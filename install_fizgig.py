@@ -105,12 +105,15 @@ def install_dependencies():
     print("Upgrading pip...")
     subprocess.run([str(python_path), "-m", "pip", "install", "--upgrade", "pip"], check=True)
 
-    print(f"Installing dependencies from: {REQUIREMENTS_FILE}")
+    print("Installing uv...")
+    subprocess.run([str(python_path), "-m", "pip", "install", "uv"], check=True)
+
+    print(f"Installing dependencies from: {REQUIREMENTS_FILE} (using uv)")
     print("(This may take a few minutes for PyTorch download...)")
 
     try:
         subprocess.run(
-            [str(python_path), "-m", "pip", "install", "-r", str(REQUIREMENTS_FILE)],
+            [str(python_path), "-m", "uv", "pip", "install", "--index-strategy", "unsafe-best-match", "-r", str(REQUIREMENTS_FILE)],
             check=True
         )
         print("Dependencies installed successfully.")

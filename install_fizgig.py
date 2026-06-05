@@ -106,12 +106,14 @@ def install_dependencies():
     subprocess.run([str(python_path), "-m", "pip", "install", "--upgrade", "pip"], check=True)
 
     print("Installing uv...")
-    subprocess.run([str(python_path), "-m", "pip", "install", "uv"], check=True)
+    # shell=False (list form) with internal Path constants — not injectable
+    subprocess.run([str(python_path), "-m", "pip", "install", "--upgrade", "uv"], check=True)
 
     print(f"Installing dependencies from: {REQUIREMENTS_FILE} (using uv)")
     print("(This may take a few minutes for PyTorch download...)")
 
     try:
+        # shell=False (list form) with internal Path constants — not injectable
         subprocess.run(
             [str(python_path), "-m", "uv", "pip", "install", "--index-strategy", "unsafe-best-match", "-r", str(REQUIREMENTS_FILE)],
             check=True

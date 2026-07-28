@@ -26,7 +26,15 @@ from PIL import Image, ImageTk
 #
 # Note this is inherited by the training subprocess too, which is intended — the same churn
 # happens there. Respects an existing value, and FIZGIG_NO_EXPANDABLE=1 opts out for A/B testing.
-if not os.environ.get("PYTORCH_CUDA_ALLOC_CONF") and os.environ.get("FIZGIG_NO_EXPANDABLE") != "1":
+#
+# Not on Windows: the CUDA allocator there rejects the option outright ("expandable_segments not
+# supported on this platform") and falls back to the default allocator, so setting it bought
+# nothing and printed that warning in every caching and training log.
+if (
+    sys.platform != "win32"
+    and not os.environ.get("PYTORCH_CUDA_ALLOC_CONF")
+    and os.environ.get("FIZGIG_NO_EXPANDABLE") != "1"
+):
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 # OpenMP wait policy, also before anything loads torch (which loads libiomp on Windows).

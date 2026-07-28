@@ -18,7 +18,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 # fixed-size segments, which fragments under that pattern and worsens as a run goes on.
 # The GUI already sets this and the training subprocess inherits it; this covers headless runs.
 # Respects an existing value, and FIZGIG_NO_EXPANDABLE=1 opts out for A/B testing.
-if not os.environ.get("PYTORCH_CUDA_ALLOC_CONF") and os.environ.get("FIZGIG_NO_EXPANDABLE") != "1":
+#
+# Not on Windows: the CUDA allocator there rejects the option outright ("expandable_segments not
+# supported on this platform") and falls back to the default allocator, so setting it bought
+# nothing and printed a warning on every process launch.
+if (
+    sys.platform != "win32"
+    and not os.environ.get("PYTORCH_CUDA_ALLOC_CONF")
+    and os.environ.get("FIZGIG_NO_EXPANDABLE") != "1"
+):
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 # OpenMP wait policy, before torch loads libiomp: Intel OpenMP keeps every pool thread

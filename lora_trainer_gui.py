@@ -13041,9 +13041,13 @@ class LoRATrainerGUI:
         if family == "klein":
             # Klein's repos are gated: BFL require each user to accept the licence themselves,
             # which is exactly why these can't be bundled or pre-fetched on anyone's behalf.
-            token = self._ask_hf_token()
+            # An HF_TOKEN already in the environment (the container's documented env var for
+            # exactly this) satisfies the gate with no prompt — only ask when there isn't one.
+            token = os.environ.get("HF_TOKEN", "").strip()
             if not token:
-                return
+                token = self._ask_hf_token()
+                if not token:
+                    return
 
         btn = getattr(self, f"_fetch_btn_{family}", None)
         status = getattr(self, f"_fetch_status_{family}", None)

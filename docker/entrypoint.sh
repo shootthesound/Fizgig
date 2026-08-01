@@ -48,6 +48,30 @@ echo -e "${VNC_PASSWORD}
 ${VNC_PASSWORD}
 " | kasmvncpasswd -u fizgig -w -o /root/.kasmpasswd >/dev/null 2>&1
 
+# ---------------------------------------------------------------- optional SSH
+# Off by default — the file manager + runpodctl are the transfer path this image is built
+# around, and an image that opens port 22 for everyone regardless of whether they asked is a
+# worse default than a debugging feature nobody but us used. PUBLIC_KEY is RunPod's OWN
+# convention (their "SSH Terminal Access" toggle sets it for you), so opting in there wires
+# this up for free; on any other host, set PUBLIC_KEY to your public key yourself.
+if [ -n "${PUBLIC_KEY:-}" ]; then
+  # Self-installing so this also works against an already-published image that predates
+  # openssh-server being baked in (see Dockerfile) — a no-op once a newer image has it.
+  if ! command -v sshd >/dev/null 2>&1; then
+    log "PUBLIC_KEY set — installing openssh-server"
+    apt-get update -qq && apt-get install -y --no-install-recommends openssh-server -qq
+  fi
+  mkdir -p /root/.ssh
+  echo "$PUBLIC_KEY" >> /root/.ssh/authorized_keys
+  chmod 700 /root/.ssh
+  chmod 600 /root/.ssh/authorized_keys
+  # PasswordAuthentication stays default (no) — a key was just handed to us, a password wasn't,
+  # and this is root on a box reachable from the whole internet.
+  mkdir -p /run/sshd
+  /usr/sbin/sshd
+  log "SSH enabled on :22 (PUBLIC_KEY was set)"
+fi
+
 # ---------------------------------------------------------------- Fizgig source
 # Pulled rather than baked, so a new release needs no image rebuild. A pod restart is an update.
 if [ -d "$APP_DIR/.git" ]; then

@@ -57,7 +57,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
       fonts-dejavu-core fonts-liberation fontconfig unzip \
       xdg-utils pcmanfm dbus-x11 \
+      openssh-server \
     && rm -rf /var/lib/apt/lists/*
+# openssh-server sits here unused unless PUBLIC_KEY is set at boot (see entrypoint.sh) — the
+# file manager + runpodctl remain the default, keyless transfer path. This is for anyone who
+# wants a real shell for debugging: RunPod's own "SSH Terminal Access" toggle sets PUBLIC_KEY
+# for you, so opting in there wires this up with no template changes; anywhere else, set
+# PUBLIC_KEY to your own public key. Off by default: no open port 22 for someone who never asked.
 # gcc + libc6-dev are RUNTIME dependencies, not builder leftovers: torch.compile has
 # inductor/triton build small host-side C stubs while training runs, and without a compiler
 # every compiled run died with "Failed to find C compiler". The app now declines compile
@@ -212,9 +218,10 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # noVNC over HTTP — the only port that needs exposing. 5900 stays internal on purpose: raw VNC
 # is unencrypted, and the host's HTTPS proxy is what makes this safe to reach over the internet.
-# 8081 is reserved for the app to serve on (a phone-facing run monitor). Declaring it here
-# is documentation — RunPod exposes what the TEMPLATE lists — but it keeps the ports in
-# one place and works for a plain `docker run -p`.
-EXPOSE 6080 8080 8081
+# 8081 is reserved for the app to serve on (a phone-facing run monitor). 22 only ever listens
+# if PUBLIC_KEY is set (see entrypoint.sh) — declaring it here is documentation, same as 8081.
+# Declaring these is documentation — RunPod exposes what the TEMPLATE lists — but it keeps the
+# ports in one place and works for a plain `docker run -p`.
+EXPOSE 6080 8080 8081 22
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

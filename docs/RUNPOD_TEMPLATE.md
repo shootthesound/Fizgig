@@ -51,7 +51,7 @@ Both ports then ask for a username and password:
 | | Port | Username | Password |
 |---|---|---|---|
 | **Fizgig** | 6080 | `fizgig` | your `VNC_PASSWORD` |
-| **File manager** | 8080 | `admin` | the same one |
+| **File manager** | 8080 | `admin` | the same one, zero-padded to 12 chars if shorter — see below |
 
 **Set your own password when you deploy** — it saves you hunting for one later. On the deploy
 screen expand **Edit Template → Environment Variables**, add `VNC_PASSWORD`, and pick something

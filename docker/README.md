@@ -61,7 +61,7 @@ You're in business when the log reaches:
 | | Port | Username | Password |
 |---|---|---|---|
 | **Fizgig** | 6080 | `fizgig` | your `VNC_PASSWORD` |
-| **File manager** | 8080 | `admin` | the same one |
+| **File manager** | 8080 | `admin` | the same one, zero-padded to 12 chars if shorter — see below |
 
 **Set your own password when you deploy.** On the deploy screen expand **Edit Template →
 Environment Variables**, add `VNC_PASSWORD`, and pick something 12+ characters. Then you already

@@ -1078,6 +1078,8 @@ class LoRATrainerGUI:
             "METADATA_DESCRIPTION": "",
             "METADATA_LICENSE": "",
             "METADATA_TAGS": "",
+            "METADATA_TRIGGER_PHRASE": "",
+            "METADATA_THUMBNAIL": "",
             "FP8": True,  # Default FP8 setting (--fp8_base)
             "SCALED": True,  # Default Scaled setting (--fp8_scaled, recommended with fp8_base)
             "QUANT_4BIT": False,  # 4-bit NF4 base (low-VRAM); supersedes fp8 when on
@@ -5596,6 +5598,25 @@ class LoRATrainerGUI:
         ttk.Label(parent, text="Metadata Tags:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=2)
         self.entries["METADATA_TAGS"] = ttk.Entry(parent, width=40)
         self.entries["METADATA_TAGS"].grid(row=row, column=1, sticky=tk.EW, padx=5, pady=2)
+        row += 1
+
+        ttk.Label(parent, text="Metadata Trigger Phrase:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=2)
+        self.entries["METADATA_TRIGGER_PHRASE"] = ttk.Entry(parent, width=40)
+        self.entries["METADATA_TRIGGER_PHRASE"].grid(row=row, column=1, sticky=tk.EW, padx=5, pady=2)
+        row += 1
+        ttk.Label(parent, text="Blank uses the Captions tab's trigger word.",
+                  foreground="#95A5A6", font=(FONT_FAMILY, 8, "italic")).grid(
+            row=row, column=0, columnspan=3, sticky=tk.W, padx=5)
+        row += 1
+
+        ttk.Label(parent, text="Metadata Thumbnail:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=2)
+        self.entries["METADATA_THUMBNAIL"] = ttk.Entry(parent, width=40)
+        self.entries["METADATA_THUMBNAIL"].grid(row=row, column=1, sticky=tk.EW, padx=5, pady=2)
+        ttk.Button(parent, text="Browse", command=lambda: self.browse_file("METADATA_THUMBNAIL", "file")).grid(row=row, column=2, sticky=tk.W, padx=5)
+        row += 1
+        ttk.Label(parent, text="Blank auto-embeds the latest sample preview; type 'off' to disable.",
+                  foreground="#95A5A6", font=(FONT_FAMILY, 8, "italic")).grid(
+            row=row, column=0, columnspan=3, sticky=tk.W, padx=5)
         row += 1
 
         return row
@@ -19104,6 +19125,8 @@ class LoRATrainerGUI:
             "METADATA_DESCRIPTION": self.entries["METADATA_DESCRIPTION"].get(),
             "METADATA_LICENSE": self.entries["METADATA_LICENSE"].get(),
             "METADATA_TAGS": self.entries["METADATA_TAGS"].get(),
+            "METADATA_TRIGGER_PHRASE": self.entries["METADATA_TRIGGER_PHRASE"].get(),
+            "METADATA_THUMBNAIL": self.entries["METADATA_THUMBNAIL"].get(),
             "FP8": self.fp8_var.get(),
             "SCALED": self.scaled_var.get(),
             "QUANT_4BIT": self.quant_4bit_var.get(),
@@ -19502,6 +19525,15 @@ class LoRATrainerGUI:
         if metadata_tags:
             command.extend(["--metadata_tags", metadata_tags])
 
+        metadata_trigger_phrase = self.settings["METADATA_TRIGGER_PHRASE"].strip() or \
+            (self.caption_trigger_var.get().strip() if hasattr(self, "caption_trigger_var") else "")
+        if metadata_trigger_phrase and metadata_trigger_phrase.lower() != "trigger_word":
+            command.extend(["--metadata_trigger_phrase", metadata_trigger_phrase])
+
+        metadata_thumbnail = self.settings["METADATA_THUMBNAIL"].strip()
+        if metadata_thumbnail:
+            command.extend(["--metadata_thumbnail", metadata_thumbnail])
+
         if self.settings["RESUME_TRAINING"].strip():
             command.append(f"--resume={self.settings['RESUME_TRAINING']}")
 
@@ -19789,6 +19821,15 @@ class LoRATrainerGUI:
             _mval = str(self.settings.get(_mkey, "") or "").strip()
             if _mval:
                 cmd += [_mflag, _mval]
+        # Trigger phrase falls back to the Captions tab's trigger word — independent of
+        # --trigger_word above, which is only ever sent when auto-recaption is on.
+        _mtrig = self.settings.get("METADATA_TRIGGER_PHRASE", "").strip() or \
+            (self.caption_trigger_var.get().strip() if hasattr(self, "caption_trigger_var") else "")
+        if _mtrig and _mtrig.lower() != "trigger_word":
+            cmd += ["--metadata_trigger_phrase", _mtrig]
+        _mthumb = self.settings.get("METADATA_THUMBNAIL", "").strip()
+        if _mthumb:
+            cmd += ["--metadata_thumbnail", _mthumb]
         # Base weight optimization. 4-bit NF4 supersedes fp8 (mutually exclusive): it quantizes the
         # frozen base to ~5.6 GB so a full LoRA trains on a 10-12 GB card with NO block swap (the
         # trainer forces blocks_to_swap=0 under 4-bit). Otherwise fp8 Base (the default) unless the

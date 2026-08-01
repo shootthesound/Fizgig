@@ -33,7 +33,9 @@ from fizgig.krea2.utils import load_krea2_dit
 from fizgig.krea2.sampling import gather_valid_text, prepare
 from fizgig.modules.sdpa import consider_training_backend as _consider_training_backend
 from fizgig.networks.lora import create_network
-from fizgig.training.metadata import ARCHITECTURE_KREA2
+from fizgig.training.metadata import (
+    ARCHITECTURE_KREA2, build_metadata, latest_sample_image, thumbnail_data_uri,
+)
 from fizgig.training.train_utils import LossRecorder, prune_state_dirs
 
 logger = logging.getLogger(__name__)
@@ -1288,6 +1290,8 @@ def train_krea2(
     metadata_description: str = None,
     metadata_license: str = None,
     metadata_tags: str = None,
+    metadata_trigger_phrase: str = None,
+    metadata_thumbnail: str = None,
     device: str = "cuda",
     dtype: torch.dtype = torch.bfloat16,
 ):
@@ -1295,6 +1299,25 @@ def train_krea2(
     flow-matching loss -> AdamW -> save a ComfyUI-compatible LoRA. In-training Turbo previews +
     GUI wiring are layered on elsewhere."""
     torch.manual_seed(seed)
+
+    def _sai_metadata():
+        """SAI ModelSpec block shared by every checkpoint (per-epoch and final), so an epoch
+        picked over the last one is just as identifiable in ComfyUI. Thumbnail defaults to
+        whatever preview training has produced so far — cosmetic, so a missing one is fine."""
+        if metadata_thumbnail and metadata_thumbnail.lower() in ("off", "none"):
+            thumb_source = None
+        elif metadata_thumbnail:
+            thumb_source = metadata_thumbnail
+        else:
+            thumb_source = latest_sample_image(output_dir)
+        return build_metadata(
+            None, ARCHITECTURE_KREA2, time.time(),
+            title=metadata_title if metadata_title is not None else output_name,
+            author=metadata_author, description=metadata_description,
+            license=metadata_license, tags=metadata_tags,
+            trigger_phrase=metadata_trigger_phrase,
+            thumbnail=thumbnail_data_uri(thumb_source),
+        )
 
     shared_epoch = Value("i", 0)
     user_config = load_user_config(dataset_config)
@@ -1850,7 +1873,8 @@ def train_krea2(
             # comfy_format so a user's picked-best epoch is byte-format-identical to the final
             # artifact (LoKR: LyCORIS-standard keys). No-op for standard LoRA.
             _save_lora(network, os.path.join(output_dir, f"{output_name}-{epoch + 1:06d}.safetensors"),
-                       network_dim, network_alpha, dtype, comfy_format=True)
+                       network_dim, network_alpha, dtype, extra_metadata=_sai_metadata(),
+                       comfy_format=True)
             # Resumable state rides the checkpoint cadence. Safe to snapshot here: pending_accum
             # was flushed above, the adaptive-LR watcher has already made its call for this epoch,
             # and any queued caption updates are applied — so the optimizer is settled.
@@ -2017,12 +2041,9 @@ def train_krea2(
     if context_lora_path:
         extra.update({"ss_context_lora": os.path.basename(context_lora_path),
                       "ss_context_lora_strength": str(context_lora_strength)})
-    # User metadata (GUI: Other Options → Metadata) — same keys ComfyUI/model managers read.
-    for _mk, _mv in (("modelspec.title", metadata_title), ("modelspec.author", metadata_author),
-                     ("modelspec.description", metadata_description),
-                     ("modelspec.license", metadata_license), ("modelspec.tags", metadata_tags)):
-        if _mv:
-            extra[_mk] = str(_mv)
+    # Full SAI ModelSpec block — same keys ComfyUI/model managers read (GUI: Other Options →
+    # Metadata), plus trigger phrase and an auto-picked sample thumbnail.
+    extra.update(_sai_metadata())
     _save_lora(network, out, network_dim, network_alpha, dtype, extra_metadata=extra,
                comfy_format=True)
     logger.info(f"saved final LoRA -> {out}")

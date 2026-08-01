@@ -54,7 +54,10 @@ from fizgig.klein.model_utils import (
 )
 from fizgig.klein.position import prc_img, prc_txt, scatter_ids, pack_control_latent
 from fizgig.modules.schedulers import FlowMatchDiscreteScheduler, RexLR
-from fizgig.training.metadata import build_metadata, ARCHITECTURE_KLEIN_9B, ARCHITECTURE_KLEIN_9B_FULL
+from fizgig.training.metadata import (
+    build_metadata, latest_sample_image, thumbnail_data_uri,
+    ARCHITECTURE_KLEIN_9B, ARCHITECTURE_KLEIN_9B_FULL,
+)
 from fizgig.training.train_utils import (
     LossRecorder,
     get_epoch_ckpt_name,
@@ -2324,6 +2327,14 @@ class KleinTrainer:
             else:
                 md_timesteps = None
 
+            thumb_arg = args.metadata_thumbnail
+            if thumb_arg and thumb_arg.lower() in ("off", "none"):
+                thumb_source = None
+            elif thumb_arg:
+                thumb_source = thumb_arg
+            else:
+                thumb_source = latest_sample_image(args.output_dir)
+
             sai_metadata = build_metadata(
                 None,
                 self.architecture,
@@ -2335,6 +2346,8 @@ class KleinTrainer:
                 args.metadata_license,
                 args.metadata_tags,
                 timesteps=md_timesteps,
+                trigger_phrase=args.metadata_trigger_phrase,
+                thumbnail=thumbnail_data_uri(thumb_source),
             )
 
             metadata_to_save.update(sai_metadata)
@@ -3201,6 +3214,11 @@ def setup_parser() -> argparse.ArgumentParser:
     parser.add_argument("--metadata_tags", type=str, default=None)
     parser.add_argument("--metadata_reso", type=str, default=None)
     parser.add_argument("--metadata_arch", type=str, default=None)
+    parser.add_argument("--metadata_trigger_phrase", type=str, default=None,
+                        help="Trigger word(s) recorded as modelspec.trigger_phrase")
+    parser.add_argument("--metadata_thumbnail", type=str, default=None,
+                        help="Path to an image to embed as modelspec.thumbnail. Omit to "
+                             "auto-use the latest sample preview; pass 'off' to disable.")
 
     # ---- Model paths ----
     parser.add_argument("--dit", type=str, help="Path to DiT checkpoint (.safetensors)")

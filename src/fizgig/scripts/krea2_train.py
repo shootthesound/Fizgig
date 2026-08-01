@@ -95,6 +95,12 @@ def setup_parser() -> argparse.ArgumentParser:
     p.add_argument("--metadata_description", default=None)
     p.add_argument("--metadata_license", default=None)
     p.add_argument("--metadata_tags", default=None)
+    p.add_argument("--metadata_trigger_phrase", default=None,
+                   help="Trigger word(s) recorded as modelspec.trigger_phrase. "
+                        "Defaults to --trigger_word when omitted.")
+    p.add_argument("--metadata_thumbnail", default=None,
+                   help="Path to an image to embed as modelspec.thumbnail. Omit to "
+                        "auto-use the latest sample preview; pass 'off' to disable.")
     p.add_argument("--preview_blocks_to_swap", type=int, default=0,
                    help="Forward-only block swap on the preview Turbo (fits smaller cards)")
     p.add_argument("--preview_int8", action="store_true",
@@ -179,6 +185,8 @@ def main():
         metadata_title=args.metadata_title, metadata_author=args.metadata_author,
         metadata_description=args.metadata_description,
         metadata_license=args.metadata_license, metadata_tags=args.metadata_tags,
+        metadata_trigger_phrase=args.metadata_trigger_phrase or args.trigger_word,
+        metadata_thumbnail=args.metadata_thumbnail,
         preview_blocks_to_swap=args.preview_blocks_to_swap,
         preview_int8=args.preview_int8,
         resume_state_dir=args.resume,

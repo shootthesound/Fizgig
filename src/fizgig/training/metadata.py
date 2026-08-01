@@ -4,6 +4,7 @@ Based on https://github.com/Stability-AI/ModelSpec
 Klein 9B specific — other architectures stripped.
 """
 
+import base64
 import datetime
 import hashlib
 from io import BytesIO
@@ -44,6 +45,8 @@ BASE_METADATA = {
     "modelspec.prediction_type": None,
     "modelspec.timestep_range": None,
     "modelspec.encoder_layer": None,
+    "modelspec.trigger_phrase": None,
+    "modelspec.thumbnail": None,
 }
 
 
@@ -80,6 +83,8 @@ def build_metadata(
     merged_from: Optional[str] = None,
     timesteps: Optional[Tuple[int, int]] = None,
     is_lora: bool = True,
+    trigger_phrase: Optional[str] = None,
+    thumbnail: Optional[str] = None,
 ) -> dict:
     """Build SAI model spec metadata for Klein 9B LoRA files."""
     metadata = {}
@@ -111,6 +116,8 @@ def build_metadata(
         ("modelspec.license", license),
         ("modelspec.tags", tags),
         ("modelspec.merged_from", merged_from),
+        ("modelspec.trigger_phrase", trigger_phrase),
+        ("modelspec.thumbnail", thumbnail),
     ]:
         if value is not None:
             metadata[key] = value
@@ -152,6 +159,44 @@ def build_metadata(
         logger.error(f"Internal error: some metadata values are None: {metadata}")
 
     return metadata
+
+
+def latest_sample_image(output_dir: Optional[str]) -> Optional[str]:
+    """Most recently written preview under <output_dir>/sample/, if any.
+
+    Used as the default source for `modelspec.thumbnail` — training already produces these,
+    so a LoRA can carry a representative preview with no extra input from the user.
+    """
+    if not output_dir:
+        return None
+    sample_dir = os.path.join(output_dir, "sample")
+    if not os.path.isdir(sample_dir):
+        return None
+    exts = (".png", ".jpg", ".jpeg", ".webp")
+    candidates = [os.path.join(sample_dir, f) for f in os.listdir(sample_dir)
+                  if f.lower().endswith(exts)]
+    if not candidates:
+        return None
+    return max(candidates, key=os.path.getmtime)
+
+
+def thumbnail_data_uri(image_path: Optional[str], max_size: int = 512, quality: int = 85) -> Optional[str]:
+    """Downscale an image and embed it as a `modelspec.thumbnail` data URI (what ComfyUI's
+    model browser renders as the card art). Best-effort: a missing or broken thumbnail must
+    never fail a checkpoint save."""
+    if not image_path or not os.path.exists(image_path):
+        return None
+    try:
+        from PIL import Image
+        with Image.open(image_path) as im:
+            im = im.convert("RGB")
+            im.thumbnail((max_size, max_size))
+            buf = BytesIO()
+            im.save(buf, format="JPEG", quality=quality)
+        return f"data:image/jpeg;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"
+    except Exception:
+        logger.warning(f"could not build metadata thumbnail from {image_path}", exc_info=True)
+        return None
 
 
 def get_title(metadata: dict) -> Optional[str]:

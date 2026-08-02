@@ -10,9 +10,20 @@ loaded directly from a local safetensors file (ComfyUI-style `model.`/`visual.` 
 accepted as well as the official HF layout), and only the tokenizer is still pulled by
 repo id. This lets K2 share the same Qwen3-VL-4B weights a user already has for ComfyUI,
 instead of requiring a separate transformers/Diffusers checkpoint.
+
+The tokenizer/processor/chat-template can't be vendored as a Python dict the way the model
+config is -- transformers wants them as actual files (tokenizer.json, chat_template.json,
+etc). So the same "naked safetensors" convention the checkpoint itself follows applies here
+too: if those files are sitting in a `qwen3vl_tokenizer/` folder next to the checkpoint (see
+_local_tokenizer_dir), they're used directly with no Hub involved at all -- a fully offline
+machine can have them sneakernet'd in by hand, no HF cache archaeology required. Only falls
+back to `tokenizer_repo`'s normal cache-first Hub resolution if that folder isn't there --
+which is what fetch_models.py's "tools" family (hf-config: entries) already keeps warm for
+anyone who's run it online at least once, this is a second, folder-based way in.
 """
 
 import logging
+import os
 import re
 from dataclasses import dataclass
 
@@ -31,8 +42,57 @@ from fizgig.krea2.safetensors_utils import load_split_weights
 logger = logging.getLogger(__name__)
 
 
-# Only the tokenizer is still fetched by repo id (small, HF-cached after first use).
+# Only the tokenizer is still fetched by repo id (small, HF-cached after first use) --
+# unless a local qwen3vl_tokenizer/ folder is found first; see _local_tokenizer_dir.
 QWEN3_VL_4B_INSTRUCT_REPO_ID = "Qwen/Qwen3-VL-4B-Instruct"
+
+# The non-weight files this repo carries -- everything apply_chat_template / the image
+# processor need, none of the multi-GB weight shards (those come from the local checkpoint).
+# Named explicitly so a fully offline install has a precise shopping list: download these from
+# https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct/tree/main and drop them into the folder
+# _local_tokenizer_dir names.
+QWEN3_VL_TOKENIZER_FILES = (
+    "chat_template.json",
+    "generation_config.json",
+    "merges.txt",
+    "preprocessor_config.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "video_preprocessor_config.json",
+    "vocab.json",
+)
+
+
+def _local_tokenizer_dir(model_path: str) -> str:
+    """Where a sneakernet'd copy of QWEN3_VL_TOKENIZER_FILES lives: a `qwen3vl_tokenizer/`
+    folder next to the checkpoint itself, so it travels with the checkpoint regardless of
+    where the user's models directory is."""
+    return os.path.join(os.path.dirname(os.path.abspath(model_path)), "qwen3vl_tokenizer")
+
+
+def _resolve_tokenizer_source(model_path: str, tokenizer_repo: str) -> str:
+    """Prefer a local qwen3vl_tokenizer/ folder next to the checkpoint over fetching
+    `tokenizer_repo` from the Hub, if the caller didn't explicitly ask for something else."""
+    if tokenizer_repo == QWEN3_VL_4B_INSTRUCT_REPO_ID:
+        local_dir = _local_tokenizer_dir(model_path)
+        if os.path.isfile(os.path.join(local_dir, "tokenizer_config.json")):
+            return local_dir
+    return tokenizer_repo
+
+
+def _offline_tokenizer_error(local_dir: str, tokenizer_repo: str, err: Exception) -> RuntimeError:
+    """Turn a bare ConnectionError (etc.) from the Hub into the sneakernet instructions: which
+    files, from where, and exactly which local folder to drop them into."""
+    files = "\n".join(f"  - {name}" for name in QWEN3_VL_TOKENIZER_FILES)
+    return RuntimeError(
+        f"Couldn't load the Qwen3-VL tokenizer/chat-template ({tokenizer_repo}): "
+        f"{type(err).__name__}: {err}\n"
+        "No internet connection, and no local copy was found. To caption fully offline, "
+        f"download these files from https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct/tree/main "
+        f"on any machine with internet:\n{files}\n"
+        f"...and place them in:\n  {local_dir}"
+    )
+
 
 # Vendored copy of the Qwen3-VL-4B-Instruct config.json so the text encoder is built
 # without fetching the config from the Hugging Face Hub. Qwen3-VL is natively supported by
@@ -203,10 +263,16 @@ def load_qwen3_vl_conditioner(
     tokenizer from ``tokenizer_repo`` (Hub id or local dir)."""
     from fizgig.utils.hf_cache import from_pretrained_cache_first
     qwen = _load_qwen3_vl_model(model_path, dtype=dtype, device=device, disable_mmap=disable_mmap)
-    tokenizer = from_pretrained_cache_first(AutoTokenizer, tokenizer_repo, max_length=max_length)
-    processor = from_pretrained_cache_first(Qwen2TokenizerFast, tokenizer_repo, max_length=max_length)
+    local_dir = _local_tokenizer_dir(model_path)
+    tokenizer_repo = _resolve_tokenizer_source(model_path, tokenizer_repo)
+    try:
+        tokenizer = from_pretrained_cache_first(AutoTokenizer, tokenizer_repo, max_length=max_length)
+        processor = from_pretrained_cache_first(Qwen2TokenizerFast, tokenizer_repo, max_length=max_length)
+    except Exception as e:
+        raise _offline_tokenizer_error(local_dir, tokenizer_repo, e) from e
     conditioner = Qwen3VLConditioner(qwen, tokenizer, processor, max_length=max_length,
-                                     select_layers=select_layers, tokenizer_repo=tokenizer_repo)
+                                     select_layers=select_layers, tokenizer_repo=tokenizer_repo,
+                                     local_tokenizer_dir=local_dir)
     return conditioner.eval().requires_grad_(False)
 
 
@@ -421,12 +487,14 @@ class Qwen3VLConditioner(torch.nn.Module):
         max_length: int = 512,
         select_layers: tuple[int, ...] = (2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35),
         tokenizer_repo: str | None = None,
+        local_tokenizer_dir: str | None = None,
     ):
         super().__init__()
         self.qwen = qwen.eval().requires_grad_(False)
         self.tokenizer = tokenizer
         self.processor = processor
         self.tokenizer_repo = tokenizer_repo
+        self.local_tokenizer_dir = local_tokenizer_dir
         self._image_processor = None  # lazily-loaded full Qwen3-VL processor (for image refs)
         self.max_length = max_length
         self.select_layers = select_layers
@@ -493,7 +561,24 @@ class Qwen3VLConditioner(torch.nn.Module):
             from transformers import AutoProcessor
             from fizgig.utils.hf_cache import from_pretrained_cache_first
             repo = self.tokenizer_repo or QWEN3_VL_4B_INSTRUCT_REPO_ID
-            self._image_processor = from_pretrained_cache_first(AutoProcessor, repo)
+            try:
+                proc = from_pretrained_cache_first(AutoProcessor, repo)
+                if proc.chat_template is None and not os.path.isdir(repo):
+                    # local_files_only can succeed on a cache that only has tokenizer files
+                    # (warmed by the plain AutoTokenizer/Qwen2TokenizerFast loads in
+                    # load_qwen3_vl_conditioner) but not chat_template.json -- transformers
+                    # treats a missing chat template as optional, so the cache-first helper's
+                    # exception-triggered network fallback never fires and hands back a
+                    # processor apply_chat_template can't use (issue #37). Force a real fetch
+                    # instead of caching that broken processor for every caption. (A local
+                    # qwen3vl_tokenizer/ dir can't self-heal this way -- there's nowhere else
+                    # on disk to look -- so that case falls straight to the error below.)
+                    proc = AutoProcessor.from_pretrained(repo)
+                if proc.chat_template is None:
+                    raise ValueError("processor has no chat_template")
+            except Exception as e:
+                raise _offline_tokenizer_error(self.local_tokenizer_dir, repo, e) from e
+            self._image_processor = proc
         return self._image_processor
 
     @staticmethod

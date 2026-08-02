@@ -5657,6 +5657,10 @@ class LoRATrainerGUI:
         self.caption_model_combo.grid(row=3, column=1, sticky=tk.W, pady=4)
         self.caption_model_combo.bind("<<ComboboxSelected>>",
                                       lambda e: self._on_caption_model_changed())
+        self.caption_model_hint_label = tk.Label(
+            settings_card, text=self._qwen_captioner_hint(),
+            font=(FONT_FAMILY, 9), fg=COLORS["text_muted"], bg=COLORS["bg_surface"])
+        self.caption_model_hint_label.grid(row=3, column=2, sticky=tk.W, padx=(10, 0))
         # The Qwen3-VL entry appears as soon as the Krea 2 text encoder path is filled in on
         # Preferences — no restart. It's a captioner for ANY dataset, Klein included; the file
         # just happens to ship with the Krea 2 models.
@@ -6022,6 +6026,17 @@ class LoRATrainerGUI:
         p = self._krea2_pref("krea2_text_encoder") if hasattr(self, "prefs_vars") else ""
         return p if (p and os.path.isfile(p)) else ""
 
+    def _qwen_captioner_hint(self) -> str:
+        """Small nudge next to the Model dropdown when Qwen3-VL isn't offered -- someone who
+        already has the weights (from ComfyUI, a pod image, wherever) has no other way to
+        learn that this is an unset/broken Preferences path rather than a missing feature."""
+        if self._qwen_captioner_path():
+            return ""
+        raw = self._krea2_pref("krea2_text_encoder") if hasattr(self, "prefs_vars") else ""
+        if raw:
+            return f"(Qwen3-VL path set but not found: {os.path.basename(raw)} — check Preferences)"
+        return "(Already have the Qwen3-VL weights? Set the path in Preferences to caption with it)"
+
     def _caption_model_values(self):
         """Model dropdown contents. Qwen3-VL is offered whenever its file exists — it captions to
         .txt like Florence does, so it serves Klein datasets just as well as Krea 2 ones."""
@@ -6057,6 +6072,8 @@ class LoRATrainerGUI:
                 # selection that no longer resolves to anything loadable.
                 self.caption_model_var.set(FLORENCE_DEFAULT_MODEL)
                 self._on_caption_model_changed()
+            if hasattr(self, "caption_model_hint_label"):
+                self.caption_model_hint_label.configure(text=self._qwen_captioner_hint())
         except tk.TclError:
             pass
 

@@ -601,6 +601,16 @@ _FIZGIG_DIR = os.path.dirname(os.path.abspath(__file__))
 # file comes from, not who it is for.
 FLORENCE_DEFAULT_MODEL = "MiaoshouAI/Florence-2-base-PromptGen"
 FLORENCE_MODELS = [FLORENCE_DEFAULT_MODEL, "microsoft/Florence-2-base", "microsoft/Florence-2-large"]
+# Florence-2 isn't a native transformers architecture, so loading it means trust_remote_code=True
+# — downloading and EXECUTING whatever Python is currently on that repo's default branch, with no
+# pin. Pinned here to the commit each was audited against, so a compromised account (or a repo
+# that just changes later) can't silently change what gets executed on someone's next first-run.
+# To refresh a pin: check https://huggingface.co/api/models/<repo> for the current "sha".
+FLORENCE_REVISIONS = {
+    "MiaoshouAI/Florence-2-base-PromptGen": "da7ac9f3deac56a928e2fd4d94d8bb985d231299",
+    "microsoft/Florence-2-base": "5ca5edf5bd017b9919c05d08aebef5e4c7ac3bac",
+    "microsoft/Florence-2-large": "21a599d414c4d928c9032694c424fb94458e3594",
+}
 FLORENCE_TASKS = ["<CAPTION>", "<DETAILED_CAPTION>", "<MORE_DETAILED_CAPTION>"]
 QWEN_CAPTION_MODEL = "Qwen3-VL 4B (Krea 2 text encoder)"
 QWEN_CUSTOM_TASK = "Custom…"
@@ -6300,9 +6310,11 @@ class LoRATrainerGUI:
             self.master.update_idletasks()
 
             from fizgig.utils.hf_cache import from_pretrained_cache_first
+            florence_revision = FLORENCE_REVISIONS.get(model_name)
             self.florence_processor = from_pretrained_cache_first(
                 AutoProcessor,
                 model_name,
+                revision=florence_revision,
                 trust_remote_code=True
             )
 
@@ -6316,6 +6328,7 @@ class LoRATrainerGUI:
             self.florence_model = from_pretrained_cache_first(
                 AutoModelForCausalLM,
                 model_name,
+                revision=florence_revision,
                 torch_dtype=torch.float16 if device == "cuda" else torch.float32,
                 trust_remote_code=True,
                 attn_implementation="eager"

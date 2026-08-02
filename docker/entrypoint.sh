@@ -52,7 +52,21 @@ ${VNC_PASSWORD}
 # Pulled rather than baked, so a new release needs no image rebuild. A pod restart is an update.
 if [ -d "$APP_DIR/.git" ]; then
   log "Updating Fizgig in $APP_DIR"
-  git -C "$APP_DIR" fetch --depth 1 origin "$REPO_REF" && git -C "$APP_DIR" reset --hard FETCH_HEAD
+  # A persistent volume can carry a checkout from a DIFFERENT FIZGIG_REPO than the one
+  # configured now (switched forks, fixed a typo) — origin is whatever the ORIGINAL clone
+  # set it to, so point it at the current URL before fetching, or the ref lookup silently
+  # targets the wrong repo.
+  git -C "$APP_DIR" remote set-url origin "$REPO_URL"
+  # NOT `fetch && reset` as one statement: under `set -e`, a failing command is only fatal
+  # as the LAST command in an && chain — bash's own documented errexit exemption for
+  # everything before it. A bad FIZGIG_REF used to fail the fetch, skip the reset, and
+  # carry on running whatever was already checked out, with nothing but a bare `fatal:`
+  # line (no [fizgig] prefix, nothing that reads as an error) to show for it.
+  if ! git -C "$APP_DIR" fetch --depth 1 origin "$REPO_REF" \
+      || ! git -C "$APP_DIR" reset --hard FETCH_HEAD; then
+    log "ERROR: could not update to '$REPO_REF' from $REPO_URL — check FIZGIG_REPO/FIZGIG_REF for a typo."
+    log "       Continuing on whatever was already checked out ($(git -C "$APP_DIR" rev-parse --short HEAD 2>/dev/null))."
+  fi
 else
   log "Cloning Fizgig ($REPO_REF)"
   git clone --depth 1 --branch "$REPO_REF" "$REPO_URL" "$APP_DIR"

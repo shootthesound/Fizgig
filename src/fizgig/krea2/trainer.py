@@ -34,7 +34,7 @@ from fizgig.krea2.sampling import gather_valid_text, prepare
 from fizgig.modules.sdpa import consider_training_backend as _consider_training_backend
 from fizgig.networks.lora import create_network
 from fizgig.training.metadata import (
-    ARCHITECTURE_KREA2, build_metadata, latest_sample_image, thumbnail_data_uri,
+    ARCHITECTURE_KREA2, build_metadata, latest_sample_image, thumbnail_data_uri, resolve_title,
 )
 from fizgig.training.train_utils import LossRecorder, prune_state_dirs
 
@@ -1089,7 +1089,7 @@ def sample_previews(turbo_path, ae, encoded_prompts, lora_sd, out_dir, epoch, *,
                     output_name="krea2", steps=8, cfg_scale=1.0, neg=None,
                     width=512, height=512,
                     seed=42, context_lora_path=None, context_lora_strength=1.0,
-                    blocks_to_swap=0, int8=False, device="cuda"):
+                    blocks_to_swap=0, int8=False, device="cuda", prompts=None):
     """Load the (clean) pre-quant fp8 Turbo, apply the current LoRA LIVE (no merge -> no grid),
     and render each pre-encoded prompt. Turbo is freed afterwards.
 
@@ -1137,23 +1137,31 @@ def sample_previews(turbo_path, ae, encoded_prompts, lora_sd, out_dir, epoch, *,
         turbo.move_to_device_except_swap_blocks(torch.device(device))
         turbo.switch_block_swap_for_inference()
     turbo.eval()
-    paths = _render_prompt_set(turbo, ae, encoded_prompts, out_dir, epoch,
-                               output_name=output_name, steps=steps, cfg_scale=cfg_scale,
-                               neg=neg, width=width, height=height, seed=seed, device=device)
+    result = _render_prompt_set(turbo, ae, encoded_prompts, out_dir, epoch,
+                                output_name=output_name, steps=steps, cfg_scale=cfg_scale,
+                                neg=neg, width=width, height=height, seed=seed, device=device,
+                                prompts=prompts)
     del turbo, net, ctx_net
     torch.cuda.empty_cache()
-    return paths
+    return result
 
 
 def _render_prompt_set(model, ae, encoded_prompts, out_dir, epoch, *, output_name, steps,
-                       cfg_scale, neg, width, height, seed, device):
+                       cfg_scale, neg, width, height, seed, device, prompts=None):
     """Shared preview render loop — identical settings (mu=1.15 pinned) and the exact gallery
-    filename pattern for both the Turbo-model path and the turbo-LoRA-on-training-DiT path."""
+    filename pattern for both the Turbo-model path and the turbo-LoRA-on-training-DiT path.
+
+    `prompts` is the raw text parallel to `encoded_prompts` (same order, same length) — optional
+    because a couple of call sites don't have it handy, but when it's there we hand back which
+    prompt made the LAST image, so a checkpoint saved right after can default its description to
+    it instead of shipping blank (same idea as the auto-thumbnail, which is already whatever
+    sample happens to be newest on disk)."""
     import datetime
     from fizgig.krea2 import sampling
     os.makedirs(out_dir, exist_ok=True)
     ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")  # 14-digit timestamp
     paths = []
+    last_prompt = None
     # Negative prompt rides through the CFG path (untxt) — only when CFG is actually on.
     _untxt = _untxtmask = None
     if neg is not None and cfg_scale and cfg_scale > 1.0:
@@ -1166,12 +1174,15 @@ def _render_prompt_set(model, ae, encoded_prompts, out_dir, epoch, *, output_nam
         p = os.path.join(out_dir, f"{output_name}_e{epoch:06d}_{i:02d}_{ts}_{seed + i}.png")
         imgs[0].save(p)
         paths.append(p)
-    return paths
+        if prompts and i < len(prompts):
+            last_prompt = prompts[i]
+    return paths, last_prompt
 
 
 def sample_previews_on_dit(dit, turbo_net, turbo_diffb, ae, encoded_prompts, out_dir, epoch, *,
                            output_name="krea2", steps=8, cfg_scale=1.0, neg=None,
-                           width=512, height=512, seed=42, blocks_to_swap=0, device="cuda"):
+                           width=512, height=512, seed=42, blocks_to_swap=0, device="cuda",
+                           prompts=None):
     """Render previews on the RESIDENT training DiT with the Turbo LoRA enabled at 1.0 —
     no Turbo checkpoint load, no parking the trainer to CPU.
 
@@ -1200,7 +1211,8 @@ def sample_previews_on_dit(dit, turbo_net, turbo_diffb, ae, encoded_prompts, out
             bias.data.add_(delta.to(device=bias.device, dtype=bias.dtype))
         return _render_prompt_set(dit, ae, encoded_prompts, out_dir, epoch,
                                   output_name=output_name, steps=steps, cfg_scale=cfg_scale,
-                                  neg=neg, width=width, height=height, seed=seed, device=device)
+                                  neg=neg, width=width, height=height, seed=seed, device=device,
+                                  prompts=prompts)
     finally:
         for bias, snap in saved_biases:
             bias.data.copy_(snap)
@@ -1300,6 +1312,11 @@ def train_krea2(
     GUI wiring are layered on elsewhere."""
     torch.manual_seed(seed)
 
+    # Updated at every sample render (see the sample_previews*/prompts= call sites below) so
+    # _sai_metadata can default the description to whatever prompt made the newest thumbnail,
+    # instead of shipping blank.
+    _last_sample_prompt = None
+
     def _sai_metadata():
         """SAI ModelSpec block shared by every checkpoint (per-epoch and final), so an epoch
         picked over the last one is just as identifiable in ComfyUI. Thumbnail defaults to
@@ -1312,8 +1329,11 @@ def train_krea2(
             thumb_source = latest_sample_image(output_dir)
         return build_metadata(
             None, ARCHITECTURE_KREA2, time.time(),
-            title=metadata_title if metadata_title is not None else output_name,
-            author=metadata_author, description=metadata_description,
+            title=(metadata_title if metadata_title is not None
+                   else resolve_title(output_name, metadata_trigger_phrase)),
+            author=metadata_author,
+            description=(metadata_description if metadata_description is not None
+                         else _last_sample_prompt),
             license=metadata_license, tags=metadata_tags,
             trigger_phrase=metadata_trigger_phrase,
             thumbnail=thumbnail_data_uri(thumb_source),
@@ -1702,11 +1722,13 @@ def train_krea2(
         logger.info("rendering epoch-0 preview (Sample at Start, on training DiT)...")
         try:
             _seed0 = sample_seed if sample_seed != 0 else random.randint(1, 2**31 - 1)
-            sample_previews_on_dit(dit, turbo_net, turbo_diffb, sample_ae, encoded_prompts,
+            _, _last_p = sample_previews_on_dit(dit, turbo_net, turbo_diffb, sample_ae, encoded_prompts,
                                    sample_dir, 0, output_name=output_name, steps=sample_steps,
                                    cfg_scale=sample_cfg_scale, neg=encoded_negative,
                                    width=sample_width, height=sample_height, seed=_seed0,
-                                   blocks_to_swap=blocks_to_swap, device=device)
+                                   blocks_to_swap=blocks_to_swap, device=device, prompts=sample_prompts)
+            if _last_p:
+                _last_sample_prompt = _last_p
         except Exception as _e0:
             logger.warning(f"[preview] Sample at Start failed ({type(_e0).__name__}) — training "
                            f"continues; per-epoch previews will still be attempted.")
@@ -1723,13 +1745,16 @@ def train_krea2(
         torch.cuda.empty_cache()
         try:
             _seed0 = sample_seed if sample_seed != 0 else random.randint(1, 2**31 - 1)
-            sample_previews(turbo_path, sample_ae, encoded_prompts, _lf0(_tmp0), sample_dir, 0,
+            _, _last_p = sample_previews(turbo_path, sample_ae, encoded_prompts, _lf0(_tmp0), sample_dir, 0,
                             output_name=output_name, steps=sample_steps,
                             cfg_scale=sample_cfg_scale, neg=encoded_negative,
                             width=sample_width, height=sample_height, seed=_seed0,
                             context_lora_path=context_lora_path,
                             context_lora_strength=context_lora_strength,
-                            blocks_to_swap=preview_blocks_to_swap, int8=preview_int8, device=device)
+                            blocks_to_swap=preview_blocks_to_swap, int8=preview_int8, device=device,
+                            prompts=sample_prompts)
+            if _last_p:
+                _last_sample_prompt = _last_p
         except Exception as _e0:
             logger.warning(f"[preview] Sample at Start failed ({type(_e0).__name__}) — training "
                            f"continues; per-epoch previews will still be attempted.")
@@ -1902,16 +1927,21 @@ def train_krea2(
                     prev_enc = encode_sample_prompts(te_path, [ov["prompt"]],
                                                      ref_image=ov.get("ref_image") or None, device=device)
                     prev_w, prev_h, prev_seed = ov["width"], ov["height"], ov["seed"]
+                    prev_prompts = [ov["prompt"]]
                 else:
                     prev_enc, prev_w, prev_h, prev_seed = encoded_prompts, sample_width, sample_height, sample_seed
+                    prev_prompts = sample_prompts
                 if prev_seed == 0:
                     prev_seed = random.randint(1, 2**31 - 1)
                     logger.info(f"[sample] seed 0 -> random {prev_seed}")
-                sample_previews_on_dit(dit, turbo_net, turbo_diffb, sample_ae, prev_enc,
+                _, _last_p = sample_previews_on_dit(dit, turbo_net, turbo_diffb, sample_ae, prev_enc,
                                        sample_dir, epoch + 1, output_name=output_name,
                                        steps=sample_steps, cfg_scale=sample_cfg_scale,
                                        neg=encoded_negative, width=prev_w, height=prev_h,
-                                       seed=prev_seed, blocks_to_swap=blocks_to_swap, device=device)
+                                       seed=prev_seed, blocks_to_swap=blocks_to_swap, device=device,
+                                       prompts=prev_prompts)
+                if _last_p:
+                    _last_sample_prompt = _last_p
             except Exception as _prev_err:
                 _oom = "out of memory" in str(_prev_err).lower()
                 logger.warning(
@@ -1951,19 +1981,24 @@ def train_krea2(
                     prev_enc = encode_sample_prompts(te_path, [ov["prompt"]],
                                                      ref_image=ov.get("ref_image") or None, device=device)
                     prev_w, prev_h, prev_seed = ov["width"], ov["height"], ov["seed"]
+                    prev_prompts = [ov["prompt"]]
                 else:
                     prev_enc, prev_w, prev_h, prev_seed = encoded_prompts, sample_width, sample_height, sample_seed
+                    prev_prompts = sample_prompts
                 # Seed 0 means "random": pick a fresh seed for this preview so 0 isn't a fixed seed
                 # (each epoch's sample differs). Covers the Samples-tab field and a 0 in the override.
                 if prev_seed == 0:
                     prev_seed = random.randint(1, 2**31 - 1)
                     logger.info(f"[sample] seed 0 -> random {prev_seed}")
-                sample_previews(turbo_path, sample_ae, prev_enc, load_file(tmp), sample_dir, epoch + 1,
+                _, _last_p = sample_previews(turbo_path, sample_ae, prev_enc, load_file(tmp), sample_dir, epoch + 1,
                                 output_name=output_name, steps=sample_steps,
                                 cfg_scale=sample_cfg_scale, neg=encoded_negative, width=prev_w,
                                 height=prev_h, seed=prev_seed,
                                 context_lora_path=context_lora_path, context_lora_strength=context_lora_strength,
-                                blocks_to_swap=preview_blocks_to_swap, int8=preview_int8, device=device)
+                                blocks_to_swap=preview_blocks_to_swap, int8=preview_int8, device=device,
+                                prompts=prev_prompts)
+                if _last_p:
+                    _last_sample_prompt = _last_p
             except Exception as _prev_err:
                 # A preview failure — almost always CUDA OOM (the ~13 GB Turbo + the Qwen3-VL
                 # encoder won't fit alongside the parked training DiT on a small card) — must NEVER

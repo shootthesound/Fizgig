@@ -47,7 +47,15 @@ BASE_METADATA = {
     "modelspec.encoder_layer": None,
     "modelspec.trigger_phrase": None,
     "modelspec.thumbnail": None,
+    "modelspec.usage_hint": None,
 }
+
+# The GUI's default, unedited value for the Output Name field (lora_trainer_gui.py's
+# LORA_NAME setting). _apply_lora_name_suffix there only ever swaps the trailing "_k9b"/
+# "_krea2" tag to match the selected family, so an untouched field is always exactly one of
+# these two — never anything else. Used to keep obvious placeholder text like
+# "LoraName_TokenName_krea2" out of modelspec.title.
+PLACEHOLDER_OUTPUT_NAMES = {"loraname_tokenname_k9b", "loraname_tokenname_krea2"}
 
 
 def load_bytes_in_safetensors(tensors):
@@ -85,10 +93,17 @@ def build_metadata(
     is_lora: bool = True,
     trigger_phrase: Optional[str] = None,
     thumbnail: Optional[str] = None,
+    usage_hint: Optional[str] = None,
 ) -> dict:
     """Build SAI model spec metadata for Klein 9B LoRA files."""
     metadata = {}
     metadata.update(BASE_METADATA)
+
+    # A reasonable default beats a blank field nobody's ever been able to set before now —
+    # same reasoning as the auto-thumbnail. Only kicks in when there's nothing to lose: an
+    # explicit usage_hint always wins, and this needs a trigger_phrase to say anything useful.
+    if usage_hint is None and trigger_phrase:
+        usage_hint = f"Include '{trigger_phrase}' in your prompt."
 
     # Map Fizgig architecture to SAI model spec
     if architecture in (ARCHITECTURE_KLEIN_9B, ARCHITECTURE_KLEIN_9B_FULL):
@@ -118,6 +133,7 @@ def build_metadata(
         ("modelspec.merged_from", merged_from),
         ("modelspec.trigger_phrase", trigger_phrase),
         ("modelspec.thumbnail", thumbnail),
+        ("modelspec.usage_hint", usage_hint),
     ]:
         if value is not None:
             metadata[key] = value
@@ -197,6 +213,18 @@ def thumbnail_data_uri(image_path: Optional[str], max_size: int = 512, quality: 
     except Exception:
         logger.warning(f"could not build metadata thumbnail from {image_path}", exc_info=True)
         return None
+
+
+def resolve_title(output_name: Optional[str], trigger_phrase: Optional[str]) -> Optional[str]:
+    """The output name, unless it's still the GUI's untouched placeholder — in which case
+    fall back to the trigger phrase (if there is one) rather than writing obvious filler like
+    "LoraName_TokenName_krea2" into modelspec.title. Deliberately narrow: this only ever
+    affects the metadata title, never the actual filename/output_name used everywhere else in
+    the run (cache dirs, state dirs, the checkpoint's own name), which stays exactly what the
+    user set regardless."""
+    if output_name and output_name.strip().lower() in PLACEHOLDER_OUTPUT_NAMES and trigger_phrase:
+        return trigger_phrase
+    return output_name
 
 
 def get_title(metadata: dict) -> Optional[str]:

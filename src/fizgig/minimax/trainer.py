@@ -158,6 +158,17 @@ def park_dit_partial(dit, need_gb=None):
     target = float("inf") if need_gb is None else max(0.0, float(need_gb)) * 1e9
     _alloc0 = torch.cuda.memory_allocated() if torch.cuda.is_available() else 0
 
+    # Under H2D swap, the swapped blocks' qdata/wscale LOOK cuda-resident to the walk below
+    # (they point at ring staging views), and evicting one view resize_(0)s the whole shared
+    # slot storage — the next copy from that storage is a sticky CUDA 'invalid argument'
+    # that killed the preview decode and the first training step (24 GB card, swap 6, 56-
+    # frame preview at 4.9 GB free; step 0/6900 died in the rebuilt offloader). Their real
+    # masters are already on CPU in the offloader's pinned flats: re-bind, and the walk
+    # skips them exactly as its own "already on CPU" rule intends.
+    _off = getattr(dit, "_h2d_offloader", None)
+    if _off is not None:
+        _off.unbind_to_cpu()
+
     def _park_module(mod, prefix):
         nonlocal freed
         for name, t in (list(mod.named_parameters(prefix=prefix))

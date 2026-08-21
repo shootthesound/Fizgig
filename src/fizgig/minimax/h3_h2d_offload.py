@@ -291,6 +291,27 @@ class H3Int8H2DOffloader:
         self.ring_views = None
         torch.cuda.empty_cache()
 
+    def unbind_to_cpu(self):
+        """Point every managed module back at its pinned CPU master, changing nothing else.
+
+        park_dit_partial evicts CUDA buffers by resizing their storages to zero — correct
+        for real weights, fatal for these bindings: after a forward, a swapped block's
+        qdata/wscale still point at RING VIEWS, and every view of a slot shares ONE
+        storage. Parking the first view resize_(0)s the whole slot, and the very next
+        buffer copied from that storage dies with CUDA 'invalid argument' — a sticky
+        context error that then kills the preview decode and the first training step
+        (field: 24 GB card, auto plan swap 6, 56-frame clip preview at 4.9 GB free; run
+        died at step 0/6900 in the rebuilt offloader's first ring copy). The swapped
+        blocks' weights already live on CPU in the pinned flats, so re-binding lets the
+        park's walk skip them exactly as its "already on CPU, skipped as not-cuda" rule
+        assumes. Slot bookkeeping resets too, so a wait_for_block() that somehow runs
+        before the next restore self-heals a reload instead of trusting stale bindings."""
+        for block_idx in self.sources:
+            self._bind_cpu(block_idx)
+        self.loaded_block = [None] * self.ring_size
+        self.free_event = [None] * self.ring_size
+        self.copy_done.clear()
+
     def __del__(self):
         try:
             for handle in getattr(self, "remove_handles", []):

@@ -110,60 +110,82 @@ def _from_blocked(
     ].contiguous()
 
 
-def _nvfp4_dequant(
-    packed,
-    block_scale_fp8,
-    global_scale,
-):
+def _nvfp4_dequant(packed, block_scale_fp8, global_scale):
+    """packed U8 [out, in/2] -> bf16 [out, in]."""
     out, in2 = packed.shape
     inp = in2 * 2
-
-    codes = torch.empty(
-        out,
-        inp,
-        dtype=torch.uint8,
-        device=packed.device,
-    )
-
-    codes[:, 0::2] = packed >> 4
-    codes[:, 1::2] = packed & 0x0F
-
-    table = _E2M1_SIGNED.to(
-        codes.device
-    )
-
-    vals = table[
-        codes.long()
-    ]
+    dev = packed.device
 
     bs = _from_blocked(
-        block_scale_fp8
-        .to(torch.float32)
-        .reshape(
-            -1,
-            32,
-            16,
-        ),
+        block_scale_fp8.to(torch.float32).reshape(-1, 32, 16),
         out,
         inp // 16,
     )
 
-    w = (
-        vals.view(
-            out,
-            inp // 16,
-            16,
-        )
-        * bs.unsqueeze(-1)
-        * global_scale.to(torch.float32)
-    )
+    gs = global_scale.to(torch.float32)
+    table = _E2M1_SIGNED.to(dev)
 
-    return w.view(
+    w_out = torch.empty(
         out,
         inp,
-    ).to(
-        torch.bfloat16
+        dtype=torch.bfloat16,
+        device=dev,
     )
+
+    chunk = max(
+        1,
+        (32 << 20) // max(inp, 1),
+    )
+
+    for r0 in range(
+        0,
+        out,
+        chunk,
+    ):
+
+        r1 = min(
+            out,
+            r0 + chunk,
+        )
+
+        codes = torch.empty(
+            r1 - r0,
+            inp,
+            dtype=torch.uint8,
+            device=dev,
+        )
+
+        codes[:, 0::2] = (
+            packed[r0:r1] >> 4
+        )
+
+        codes[:, 1::2] = (
+            packed[r0:r1] & 0x0F
+        )
+
+        vals = table[
+            codes.long()
+        ]
+
+        w = (
+            vals.view(
+                r1 - r0,
+                inp // 16,
+                16,
+            )
+            * bs[r0:r1].unsqueeze(-1)
+        ).mul_(gs)
+
+        w_out[
+            r0:r1
+        ] = w.view(
+            r1 - r0,
+            inp,
+        ).to(
+            torch.bfloat16
+        )
+
+    return w_out
 
 
 def _dequant_comfy_weight(
@@ -1826,8 +1848,14 @@ class MiniMaxH3TextEncoder:
 
             if self.cpu_embed:
 
+                ids_device = ids.to("cpu")
+
                 emb = embed_tokens(
-                    ids.to("cpu")
+                    ids_device
+                )
+
+                ids_rope = ids.to(
+                    self.device
                 )
 
                 emb = emb.to(
@@ -1838,20 +1866,42 @@ class MiniMaxH3TextEncoder:
 
             else:
 
+                ids_rope = ids.to(
+                    self.device
+                )
+
                 emb = embed_tokens(
-                    ids.to(
-                        self.device
-                    )
+                    ids_rope
                 )
 
                 emb = emb.to(
                     self.compute_dtype
                 )
 
-            position_ids = torch.arange(
-                emb.shape[1],
-                device=emb.device,
-            ).unsqueeze(0)
+            position_ids, _ = (
+                self.model.get_rope_index(
+                    ids_rope,
+                    None,
+                    None,
+                    attention_mask=None,
+                )
+            )
+
+            position_ids = position_ids.to(
+                emb.device
+            )
+
+            from transformers.cache_utils import DynamicCache
+
+            # Not an optimization — a bitwise-parity requirement. The stock HF forward
+            # creates a DynamicCache when past_key_values is None, and with a None
+            # attention mask the cache's presence changes attention kernel selection:
+            # without it the streamed text output drifts ~1e0 in bf16 (cosine 1.0,
+            # token 0 exact — pure kernel noise). The reference path is immune (its
+            # explicit ones-mask forces the same kernel either way).
+            pkv = DynamicCache(
+                config=self.model.language_model.config
+            )
 
             return qwen3vl_layerwise_forward(
                 self.model,
@@ -1859,7 +1909,7 @@ class MiniMaxH3TextEncoder:
                 attention_mask=None,
                 position_ids=position_ids,
                 cache_position=None,
-                past_key_values=None,
+                past_key_values=pkv,
                 device=self.device,
                 layer_streamer=self.layer_streamer,
             )

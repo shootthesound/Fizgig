@@ -3415,11 +3415,15 @@ def train_minimax(
                     from fizgig.utils.device import plannable_free_vram as _pfv
                     _free = _pfv()
                     vram_line("pre-decode")
-                    if _frames > 1 and _free < 7.5:
+                    if _free < 7.5:
+                        # Stills included, not just clips: the decoder does not fit beside
+                        # the resident base on a tight card regardless of frame count — the
+                        # old _frames > 1 guard was a big-card assumption that turned into
+                        # an every-epoch OOM for still previews.
                         _need = (7.5 - _free) + 1.0
-                        logger.info(f"[preview] {_free:.1f} GB free is too tight for clip "
-                                    f"decode — parking ~{_need:.1f} GB of tail blocks for "
-                                    f"this decode pass.")
+                        logger.info(f"[preview] {_free:.1f} GB free is too tight for "
+                                    f"{'clip ' if _frames > 1 else ''}decode — parking "
+                                    f"~{_need:.1f} GB of tail blocks for this decode pass.")
                         park_dit_partial(dit, need_gb=_need)
                         gc.collect()
                         torch.cuda.empty_cache()
@@ -3500,6 +3504,14 @@ def train_minimax(
             if _audio_dec_state["dec"] is not None:
                 _audio_dec_state["dec"].to("cpu")     # ~0.45 GB back off the card
             vram_line("post-decode")
+            if _base_parked and decoder is not None:
+                # The decoder must be off the card before the parked tail blocks
+                # come back — with it resident there is not enough room for the
+                # restore. Idempotent with the finally, which covers the exception path.
+                decoder.to("cpu")
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
             if _base_parked:
                 restore_parked_dit(dit, device, n_swap)   # swap-aware: never the whole base
                 gc.collect()

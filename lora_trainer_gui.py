@@ -1179,12 +1179,14 @@ DEFAULT_PREFS = {
 
 
 def _enumerate_gpus():
-    """[(index, name, total_gb)] for every card in the machine, or [] if it cannot be read.
+    """[(index, name, total_gb, uuid)] for every card in the machine, or [] if it cannot be read.
 
     Deliberately NOT torch.cuda: touching it creates the CUDA context, which fixes the visible
     device set for the life of the process - i.e. asking torch what GPUs exist would defeat the
     setting this list feeds. NVML and nvidia-smi both enumerate the real hardware regardless of
-    CUDA_VISIBLE_DEVICES, which is exactly what a chooser needs."""
+    CUDA_VISIBLE_DEVICES, which is exactly what a chooser needs. UUID is included so that
+    CUDA_VISIBLE_DEVICES can be set by UUID — immune to NVML vs. CUDA index reordering on
+    Windows when the display GPU is not the fastest card (issue #104)."""
     try:
         import pynvml
         pynvml.nvmlInit()
@@ -1192,22 +1194,24 @@ def _enumerate_gpus():
         for i in range(pynvml.nvmlDeviceGetCount()):
             h = pynvml.nvmlDeviceGetHandleByIndex(i)
             name = pynvml.nvmlDeviceGetName(h)
+            uuid = pynvml.nvmlDeviceGetUUID(h)
+            uuid = uuid.decode() if isinstance(uuid, bytes) else uuid
             out.append((i, name.decode() if isinstance(name, bytes) else name,
-                        pynvml.nvmlDeviceGetMemoryInfo(h).total / (1024 ** 3)))
+                        pynvml.nvmlDeviceGetMemoryInfo(h).total / (1024 ** 3), uuid))
         if out:
             return out
     except Exception:
         pass
     try:
         import subprocess
-        r = subprocess.run(["nvidia-smi", "--query-gpu=index,name,memory.total",
+        r = subprocess.run(["nvidia-smi", "--query-gpu=index,name,memory.total,uuid",
                             "--format=csv,noheader,nounits"],
                            capture_output=True, text=True, timeout=6,
                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         out = []
         for line in r.stdout.strip().splitlines():
-            idx, name, mb = [p.strip() for p in line.split(",")]
-            out.append((int(idx), name, int(mb) / 1024))
+            idx, name, mb, uuid = [p.strip() for p in line.split(",")]
+            out.append((int(idx), name, int(mb) / 1024, uuid))
         return out
     except Exception:
         return []
@@ -1226,7 +1230,7 @@ def _apply_cuda_device_pref(prefs) -> str:
     if os.environ.get("CUDA_VISIBLE_DEVICES"):
         return os.environ["CUDA_VISIBLE_DEVICES"]
     want = str(prefs.get("cuda_device", "")).strip()
-    if want.isdigit():
+    if want:
         os.environ["CUDA_VISIBLE_DEVICES"] = want
         return want
     return ""
@@ -2601,10 +2605,16 @@ class LoRATrainerGUI:
         change that, it only changes what torch can see. So on a two-GPU box with
         CUDA_VISIBLE_DEVICES=1, training runs on physical card 1 while an unqualified NVML read
         reports card 0 — the status bar then shows a card that is doing nothing (issue #60).
-        Torch's cuda:0 is the FIRST entry in the list, hence [0]. A UUID rather than an index
-        is valid too; there is no cheap mapping for it, so fall back to 0."""
+        Torch's cuda:0 is the FIRST entry in the list, hence [0]. When CUDA_VISIBLE_DEVICES
+        holds a UUID (new format), map it back to NVML index via _gpu_info."""
         raw = (os.environ.get("CUDA_VISIBLE_DEVICES") or "").split(",")[0].strip()
-        return int(raw) if raw.isdigit() else 0
+        if raw.isdigit():
+            return int(raw)
+        # UUID — look up NVML index from _gpu_info
+        for _k, _info in getattr(self, "_gpu_info", {}).items():
+            if _info[3] == raw:
+                return _info[0]
+        return 0
 
     def _read_vram(self):
         """Return (used_bytes, total_bytes) for the GPU training uses, or None. Prefers pynvml
@@ -7849,13 +7859,18 @@ class LoRATrainerGUI:
         return 0  # safe fallback — avoid the buggy swap path on detection failure
 
     def _on_gpu_choice(self, _event=None):
-        """Save the picked GPU as a bare index. Label -> index, since the combobox shows names."""
+        """Save the picked GPU by UUID. Label -> UUID, so CUDA_VISIBLE_DEVICES is immune to
+        NVML vs. CUDA index reordering (issue #104)."""
         _picked = self._gpu_choice_var.get()
-        _idx = next((k for k, v in self._gpu_choice_labels.items() if v == _picked), "")
-        self.prefs_vars["cuda_device"].set(_idx)          # trace writes prefs.json
+        _uuid = ""
+        for k, v in self._gpu_choice_labels.items():
+            if v == _picked:
+                _uuid = self._gpu_info.get(k, (None, None, None, ""))[3] or ""
+                break
+        self.prefs_vars["cuda_device"].set(_uuid)          # trace writes prefs.json
         self.update_console(
             f"[gpu] training will use {_picked}. Restart Fizgig to move the workbench tools too.\n"
-            if _idx else "[gpu] back to the system default GPU.\n")
+            if _uuid else "[gpu] back to the system default GPU.\n")
 
     def _cuda_env_for_subprocess(self, env):
         """Stamp the chosen GPU onto a subprocess environment.
@@ -7865,7 +7880,7 @@ class LoRATrainerGUI:
         restarted, which is the one place it easily can take effect immediately."""
         _want = str(self.prefs_vars["cuda_device"].get()).strip() if hasattr(
             self, "prefs_vars") else ""
-        if _want.isdigit() and not getattr(self, "_cuda_device_env_locked", False):
+        if _want and not getattr(self, "_cuda_device_env_locked", False):
             env["CUDA_VISIBLE_DEVICES"] = _want
         return env
 
@@ -17073,11 +17088,23 @@ class LoRATrainerGUI:
             ttk.Label(gpu_card, text="Use GPU:").grid(row=0, column=0, sticky=tk.W,
                                                       padx=(0, 10), pady=4)
             self._gpu_choice_labels = {"": "System default (GPU 0)"}
-            for _i, _name, _gb in _gpus:
+            self._gpu_info = {}
+            for _i, _name, _gb, _uuid in _gpus:
                 self._gpu_choice_labels[str(_i)] = f"{_i}: {_name} ({_gb:.0f} GB)"
+                self._gpu_info[str(_i)] = (_i, _name, _gb, _uuid)
+            self._nvml_init = False  # reset so first _read_vram() uses correct index
+            _saved_gpu = str(self.prefs.get("cuda_device", "")).strip()
+            # Match saved value: UUID (new format) or index (legacy prefs.json)
+            _matched_key = ""
+            if _saved_gpu:
+                _matched_key = next(
+                    (k for k, v in self._gpu_choice_labels.items()
+                     if self._gpu_info.get(k, (None, None, None, None))[3] == _saved_gpu
+                     or k == _saved_gpu),
+                    "")
             self._gpu_choice_var = tk.StringVar(
                 value=self._gpu_choice_labels.get(
-                    str(self.prefs.get("cuda_device", "")).strip(),
+                    _matched_key,
                     self._gpu_choice_labels[""]))
             _gpu_combo = ttk.Combobox(
                 gpu_card, textvariable=self._gpu_choice_var,

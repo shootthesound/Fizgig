@@ -9,7 +9,6 @@ import signal
 import math
 import re
 import webbrowser
-import glob
 import time
 import socket
 from http.server import HTTPServer, SimpleHTTPRequestHandler
@@ -106,8 +105,10 @@ from fizgig_gui.core.tabs.explorer_tab import ExplorerTabMixin
 from fizgig_gui.core.tabs.extract_tab import ExtractTabMixin
 from fizgig_gui.core.tabs.repair_studio_tab import RepairStudioTabMixin
 from fizgig_gui.core.tabs.caption_tab import CaptionTabMixin
+from fizgig_gui.core.tabs.samples_tab import SamplesTabMixin
 
 from fizgig_gui.core.models.caption_model import CaptionModelMixin
+from fizgig_gui.core.models.gallery_likeness import GalleryLikenessMixin
 
 from fizgig_gui.core.ui_base.console_validation import ConsoleValidationMixin
 
@@ -135,8 +136,8 @@ from fizgig_gui.core.config.settings_map import SETTING_TO_PREF, PRESETS
 class LoRATrainerGUI(
     StartTabMixin, MetadataTabMixin, PrefsTabMixin,
     ProfilerTabMixin, ExplorerTabMixin, ExtractTabMixin,
-    RepairStudioTabMixin, StylingMixin,
-    TabScaffoldMixin, CaptionModelMixin,
+    RepairStudioTabMixin, SamplesTabMixin, StylingMixin,
+    TabScaffoldMixin, CaptionModelMixin, GalleryLikenessMixin,
     CaptionTabMixin, ConsoleValidationMixin
 ):
     def __init__(self, master):

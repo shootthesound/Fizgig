@@ -2002,6 +2002,16 @@ def train_krea2(
         _ft_preview_gap_warned = True
     encoded_prompts = sample_ae = sample_dir = None
     encoded_negative = None
+    if do_previews and network_type == "lokr" and not ft_rotation:
+        # Deliberately a MESSAGE, not a behaviour change (Peter, 31 Aug): the preview
+        # renders on the resident training DiT with the LoKR net live, and LoKR's
+        # full-matrix w2 plus its per-layer GEMM transients cost more than a 16 GB card
+        # has left at that moment. If the run stalls or OOMs at a preview, this line is
+        # the explanation sitting right above it in the log.
+        logger.warning("[preview] heads-up: preview samples with a LoKR network need more "
+                       "than 16 GB of VRAM on Krea 2 (the render runs on the resident "
+                       "training DiT with the LoKR live). On a 16 GB card, train LoKR "
+                       "with previews off — or use a standard LoRA if you want previews.")
     if do_previews:
         from fizgig.krea2.vae_loader import load_vae
         logger.info(f"pre-encoding {len(sample_prompts)} sample prompt(s)"

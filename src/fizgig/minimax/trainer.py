@@ -473,6 +473,13 @@ _RESIDENT_PRUNED_GB = 10.5
 # int8 base (base_quant=int8, the reference's own storage): the 200 block linears stay 1 byte
 # per param instead of NF4's 0.5, and the refiner/AdaLN load dense — ~19.3 + ~1.5 GB.
 _RESIDENT_INT8_GB = 21.0
+# HQQ 4-bit g16 (rintic-13, #102): 0.5 B/param of codes + two bf16 group vectors at 1/16 =
+# 0.75 B/param against NF4's ~0.52 (block-64 absmax, double-quantized) — ~45% more resident
+# for the same quantized mass. ESTIMATED from that ratio over the NF4 figures above, NOT yet
+# GPU-measured: HQQ is explicit-pick only (Auto never chooses it), so a slack estimate costs
+# a few streamed blocks, not a crash. Replace with a measurement before Auto may pick it.
+_RESIDENT_HQQ_GB = 22.0
+_RESIDENT_HQQ_PRUNED_GB = 15.0
 # int8 dequantizes a bf16 weight per matmul (fc1 is 28672x5376 = 308 MB). A few are live at
 # once, but they are NOT retained for backward — _Int8RotLinearFn recomputes the weight in its
 # own backward, so the cost is a handful of transients rather than one per layer. (Before that
@@ -1758,6 +1765,11 @@ class BlockLimiter:
         with _t.no_grad():
             if hasattr(mod, "qdata"):                        # ConvRotInt8Linear
                 return float((mod.qdata.float() * mod.wscale.float()).norm())
+            if hasattr(mod, "W_q"):                          # HQQ4bitLinear: dequant on demand
+                try:
+                    return float(mod.weight.float().norm())
+                except Exception:
+                    return 0.0
             w = getattr(mod, "weight", None)
             if w is None:
                 return 0.0
@@ -2608,16 +2620,24 @@ def train_minimax(
     if not quantize:
         _base_mode = "none"
     # Any swap on a quantized base rides an H2D ring now — int8 through rintic-13's
-    # ConvRot ring (#73), NF4 through @mabseyuk's Linear4bit ring. Planner-owned, no
-    # opt-in; FIZGIG_NO_NF4_H2D=1 is the debug kill-switch back to classic parking.
+    # ConvRot ring (#73), NF4 through @mabseyuk's Linear4bit ring, HQQ through rintic-13's
+    # HQQ ring (#102). Planner-owned, no opt-in; FIZGIG_NO_NF4_H2D=1 is the debug
+    # kill-switch back to classic parking for both 4-bit rings.
     # Evaluated at USE time, not here: _base_mode is reassigned to the planner's
     # RESOLVED mode below (Auto's pre-plan guess of int8 can resolve to nf4 under the
     # streaming floor), and a snapshot taken now made the kill-switch dead on exactly
     # the default path where the NF4 ring is reached (audit, 25 Aug).
     def _ring_planned():
         return (_base_mode == "int8"
-                or (_base_mode == "nf4"
+                or (_base_mode in ("nf4", "hqq")
                     and os.environ.get("FIZGIG_NO_NF4_H2D") != "1"))
+
+    def _resident_for(mode, pruned):
+        if mode == "int8":
+            return _RESIDENT_INT8_GB
+        if mode == "hqq":
+            return _RESIDENT_HQQ_PRUNED_GB if pruned else _RESIDENT_HQQ_GB
+        return _RESIDENT_PRUNED_GB if pruned else _RESIDENT_GB
     if str(blocks_to_swap).lower() == "auto":
         if torch.cuda.is_available() and quantize:
             from fizgig.utils.device import plannable_free_vram
@@ -2644,16 +2664,16 @@ def train_minimax(
                 # An explicit choice is never overridden — the plan is built AROUND it, or the
                 # swap count would be sized for a quantisation that will not run.
                 _mode = base_quant
-                _res = (_RESIDENT_INT8_GB if _mode == "int8"
-                        else _RESIDENT_PRUNED_GB if _pruned else _RESIDENT_GB)
                 n_swap, _ckpt_auto = plan_vram(
-                    _free_gb, mp=_mp, resident_gb=_res,
+                    _free_gb, mp=_mp, resident_gb=_resident_for(_mode, _pruned),
                     transient_gb=_INT8_TRANSIENT_GB if _mode == "int8" else 0.0,
                     adapter_gb=_adapter)
                 _why = f"base precision pinned to {_mode} by the user"
+                if _mode == "hqq":
+                    _why += (" (HQQ residency is an estimate — ~45% over NF4 from its "
+                             "0.75 vs 0.52 B/param — until a real run measures it)")
             _base_mode = _mode
-            _resident = (_RESIDENT_INT8_GB if _mode == "int8"
-                         else _RESIDENT_PRUNED_GB if _pruned else _RESIDENT_GB)
+            _resident = _resident_for(_mode, _pruned)
 
             logger.info(f"[vram] auto plan: free {_free_gb:.1f} GB, largest bucket {_mp:.2f} MP, "
                         f"base ~{_resident:.0f} GB ({_mode}, {'pruned' if _pruned else 'bf16'}), "
@@ -2832,9 +2852,10 @@ def train_minimax(
         # writeback half was always waste — a ring buffer + copy stream prefetches each
         # block while the previous computes. int8 rides rintic-13's ConvRot ring (#73);
         # NF4 rides @mabseyuk's Linear4bit ring (the tier 12 GB cards land on — his 5070
-        # went from 12-14 s/step parked to ~1 s/step streamed). enable_block_swap
-        # dispatches by module type and falls back to classic parking if a ring can't
-        # build; the later preview-restore calls re-enter it bare and inherit this mode.
+        # went from 12-14 s/step parked to ~1 s/step streamed); HQQ rides rintic-13's
+        # HQQ ring (#102, same per-slot design). enable_block_swap dispatches by module
+        # type and falls back to classic parking if a ring can't build; the later
+        # preview-restore calls re-enter it bare and inherit this mode.
         _use_h2d = _ring_planned()
         n_swap = dit.enable_block_swap(n_swap, h2d_only=_use_h2d, ring_size=2)
         _off = getattr(dit, "_h2d_offloader", None)
@@ -2843,7 +2864,7 @@ def train_minimax(
                         if not getattr(_off, "_pin_failed", False)
                         else "staged in ordinary RAM (pinning unavailable or RAM too "
                              "tight) — copies synchronous")
-            # Both ring classes declare kind/staged_gb; the explicit None test matters
+            # All three ring classes declare kind/staged_gb; the explicit None test matters
             # because `or` would swallow a legitimate 0.0 into the int8 estimate.
             _kind = getattr(_off, "kind", "?")
             _gb = getattr(_off, "staged_gb", None)

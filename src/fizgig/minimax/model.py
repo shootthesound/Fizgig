@@ -602,6 +602,12 @@ class MiniMaxH3DiT(nn.Module):
                     # slots and copy stream on the wrong card.
                     dev = next((p.device for p in self.blocks[0].parameters()
                                 if p.is_cuda), None) or torch.device("cuda")
+                elif "HQQ4bitLinear" in _tail_types:
+                    from .h3_hqq_h2d_offload import H3HQQH2DOffloader
+                    _cls = H3HQQH2DOffloader
+                    dev = next((m.W_q.device for b in self.blocks for m in b.modules()
+                                if m.__class__.__name__ == "HQQ4bitLinear"
+                                and m.W_q.is_cuda), None) or torch.device("cuda")
                 else:
                     raise RuntimeError(
                         f"no ring-streamable modules in the swapped tail "

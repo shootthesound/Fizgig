@@ -95,6 +95,9 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
                ~0.17% error in the frozen base, ~21 GB resident. Needs a pre-quantized file.
       "nf4"  — decode to bf16 then NF4 (bitsandbytes). ~9.5% error, ~11 GB resident. The only
                option for the bf16 checkpoint, and the fallback for small cards.
+      "hqq"  — decode to bf16 then HQQ 4-bit, group 16 (rintic-13, #102; needs `pip install
+               hqq`). ~6.3% error — a third closer to int8 than NF4 — at ~0.75 B/param, so
+               ~45% more resident than NF4. Explicit pick only; never chosen by "auto".
       "auto" — int8 when the file carries int8 ConvRot weights, else nf4. Matching the
                reference is worth the 10 GB: a LoRA fitted against a 9.5%-perturbed base spends
                capacity correcting quantization error that is absent at inference, and the
@@ -122,6 +125,9 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
         if mode == "int8" and not quant_conf:
             raise ValueError("base_quant='int8' needs a pre-quantized checkpoint "
                              "(minimax_h3_*_pruned_int8_convrot.safetensors)")
+        if mode == "hqq":
+            from .hqq4 import HQQ4bitLinear, _quantizer
+            _quantizer()                      # fail HERE with the install hint, not mid-stream
         if not quantize:
             mode = "none"
         # fp32 AdaLN only applies to a curve-table (pruned) file — see the docstring.
@@ -141,6 +147,7 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
             # (nn.Linear's default), which across the 33 B of NF4-target Linears is ~118 GB of
             # throwaway tensors that the process allocator then holds for the whole run. On meta
             # the shells are 0 bytes; the real weights are streamed in below.
+            hqq_targets = []                  # module paths that got an HQQ4bitLinear shell
             if mode != "none":
                 for mod_name, module in list(model.named_modules()):
                     for child_name, child in list(module.named_children()):
@@ -163,9 +170,18 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
                             # Linear4bit shell is a 4-bit module holding a dense Parameter, and
                             # bitsandbytes only finds out on the first forward — deep inside a
                             # checkpointed block, as `assert module.weight.shape[1] == 1`.
-                            q = Linear4bit(child.in_features, child.out_features,
-                                           bias=child.bias is not None,
-                                           compute_dtype=compute_dtype, quant_type="nf4")
+                            if mode == "hqq":
+                                n = child.in_features * child.out_features
+                                if n % 32:      # 2*group_size — leave the odd one dense
+                                    continue
+                                q = HQQ4bitLinear(child.in_features, child.out_features,
+                                                  bias=child.bias is not None,
+                                                  compute_dtype=compute_dtype)
+                                hqq_targets.append(full)
+                            else:
+                                q = Linear4bit(child.in_features, child.out_features,
+                                               bias=child.bias is not None,
+                                               compute_dtype=compute_dtype, quant_type="nf4")
                             setattr(module, child_name, q)
 
         dev = torch.device(device)
@@ -173,6 +189,11 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
             print(f"[load] streaming the MiniMax H3 base, KEEPING its {len(quant_conf)} int8 "
                   "ConvRot linears (~0.17% base error, ~21 GB resident — the reference's own "
                   "storage; NF4 would be ~9.5% error at ~11 GB).", flush=True)
+        elif mode == "hqq":
+            print(f"[load] streaming the MiniMax H3 base and quantizing {len(hqq_targets)} "
+                  "linears to HQQ 4-bit (group 16 — ~6.3% base error vs NF4's ~9.5%, ~45% "
+                  "more resident than NF4). The proximal solver runs per weight on the GPU; "
+                  "a few quiet minutes here is normal.", flush=True)
         elif quant_conf:
             print(f"[load] streaming the pre-quantized MiniMax H3 base ({len(quant_conf)} int8 "
                   "ConvRot linears decoded to bf16, then NF4) — a quiet minute here is normal "
@@ -214,6 +235,16 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
                 mod.qdata = f.get_tensor(f"{mod_path}.weight").to(torch.int8).to(tgt)
                 mod.wscale = (f.get_tensor(f"{mod_path}.weight_scale")
                               .to(torch.float32).reshape(-1, 1).to(tgt))
+        # hqq mode: same buffer story — the shells have no `weight` Parameter, so the
+        # named_parameters loop below never sees them. Quantize on the GPU (the solver is
+        # CPU-slow on fc1-sized weights), then park the packed buffers if the block is swapped.
+        if mode == "hqq":
+            for mod_path in hqq_targets:
+                mod = model.get_submodule(mod_path)
+                mod.load_dense(_read_weight(f"{mod_path}.weight").to(compute_dtype), dev)
+                if _parked(mod_path):
+                    mod.W_q, mod.scale, mod.zero = (mod.W_q.cpu(), mod.scale.cpu(),
+                                                    mod.zero.cpu())
 
         for name, param in model.named_parameters():
             if name not in keys:

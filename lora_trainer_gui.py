@@ -638,6 +638,7 @@ MINIMAX_BASE_QUANT_OPTIONS = [
     "Auto (recommended)",
     "int8 · most accurate, needs ~30 GB free",
     "4-bit · fits smaller cards",
+    "4-bit HQQ · lower error than 4-bit, needs pip install hqq",
 ]
 
 
@@ -646,6 +647,8 @@ def minimax_base_quant(raw):
     s = str(raw or "").split("·")[0].strip().lower()
     if s.startswith("int8"):
         return "int8"
+    if "hqq" in s:                    # before the 4-bit test — "4-bit HQQ" starts with 4-bit
+        return "hqq"
     if s.startswith("4-bit") or s.startswith("nf4"):
         return "nf4"
     return "auto"
@@ -5218,7 +5221,7 @@ class LoRATrainerGUI:
         self._minimax_quant_frame = ttk.Frame(memory_content)
         self._minimax_quant_frame.grid(row=16, column=1, sticky=tk.W, padx=5, pady=(8, 0))
         self.entries["MINIMAX_BASE_QUANT"] = ttk.Combobox(
-            self._minimax_quant_frame, values=list(MINIMAX_BASE_QUANT_OPTIONS), width=30,
+            self._minimax_quant_frame, values=list(MINIMAX_BASE_QUANT_OPTIONS), width=48,
             state="readonly")
         self.entries["MINIMAX_BASE_QUANT"].set(
             str(self.settings.get("MINIMAX_BASE_QUANT", MINIMAX_BASE_QUANT_OPTIONS[0])))
@@ -5226,8 +5229,10 @@ class LoRATrainerGUI:
         self._minimax_quant_hint = ttk.Label(
             memory_content,
             text="Auto reads your FREE VRAM at launch and picks the base precision and block "
-                 "swap together — int8 is the most accurate, 4-bit fits smaller cards. Full "
-                 "write-up in the README.",
+                 "swap together — int8 is the most accurate, 4-bit fits smaller cards. 4-bit "
+                 "HQQ sits between them (about a third less base error than 4-bit, ~45% more "
+                 "VRAM) and needs `pip install hqq` in the venv first; Auto never picks it. "
+                 "Full write-up in the README.",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_quant_hint.grid(row=17, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
 

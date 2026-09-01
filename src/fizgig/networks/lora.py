@@ -859,7 +859,7 @@ class LoRANetwork(torch.nn.Module):
                         # IT when introducing a Linear subclass.
                         is_linear = child_module.__class__.__name__ in (
                             "Linear", "Linear4bit", "Linear8bitLt",
-                            "ConvRotInt8Linear", "Nvfp4Linear")
+                            "ConvRotInt8Linear", "Nvfp4Linear", "HQQ4bitLinear")
                         is_conv2d = child_module.__class__.__name__ == "Conv2d"
                         is_conv2d_1x1 = is_conv2d and child_module.kernel_size == (1, 1)
 
@@ -1943,7 +1943,7 @@ def _build_dit_linear_map(
                 # module on them (H3's LoKR default loaded 0 modules before this).
                 if child_module.__class__.__name__ in (
                         "Linear", "Linear4bit", "Linear8bitLt",
-                        "ConvRotInt8Linear", "Nvfp4Linear", "Conv2d"):
+                        "ConvRotInt8Linear", "Nvfp4Linear", "HQQ4bitLinear", "Conv2d"):
                     original_name = (name + "." if name else "") + child_name
                     lora_name = f"{prefix}.{original_name}".replace(".", "_")
                     result[lora_name] = child_module

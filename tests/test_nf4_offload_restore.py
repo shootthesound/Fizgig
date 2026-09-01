@@ -19,6 +19,7 @@ sent the whole batch to CPU, and the first CUDA-resident tensor it met raised.
 The two calls are complementary, never alternatives. That is what this pins down.
 """
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
@@ -119,7 +120,8 @@ def main():
                 "an NF4 restore is exclusive again — see issue #17")
     n = src.count("move_nf4_to_device(dit, device)")
     ok &= check("all three restore sites present", n == 3, f"found {n}")
-    ok &= check("compute_loss takes an explicit device", "device=None):" in src)
+    ok &= check("compute_loss takes an explicit device",
+            re.search(r"def compute_loss\([^)]*device=None", src) is not None)
 
     print()
     print("all passed" if ok else "FAILURES — see above")

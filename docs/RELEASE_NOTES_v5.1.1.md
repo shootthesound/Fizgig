@@ -1,4 +1,4 @@
-# Fizgig v5.1.1 — DRAFT (unreleased; grows until the next release)
+# Fizgig v5.1.1
 
 ## A launch splash — you see Fizgig within a second
 

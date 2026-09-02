@@ -24,9 +24,11 @@ recognition, 45 epochs each:
   ended within a point of each other, taking about the same number of epochs to get there.
 - **Together they got there a quarter sooner**, ran clearly ahead through the whole middle of
   the run, and finished higher than either.
-- **The adapter on all blocks was the weakest late in the run.** The adapter's cleaner
-  gradient reaches the front blocks too, and there a likeness LoRA has nothing to learn and a
-  lot to damage — the block restriction is what keeps that cleaner gradient where it pays.
+- **Training all 50 blocks with the adapter — the adapter's strength with the block
+  restriction off — was the weakest of the three late in the run.** Nothing wrong with the
+  adapter: its cleaner gradient reaches every block it's allowed to, and for a likeness
+  LoRA the front blocks have nothing to learn and a lot to damage. The block restriction
+  is what keeps that cleaner gradient where it pays.
 
 **In short: the combination reaches greater likeness and quality than either method does
 on its own.**

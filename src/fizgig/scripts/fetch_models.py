@@ -94,6 +94,15 @@ FAMILIES = {
         Weight("minimax_turbo_lora", "larryvrh/MiniMax-H3-Turbo-Lora",
                "minimax_h3_turbo_v4_step600.safetensors", 0.78,
                "Turbo LoRA — fast 6-step in-training previews"),
+        # Ostris's training adapters (ai-toolkit's "assistant LoRA"): 155 MB each, one per base.
+        # The Training tab's tickbox loads the one matching the selected base at 1.0, on for
+        # training and off for previews. Both fetched — the ref2va one is tiny next to its DiT.
+        Weight("minimax_training_adapter", "ostris/minimax_h3_training_adapter",
+               "minimax_h3_training_adapter_v1.safetensors", 0.16,
+               "Training adapter (fl2va) — de-distills the base while your LoRA learns (Ostris)"),
+        Weight("minimax_ref_training_adapter", "ostris/minimax_h3_training_adapter",
+               "minimax_h3_ref2va_training_adapter_v1.safetensors", 0.16,
+               "Training adapter (ref2va) — the same, for runs on the reference base (Ostris)"),
         # ref2va is a DIFFERENT fine-tune, needed only for reference distillation — 21 GB most
         # users don't want on a first setup, so it rides behind --include-optional like the
         # Krea 2 Turbo DiT does.

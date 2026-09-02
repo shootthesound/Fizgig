@@ -232,6 +232,11 @@ def setup_parser() -> argparse.ArgumentParser:
                         "paired with it at inference. Not available with --finetune_rotation.")
     p.add_argument("--context_lora_strength", type=float, default=1.0,
                    help="Strength the context LoRA rides at (0.0-2.0)")
+    p.add_argument("--training_adapter_path", default=None,
+                   help="Training adapter (Ostris, ostris/minimax_h3_training_adapter): a frozen "
+                        "LoRA at 1.0 that de-distills the base while yours learns — on for every "
+                        "training step, off for previews. Use the fl2va or ref2va file to match "
+                        "--dit. Not available with --finetune_rotation.")
     p.add_argument("--sample_audio", action="store_true",
                    help="Clip previews carry their generated SOUND: the jointly-denoised "
                         "audio rows are decoded to a .wav beside each sample. Needs "
@@ -377,6 +382,7 @@ def main():
         turbo_lora_strength=args.turbo_lora_strength,
         context_lora_path=args.context_lora_path,
         context_lora_strength=args.context_lora_strength,
+        training_adapter_path=args.training_adapter_path,
         sample_audio=args.sample_audio,
         audio_vae_path=args.audio_vae,
         finetune_rotation=args.finetune_rotation,

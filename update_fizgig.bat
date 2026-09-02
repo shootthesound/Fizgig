@@ -67,11 +67,13 @@ if errorlevel 1 (
 
 :skip_deps
 
-REM ---- Krea 2 Turbo LoRA (~470 MB) ----
-REM Idempotent: exits instantly when the file is already present + linked in
+REM ---- Community LoRAs: Krea 2 Turbo LoRA (~470 MB) + Ostris's two MiniMax H3 ----
+REM ---- training adapters (~155 MB each) ----
+REM Idempotent: exits instantly for any file already present + linked in
 REM Preferences, so this step is safe to keep across releases. Always downloads
-REM when missing, whatever family is configured; failure never aborts the
-REM update (the GUI fetches it at training start as a fallback).
+REM what's missing, whatever family is configured; failure never aborts the
+REM update (offline = a logged line; the GUI fetches the Krea 2 one at training
+REM start as a fallback).
 if exist "venv\Scripts\python.exe" (
     "venv\Scripts\python.exe" "src\fizgig\scripts\fetch_turbo_lora.py"
 )

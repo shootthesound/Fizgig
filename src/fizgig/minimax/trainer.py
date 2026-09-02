@@ -1283,7 +1283,7 @@ def load_preview_turbo(dit, path, strength, tag="turbo"):
     return net, adaln_pairs
 
 
-def load_context_lora(dit, path, strength, device, dtype):
+def load_context_lora(dit, path, strength, device, dtype, tag="context", label="Context LoRA"):
     """A Context LoRA: an existing LoRA loaded FROZEN and ACTIVE on the base before the
     trainable network wraps it, so the new LoRA learns to coexist with it (Klein and Krea 2
     have the same feature). Same loader as the preview Turbo — H3's shape prefilter and the
@@ -1294,33 +1294,17 @@ def load_context_lora(dit, path, strength, device, dtype):
 
     Returns (network, adaln_pairs)."""
     from fizgig.networks.lora import assert_lora_family_matches
-    assert_lora_family_matches(path, "minimax", "Context LoRA")
-    net, pairs = load_preview_turbo(dit, path, strength, tag="context")
+    assert_lora_family_matches(path, "minimax", label)
+    net, pairs = load_preview_turbo(dit, path, strength, tag=tag)
     net.to(device=device, dtype=dtype).eval()
     for m in net.unet_loras:
         m.enabled = True
     n_ad = turbo_adaln_patch(dit, pairs, device, dtype)
-    logger.info(f"[context] {os.path.basename(path)} active at {float(strength):g} — "
+    logger.info(f"[{tag}] {os.path.basename(path)} active at {float(strength):g} — "
                 f"{len(net.unet_loras)} modules"
                 + (f" + {n_ad} adaln injected" if n_ad else "")
-                + "; the trainable LoRA learns on top of it (off for previews)")
+                + "; the trainable LoRA learns on top of it")
     return net, pairs
-
-
-def context_lora_set_active(context_net, context_adaln, dit, active, device, dtype):
-    """Flip the context LoRA on/off around a preview. OFF for sampling is the point of a
-    training adapter (Ostris's assistant LoRA: active for the training step, inactive for
-    every sample pass) — the preview must show the LoRA as it DEPLOYS, without the context,
-    or the preview lies about what the user will get. Idempotent; a no-op without a context."""
-    if context_net is None:
-        return
-    for m in context_net.unet_loras:
-        m.enabled = bool(active)
-    if context_adaln:
-        if active:
-            turbo_adaln_patch(dit, context_adaln, device, dtype)
-        else:
-            turbo_adaln_unpatch(context_adaln)
 
 
 @contextlib.contextmanager
@@ -2406,6 +2390,10 @@ def train_minimax(
     # output metadata. Not available under rotation fine-tune.
     context_lora_path: str = None,
     context_lora_strength: float = 1.0,
+    # Training adapter (Ostris's assistant LoRA, ostris/minimax_h3_training_adapter): the
+    # same frozen-layer mechanism at a fixed strength of 1.0, stacked UNDER the context
+    # LoRA. De-distills the base while the LoRA learns; off for previews like the context.
+    training_adapter_path: str = None,
     # Previews with sound: decode the jointly-denoised audio rows to a .wav beside each clip
     # sample. Needs the audio VAE (its decoder half); silently off without it.
     sample_audio: bool = False,
@@ -3415,15 +3403,50 @@ def train_minimax(
     # the same reason the Turbo is deferred there — apply_to captures bound forwards that
     # the rotator's class-swap would orphan — and unlike the Turbo it can't be re-applied
     # per window without changing what the model trains against mid-run.
+    # Frozen layers, innermost first: training adapter, then the user's context LoRA. Both
+    # ride at their strength for every training step. Previews differ PER LAYER (Peter):
+    # the adapter switches OFF (it is a training aid — Ostris's assistant LoRA is inactive
+    # for every sample pass, and the LoRA deploys without it), the context LoRA stays ON
+    # (the LoRA deploys paired with it — Klein/Krea 2 semantics).
+    adapter_net, adapter_adaln = None, []
     context_net, context_adaln = None, []
-    if context_lora_path:
+    if training_adapter_path or context_lora_path:
         if rotator is not None:
-            raise RuntimeError("Context LoRA is not available with fine-tuning on MiniMax H3 "
-                               "— untick Fine-tune (train a LoRA) or clear the Context LoRA.")
+            _what = "The training adapter" if training_adapter_path else "Context LoRA"
+            raise RuntimeError(f"{_what} is not available with fine-tuning on MiniMax H3 "
+                               "— untick Fine-tune (train a LoRA) or turn it off.")
+    if training_adapter_path:
+        if not os.path.isfile(training_adapter_path):
+            raise FileNotFoundError(f"Training adapter not found: {training_adapter_path} — "
+                                    "run the updater or the Preferences model download.")
+        adapter_net, adapter_adaln = load_context_lora(dit, training_adapter_path, 1.0,
+                                                       device, dtype, tag="adapter",
+                                                       label="Training adapter")
+    if context_lora_path:
         if not os.path.isfile(context_lora_path):
             raise FileNotFoundError(f"Context LoRA not found: {context_lora_path}")
         context_net, context_adaln = load_context_lora(dit, context_lora_path,
                                                        context_lora_strength, device, dtype)
+
+    def _frozen_for_preview():
+        """Adapter off, context on; AdaLN rows = context (+ the Turbo's, added by the
+        caller). Unpatch the training set FIRST — the rows share modules, and a patch
+        replaces the module forward wholesale."""
+        turbo_adaln_unpatch(adapter_adaln + context_adaln)
+        if adapter_net is not None:
+            for _m in adapter_net.unet_loras:
+                _m.enabled = False
+            logger.info("[preview] training adapter off for the render (deployment view)")
+
+    def _frozen_for_training():
+        """Back to the training stack: Turbo/preview rows out, adapter on, adapter +
+        context rows in. Idempotent — safe on the exception path."""
+        turbo_adaln_unpatch(context_adaln + turbo_adaln)
+        if adapter_net is not None:
+            for _m in adapter_net.unet_loras:
+                _m.enabled = True
+        if adapter_adaln or context_adaln:
+            turbo_adaln_patch(dit, adapter_adaln + context_adaln, device, dtype)
     if rotator is not None:
         # Rotation FT: no adapter at all. LoRA's apply_to captures each wrapped module's
         # BOUND forward, which the rotator's class-swap would orphan — a wrapped window
@@ -4048,6 +4071,8 @@ def train_minimax(
                                 if context_lora_path else "none"),
             "ss_context_lora_strength": (f"{float(context_lora_strength):g}"
                                          if context_lora_path else "0"),
+            "ss_training_adapter": (os.path.basename(training_adapter_path)
+                                    if training_adapter_path else "none"),
             "ss_slow_blocks": _slow_used or "none",
             "ss_photo_blocks": (_photo_used if _photo_mask_params else "off"),
             "ss_block_limit": str(block_limit or 0),
@@ -4353,21 +4378,20 @@ def train_minimax(
                     except Exception:
                         pass
                 vram_line("preview-start")
-            # The context LoRA is OFF for the render — previews show the LoRA as it deploys,
-            # without its training context (the training-adapter contract). Back on after.
-            context_lora_set_active(context_net, context_adaln, dit, False, device, dtype)
-            if context_net is not None:
-                logger.info("[preview] context LoRA off for the render (deployment view)")
+            # Training adapter OFF for the render, context LoRA ON (see the load block).
+            _frozen_for_preview()
             if turbo_net is not None:
                 # On for the sampling phase only: weights to the GPU (~0.8 GB), modules
                 # enabled at their strength, AdaLN injected. Off + back to CPU before decode.
                 turbo_net.to(device=device, dtype=dtype)
                 for _tm in turbo_net.unet_loras:
                     _tm.enabled = True
-                _n_ad = turbo_adaln_patch(dit, turbo_adaln, device, dtype)
+                _n_ad = turbo_adaln_patch(dit, context_adaln + turbo_adaln, device, dtype)
                 logger.info(f"[preview] Turbo LoRA on — {sample_steps} steps at "
                             f"{turbo_lora_strength:g}"
                             + (f", {_n_ad} adaln injected" if _n_ad else ""))
+            elif context_adaln:
+                turbo_adaln_patch(dit, context_adaln, device, dtype)
             _want_audio = bool(sample_audio and _frames > 1)
             _rendered = []
             for i, txt in enumerate(_prompts):
@@ -4450,7 +4474,7 @@ def train_minimax(
                 turbo_net.to("cpu")
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()      # its ~0.8 GB back before the decode phase
-            context_lora_set_active(context_net, context_adaln, dit, True, device, dtype)
+            _frozen_for_training()
 
             # optimizer state back before anything else - the next training step needs it
             for _st, _k in _opt_parked:
@@ -4568,9 +4592,9 @@ def train_minimax(
                     torch.cuda.empty_cache()
             if _audio_dec_state["dec"] is not None:
                 _audio_dec_state["dec"].to("cpu")        # idempotent; covers a mid-decode raise
-            # The context must come BACK on the same way (an exception mid-sample would
-            # otherwise leave every subsequent training step without it).
-            context_lora_set_active(context_net, context_adaln, dit, True, device, dtype)
+            # The training stack must come BACK the same way (an exception mid-sample would
+            # otherwise leave every subsequent training step without the adapter).
+            _frozen_for_training()
             if turbo_net is not None:
                 # Idempotent, and NON-NEGOTIABLE on an exception mid-sample: a Turbo left
                 # enabled (or an injected AdaLN forward left installed) would ride every

@@ -1160,21 +1160,24 @@ def _load_h3_egrid():
     return _EGRID_CACHE[0]
 
 
-def _turbo_adaln_forward(base, A, B, table, egrid):
-    """A replacement AdalnProj.forward that adds the Turbo's AdaLN update.
+def _turbo_adaln_forward(base, updates, table, egrid):
+    """A replacement AdalnProj.forward that adds one or more full-model AdaLN LoRA updates.
 
-    The update lives in the full model's silu(t_emb) space; the pruned base only has curve
+    Each update lives in the full model's silu(t_emb) space; the pruned base only has curve
     rows, so each incoming t_emb row is matched to its nearest table row (the model built it
     by lerping adjacent rows — half a grid step of error at worst, larryvrh's own approach)
     and the corresponding full-width grid row stands in: x += B @ A @ silu(t_emb). Strength
-    is folded into B at collection time."""
+    is folded into B at collection time. `updates` is a list of (A, B): a context LoRA's
+    rows and the preview Turbo's rows both land on the same module, and they must ADD, not
+    replace each other."""
     def forward(t_emb):
         import torch.nn.functional as _F
         x = base.linear(_F.silu(t_emb) if base.apply_silu else t_emb)
         idx = torch.cdist(t_emb.detach().float(),
                           table.to(t_emb.device, torch.float32)).argmin(dim=1)
         st = egrid.to(t_emb.device)[idx].to(x.dtype)
-        x = x + (B.to(x) @ (A.to(x) @ st.T)).T
+        for A, B in updates:
+            x = x + (B.to(x) @ (A.to(x) @ st.T)).T
         x = x.view(x.shape[0] * base.modalities, base.expand * base.hidden)
         return x.chunk(base.expand, dim=-1)
     return forward
@@ -1197,11 +1200,14 @@ def turbo_adaln_patch(dit, pairs, device, dtype, egrid=None):
         return 0
     eg = egrid.to(device)
     n = 0
+    by_mod = {}
     for mod, A, B in pairs:
         if A.shape[1] != eg.shape[1]:
             continue
-        mod.forward = _turbo_adaln_forward(mod, A.to(device, dtype), B.to(device, dtype),
-                                           table, eg)
+        by_mod.setdefault(id(mod), (mod, []))[1].append((A.to(device, dtype),
+                                                          B.to(device, dtype)))
+    for mod, updates in by_mod.values():
+        mod.forward = _turbo_adaln_forward(mod, updates, table, eg)
         n += 1
     return n
 
@@ -1216,7 +1222,7 @@ def turbo_adaln_unpatch(pairs):
             pass
 
 
-def load_preview_turbo(dit, path, strength):
+def load_preview_turbo(dit, path, strength, tag="turbo"):
     """The Turbo LoRA, wired for previews: applied ONCE to the live DiT with every module
     DISABLED, weights parked on CPU. The preview phase flips `enabled` on and moves the
     weights to the GPU; afterwards both revert. A disabled LoRAInfModule's forward is a pure
@@ -1270,11 +1276,35 @@ def load_preview_turbo(dit, path, strength):
     net.requires_grad_(False)
     for m in net.unet_loras:
         m.enabled = False
-    logger.info(f"[turbo] {len(net.unet_loras)} modules wired at strength {strength:g}"
+    logger.info(f"[{tag}] {len(net.unet_loras)} modules wired at strength {strength:g}"
                 + (f" + {len(adaln_pairs)} adaln via run-time injection"
                    if adaln_pairs else "")
                 + (f" ({len(dropped)} skipped)" if dropped else ""))
     return net, adaln_pairs
+
+
+def load_context_lora(dit, path, strength, device, dtype):
+    """A Context LoRA: an existing LoRA loaded FROZEN and ACTIVE on the base before the
+    trainable network wraps it, so the new LoRA learns to coexist with it (Klein and Krea 2
+    have the same feature). Same loader as the preview Turbo — H3's shape prefilter and the
+    pruned-base AdaLN injection are exactly what a foreign H3 LoRA needs — but the modules
+    stay ENABLED and resident for the whole run, and its AdaLN rows are injected permanently
+    (re-installed after every Turbo preview, which swaps the injection out for its own).
+
+    Returns (network, adaln_pairs). H3 previews render on the resident training DiT, so the
+    context is live in them with no extra wiring."""
+    from fizgig.networks.lora import assert_lora_family_matches
+    assert_lora_family_matches(path, "minimax", "Context LoRA")
+    net, pairs = load_preview_turbo(dit, path, strength, tag="context")
+    net.to(device=device, dtype=dtype).eval()
+    for m in net.unet_loras:
+        m.enabled = True
+    n_ad = turbo_adaln_patch(dit, pairs, device, dtype)
+    logger.info(f"[context] {os.path.basename(path)} active at {float(strength):g} — "
+                f"{len(net.unet_loras)} modules"
+                + (f" + {n_ad} adaln injected" if n_ad else "")
+                + "; the trainable LoRA learns on top of it (pair them at inference)")
+    return net, pairs
 
 
 @contextlib.contextmanager
@@ -2355,6 +2385,11 @@ def train_minimax(
     # the sampling phase, off again after. The training math never sees it.
     turbo_lora_path: str = None,
     turbo_lora_strength: float = 0.75,
+    # Context LoRA: an existing LoRA held frozen + active under the trainable one, in
+    # training AND previews (the resident DiT renders both). Recorded in the output metadata
+    # so the pair can be reproduced at inference. Not available under rotation fine-tune.
+    context_lora_path: str = None,
+    context_lora_strength: float = 1.0,
     # Previews with sound: decode the jointly-denoised audio rows to a .wav beside each clip
     # sample. Needs the audio VAE (its decoder half); silently off without it.
     sample_audio: bool = False,
@@ -3359,6 +3394,20 @@ def train_minimax(
                                  network_alpha, lokr_factor)
         for _n in _rs_notes:
             logger.warning(f"[resume] {_n} — a resume continues the run it resumes")
+    # Context LoRA goes on FIRST, so the trainable network wraps a forward that already
+    # includes it (additive stack: base + context + trainable). Refused under rotation FT for
+    # the same reason the Turbo is deferred there — apply_to captures bound forwards that
+    # the rotator's class-swap would orphan — and unlike the Turbo it can't be re-applied
+    # per window without changing what the model trains against mid-run.
+    context_net, context_adaln = None, []
+    if context_lora_path:
+        if rotator is not None:
+            raise RuntimeError("Context LoRA is not available with fine-tuning on MiniMax H3 "
+                               "— untick Fine-tune (train a LoRA) or clear the Context LoRA.")
+        if not os.path.isfile(context_lora_path):
+            raise FileNotFoundError(f"Context LoRA not found: {context_lora_path}")
+        context_net, context_adaln = load_context_lora(dit, context_lora_path,
+                                                       context_lora_strength, device, dtype)
     if rotator is not None:
         # Rotation FT: no adapter at all. LoRA's apply_to captures each wrapped module's
         # BOUND forward, which the rotator's class-swap would orphan — a wrapped window
@@ -3977,6 +4026,12 @@ def train_minimax(
             "ss_train_adaln": "1" if _adaln_on else "0",
             "ss_distill": "dataset" if distill else "off",
             "ss_distill_weight": (f"{distill_weight:g}" if distill else "0"),
+            # Context LoRA: the file this LoRA was trained ON TOP OF and the strength it rode
+            # at — pair them the same way at inference (Klein/Krea 2 record the same keys).
+            "ss_context_lora": (os.path.basename(context_lora_path)
+                                if context_lora_path else "none"),
+            "ss_context_lora_strength": (f"{float(context_lora_strength):g}"
+                                         if context_lora_path else "0"),
             "ss_slow_blocks": _slow_used or "none",
             "ss_photo_blocks": (_photo_used if _photo_mask_params else "off"),
             "ss_block_limit": str(block_limit or 0),
@@ -4288,7 +4343,7 @@ def train_minimax(
                 turbo_net.to(device=device, dtype=dtype)
                 for _tm in turbo_net.unet_loras:
                     _tm.enabled = True
-                _n_ad = turbo_adaln_patch(dit, turbo_adaln, device, dtype)
+                _n_ad = turbo_adaln_patch(dit, context_adaln + turbo_adaln, device, dtype)
                 logger.info(f"[preview] Turbo LoRA on — {sample_steps} steps at "
                             f"{turbo_lora_strength:g}"
                             + (f", {_n_ad} adaln injected" if _n_ad else ""))
@@ -4371,6 +4426,8 @@ def train_minimax(
                 for _tm in turbo_net.unet_loras:
                     _tm.enabled = False
                 turbo_adaln_unpatch(turbo_adaln)
+                if context_adaln:
+                    turbo_adaln_patch(dit, context_adaln, device, dtype)
                 turbo_net.to("cpu")
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()      # its ~0.8 GB back before the decode phase

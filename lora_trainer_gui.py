@@ -7926,11 +7926,12 @@ class LoRATrainerGUI:
         else:
             self.show_row("OPTIMIZER_TYPE")
 
-        # Context LoRA is wired for Klein and Krea 2 but NOT MiniMax — hide the whole row there
-        # rather than show a picker the trainer silently ignores.
+        # Context LoRA is wired for all three families (MiniMax since 2 Sep 2026: frozen +
+        # active on the resident DiT, so it's live in previews too). Under MiniMax fine-tune
+        # it's refused at validation — the rotation path has no LoRA network to stack on.
         for w in (self._contextlora_label, self._contextlora_frame,
                   self._contextlora_desc_label, self._contextlora_warn_label):
-            self._set_widget_visible(w, not is_minimax)
+            self._set_widget_visible(w, True)
         if native:
             # Restore the rank/alpha <-> factor row swap for the current selection.
             self._on_network_type_changed()
@@ -25273,9 +25274,13 @@ class LoRATrainerGUI:
             except ValueError:
                 errors.append("Learning rate must be a valid number")
 
-        # Context LoRA validation (supported by both Klein and Krea 2).
+        # Context LoRA validation (all three families; MiniMax refuses it under fine-tune).
         ctx_path = self.entries.get("CONTEXT_LORA_PATH").get().strip() if "CONTEXT_LORA_PATH" in self.entries else ""
         if ctx_path:
+            if (self._is_minimax_arch() and bool(getattr(self, "minimax_finetune_var", None)
+                                                 and self.minimax_finetune_var.get())):
+                errors.append("Context LoRA is not available with MiniMax H3 fine-tuning — "
+                              "untick Fine-tune (train a LoRA) or clear the Context LoRA")
             if not os.path.exists(ctx_path):
                 errors.append(f"Context LoRA file does not exist: {ctx_path}")
             elif not ctx_path.lower().endswith(".safetensors"):
@@ -26779,10 +26784,10 @@ class LoRATrainerGUI:
         return cmd
 
     def _build_minimax_train_command(self):
-        """Build the native MiniMax H3 training command — barebones image-only LoRA over an
-        NF4-quantized frozen base. No samples, no block swap, no context LoRA, no LoKR, no
-        per-image loss watch: just the core knobs (rank/alpha/lr/epochs/save/seed/optimizer) plus
-        adaptive LR and output metadata. Model paths come from Preferences (minimax_*)."""
+        """Build the native MiniMax H3 training command: LoRA / LoKR / rotation fine-tune over
+        the int8 / NF4 / HQQ base, with previews (Turbo), block swap, context LoRA and output
+        metadata. Model paths come from Preferences (minimax_*). No per-image loss watch or
+        adaptive LR (retired for this family)."""
         # Armed fine-tune continuation (Resume after an FT pause): --dit becomes the pause
         # checkpoint — a one-run override that outranks the distill/ref2va choice too — and
         # the epoch count is what's left of the original total. No --resume under FT.
@@ -27068,6 +27073,12 @@ class LoRATrainerGUI:
         resume_path = (self.settings.get("RESUME_TRAINING") or "").strip()
         if resume_path:
             cmd += ["--resume", resume_path]
+        # Context LoRA — an existing H3 LoRA frozen + active under the trainable one (LoRA runs
+        # only; validation refuses the fine-tune combination before we get here).
+        ctx_path = (self.settings.get("CONTEXT_LORA_PATH") or "").strip()
+        if ctx_path:
+            ctx_strength = (self.settings.get("CONTEXT_LORA_STRENGTH") or "1.0").strip() or "1.0"
+            cmd += ["--context_lora_path", ctx_path, "--context_lora_strength", ctx_strength]
         # Adaptive LR is RETIRED for MiniMax (Peter, 9 Aug): ticking it silently disabled the
         # governor and warmup (both defer to it), quietly dismantling the stability stack. The
         # control is hidden under this family and a stale saved ADAPTIVE_LR=True is deliberately

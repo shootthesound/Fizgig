@@ -226,6 +226,12 @@ def setup_parser() -> argparse.ArgumentParser:
                         "training step. Pair with --sample_steps 6.")
     p.add_argument("--turbo_lora_strength", type=float, default=0.75,
                    help="Preview strength for --turbo_lora_path (0.75 recommended)")
+    p.add_argument("--context_lora_path", default=None,
+                   help="Context LoRA: an existing H3 LoRA loaded FROZEN and ACTIVE under the "
+                        "trainable one, in training and previews. The output is trained to be "
+                        "paired with it at inference. Not available with --finetune_rotation.")
+    p.add_argument("--context_lora_strength", type=float, default=1.0,
+                   help="Strength the context LoRA rides at (0.0-2.0)")
     p.add_argument("--sample_audio", action="store_true",
                    help="Clip previews carry their generated SOUND: the jointly-denoised "
                         "audio rows are decoded to a .wav beside each sample. Needs "
@@ -369,6 +375,8 @@ def main():
         sample_seed=args.sample_seed,
         turbo_lora_path=args.turbo_lora_path,
         turbo_lora_strength=args.turbo_lora_strength,
+        context_lora_path=args.context_lora_path,
+        context_lora_strength=args.context_lora_strength,
         sample_audio=args.sample_audio,
         audio_vae_path=args.audio_vae,
         finetune_rotation=args.finetune_rotation,

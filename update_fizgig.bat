@@ -67,10 +67,10 @@ if errorlevel 1 (
 
 :skip_deps
 
-REM ---- Krea 2 Turbo LoRA (~470 MB, Krea 2 users only) ----
+REM ---- Krea 2 Turbo LoRA (~470 MB) ----
 REM Idempotent: exits instantly when the file is already present + linked in
-REM Preferences, so this step is safe to keep across releases. Downloads only
-REM for installs with a Krea 2 RAW DiT configured; failure never aborts the
+REM Preferences, so this step is safe to keep across releases. Always downloads
+REM when missing, whatever family is configured; failure never aborts the
 REM update (the GUI fetches it at training start as a fallback).
 if exist "venv\Scripts\python.exe" (
     "venv\Scripts\python.exe" "src\fizgig\scripts\fetch_turbo_lora.py"

@@ -6,9 +6,10 @@ Idempotent by design — safe to leave in update_fizgig.bat forever:
   - neither ................................... downloads (~470 MB) with progress,
                                                 verifies, then populates the pref
 
-Only acts for Krea 2 users (krea2_raw_dit set in prefs.json) when run standalone;
-the GUI calls ensure_turbo_lora(require=True) at training start as a fallback for
-anyone who skipped the update script.
+Always fetches when the file is missing — fresh installs and updates alike, whatever
+family is configured (Peter, 2 Sep 2026: no "not a Krea 2 install" gate, ever). The GUI
+calls ensure_turbo_lora() again at Krea 2 training start as a fallback for anyone who
+skipped the scripts.
 """
 import json
 import os
@@ -76,8 +77,7 @@ def _download(url: str, dest: str, log) -> bool:
 def ensure_turbo_lora(repo_dir: str = REPO_DIR, log=print, require: bool = False):
     """Make sure the Turbo LoRA exists locally and prefs.json points at it.
 
-    require=False (update script): only acts for configured Krea 2 users.
-    require=True  (GUI, at Krea 2 training start): always tries.
+    `require` is accepted for older callers and ignored — every call always tries.
     Returns the path on success, None otherwise. Never raises.
     """
     try:
@@ -91,10 +91,6 @@ def ensure_turbo_lora(repo_dir: str = REPO_DIR, log=print, require: bool = False
         if current and os.path.isfile(current):
             log(f"Turbo LoRA already present: {current}")
             return current
-
-        if not require and not str(prefs.get("krea2_raw_dit") or "").strip():
-            log("Not a Krea 2 install (no RAW DiT configured) — skipping Turbo LoRA fetch.")
-            return None
 
         models_dir = os.path.join(repo_dir, "models")
         dest = os.path.join(models_dir, LORA_FILENAME)

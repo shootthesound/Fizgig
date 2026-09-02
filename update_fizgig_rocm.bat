@@ -64,6 +64,8 @@ if errorlevel 1 (
     exit /b 1
 )
 echo Installing shared dependencies ^(CUDA torch/bnb lines stripped^)...
+REM hqq (4-bit HQQ base) builds an optional CUDA kernel from its sdist unless told not to.
+set DISABLE_CUDA=1
 "venv\Scripts\python.exe" -m uv pip install --index-strategy unsafe-best-match -r "!ROCM_REQS!"
 if errorlevel 1 (
     echo ERROR: Failed to install shared dependencies.

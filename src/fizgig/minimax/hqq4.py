@@ -27,8 +27,9 @@ Cost: 0.5 B/param of codes plus two bf16 group vectors at 1/16 → 0.75 B/param,
 ~0.52 (its double-quantized absmax at block 64). Resident footprint is ~45 % larger than NF4
 for the same model; the H2D ring covers the difference on small cards.
 
-`pip install hqq` (DISABLE_CUDA=1 skips its optional CUDA kernel build — Fizgig only uses the
-PyTorch path, which is the one rintic-13 benchmarked).
+hqq is pinned in requirements.txt; the install/update scripts set DISABLE_CUDA=1 so its
+optional CUDA kernel is never built — Fizgig only uses the PyTorch path, which is the one
+rintic-13 benchmarked.
 """
 
 import torch
@@ -44,10 +45,10 @@ def _quantizer():
         from hqq.core.quantize import Quantizer
     except ImportError as e:            # the package is optional — name the fix, not a traceback
         raise ImportError(
-            "Base Precision '4-bit HQQ' needs the hqq package (not installed in this "
-            "environment). Install it with:  pip install hqq   — set DISABLE_CUDA=1 first to "
-            "skip its optional CUDA kernel build; Fizgig uses hqq's PyTorch path. Or pick "
-            "'4-bit' (bitsandbytes NF4) / 'int8' instead.") from e
+            "Base Precision '4-bit HQQ' needs the hqq package, which this venv predates. "
+            "Run the Fizgig updater (update_fizgig.bat / update_fizgig_rocm.bat, or the "
+            "install script on Linux) and it installs with the rest of the requirements. "
+            "Or pick '4-bit' (bitsandbytes NF4) / 'int8' instead.") from e
     return Quantizer
 
 

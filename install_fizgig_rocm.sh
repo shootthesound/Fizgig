@@ -852,7 +852,8 @@ echo
 echo "Installing Fizgig dependencies from requirements.txt (CUDA torch/bnb + nvidia-ml-py stripped)..."
 SHARED_REQS="$(mktemp)"
 python filter_requirements_rocm.py requirements.txt "$SHARED_REQS"
-python -m uv pip install --index-strategy unsafe-best-match \
+# hqq (4-bit HQQ base) builds an optional CUDA kernel from its sdist unless told not to.
+DISABLE_CUDA=1 python -m uv pip install --index-strategy unsafe-best-match \
     -r "$SHARED_REQS"
 rm -f "$SHARED_REQS"
 

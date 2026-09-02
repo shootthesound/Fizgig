@@ -149,6 +149,12 @@ def install_requirements(requirements_path, venv_dir, python_path=None):
     link_mode_args = _link_mode_args(python_path, venv_dir)
     extra_index_url, torch_specs, other_lines = _parse_requirements(requirements_path)
 
+    # hqq ships as an sdist whose setup.py runs an `os.system` CUDA-kernel build during
+    # egg_info unless DISABLE_CUDA=1 — slow where nvcc exists (pods), a harmless error
+    # everywhere else, and Fizgig only uses its PyTorch path. uv's isolated build inherits
+    # this environment, so the one variable covers every caller of this function.
+    build_env = {**os.environ, "DISABLE_CUDA": "1"}
+
     try:
         # shell=False (list form) throughout — extra_index_url/torch_specs/link_mode_args all
         # come from this repo's own requirements.txt or uv's own `cache dir` output, not from
@@ -167,7 +173,7 @@ def install_requirements(requirements_path, venv_dir, python_path=None):
             subprocess.run(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
                 [str(python_path), "-m", "uv", "pip", "install", *link_mode_args,
                  "-r", filtered_path],
-                check=True)
+                check=True, env=build_env)
         finally:
             try:
                 os.remove(filtered_path)

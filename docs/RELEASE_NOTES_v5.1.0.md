@@ -21,17 +21,10 @@ same run it trained at **about half the step speed** of 4-bit NF4 (1.45 vs 2.6 i
 Pick it when the base error matters more than the clock; leave Auto alone otherwise and
 **nothing changes for you**.
 
-**To use it:** install the `hqq` package into the venv first, skipping its optional
-kernel build —
-
-```
-Windows:  set DISABLE_CUDA=1 && venv\Scripts\pip install hqq==0.2.8.post1
-Linux:    DISABLE_CUDA=1 venv/bin/pip install hqq==0.2.8.post1
-```
-
-— then choose **4-bit HQQ** under Base precision on the Training tab (or
-`--base_quant hqq` on the command line). Picking it without the package installed stops at
-load with the install line, not mid-run.
+**To use it:** run the updater (`update_fizgig.bat`, or the ROCm one) as usual — it brings
+in the `hqq` package with the rest of the requirements — then choose **4-bit HQQ** under
+Base precision on the Training tab (or `--base_quant hqq` on the command line). Fresh
+installs and the pod image already have it.
 
 ## Checkpoint to LoRA, from the fine-tune cards and on Linux
 

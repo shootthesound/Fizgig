@@ -174,8 +174,8 @@ def setup_parser() -> argparse.ArgumentParser:
                    help="Frozen-base precision. 'int8' keeps the checkpoint's own ConvRot "
                         "weights (~0.17%% base error, ~21 GB) — what the reference trainer "
                         "does. 'nf4' decodes then 4-bit quantizes (~9.5%% error, ~11 GB). "
-                        "'hqq' decodes then HQQ 4-bit quantizes (~6.3%% error, ~15 GB, ~half the step speed; "
-                        "needs `pip install hqq`). 'auto' picks int8 for a pre-quantized "
+                        "'hqq' decodes then HQQ 4-bit quantizes (~6.3%% error, ~15 GB, ~half "
+                        "the step speed). 'auto' picks int8 for a pre-quantized "
                         "file, nf4 otherwise — never hqq.")
     p.add_argument("--no_quantize", action="store_true",
                    help="Train on the bf16 base (no NF4) — needs ~66 GB VRAM.")

@@ -201,6 +201,8 @@ echo.
 echo Installing Fizgig dependencies from requirements.txt ^(CUDA torch/bnb lines stripped^)...
 python filter_requirements_rocm.py requirements.txt "%TEMP%\fizgig_rocm_shared_reqs.txt"
 if errorlevel 1 goto :install_failed
+REM hqq (4-bit HQQ base) builds an optional CUDA kernel from its sdist unless told not to.
+set DISABLE_CUDA=1
 python -m uv pip install --index-strategy unsafe-best-match -r "%TEMP%\fizgig_rocm_shared_reqs.txt"
 if errorlevel 1 goto :install_failed
 del "%TEMP%\fizgig_rocm_shared_reqs.txt" %Q%

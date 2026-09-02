@@ -921,6 +921,9 @@ MINIMAX_BUILT_IN_PRESETS = {
         # 50% likeness seven epochs sooner and peaked higher (61 vs 57). Every H3 preset
         # inherits this — Style included, the adapter is about the base, not the blocks.
         "MINIMAX_TRAINING_ADAPTER": True,
+        # Restrict video to the likeness blocks — the sub-tick of likeness mode, on by default
+        # (LoRA and FT alike since 2 Sep). Hidden, and not emitted, when likeness is off.
+        "MINIMAX_FT_CLIP_LIKENESS": True,
         "MINIMAX_SLOW_BLOCKS": "", "MINIMAX_SLOW_LR_SCALE": "0.2",
         # The one experiment that graduated: the limiter ships ON. Validated on a real A/B
         # (8 Aug) — the last trained block always hogs 2-4x the median block's movement and
@@ -1767,6 +1770,7 @@ class LoRATrainerGUI:
             # work H3 is for. The Style preset turns it OFF (style needs the early blocks).
             "MINIMAX_LIKENESS_OPT": True,
             "MINIMAX_TRAINING_ADAPTER": True,
+            "MINIMAX_FT_CLIP_LIKENESS": True,
             "MINIMAX_DISTILL": False,      # off = ordinary training
             # Which H3 base ordinary training runs on ("fl2va"/"ref2va"). NOT in any preset —
             # the Training Base dropdown's var lives outside self.entries by design.
@@ -4880,11 +4884,12 @@ class LoRATrainerGUI:
             f"Same meaning under fine-tune: photos train the identity blocks "
             f"({MINIMAX_LIKENESS_BLOCKS}), voice the audio zone ({MINIMAX_AUDIO_BLOCKS}), "
             f"video follows the tickbox below. See the MiniMax section of the README.")
-        # Restrict video to likeness blocks — FT-only sub-tick of likeness mode (Peter,
-        # 29 Aug: a confined overnight video run trained perfectly well; on by default,
-        # untick for whole-model video). Emitted as --clip_blocks by the FT builder only;
-        # shown only when the family is MiniMax AND Fine-tune AND likeness are all on
-        # (managed by _sync_minimax_likeness_state, which fires on all three).
+        # Restrict video to likeness blocks — sub-tick of likeness mode, LoRA and FT alike
+        # (Peter, 29 Aug: a confined overnight video run trained perfectly well; on by
+        # default, untick for whole-model video; extended to LoRA runs 2 Sep). Emitted as
+        # --clip_blocks whenever likeness is on; shown when the family is MiniMax and
+        # likeness is on (managed by _sync_minimax_likeness_state). The settings key keeps
+        # its historical MINIMAX_FT_ name so presets and saved settings still match.
         self.entries["MINIMAX_FT_CLIP_LIKENESS"] = tk.BooleanVar(
             value=bool(self.settings.get("MINIMAX_FT_CLIP_LIKENESS", True)))
         self._minimax_ft_clip_cb = ttk.Checkbutton(
@@ -7300,15 +7305,12 @@ class LoRATrainerGUI:
             return
         locked = self._is_minimax_arch() and bool(
             self.entries["MINIMAX_LIKENESS_OPT"].get())
-        # The video-restriction sub-tick shows only where it means something: MiniMax
-        # family, Fine-tune ON, likeness ON. (LoRA-mode clips keep whole-model behaviour;
-        # the builder only emits --clip_blocks under FT regardless, so this is
-        # presentation — the flag gate is the guard.)
+        # The video-restriction sub-tick shows wherever likeness mode is on — LoRA and
+        # fine-tune alike since 2 Sep (same behaviour: clip steps confined to the likeness
+        # blocks; the LoRA path masks per step, the FT path tightens the cycle).
         _clip_cb = getattr(self, "_minimax_ft_clip_cb", None)
         if _clip_cb is not None and _clip_cb.winfo_exists():
-            _show = locked and bool(getattr(self, "minimax_finetune_var", None)
-                                    and self.minimax_finetune_var.get())
-            self._set_widget_visible(_clip_cb, _show)
+            self._set_widget_visible(_clip_cb, locked)
         if locked:
             combo.config(state="disabled")
             hint.config(text=self._MINIMAX_BLOCKS_HINT_LOCKED)
@@ -26982,10 +26984,10 @@ class LoRATrainerGUI:
         # freezing on mixed). --train_blocks stays adapter-only and is never emitted under FT.
         if self.settings.get("MINIMAX_LIKENESS_OPT"):
             cmd += ["--photo_blocks", MINIMAX_LIKENESS_BLOCKS]
-            # Restrict video to likeness blocks (FT only, on by default with likeness):
-            # a confined overnight video run trained perfectly well (field, 29 Aug).
+            # Restrict video to likeness blocks (on by default with likeness, LoRA and FT
+            # alike): a confined overnight video run trained perfectly well (field, 29 Aug).
             # Unticked, clips keep the original whole-model behaviour.
-            if _mft_cmd_on and self.settings.get("MINIMAX_FT_CLIP_LIKENESS", True):
+            if self.settings.get("MINIMAX_FT_CLIP_LIKENESS", True):
                 cmd += ["--clip_blocks", MINIMAX_LIKENESS_BLOCKS]
         # Voice routing — audio steps train only the measured voice zone (34-49): outside it
         # they corrupt the visual blocks (A/B, 24 Aug). Under FT it always travels (the

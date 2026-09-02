@@ -2323,9 +2323,11 @@ def train_minimax(
                                      # The 20-49 recipe: photo gradients into the front trunk are
                                      # pure prior damage (deformed previews, eroded prompt
                                      # following) while identity lives in the back 30 blocks.
-    clip_blocks: str = None,         # FT only: confine CLIP steps to these blocks too (the GUI's
-                                     # "Restrict video to likeness blocks" tickbox passes the
-                                     # likeness set). Field result 29 Aug: an overnight video run
+    clip_blocks: str = None,         # Confine CLIP steps to these blocks too (the GUI's "Restrict
+                                     # video to likeness blocks" tickbox passes the likeness set).
+                                     # FT: the rotation cycle honours it; LoRA (2 Sep): the same
+                                     # per-step gradient mask as photo_blocks, keyed on clip-only
+                                     # windows. Field result 29 Aug: an overnight video run
                                      # confined this way trained perfectly well. Unset = clips
                                      # train the whole model, the original behaviour.
     audio_blocks: str = None,        # Voice routing: audio-only steps update only these blocks
@@ -3673,11 +3675,31 @@ def train_minimax(
         _photo_used = format_block_spec(sorted(_pb_allowed))
         if _photo_mask_params:
             logger.info("[likeness] Optimised Likeness Learning ON — photo steps train blocks "
-                        "%s (+refiners, %d of %d tensors frozen on photos); video/audio clips "
-                        "train the full model", _photo_used, len(_photo_mask_params), len(params))
+                        "%s (+refiners, %d of %d tensors frozen on photos); video clips train %s",
+                        _photo_used, len(_photo_mask_params), len(params),
+                        (f"blocks {clip_blocks} (restricted)" if clip_blocks else "the full model"))
         else:
             logger.info("[likeness] photo_blocks %s covers every trained block — nothing to "
                         "mask (Blocks to Train already inside it?)", _photo_used)
+    # Clip routing, LoRA mode (Peter, 2 Sep — same behaviour as the FT tickbox): clip-only
+    # windows update only clip_blocks. Same mechanism as the photo mask.
+    _clip_mask_params = []
+    if clip_blocks and rotator is None:
+        _cb_allowed = set(parse_block_spec(clip_blocks, len(dit.blocks)))
+        _cmask_ids = set()
+        for _lora in network.unet_loras:
+            _nm = _lora.lora_name
+            if "token_refiner" in _nm:
+                continue
+            _m = re.search(r"blocks_(\d+)_", _nm)
+            if _m and int(_m.group(1)) not in _cb_allowed:
+                _cmask_ids.update(id(p) for p in _lora.parameters())
+        _clip_mask_params = [p for p in params if id(p) in _cmask_ids]
+        if _clip_mask_params:
+            logger.info("[likeness] video restriction ON — clip steps train blocks %s "
+                        "(+refiners, %d of %d tensors frozen on clips)",
+                        format_block_spec(sorted(_cb_allowed)),
+                        len(_clip_mask_params), len(params))
     # Voice routing, LoRA mode: audio-only steps update only audio_blocks (the measured
     # voice zone — audio gradients outside it corrupt the visual blocks). Same mechanism
     # as the photo mask, keyed on voice-only optimizer windows.
@@ -4075,6 +4097,8 @@ def train_minimax(
                                     if training_adapter_path else "none"),
             "ss_slow_blocks": _slow_used or "none",
             "ss_photo_blocks": (_photo_used if _photo_mask_params else "off"),
+            "ss_clip_blocks": (str(clip_blocks) if (clip_blocks and (_clip_mask_params or rotator is not None))
+                               else "off"),
             "ss_block_limit": str(block_limit or 0),
             "ss_gradient_accumulation": str(_accum_n),
             "ss_adapter_ramp": f"{adapter_ramp:g}" if ramp is not None else "0",
@@ -4811,6 +4835,7 @@ def train_minimax(
     _pending = [0]                       # backwards accumulated since the last optimizer step
     _window_photo_only = [True]          # likeness mask: does this window hold ONLY photo steps?
     _window_voice_only = [True]          # voice-routing mask: ONLY audio steps in this window?
+    _window_clip_only = [True]           # clip-routing mask: ONLY video-clip steps in this window?
 
     def _boundary_step():
         """The optimizer step at a window boundary — shared by live iterations and by the
@@ -4843,6 +4868,11 @@ def train_minimax(
             for _p in _audio_mask_params:
                 _p.grad = None
         _window_voice_only[0] = True
+        # Clip routing, same rule again: a clip-only window drops the out-of-range grads.
+        if _clip_mask_params and _window_clip_only[0]:
+            for _p in _clip_mask_params:
+                _p.grad = None
+        _window_clip_only[0] = True
         if max_grad_norm and max_grad_norm > 0:
             torch.nn.utils.clip_grad_norm_(params, max_grad_norm)
         _bm = (sum(_band_acc) / len(_band_acc)) if _band_acc else 1.0
@@ -4978,6 +5008,8 @@ def train_minimax(
                 _window_photo_only[0] = False
             if not _is_voice:
                 _window_voice_only[0] = False
+            if _is_photo or _is_voice:
+                _window_clip_only[0] = False
             # Per-category retirement: past its stop epoch a category is either ANCHORED
             # (trains on at ANCHOR_LR_SCALE — rehearsal against drift on the shared adapters,
             # ledger stays live) or STOPPED (skipped outright — faster epochs, blind).

@@ -32,3 +32,15 @@ Verified on a real run: the same seed and prompt, before any training, renders t
 model's generic hooded skull without the context and the context LoRA's own character with
 it — the context is genuinely part of what the new LoRA learns against. LoRA runs only;
 fine-tuning refuses it up front.
+
+## Video clips follow likeness mode in LoRA runs too
+
+The **Restrict video to likeness blocks** tickbox under Optimised Likeness Learning used to
+appear only for fine-tunes. It now applies to LoRA runs the same way — clip steps train the
+identity blocks (20-49) and leave the front of the model alone, exactly as photo steps do —
+and it's on by default with likeness mode in every H3 preset. Untick it for whole-model
+video. Verified on a clip-only run: blocks 0-19 never moved.
+
+Also: "Medium to High LR" is now labelled **Medium to High Noise LR** (it scales the
+learning rate of the noisy-half steps), and the MiniMax training hints are one line each
+with a pointer to the README's MiniMax section.

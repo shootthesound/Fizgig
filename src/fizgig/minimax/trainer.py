@@ -1288,11 +1288,11 @@ def load_context_lora(dit, path, strength, device, dtype):
     trainable network wraps it, so the new LoRA learns to coexist with it (Klein and Krea 2
     have the same feature). Same loader as the preview Turbo — H3's shape prefilter and the
     pruned-base AdaLN injection are exactly what a foreign H3 LoRA needs — but the modules
-    stay ENABLED and resident for the whole run, and its AdaLN rows are injected permanently
-    (re-installed after every Turbo preview, which swaps the injection out for its own).
+    stay ENABLED and resident for every training step, and its AdaLN rows are injected for
+    the same span. Previews render with it OFF (context_lora_set_active) — the deployment
+    view, which for a training adapter is the whole point.
 
-    Returns (network, adaln_pairs). H3 previews render on the resident training DiT, so the
-    context is live in them with no extra wiring."""
+    Returns (network, adaln_pairs)."""
     from fizgig.networks.lora import assert_lora_family_matches
     assert_lora_family_matches(path, "minimax", "Context LoRA")
     net, pairs = load_preview_turbo(dit, path, strength, tag="context")
@@ -1303,8 +1303,24 @@ def load_context_lora(dit, path, strength, device, dtype):
     logger.info(f"[context] {os.path.basename(path)} active at {float(strength):g} — "
                 f"{len(net.unet_loras)} modules"
                 + (f" + {n_ad} adaln injected" if n_ad else "")
-                + "; the trainable LoRA learns on top of it (pair them at inference)")
+                + "; the trainable LoRA learns on top of it (off for previews)")
     return net, pairs
+
+
+def context_lora_set_active(context_net, context_adaln, dit, active, device, dtype):
+    """Flip the context LoRA on/off around a preview. OFF for sampling is the point of a
+    training adapter (Ostris's assistant LoRA: active for the training step, inactive for
+    every sample pass) — the preview must show the LoRA as it DEPLOYS, without the context,
+    or the preview lies about what the user will get. Idempotent; a no-op without a context."""
+    if context_net is None:
+        return
+    for m in context_net.unet_loras:
+        m.enabled = bool(active)
+    if context_adaln:
+        if active:
+            turbo_adaln_patch(dit, context_adaln, device, dtype)
+        else:
+            turbo_adaln_unpatch(context_adaln)
 
 
 @contextlib.contextmanager
@@ -2385,9 +2401,9 @@ def train_minimax(
     # the sampling phase, off again after. The training math never sees it.
     turbo_lora_path: str = None,
     turbo_lora_strength: float = 0.75,
-    # Context LoRA: an existing LoRA held frozen + active under the trainable one, in
-    # training AND previews (the resident DiT renders both). Recorded in the output metadata
-    # so the pair can be reproduced at inference. Not available under rotation fine-tune.
+    # Context LoRA: an existing LoRA held frozen + active under the trainable one for every
+    # training step; OFF for previews, so they show the LoRA as it deploys. Recorded in the
+    # output metadata. Not available under rotation fine-tune.
     context_lora_path: str = None,
     context_lora_strength: float = 1.0,
     # Previews with sound: decode the jointly-denoised audio rows to a .wav beside each clip
@@ -4337,13 +4353,18 @@ def train_minimax(
                     except Exception:
                         pass
                 vram_line("preview-start")
+            # The context LoRA is OFF for the render — previews show the LoRA as it deploys,
+            # without its training context (the training-adapter contract). Back on after.
+            context_lora_set_active(context_net, context_adaln, dit, False, device, dtype)
+            if context_net is not None:
+                logger.info("[preview] context LoRA off for the render (deployment view)")
             if turbo_net is not None:
                 # On for the sampling phase only: weights to the GPU (~0.8 GB), modules
                 # enabled at their strength, AdaLN injected. Off + back to CPU before decode.
                 turbo_net.to(device=device, dtype=dtype)
                 for _tm in turbo_net.unet_loras:
                     _tm.enabled = True
-                _n_ad = turbo_adaln_patch(dit, context_adaln + turbo_adaln, device, dtype)
+                _n_ad = turbo_adaln_patch(dit, turbo_adaln, device, dtype)
                 logger.info(f"[preview] Turbo LoRA on — {sample_steps} steps at "
                             f"{turbo_lora_strength:g}"
                             + (f", {_n_ad} adaln injected" if _n_ad else ""))
@@ -4426,11 +4447,10 @@ def train_minimax(
                 for _tm in turbo_net.unet_loras:
                     _tm.enabled = False
                 turbo_adaln_unpatch(turbo_adaln)
-                if context_adaln:
-                    turbo_adaln_patch(dit, context_adaln, device, dtype)
                 turbo_net.to("cpu")
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()      # its ~0.8 GB back before the decode phase
+            context_lora_set_active(context_net, context_adaln, dit, True, device, dtype)
 
             # optimizer state back before anything else - the next training step needs it
             for _st, _k in _opt_parked:
@@ -4548,6 +4568,9 @@ def train_minimax(
                     torch.cuda.empty_cache()
             if _audio_dec_state["dec"] is not None:
                 _audio_dec_state["dec"].to("cpu")        # idempotent; covers a mid-decode raise
+            # The context must come BACK on the same way (an exception mid-sample would
+            # otherwise leave every subsequent training step without it).
+            context_lora_set_active(context_net, context_adaln, dit, True, device, dtype)
             if turbo_net is not None:
                 # Idempotent, and NON-NEGOTIABLE on an exception mid-sample: a Turbo left
                 # enabled (or an injected AdaLN forward left installed) would ride every

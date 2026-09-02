@@ -42,6 +42,7 @@ BASE = tempfile.mkdtemp(prefix="fizgig_launch_sim_")
 SB = os.path.join(BASE, "app")
 os.makedirs(SB)
 shutil.copy(os.path.join(REPO, "launch.pyw"), os.path.join(SB, "launch.pyw"))
+shutil.copy(os.path.join(REPO, "fizgig_splash.py"), os.path.join(SB, "fizgig_splash.py"))
 LAUNCH = os.path.join(SB, "launch.pyw")
 LOGF = os.path.join(SB, "launch_error.log")
 MARK = os.path.join(SB, "started.txt")
@@ -124,7 +125,10 @@ def log_text():
     return ""
 
 
-HAPPY = f"with open({MARK!r}, 'w') as f: f.write('started')\n"
+# The launcher imports the GUI as a module and calls its main() — the splash needs the root
+# before the module exists (#115) — so a fake GUI must offer one.
+HAPPY = (f"with open({MARK!r}, 'w') as f: f.write('started')\n"
+         "def main(root=None, splash=None): pass\n")
 
 # --- 1. the happy path is untouched -------------------------------------------------------------
 r = run_launcher(HAPPY, extra_path=[FAKECT])
@@ -203,6 +207,7 @@ ck("Linux shape (ctypes imports, no windll): stderr + log, exit 1",
 SB2 = os.path.join(BASE, "app2")
 os.makedirs(SB2)
 shutil.copy(os.path.join(REPO, "launch.pyw"), os.path.join(SB2, "launch.pyw"))
+shutil.copy(os.path.join(REPO, "fizgig_splash.py"), os.path.join(SB2, "fizgig_splash.py"))
 MARK2 = os.path.join(SB2, "started.txt")
 with open(os.path.join(SB2, "lora_trainer_gui.py"), "w", encoding="utf-8") as f:
     f.write(f"with open({MARK2!r}, 'w') as fh: fh.write('started')\n")

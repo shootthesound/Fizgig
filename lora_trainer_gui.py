@@ -1532,6 +1532,16 @@ PRESETS = {
 
 
 class LoRATrainerGUI:
+    def _splash_status(self, text):
+        """Forward a build-phase line to the launch splash, if one is up (main() parks it
+        on the root for the duration of the constructor). No-op otherwise."""
+        splash = getattr(self.master, "_fizgig_splash", None)
+        if splash is not None:
+            try:
+                splash.status(text)
+            except Exception:
+                pass
+
     def __init__(self, master):
         self.master = master
         master.title("Fizgig — Klein 9B & Krea 2 LoRA Studio")
@@ -1930,18 +1940,34 @@ class LoRATrainerGUI:
         self.entries = {}
         self.labels = {}  # Store label widgets for dynamic updates
         self.rows = {}    # Store row widgets for show/hide
+        # Each tab reports to the launch splash (#115) — the status line is the only sign
+        # of life while ~8 s of widgets get built, and each call pumps the event loop so
+        # Windows never ghosts the splash as "Not responding".
+        self._splash_status("Building the Start tab…")
         self.create_start_tab()
+        self._splash_status("Building the Training tab…")
         self.create_training_settings()
+        self._splash_status("Building the Captions tab…")
         self.create_caption_generator()
+        self._splash_status("Building the Image Prep tab…")
         self.create_image_converter()
+        self._splash_status("Building the Samples tab…")
         self.create_samples_settings()
+        self._splash_status("Building the Profiler…")
         self.create_profiler_tab()
+        self._splash_status("Building the Repair Studio…")
         self.create_repair_studio_tab()
+        self._splash_status("Building LoRA the Explorer…")
         self.create_explorer_tab()
+        self._splash_status("Building LoRA Royale…")
         self.create_lora_royale_tab()
+        self._splash_status("Building the Extract tab…")
         self.create_extract_tab()
+        self._splash_status("Building the Metadata tab…")
         self.create_metadata_tab()
+        self._splash_status("Building Preferences…")
         self.create_prefs_tab()
+        self._splash_status("Restoring your last session…")
         # Restore remembered Repair Studio / Explorer Setup fields + attach save traces.
         # After ALL tabs exist: restoring fires their traces, which touch other tabs' widgets.
         self._restore_workbench_setup_fields()
@@ -27622,15 +27648,41 @@ class LoRATrainerGUI:
     # (save_settings/load_settings removed: 160 lines of dead code with no
     #  callers, duplicating the preset system with a 4-key save/load asymmetry.)
 
-if __name__ == "__main__":
+def main(root=None, splash=None):
+    """Build and run the app.
+
+    launch.pyw passes a withdrawn root plus a live splash (it put them up before this
+    file was even compiled — #115). Run directly (`python lora_trainer_gui.py`, the Linux
+    launcher) both are created here, so the splash still covers the tab build. Either
+    way the main window stays hidden until every tab exists, then appears fully drawn and
+    the splash closes — no blank window while the tabs fill in."""
     # Set unique app ID so Windows taskbar shows our icon, not Python's
     try:
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('fizgig.lora.studio')
     except Exception:
         pass
-    root = tk.Tk()
+    if root is None:
+        root = tk.Tk()
+        root.withdraw()
+    if splash is None:
+        try:
+            from fizgig_splash import Splash
+            splash = Splash(root, "Building the interface…")
+        except Exception:
+            splash = None
+    root._fizgig_splash = splash          # read by LoRATrainerGUI._splash_status
+    if splash is not None:
+        splash.status("Building the interface…")
     gui = LoRATrainerGUI(root)
+    root._fizgig_splash = None
+    root.deiconify()
+    try:
+        root.update_idletasks()
+    except Exception:
+        pass
+    if splash is not None:
+        splash.close()
     # Detect leftover paused training state from a prior session
     try:
         gui._check_for_paused_state_on_startup()
@@ -27643,3 +27695,7 @@ if __name__ == "__main__":
     except Exception:
         pass
     root.mainloop()
+
+
+if __name__ == "__main__":
+    main()

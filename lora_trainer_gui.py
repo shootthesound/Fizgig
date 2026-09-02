@@ -596,15 +596,13 @@ MINIMAX_STRUCTURE_OPTIONS = {
 }
 MINIMAX_STRUCTURE_DESC = {
     "Likeness and Style — 60% clean-end":
-        "Most of the run on nearly-clean images. Skin, hair and identity are learned there — and "
-        "so is style, which is a surface property rather than a compositional one. The tuned "
-        "default for stills.",
+        "Most of the run on nearly-clean images — the tuned default for stills. See the MiniMax "
+        "section of the README.",
     "Model default, movement — 8% clean-end":
-        "The schedule H3's own flow shift implies, and what the reference trainer uses. Weighted "
-        "to movement and composition rather than fine detail.",
+        "The reference trainer's schedule, weighted to movement and composition. See the MiniMax "
+        "section of the README.",
     "Custom":
-        "Type your own share. Below ~50% the high-noise steps become the majority, which is what "
-        "the LR adjustment beside this is for.",
+        "Type your own clean-end share. See the MiniMax section of the README.",
 }
 MINIMAX_STRUCTURE_DEFAULT = "Likeness and Style — 60% clean-end"
 
@@ -4734,10 +4732,9 @@ class LoRATrainerGUI:
             "<<ComboboxSelected>>", lambda _e: self._sync_distill_weight_state())
         self._minimax_distill_hint = ttk.Label(
             training_content,
-            text="EXPERIMENT — teaches your LoRA to reproduce identity from the trigger word "
-                 "the way H3 does when shown a photo, using your own dataset as the "
-                 "references. Needs the ref2va model in Preferences. Full write-up in the "
-                 "README.",
+            text="EXPERIMENT — teaches the LoRA to reproduce identity the way H3 does when shown "
+                 "a photo. Needs the ref2va model in Preferences. See the MiniMax section of "
+                 "the README.",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_distill_hint.grid(row=36, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
 
@@ -4872,24 +4869,17 @@ class LoRATrainerGUI:
                                        padx=5, pady=(8, 0))
         self._minimax_likeness_hint = ttk.Label(
             training_content,
-            text=f"Photos train the identity blocks ({MINIMAX_LIKENESS_BLOCKS}) only and "
-                 f"voice recordings train the audio zone ({MINIMAX_AUDIO_BLOCKS}) only — "
-                 "protecting the base model's rendering, anatomy and prompt following — while "
-                 "video clips train the full model. Measured result: sharper, more "
-                 "prompt-responsive, better sound, faster to converge. Untick for style or "
-                 "scene training (the Style preset does).",
+            text=f"Photos train the identity blocks ({MINIMAX_LIKENESS_BLOCKS}) only, voice the "
+                 f"audio zone ({MINIMAX_AUDIO_BLOCKS}) only, clips the full model. Untick for "
+                 "style or scene training. See the MiniMax section of the README.",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_likeness_hint.grid(row=40, column=0, columnspan=2, sticky=tk.W,
                                          padx=5, pady=(0, 4))
         self._MINIMAX_LIKENESS_HINT_LORA = self._minimax_likeness_hint.cget("text")
         self._MINIMAX_LIKENESS_HINT_FT = (
-            f"Under fine-tune this keeps its exact LoRA meaning: photos feed only the "
-            f"identity blocks ({MINIMAX_LIKENESS_BLOCKS}), voice feeds only the audio zone "
-            f"({MINIMAX_AUDIO_BLOCKS}) — and video follows the restriction tickbox below "
-            f"(on: clips train {MINIMAX_LIKENESS_BLOCKS} too; off: clips train the full "
-            f"model). The rotation cycle tightens automatically to the union of what your "
-            f"dataset actually trains. Untick for style/scene fine-tunes — voice still "
-            f"routes to its zone either way. An explicit Blocks range above always wins.")
+            f"Same meaning under fine-tune: photos train the identity blocks "
+            f"({MINIMAX_LIKENESS_BLOCKS}), voice the audio zone ({MINIMAX_AUDIO_BLOCKS}), "
+            f"video follows the tickbox below. See the MiniMax section of the README.")
         # Restrict video to likeness blocks — FT-only sub-tick of likeness mode (Peter,
         # 29 Aug: a confined overnight video run trained perfectly well; on by default,
         # untick for whole-model video). Emitted as --clip_blocks by the FT builder only;
@@ -4932,10 +4922,8 @@ class LoRATrainerGUI:
 
         # Answers "when do changes take effect?" (issue #40) right where people wonder it.
         ttk.Label(training_content,
-                  text="When do changes apply? Settings are read when a run launches — changing "
-                       "them mid-run does nothing. Pause → Resume relaunches with your current "
-                       "settings, so these can be changed at a pause. Dataset/caption changes "
-                       "need a fresh run (Resume skips re-caching).",
+                  text="Settings are read when a run launches; Pause → Resume picks up changes, "
+                       "dataset/caption changes need a fresh run.",
                   foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"),
                   justify=tk.LEFT, wraplength=720).grid(
             row=30, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 6))
@@ -7195,10 +7183,8 @@ class LoRATrainerGUI:
         # without the Turbo LoRA and 100% holds face SHAPE better every time.
         self._minimax_hnlr_hint = tk.Label(
             parent,
-            text="What the noisier steps — where pose, framing and face shape are decided — do to "
-                 "the learning rate. Lowering it biases the run toward surface detail at the cost "
-                 "of shape — useful for a skin-texture LoRA, not for a likeness one. Across five "
-                 "datasets 100 held face shape better, and nothing distorted at any setting.",
+            text="Scales the learning rate of the noisy-half steps (pose, framing, face shape). "
+                 "See the MiniMax section of the README.",
             font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
             justify=tk.LEFT, wraplength=700)
         self._minimax_hnlr_hint.grid(row=26, column=0, columnspan=3, sticky=tk.W,

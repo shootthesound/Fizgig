@@ -491,7 +491,7 @@ def minimax_lownoise_to_shift(pct):
 
 
 def minimax_highnoise_lr(pct):
-    """'Medium to High LR adjustment' (percent) -> a plain multiplier. None if unusable.
+    """'Medium to High Noise LR' (percent) -> a plain multiplier. None if unusable.
 
     Applies to steps drawn ABOVE sigma 0.5 — the same threshold the low-noise box is defined
     against, so the two controls always agree about where the boundary is. 100 means unchanged.
@@ -7177,7 +7177,7 @@ class LoRATrainerGUI:
 
         # Always visible: a preset recommends a value, the user can override it without that
         # counting as a different structure.
-        self._minimax_hnlr_label = ttk.Label(parent, text="Medium to High LR:")
+        self._minimax_hnlr_label = ttk.Label(parent, text="Medium to High Noise LR:")
         self._minimax_hnlr_label.grid(row=25, column=0, sticky=tk.W, padx=5, pady=(2, 8))
         self._minimax_hnlr_frame = ttk.Frame(parent)
         self._minimax_hnlr_frame.grid(row=25, column=1, columnspan=2, sticky=tk.W,

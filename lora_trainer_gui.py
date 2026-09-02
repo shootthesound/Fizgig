@@ -919,7 +919,10 @@ MINIMAX_BUILT_IN_PRESETS = {
         # clips train the full model. The one measured exception is style — the Style preset
         # turns it off (style needs the early blocks).
         "MINIMAX_LIKENESS_OPT": True,
-        "MINIMAX_TRAINING_ADAPTER": False,
+        # Training adapter ships ON (Peter, 2 Sep): measured on the same dataset/seed it hit
+        # 50% likeness seven epochs sooner and peaked higher (61 vs 57). Every H3 preset
+        # inherits this — Style included, the adapter is about the base, not the blocks.
+        "MINIMAX_TRAINING_ADAPTER": True,
         "MINIMAX_SLOW_BLOCKS": "", "MINIMAX_SLOW_LR_SCALE": "0.2",
         # The one experiment that graduated: the limiter ships ON. Validated on a real A/B
         # (8 Aug) — the last trained block always hogs 2-4x the median block's movement and
@@ -1765,7 +1768,7 @@ class LoRATrainerGUI:
             # everything. On by default: it is the measured best recipe for the character/voice
             # work H3 is for. The Style preset turns it OFF (style needs the early blocks).
             "MINIMAX_LIKENESS_OPT": True,
-            "MINIMAX_TRAINING_ADAPTER": False,
+            "MINIMAX_TRAINING_ADAPTER": True,
             "MINIMAX_DISTILL": False,      # off = ordinary training
             # Which H3 base ordinary training runs on ("fl2va"/"ref2va"). NOT in any preset —
             # the Training Base dropdown's var lives outside self.entries by design.
@@ -4912,7 +4915,7 @@ class LoRATrainerGUI:
         # tickbox greys out with a pointer when that pref is empty. Independent of the
         # Context LoRA box: adapter first, then the user's context, then the trainable LoRA.
         self.entries["MINIMAX_TRAINING_ADAPTER"] = tk.BooleanVar(
-            value=bool(self.settings.get("MINIMAX_TRAINING_ADAPTER", False)))
+            value=bool(self.settings.get("MINIMAX_TRAINING_ADAPTER", True)))
         self._minimax_adapter_cb = ttk.Checkbutton(
             training_content, text="Training adapter (Ostris) — de-distills the base while your LoRA learns",
             variable=self.entries["MINIMAX_TRAINING_ADAPTER"])
@@ -4922,11 +4925,7 @@ class LoRATrainerGUI:
             training_content,
             text="Loads Ostris's training adapter (ostris/minimax_h3_training_adapter) frozen at "
                  "1.0 under your LoRA for every training step, and switches it off for previews "
-                 "and in your saved file. H3 is guidance-distilled; the adapter pulls the base "
-                 "back toward plain flow so the gradient is all concept from step one. Our A/B "
-                 "with likeness mode on: 50% likeness seven epochs sooner and a higher peak — "
-                 "and a best window that arrives earlier, so watch the gallery. The file "
-                 "matching the Training Base is picked from Preferences. LoRA runs only.",
+                 "and in your saved file.",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_adapter_hint.grid(row=43, column=0, columnspan=2, sticky=tk.W,
                                         padx=5, pady=(0, 4))
@@ -7692,7 +7691,13 @@ class LoRATrainerGUI:
                   # under FT; the builder also suppresses the flag.
                   getattr(self, "_minimax_hnlr_label", None),
                   getattr(self, "_minimax_hnlr_frame", None),
-                  getattr(self, "_minimax_hnlr_hint", None)):
+                  getattr(self, "_minimax_hnlr_hint", None),
+                  # The training adapter is a LoRA-run aid (a frozen layer the trainable
+                  # LoRA stacks on; the rotation FT has nothing to stack). Hidden under FT
+                  # and ignored by the builder there — its saved value is left alone so it
+                  # comes back exactly as set when FT is unticked.
+                  getattr(self, "_minimax_adapter_cb", None),
+                  getattr(self, "_minimax_adapter_hint", None)):
             if w is not None:
                 self._set_widget_visible(w, not on)
         if hasattr(self, "_network_type_rowf"):
@@ -25337,11 +25342,11 @@ class LoRATrainerGUI:
                 errors.append("Learning rate must be a valid number")
 
         # Training adapter (MiniMax): needs the pref for the selected base, and never under FT.
-        if self._is_minimax_arch() and bool(self.entries.get("MINIMAX_TRAINING_ADAPTER") and
-                                            self.entries["MINIMAX_TRAINING_ADAPTER"].get()):
-            if bool(getattr(self, "minimax_finetune_var", None) and self.minimax_finetune_var.get()):
-                errors.append("The training adapter is not available with MiniMax H3 fine-tuning — "
-                              "untick Fine-tune (train a LoRA) or untick the adapter")
+        _mm_ft_on = bool(getattr(self, "minimax_finetune_var", None) and self.minimax_finetune_var.get())
+        if (self._is_minimax_arch() and not _mm_ft_on
+                and bool(self.entries.get("MINIMAX_TRAINING_ADAPTER")
+                         and self.entries["MINIMAX_TRAINING_ADAPTER"].get())):
+            # (Under fine-tune the tickbox is hidden and the builder ignores it — no error.)
             _ak = self._minimax_adapter_pref_key()
             if not self._krea2_pref(_ak):
                 errors.append("Training adapter is ticked but its file isn't set in Preferences "
@@ -27150,7 +27155,7 @@ class LoRATrainerGUI:
         # Training adapter — Ostris's frozen de-distillation LoRA at 1.0 under everything else,
         # the file chosen to match the base this run trains on (validation already checked it
         # exists and that this isn't a fine-tune).
-        if self.settings.get("MINIMAX_TRAINING_ADAPTER"):
+        if self.settings.get("MINIMAX_TRAINING_ADAPTER") and not _mft_cmd_on:
             _adapter = self._krea2_pref(self._minimax_adapter_pref_key())
             if _adapter:
                 cmd += ["--training_adapter_path", _adapter]

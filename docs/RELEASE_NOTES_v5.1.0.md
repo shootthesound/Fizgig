@@ -45,3 +45,6 @@ base model in Preferences**, and LoRAs trained on top of it.
 - **Krea 2 LoKR previews need more than 16 GB** — the render runs on the resident training
   model with the LoKR net live. The trainer now says so up front, directly above where a
   16 GB card would otherwise stall.
+- **The updater now fetches the Krea 2 Turbo LoRA whenever it's missing**, whatever family
+  you have configured — previously it only did so for installs with a Krea 2 model path
+  set. Offline, it notes the failure and carries on.

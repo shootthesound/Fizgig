@@ -475,9 +475,12 @@ _RESIDENT_PRUNED_GB = 10.5
 _RESIDENT_INT8_GB = 21.0
 # HQQ 4-bit g16 (rintic-13, #102): 0.5 B/param of codes + two bf16 group vectors at 1/16 =
 # 0.75 B/param against NF4's ~0.52 (block-64 absmax, double-quantized) — ~45% more resident
-# for the same quantized mass. ESTIMATED from that ratio over the NF4 figures above, NOT yet
-# GPU-measured: HQQ is explicit-pick only (Auto never chooses it), so a slack estimate costs
-# a few streamed blocks, not a crash. Replace with a measurement before Auto may pick it.
+# for the same quantized mass. PRUNED figure MEASURED (2 Sep, 5090, pruned int8 file
+# decoded to HQQ): ~15.5 GB process right after load incl. the 0.6 GB adapter, ~22 GB
+# steady in training at 0.25 MP with no checkpointing, 1.45 it/s vs NF4's 2.6 it/s on the
+# same run (PyTorch-path dequant in forward AND backward; hqq's CUDA kernel is not
+# installed). The bf16-file figure is still the B/param ratio over _RESIDENT_GB — no bf16
+# checkpoint on the bench box. HQQ stays explicit-pick only (Auto never chooses it).
 _RESIDENT_HQQ_GB = 22.0
 _RESIDENT_HQQ_PRUNED_GB = 15.0
 # int8 dequantizes a bf16 weight per matmul (fc1 is 28672x5376 = 308 MB). A few are live at
@@ -2670,8 +2673,8 @@ def train_minimax(
                     adapter_gb=_adapter)
                 _why = f"base precision pinned to {_mode} by the user"
                 if _mode == "hqq":
-                    _why += (" (HQQ residency is an estimate — ~45% over NF4 from its "
-                             "0.75 vs 0.52 B/param — until a real run measures it)")
+                    _why += (" (HQQ: ~45% more resident than nf4 and roughly half the "
+                             "step speed — PyTorch-path dequant)")
             _base_mode = _mode
             _resident = _resident_for(_mode, _pruned)
 

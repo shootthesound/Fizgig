@@ -5231,7 +5231,8 @@ class LoRATrainerGUI:
             text="Auto reads your FREE VRAM at launch and picks the base precision and block "
                  "swap together — int8 is the most accurate, 4-bit fits smaller cards. 4-bit "
                  "HQQ sits between them (about a third less base error than 4-bit, ~45% more "
-                 "VRAM) and needs `pip install hqq` in the venv first; Auto never picks it. "
+                 "VRAM, roughly half the step speed) and needs `pip install hqq` in the venv "
+                 "first; Auto never picks it. "
                  "Full write-up in the README.",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_quant_hint.grid(row=17, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))

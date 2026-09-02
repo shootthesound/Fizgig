@@ -1,4 +1,4 @@
-# Fizgig v5.2.0 — DRAFT (unreleased)
+# Fizgig v5.2.0
 
 Faster, higher likeness on MiniMax H3 — from combining two methods that each fall short on
 their own.
@@ -27,6 +27,9 @@ recognition, 45 epochs each:
 - **The adapter on all blocks was the weakest late in the run.** The adapter's cleaner
   gradient reaches the front blocks too, and there a likeness LoRA has nothing to learn and a
   lot to damage — the block restriction is what keeps that cleaner gradient where it pays.
+
+**In short: the combination reaches greater likeness and quality than either method does
+on its own.**
 
 So the combination is now the default. The training adapter is a tickbox on the Training
 tab, **on in all three H3 presets** alongside Optimised Likeness Learning; it's active for

@@ -3852,10 +3852,13 @@ class LoRATrainerGUI:
     # Deliberately NOT here: Adapter-relative LR. It is an LR strategy, and the two presets own
     # that choice (Defaults on, Fast flat) - a box describing how your DATA is laid out has no
     # business overruling the preset the user just loaded.
+    # Ticking Multi Concept applies only the dropout. It used to switch identity-learn
+    # (reference distillation) on as well, with 4 references and a 2-epoch identity-first
+    # phase — retired 3 Sep 2026 (Peter): it wasn't helping the two-subject case, and a mode
+    # tickbox quietly enabling a 21 GB-model experiment was the wrong shape. Identity-learn
+    # stays a separate, deliberate tick.
     _MULTICONCEPT_DEFAULTS = {
         "MINIMAX_CAPTION_DROPOUT": "0.10 (strong)",
-        "MINIMAX_DISTILL_REFS": "4",
-        "MINIMAX_DISTILL_PHASE1": "2 epochs",
     }
 
     def _warn_if_no_ref_dit(self):
@@ -3895,9 +3898,6 @@ class LoRATrainerGUI:
                 if _w is not None and str(_w.get()) != _v:
                     _w.set(_v)
                     _changed.append(f"{_k.replace('MINIMAX_', '').lower()}={_v}")
-            if hasattr(self, "minimax_distill_var") and not self.minimax_distill_var.get():
-                self.minimax_distill_var.set(True)
-                _changed.append("identity-learn=on")
             if _changed:
                 self.update_console("[multi concept] applied: " + ", ".join(_changed)
                                     + "  (all still editable)\n")
@@ -3920,12 +3920,6 @@ class LoRATrainerGUI:
                   getattr(self, "_minimax_mc_hint", None)):
             if w is not None:
                 self._set_widget_visible(w, on)
-        # The "no reference steering" warning only makes sense in multi-concept with distill off.
-        _nd = getattr(self, "_minimax_mc_nodistill_hint", None)
-        if _nd is not None:
-            _distill = bool(getattr(self, "minimax_distill_var", None)
-                            and self.minimax_distill_var.get())
-            self._set_widget_visible(_nd, on and not _distill)
 
     def _browse_image_folder(self):
         """Folder picker for the Start tab (unified image folder).
@@ -4783,22 +4777,12 @@ class LoRATrainerGUI:
             training_content,
             text="Each folder needs its OWN trigger word, in every caption — that is the only "
                  "thing telling the two apart. Caption and prep both folders yourself first; "
-                 "this box is training-only. Ticking the mode also sets the settings that suit "
-                 "it (identity-learn on, 4 references, identity-first 2 epochs, dropout 0.10, "
-                 "adapter-relative LR off) — all still yours to change.",
+                 "this box is training-only. Ticking the mode sets caption dropout to 0.10 "
+                 "(strong) — still yours to change. See the MiniMax section of the README.",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT,
             wraplength=720)
         self._minimax_mc_hint.grid(row=51, column=0, columnspan=2, sticky=tk.W, padx=5,
                                    pady=(0, 4))
-        # Only shown when Multi Concept is on AND identity-learn is off — see the toggle handler.
-        self._minimax_mc_nodistill_hint = ttk.Label(
-            training_content,
-            text="Identity-learn is off, so the reference steering that keeps two subjects "
-                 "apart is not running — separation rests on your trigger words alone.",
-            foreground=COLORS["warning"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT,
-            wraplength=720)
-        self._minimax_mc_nodistill_hint.grid(row=52, column=0, columnspan=2, sticky=tk.W,
-                                             padx=5, pady=(0, 4))
         # These change the [[datasets]] blocks, so the TOML has to be rewritten when they move.
         # Without this the mode looks enabled and silently trains the old single-folder config.
         if hasattr(self, "_auto_save_ds"):
@@ -7928,8 +7912,7 @@ class LoRATrainerGUI:
             self._on_minimax_multiconcept_toggle()
             self._sync_distill_weight_state()
         else:
-            for w in (self._minimax_mc_dir_frame, self._minimax_mc_hint,
-                      self._minimax_mc_nodistill_hint):
+            for w in (self._minimax_mc_dir_frame, self._minimax_mc_hint):
                 self._set_widget_visible(w, False)
         # Retired MiniMax controls — never shown under any family. AdaLN can't deploy on the
         # pruned builds; depth-split LR was superseded by the limiter (9 Aug). The per-step clip

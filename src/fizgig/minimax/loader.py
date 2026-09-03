@@ -95,7 +95,7 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
                ~0.17% error in the frozen base, ~21 GB resident. Needs a pre-quantized file.
       "nf4"  — decode to bf16 then NF4 (bitsandbytes). ~9.5% error, ~11 GB resident. The only
                option for the bf16 checkpoint, and the fallback for small cards.
-      "hqq"  — decode to bf16 then HQQ 4-bit, group 16 (rintic-13, #102; needs `pip install
+      "hqq"  — decode to bf16 then HQQ 4-bit, group 8 (rintic-13, #102; needs `pip install
                hqq`). ~6.3% error — a third closer to int8 than NF4 — at ~0.75 B/param, so
                ~45% more resident than NF4. Explicit pick only; never chosen by "auto".
       "auto" — int8 when the file carries int8 ConvRot weights, else nf4. Matching the
@@ -191,7 +191,7 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
                   "storage; NF4 would be ~9.5% error at ~11 GB).", flush=True)
         elif mode == "hqq":
             print(f"[load] streaming the MiniMax H3 base and quantizing {len(hqq_targets)} "
-                  "linears to HQQ 4-bit (group 16 — ~6.3% base error vs NF4's ~9.5%, ~45% "
+                  "linears to HQQ 4-bit (group 8 — ~4.8% base error vs NF4's ~9.5%, ~45% "
                   "more resident than NF4). The proximal solver runs per weight on the GPU; "
                   "a few quiet minutes here is normal.", flush=True)
         elif quant_conf:
@@ -243,8 +243,8 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
                 mod = model.get_submodule(mod_path)
                 mod.load_dense(_read_weight(f"{mod_path}.weight").to(compute_dtype), dev)
                 if _parked(mod_path):
-                    mod.W_q, mod.scale, mod.zero = (mod.W_q.cpu(), mod.scale.cpu(),
-                                                    mod.zero.cpu())
+                    mod.W_q, mod.scale, mod.zero, mod.qmeta = (
+                        mod.W_q.cpu(), mod.scale.cpu(), mod.zero.cpu(), mod.qmeta.cpu())
 
         for name, param in model.named_parameters():
             if name not in keys:

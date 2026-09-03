@@ -7,7 +7,7 @@ Slot buffers are allocated PER SLOT and reused — the first cut keyed them by
 (block_idx, slot) and grew a fresh GPU copy of every streamed block, a leak @mabseyuk caught
 in review; the per-slot layout here is rintic-13's fix.
 
-Each module contributes three tensors (W_q, scale, zero — HQQ4bitLinear's buffers, see
+Each module contributes four tensors (W_q, scale, zero, qmeta — HQQ4bitLinear's buffers, see
 hqq4.py); binding a block to a slot rebinds those three buffers by name, so the module's
 forward reads whichever storage it is currently bound to. Selected automatically by the VRAM
 planner: enable_block_swap dispatches by module type (ConvRot → int8 ring, Linear4bit → NF4
@@ -29,7 +29,7 @@ from .hqq4 import HQQ4bitLinear
 
 logger = logging.getLogger(__name__)
 
-_NAMES = ("W_q", "scale", "zero")
+_NAMES = ("W_q", "scale", "zero", "qmeta")
 
 
 class H3HQQH2DOffloader:

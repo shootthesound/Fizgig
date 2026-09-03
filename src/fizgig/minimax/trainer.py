@@ -473,7 +473,7 @@ _RESIDENT_PRUNED_GB = 10.5
 # int8 base (base_quant=int8, the reference's own storage): the 200 block linears stay 1 byte
 # per param instead of NF4's 0.5, and the refiner/AdaLN load dense — ~19.3 + ~1.5 GB.
 _RESIDENT_INT8_GB = 21.0
-# HQQ 4-bit g16 (rintic-13, #102): 0.5 B/param of codes + two bf16 group vectors at 1/16 =
+# HQQ 4-bit g8 w/ 8-bit group vectors (rintic-13, #102): 0.5 B/param of codes + two uint8 vectors at 1/8 =
 # 0.75 B/param against NF4's ~0.52 (block-64 absmax, double-quantized) — ~45% more resident
 # for the same quantized mass. PRUNED figure MEASURED (2 Sep, 5090, pruned int8 file
 # decoded to HQQ): ~15.5 GB process right after load incl. the 0.6 GB adapter, ~22 GB
@@ -2714,8 +2714,8 @@ def train_minimax(
                     adapter_gb=_adapter)
                 _why = f"base precision pinned to {_mode} by the user"
                 if _mode == "hqq":
-                    _why += (" (HQQ: ~45% more resident than nf4 and roughly half the "
-                             "step speed — PyTorch-path dequant)")
+                    _why += (" (HQQ: ~45% more resident than nf4; NF4's speed when blocks "
+                             "stream, ~half at swap 0 — PyTorch-path dequant)")
             _base_mode = _mode
             _resident = _resident_for(_mode, _pruned)
 

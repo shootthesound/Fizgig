@@ -24131,7 +24131,10 @@ class LoRATrainerGUI:
         n = len(tweak_clip["frames"])
         reg = "Dial" if tweak_clip.get("regime") == "dial" else "Confirm"
         snd = " with sound" if tweak_clip.get("wav_path") else ""
-        src = " (exact, from cache)" if tweak_clip.get("cached") else ""
+        src = ""
+        if tweak_clip.get("cached"):
+            src = (" (sliders at default — same as the baseline)" if tweak_clip.get("sig") == "base"
+                   else " (exact, from cache)")
         canvas = ""
         if snapshot is not None:
             canvas = f" {snapshot.preview_width}×{snapshot.preview_height}"
@@ -24423,10 +24426,16 @@ class LoRATrainerGUI:
         self._repair_preview_in_flight = True
         self.repair_status_var.set(f"Loading {label} from the library…")
         self._repair_progress_marquee_on()
+        # Same priority rule as a slider move: a builder entry mid-render yields the engine
+        # (measured 3 Sep: without this a peek waited ~4 s behind the entry in flight).
+        if self._repair_cache_busy and hasattr(eng, "request_cancel"):
+            eng.request_cancel()
 
         def _work():
             try:
                 with self._repair_engine_lock:
+                    if hasattr(eng, "clear_cancel"):
+                        eng.clear_cancel()
                     base = eng.baseline_clip(st, cache=cache, **opts)
                     clip = eng.render_clip(st, cache=cache, **opts)
                 self.master.after(0, lambda: self._set_repair_preview_clips(

@@ -6,6 +6,20 @@ HQQ 4-bit now quantises in groups of 8 instead of 16, taking the frozen base fro
 
 Also corrected in the docs: HQQ's speed cost is a big-card statement. On a plan that streams blocks — the 12–24 GB tiers it exists for — the dequant hides behind the PCIe transfers and HQQ runs at NF4's speed; only on a large card with nothing streamed does it show as roughly half NF4's step speed.
 
+## Repair Studio sees motion (MiniMax H3)
+
+Repair Studio on H3 used to show one frame of a clip. Now it renders the clip — 22 frames with its sound by default, or a still, or 56 frames — and plays both sides **in the app**: click either preview and baseline and tweaked loop side by side in lockstep, with pause, frame stepping, a scrub bar, slow motion and **S** to swap sides (the left one carries the sound). The metrics strip and the Profiler cross-link still read the middle frame.
+
+**Two regimes.** Dial is the loop you turn sliders in — 4 steps with the bundled Turbo LoRA at full strength, at a smaller Dial size (⅔ of your chosen size by default, about twice as fast; ~4 s a move on a 5090). Confirm is the render you judge before saving — 6 steps at 75%, full size, the regime training previews use. **Show early** puts a rough picture up after the second pass while the remaining passes finish. Every preview is an exact render; nothing is approximated. A change to a late block skips the untouched blocks on the first pass — bit-for-bit the same result, up to a fifth faster.
+
+**The block library.** After your first Dial render, every block is rendered switched off in the background (about 3½ minutes for a 52-block LoRA; it pauses the moment you move a slider). From then on the ● beside each slider is live: hover for a thumbnail, click to see the clip with that block removed, instantly. Every render you make is kept as well, so a state you've already seen comes back in a couple of seconds, and the new **History** strip holds all of them — click to view, right-click to pin one as the baseline (compare two tweaks head to head) or save it as an MP4. Library and history live in your cache folder, survive restarts, and go with **Clear cache…**.
+
+**First / Last Frame.** Pin the clip's first and/or last frame to a photo — pick it, drag an aspect-locked box over the part you want — and every render starts (or ends) on that picture, so what you compare is the LoRA's effect rather than the shot the seed picked.
+
+Also fixed on the way: a LoRA carrying AdaLN keys (any run trained with AdaLN on, AI-Toolkit's files) failed to load in Repair Studio on H3; and the first clip decode of a session no longer costs ~10 s in the middle of the first preview.
+
+Klein and Krea 2 Repair Studio are unchanged.
+
 ## Multi Concept no longer switches identity-learn on
 
 Ticking Multi Concept now sets caption dropout to 0.10 (strong) and nothing else. It used to switch reference distillation on as well, with its references and identity-first phase; in our runs that wasn't what held two subjects apart — the trigger words do that work — and a data-layout tick quietly enabling a 21 GB-model experiment was the wrong shape. Identity-learn stays its own deliberate tick.

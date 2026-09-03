@@ -137,7 +137,7 @@ for style or scene training; while it's on, Blocks to Train is disabled with a n
 
 **0.25 MP is the default, and it holds up** — four times cheaper per step than 1 MP, and the extra resolution has not paid for itself in testing. Raise it if a specific dataset asks for it.
 
-**Previews default to 768×768, 56-frame clips with sound** — a short watchable clip with the model's generated audio, opened in the gallery as a playable video (never autoplay). Without the audio VAE set, clips render silent; stills and other lengths stay in the dropdown. Set the **Turbo LoRA** in Preferences and previews render in **6 steps instead of 20** — previews only, never the saved LoRA. A preview that outgrows VRAM steps itself down a ladder rather than dying — a shorter clip first, then resolution to a 512×512 floor — and the size that fit is saved as the new default.
+**Previews default to 768×768, 56-frame clips with sound** — a short watchable clip with the model's generated audio, opened in the gallery as a playable video (never autoplay). Without the audio VAE set, clips render silent; stills and other lengths stay in the dropdown. Set the **Turbo LoRA** in Preferences and previews render in **6 steps instead of 20** — previews only, never the saved LoRA. On a plan that streams blocks (a 24 GB card on the int8 base), clip previews clamp to **22 frames up front** — the plan leaves previews ~4 GB and a 56-frame clip measurably doesn't fit there, so the trainer says so once and renders the 22-frame clip instead of failing its way down to it. A preview that still outgrows VRAM steps itself down a ladder rather than dying — a shorter clip first, then resolution to a 512×512 floor — and the size that fit is saved as the new default.
 
 ### Video and sound: how do I…
 
@@ -733,7 +733,7 @@ Auto budgets from your *free* VRAM and the console explains its choice. If a pre
 
 ### MiniMax H3
 
-See [the Auto table in its section](#minimax-h3--third-model-family) — 16 GB and up trains on the accurate int8 base with streamed block swap; ≤12 GB falls back to 4-bit. On 16 GB-class cards, previews cap themselves at **768×640 and 22 frames** (sound kept) — larger picks in the menus simply clamp, with a console note.
+See [the Auto table in its section](#minimax-h3--third-model-family) — 16 GB and up trains on the accurate int8 base with streamed block swap; ≤12 GB falls back to 4-bit. On 16 GB-class cards, previews cap themselves at **768×640 and 22 frames** (sound kept) — larger picks in the menus simply clamp, with a console note. On 24 GB cards the int8 base streams ~11 blocks, and clip previews clamp to **22 frames** for the same reason (resolution untouched); lower Target Megapixels if you want the 56-frame preview back on that tier.
 
 **12 GB cards + previews (Windows): leave the paging file system-managed.** Each preview parks the training model and optimizer in system RAM while the decoder runs, and that commit spike is what a fixed small paging file (e.g. 4 GB) can't cover — the run dies with **Windows error 1455** ("paging file is too small"), which says nothing about previews. Settings → System → About → Advanced system settings → Performance → Advanced → Virtual memory → *Automatically manage*. Reported and confirmed on a 12 GB RTX 5070 by David Maybank.
 

@@ -2842,6 +2842,21 @@ def train_minimax(
             _total_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
         except Exception:
             _total_gb = 99.0
+        # Streamed plans (24 GB-class on the int8 base, typically 11 blocks out): the plan
+        # spends the card on the training step and leaves the preview ~4 GB, and a 56-frame
+        # 768 clip sample measurably OOMs in that (3 Sep, 24 GB sim: every arm — adapter on,
+        # off, and the previous release — OOM'd at 56 and landed at 22 after a wasted render).
+        # The ladder learned 22 the hard way once per run; learn it from the plan instead.
+        # Frames only — resolution stays where the user put it (768 is the training canvas).
+        _streams = isinstance(n_swap, int) and n_swap > 0 and not ft_rotation
+        if _streams and _total_gb >= 20.0 and int(sample_frames or 1) > 22:
+            logger.info(f"[preview] the plan streams {n_swap} blocks, which leaves clip "
+                        f"previews ~4 GB — {sample_frames} frames -> 22 up front (a 56-frame "
+                        f"768 clip OOMs at that headroom and would step down to 22 anyway). "
+                        f"Sound kept. Pick 22 frames on the Samples tab to make this the "
+                        f"setting rather than a clamp; lower Target Megapixels if you want "
+                        f"the longer preview back.")
+            sample_frames = 22
         if _total_gb < 20.0:
             _clamped = []
             if int(sample_frames or 1) > 22:

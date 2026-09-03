@@ -54,6 +54,17 @@ def _apply_lora(target, sd, multiplier, device, dtype):
     net.apply_to(text_encoders=None, unet=target, apply_text_encoder=False, apply_unet=True)
     net.load_state_dict(sd, strict=False)
     net.to(device=device, dtype=dtype).eval()
+    # The pruned base keeps its AdaLN projections in fp32 (ComfyUI's curve-checkpoint dtype)
+    # and Repair Studio never asks the loader to drop that. A LoRA that carries AdaLN keys
+    # (any run trained with AdaLN on; AI-Toolkit's 516-key files) then feeds an fp32
+    # activation to a bf16 adapter and dies in F.linear. Match each module to the Linear it
+    # wraps — the trainer sidesteps this by loading bf16 AdaLN when AdaLN is a target, which
+    # a workbench that loads the base once and many LoRAs after cannot do.
+    for m in getattr(net, "unet_loras", []):
+        org = getattr(getattr(m, "org_forward", None), "__self__", None)
+        w = getattr(org, "weight", None)
+        if w is not None and w.dtype == torch.float32:
+            m.to(torch.float32)
     return net
 
 
@@ -81,6 +92,12 @@ class H3RepairEngine:
         self._turbo_net = None
         self._turbo_adaln = []
         self._steps = 20               # 6 when the Turbo LoRA loads
+        self._turbo_strength = 0.75    # the strength the Turbo was loaded at (Confirm regime)
+        # Lazily-loaded, CPU-parked between uses: the audio VAE decoder (previews with
+        # sound) and the video VAE ENCODER (first/last-frame keyframes). Both optional.
+        self._audio_vae_path = None
+        self.audio_decoder = None
+        self.encoder = None
 
         # Encoded-prompt caches. The TE is Qwen3-VL-32B and takes ~2 minutes to load, so
         # prompts are cached at TWO levels: in-memory for the session, and on DISK keyed by
@@ -106,7 +123,7 @@ class H3RepairEngine:
     def ensure_pipeline(self, dit_path: str, vae_path: str, text_encoder_path: str,
                         device: str = "cuda", turbo_lora_path: str = "",
                         turbo_lora_strength: float = 0.75, te_cache_dir: str = "",
-                        **_ignored) -> None:
+                        audio_vae_path: str = "", **_ignored) -> None:
         """Load the DiT (base precision auto-planned from free VRAM) + the Turbo LoRA once.
         The video VAE decoder loads lazily at first decode; the TE loads only on a prompt-cache
         miss (and is freed straight after)."""
@@ -116,6 +133,7 @@ class H3RepairEngine:
         self.device = device
         self.te_path = text_encoder_path
         self._vae_path = vae_path
+        self._audio_vae_path = audio_vae_path or None
         self._te_cache_dir = te_cache_dir or None
 
         try:
@@ -141,6 +159,7 @@ class H3RepairEngine:
                     _m.enabled = True
                 n_ad = turbo_adaln_patch(self.dit, self._turbo_adaln, device, self.dtype)
                 self._steps = 6
+                self._turbo_strength = float(turbo_lora_strength)
                 logger.info("[h3-workbench] Turbo LoRA on for all previews — 6 steps at %g"
                             + (", %d adaln injected" % n_ad if n_ad else ""),
                             float(turbo_lora_strength))
@@ -165,6 +184,66 @@ class H3RepairEngine:
         # ComfyUI on purpose (see the trainer's decode-phase comment for the full story).
         self.decoder = dec.to(torch.float16).eval()
         return self.decoder
+
+    def _ensure_audio_decoder(self):
+        """The audio VAE's decoder half (~0.45 GB), or None when no audio VAE is configured."""
+        if self.audio_decoder is not None:
+            return self.audio_decoder
+        if not self._audio_vae_path or not os.path.exists(self._audio_vae_path):
+            return None
+        from fizgig.minimax.audio_vae import load_minimax_h3_audio_vae_decoder
+        self.audio_decoder = load_minimax_h3_audio_vae_decoder(
+            self._audio_vae_path, device="cpu", dtype=torch.float32).eval()
+        return self.audio_decoder
+
+    def _ensure_encoder(self):
+        """The video VAE ENCODER (first/last-frame keyframes). fp32 like the caching script;
+        parked on CPU between uses."""
+        if self.encoder is not None:
+            return self.encoder
+        from safetensors import safe_open
+        from fizgig.minimax.vae import MiniMaxH3VideoVAEEncoder
+        enc = MiniMaxH3VideoVAEEncoder()
+        with safe_open(self._vae_path, framework="pt", device="cpu") as f:
+            enc.load_state_dict({k: f.get_tensor(k) for k in f.keys()}, strict=False)
+        self.encoder = enc.to(torch.float32).eval()
+        return self.encoder
+
+    def set_turbo_strength(self, strength: float) -> None:
+        """Re-dial the Turbo LoRA's multiplier live (Dial regime = 4 steps @ 1.0, Confirm =
+        6 steps @ 0.75). The AdaLN injection rows were folded at load strength; on a pruned
+        base they are re-collected via turbo_adaln_patch only at load, so a strength change
+        scales the LoRA modules and leaves the injected AdaLN rows at load strength — a
+        second-order effect on a preview (Peter accepted the two-regime split)."""
+        if self._turbo_net is None:
+            return
+        for _m in self._turbo_net.unet_loras:
+            _m.multiplier = float(strength)
+        self._turbo_strength = float(strength)
+
+    # ----- keyframes ---------------------------------------------------------
+    @torch.no_grad()
+    def encode_keyframe(self, image: Image.Image, width: int, height: int):
+        """A PIL image -> keyframe latent [1, 24, 1, H/16, W/16] at the clip's OWN canvas.
+
+        The caller crops (aspect-locked box); this only resizes to the exact canvas so the
+        latent grid matches the target's — the DiT refuses anything else. Encoder to GPU for
+        the call, parked back to CPU after (it is only ever used at conditioning time)."""
+        w, h = int(width), int(height)
+        w, h = (w // 32) * 32, (h // 32) * 32          # even latent grid, like the sampler
+        img = image.convert("RGB")
+        if img.size != (w, h):
+            img = img.resize((w, h), Image.LANCZOS)
+        import numpy as np
+        arr = torch.from_numpy(np.asarray(img).copy()).float().permute(2, 0, 1) / 127.5 - 1.0
+        enc = self._ensure_encoder().to(self.device)
+        try:
+            z = enc.encode(arr.unsqueeze(0).to(self.device))     # [1, 24, 1, h, w]
+        finally:
+            self.encoder = enc.to("cpu")
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        return z.float().cpu()
 
     def load_primary(self, path: str) -> None:
         if self.pipeline is None or not self.pipeline.is_loaded:
@@ -375,7 +454,7 @@ class H3RepairEngine:
                     width=width, height=height, steps=steps, cfg_scale=1.0,
                     seed=int(seed), device=self.device, dtype=self.dtype,
                     num_frames=frames, on_slow_step=_abort_check, slow_step_s=0.0,
-                    block_cache=block_cache)
+                    block_cache=block_cache, keyframes=getattr(state, "keyframes", None))
 
         if ctx is not None:
             try:
@@ -401,6 +480,88 @@ class H3RepairEngine:
                 torch.cuda.empty_cache()
         arr = (px.permute(1, 2, 0).clamp(0, 1) * 255).byte().cpu().numpy()
         return Image.fromarray(arr)
+
+    # ----- clip primitives (Repair Studio video mode / effect lattice) --------
+    def render_latent(self, state, *, seed: Optional[int] = None,
+                      prompt: Optional[str] = None, width: Optional[int] = None,
+                      height: Optional[int] = None, frames: Optional[int] = None,
+                      steps: Optional[int] = None, turbo_strength: Optional[float] = None,
+                      keyframes=None):
+        """Apply the slider state and sample ONE clip: returns (latent [1,24,T,H/16,W/16] on
+        CPU fp32, audio_rows [2*A, 32] on CPU fp32 or None). No decode — the caller decides
+        (decode_clip_frames / decode_audio, or store it in the lattice).
+
+        keyframes: [(pixel_frame_index, latent)] from encode_keyframe at THIS width/height;
+        defaults to state.keyframes when the state carries them. turbo_strength re-dials the
+        Turbo modules for this render (Dial 1.0 / Confirm 0.75) and restores nothing — the
+        caller owns the regime; see set_turbo_strength."""
+        from fizgig.minimax import sampling
+        self.apply_state(state)
+        prompt = prompt if prompt is not None else state.prompt
+        seed = seed if seed is not None else state.seed
+        width = width or state.preview_width
+        height = height or state.preview_height
+        steps = steps or self._steps
+        frames = int(frames or getattr(state, "preview_frames", 0) or H3_PREVIEW_FRAMES)
+        if keyframes is None:
+            keyframes = getattr(state, "keyframes", None)
+        if turbo_strength is not None:
+            self.set_turbo_strength(turbo_strength)
+        emb = self._encode_prompt(prompt)
+
+        def _abort_check(_seconds, _step, _total):
+            cb = self.on_step
+            if cb is not None:
+                try:
+                    cb(_step, _total)
+                except Exception:
+                    pass
+            return True if self._cancel_event.is_set() else None
+
+        with torch.no_grad():
+            lat, audio = sampling.sample_image(
+                self.dit, emb.to(self.device, self.dtype),
+                width=width, height=height, steps=steps, cfg_scale=1.0,
+                seed=int(seed), device=self.device, dtype=self.dtype,
+                num_frames=frames, on_slow_step=_abort_check, slow_step_s=0.0,
+                return_audio=True, keyframes=keyframes)
+        lat = lat.detach().float().cpu()
+        audio = audio.detach().float().cpu() if audio is not None else None
+        return lat, audio
+
+    @torch.no_grad()
+    def decode_clip_frames(self, latent) -> "list[Image.Image]":
+        """A clip latent -> PIL frames (all of them). At 22 frames the whole clip is one
+        decoder chunk, so this costs what the middle-frame decode already did."""
+        dec = self._ensure_decoder().to(self.device)
+        try:
+            px = dec.decode_clip(latent.to(self.device).float())[0]   # [3, F, H, W] in [0, 1]
+            px = (px.permute(1, 2, 3, 0).clamp(0, 1) * 255).byte().cpu().numpy()
+        finally:
+            self.decoder = dec.to("cpu")
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        return [Image.fromarray(px[i]) for i in range(px.shape[0])]
+
+    @torch.no_grad()
+    def decode_audio(self, audio_rows):
+        """[2*A, 32] denoised audio rows -> stereo waveform [2, L] float in [-1, 1] on CPU,
+        or None when no audio VAE is configured (previews then play silent)."""
+        if audio_rows is None:
+            return None
+        dec = self._ensure_audio_decoder()
+        if dec is None:
+            return None
+        from fizgig.minimax.audio_vae import unpack_audio
+        dec = dec.to(self.device)
+        try:
+            z = unpack_audio(audio_rows.to(self.device).float())   # [1, 32, 2, A]
+            wav = dec.decode(z)[0].float().clamp(-1, 1).cpu()      # [2, L]
+        finally:
+            self.audio_decoder = dec.to("cpu")
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        return wav
 
     def generate_baseline(self, state) -> Image.Image:
         """Baseline = primary at default 1.0 / all enabled, donor off. Cached on
@@ -516,8 +677,12 @@ class H3RepairEngine:
         from fizgig.utils.device import release_module_tensors
         release_module_tensors(self.dit)
         release_module_tensors(self.decoder)
+        release_module_tensors(self.audio_decoder)
+        release_module_tensors(self.encoder)
         self.dit = None
         self.decoder = None
+        self.audio_decoder = None
+        self.encoder = None
         self.pipeline = None
         self.primary_path = None
         self.donor_path = None

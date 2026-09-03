@@ -196,10 +196,17 @@ def ref_row_count(refs) -> int:
 
 
 def image_position_ids(text_len, latent_h, latent_w, num_audio_latents: int = 0,
-                       refs=None, latent_t: int = 1) -> torch.Tensor:
-    """3-axis (t, h, w) position ids for a [text | refs | audio | video] sequence.
+                       refs=None, latent_t: int = 1, keyframes=None) -> torch.Tensor:
+    """3-axis (t, h, w) position ids for a [text | keyframes | refs | audio | video] sequence.
 
     Text rows: t = 0..text_len-1, h=w=0 — so prompt length shifts the whole media clock.
+    Keyframe rows (fl2va first/last-frame conditioning, `keyframes=[frame_index, ...]`): one
+    condition frame each on the TARGET's own grid, pinned to the moment it conditions —
+    t = target_origin + FRAME_RESCALE * frame_index, where target_origin is the cursor AFTER
+    the references (the reference packs keyframe cond rows before the refs but anchors them
+    on the target timeline: comfy/ldm/minimax/model.py::PackedLayout, cond_t). frame 0 is
+    the clip's first pixel frame; sum(_video_t_spans(latent_t)) == FRAME_RESCALE * frames,
+    so index frames-1 lands on the last pixel frame exactly.
     Reference rows (r2v): each reference image contributes its OWN area-normalized frame grid at
     t = cursor, and advances the cursor by 1.0. Ordered right after the text, matching the
     reference's segment order [text | cond | refs | target audio | target video]
@@ -225,13 +232,22 @@ def image_position_ids(text_len, latent_h, latent_w, num_audio_latents: int = 0,
 
     rows = [text]
     cursor = float(text_len)
+    ref_rows = []
     for rh, rw in (refs or ()):
         r_frame = _frame_grid(rh, rw)
         g = torch.empty(r_frame.shape[0], 3, dtype=torch.float64)
         g[:, 0] = cursor
         g[:, 1:] = r_frame
-        rows.append(g)
+        ref_rows.append(g)
         cursor += 1.0
+    # Keyframe cond rows sit BETWEEN text and refs in the sequence, but their clock is the
+    # target's (post-ref cursor) — build them once the cursor is final, insert them first.
+    for idx in (keyframes or ()):
+        g = torch.empty(frame_rows, 3, dtype=torch.float64)
+        g[:, 0] = cursor + FRAME_RESCALE * float(idx)
+        g[:, 1:] = frame
+        rows.append(g)
+    rows.extend(ref_rows)
 
     if num_audio_latents:
         w_axis = _axis_from_sqrt_area(latent_w, 2, math.sqrt(latent_h * latent_w))
@@ -655,8 +671,16 @@ class MiniMaxH3DiT(nn.Module):
                 text_embeds: torch.Tensor, audio_noise: torch.Tensor = None, *,
                 audio_rows: torch.Tensor = None, return_audio: bool = False,
                 ref_latents=None, text_token_tags: torch.Tensor = None, seed: int = 0,
-                visual_cond_noise_aug: float = VISUAL_COND_TIMESTEP):
+                visual_cond_noise_aug: float = VISUAL_COND_TIMESTEP, keyframes=None):
         """
+        keyframes    : optional list of (frame_index, latent [1, C, 1, h, w]) — fl2va first /
+                       last-frame conditioning. Each is packed as a condition frame on the
+                       TARGET grid right after the text (before any refs), noise-augmented at
+                       VISUAL_COND_TIMESTEP with a role-pinned seed (H3Studio's convention:
+                       last frame 0, first frame 1, others 100+index — so the two never share
+                       a noise field), tagged video, pinned near clean, never denoised, and
+                       placed on the target clock at origin + FRAME_RESCALE * frame_index.
+                       Full strength only (no blend dial) — Repair Studio's contract.
         video_latent : [1, C=latents_dim, T, H, W] — a still (T=1, the keyframe layout) or a
                        clip (T on the 5n+2 latent grid; position ids and audio rows follow).
         t            : scalar or [1] flow time in [0, 1] (the value fed to the time embedder;
@@ -721,6 +745,32 @@ class MiniMaxH3DiT(nn.Module):
             ref_embed = self.video_patch_proj(
                 torch.cat(_rows, dim=0).to(self.video_patch_proj.weight.dtype)).to(dtype)
 
+        # fl2va keyframe condition rows: the same row machinery as a reference, on the
+        # target's own grid, with a role-pinned noise seed per frame (see the docstring).
+        kf_indices, kf_embed = [], None
+        if keyframes:
+            _pixel_frames = pixel_frames_for_latent(latent_t)
+            _rows = []
+            for idx, z in keyframes:
+                idx = int(idx)
+                if z.shape[-2] != lat_h or z.shape[-1] != lat_w:
+                    raise ValueError(f"keyframe latent is {tuple(z.shape[-2:])} but the target "
+                                     f"grid is {(lat_h, lat_w)} — keyframes must be encoded at "
+                                     f"the clip's own size")
+                if not (0 <= idx < _pixel_frames):
+                    raise ValueError(f"keyframe index {idx} is outside the clip's "
+                                     f"{_pixel_frames} pixel frames")
+                r = patchify_video(z.to(device=device, dtype=torch.float32), self.patch_size)
+                if visual_cond_noise_aug < 1.0:
+                    _role = 1 if idx == 0 else (0 if idx == _pixel_frames - 1 else 100 + idx)
+                    gen = torch.Generator("cpu").manual_seed(_role)
+                    noise = torch.randn(r.shape, generator=gen, dtype=torch.float32).to(device)
+                    r = visual_cond_noise_aug * r + (1.0 - visual_cond_noise_aug) * noise
+                _rows.append(r)
+                kf_indices.append(idx)
+            kf_embed = self.video_patch_proj(
+                torch.cat(_rows, dim=0).to(self.video_patch_proj.weight.dtype)).to(dtype)
+
         # audio: silence (x0 = 0) noised on the audio schedule at the same schedule position as
         # the video rows. Present because the base model has never seen a pack without it.
         t_val = t.reshape(-1)[:1].to(torch.float32) if torch.is_tensor(t) else torch.tensor([float(t)], device=device)
@@ -757,17 +807,20 @@ class MiniMaxH3DiT(nn.Module):
             audio_embed = self.audio_patch_proj(
                 _arows.to(self.audio_patch_proj.weight.dtype)).to(dtype)
 
-        # pack [text | refs | audio | video] — the reference's segment order
+        # pack [text | keyframes | refs | audio | video] — the reference's segment order
         parts = ([text_states.to(dtype)]
+                 + ([kf_embed] if kf_embed is not None else [])
                  + ([ref_embed] if ref_embed is not None else [])
                  + ([audio_embed] if audio_embed is not None else [])
                  + [video_embed])
         h = torch.cat(parts, dim=0)
         seq_len = h.shape[0]
         n_video = video_embed.shape[0]
+        n_kf = 0 if kf_embed is None else kf_embed.shape[0]
         n_ref = 0 if ref_embed is None else ref_embed.shape[0]
+        n_cond = n_kf + n_ref                        # every condition row: keyframes then refs
         n_audio = 0 if audio_embed is None else audio_embed.shape[0]
-        audio_start = text_len + n_ref
+        audio_start = text_len + n_cond
         video_start = audio_start + n_audio
 
         # One modulation row-set per DISTINCT timestep (video/text at t, audio at t_audio),
@@ -776,7 +829,7 @@ class MiniMaxH3DiT(nn.Module):
         # Condition rows sit at max(t, aug) — near clean whatever the sampler is doing, so on a
         # late step they can share the video timestep and on an early one they need their own.
         t_parts = [t_val] + ([t_audio] if audio_embed is not None else [])
-        if n_ref:
+        if n_cond:
             t_parts.append(torch.maximum(t_val, torch.tensor([visual_cond_noise_aug],
                                                              device=device, dtype=torch.float32)))
         t_all = torch.cat(t_parts) if len(t_parts) > 1 else t_val
@@ -795,7 +848,7 @@ class MiniMaxH3DiT(nn.Module):
                 raise ValueError(f"text_token_tags has {_tt.numel()} rows for {text_len} text rows")
             tags[:text_len] = _tt                    # vision-block rows carry VIDEO_TAG
         row_t_index = torch.full((seq_len,), int(inverse[0]), dtype=torch.long, device=device)
-        if n_ref:                                    # ref rows: video tag (already), cond timestep
+        if n_cond:                                   # cond rows: video tag (already), cond timestep
             row_t_index[text_len:audio_start] = int(inverse[-1])
         if audio_embed is not None:
             tags[audio_start:video_start] = AUDIO_TAG
@@ -805,7 +858,8 @@ class MiniMaxH3DiT(nn.Module):
 
         # rope
         pos = image_position_ids(text_len, lat_h, lat_w, n_audio_latents,
-                                 refs=ref_shapes or None, latent_t=latent_t).to(device)
+                                 refs=ref_shapes or None, latent_t=latent_t,
+                                 keyframes=kf_indices or None).to(device)
         cos, sin = rope_cos_sin(pos, self.rope.inv_freq.to(device))
         cos, sin = cos.to(dtype), sin.to(dtype)
 
@@ -846,7 +900,7 @@ class MiniMaxH3DiT(nn.Module):
                        text_embeds: torch.Tensor, audio_rows: torch.Tensor = None,
                        return_audio: bool = False, *,
                        resume_from=None, cached=None, new_cache=None,
-                       cache_device: str = "cpu"):
+                       cache_device: str = "cpu", keyframes=None):
         """Inference forward with per-block activation caching (Repair Studio Turbo Preview).
 
         `resume_from` = the earliest changed main-block index (or None for a full pass). When
@@ -861,6 +915,11 @@ class MiniMaxH3DiT(nn.Module):
         doesn't use them), and a live H2D offloader disables resume (its ring assumes a walk
         from _swap_from) — the pass silently runs in full instead.
         """
+        if keyframes:
+            # The cache entries key on a fixed sequence layout; a keyframe changes it, and
+            # the resume is off on H3 anyway (measured misleading). Say so, don't guess.
+            raise ValueError("forward_cached does not support keyframe conditioning — "
+                             "use forward()")
         if video_latent.shape[0] != 1:
             raise ValueError("MiniMax H3 inference is batch size 1")
         device = video_latent.device

@@ -56,6 +56,12 @@ class SliderState:
     ref_image_path: str = ""
     ref_megapixels: float = 1.0
     ref_strength: float = 1.0
+    # MiniMax H3 video mode (Repair Studio, 3 Sep 2026). preview_frames: pixel frames on the
+    # 17n+5 grid (1 = still); 0 = the engine's default. keyframes: [(frame_index, latent)]
+    # built by H3RepairEngine.encode_keyframe — TENSORS, so deliberately NOT serialised
+    # (presets never carry a conditioning image); copied by reference.
+    preview_frames: int = 0
+    keyframes: Any = None
 
     @classmethod
     def default_klein9b(cls) -> "SliderState":
@@ -117,6 +123,7 @@ class SliderState:
             preview_width=self.preview_width, preview_height=self.preview_height,
             ref_image_path=self.ref_image_path, ref_megapixels=self.ref_megapixels,
             ref_strength=self.ref_strength,
+            preview_frames=self.preview_frames, keyframes=self.keyframes,
         )
 
     def mutate(self, active_blocks: set, num_mutations: int = 3,

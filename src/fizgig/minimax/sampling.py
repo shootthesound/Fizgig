@@ -164,7 +164,7 @@ def sample_image(model, text_embeds, *, width=512, height=512, steps=8, cfg_scal
                  sampler="res_multistep", schedule_mode="comfy",
                  ref_latents=None, text_token_tags=None, num_frames: int = 1,
                  on_slow_step=None, slow_step_s: float = 120.0, return_audio=False,
-                 block_cache: "BlockCacheContext | None" = None):
+                 block_cache: "BlockCacheContext | None" = None, keyframes=None):
     """Denoise one image OR clip and return its LATENT [1, 24, T, H/16, W/16].
 
     num_frames is PIXEL frames on the model's 17n+5 grid (5, 22, ..., 124, 141); off-grid
@@ -188,6 +188,11 @@ def sample_image(model, text_embeds, *, width=512, height=512, steps=8, cfg_scal
     as condition rows in every evaluation, and the tags mark which conditioning rows are the
     `<Picture i>` vision blocks. Both are passed straight through to the DiT, unchanged across
     steps — the references are conditioning, not something being denoised.
+
+    keyframes = [(pixel_frame_index, latent [1, 24, 1, H/16, W/16]), ...] is fl2va first /
+    last-frame conditioning (Repair Studio): the same "ride along every step, never denoised"
+    contract as refs, anchored on the clip's own timeline. Latents must be encoded at this
+    call's width/height (the DiT checks). Index 0 = first frame, num_frames-1 = last.
 
     on_slow_step(seconds, step, total) fires ONCE if any step exceeds slow_step_s. It exists
     because the interesting failure here is not an exception: when a preview oversubscribes
@@ -223,11 +228,21 @@ def sample_image(model, text_embeds, *, width=512, height=512, steps=8, cfg_scal
         _ref_kw["seed"] = int(seed)
     if text_token_tags is not None:
         _ref_kw["text_token_tags"] = text_token_tags
+    if keyframes:
+        # Indices are against the SNAPPED clip length; a last-frame anchor asked for at the
+        # requested length must land on the last pixel frame the model actually renders.
+        _kf = []
+        for _idx, _z in keyframes:
+            _idx = int(_idx)
+            if _idx >= pixel_frames:
+                _idx = pixel_frames - 1
+            _kf.append((_idx, _z.to(device=device, dtype=torch.float32)))
+        _ref_kw["keyframes"] = _kf
     # the uncond prompt has its own length, so it must NOT carry the cond prompt's tags
     _ref_uncond_kw = {k: v for k, v in _ref_kw.items() if k != "text_token_tags"}
     use_cfg = cfg_scale > 1.0 and uncond_embeds is not None
     _use_block_cache = (block_cache is not None and not use_cfg and not ref_latents
-                        and hasattr(model, "forward_cached"))
+                        and not keyframes and hasattr(model, "forward_cached"))
     sigmas = sample_schedule(steps, shift=shift, mode=schedule_mode)
     n_eval = len(sigmas) - 1                            # the terminal 0 is not an evaluation
     prev_denoised = None                                # res_multistep's one-step memory

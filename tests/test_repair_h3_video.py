@@ -353,6 +353,7 @@ try:
     CacheEngine.render_clip = _H3E.render_clip
     CacheEngine.baseline_clip = _H3E.baseline_clip
     CacheEngine.describe_state = staticmethod(_H3E.describe_state)
+    CacheEngine.clip_from_cache = _H3E.clip_from_cache
 
     fam("minimax")
     app.repair_engine = CacheEngine()
@@ -466,6 +467,103 @@ try:
     from fizgig.repair_studio.h3_render_cache import RenderCache
     again = RenderCache(cache_root, cache.key, sorted(ACTIVE))
     ck("restart: the dial library reloads complete from disk", again.complete())
+    # --- 7. first/last frame card + crop dialog + history strip ---------------------------
+    ck("keyframe card managed under H3", bool(app._repair_kf_container.winfo_manager()))
+    photo = os.path.join(cache_root, "photo.png")
+    Image.new("RGB", (1000, 500), "purple").save(photo)      # 2:1 photo, clip is 768x640 (1.2:1)
+    # the crop dialog is modal: press Return on it once it's up -> the default box
+    def _accept():
+        for w in app.master.winfo_children():
+            if isinstance(w, tk.Toplevel) and hasattr(w, "_crop_ok"):
+                w._crop_ok()
+                return
+        root.after(100, _accept)
+    root.after(300, _accept)
+    rect = app._repair_kf_crop_dialog(photo)
+    ck("crop dialog default box: largest centred box of the clip's aspect",
+       rect is not None and rect[3] - rect[1] == 500 and abs((rect[2] - rect[0]) - 600) <= 2
+       and abs(rect[0] - 200) <= 2, rect)
+    # a pre-set crop (re-crop) comes back as given
+    root.after(300, _accept)
+    rect2 = app._repair_kf_crop_dialog(photo, initial=(100, 50, 400, 300))
+    ck("re-crop starts from the stored rect", rect2 == (100, 50, 400, 300), rect2)
+    # set the first frame directly (browse = dialog + this)
+    app._repair_h3_kf["first"] = {"path": photo, "rect": rect}
+    app._repair_kf_refresh_thumbs()
+    ck("thumb + info shown for the slot",
+       app._repair_h3_kf_widgets["first"]["thumb"].image is not None
+       and "photo.png" in app._repair_h3_kf_widgets["first"]["info"].cget("text"))
+    encodes = []
+    class KFEngine(CacheEngine):
+        def encode_keyframe(self, img, w, h):
+            encodes.append((img.size, w, h))
+            return torch.full((1, 24, 1, h // 16, w // 16), 0.5)
+    KFEngine.keyframe_signature = staticmethod(_H3E.keyframe_signature)
+    KFEngine.clip_from_cache = _H3E.clip_from_cache
+    KFEngine.cache_key_for = _H3E.cache_key_for
+    KFEngine.primary_network = object()
+    app.repair_engine = KFEngine()
+    kf = app._repair_h3_prepare_keyframes(512, 416, 22)
+    ck("keyframes: the first photo, cropped, encoded at the render canvas, index 0",
+       kf is not None and len(kf) == 1 and kf[0][0] == 0 and encodes[-1] == ((600, 500), 512, 416),
+       encodes)
+    kf_b = app._repair_h3_prepare_keyframes(512, 416, 22)
+    ck("second call is a cache hit (no re-encode)", len(encodes) == 1 and kf_b[0][1] is kf[0][1])
+    app._repair_h3_kf["last"] = {"path": photo, "rect": rect}
+    kf2 = app._repair_h3_prepare_keyframes(768, 640, 22)
+    ck("last frame -> index frames-1, encoded at the Confirm canvas",
+       [i for i, _ in kf2] == [0, 21] and encodes[-1] == ((600, 500), 768, 640))
+    ck("a still takes the first photo only",
+       [i for i, _ in app._repair_h3_prepare_keyframes(512, 416, 1)] == [0])
+    st_kf = app.repair_state.copy(); st_kf.preview_width, st_kf.preview_height = 512, 416
+    st_kf.keyframes = kf
+    st_no = st_kf.copy(); st_no.keyframes = None
+    ck("keyframes change the render-cache setup key",
+       app.repair_engine.cache_key_for(st_kf, frames=22, regime="dial")
+       != app.repair_engine.cache_key_for(st_no, frames=22, regime="dial"))
+    app._repair_kf_clear("first"); app._repair_kf_clear("last")
+    ck("clear empties the slots", app._repair_h3_prepare_keyframes(512, 416, 22) is None)
+    if app._repair_preview_after_id is not None:
+        root.after_cancel(app._repair_preview_after_id); app._repair_preview_after_id = None
+    # history strip: one thumb per cached entry of the current setup
+    app.repair_engine = CacheEngine()
+    app._repair_cache = cache
+    app._repair_history_shown = ()
+    app._repair_history_refresh()
+    root.update()
+    cells = app._repair_history_inner.winfo_children()
+    ck("history strip shows every cached render", len(cells) == cache.n_entries(), len(cells))
+    # view an entry -> tweaked pane shows it as a peek with its label
+    sig = "off:h3blk_21"
+    app._repair_preview_in_flight = False
+    app._repair_history_view(sig)
+    wait_for(lambda: not app._repair_preview_in_flight and app._repair_peek is not None, 6.0)
+    ck("history view shows the entry (sliders untouched)",
+       app._repair_peek == "Block 21 off" and app._repair_clips["tweaked"].get("sig") == sig,
+       app._repair_peek)
+    # pin it as the baseline: the next render's baseline pane is that entry (same setup)
+    app.repair_h3_regime_var.set("dial")
+    app._repair_history_pin(sig)
+    ck("pin marks the strip + the baseline title",
+       app._repair_pinned_sig == sig and "Pinned" in app._repair_baseline_title.cget("text"))
+    wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
+             and app._repair_clips["baseline"].get("pinned") is True, 6.0)
+    ck("baseline pane is the pinned entry after the re-render",
+       app._repair_clips["baseline"].get("sig") == sig)
+    # a setup change (Confirm regime) drops the pin instead of leaving the title lying
+    app._repair_history_pin(sig, rerender=False)
+    app.repair_h3_regime_var.set("confirm"); app._on_repair_h3_clip_changed()
+    wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
+             and app._repair_pinned_sig is None and "Pinned" not in app._repair_baseline_title.cget("text"), 6.0)
+    ck("a setup change drops the pin and its title",
+       app._repair_pinned_sig is None and "Pinned" not in app._repair_baseline_title.cget("text")
+       and not app._repair_clips["baseline"].get("pinned"))
+    app.repair_h3_regime_var.set("dial")
+    fam("klein")
+    ck("Klein: keyframe card + history strip hidden",
+       not app._repair_kf_container.winfo_manager() and not app._repair_history_row.winfo_manager())
+    fam("minimax")
+    app.repair_engine = CacheEngine(); app._repair_cache = cache
     app.repair_h3_regime_var.set("dial")
     app._reset_repair_session()
     ck("reset drops the cache and the title", app._repair_cache is None

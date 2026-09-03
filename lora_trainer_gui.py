@@ -19273,6 +19273,17 @@ class LoRATrainerGUI:
                                              highlightthickness=1, bd=0)
         # Deliberately not packed yet — shown only when a match is found.
 
+        # Card 1b (MiniMax H3 only): first / last frame conditioning. Hidden for the other
+        # families by _apply_repair_family_ui.
+        kf_card = self._start_section_card(
+            outer, "First / Last Frame",
+            "Pin the clip's first and/or last frame to a photo (H3's fl2va conditioning) so the "
+            "shot you judge is predictable. Pick a photo, crop it to the clip's shape, done. "
+            "Applies to every render — sliders, library and Confirm alike.",
+        )
+        self._build_repair_keyframe_card(kf_card)
+        self._repair_kf_container = kf_card.master.master
+
         # Card 2: Preview
         preview_card = self._start_section_card(
             outer, "Preview",
@@ -19412,7 +19423,13 @@ class LoRATrainerGUI:
                     text="▶ Click either image to play both clips side by side — sound, "
                          "swap, scrub — with likeness + quality metrics on the middle frame")
                 self._repair_cache_row.grid()
+                self._repair_history_row.grid()
+                if not self._repair_kf_container.winfo_manager():
+                    self._repair_kf_container.pack(fill=tk.X, padx=36, pady=(0, 16),
+                                                   before=self._repair_profile_anchor)
             else:
+                self._repair_history_row.grid_remove()
+                self._repair_kf_container.pack_forget()
                 self._repair_cmp_btn.configure(text="⧉ Compare + Metrics")
                 self._repair_preview_hint.configure(
                     text="🔍 Click either image for the full-size side-by-side compare with "
@@ -19892,8 +19909,9 @@ class LoRATrainerGUI:
     def _build_repair_preview_panel(self, parent):
         parent.columnconfigure(0, weight=1)
         parent.columnconfigure(1, weight=1)
-        ttk.Label(parent, text="Baseline (LoRA at default 1.0)",
-                  font=(FONT_FAMILY, 9, "bold")).grid(row=0, column=0, padx=4, pady=(2, 0))
+        self._repair_baseline_title = ttk.Label(parent, text="Baseline (LoRA at default 1.0)",
+                                                font=(FONT_FAMILY, 9, "bold"))
+        self._repair_baseline_title.grid(row=0, column=0, padx=4, pady=(2, 0))
         self._repair_tweaked_title = ttk.Label(parent, text="Tweaked (current sliders)",
                                                font=(FONT_FAMILY, 9, "bold"))
         self._repair_tweaked_title.grid(row=0, column=1, padx=4, pady=(2, 0))
@@ -19978,6 +19996,27 @@ class LoRATrainerGUI:
         _clr.pack(side=tk.LEFT)
         ToolTip(_clr, "Delete every cached render (all LoRAs / prompts / seeds). The library "
                       "rebuilds on demand; nothing else is touched.")
+        # History strip (minimax only): every cached render of the current setup as a thumb.
+        hist_row = tk.Frame(parent, bg=COLORS["bg_surface"])
+        hist_row.grid(row=4, column=0, columnspan=2, sticky=tk.EW, pady=(0, 4))
+        hist_row.grid_remove()
+        self._repair_history_row = hist_row
+        tk.Label(hist_row, text="History — click to view, right-click to save or pin as baseline",
+                 font=(FONT_FAMILY, 9), fg=COLORS["text_secondary"], bg=COLORS["bg_surface"],
+                 anchor=tk.W).pack(fill=tk.X, padx=4)
+        hist_canvas = tk.Canvas(hist_row, height=124, bg=COLORS["bg_surface"], highlightthickness=0)
+        hist_scroll = ttk.Scrollbar(hist_row, orient="horizontal", command=hist_canvas.xview)
+        hist_canvas.configure(xscrollcommand=hist_scroll.set)
+        hist_canvas.pack(fill=tk.X, padx=4)
+        hist_scroll.pack(fill=tk.X, padx=4)
+        hist_inner = tk.Frame(hist_canvas, bg=COLORS["bg_surface"])
+        hist_canvas.create_window((0, 0), window=hist_inner, anchor="nw")
+        hist_inner.bind("<Configure>", lambda e: hist_canvas.configure(scrollregion=hist_canvas.bbox("all")))
+        self._repair_history_canvas = hist_canvas
+        self._repair_history_inner = hist_inner
+        self._repair_history_thumbs = {}       # sig -> PhotoImage (keep refs)
+        self._repair_history_shown = ()        # the sig tuple currently laid out
+        self._repair_pinned_sig = None         # "Pin as baseline": a cached render's sig
         # Metrics strip state: reference photo for likeness scoring (remembered via the
         # workbench table), chip labels, and a generation counter so a slow ArcFace pass
         # can never paint a stale result over a newer render's numbers.
@@ -24015,10 +24054,19 @@ class LoRATrainerGUI:
                 with self._repair_engine_lock:
                     if hasattr(self.repair_engine, "clear_cancel"):
                         self.repair_engine.clear_cancel()
+                    # First / last frame photos -> latents at THIS canvas (cached encodes).
+                    snapshot.keyframes = self._repair_h3_prepare_keyframes(
+                        snapshot.preview_width, snapshot.preview_height, h3_opts["frames"])
                     cache = self._repair_cache_for(snapshot, h3_opts)
                     print(f"[repair] worker: H3 baseline clip {snapshot.preview_width}x"
-                          f"{snapshot.preview_height} x{h3_opts['frames']} ({h3_opts['regime']})")
+                          f"{snapshot.preview_height} x{h3_opts['frames']} ({h3_opts['regime']})"
+                          + (f" + {len(snapshot.keyframes)} keyframe(s)" if snapshot.keyframes else ""))
                     base_clip = self.repair_engine.baseline_clip(snapshot, cache=cache, **h3_opts)
+                    if self._repair_pinned_sig and cache is not None:
+                        pinned = self._repair_baseline_for_display(
+                            cache, h3_opts["regime"], h3_opts["with_audio"])
+                        if pinned is not None and pinned.get("pinned"):
+                            base_clip = pinned
                     print("[repair] worker: H3 tweaked clip")
                     early = int(h3_opts.pop("early_step", 0))
                     _gen = self._repair_render_gen
@@ -24139,6 +24187,8 @@ class LoRATrainerGUI:
         if snapshot is not None:
             canvas = f" {snapshot.preview_width}×{snapshot.preview_height}"
         plural = "s" if n != 1 else ""
+        if snapshot is not None and getattr(snapshot, "keyframes", None):
+            canvas += " · frame-conditioned"
         if peek:
             self.repair_status_var.set(f"Showing {peek} from the library — exact render. "
                                        "Move a slider to return to your settings.")
@@ -24209,6 +24259,11 @@ class LoRATrainerGUI:
         from fizgig.repair_studio.h3_render_cache import RenderCache
         from fizgig.repair_studio.h3_blocks import all_block_ids_h3
         self._repair_cache_stop_build(wait_s=0.0)
+        if self._repair_pinned_sig:
+            # A pin belongs to its setup — a regime / size / prompt change drops it rather
+            # than leaving "Pinned:" over a baseline that quietly reverted.
+            self._repair_pinned_sig = None
+            self.master.after(0, lambda: self._repair_history_pin(None, rerender=False))
         active = [b for b in all_block_ids_h3() if b in eng.primary_block_ids]
         cache = RenderCache(self._repair_cache_root(), key, active)
         cache.set_meta(lora=os.path.basename(eng.primary_path or ""),
@@ -24282,7 +24337,8 @@ class LoRATrainerGUI:
                             st.preview_width = snapshot.preview_width
                             st.preview_height = snapshot.preview_height
                             st.preview_frames = opts["frames"]
-                            st.keyframes = snapshot.keyframes
+                            st.keyframes = self._repair_h3_prepare_keyframes(
+                                st.preview_width, st.preview_height, opts["frames"])
                             if bid != "__baseline__":
                                 st.blocks[bid].primary_strength = 0.0
                             t0 = _time.time()
@@ -24361,7 +24417,9 @@ class LoRATrainerGUI:
             except Exception:
                 pass
             self._repair_cache_refresh_ticks(None)
+            self._repair_history_refresh()
             return
+        self._repair_history_refresh()
         done, total = len(cache.done_ids()), len(cache.block_ids)
         t = self._repair_cache_thread
         building = t is not None and t.is_alive() and not self._repair_cache_paused.is_set()
@@ -24420,7 +24478,6 @@ class LoRATrainerGUI:
         st.seed, st.prompt = self.repair_state.seed, self.repair_state.prompt
         st.preview_width, st.preview_height = self._repair_h3_canvas("dial")
         st.preview_frames = opts["frames"]
-        st.keyframes = self.repair_state.keyframes
         st.blocks[block_id].primary_strength = 0.0
         label = eng.describe_state(st)
         self._repair_preview_in_flight = True
@@ -24436,7 +24493,10 @@ class LoRATrainerGUI:
                 with self._repair_engine_lock:
                     if hasattr(eng, "clear_cancel"):
                         eng.clear_cancel()
-                    base = eng.baseline_clip(st, cache=cache, **opts)
+                    st.keyframes = self._repair_h3_prepare_keyframes(
+                        st.preview_width, st.preview_height, opts["frames"])
+                    base = self._repair_baseline_for_display(cache, "dial", opts["with_audio"]) \
+                        or eng.baseline_clip(st, cache=cache, **opts)
                     clip = eng.render_clip(st, cache=cache, **opts)
                 self.master.after(0, lambda: self._set_repair_preview_clips(
                     base, clip, peek=label))
@@ -24485,6 +24545,501 @@ class LoRATrainerGUI:
             self._repair_cache_hover_win = win
         except Exception:
             self._repair_cache_hover_win = None
+
+    # ----- H3 first / last frame conditioning ---------------------------------------------
+    # A photo per slot, cropped to the clip's shape in an aspect-locked box; encoded with the
+    # video VAE at the RENDER canvas (Dial and Confirm sizes are separate tensors, cached per
+    # (photo, crop, canvas)) and handed to every render as state.keyframes. Part of the render
+    # cache's setup key, so a different crop is a different library.
+
+    def _build_repair_keyframe_card(self, parent):
+        self._repair_h3_kf = {"first": None, "last": None}   # slot -> {"path", "rect"}
+        self._repair_h3_kf_latents = {}                       # (slot, path, rect, w, h) -> latent
+        self._repair_h3_kf_thumbs = {}
+        self._repair_h3_kf_widgets = {}
+        for r, (slot, title, tip) in enumerate((
+                ("first", "First frame:", "The clip starts on this picture (frame 0)."),
+                ("last", "Last frame:", "The clip ends on this picture (its last frame)."))):
+            ttk.Label(parent, text=title).grid(row=r, column=0, sticky=tk.W, padx=4, pady=4)
+            thumb = tk.Label(parent, text="(none)", width=14, height=4, bg=COLORS["bg_deep"],
+                             fg=COLORS["text_muted"], font=(FONT_FAMILY, 9), cursor="hand2")
+            thumb.grid(row=r, column=1, sticky=tk.W, padx=4, pady=4)
+            thumb.bind("<Button-1>", lambda e, sl=slot: self._repair_kf_browse(sl))
+            ToolTip(thumb, tip + " Click to pick a photo; you then crop it to the clip's shape.")
+            btns = ttk.Frame(parent)
+            btns.grid(row=r, column=2, sticky=tk.W, padx=4)
+            ttk.Button(btns, text="Browse…", command=lambda sl=slot: self._repair_kf_browse(sl)
+                       ).pack(side=tk.LEFT, padx=(0, 4))
+            ttk.Button(btns, text="Re-crop", command=lambda sl=slot: self._repair_kf_recrop(sl)
+                       ).pack(side=tk.LEFT, padx=(0, 4))
+            ttk.Button(btns, text="Clear", command=lambda sl=slot: self._repair_kf_clear(sl)
+                       ).pack(side=tk.LEFT)
+            info = tk.Label(parent, text="", font=(FONT_FAMILY, 9), fg=COLORS["text_secondary"],
+                            bg=COLORS["bg_surface"], anchor=tk.W)
+            info.grid(row=r, column=3, sticky=tk.W, padx=8)
+            self._repair_h3_kf_widgets[slot] = {"thumb": thumb, "info": info}
+        parent.columnconfigure(3, weight=1)
+        tk.Label(parent, text="Frame conditioning turns the pass-1 resume off for those renders "
+                              "(the cached pass doesn't lay the extra rows out) — a slider move "
+                              "is a full render then.",
+                 font=(FONT_FAMILY, 9), fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
+                 anchor=tk.W, justify=tk.LEFT).grid(row=2, column=0, columnspan=4, sticky=tk.W,
+                                                     padx=4, pady=(6, 0))
+
+    def _repair_kf_browse(self, slot):
+        from tkinter import filedialog
+        path = filedialog.askopenfilename(
+            title=f"Photo for the {slot} frame",
+            filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp"), ("All files", "*.*")],
+            initialdir=self._pref_initialdir("input_ref_dir"))
+        if not path:
+            return
+        rect = self._repair_kf_crop_dialog(path)
+        if rect is None:
+            return
+        self._repair_h3_kf[slot] = {"path": path, "rect": rect}
+        self._repair_kf_refresh_thumbs()
+        self._on_preview_param_changed()
+
+    def _repair_kf_recrop(self, slot):
+        cur = self._repair_h3_kf.get(slot)
+        if not cur:
+            self._repair_kf_browse(slot)
+            return
+        rect = self._repair_kf_crop_dialog(cur["path"], initial=cur["rect"])
+        if rect is None:
+            return
+        self._repair_h3_kf[slot] = {"path": cur["path"], "rect": rect}
+        self._repair_kf_refresh_thumbs()
+        self._on_preview_param_changed()
+
+    def _repair_kf_clear(self, slot):
+        if not self._repair_h3_kf.get(slot):
+            return
+        self._repair_h3_kf[slot] = None
+        self._repair_kf_refresh_thumbs()
+        self._on_preview_param_changed()
+
+    def _repair_kf_refresh_thumbs(self):
+        from PIL import Image as _PILImage
+        for slot, w in self._repair_h3_kf_widgets.items():
+            cur = self._repair_h3_kf.get(slot)
+            if not cur:
+                w["thumb"].configure(image="", text="(none)", width=14, height=4)
+                w["thumb"].image = None
+                w["info"].configure(text="")
+                continue
+            try:
+                img = _PILImage.open(cur["path"]).convert("RGB").crop(tuple(cur["rect"]))
+                img.thumbnail((160, 96))
+                ph = ImageTk.PhotoImage(img)
+                w["thumb"].configure(image=ph, text="", width=img.width, height=img.height)
+                w["thumb"].image = ph
+                x0, y0, x1, y1 = cur["rect"]
+                w["info"].configure(text=f"{os.path.basename(cur['path'])} — crop "
+                                         f"{x1 - x0}×{y1 - y0}")
+            except Exception as e:
+                w["thumb"].configure(image="", text="(unreadable)", width=14, height=4)
+                w["info"].configure(text=str(e)[:60])
+
+    def _repair_kf_crop_dialog(self, path, initial=None):
+        """Modal crop window: the photo fitted on a canvas, an aspect-locked box (the clip's
+        Confirm-size shape) you drag to move and drag by a corner to resize. Returns the
+        crop rect in source pixels, or None on cancel."""
+        from PIL import Image as _PILImage
+        try:
+            src = _PILImage.open(path).convert("RGB")
+        except Exception as e:
+            messagebox.showerror("Crop", f"Couldn't open the photo:\n{e}")
+            return None
+        cw, ch = self._repair_h3_size()
+        aspect = cw / ch
+        sw, sh = src.size
+        # fit the photo into a working canvas
+        max_w, max_h = min(1100, int(self.master.winfo_screenwidth() * 0.8)), \
+            min(760, int(self.master.winfo_screenheight() * 0.7))
+        scale = min(max_w / sw, max_h / sh, 1.0)
+        dw, dh = max(1, int(sw * scale)), max(1, int(sh * scale))
+        disp = src.resize((dw, dh), _PILImage.LANCZOS)
+
+        win = tk.Toplevel(self.master)
+        win.title(f"Crop to the clip's shape ({cw}×{ch})")
+        win.configure(bg=COLORS["bg_deep"])
+        win.transient(self.master)
+        try:
+            win.grab_set()
+        except Exception:
+            pass        # not viewable yet (headless harness) — the dialog still works modally
+        result = {"rect": None}
+        tk.Label(win, text="Drag the box to move it, drag a corner to resize. The box keeps the "
+                           "clip's aspect; what's inside becomes the frame.",
+                 font=(FONT_FAMILY, 9), fg=COLORS["text_secondary"], bg=COLORS["bg_deep"]
+                 ).pack(padx=8, pady=(8, 4), anchor=tk.W)
+        cv = tk.Canvas(win, width=dw, height=dh, bg="#000", highlightthickness=0, cursor="fleur")
+        cv.pack(padx=8, pady=4)
+        ph = ImageTk.PhotoImage(disp)
+        cv.create_image(0, 0, image=ph, anchor="nw")
+        cv.image = ph
+
+        # initial box: the given rect, else the largest centred box of the aspect
+        if initial:
+            x0, y0, x1, y1 = [v * scale for v in initial]
+        else:
+            if dw / dh >= aspect:
+                bh = dh; bw = bh * aspect
+            else:
+                bw = dw; bh = bw / aspect
+            x0, y0 = (dw - bw) / 2, (dh - bh) / 2
+            x1, y1 = x0 + bw, y0 + bh
+        box = {"x0": x0, "y0": y0, "x1": x1, "y1": y1}
+        HANDLE = 8
+        MIN_W = 32 * scale * 4     # never smaller than 4 latent cells wide on screen
+
+        def _draw():
+            cv.delete("box")
+            b = box
+            # dim outside
+            for rect in ((0, 0, dw, b["y0"]), (0, b["y1"], dw, dh),
+                         (0, b["y0"], b["x0"], b["y1"]), (b["x1"], b["y0"], dw, b["y1"])):
+                cv.create_rectangle(*rect, fill="#000", stipple="gray50", outline="", tags="box")
+            cv.create_rectangle(b["x0"], b["y0"], b["x1"], b["y1"], outline="#3B9FD8", width=2,
+                                tags="box")
+            for hx, hy in ((b["x0"], b["y0"]), (b["x1"], b["y0"]), (b["x0"], b["y1"]), (b["x1"], b["y1"])):
+                cv.create_rectangle(hx - HANDLE, hy - HANDLE, hx + HANDLE, hy + HANDLE,
+                                    fill="#3B9FD8", outline="#fff", tags="box")
+            sx0, sy0, sx1, sy1 = [int(round(v / scale)) for v in (b["x0"], b["y0"], b["x1"], b["y1"])]
+            size_lbl.configure(text=f"crop {sx1 - sx0}×{sy1 - sy0} of {sw}×{sh} → {cw}×{ch}")
+
+        drag = {"mode": None, "corner": None, "dx": 0, "dy": 0}
+
+        def _corner_at(x, y):
+            b = box
+            for name, (hx, hy) in (("nw", (b["x0"], b["y0"])), ("ne", (b["x1"], b["y0"])),
+                                   ("sw", (b["x0"], b["y1"])), ("se", (b["x1"], b["y1"]))):
+                if abs(x - hx) <= HANDLE * 1.5 and abs(y - hy) <= HANDLE * 1.5:
+                    return name
+            return None
+
+        def _press(e):
+            c = _corner_at(e.x, e.y)
+            if c:
+                drag.update(mode="resize", corner=c)
+            elif box["x0"] <= e.x <= box["x1"] and box["y0"] <= e.y <= box["y1"]:
+                drag.update(mode="move", dx=e.x - box["x0"], dy=e.y - box["y0"])
+            else:
+                drag["mode"] = None
+
+        def _motion(e):
+            if drag["mode"] == "move":
+                bw, bh = box["x1"] - box["x0"], box["y1"] - box["y0"]
+                nx0 = min(max(0, e.x - drag["dx"]), dw - bw)
+                ny0 = min(max(0, e.y - drag["dy"]), dh - bh)
+                box.update(x0=nx0, y0=ny0, x1=nx0 + bw, y1=ny0 + bh)
+            elif drag["mode"] == "resize":
+                c = drag["corner"]
+                # the opposite corner is the anchor; the new width follows the pointer,
+                # the height follows the aspect; clamp to the photo and a minimum size
+                ax = box["x0"] if c in ("ne", "se") else box["x1"]
+                ay = box["y0"] if c in ("sw", "se") else box["y1"]
+                w_new = abs(min(max(e.x, 0), dw) - ax)
+                h_new = abs(min(max(e.y, 0), dh) - ay)
+                w_new = max(MIN_W, max(w_new, h_new * aspect))
+                h_new = w_new / aspect
+                if c in ("ne", "se"):
+                    max_w = dw - ax
+                else:
+                    max_w = ax
+                if c in ("sw", "se"):
+                    max_h = dh - ay
+                else:
+                    max_h = ay
+                if w_new > max_w:
+                    w_new = max_w; h_new = w_new / aspect
+                if h_new > max_h:
+                    h_new = max_h; w_new = h_new * aspect
+                if c in ("ne", "se"):
+                    box["x0"], box["x1"] = ax, ax + w_new
+                else:
+                    box["x0"], box["x1"] = ax - w_new, ax
+                if c in ("sw", "se"):
+                    box["y0"], box["y1"] = ay, ay + h_new
+                else:
+                    box["y0"], box["y1"] = ay - h_new, ay
+            else:
+                return
+            _draw()
+
+        def _release(e):
+            drag["mode"] = None
+
+        def _hover(e):
+            cv.configure(cursor="sizing" if _corner_at(e.x, e.y) else "fleur")
+
+        cv.bind("<ButtonPress-1>", _press)
+        cv.bind("<B1-Motion>", _motion)
+        cv.bind("<ButtonRelease-1>", _release)
+        cv.bind("<Motion>", _hover)
+
+        bar = tk.Frame(win, bg=COLORS["bg_deep"])
+        bar.pack(fill=tk.X, padx=8, pady=(4, 8))
+        size_lbl = tk.Label(bar, text="", font=(FONT_FAMILY, 9), fg=COLORS["text_secondary"],
+                            bg=COLORS["bg_deep"])
+        size_lbl.pack(side=tk.LEFT)
+
+        def _ok():
+            b = box
+            rect = [int(round(v / scale)) for v in (b["x0"], b["y0"], b["x1"], b["y1"])]
+            rect[0], rect[1] = max(0, rect[0]), max(0, rect[1])
+            rect[2], rect[3] = min(sw, rect[2]), min(sh, rect[3])
+            result["rect"] = tuple(rect)
+            win.destroy()
+
+        def _cancel():
+            win.destroy()
+
+        tk.Button(bar, text="Use this crop", font=(FONT_FAMILY, 10, "bold"), fg="#FFFFFF",
+                  bg="#2E8B57", activeforeground="#FFFFFF", activebackground="#256F46",
+                  relief="flat", bd=0, padx=16, pady=4, cursor="hand2", command=_ok
+                  ).pack(side=tk.RIGHT)
+        ttk.Button(bar, text="Cancel", command=_cancel).pack(side=tk.RIGHT, padx=(0, 8))
+        win.bind("<Return>", lambda e: _ok())
+        win.bind("<Escape>", lambda e: _cancel())
+        win.protocol("WM_DELETE_WINDOW", _cancel)
+        win._crop_ok, win._crop_box = _ok, box      # reachable for the headless pins
+        _draw()
+        win.wait_window()
+        return result["rect"]
+
+    def _repair_h3_keyframe_spec(self):
+        """[(slot, path, rect)] for the slots that have a photo — plain values, safe to read
+        from a worker thread."""
+        out = []
+        for slot in ("first", "last"):
+            cur = (getattr(self, "_repair_h3_kf", None) or {}).get(slot)
+            if cur:
+                out.append((slot, cur["path"], tuple(cur["rect"])))
+        return out
+
+    def _repair_h3_prepare_keyframes(self, width, height, frames):
+        """Worker thread, under the engine lock: the keyframe list for a render at this
+        canvas, encoding (and caching) each photo's crop as needed. None when no photo is
+        set. A still (1 frame) takes the first photo only."""
+        spec = self._repair_h3_keyframe_spec()
+        eng = self.repair_engine
+        if not spec or eng is None or not hasattr(eng, "encode_keyframe"):
+            return None
+        from PIL import Image as _PILImage
+        out = []
+        for slot, path, rect in spec:
+            if slot == "last" and int(frames) <= 1:
+                continue
+            key = (slot, path, rect, int(width), int(height))
+            lat = self._repair_h3_kf_latents.get(key)
+            if lat is None:
+                img = _PILImage.open(path).convert("RGB").crop(rect)
+                lat = eng.encode_keyframe(img, width, height)
+                self._repair_h3_kf_latents[key] = lat
+            idx = 0 if slot == "first" else max(0, int(frames) - 1)
+            out.append((idx, lat))
+        return out or None
+
+    # ----- H3 history strip ---------------------------------------------------------------
+    # Every cached render of the current setup, as a thumb with its label. Click = view it in
+    # the tweaked pane (and the player); right-click = save the clip / pin it as the baseline.
+
+    def _repair_history_refresh(self):
+        cache = self._repair_cache
+        inner = getattr(self, "_repair_history_inner", None)
+        if inner is None:
+            return
+        sigs = tuple(cache.entries().keys()) if cache is not None else ()
+        sigs = sigs[-80:]
+        if sigs == self._repair_history_shown:
+            return
+        for w in inner.winfo_children():
+            w.destroy()
+        self._repair_history_thumbs = {}
+        from PIL import Image as _PILImage
+        for sig in sigs:
+            meta = cache.info(sig)
+            cell = tk.Frame(inner, bg=COLORS["bg_surface"])
+            cell.pack(side=tk.LEFT, padx=3)
+            ph = None
+            tp = cache.thumb_path(sig)
+            if os.path.isfile(tp):
+                try:
+                    im = _PILImage.open(tp)
+                    im.thumbnail((128, 88))
+                    ph = ImageTk.PhotoImage(im)
+                except Exception:
+                    ph = None
+            pinned = sig == self._repair_pinned_sig
+            lbl = tk.Label(cell, image=ph, text="" if ph else "(no thumb)", bg="#1c1c1c",
+                           fg=COLORS["text_muted"], width=128 if ph is None else 0,
+                           cursor="hand2", bd=2, relief="solid" if pinned else "flat",
+                           highlightthickness=0)
+            if ph is not None:
+                lbl.configure(width=ph.width(), height=ph.height())
+                self._repair_history_thumbs[sig] = ph
+            lbl.pack()
+            lbl.bind("<Button-1>", lambda e, s=sig: self._repair_history_view(s))
+            lbl.bind("<Button-3>", lambda e, s=sig: self._repair_history_menu(s, e))
+            cap = str(meta.get("label", sig))[:22] + ("  📌" if pinned else "")
+            tk.Label(cell, text=cap, font=(FONT_FAMILY, 8), fg=COLORS["text_secondary"],
+                     bg=COLORS["bg_surface"]).pack()
+        self._repair_history_shown = sigs
+        try:
+            self._repair_history_canvas.update_idletasks()
+            self._repair_history_canvas.xview_moveto(1.0)
+        except Exception:
+            pass
+
+    def _repair_history_view(self, sig):
+        """Show a cached render in the tweaked pane + player, sliders untouched."""
+        cache = self._repair_cache
+        eng = self.repair_engine
+        if cache is None or eng is None or not cache.has(sig):
+            return
+        if self._repair_preview_in_flight:
+            self.repair_status_var.set("A render is in flight — try again when it lands.")
+            return
+        label = cache.info(sig).get("label", sig)
+        opts = dict(self._repair_h3_render_opts())
+        regime = str(cache.meta.get("regime", "dial"))
+        self._repair_preview_in_flight = True
+        self.repair_status_var.set(f"Loading {label} from history…")
+        self._repair_progress_marquee_on()
+        if self._repair_cache_busy and hasattr(eng, "request_cancel"):
+            eng.request_cancel()
+
+        def _work():
+            try:
+                with self._repair_engine_lock:
+                    if hasattr(eng, "clear_cancel"):
+                        eng.clear_cancel()
+                    base = self._repair_baseline_for_display(cache, regime, opts["with_audio"])
+                    clip = eng.clip_from_cache(cache, sig, regime=regime,
+                                               with_audio=opts["with_audio"])
+                if base is None or clip is None:
+                    raise RuntimeError("entry vanished from the cache")
+                self.master.after(0, lambda: self._set_repair_preview_clips(
+                    base, clip, peek=label))
+            except Exception:
+                import traceback
+                err = traceback.format_exc()
+
+                def _show():
+                    self._repair_progress_end()
+                    self._repair_preview_in_flight = False
+                    self.repair_status_var.set("History view failed — see console.")
+                    print(err)
+                self.master.after(0, _show)
+
+        threading.Thread(target=_work, daemon=True).start()
+
+    def _repair_baseline_for_display(self, cache, regime, with_audio):
+        """Worker thread, under the lock: the baseline pane's clip — the pinned entry when
+        one is set (and still cached), else the true baseline entry."""
+        eng = self.repair_engine
+        pin = self._repair_pinned_sig
+        if pin and cache.has(pin):
+            clip = eng.clip_from_cache(cache, pin, regime=regime, with_audio=with_audio)
+            if clip is not None:
+                clip["pinned"] = True
+                return clip
+        from fizgig.repair_studio.h3_render_cache import BASE_SIG
+        return eng.clip_from_cache(cache, BASE_SIG, regime=regime, with_audio=with_audio)
+
+    def _repair_history_menu(self, sig, event):
+        cache = self._repair_cache
+        if cache is None:
+            return
+        menu = tk.Menu(self.master, tearoff=0)
+        label = cache.info(sig).get("label", sig)
+        menu.add_command(label=f"View {label}", command=lambda: self._repair_history_view(sig))
+        if self._repair_pinned_sig == sig:
+            menu.add_command(label="Unpin (baseline = LoRA at 1.0)",
+                             command=lambda: self._repair_history_pin(None))
+        else:
+            menu.add_command(label="Pin as baseline (compare against this)",
+                             command=lambda: self._repair_history_pin(sig))
+        menu.add_separator()
+        menu.add_command(label="Save clip (MP4 / frames + WAV)…",
+                         command=lambda: self._repair_history_save(sig))
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _repair_history_pin(self, sig, rerender=True):
+        """Pin a cached render as the baseline pane for every render that follows (a way to
+        compare two tweaks head to head). None unpins."""
+        self._repair_pinned_sig = sig
+        self._repair_history_shown = ()      # redraw the strip (pin marker)
+        self._repair_history_refresh()
+        try:
+            if sig:
+                label = self._repair_cache.info(sig).get("label", sig)
+                self._repair_baseline_title.configure(text=f"Pinned: {label}", foreground="#3B9FD8")
+            else:
+                self._repair_baseline_title.configure(text="Baseline (LoRA at default 1.0)", foreground="")
+        except Exception:
+            pass
+        if rerender:
+            self._schedule_preview(force=True)
+
+    def _repair_history_save(self, sig):
+        cache = self._repair_cache
+        eng = self.repair_engine
+        if cache is None or eng is None or not cache.has(sig):
+            return
+        if self._repair_preview_in_flight:
+            self.repair_status_var.set("A render is in flight — save when it lands.")
+            return
+        label = cache.info(sig).get("label", sig)
+        regime = str(cache.meta.get("regime", "dial"))
+        with self._repair_engine_lock:
+            clip = eng.clip_from_cache(cache, sig, regime=regime,
+                                       with_audio=bool(self._repair_h3_render_opts()["with_audio"]))
+        if clip is not None:
+            import re
+            self._repair_save_clip(clip, "repair_" + re.sub(r"[^A-Za-z0-9]+", "_", label).strip("_"))
+
+    def _repair_save_clip(self, clip, stem):
+        """Save a clip dict: MP4 with sound via ffmpeg, else PNG frames + WAV."""
+        from tkinter import filedialog
+        path = filedialog.asksaveasfilename(
+            title="Save clip", defaultextension=".mp4", initialfile=stem + ".mp4",
+            filetypes=[("MP4 clip", "*.mp4"), ("PNG frames + WAV (folder name)", "*")])
+        if not path:
+            return
+        try:
+            import numpy as np
+            import torch as _t
+            from fizgig.minimax.trainer import write_preview_mp4, write_wav, _find_ffmpeg
+            frames = clip["frames"]
+            if path.lower().endswith(".mp4") and _find_ffmpeg() and len(frames) > 1:
+                arr = np.stack([np.asarray(f.convert("RGB")) for f in frames])   # [F,H,W,3]
+                ten = _t.from_numpy(arr).permute(3, 0, 1, 2).float() / 255.0    # [3,F,H,W]
+                import tempfile
+                wav_path = os.path.join(tempfile.gettempdir(), "fizgig_repair_save.wav")
+                if clip.get("wav") is not None:
+                    write_wav(wav_path, clip["wav"])
+                else:
+                    write_wav(wav_path, _t.zeros(2, int(32000 * len(frames) / self._REPAIR_H3_FPS)))
+                write_preview_mp4(path, ten, wav_path, fps=self._REPAIR_H3_FPS)
+                self.repair_status_var.set(f"Saved {os.path.basename(path)}.")
+                return
+            folder = path[:-4] if path.lower().endswith(".mp4") else path
+            os.makedirs(folder, exist_ok=True)
+            for i, f in enumerate(frames):
+                f.save(os.path.join(folder, f"frame_{i:03d}.png"))
+            if clip.get("wav") is not None:
+                write_wav(os.path.join(folder, "sound.wav"), clip["wav"])
+            self.repair_status_var.set(f"Saved {len(frames)} frames to {folder} "
+                                       "(no ffmpeg on the path — PNGs instead of an MP4).")
+        except Exception as e:
+            messagebox.showerror("Save clip", f"Couldn't save the clip:\n{e}")
 
     def _repair_cache_clear(self):
         from fizgig.repair_studio.h3_render_cache import clear_render_cache, dir_size
@@ -24892,40 +25447,7 @@ class LoRATrainerGUI:
         clip = self._repair_clips.get(side)
         if clip is None:
             return
-        from tkinter import filedialog
-        stem = f"repair_{side}_{clip.get('regime', 'clip')}"
-        path = filedialog.asksaveasfilename(
-            title=f"Save the {side} clip", defaultextension=".mp4", initialfile=stem + ".mp4",
-            filetypes=[("MP4 clip", "*.mp4"), ("PNG frames + WAV (folder name)", "*")])
-        if not path:
-            return
-        try:
-            import numpy as np
-            import torch as _t
-            from fizgig.minimax.trainer import write_preview_mp4, write_wav, _find_ffmpeg
-            frames = clip["frames"]
-            if path.lower().endswith(".mp4") and _find_ffmpeg() and len(frames) > 1:
-                arr = np.stack([np.asarray(f.convert("RGB")) for f in frames])   # [F,H,W,3]
-                ten = _t.from_numpy(arr).permute(3, 0, 1, 2).float() / 255.0    # [3,F,H,W]
-                wav_path = clip.get("wav_path")
-                if not wav_path:
-                    import tempfile
-                    wav_path = os.path.join(tempfile.gettempdir(), "fizgig_repair_silence.wav")
-                    write_wav(wav_path, _t.zeros(2, int(32000 * len(frames) / self._REPAIR_H3_FPS)))
-                write_preview_mp4(path, ten, wav_path, fps=self._REPAIR_H3_FPS)
-                self.repair_status_var.set(f"Saved {os.path.basename(path)}.")
-                return
-            # No ffmpeg (or a still): a folder of PNGs + the wav.
-            folder = path[:-4] if path.lower().endswith(".mp4") else path
-            os.makedirs(folder, exist_ok=True)
-            for i, f in enumerate(frames):
-                f.save(os.path.join(folder, f"frame_{i:03d}.png"))
-            if clip.get("wav") is not None:
-                write_wav(os.path.join(folder, "sound.wav"), clip["wav"])
-            self.repair_status_var.set(f"Saved {len(frames)} frames to {folder} "
-                                       "(no ffmpeg on the path — PNGs instead of an MP4).")
-        except Exception as e:
-            messagebox.showerror("Save clip", f"Couldn't save the clip:\n{e}")
+        self._repair_save_clip(clip, f"repair_{side}_{clip.get('regime', 'clip')}")
 
     def _repair_popout_compose(self):
         """Baseline and tweaked side by side on one canvas \u2014 same left/right order as the
@@ -25477,6 +25999,12 @@ class LoRATrainerGUI:
         self._repair_cache = None
         self._repair_peek = None
         self._repair_set_tweaked_title(None, "")
+        self._repair_h3_kf_latents = {}          # (the photos + crops stay; re-encoded on load)
+        self._repair_pinned_sig = None
+        try:
+            self._repair_baseline_title.configure(text="Baseline (LoRA at default 1.0)", foreground="")
+        except Exception:
+            pass
         self._repair_cache_refresh_ui()
         if self._repair_popout_window is not None:
             try:

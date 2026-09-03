@@ -742,6 +742,22 @@ class H3RepairEngine:
                 logger.exception("render cache: put failed (render still shown)")
         return clip
 
+    def clip_from_cache(self, cache, sig: str, *, regime: str = "dial",
+                        with_audio: bool = True) -> Optional[dict]:
+        """A clip dict straight from a cached entry (history strip, peeks, pinned baseline)
+        — decode only, no state needed. None when the entry isn't there."""
+        hit = cache.get(sig) if cache is not None else None
+        if hit is None:
+            return None
+        lat, aud = hit
+        steps, strength = self.regime_params(regime)
+        imgs = self.decode_clip_frames(lat)
+        wav = self.decode_audio(aud) if (with_audio and len(imgs) > 1) else None
+        return {"latent": lat, "audio_rows": aud, "frames": imgs, "wav": wav,
+                "middle": imgs[len(imgs) // 2], "regime": regime, "steps": steps,
+                "turbo_strength": strength, "frames_n": len(imgs), "cached": True,
+                "sig": sig, "label": cache.info(sig).get("label", "")}
+
     @torch.no_grad()
     def decode_middle_frame_image(self, latent) -> Image.Image:
         """One PIL frame (the clip's middle) from a latent — the early-look decode."""

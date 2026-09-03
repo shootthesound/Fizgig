@@ -19411,11 +19411,13 @@ class LoRATrainerGUI:
                 self._repair_preview_hint.configure(
                     text="▶ Click either image to play both clips side by side — sound, "
                          "swap, scrub — with likeness + quality metrics on the middle frame")
+                self._repair_cache_row.grid()
             else:
                 self._repair_cmp_btn.configure(text="⧉ Compare + Metrics")
                 self._repair_preview_hint.configure(
                     text="🔍 Click either image for the full-size side-by-side compare with "
                          "likeness + quality metrics")
+                self._repair_cache_row.grid_remove()
         except Exception:
             pass
         try:
@@ -19504,17 +19506,49 @@ class LoRATrainerGUI:
             self.last_used["repair_h3_size"] = self.repair_h3_size_var.get()
             self.last_used["repair_h3_regime"] = self.repair_h3_regime_var.get()
             self.last_used["repair_h3_sound"] = bool(self.repair_h3_sound_var.get())
+            self.last_used["repair_h3_dial_scale"] = self.repair_h3_dial_scale_var.get()
             self._save_last_used_paths()
         except Exception:
             pass
         self._on_preview_param_changed()
 
     def _repair_h3_render_opts(self):
-        """What the H3 worker renders with, read on the Tk thread: frames, regime, sound."""
+        """What the H3 worker renders with, read on the Tk thread: frames, regime, sound,
+        and the early-look pass (0 = off)."""
+        early = 0
+        if getattr(self, "repair_h3_early_var", None) is not None and self.repair_h3_early_var.get():
+            early = self._REPAIR_H3_EARLY_STEP
         return {"frames": self._repair_h3_frames(),
                 "regime": self.repair_h3_regime_var.get() or "dial",
                 "with_audio": bool(self.repair_h3_sound_var.get()
-                                   and self._repair_h3_audio_vae_path())}
+                                   and self._repair_h3_audio_vae_path()),
+                "early_step": early}
+
+    _REPAIR_H3_DIAL_SCALES = {"Full": 1.0, "⅔": 2.0 / 3.0, "½": 0.5}
+    # The pass whose estimate "Show early" puts up. Measured 3 Sep at Turbo 1.0: the
+    # pass-1 estimate is mush, pass 2 is a readable rough picture (composition, pose,
+    # expression), so 2 — at the ⅔ dial canvas that is ~2.8 s in, with the finished clip
+    # ~1.5 s later than it would be without the extra decode.
+    _REPAIR_H3_EARLY_STEP = 2
+
+    def _repair_h3_canvas(self, regime):
+        """(width, height) a render of this regime uses: the Size combo for Confirm, the
+        Size scaled by the Dial size fraction (each side snapped to /32) for Dial."""
+        w, h = self._repair_h3_size()
+        if regime != "dial":
+            return w, h
+        var = getattr(self, "repair_h3_dial_scale_var", None)
+        f = self._REPAIR_H3_DIAL_SCALES.get(var.get() if var is not None else "Full", 1.0)
+        if f >= 0.999:
+            return w, h
+        return max(256, int(w * f) // 32 * 32), max(256, int(h * f) // 32 * 32)
+
+    def _on_repair_h3_early_toggled(self):
+        try:
+            self.last_used["repair_h3_early"] = bool(self.repair_h3_early_var.get())
+            self._save_last_used_paths()
+        except Exception:
+            pass
 
     def _on_repair_family_changed(self):
         """Family toggle: reset any loaded session (engine type changes), reset the slider
@@ -19732,6 +19766,16 @@ class LoRATrainerGUI:
         _low.pack(side=tk.LEFT, padx=(0, 12))
         ToolTip(_low, "Unlock 576 and 512 short sides. Below 640 H3 drifts off its trained "
                       "canvas — fine for a quick block read, not for judging quality.")
+        ttk.Label(h3_row, text="Dial size:").pack(side=tk.LEFT, padx=(0, 4))
+        self.repair_h3_dial_scale_var = tk.StringVar(
+            value=str(self.last_used.get("repair_h3_dial_scale", "⅔")))
+        _ds = ttk.Combobox(h3_row, textvariable=self.repair_h3_dial_scale_var, state="readonly",
+                           width=5, values=list(self._REPAIR_H3_DIAL_SCALES))
+        _ds.pack(side=tk.LEFT, padx=(0, 12))
+        _ds.bind("<<ComboboxSelected>>", lambda e: self._on_repair_h3_clip_changed())
+        ToolTip(_ds, "Dial renders at this fraction of the Size (⅔ of 768×640 is 512×416 — "
+                     "about twice as fast). Confirm always renders at the full Size. The "
+                     "small render is exact at its size; framing can differ from full size.")
         ttk.Label(h3_row, text="Regime:").pack(side=tk.LEFT, padx=(0, 4))
         self.repair_h3_regime_var = tk.StringVar(
             value=str(self.last_used.get("repair_h3_regime", "dial")))
@@ -19756,6 +19800,15 @@ class LoRATrainerGUI:
         ToolTip(self._repair_h3_sound_chk,
                 "Decode the clip's soundtrack for the player. Needs the MiniMax audio VAE "
                 "path set on the Preferences tab.")
+        self.repair_h3_early_var = tk.BooleanVar(
+            value=bool(self.last_used.get("repair_h3_early", True)))
+        _early = ttk.Checkbutton(h3_row, text="Show early", variable=self.repair_h3_early_var,
+                                 command=self._on_repair_h3_early_toggled)
+        _early.pack(side=tk.LEFT, padx=(10, 0))
+        ToolTip(_early, "Put a rough picture up after the second pass while the remaining "
+                        "passes finish it — the real render, unfinished, with a badge. "
+                        "You see something ~1 s sooner; the finished clip lands ~1.5 s "
+                        "later (one extra decode).")
         r += 1
 
         # Reference image row (Klein is an edit model — condition the preview on a
@@ -19841,8 +19894,9 @@ class LoRATrainerGUI:
         parent.columnconfigure(1, weight=1)
         ttk.Label(parent, text="Baseline (LoRA at default 1.0)",
                   font=(FONT_FAMILY, 9, "bold")).grid(row=0, column=0, padx=4, pady=(2, 0))
-        ttk.Label(parent, text="Tweaked (current sliders)",
-                  font=(FONT_FAMILY, 9, "bold")).grid(row=0, column=1, padx=4, pady=(2, 0))
+        self._repair_tweaked_title = ttk.Label(parent, text="Tweaked (current sliders)",
+                                               font=(FONT_FAMILY, 9, "bold"))
+        self._repair_tweaked_title.grid(row=0, column=1, padx=4, pady=(2, 0))
 
         # Pixel-size holders per side. pack_propagate(False) stops the holder
         # from shrinking to the label's text size — without this, the frames
@@ -19886,6 +19940,44 @@ class LoRATrainerGUI:
         self._repair_popout_tk_img = None
         self._repair_clips = {}          # H3: "baseline"/"tweaked" -> clip bundle (frames+wav)
         self._repair_player = None       # H3: the open clip player's state, or None
+        # H3 render cache + block library (exact renders cached to disk per slider state;
+        # every block-off clip pre-rendered in the background). One engine, two users — the
+        # builder thread and the preview worker take this lock per render; the interactive
+        # render always wins (see _run_preview_async).
+        import threading as _thr
+        self._repair_engine_lock = _thr.RLock()
+        self._repair_cache = None            # RenderCache for the current render setup
+        self._repair_cache_thread = None
+        self._repair_cache_stop = _thr.Event()
+        self._repair_cache_paused = _thr.Event()
+        self._repair_cache_busy = False      # builder mid-render (holds the lock)
+        self._repair_cache_current = None
+        self._repair_render_gen = 0          # bumps per render; stale early looks are dropped
+        self._repair_peek = None             # label of the library entry on show, or None
+        # Library status row (minimax only; hidden otherwise — see _apply_repair_family_ui).
+        lat_row = tk.Frame(parent, bg=COLORS["bg_surface"])
+        lat_row.grid(row=3, column=0, columnspan=2, sticky=tk.EW, pady=(0, 4))
+        lat_row.grid_remove()
+        self._repair_cache_row = lat_row
+        self.repair_cache_status_var = tk.StringVar(value="Library: no LoRA loaded.")
+        tk.Label(lat_row, textvariable=self.repair_cache_status_var, font=(FONT_FAMILY, 9),
+                 fg=COLORS["text_secondary"], bg=COLORS["bg_surface"], anchor=tk.W
+                 ).pack(side=tk.LEFT, padx=(4, 8))
+        self._repair_cache_bar = ttk.Progressbar(lat_row, mode="determinate", length=160,
+                                                   style="Green.Horizontal.TProgressbar")
+        self._repair_cache_bar.pack(side=tk.LEFT, padx=(0, 8))
+        self._repair_cache_btn = ttk.Button(lat_row, text="Pause build", width=12,
+                                              command=self._repair_cache_toggle)
+        self._repair_cache_btn.pack(side=tk.LEFT, padx=(0, 6))
+        ToolTip(self._repair_cache_btn,
+                "The library renders every block switched off, once, in the background — "
+                "after that clicking a block's ● shows that clip instantly, exact. Pause it "
+                "if you want the GPU to yourself.")
+        _clr = ttk.Button(lat_row, text="Clear cache…", width=12,
+                          command=self._repair_cache_clear)
+        _clr.pack(side=tk.LEFT)
+        ToolTip(_clr, "Delete every cached render (all LoRAs / prompts / seeds). The library "
+                      "rebuilds on demand; nothing else is touched.")
         # Metrics strip state: reference photo for likeness scoring (remembered via the
         # workbench table), chip labels, and a generation counter so a slow ArcFace pass
         # can never paint a stale result over a newer render's numbers.
@@ -20327,6 +20419,16 @@ class LoRATrainerGUI:
         val_lbl_p.grid(row=0, column=4, padx=(2, 2))
         btns_p = self._repair_quickset_buttons(rowf, primary_strength, 0, 5,
             balance_cb=lambda b=block_id: self._repair_balance_block(b, "primary"))
+        # H3 only: the library tick — ● this block's off clip is cached (click to see it,
+        # exact, instantly), ○ still to build, blank = the LoRA doesn't touch the block.
+        cache_lbl = None
+        if block_id.startswith(("h3blk_", "h3_rf_")):
+            cache_lbl = tk.Label(rowf, text="", width=2, fg=COLORS["text_muted"],
+                                   bg=COLORS["bg_surface"], font=(FONT_FAMILY, 8))
+            cache_lbl.grid(row=0, column=9, padx=(0, 2))    # after the [0][1][±][⚖] set
+            cache_lbl.bind("<Button-1>", lambda e, b=block_id: self._repair_cache_peek(b))
+            cache_lbl.bind("<Enter>", lambda e, b=block_id: self._repair_cache_hover(b, e))
+            cache_lbl.bind("<Leave>", lambda e: self._repair_cache_hover(None, e))
 
         # Donor row (hidden until donor is loaded)
         donor_rowf = ttk.Frame(rowf)
@@ -20399,6 +20501,8 @@ class LoRATrainerGUI:
             "btns_d": btns_d,
             # category color (for restore after greying)
             "cat_color": color,
+            # H3 library tick (None on other families)
+            "cache_lbl": cache_lbl,
         }
 
     # ------------------------------------------------------------
@@ -23733,11 +23837,17 @@ class LoRATrainerGUI:
         h3_opts = None
         if self._repair_is_h3():
             # H3 renders a clip on its own canvas — the Clip row, not the square Res combo.
-            _w, _h = self._repair_h3_size()
+            # Dial renders at the dial fraction of that canvas (Confirm at the full size).
+            h3_opts = self._repair_h3_render_opts()
+            _w, _h = self._repair_h3_canvas(h3_opts["regime"])
             self.repair_state.preview_width = _w
             self.repair_state.preview_height = _h
-            h3_opts = self._repair_h3_render_opts()
             self.repair_state.preview_frames = h3_opts["frames"]
+            self._repair_peek = None      # a slider move ends a library peek
+            # The interactive render always wins the engine: if the library builder is
+            # mid-render, abort its entry (it retries that block after we're done).
+            if self._repair_cache_busy and hasattr(self.repair_engine, "request_cancel"):
+                self.repair_engine.request_cancel()
         # Reference-image fields (Klein edit conditioning).
         self.repair_state.ref_image_path = self.repair_ref_path_var.get().strip()
         try:
@@ -23757,6 +23867,7 @@ class LoRATrainerGUI:
         # set it again and trigger a re-fire when this preview completes.
         self._repair_preview_dirty = False
         self._repair_preview_in_flight = True
+        self._repair_render_gen += 1
         print(f"[repair] run_async: starting worker w={snapshot.preview_width} "
               f"h={snapshot.preview_height} seed={snapshot.seed} prompt={snapshot.prompt!r}")
         self.repair_status_var.set("Generating preview…" if h3_opts is None else
@@ -23896,19 +24007,34 @@ class LoRATrainerGUI:
             if self.repair_engine is None:
                 self._repair_preview_in_flight = False
                 return
+            if h3_opts is not None and hasattr(self.repair_engine, "render_clip"):
+                # H3: whole clips (frames + sound) for the in-app player; the panel shows
+                # each clip's middle frame exactly as before. The engine lock is taken
+                # FIRST and the cancel cleared inside it: a pending cancel is what makes a
+                # mid-render library entry yield the engine to us.
+                with self._repair_engine_lock:
+                    if hasattr(self.repair_engine, "clear_cancel"):
+                        self.repair_engine.clear_cancel()
+                    cache = self._repair_cache_for(snapshot, h3_opts)
+                    print(f"[repair] worker: H3 baseline clip {snapshot.preview_width}x"
+                          f"{snapshot.preview_height} x{h3_opts['frames']} ({h3_opts['regime']})")
+                    base_clip = self.repair_engine.baseline_clip(snapshot, cache=cache, **h3_opts)
+                    print("[repair] worker: H3 tweaked clip")
+                    early = int(h3_opts.pop("early_step", 0))
+                    _gen = self._repair_render_gen
+
+                    def _on_early(img, step, n, _g=_gen):
+                        self.master.after(0, lambda: self._repair_show_early(img, step, n, _g))
+
+                    tweak_clip = self.repair_engine.render_clip(
+                        snapshot, cache=cache, early_step=early,
+                        on_early=_on_early if early > 0 else None, **h3_opts)
+                self.master.after(0, lambda: self._set_repair_preview_clips(
+                    base_clip, tweak_clip, snapshot=snapshot, opts=h3_opts))
+                return
             # Fresh render cycle — clear any pending cancel from a previous aborted pass.
             if hasattr(self.repair_engine, "clear_cancel"):
                 self.repair_engine.clear_cancel()
-            if h3_opts is not None and hasattr(self.repair_engine, "render_clip"):
-                # H3: whole clips (frames + sound) for the in-app player; the panel shows
-                # each clip's middle frame exactly as before.
-                print(f"[repair] worker: H3 baseline clip {snapshot.preview_width}x"
-                      f"{snapshot.preview_height} x{h3_opts['frames']} ({h3_opts['regime']})")
-                base_clip = self.repair_engine.baseline_clip(snapshot, **h3_opts)
-                print(f"[repair] worker: H3 tweaked clip")
-                tweak_clip = self.repair_engine.render_clip(snapshot, **h3_opts)
-                self.master.after(0, lambda: self._set_repair_preview_clips(base_clip, tweak_clip))
-                return
             print(f"[repair] worker: generating baseline at "
                   f"{snapshot.preview_width}x{snapshot.preview_height}")
             baseline = self.repair_engine.generate_baseline(snapshot)
@@ -23974,10 +24100,13 @@ class LoRATrainerGUI:
 
     _REPAIR_H3_FPS = 24
 
-    def _set_repair_preview_clips(self, base_clip, tweak_clip):
+    def _set_repair_preview_clips(self, base_clip, tweak_clip, snapshot=None, opts=None,
+                                  peek=None):
         """A rendered clip pair landed (Tk thread). Keep the frames + sound for the player,
         write each soundtrack to a temp wav (winsound plays files), then hand the middle
-        frames to the still path — which repaints, refreshes metrics and clears in-flight."""
+        frames to the still path — which repaints, refreshes metrics and clears in-flight.
+        Every render here is exact: a cache hit is the stored exact render, a peek is a
+        library entry shown without touching the sliders."""
         import tempfile
         try:
             from fizgig.minimax.trainer import write_wav
@@ -23994,13 +24123,376 @@ class LoRATrainerGUI:
                     wav_path = None
             clip["wav_path"] = wav_path
             self._repair_clips[side] = clip
+        self._repair_peek = peek
+        self._repair_set_tweaked_title(
+            f"{peek} — library entry (sliders untouched)" if peek else None,
+            "#3B9FD8" if peek else "")
         self._set_repair_preview_images(base_clip["middle"], tweak_clip["middle"])
         n = len(tweak_clip["frames"])
         reg = "Dial" if tweak_clip.get("regime") == "dial" else "Confirm"
         snd = " with sound" if tweak_clip.get("wav_path") else ""
-        self.repair_status_var.set(
-            f"Ready — {reg} render, {n} frame{'s' if n != 1 else ''}{snd}. "
-            + ("Click a preview to play both clips." if n > 1 else ""))
+        src = " (exact, from cache)" if tweak_clip.get("cached") else ""
+        canvas = ""
+        if snapshot is not None:
+            canvas = f" {snapshot.preview_width}×{snapshot.preview_height}"
+        plural = "s" if n != 1 else ""
+        if peek:
+            self.repair_status_var.set(f"Showing {peek} from the library — exact render. "
+                                       "Move a slider to return to your settings.")
+        else:
+            self.repair_status_var.set(
+                f"Ready — {reg}{canvas} render{src}, {n} frame{plural}{snd}. "
+                + ("Click a preview to play both clips." if n > 1 else ""))
+            if snapshot is not None and opts is not None:
+                self._repair_cache_after_exact(snapshot, opts)
+
+    def _repair_set_tweaked_title(self, text=None, color=""):
+        lbl = getattr(self, "_repair_tweaked_title", None)
+        if lbl is None:
+            return
+        try:
+            lbl.configure(text=text or "Tweaked (current sliders)", foreground=color)
+        except Exception:
+            pass
+
+    def _repair_show_early(self, img, step, n, gen):
+        """"Show early": the pass-`step` estimate of the render in flight lands in the
+        tweaked pane with a badge; the finished clip replaces it. Ignored once a newer render
+        has started (gen) or after the render finished."""
+        if gen != self._repair_render_gen or not self._repair_preview_in_flight:
+            return
+        try:
+            self.repair_pil_images["tweaked"] = img
+            self._repair_redraw_preview("tweaked")
+            self._repair_set_tweaked_title(
+                f"Tweaked — rendering, pass {step} of {n} (unfinished)", "#3B9FD8")
+        except Exception:
+            pass
+
+    # ----- H3 render cache + block library ------------------------------------------------
+    # For one render setup (LoRA, donor, prompt, seed, length, canvas, regime, keyframes)
+    # every exact render is cached on disk under the slider state that produced it, so a
+    # state rendered before comes back with a decode only. A background builder (a daemon
+    # thread sharing the engine under _repair_engine_lock, yielding to every interactive
+    # render) pre-renders every block switched off — the library: clicking a block's ● shows
+    # the exact clip with that block removed, instantly. Nothing is approximated.
+
+    def _repair_cache_root(self):
+        cache_dir = ""
+        try:
+            cache_dir = self.prefs_vars.get("cache_dir", tk.StringVar()).get().strip()
+        except Exception:
+            pass
+        if not cache_dir:
+            cache_dir = os.path.join(FIZGIG_DIR, "cache")
+        return os.path.join(cache_dir, "repair_cache")
+
+    def _repair_cache_for(self, snapshot, opts):
+        """The RenderCache for this render setup (bound or created; worker thread, under the
+        engine lock). None before a primary is loaded. A setup change drops the old one and
+        stops its build."""
+        eng = self.repair_engine
+        if eng is None or not hasattr(eng, "cache_key_for"):
+            return None
+        try:
+            key = eng.cache_key_for(snapshot, frames=opts["frames"], regime=opts["regime"])
+        except Exception:
+            key = None
+        if not key:
+            return None
+        cache = self._repair_cache
+        if cache is not None and cache.key == key:
+            return cache
+        from fizgig.repair_studio.h3_render_cache import RenderCache
+        from fizgig.repair_studio.h3_blocks import all_block_ids_h3
+        self._repair_cache_stop_build(wait_s=0.0)
+        active = [b for b in all_block_ids_h3() if b in eng.primary_block_ids]
+        cache = RenderCache(self._repair_cache_root(), key, active)
+        cache.set_meta(lora=os.path.basename(eng.primary_path or ""),
+                       donor=os.path.basename(eng.donor_path or ""),
+                       prompt=snapshot.prompt, seed=int(snapshot.seed),
+                       frames=int(opts["frames"]), width=int(snapshot.preview_width),
+                       height=int(snapshot.preview_height), regime=opts["regime"])
+        self._repair_cache = cache
+        print(f"[repair] render cache {key}: {cache.n_entries()} entries, "
+              f"{len(cache.done_ids())}/{len(cache.block_ids)} block-off clips at {cache.dir}")
+        return cache
+
+    def _repair_cache_after_exact(self, snapshot, opts):
+        """An exact render landed (Tk thread): auto-start the library build for this setup
+        if it isn't complete. Only the Dial regime builds — the library IS the fast loop;
+        Confirm renders are judged one at a time."""
+        cache = self._repair_cache
+        if cache is not None and opts.get("regime") == "dial" and not cache.complete() \
+                and not self._repair_cache_paused.is_set():
+            self._repair_cache_start_build(snapshot, opts)
+        self._repair_cache_refresh_ui()
+
+    def _repair_cache_start_build(self, snapshot, opts):
+        t = self._repair_cache_thread
+        if t is not None and t.is_alive():
+            return
+        cache = self._repair_cache
+        if cache is None or cache.complete():
+            return
+        self._repair_cache_stop.clear()
+        snap = snapshot.copy()
+        run_opts = {"frames": opts["frames"], "regime": opts["regime"], "with_audio": False}
+        t = threading.Thread(target=self._repair_cache_worker, args=(cache, snap, run_opts),
+                             daemon=True, name="repair-library")
+        self._repair_cache_thread = t
+        t.start()
+
+    def _repair_cache_worker(self, cache, snapshot, opts):
+        """The library builder. Each entry: wait until no interactive render is pending,
+        take the engine lock, render one block-off clip through the same render_clip path
+        the previews use (so it lands in the cache with its thumb). Ascending block order,
+        so the exact pass-1 resume skips everything before the two blocks that differ from
+        the previous entry. A cancel mid-render (an interactive render wants the engine)
+        aborts the entry, which is retried; the stop event ends the thread between entries."""
+        import time as _time
+        from fizgig.minimax.sampling import PreviewAborted
+        from fizgig.repair_studio.h3_render_cache import build_order, BASE_SIG
+        from fizgig.repair_studio.state import SliderState
+        eng = self.repair_engine
+        queue = (["__baseline__"] if not cache.has(BASE_SIG) else []) + build_order(cache.missing())
+        t_start, n_done = _time.time(), 0
+        try:
+            for bid in queue:
+                while True:
+                    if self._repair_cache_stop.is_set():
+                        return
+                    if (self._repair_cache_paused.is_set() or self._repair_preview_in_flight
+                            or self._repair_preview_after_id is not None
+                            or getattr(self, "_repair_unload_wanted", False)):
+                        _time.sleep(0.1)
+                        continue
+                    with self._repair_engine_lock:
+                        if self._repair_cache_stop.is_set() or self.repair_engine is not eng:
+                            return
+                        self._repair_cache_busy = True
+                        self._repair_cache_current = bid
+                        try:
+                            eng.clear_cancel()
+                            st = SliderState.default_h3()
+                            st.seed, st.prompt = snapshot.seed, snapshot.prompt
+                            st.preview_width = snapshot.preview_width
+                            st.preview_height = snapshot.preview_height
+                            st.preview_frames = opts["frames"]
+                            st.keyframes = snapshot.keyframes
+                            if bid != "__baseline__":
+                                st.blocks[bid].primary_strength = 0.0
+                            t0 = _time.time()
+                            eng.render_clip(st, frames=opts["frames"], regime=opts["regime"],
+                                            with_audio=False, cache=cache)
+                            n_done += 1
+                            rf = getattr(eng, "last_resume_from", None)
+                            print(f"[repair] library: {bid} in {_time.time() - t0:.1f}s"
+                                  + (f" (resumed at block {rf})" if rf is not None else ""))
+                        except PreviewAborted:
+                            continue          # yielded to an interactive render — retry
+                        finally:
+                            self._repair_cache_busy = False
+                            self._repair_cache_current = None
+                    break
+                self.master.after(0, self._repair_cache_refresh_ui)
+            el = _time.time() - t_start
+            print(f"[repair] library build done: {n_done} entries in {el:.0f}s "
+                  f"({el / max(n_done, 1):.1f}s each)")
+        except Exception:
+            import traceback
+            print("[repair] library build stopped on an error:\n" + traceback.format_exc())
+        finally:
+            self._repair_cache_busy = False
+            self._repair_cache_current = None
+            try:
+                self.master.after(0, self._repair_cache_refresh_ui)
+            except Exception:
+                pass
+
+    def _repair_cache_stop_build(self, wait_s: float = 10.0):
+        """Ask the builder to stop (aborting a mid-render entry) and optionally wait."""
+        t = self._repair_cache_thread
+        self._repair_cache_stop.set()
+        if t is None or not t.is_alive():
+            return True
+        eng = self.repair_engine
+        if self._repair_cache_busy and eng is not None and hasattr(eng, "request_cancel"):
+            try:
+                eng.request_cancel()
+            except Exception:
+                pass
+        if wait_s > 0:
+            t.join(wait_s)
+        return not t.is_alive()
+
+    def _repair_cache_toggle(self):
+        """Pause / resume the library build (the button under the previews)."""
+        if self._repair_cache_paused.is_set():
+            self._repair_cache_paused.clear()
+            cache = self._repair_cache
+            if cache is not None and not cache.complete() and self._repair_clips.get("tweaked"):
+                snap = self.repair_state.copy()
+                opts = dict(self._repair_h3_render_opts())
+                snap.preview_width, snap.preview_height = self._repair_h3_canvas("dial")
+                opts["regime"] = "dial"
+                self._repair_cache_start_build(snap, opts)
+        else:
+            self._repair_cache_paused.set()
+            eng = self.repair_engine
+            if self._repair_cache_busy and eng is not None and hasattr(eng, "request_cancel"):
+                eng.request_cancel()      # let go of the GPU now, not after this entry
+        self._repair_cache_refresh_ui()
+
+    def _repair_cache_refresh_ui(self):
+        """Status line, progress bar, button label and the per-block ticks."""
+        cache = self._repair_cache
+        var = getattr(self, "repair_cache_status_var", None)
+        if var is None:
+            return
+        if cache is None:
+            var.set("Library: after the first Dial render, every block is rendered switched "
+                    "off in the background — click a block's ● to see it instantly.")
+            try:
+                self._repair_cache_bar.configure(maximum=1, value=0)
+            except Exception:
+                pass
+            self._repair_cache_refresh_ticks(None)
+            return
+        done, total = len(cache.done_ids()), len(cache.block_ids)
+        t = self._repair_cache_thread
+        building = t is not None and t.is_alive() and not self._repair_cache_paused.is_set()
+        if cache.complete():
+            state = "complete"
+        elif self._repair_cache_paused.is_set():
+            state = "paused"
+        elif building:
+            cur = self._repair_cache_current
+            state = "building" + (f" {cur.replace('h3blk_', 'block ').replace('h3_rf_', 'refiner ')}"
+                                  if cur and cur != "__baseline__" else " baseline")
+        else:
+            state = "idle"
+        var.set(f"Library: {done}/{total} block-off clips ({state}) · "
+                f"{cache.n_entries()} renders cached · {cache.size_bytes() / 2**20:.0f} MB")
+        try:
+            self._repair_cache_bar.configure(maximum=max(total, 1), value=done)
+            self._repair_cache_btn.configure(
+                text="Resume build" if self._repair_cache_paused.is_set() else "Pause build",
+                state="disabled" if cache.complete() else "normal")
+        except Exception:
+            pass
+        self._repair_cache_refresh_ticks(cache)
+
+    def _repair_cache_refresh_ticks(self, cache):
+        eng = self.repair_engine
+        active = set(getattr(eng, "primary_block_ids", ()) or ()) if eng is not None else set()
+        for bid, vars_ in self.repair_block_vars.items():
+            lbl = vars_.get("cache_lbl")
+            if lbl is None:
+                continue
+            try:
+                if cache is None or bid not in active:
+                    lbl.configure(text="", cursor="")
+                elif cache.has_block_off(bid):
+                    lbl.configure(text="●", fg="#2ECC71", cursor="hand2")
+                else:
+                    lbl.configure(text="○", fg=COLORS["text_muted"], cursor="")
+            except Exception:
+                pass
+
+    def _repair_cache_peek(self, block_id):
+        """Click on a block's ●: show the library's exact clip with that block off in the
+        tweaked pane (and the player), without touching the sliders."""
+        cache = self._repair_cache
+        eng = self.repair_engine
+        if cache is None or eng is None or not cache.has_block_off(block_id):
+            return
+        if self._repair_preview_in_flight:
+            self.repair_status_var.set("A render is in flight — try the peek when it lands.")
+            return
+        from fizgig.repair_studio.state import SliderState
+        opts = dict(self._repair_h3_render_opts())
+        opts["regime"] = "dial"
+        st = SliderState.default_h3()
+        st.seed, st.prompt = self.repair_state.seed, self.repair_state.prompt
+        st.preview_width, st.preview_height = self._repair_h3_canvas("dial")
+        st.preview_frames = opts["frames"]
+        st.keyframes = self.repair_state.keyframes
+        st.blocks[block_id].primary_strength = 0.0
+        label = eng.describe_state(st)
+        self._repair_preview_in_flight = True
+        self.repair_status_var.set(f"Loading {label} from the library…")
+        self._repair_progress_marquee_on()
+
+        def _work():
+            try:
+                with self._repair_engine_lock:
+                    base = eng.baseline_clip(st, cache=cache, **opts)
+                    clip = eng.render_clip(st, cache=cache, **opts)
+                self.master.after(0, lambda: self._set_repair_preview_clips(
+                    base, clip, peek=label))
+            except Exception:
+                import traceback
+                err = traceback.format_exc()
+
+                def _show():
+                    self._repair_progress_end()
+                    self._repair_preview_in_flight = False
+                    self.repair_status_var.set("Library peek failed — see console.")
+                    print(err)
+                self.master.after(0, _show)
+
+        threading.Thread(target=_work, daemon=True).start()
+
+    def _repair_cache_hover(self, block_id, event):
+        """Hovering a ● shows the library entry's middle-frame thumb beside the cursor."""
+        win = getattr(self, "_repair_cache_hover_win", None)
+        if win is not None:
+            try:
+                win.destroy()
+            except Exception:
+                pass
+            self._repair_cache_hover_win = None
+        cache = self._repair_cache
+        if block_id is None or cache is None or not cache.has_block_off(block_id):
+            return
+        from fizgig.repair_studio.h3_render_cache import block_off_sig
+        path = cache.thumb_path(block_off_sig(block_id))
+        if not os.path.isfile(path):
+            return
+        try:
+            from PIL import Image as _PILImage
+            img = _PILImage.open(path)
+            photo = ImageTk.PhotoImage(img)
+            win = tk.Toplevel(self.master)
+            win.overrideredirect(True)
+            win.attributes("-topmost", True)
+            win.geometry(f"+{event.x_root + 16}+{event.y_root + 12}")
+            lbl = tk.Label(win, image=photo, bd=1, relief="solid", bg="#000")
+            lbl.image = photo
+            lbl.pack()
+            tk.Label(win, text=f"{block_id.replace('h3blk_', 'Block ').replace('h3_rf_', 'Refiner ')} off "
+                               "— click to view", font=(FONT_FAMILY, 8), bg="#000", fg="#ddd").pack(fill=tk.X)
+            self._repair_cache_hover_win = win
+        except Exception:
+            self._repair_cache_hover_win = None
+
+    def _repair_cache_clear(self):
+        from fizgig.repair_studio.h3_render_cache import clear_render_cache, dir_size
+        root = self._repair_cache_root()
+        size = dir_size(root) if os.path.isdir(root) else 0
+        if not messagebox.askyesno(
+                "Clear render cache",
+                f"Delete every cached Repair Studio render under\n{root}\n"
+                f"({size / 2**20:.0f} MB)?\n\nThe block library rebuilds in the background "
+                "on demand. Nothing else is touched."):
+            return
+        self._repair_cache_stop_build(wait_s=15.0)
+        n, freed = clear_render_cache(root)
+        self._repair_cache = None
+        self._repair_cache_refresh_ui()
+        self.repair_status_var.set(f"Cleared {n} cached setup{'s' if n != 1 else ''} "
+                                   f"({freed / 2**20:.0f} MB).")
 
     def _repair_stop_wav(self):
         try:
@@ -24186,7 +24678,9 @@ class LoRATrainerGUI:
             clip = self._repair_clips[side]
             reg = "Dial" if clip.get("regime") == "dial" else "Confirm"
             snd = " · 🔊" if (i == 0 and clip.get("wav_path")) else ""
-            P["titles"][i].configure(text=f"{names[side]} — {reg}{snd}")
+            src = " · from cache" if clip.get("cached") else ""
+            P["titles"][i].configure(text=f"{names[side]} — {reg}{src}{snd}",
+                                     fg=COLORS["text_primary"])
         if P["n"] == 1:
             self._repair_clip_player_stop()
         self._repair_clip_player_paint(min(P["idx"], P["n"] - 1))
@@ -24791,9 +25285,15 @@ class LoRATrainerGUI:
         # quit) — an H3 preview runs ~12s, plenty of time to switch tabs mid-render, and
         # nothing ever retried the unload. Now: cancel the render and retry until the worker
         # lands, then unload for real.
+        _lat_t = getattr(self, "_repair_cache_thread", None)
         if (getattr(self, "_repair_preview_in_flight", False)
-                or getattr(self, "_repair_loading", False)):
+                or getattr(self, "_repair_loading", False)
+                or (_lat_t is not None and _lat_t.is_alive())):
             self._repair_unload_wanted = True     # stops the abort path re-firing a preview
+            # The library builder shares the engine: tell it to stop, abort its entry, and
+            # come back once its thread has actually exited.
+            if _lat_t is not None and _lat_t.is_alive():
+                self._repair_cache_stop_build(wait_s=0.0)
             eng = self.repair_engine
             if eng is not None and hasattr(eng, "request_cancel"):
                 try:
@@ -24813,6 +25313,8 @@ class LoRATrainerGUI:
         self._repair_unload_tries = 0
         self._repair_unload_wanted = False
         self._repair_clip_player_close()     # a looping player must not outlive the tab
+        self._repair_cache = None          # rebinds from disk on the next exact render
+        self._repair_cache_refresh_ui()
         if self.repair_engine is not None and self.repair_engine.pipeline is not None:
             print("[repair] tab-switch unload: freeing models…", flush=True)
             try:
@@ -24955,9 +25457,18 @@ class LoRATrainerGUI:
             messagebox.showinfo("Busy", "A preview is still rendering — wait for it to finish "
                                 "before resetting the session.")
             return
-        # Close pop-out preview window if open
+        # Close pop-out preview window if open; stop the library builder (it holds the engine
+        # mid-render — a reset under it would hang on CUDA).
         self._repair_clip_player_close()
         self._repair_clips = {}
+        if not self._repair_cache_stop_build(wait_s=20.0):
+            messagebox.showinfo("Busy", "The library builder is still finishing its render — "
+                                "try again in a moment.")
+            return
+        self._repair_cache = None
+        self._repair_peek = None
+        self._repair_set_tweaked_title(None, "")
+        self._repair_cache_refresh_ui()
         if self._repair_popout_window is not None:
             try:
                 self._repair_popout_window.destroy()

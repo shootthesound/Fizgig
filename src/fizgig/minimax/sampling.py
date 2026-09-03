@@ -150,11 +150,18 @@ class BlockCacheContext:
     run extra/model-variant forwards the cache doesn't model.
     """
 
-    def __init__(self, entries=None, resume_from=None, cache_device="cpu"):
+    def __init__(self, entries=None, resume_from=None, cache_device="cpu", record_steps=None):
         self.entries = entries or {}
         self.resume_from = resume_from
         self.new_entries = {}
         self.cache_device = cache_device
+        # Which step indices to RECORD this render (None = all). The exact pass-1 resume
+        # only ever needs step 0: recording the other passes would park gigabytes nobody
+        # reads. A step outside the set still resumes if `entries` holds it.
+        self.record_steps = set(record_steps) if record_steps is not None else None
+
+    def records(self, step: int) -> bool:
+        return self.record_steps is None or step in self.record_steps
 
 
 @torch.no_grad()
@@ -164,7 +171,8 @@ def sample_image(model, text_embeds, *, width=512, height=512, steps=8, cfg_scal
                  sampler="res_multistep", schedule_mode="comfy",
                  ref_latents=None, text_token_tags=None, num_frames: int = 1,
                  on_slow_step=None, slow_step_s: float = 120.0, return_audio=False,
-                 block_cache: "BlockCacheContext | None" = None, keyframes=None):
+                 block_cache: "BlockCacheContext | None" = None, keyframes=None,
+                 on_denoised=None):
     """Denoise one image OR clip and return its LATENT [1, 24, T, H/16, W/16].
 
     num_frames is PIXEL frames on the model's 17n+5 grid (5, 22, ..., 124, 141); off-grid
@@ -193,6 +201,11 @@ def sample_image(model, text_embeds, *, width=512, height=512, steps=8, cfg_scal
     last-frame conditioning (Repair Studio): the same "ride along every step, never denoised"
     contract as refs, anchored on the clip's own timeline. Latents must be encoded at this
     call's width/height (the DiT checks). Index 0 = first frame, num_frames-1 = last.
+
+    on_denoised(step_1based, n_eval, x0_estimate) fires after every evaluation with the
+    step's clean-latent estimate (`x + sigma * out`, fp32, the clip's latent shape) — the
+    Repair Studio's "show early" hook decodes one of these while the remaining passes run.
+    Video only; exceptions are swallowed like on_slow_step's.
 
     on_slow_step(seconds, step, total) fires ONCE if any step exceeds slow_step_s. It exists
     because the interesting failure here is not an exception: when a preview oversubscribes
@@ -276,14 +289,15 @@ def sample_image(model, text_embeds, *, width=512, height=512, steps=8, cfg_scal
             a_in = (audio_rows * (_sa / _sv)).to(dtype)
             if _use_block_cache:
                 from fizgig.minimax.model import H3ActivationCacheEntry
-                _entry = H3ActivationCacheEntry()
+                _entry = H3ActivationCacheEntry() if block_cache.records(i) else None
                 _step_cached = block_cache.entries.get(i)
                 _step_resume = block_cache.resume_from if _step_cached is not None else None
                 out, a_raw = model.forward_cached(
                     x.to(dtype), t, text_embeds, audio_rows=a_in, return_audio=True,
                     resume_from=_step_resume, cached=_step_cached, new_cache=_entry,
                     cache_device=block_cache.cache_device)
-                block_cache.new_entries[i] = _entry
+                if _entry is not None:
+                    block_cache.new_entries[i] = _entry
             else:
                 out, a_raw = model(x.to(dtype), t, text_embeds,
                                    audio_rows=a_in, return_audio=True, **_ref_kw)
@@ -311,14 +325,15 @@ def sample_image(model, text_embeds, *, width=512, height=512, steps=8, cfg_scal
             a_out = None
             if _use_block_cache:
                 from fizgig.minimax.model import H3ActivationCacheEntry
-                _entry = H3ActivationCacheEntry()
+                _entry = H3ActivationCacheEntry() if block_cache.records(i) else None
                 _step_cached = block_cache.entries.get(i)
                 _step_resume = block_cache.resume_from if _step_cached is not None else None
                 out = model.forward_cached(
                     x.to(dtype), t, text_embeds,
                     resume_from=_step_resume, cached=_step_cached, new_cache=_entry,
                     cache_device=block_cache.cache_device).float()
-                block_cache.new_entries[i] = _entry
+                if _entry is not None:
+                    block_cache.new_entries[i] = _entry
             else:
                 out = model(x.to(dtype), t, text_embeds, **_ref_kw).float()
             if use_cfg:
@@ -328,6 +343,11 @@ def sample_image(model, text_embeds, *, width=512, height=512, steps=8, cfg_scal
         # from sigma to 0). Euler is x + (sigma - sigma_next)*out, identical to comfy's
         # to_d()/dt form; res_multistep reuses the PREVIOUS denoised for a 2nd-order step.
         denoised = x + s_curr * out
+        if on_denoised is not None:
+            try:
+                on_denoised(i + 1, n_eval, denoised)
+            except Exception:       # an early-look decode must never take the render down
+                pass
         if a_out is not None:
             # The carried audio variable is an ordinary video-schedule flow latent now, so
             # the SAME update (Euler or second-order) drives both streams below.

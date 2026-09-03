@@ -19,6 +19,7 @@ Pins (headless, no models):
 Run: venv/Scripts/python.exe tests/test_repair_h3_video.py
 """
 import os
+import shutil
 import sys
 
 os.environ["FIZGIG_NO_PERSIST"] = "1"
@@ -55,6 +56,23 @@ G.messagebox.showerror = lambda *a, **k: print("  (showerror suppressed)", a)
 def fam(name):
     app.repair_family_var.set(name)
     app._on_repair_family_changed()
+
+
+def wait_for(cond, timeout=5.0):
+    """Pump a real mainloop until cond() — after() from a worker thread needs the main
+    thread to actually be in the loop, exactly as in the running app."""
+    import time as _t
+    deadline = _t.time() + timeout
+
+    def _poll():
+        if cond() or _t.time() > deadline:
+            root.quit()
+        else:
+            root.after(20, _poll)
+
+    root.after(20, _poll)
+    root.mainloop()
+    return cond()
 
 
 try:
@@ -120,6 +138,13 @@ try:
         def reset(self):
             pass
 
+        def mark_blocks_changed(self, blocks):
+            pass
+
+        def _invalidate_baseline_cache(self):
+            self._baseline_clip_key = None
+            self._baseline_clip = None
+
         def generate_baseline(self, st):
             calls.append("generate_baseline"); return Image.new("RGB", (32, 32), "red")
 
@@ -158,8 +183,8 @@ try:
        captured["snap"].preview_width == 768 and captured["snap"].preview_height == 640)
     ck("H3 run_async: frames on the snapshot", captured["snap"].preview_frames == 22)
     o = captured["opts"]
-    ck("H3 run_async: opts carry frames/regime; sound only with an audio VAE configured",
-       o == {"frames": 22, "regime": "confirm",
+    ck("H3 run_async: opts carry frames/regime/early; sound only with an audio VAE configured",
+       o == {"frames": 22, "regime": "confirm", "early_step": 2,
              "with_audio": bool(app._repair_h3_audio_vae_path())}, o)
     app.repair_h3_sound_var.set(False)
     app._repair_preview_in_flight = False
@@ -197,8 +222,8 @@ try:
     root.update()
     ck("worker with opts: clip path only",
        [c[0] for c in calls] == ["baseline_clip", "render_clip"], calls)
-    ck("worker with opts: baseline gets the same opts",
-       calls[0][1] == {"frames": 5, "regime": "dial", "with_audio": False}, calls[0])
+    ck("worker with opts: baseline gets the same opts (+ the cache slot)",
+       calls[0][1] == {"frames": 5, "regime": "dial", "with_audio": False, "cache": None}, calls[0])
 
     # --- 5. clips landed + the player ------------------------------------------------------
     ck("clips landed: both sides stored, 5 frames each",
@@ -249,6 +274,203 @@ try:
        and app._repair_popout_label is not None)
     app._repair_popout_window.destroy()
     app._repair_popout_window = None
+
+    # --- 6. render cache + block library: build after an exact Dial render, ticks, cache
+    #        hit on [0], peek, show-early badge, no approximation anywhere ----------------
+    import tempfile
+    import torch
+    cache_root = tempfile.mkdtemp(prefix="fizgig_rcache_gui_")
+    app._repair_cache_root = lambda: cache_root
+    ACTIVE = {"h3blk_3", "h3blk_21", "h3_rf_0"}
+    renders = []
+
+    class CacheEngine(FakeEngine):
+        """Synthetic renders: latent = ones + (index+1) marker per active block at 1.0, so an
+        off-render differs from the baseline in a known way. Real render_clip/baseline_clip
+        semantics (cache hit / put, early hook) are exercised through the real engine
+        methods by binding them onto this fake."""
+        primary_block_ids = ACTIVE
+        primary_hash = "deadbeef"
+        donor_network = None
+        donor_hash = None
+        donor_path = None
+        primary_path = "C:/fake/lora.safetensors"
+        _steps = 6
+        _turbo_net = object()
+        _baseline_clip_key = None
+        _baseline_clip = None
+        last_resume_from = None
+
+        def regime_params(self, regime):
+            return (4, 1.0) if regime == "dial" else (6, 0.75)
+
+        def request_cancel(self):
+            pass
+
+        @staticmethod
+        def keyframe_signature(st):
+            return ()
+
+        def clip_key(self, st, **kw):
+            return (st.seed, st.prompt, st.preview_width, st.preview_height, kw.get("frames"),
+                    kw.get("steps"), kw.get("turbo_strength"))
+
+        def cache_key_for(self, st, *, frames, regime, **_):
+            from fizgig.repair_studio.h3_render_cache import setup_key
+            steps, strength = self.regime_params(regime)
+            return setup_key(primary_hash=self.primary_hash, donor_hash="", prompt=st.prompt,
+                             seed=st.seed, frames=frames, width=st.preview_width,
+                             height=st.preview_height, steps=steps, turbo_strength=strength,
+                             keyframe_sig=())
+
+        def _latent(self, st):
+            lat = torch.ones(1, 24, 2, 4, 4)
+            for i, bid in enumerate(sorted(ACTIVE)):
+                bs = st.blocks[bid]
+                m = bs.primary_strength if bs.primary_enabled else 0.0
+                lat[:, i] += float(m) * (i + 1)
+            return lat
+
+        def render_latent(self, st, on_denoised=None, **kw):
+            renders.append(("render_latent", kw.get("steps"), st.preview_width))
+            if on_denoised is not None:
+                for _s in (1, 2):
+                    on_denoised(_s, kw.get("steps") or 4, self._latent(st) * 0.5)
+            time.sleep(0.02)
+            return self._latent(st), torch.zeros(4, 32)
+
+        def decode_clip_frames(self, latent):
+            return [Image.new("RGB", (32, 32), "black") for _ in range(3)]
+
+        def decode_middle_frame_image(self, latent):
+            renders.append(("early_decode",))
+            return Image.new("RGB", (32, 32), "blue")
+
+        def decode_audio(self, rows):
+            return None
+
+    from fizgig.repair_studio.h3_engine import H3RepairEngine as _H3E
+    CacheEngine.render_clip = _H3E.render_clip
+    CacheEngine.baseline_clip = _H3E.baseline_clip
+    CacheEngine.describe_state = staticmethod(_H3E.describe_state)
+
+    fam("minimax")
+    app.repair_engine = CacheEngine()
+    app._refresh_block_slider_activity()
+    app.repair_prompt_var.set("zwxem cache prompt")
+    app.repair_seed_var.set("3")
+    app.repair_h3_frames_var.set("22 frames (~1s)")
+    app.repair_h3_size_var.set("768 × 640  (landscape)")
+    app.repair_h3_dial_scale_var.set("⅔")
+    app.repair_h3_regime_var.set("dial")
+    app.repair_h3_sound_var.set(False)
+    app.repair_h3_early_var.set(True)
+    ck("library row managed under H3", bool(app._repair_cache_row.winfo_manager()))
+    ck("dial canvas: ⅔ of 768x640 snapped to /32", app._repair_h3_canvas("dial") == (512, 416))
+    ck("confirm canvas: the full Size", app._repair_h3_canvas("confirm") == (768, 640))
+    app.repair_h3_dial_scale_var.set("½")
+    ck("dial canvas: ½", app._repair_h3_canvas("dial") == (384, 320))
+    app.repair_h3_dial_scale_var.set("Full")
+    ck("dial canvas: Full = Size", app._repair_h3_canvas("dial") == (768, 640))
+    app.repair_h3_dial_scale_var.set("⅔")
+    ck("no cache before the first render", app._repair_cache is None)
+    if app._repair_preview_after_id is not None:      # (donor-var traces, see above)
+        root.after_cancel(app._repair_preview_after_id)
+        app._repair_preview_after_id = None
+    # first exact Dial render -> early look mid-render, then the library builds
+    early_seen = []
+    _orig_show_early = app._repair_show_early
+    def _spy_early(img, step, n, gen):
+        early_seen.append((step, n, app._repair_preview_in_flight))
+        _orig_show_early(img, step, n, gen)
+    app._repair_show_early = _spy_early
+    app._repair_preview_in_flight = False
+    app._run_preview_async()
+    wait_for(lambda: (not app._repair_preview_in_flight and app._repair_cache is not None
+                      and app._repair_cache.complete()
+                      and not app._repair_cache_thread.is_alive()), timeout=15.0)
+    cache = app._repair_cache
+    ck("render bound a cache for the LoRA's blocks at the DIAL canvas",
+       cache is not None and set(cache.block_ids) == ACTIVE
+       and cache.meta.get("width") == 512 and cache.meta.get("height") == 416,
+       None if cache is None else cache.meta)
+    ck("snapshot rendered at the dial canvas",
+       any(r[0] == "render_latent" and r[2] == 512 for r in renders), renders[:3])
+    ck("default sliders: the tweaked side is the baseline -> served from cache, no early look",
+       app._repair_clips["tweaked"].get("cached") is True and not early_seen, early_seen)
+    ck("library complete: base + every block-off entry",
+       cache.complete() and cache.n_entries() == 1 + len(ACTIVE))
+    root.update()
+    ck("ticks: ● on active blocks (clickable), blank on untouched",
+       app.repair_block_vars["h3blk_21"]["cache_lbl"].cget("text") == "●"
+       and app.repair_block_vars["h3blk_5"]["cache_lbl"].cget("text") == "")
+    ck("status: complete + counts", "complete" in app.repair_cache_status_var.get()
+       and "renders cached" in app.repair_cache_status_var.get(), app.repair_cache_status_var.get())
+    ck("entries carry thumbs", os.path.isfile(cache.thumb_path("off:h3blk_21")))
+    e = cache.get("off:h3blk_21")[0]; b = cache.get("base")[0]
+    i21 = sorted(ACTIVE).index("h3blk_21")
+    ck("block-21-off entry is that exact render",
+       torch.allclose((b - e)[:, i21], torch.full_like(e[:, i21], float(i21 + 1))))
+    # [0] on block 21 -> a cache HIT: no render, no early look, status says from cache
+    renders.clear(); early_seen.clear()
+    app.repair_block_vars["h3blk_21"]["primary_strength"].set(0.0)
+    wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
+             and "from cache" in app.repair_status_var.get(), timeout=6.0)
+    ck("[0] on a library block is served from the cache (no render, no early look)",
+       not any(r[0] == "render_latent" for r in renders) and not early_seen
+       and app._repair_clips["tweaked"].get("cached") is True, renders)
+    ck("status says exact, from cache", "exact, from cache" in app.repair_status_var.get(),
+       app.repair_status_var.get())
+    # a new state renders, is cached, and re-rendering the same state hits
+    renders.clear()
+    app.repair_block_vars["h3blk_21"]["primary_strength"].set(0.5)
+    wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
+             and app._repair_clips["tweaked"].get("cached") is False, timeout=6.0)
+    ck("a new state renders (exact) and lands in the cache",
+       any(r[0] == "render_latent" for r in renders) and cache.n_entries() == 2 + len(ACTIVE))
+    ck("show early fired during that render with pass 2 of 4 (pass 1 is mush), while in flight",
+       early_seen and early_seen[0][:2] == (2, 4) and early_seen[0][2] is True
+       and any(r[0] == "early_decode" for r in renders), early_seen)
+    ck("...and the finished clip cleared the early badge",
+       app._repair_tweaked_title.cget("text") == "Tweaked (current sliders)")
+    app.repair_block_vars["h3blk_21"]["primary_strength"].set(1.0)
+    wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
+             and app._repair_clips["tweaked"].get("cached") is True, timeout=6.0)
+    ck("back to 1.0 = baseline state, served from cache", app._repair_clips["tweaked"].get("cached") is True)
+    # peek: click ● on block 3 -> its off clip shows, sliders untouched
+    renders.clear()
+    app._repair_cache_peek("h3blk_3")
+    wait_for(lambda: not app._repair_preview_in_flight and app._repair_peek is not None, timeout=6.0)
+    ck("peek shows the library entry without touching the sliders",
+       app._repair_peek == "Block 3 off"
+       and app.repair_block_vars["h3blk_3"]["primary_strength"].get() == 1.0
+       and "library" in app._repair_tweaked_title.cget("text")
+       and not any(r[0] == "render_latent" for r in renders), (app._repair_peek, renders))
+    # a slider move ends the peek
+    app.repair_block_vars["h3blk_3"]["primary_strength"].set(0.8)
+    wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
+             and app._repair_peek is None, timeout=6.0)
+    ck("a slider move ends the peek and restores the title",
+       app._repair_peek is None and app._repair_tweaked_title.cget("text") == "Tweaked (current sliders)")
+    # regime switch = another setup key; Confirm renders at the full Size and never builds
+    app.repair_h3_regime_var.set("confirm")
+    renders.clear()
+    app._on_repair_h3_clip_changed()
+    wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
+             and any(r[0] == "render_latent" and r[2] == 768 for r in renders), timeout=6.0)
+    ck("Confirm renders at the full Size", any(r[0] == "render_latent" and r[2] == 768 for r in renders))
+    ck("Confirm setup is its own cache, and does not build a library",
+       app._repair_cache is not cache and (app._repair_cache_thread is None
+                                          or not app._repair_cache_thread.is_alive()))
+    # restart: a fresh cache on the dial key finds everything
+    from fizgig.repair_studio.h3_render_cache import RenderCache
+    again = RenderCache(cache_root, cache.key, sorted(ACTIVE))
+    ck("restart: the dial library reloads complete from disk", again.complete())
+    app.repair_h3_regime_var.set("dial")
+    app._reset_repair_session()
+    ck("reset drops the cache and the title", app._repair_cache is None
+       and app._repair_tweaked_title.cget("text") == "Tweaked (current sliders)")
+    shutil.rmtree(cache_root, ignore_errors=True)
 finally:
     G.messagebox.showerror = _err
     try:

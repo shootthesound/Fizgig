@@ -84,6 +84,7 @@ class H3RepairEngine:
         self.primary_block_ids: Set[str] = set()
         self.donor_block_ids: Set[str] = set()
         self.primary_hash: Optional[str] = None
+        self.donor_hash: Optional[str] = None
 
         # The community Turbo LoRA (6-step previews). Applied ONCE at ensure_pipeline and left
         # enabled — it conditions every render identically, so baseline-vs-tweaked comparisons
@@ -115,8 +116,16 @@ class H3RepairEngine:
         self._baseline_clip: Optional[dict] = None
         self._last_frame_latent = None   # Klein-only chain; kept None for Royale's workers
 
-        # Phase C (activation cache) plumbing — off until forward_cached lands.
+        # Activation cache. `_turbo_enabled` is the OLD whole-render resume behind
+        # generate_preview (measured misleading on H3 — stays False). `resume_enabled` is the
+        # EXACT pass-1 resume in render_latent: only step 0 is recorded (~2.3 GB at 768²×22f,
+        # ~1 GB at the ⅔ dial canvas) and only step 0 resumes. `_cache_device` is decided at
+        # load: "cuda" when the card has the headroom, else "cpu" (a PCIe round trip per
+        # render — worth it only if it still nets a saving; see ensure_pipeline).
         self._turbo_enabled = False
+        self.resume_enabled = True
+        self._cache_device = "cpu"
+        self.last_resume_from = None   # what the last render skipped up to (None = full pass)
         self._act_cache = None
         self._act_cache_key = None
         self._act_cache_state = None
@@ -172,6 +181,29 @@ class H3RepairEngine:
         else:
             logger.info("[h3-workbench] no Turbo LoRA configured — previews run 20 steps "
                         "(set it in Preferences for 6-step previews)")
+        # Pass-1 resume cache placement. The step-0 block inputs are 1.7 GB at 768×640×22f
+        # (~0.8 GB at the ⅔ dial canvas). Measured 3 Sep on the 5090 (int8 plan): a
+        # CPU-parked cache costs +0.2 s per render for the PCIe round trip and the resumed
+        # render saves exactly what the GPU-parked one does (4.22 s vs 4.18 s at block 45,
+        # plain 5.71 s), so the resume is ON everywhere; the GPU only hosts the cache when
+        # there is headroom left for the clip decoder beside it.
+        try:
+            from fizgig.utils.device import plannable_free_vram
+            free_after = plannable_free_vram()
+        except Exception:
+            free_after = 0.0
+        self.resume_enabled = True
+        self._cache_device = "cuda" if free_after >= 8.0 else "cpu"
+        logger.info("[h3-workbench] exact pass-1 resume ON, step-0 cache on the %s "
+                    "(%.1f GB free after the DiT)", "GPU" if self._cache_device == "cuda"
+                    else "CPU", free_after)
+        # Warm the clip decoder now, on the CPU: the first decode of a session otherwise
+        # pays ~10 s (4.8 GB off disk + first CUDA calls) in the middle of the first preview
+        # — measured 3 Sep: 11.6 s cold, 1.8 s every decode after.
+        try:
+            self._ensure_decoder()
+        except Exception:
+            logger.exception("[h3-workbench] decoder pre-load failed (it loads at first decode)")
         self.pipeline = _Loaded()
 
     def _ensure_decoder(self):
@@ -306,6 +338,11 @@ class H3RepairEngine:
         self.donor_network = net
         self.donor_path = path
         self.donor_block_ids = extract_block_ids_h3(net)
+        try:
+            from fizgig.profiler.visualize import compute_lora_hash
+            self.donor_hash = compute_lora_hash(path)
+        except Exception:
+            self.donor_hash = None
         logger.info("H3 donor loaded: %s (%d blocks)", path, len(self.donor_block_ids))
 
     def unload_donor(self) -> None:
@@ -313,7 +350,22 @@ class H3RepairEngine:
             self.donor_network.set_enabled(False)
             self.donor_network = None
             self.donor_path = None
+            self.donor_hash = None
             self.donor_block_ids = set()
+
+    def cache_key_for(self, state, *, frames, regime, **_ignored) -> Optional[str]:
+        """The render-cache setup key for this state's render setup, or None before a
+        primary is loaded. Sound doesn't enter the key: audio rows are part of every entry."""
+        if self.primary_network is None or not self.primary_hash:
+            return None
+        from fizgig.repair_studio.h3_render_cache import setup_key
+        steps, strength = self.regime_params(regime)
+        frames = int(frames or getattr(state, "preview_frames", 0) or H3_PREVIEW_FRAMES)
+        return setup_key(primary_hash=self.primary_hash, donor_hash=self.donor_hash or "",
+                         prompt=state.prompt, seed=int(state.seed), frames=frames,
+                         width=int(state.preview_width), height=int(state.preview_height),
+                         steps=int(steps), turbo_strength=strength,
+                         keyframe_sig=self.keyframe_signature(state))
 
     # ----- slider state ------------------------------------------------------
     def apply_state(self, state) -> None:
@@ -488,15 +540,26 @@ class H3RepairEngine:
                       prompt: Optional[str] = None, width: Optional[int] = None,
                       height: Optional[int] = None, frames: Optional[int] = None,
                       steps: Optional[int] = None, turbo_strength: Optional[float] = None,
-                      keyframes=None):
+                      keyframes=None, on_denoised=None):
         """Apply the slider state and sample ONE clip: returns (latent [1,24,T,H/16,W/16] on
         CPU fp32, audio_rows [2*A, 32] on CPU fp32 or None). No decode — the caller decides
-        (decode_clip_frames / decode_audio, or store it in the lattice).
+        (decode_clip_frames / decode_audio, or store it in the render cache).
 
         keyframes: [(pixel_frame_index, latent)] from encode_keyframe at THIS width/height;
         defaults to state.keyframes when the state carries them. turbo_strength re-dials the
         Turbo modules for this render (Dial 1.0 / Confirm 0.75) and restores nothing — the
-        caller owns the regime; see set_turbo_strength."""
+        caller owns the regime; see set_turbo_strength. on_denoised(step, n, x0_estimate)
+        fires after every pass (the "show early" hook).
+
+        **Exact pass-1 resume.** When the previous render had the same setup (LoRA, donor,
+        seed, prompt, canvas, length, steps, Turbo strength) and only blocks >= k changed,
+        the FIRST pass skips blocks < k by restoring their cached input — bit-identical to a
+        full pass, because nothing before k saw a different input yet. Passes 2..n always run
+        in full: their input latent already carries the change, so nothing there is reusable
+        (resuming them anyway was measured to keep ~6% of a tweak's effect — never again).
+        Only pass 1 is recorded (one step's block inputs, not a whole render's). Off with
+        keyframes (forward_cached doesn't lay them out). Measured 3 Sep at 768×640×22 Dial:
+        bit-exact, saves 2% / 12% / 22% of the render for a change at block 5 / 25 / 45."""
         from fizgig.minimax import sampling
         self.apply_state(state)
         prompt = prompt if prompt is not None else state.prompt
@@ -520,13 +583,45 @@ class H3RepairEngine:
                     pass
             return True if self._cancel_event.is_set() else None
 
-        with torch.no_grad():
-            lat, audio = sampling.sample_image(
-                self.dit, emb.to(self.device, self.dtype),
-                width=width, height=height, steps=steps, cfg_scale=1.0,
-                seed=int(seed), device=self.device, dtype=self.dtype,
-                num_frames=frames, on_slow_step=_abort_check, slow_step_s=0.0,
-                return_audio=True, keyframes=keyframes)
+        ctx = None
+        key = (self.primary_path, self.donor_path, int(seed), prompt, int(width), int(height),
+               int(frames), int(steps), self._turbo_strength)
+        if self.resume_enabled and not keyframes and hasattr(self.dit, "forward_cached"):
+            resume = None
+            entries = {}
+            if self._act_cache_key == key and self._act_cache:
+                entries = self._act_cache
+                resume = self._resume_from_diff(state)
+            ctx = sampling.BlockCacheContext(entries=entries, resume_from=resume,
+                                             cache_device=self._cache_device, record_steps={0})
+            self.last_resume_from = resume
+
+        def _render(block_cache):
+            with torch.no_grad():
+                return sampling.sample_image(
+                    self.dit, emb.to(self.device, self.dtype),
+                    width=width, height=height, steps=steps, cfg_scale=1.0,
+                    seed=int(seed), device=self.device, dtype=self.dtype,
+                    num_frames=frames, on_slow_step=_abort_check, slow_step_s=0.0,
+                    return_audio=True, keyframes=keyframes, block_cache=block_cache,
+                    on_denoised=on_denoised)
+
+        if ctx is not None:
+            try:
+                lat, audio = _render(ctx)
+                e0 = ctx.new_entries.get(0)
+                if e0 is not None:
+                    self._act_cache = {0: e0}
+                    self._act_cache_key = key
+                    self._act_cache_state = state.copy()
+            except sampling.PreviewAborted:
+                raise
+            except Exception:
+                logger.exception("pass-1 resume failed — falling back to a full render")
+                self._invalidate_activation_cache()
+                lat, audio = _render(None)
+        else:
+            lat, audio = _render(None)
         lat = lat.detach().float().cpu()
         audio = audio.detach().float().cpu() if audio is not None else None
         return lat, audio
@@ -604,25 +699,83 @@ class H3RepairEngine:
                 turbo_strength, bool(with_audio), self.keyframe_signature(state))
 
     def render_clip(self, state, *, frames: Optional[int] = None, regime: str = "confirm",
-                    with_audio: bool = True) -> dict:
+                    with_audio: bool = True, cache=None, early_step: int = 0,
+                    on_early=None, **_ignored) -> dict:
         """Render + decode one clip for the slider state. Returns
         {"latent", "audio_rows", "frames": [PIL...], "wav": [2, L] or None, "middle": PIL,
-         "regime", "steps", "turbo_strength", "frames_n"}."""
+         "regime", "steps", "turbo_strength", "frames_n", "cached": bool}.
+
+        cache: a RenderCache for this setup — a state rendered before is served from it
+        (decode only, "cached": True); a fresh render is stored into it under the state's
+        signature. early_step + on_early: "show early" — after pass `early_step` the
+        clean-latent estimate's middle frame is decoded and handed to on_early(pil, step, n)
+        while the remaining passes run. Never fires on a cache hit."""
+        from fizgig.repair_studio.h3_render_cache import signature
         steps, strength = self.regime_params(regime)
         frames = int(frames or getattr(state, "preview_frames", 0) or H3_PREVIEW_FRAMES)
-        lat, aud = self.render_latent(state, frames=frames, steps=steps,
-                                      turbo_strength=strength)
+        sig = signature(state)
+        hit = cache.get(sig) if cache is not None else None
+        if hit is not None:
+            lat, aud = hit
+            cached = True
+        else:
+            def _on_denoised(step, n, x0):
+                if on_early is None or step != int(early_step):
+                    return
+                img = self.decode_middle_frame_image(x0)
+                on_early(img, step, n)
+
+            lat, aud = self.render_latent(state, frames=frames, steps=steps,
+                                          turbo_strength=strength,
+                                          on_denoised=_on_denoised if early_step > 0 else None)
+            cached = False
         imgs = self.decode_clip_frames(lat)
         wav = self.decode_audio(aud) if (with_audio and frames > 1) else None
-        return {"latent": lat, "audio_rows": aud, "frames": imgs, "wav": wav,
+        clip = {"latent": lat, "audio_rows": aud, "frames": imgs, "wav": wav,
                 "middle": imgs[len(imgs) // 2], "regime": regime, "steps": steps,
-                "turbo_strength": strength, "frames_n": frames}
+                "turbo_strength": strength, "frames_n": frames, "cached": cached, "sig": sig}
+        if cache is not None and not cached:
+            try:
+                cache.put(sig, lat, aud, middle=clip["middle"], regime=regime,
+                          label=self.describe_state(state))
+            except Exception:
+                logger.exception("render cache: put failed (render still shown)")
+        return clip
+
+    @torch.no_grad()
+    def decode_middle_frame_image(self, latent) -> Image.Image:
+        """One PIL frame (the clip's middle) from a latent — the early-look decode."""
+        dec = self._ensure_decoder().to(self.device)
+        try:
+            px = dec.decode_middle_frame(latent.to(self.device).float())[0]
+            arr = (px.permute(1, 2, 0).clamp(0, 1) * 255).byte().cpu().numpy()
+        finally:
+            self.decoder = dec.to("cpu")
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        return Image.fromarray(arr)
+
+    @staticmethod
+    def describe_state(state) -> str:
+        """A short human label for a slider state ("Block 30 off", "3 blocks moved")."""
+        from fizgig.repair_studio.h3_render_cache import signature, BASE_SIG
+        sig = signature(state)
+        if sig == BASE_SIG:
+            return "Baseline"
+        if sig.startswith("off:"):
+            bid = sig[4:]
+            return ("Refiner " + bid.split("_")[2] if bid.startswith("h3_rf_")
+                    else "Block " + bid.split("_")[1]) + " off"
+        moved = [b for b, bs in state.blocks.items()
+                 if not (bs.primary_enabled and abs(bs.primary_strength - 1.0) < 1e-6
+                         and abs(bs.donor_strength) < 1e-6)]
+        return f"{len(moved)} block{'s' if len(moved) != 1 else ''} moved"
 
     def baseline_clip(self, state, *, frames: Optional[int] = None, regime: str = "confirm",
-                      with_audio: bool = True) -> dict:
-        """The clip for the primary at 1.0 / all on, donor off — cached on everything the
-        render depends on (a slider move never re-renders it; a regime, length, size, seed,
-        prompt or keyframe change does)."""
+                      with_audio: bool = True, cache=None, **_ignored) -> dict:
+        """The clip for the primary at 1.0 / all on, donor off — cached in memory on
+        everything the render depends on (a slider move never re-renders it; a regime,
+        length, size, seed, prompt or keyframe change does) and, through `cache`, on disk."""
         from fizgig.repair_studio.state import SliderState
         steps, strength = self.regime_params(regime)
         frames = int(frames or getattr(state, "preview_frames", 0) or H3_PREVIEW_FRAMES)
@@ -637,7 +790,8 @@ class H3RepairEngine:
         base.preview_height = state.preview_height
         base.preview_frames = frames
         base.keyframes = getattr(state, "keyframes", None)
-        clip = self.render_clip(base, frames=frames, regime=regime, with_audio=with_audio)
+        clip = self.render_clip(base, frames=frames, regime=regime, with_audio=with_audio,
+                                cache=cache)
         self._baseline_clip_key = key
         self._baseline_clip = clip
         return clip
@@ -770,6 +924,7 @@ class H3RepairEngine:
         self.primary_block_ids = set()
         self.donor_block_ids = set()
         self.primary_hash = None
+        self.donor_hash = None
         self._prompt_cache_key = None
         self._prompt_cache = None
         self._invalidate_baseline_cache()

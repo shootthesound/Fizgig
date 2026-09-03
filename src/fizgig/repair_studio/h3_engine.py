@@ -111,6 +111,8 @@ class H3RepairEngine:
         self.on_step = None
         self._baseline_cache_key = None
         self._baseline_cache_image: Optional[Image.Image] = None
+        self._baseline_clip_key = None
+        self._baseline_clip: Optional[dict] = None
         self._last_frame_latent = None   # Klein-only chain; kept None for Royale's workers
 
         # Phase C (activation cache) plumbing — off until forward_cached lands.
@@ -535,7 +537,12 @@ class H3RepairEngine:
         decoder chunk, so this costs what the middle-frame decode already did."""
         dec = self._ensure_decoder().to(self.device)
         try:
-            px = dec.decode_clip(latent.to(self.device).float())[0]   # [3, F, H, W] in [0, 1]
+            z = latent.to(self.device).float()
+            if z.shape[2] == 1:
+                # A still: the single-latent decode (the 5n+2 clip grid has no T=1 rung).
+                px = dec.decode(z)[0].unsqueeze(1)                    # [3, 1, H, W]
+            else:
+                px = dec.decode_clip(z)[0]                            # [3, F, H, W] in [0, 1]
             px = (px.permute(1, 2, 3, 0).clamp(0, 1) * 255).byte().cpu().numpy()
         finally:
             self.decoder = dec.to("cpu")
@@ -562,6 +569,78 @@ class H3RepairEngine:
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
         return wav
+
+    # ----- clip bundles (the Repair Studio video preview) --------------------
+    # A "clip" is what the H3 tab actually shows: every decoded frame (for the in-app player),
+    # the soundtrack when an audio VAE is configured, and the middle frame (what the main
+    # panel, the metrics strip and the Royale workers still judge). Dial = 4 steps at Turbo
+    # 1.0 (the fast loop), Confirm = 6 at 0.75 (the render that matches training previews).
+    REGIMES = {"dial": (4, 1.0), "confirm": (6, 0.75)}
+
+    def regime_params(self, regime: str):
+        """(steps, turbo_strength) for a regime name. Without a Turbo LoRA both regimes are
+        the plain 20-step render (the strength has nothing to dial)."""
+        if self._turbo_net is None:
+            return self._steps, None
+        return self.REGIMES.get(regime, self.REGIMES["confirm"])
+
+    @staticmethod
+    def keyframe_signature(state):
+        """A hashable stand-in for state.keyframes (index + tensor fingerprint per entry) —
+        cheap enough for a cache key, specific enough that a different crop re-renders."""
+        kf = getattr(state, "keyframes", None)
+        if not kf:
+            return ()
+        sig = []
+        for idx, lat in kf:
+            t = lat.float()
+            sig.append((int(idx), tuple(t.shape), round(float(t.sum()), 3),
+                        round(float(t.abs().mean()), 5)))
+        return tuple(sig)
+
+    def clip_key(self, state, *, frames, steps, turbo_strength, with_audio):
+        return (self.primary_path, self.donor_path, int(state.seed), state.prompt,
+                int(state.preview_width), int(state.preview_height), int(frames), int(steps),
+                turbo_strength, bool(with_audio), self.keyframe_signature(state))
+
+    def render_clip(self, state, *, frames: Optional[int] = None, regime: str = "confirm",
+                    with_audio: bool = True) -> dict:
+        """Render + decode one clip for the slider state. Returns
+        {"latent", "audio_rows", "frames": [PIL...], "wav": [2, L] or None, "middle": PIL,
+         "regime", "steps", "turbo_strength", "frames_n"}."""
+        steps, strength = self.regime_params(regime)
+        frames = int(frames or getattr(state, "preview_frames", 0) or H3_PREVIEW_FRAMES)
+        lat, aud = self.render_latent(state, frames=frames, steps=steps,
+                                      turbo_strength=strength)
+        imgs = self.decode_clip_frames(lat)
+        wav = self.decode_audio(aud) if (with_audio and frames > 1) else None
+        return {"latent": lat, "audio_rows": aud, "frames": imgs, "wav": wav,
+                "middle": imgs[len(imgs) // 2], "regime": regime, "steps": steps,
+                "turbo_strength": strength, "frames_n": frames}
+
+    def baseline_clip(self, state, *, frames: Optional[int] = None, regime: str = "confirm",
+                      with_audio: bool = True) -> dict:
+        """The clip for the primary at 1.0 / all on, donor off — cached on everything the
+        render depends on (a slider move never re-renders it; a regime, length, size, seed,
+        prompt or keyframe change does)."""
+        from fizgig.repair_studio.state import SliderState
+        steps, strength = self.regime_params(regime)
+        frames = int(frames or getattr(state, "preview_frames", 0) or H3_PREVIEW_FRAMES)
+        key = self.clip_key(state, frames=frames, steps=steps, turbo_strength=strength,
+                            with_audio=with_audio)
+        if self._baseline_clip_key == key and self._baseline_clip is not None:
+            return self._baseline_clip
+        base = SliderState.default_h3()
+        base.seed = state.seed
+        base.prompt = state.prompt
+        base.preview_width = state.preview_width
+        base.preview_height = state.preview_height
+        base.preview_frames = frames
+        base.keyframes = getattr(state, "keyframes", None)
+        clip = self.render_clip(base, frames=frames, regime=regime, with_audio=with_audio)
+        self._baseline_clip_key = key
+        self._baseline_clip = clip
+        return clip
 
     def generate_baseline(self, state) -> Image.Image:
         """Baseline = primary at default 1.0 / all enabled, donor off. Cached on
@@ -616,6 +695,8 @@ class H3RepairEngine:
     def _invalidate_baseline_cache(self) -> None:
         self._baseline_cache_key = None
         self._baseline_cache_image = None
+        self._baseline_clip_key = None
+        self._baseline_clip = None
 
     def _invalidate_activation_cache(self) -> None:
         self._act_cache = None
@@ -691,8 +772,7 @@ class H3RepairEngine:
         self.primary_hash = None
         self._prompt_cache_key = None
         self._prompt_cache = None
-        self._baseline_cache_key = None
-        self._baseline_cache_image = None
+        self._invalidate_baseline_cache()
         self._invalidate_activation_cache()
         gc.collect()
         if torch.cuda.is_available():

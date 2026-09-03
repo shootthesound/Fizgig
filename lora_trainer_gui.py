@@ -19403,6 +19403,118 @@ class LoRATrainerGUI:
             # A path carried over from a Klein session must not sit invisibly in the state.
             self.repair_ref_path_var.set("")
             self.repair_state.ref_image_path = ""
+        # H3 renders clips: its own Length/Size/Regime/Sound row replaces the square Res combo,
+        # and the compare pop-out is a clip player.
+        try:
+            if fam == "minimax":
+                self._repair_cmp_btn.configure(text="▶ Play clips + Metrics")
+                self._repair_preview_hint.configure(
+                    text="▶ Click either image to play both clips side by side — sound, "
+                         "swap, scrub — with likeness + quality metrics on the middle frame")
+            else:
+                self._repair_cmp_btn.configure(text="⧉ Compare + Metrics")
+                self._repair_preview_hint.configure(
+                    text="🔍 Click either image for the full-size side-by-side compare with "
+                         "likeness + quality metrics")
+        except Exception:
+            pass
+        try:
+            if fam == "minimax":
+                self._repair_res_label.pack_forget()
+                self._repair_res_combo.pack_forget()
+                self._repair_h3_label.grid()
+                self._repair_h3_row.grid()
+                self._refresh_repair_h3_sound_state()
+            else:
+                self._repair_h3_label.grid_remove()
+                self._repair_h3_row.grid_remove()
+                if not self._repair_res_label.winfo_manager():
+                    # Keep the Res pair ahead of the Turbo tick when that is showing (Klein);
+                    # under Krea 2 the tick is hidden and `before=` it would raise.
+                    _bk = ({"before": self._repair_turbo_chk}
+                           if self._repair_turbo_chk.winfo_manager() else {})
+                    self._repair_res_label.pack(side=tk.LEFT, padx=(0, 4), **_bk)
+                    self._repair_res_combo.pack(side=tk.LEFT, **_bk)
+        except Exception:
+            pass
+
+    # ----- H3 clip controls ---------------------------------------------------------------
+    _REPAIR_H3_LENGTHS = {"Still (1 frame)": 1, "22 frames (~1s)": 22, "56 frames (~2.3s)": 56}
+    _REPAIR_H3_SHORT_SIDES = (768, 704, 640)
+    _REPAIR_H3_SHORT_SIDES_LOW = (576, 512)
+
+    def _repair_h3_size_values(self):
+        """'W × H' choices: long side 768, short side stepping down; portrait and landscape
+        for every non-square rung; the 576/512 rungs only with 'allow lower' ticked."""
+        sides = list(self._REPAIR_H3_SHORT_SIDES)
+        if getattr(self, "repair_h3_lower_var", None) is not None and self.repair_h3_lower_var.get():
+            sides += list(self._REPAIR_H3_SHORT_SIDES_LOW)
+        vals = []
+        for s in sides:
+            if s == 768:
+                vals.append("768 × 768")
+            else:
+                vals.append(f"768 × {s}  (landscape)")
+                vals.append(f"{s} × 768  (portrait)")
+        return vals
+
+    def _repair_h3_size(self):
+        """(width, height) from the Size combo; 768x768 for anything unparseable."""
+        import re
+        m = re.match(r"\s*(\d+)\s*×\s*(\d+)", self.repair_h3_size_var.get())
+        if not m:
+            return 768, 768
+        return int(m.group(1)), int(m.group(2))
+
+    def _repair_h3_frames(self):
+        return int(self._REPAIR_H3_LENGTHS.get(self.repair_h3_frames_var.get(), 22))
+
+    def _repair_h3_audio_vae_path(self):
+        v = self.prefs_vars.get("minimax_audio_vae") if hasattr(self, "prefs_vars") else None
+        p = v.get().strip() if v is not None else ""
+        return p if p and os.path.exists(p) else ""
+
+    def _refresh_repair_h3_sound_state(self):
+        """Sound is only offerable with an audio VAE configured — grey the tick otherwise."""
+        chk = getattr(self, "_repair_h3_sound_chk", None)
+        if chk is None:
+            return
+        if self._repair_h3_audio_vae_path():
+            chk.state(["!disabled"])
+        else:
+            chk.state(["disabled"])
+
+    def _on_repair_h3_lower_toggled(self):
+        combo = self._repair_h3_size_combo
+        combo.configure(values=self._repair_h3_size_values())
+        if self.repair_h3_size_var.get() not in combo["values"]:
+            self.repair_h3_size_var.set("768 × 768")    # a now-locked rung falls back to square
+            self._on_repair_h3_clip_changed()
+        try:
+            self.last_used["repair_h3_allow_lower"] = bool(self.repair_h3_lower_var.get())
+            self._save_last_used_paths()
+        except Exception:
+            pass
+
+    def _on_repair_h3_clip_changed(self):
+        """Length / Size / Regime / Sound changed: remember it, drop the baseline (it was
+        rendered under the old settings) and re-render."""
+        try:
+            self.last_used["repair_h3_frames"] = self.repair_h3_frames_var.get()
+            self.last_used["repair_h3_size"] = self.repair_h3_size_var.get()
+            self.last_used["repair_h3_regime"] = self.repair_h3_regime_var.get()
+            self.last_used["repair_h3_sound"] = bool(self.repair_h3_sound_var.get())
+            self._save_last_used_paths()
+        except Exception:
+            pass
+        self._on_preview_param_changed()
+
+    def _repair_h3_render_opts(self):
+        """What the H3 worker renders with, read on the Tk thread: frames, regime, sound."""
+        return {"frames": self._repair_h3_frames(),
+                "regime": self.repair_h3_regime_var.get() or "dial",
+                "with_audio": bool(self.repair_h3_sound_var.get()
+                                   and self._repair_h3_audio_vae_path())}
 
     def _on_repair_family_changed(self):
         """Family toggle: reset any loaded session (engine type changes), reset the slider
@@ -19571,12 +19683,14 @@ class LoRATrainerGUI:
                   relief="flat", bd=0, padx=4, pady=0, cursor="hand2",
                   command=self._repair_randomize_seed
                   ).pack(side=tk.LEFT, padx=(0, 12))
-        ttk.Label(params_frame, text="Res:").pack(side=tk.LEFT, padx=(0, 4))
+        self._repair_res_label = ttk.Label(params_frame, text="Res:")
+        self._repair_res_label.pack(side=tk.LEFT, padx=(0, 4))
         self.repair_res_var = tk.StringVar(value="512")
         res_combo = ttk.Combobox(params_frame, textvariable=self.repair_res_var,
                                  values=["256", "384", "512", "768"], state="readonly", width=6)
         res_combo.pack(side=tk.LEFT)
         res_combo.bind("<<ComboboxSelected>>", lambda e: self._on_preview_param_changed())
+        self._repair_res_combo = res_combo
         # Turbo Preview toggle (Klein activation cache). Hidden in Krea 2 mode — krea's 8-step
         # denoise makes the per-step cache too lossy, so Krea 2 always does the full forward.
         self.repair_turbo_var = tk.BooleanVar(value=True)
@@ -19584,6 +19698,64 @@ class LoRATrainerGUI:
                                      variable=self.repair_turbo_var,
                                      command=self._on_turbo_toggled)
         self._repair_turbo_chk.pack(side=tk.RIGHT)
+        r += 1
+
+        # MiniMax H3 clip row (hidden for Klein / Krea 2 — see _apply_repair_family_ui). H3
+        # previews are CLIPS: length, canvas (long side 768, short side down to 640 — lower
+        # unlocks with a tick), the render regime (Dial = 4 steps at Turbo 1.0 for the fast
+        # loop, Confirm = 6 at 0.75 to match training previews) and sound.
+        self._repair_h3_label = ttk.Label(parent, text="Clip:")
+        self._repair_h3_label.grid(row=r, column=0, sticky=tk.W, padx=4, pady=2)
+        h3_row = ttk.Frame(parent)
+        h3_row.grid(row=r, column=1, columnspan=3, sticky=tk.EW, padx=4, pady=2)
+        self._repair_h3_row = h3_row
+        ttk.Label(h3_row, text="Length:").pack(side=tk.LEFT, padx=(0, 4))
+        self.repair_h3_frames_var = tk.StringVar(
+            value=str(self.last_used.get("repair_h3_frames", "22 frames (~1s)")))
+        _len = ttk.Combobox(h3_row, textvariable=self.repair_h3_frames_var, state="readonly",
+                            width=17, values=list(self._REPAIR_H3_LENGTHS))
+        _len.pack(side=tk.LEFT, padx=(0, 12))
+        _len.bind("<<ComboboxSelected>>", lambda e: self._on_repair_h3_clip_changed())
+        ttk.Label(h3_row, text="Size:").pack(side=tk.LEFT, padx=(0, 4))
+        self.repair_h3_lower_var = tk.BooleanVar(
+            value=bool(self.last_used.get("repair_h3_allow_lower", False)))
+        self.repair_h3_size_var = tk.StringVar(
+            value=str(self.last_used.get("repair_h3_size", "768 × 768")))
+        self._repair_h3_size_combo = ttk.Combobox(
+            h3_row, textvariable=self.repair_h3_size_var, state="readonly", width=20,
+            values=self._repair_h3_size_values())
+        self._repair_h3_size_combo.pack(side=tk.LEFT, padx=(0, 4))
+        self._repair_h3_size_combo.bind("<<ComboboxSelected>>",
+                                        lambda e: self._on_repair_h3_clip_changed())
+        _low = ttk.Checkbutton(h3_row, text="allow lower", variable=self.repair_h3_lower_var,
+                               command=self._on_repair_h3_lower_toggled)
+        _low.pack(side=tk.LEFT, padx=(0, 12))
+        ToolTip(_low, "Unlock 576 and 512 short sides. Below 640 H3 drifts off its trained "
+                      "canvas — fine for a quick block read, not for judging quality.")
+        ttk.Label(h3_row, text="Regime:").pack(side=tk.LEFT, padx=(0, 4))
+        self.repair_h3_regime_var = tk.StringVar(
+            value=str(self.last_used.get("repair_h3_regime", "dial")))
+        for _val, _txt, _tip in (
+                ("dial", "Dial (4 steps, Turbo 1.0)",
+                 "The fast loop for turning sliders — the bundled Turbo LoRA at full "
+                 "strength, 4 steps."),
+                ("confirm", "Confirm (6 steps, Turbo 0.75)",
+                 "The render that matches in-training previews — 6 steps at 0.75. Use it "
+                 "to confirm what the Dial showed before saving.")):
+            _rb = ttk.Radiobutton(h3_row, text=_txt, variable=self.repair_h3_regime_var,
+                                  value=_val, style="Surface.TRadiobutton",
+                                  command=self._on_repair_h3_clip_changed)
+            _rb.pack(side=tk.LEFT, padx=(0, 10))
+            ToolTip(_rb, _tip)
+        self.repair_h3_sound_var = tk.BooleanVar(
+            value=bool(self.last_used.get("repair_h3_sound", True)))
+        self._repair_h3_sound_chk = ttk.Checkbutton(
+            h3_row, text="Sound", variable=self.repair_h3_sound_var,
+            command=self._on_repair_h3_clip_changed)
+        self._repair_h3_sound_chk.pack(side=tk.LEFT)
+        ToolTip(self._repair_h3_sound_chk,
+                "Decode the clip's soundtrack for the player. Needs the MiniMax audio VAE "
+                "path set on the Preferences tab.")
         r += 1
 
         # Reference image row (Klein is an edit model — condition the preview on a
@@ -19655,6 +19827,7 @@ class LoRATrainerGUI:
         _cmp_btn.pack(side=tk.RIGHT, padx=(0, 12))
         ToolTip(_cmp_btn, "Full-size side-by-side of baseline vs tweaked, with likeness and "
                           "quality metrics. Clicking either preview image opens it too.")
+        self._repair_cmp_btn = _cmp_btn
         # Render progress. H3 and Krea 2 report real denoising steps (determinate); Klein's
         # denoise loop has no hook, so the bar sweeps as a marquee there — and everywhere
         # until the first step lands, so model loads and TE encodes still show life.
@@ -19700,16 +19873,19 @@ class LoRATrainerGUI:
         self.repair_baseline_label.bind("<Button-1>", lambda e: self._repair_popout_preview())
         self.repair_tweaked_label.bind("<Button-1>", lambda e: self._repair_popout_preview())
         # Spell the click affordance out — cursor changes alone weren't discoverable.
-        ttk.Label(parent,
-                  text="🔍 Click either image for the full-size side-by-side compare with "
-                       "likeness + quality metrics",
-                  font=(FONT_FAMILY, 9), foreground=COLORS["text_secondary"],
-                  ).grid(row=2, column=0, columnspan=2, pady=(0, 4))
+        self._repair_preview_hint = ttk.Label(
+            parent,
+            text="🔍 Click either image for the full-size side-by-side compare with "
+                 "likeness + quality metrics",
+            font=(FONT_FAMILY, 9), foreground=COLORS["text_secondary"])
+        self._repair_preview_hint.grid(row=2, column=0, columnspan=2, pady=(0, 4))
         self.repair_base_holder = base_holder
         self.repair_tweaked_holder = tweaked_holder
         self._repair_popout_window = None
         self._repair_popout_label = None
         self._repair_popout_tk_img = None
+        self._repair_clips = {}          # H3: "baseline"/"tweaked" -> clip bundle (frames+wav)
+        self._repair_player = None       # H3: the open clip player's state, or None
         # Metrics strip state: reference photo for likeness scoring (remembered via the
         # workbench table), chip labels, and a generation counter so a slow ArcFace pass
         # can never paint a stale result over a newer render's numbers.
@@ -20372,7 +20548,8 @@ class LoRATrainerGUI:
         return dict(
             dit_path=dit_path, vae_path=vae_path, text_encoder_path=te_path,
             device="cuda", turbo_lora_path=turbo_path,
-            turbo_lora_strength=0.75, te_cache_dir=te_cache)
+            turbo_lora_strength=0.75, te_cache_dir=te_cache,
+            audio_vae_path=self._repair_h3_audio_vae_path())
 
     # ------------------------------------------------------------------
     # LoRA Royale — render every epoch on one seed, crossfade to the sweet spot
@@ -23553,6 +23730,14 @@ class LoRATrainerGUI:
             res = 512
         self.repair_state.preview_width = res
         self.repair_state.preview_height = res
+        h3_opts = None
+        if self._repair_is_h3():
+            # H3 renders a clip on its own canvas — the Clip row, not the square Res combo.
+            _w, _h = self._repair_h3_size()
+            self.repair_state.preview_width = _w
+            self.repair_state.preview_height = _h
+            h3_opts = self._repair_h3_render_opts()
+            self.repair_state.preview_frames = h3_opts["frames"]
         # Reference-image fields (Klein edit conditioning).
         self.repair_state.ref_image_path = self.repair_ref_path_var.get().strip()
         try:
@@ -23574,11 +23759,18 @@ class LoRATrainerGUI:
         self._repair_preview_in_flight = True
         print(f"[repair] run_async: starting worker w={snapshot.preview_width} "
               f"h={snapshot.preview_height} seed={snapshot.seed} prompt={snapshot.prompt!r}")
-        self.repair_status_var.set("Generating preview…")
+        self.repair_status_var.set("Generating preview…" if h3_opts is None else
+                                   f"Rendering {h3_opts['frames']}-frame clip "
+                                   f"({'Dial' if h3_opts['regime'] == 'dial' else 'Confirm'})…")
         self._repair_progress_begin()
         import threading
-        thread = threading.Thread(target=self._repair_preview_worker, args=(snapshot,), daemon=True)
+        thread = threading.Thread(target=self._repair_preview_worker, args=(snapshot, h3_opts),
+                                  daemon=True)
         thread.start()
+
+    def _repair_is_h3(self):
+        return (getattr(self, "repair_family_var", None) is not None
+                and self.repair_family_var.get() == "minimax")
 
     def _repair_progress_begin(self):
         """Show the render progress bar. Starts as a marquee; the first on_step report from a
@@ -23697,7 +23889,7 @@ class LoRATrainerGUI:
         if bar.winfo_manager():
             bar.pack_forget()
 
-    def _repair_preview_worker(self, snapshot):
+    def _repair_preview_worker(self, snapshot, h3_opts=None):
         from fizgig.krea2.sampling import SampleAborted
         from fizgig.minimax.sampling import PreviewAborted
         try:
@@ -23707,6 +23899,16 @@ class LoRATrainerGUI:
             # Fresh render cycle — clear any pending cancel from a previous aborted pass.
             if hasattr(self.repair_engine, "clear_cancel"):
                 self.repair_engine.clear_cancel()
+            if h3_opts is not None and hasattr(self.repair_engine, "render_clip"):
+                # H3: whole clips (frames + sound) for the in-app player; the panel shows
+                # each clip's middle frame exactly as before.
+                print(f"[repair] worker: H3 baseline clip {snapshot.preview_width}x"
+                      f"{snapshot.preview_height} x{h3_opts['frames']} ({h3_opts['regime']})")
+                base_clip = self.repair_engine.baseline_clip(snapshot, **h3_opts)
+                print(f"[repair] worker: H3 tweaked clip")
+                tweak_clip = self.repair_engine.render_clip(snapshot, **h3_opts)
+                self.master.after(0, lambda: self._set_repair_preview_clips(base_clip, tweak_clip))
+                return
             print(f"[repair] worker: generating baseline at "
                   f"{snapshot.preview_width}x{snapshot.preview_height}")
             baseline = self.repair_engine.generate_baseline(snapshot)
@@ -23764,6 +23966,464 @@ class LoRATrainerGUI:
                 print("[repair] dirty flag set during preview — refiring")
                 self._schedule_preview(force=True)
 
+    # ----- H3 clips + the in-app clip player ---------------------------------------------
+    # H3 previews are clips. The main panel keeps showing each clip's middle frame (the
+    # metrics strip, the Profiler cross-link and the Royale workers all judge a still), and
+    # the pop-out becomes a player: both clips looping in lockstep, sound from the left pane
+    # (winsound is one slot), a swap key to trade sides, scrub, frame-step and speed.
+
+    _REPAIR_H3_FPS = 24
+
+    def _set_repair_preview_clips(self, base_clip, tweak_clip):
+        """A rendered clip pair landed (Tk thread). Keep the frames + sound for the player,
+        write each soundtrack to a temp wav (winsound plays files), then hand the middle
+        frames to the still path — which repaints, refreshes metrics and clears in-flight."""
+        import tempfile
+        try:
+            from fizgig.minimax.trainer import write_wav
+        except Exception:
+            write_wav = None
+        self._repair_stop_wav()
+        for side, clip in (("baseline", base_clip), ("tweaked", tweak_clip)):
+            wav_path = None
+            if clip.get("wav") is not None and write_wav is not None:
+                try:
+                    wav_path = os.path.join(tempfile.gettempdir(), f"fizgig_repair_{side}.wav")
+                    write_wav(wav_path, clip["wav"])
+                except Exception:
+                    wav_path = None
+            clip["wav_path"] = wav_path
+            self._repair_clips[side] = clip
+        self._set_repair_preview_images(base_clip["middle"], tweak_clip["middle"])
+        n = len(tweak_clip["frames"])
+        reg = "Dial" if tweak_clip.get("regime") == "dial" else "Confirm"
+        snd = " with sound" if tweak_clip.get("wav_path") else ""
+        self.repair_status_var.set(
+            f"Ready — {reg} render, {n} frame{'s' if n != 1 else ''}{snd}. "
+            + ("Click a preview to play both clips." if n > 1 else ""))
+
+    def _repair_stop_wav(self):
+        try:
+            import gizmo as _gz
+            _gz._stop_wav()
+        except Exception:
+            pass
+
+    def _repair_play_wav(self, path):
+        try:
+            import gizmo as _gz
+            if path and os.path.isfile(path):
+                _gz._play_wav(path)
+        except Exception:
+            pass
+
+    def _repair_clip_player_open(self):
+        """Open (or raise) the H3 clip player — baseline | tweaked looping side by side."""
+        P = getattr(self, "_repair_player", None)
+        if P is not None:
+            try:
+                if P["win"].winfo_exists():
+                    P["win"].lift()
+                    self._repair_clip_player_reload()
+                    return
+            except Exception:
+                pass
+            self._repair_player = None
+        # The still pop-out and the player share the metrics strip + window slot: close the
+        # still one if it is open (a family switch mid-session can leave it up).
+        if self._repair_popout_window is not None:
+            try:
+                self._repair_popout_window.destroy()
+            except Exception:
+                pass
+            self._repair_popout_window = None
+            self._repair_popout_label = None
+            self._repair_popout_tk_img = None
+
+        win = tk.Toplevel(self.master)
+        win.title("Repair Studio — Clip player (Baseline vs Tweaked)")
+        win.configure(bg="#000000")
+        sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+        base = self._repair_clips.get("baseline") or self._repair_clips.get("tweaked")
+        fw, fh = base["frames"][0].size if base else (768, 768)
+        _w = min(fw * 2 + 8 + 16, int(sw * 0.9))
+        _h = min(fh + 120, int(sh * 0.85))
+        win.geometry(f"{_w}x{_h}")
+        win.minsize(480, 320)
+
+        self._repair_build_metrics_bar(win)            # bottom strip (shared with the still)
+
+        # Transport bar above the metrics.
+        bar = tk.Frame(win, bg=COLORS["bg_deep"])
+        bar.pack(side=tk.BOTTOM, fill=tk.X)
+
+        def _btn(txt, cmd, tip=None, **kw):
+            b = tk.Button(bar, text=txt, font=(FONT_FAMILY, 10), bg=COLORS["bg_surface"],
+                          fg=COLORS["text_primary"], activebackground=COLORS["bg_hover"],
+                          activeforeground=COLORS["text_primary"], relief="flat", bd=0,
+                          padx=8, pady=2, cursor="hand2", command=cmd, **kw)
+            b.pack(side=tk.LEFT, padx=(6, 0), pady=4)
+            if tip:
+                ToolTip(b, tip)
+            return b
+
+        play_btn = _btn("⏸ Pause", self._repair_clip_player_toggle, "Space")
+        _btn("⏮", lambda: self._repair_clip_player_step(-1), "Left arrow — one frame back")
+        _btn("⏭", lambda: self._repair_clip_player_step(+1), "Right arrow — one frame on")
+        _btn("⇄ Swap", self._repair_clip_player_swap,
+             "S / Tab — trade sides. Sound follows the LEFT pane.")
+        speed_var = tk.StringVar(value="1")
+        ttk.Label(bar, text="Speed:").pack(side=tk.LEFT, padx=(12, 2))
+        spd = ttk.Combobox(bar, textvariable=speed_var, values=["0.25", "0.5", "1"],
+                           state="readonly", width=5)
+        spd.pack(side=tk.LEFT)
+        spd.bind("<<ComboboxSelected>>", lambda e: self._repair_clip_player_set_speed())
+        sound_var = tk.BooleanVar(value=True)
+        snd_chk = ttk.Checkbutton(bar, text="🔊", variable=sound_var,
+                                  command=self._repair_clip_player_sound_toggled)
+        snd_chk.pack(side=tk.LEFT, padx=(10, 0))
+        ToolTip(snd_chk, "Soundtrack of the LEFT clip, at speed 1 only (no time-stretch). "
+                         "Needs the audio VAE set in Preferences and Sound ticked on the tab.")
+        pos_lbl = tk.Label(bar, text="", font=(FONT_FAMILY, 9), fg=COLORS["text_explain"],
+                           bg=COLORS["bg_deep"], width=9, anchor=tk.W)
+        pos_lbl.pack(side=tk.LEFT, padx=(10, 0))
+        scrub = ttk.Scale(bar, from_=0, to=1, orient=tk.HORIZONTAL,
+                          command=self._repair_clip_player_scrubbed)
+        scrub.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(6, 6))
+        _btn("💾 Save left clip…", self._repair_clip_player_save,
+             "Write the LEFT pane's clip as an MP4 (with its sound) — or PNG frames + WAV "
+             "when ffmpeg isn't on the path.")
+
+        # Two panes with titles; grid weights keep them equal and letterboxed.
+        top = tk.Frame(win, bg="#000000")
+        top.pack(fill=tk.BOTH, expand=True)
+        top.columnconfigure(0, weight=1, uniform="pane")
+        top.columnconfigure(1, weight=1, uniform="pane")
+        top.rowconfigure(1, weight=1)
+        titles, panes = [], []
+        for col in (0, 1):
+            t = tk.Label(top, text="", font=(FONT_FAMILY, 10, "bold"), fg=COLORS["text_primary"],
+                         bg="#000000")
+            t.grid(row=0, column=col, pady=(4, 2))
+            p = tk.Label(top, bg="#000000", cursor="hand2")
+            p.grid(row=1, column=col, sticky="nsew", padx=(0 if col else 4, 4 if col else 0),
+                   pady=(0, 4))
+            p.bind("<Button-1>", lambda e: self._repair_clip_player_swap())
+            titles.append(t)
+            panes.append(p)
+
+        self._repair_player = {
+            "win": win, "panes": panes, "titles": titles, "sides": ["baseline", "tweaked"],
+            "idx": 0, "playing": False, "t0": None, "offset": 0.0, "speed": 1.0, "gen": 0,
+            "job": None, "cache": {}, "n": 1, "photo": [None, None], "play_btn": play_btn,
+            "speed_var": speed_var, "sound_var": sound_var, "scrub": scrub, "pos_lbl": pos_lbl,
+            "scrubbing": False, "last_wrap": -1, "resize_job": None,
+        }
+        # The metrics worker paints into whichever window is current.
+        self._repair_popout_window = win
+        self._repair_popout_label = None
+
+        _on_close = self._repair_clip_player_close
+        win.protocol("WM_DELETE_WINDOW", _on_close)
+        win.bind("<space>", lambda e: self._repair_clip_player_toggle())
+        win.bind("<Left>", lambda e: self._repair_clip_player_step(-1))
+        win.bind("<Right>", lambda e: self._repair_clip_player_step(+1))
+        win.bind("<s>", lambda e: self._repair_clip_player_swap())
+        win.bind("<S>", lambda e: self._repair_clip_player_swap())
+        win.bind("<Tab>", lambda e: (self._repair_clip_player_swap(), "break")[1])
+        win.bind("<Escape>", lambda e: _on_close())
+
+        def _on_resize(event):
+            if event.widget is not win:
+                return
+            P = self._repair_player
+            if P is None:
+                return
+            if P["resize_job"] is not None:
+                try:
+                    win.after_cancel(P["resize_job"])
+                except Exception:
+                    pass
+            P["resize_job"] = win.after(80, self._repair_clip_player_resized)
+
+        win.bind("<Configure>", _on_resize)
+        win.update_idletasks()
+        self._repair_clip_player_reload()
+        self._repair_metrics_refresh()
+        win.focus_set()
+        self._repair_clip_player_play(0.0)
+
+    def _repair_clip_player_close(self):
+        """Tear the player down (window close, Escape, session reset, tab-switch unload)."""
+        P = getattr(self, "_repair_player", None)
+        if P is None:
+            return
+        self._repair_clip_player_stop()
+        self._repair_player = None
+        if self._repair_popout_window is P["win"]:
+            self._repair_popout_window = None
+            self._repair_popout_metric_lbls = {}
+        try:
+            P["win"].destroy()
+        except Exception:
+            pass
+
+    def _repair_clip_player_reload(self):
+        """New clips landed (or the window just opened): refresh titles, frame count, the
+        scrub range and the scaled-frame cache; keep playing from where it was."""
+        P = getattr(self, "_repair_player", None)
+        if P is None:
+            return
+        base = self._repair_clips.get("baseline")
+        tweak = self._repair_clips.get("tweaked")
+        if base is None or tweak is None:
+            return
+        P["n"] = max(1, min(len(base["frames"]), len(tweak["frames"])))
+        P["cache"] = {}
+        P["scrub"].configure(to=max(P["n"] - 1, 1))
+        names = {"baseline": "Baseline (LoRA at 1.0)", "tweaked": "Tweaked (current sliders)"}
+        for i, side in enumerate(P["sides"]):
+            clip = self._repair_clips[side]
+            reg = "Dial" if clip.get("regime") == "dial" else "Confirm"
+            snd = " · 🔊" if (i == 0 and clip.get("wav_path")) else ""
+            P["titles"][i].configure(text=f"{names[side]} — {reg}{snd}")
+        if P["n"] == 1:
+            self._repair_clip_player_stop()
+        self._repair_clip_player_paint(min(P["idx"], P["n"] - 1))
+        if P["n"] > 1 and P["playing"]:
+            self._repair_clip_player_play(self._repair_clip_player_pos())
+
+    def _repair_clip_player_resized(self):
+        P = getattr(self, "_repair_player", None)
+        if P is None:
+            return
+        P["resize_job"] = None
+        P["cache"] = {}
+        self._repair_clip_player_paint(P["idx"])
+
+    def _repair_clip_player_photo(self, pane_i, idx):
+        """PhotoImage for pane `pane_i` at frame `idx`, scaled to the pane and cached."""
+        P = self._repair_player
+        side = P["sides"][pane_i]
+        clip = self._repair_clips.get(side)
+        if clip is None or not clip["frames"]:
+            return None
+        pane = P["panes"][pane_i]
+        bw, bh = max(64, pane.winfo_width() - 4), max(64, pane.winfo_height() - 4)
+        key = (side, idx, bw, bh)
+        ph = P["cache"].get(key)
+        if ph is not None:
+            return ph
+        from PIL import Image as _PILImage
+        src = clip["frames"][min(idx, len(clip["frames"]) - 1)]
+        scale = min(bw / src.width, bh / src.height)
+        nw, nh = max(1, int(src.width * scale)), max(1, int(src.height * scale))
+        img = src if (nw, nh) == src.size else src.resize((nw, nh), _PILImage.BILINEAR)
+        ph = ImageTk.PhotoImage(img)
+        P["cache"][key] = ph
+        return ph
+
+    def _repair_clip_player_paint(self, idx):
+        P = getattr(self, "_repair_player", None)
+        if P is None:
+            return
+        idx = max(0, min(int(idx), P["n"] - 1))
+        P["idx"] = idx
+        for i in (0, 1):
+            ph = self._repair_clip_player_photo(i, idx)
+            if ph is not None:
+                P["photo"][i] = ph                   # keep a ref or Tk blanks the label
+                P["panes"][i].configure(image=ph)
+        P["pos_lbl"].configure(text=f"{idx + 1} / {P['n']}")
+        if not P["scrubbing"]:
+            P["scrub"].set(idx)
+
+    def _repair_clip_player_pos(self):
+        """Current clip time in seconds (clip's own clock, independent of speed)."""
+        P = self._repair_player
+        import time as _time
+        if P["t0"] is None:
+            return P["offset"]
+        return P["offset"] + (_time.monotonic() - P["t0"]) * P["speed"]
+
+    def _repair_clip_player_play(self, offset):
+        P = getattr(self, "_repair_player", None)
+        if P is None or P["n"] <= 1:
+            return
+        import time as _time
+        clip_len = P["n"] / self._REPAIR_H3_FPS
+        P["offset"] = float(offset) % clip_len
+        P["t0"] = _time.monotonic()
+        P["playing"] = True
+        P["gen"] += 1
+        P["last_wrap"] = -1
+        P["play_btn"].configure(text="⏸ Pause")
+        self._repair_clip_player_sound_cycle(restart=True)
+        P["job"] = P["win"].after(20, self._repair_clip_player_tick, P["gen"])
+
+    def _repair_clip_player_tick(self, gen):
+        P = getattr(self, "_repair_player", None)
+        if P is None or gen != P["gen"] or not P["playing"]:
+            return
+        fps = self._REPAIR_H3_FPS
+        pos = self._repair_clip_player_pos()
+        clip_len = P["n"] / fps
+        wrap = int(pos // clip_len)
+        idx = int((pos % clip_len) * fps)
+        if wrap != P["last_wrap"]:
+            if P["last_wrap"] >= 0:
+                self._repair_clip_player_sound_cycle(restart=False)
+            P["last_wrap"] = wrap
+        if idx != P["idx"]:
+            self._repair_clip_player_paint(idx)
+        P["job"] = P["win"].after(20, self._repair_clip_player_tick, gen)
+
+    def _repair_clip_player_sound_cycle(self, restart):
+        """Start the LEFT pane's soundtrack for this loop pass (speed 1 only — winsound has no
+        time-stretch, so slowed playback runs silent)."""
+        P = self._repair_player
+        self._repair_stop_wav()
+        if not P["sound_var"].get() or abs(P["speed"] - 1.0) > 1e-6:
+            return
+        clip = self._repair_clips.get(P["sides"][0])
+        if clip is None or not clip.get("wav_path"):
+            return
+        if restart and P["offset"] > 0.05:
+            return       # resumed mid-clip: winsound can't seek — sound rejoins at the wrap
+        self._repair_play_wav(clip["wav_path"])
+
+    def _repair_clip_player_stop(self):
+        P = getattr(self, "_repair_player", None)
+        if P is None:
+            return
+        P["gen"] += 1
+        if P["playing"]:
+            P["offset"] = self._repair_clip_player_pos() % (P["n"] / self._REPAIR_H3_FPS)
+        P["playing"] = False
+        P["t0"] = None
+        if P["job"] is not None:
+            try:
+                P["win"].after_cancel(P["job"])
+            except Exception:
+                pass
+            P["job"] = None
+        self._repair_stop_wav()
+        try:
+            P["play_btn"].configure(text="▶ Play")
+        except Exception:
+            pass
+
+    def _repair_clip_player_toggle(self):
+        P = getattr(self, "_repair_player", None)
+        if P is None:
+            return
+        if P["playing"]:
+            self._repair_clip_player_stop()
+        else:
+            self._repair_clip_player_play(P["idx"] / self._REPAIR_H3_FPS)
+
+    def _repair_clip_player_step(self, delta):
+        P = getattr(self, "_repair_player", None)
+        if P is None:
+            return
+        self._repair_clip_player_stop()
+        self._repair_clip_player_paint((P["idx"] + delta) % P["n"])
+        P["offset"] = P["idx"] / self._REPAIR_H3_FPS
+
+    def _repair_clip_player_scrubbed(self, value):
+        P = getattr(self, "_repair_player", None)
+        if P is None:
+            return
+        idx = int(float(value) + 0.5)
+        if idx == P["idx"]:
+            return
+        # A drag pauses; the frame follows the thumb. (Programmatic .set() from paint()
+        # lands here too — guarded by the idx equality above.)
+        P["scrubbing"] = True
+        try:
+            if P["playing"]:
+                self._repair_clip_player_stop()
+            self._repair_clip_player_paint(idx)
+            P["offset"] = idx / self._REPAIR_H3_FPS
+        finally:
+            P["scrubbing"] = False
+
+    def _repair_clip_player_set_speed(self):
+        P = getattr(self, "_repair_player", None)
+        if P is None:
+            return
+        try:
+            spd = float(P["speed_var"].get())
+        except ValueError:
+            spd = 1.0
+        was = P["playing"]
+        pos = self._repair_clip_player_pos()
+        if was:
+            self._repair_clip_player_stop()
+        P["speed"] = spd
+        if was:
+            self._repair_clip_player_play(pos)
+
+    def _repair_clip_player_sound_toggled(self):
+        P = getattr(self, "_repair_player", None)
+        if P is None:
+            return
+        if not P["sound_var"].get():
+            self._repair_stop_wav()
+
+    def _repair_clip_player_swap(self):
+        """Trade panes in place: the frame index is shared so nothing jumps; the sound slot
+        moves to the new left clip at the next loop wrap."""
+        P = getattr(self, "_repair_player", None)
+        if P is None:
+            return
+        P["sides"].reverse()
+        self._repair_clip_player_reload()
+
+    def _repair_clip_player_save(self):
+        """Save the LEFT pane's clip: MP4 with sound via ffmpeg, else PNG frames + WAV."""
+        P = getattr(self, "_repair_player", None)
+        if P is None:
+            return
+        side = P["sides"][0]
+        clip = self._repair_clips.get(side)
+        if clip is None:
+            return
+        from tkinter import filedialog
+        stem = f"repair_{side}_{clip.get('regime', 'clip')}"
+        path = filedialog.asksaveasfilename(
+            title=f"Save the {side} clip", defaultextension=".mp4", initialfile=stem + ".mp4",
+            filetypes=[("MP4 clip", "*.mp4"), ("PNG frames + WAV (folder name)", "*")])
+        if not path:
+            return
+        try:
+            import numpy as np
+            import torch as _t
+            from fizgig.minimax.trainer import write_preview_mp4, write_wav, _find_ffmpeg
+            frames = clip["frames"]
+            if path.lower().endswith(".mp4") and _find_ffmpeg() and len(frames) > 1:
+                arr = np.stack([np.asarray(f.convert("RGB")) for f in frames])   # [F,H,W,3]
+                ten = _t.from_numpy(arr).permute(3, 0, 1, 2).float() / 255.0    # [3,F,H,W]
+                wav_path = clip.get("wav_path")
+                if not wav_path:
+                    import tempfile
+                    wav_path = os.path.join(tempfile.gettempdir(), "fizgig_repair_silence.wav")
+                    write_wav(wav_path, _t.zeros(2, int(32000 * len(frames) / self._REPAIR_H3_FPS)))
+                write_preview_mp4(path, ten, wav_path, fps=self._REPAIR_H3_FPS)
+                self.repair_status_var.set(f"Saved {os.path.basename(path)}.")
+                return
+            # No ffmpeg (or a still): a folder of PNGs + the wav.
+            folder = path[:-4] if path.lower().endswith(".mp4") else path
+            os.makedirs(folder, exist_ok=True)
+            for i, f in enumerate(frames):
+                f.save(os.path.join(folder, f"frame_{i:03d}.png"))
+            if clip.get("wav") is not None:
+                write_wav(os.path.join(folder, "sound.wav"), clip["wav"])
+            self.repair_status_var.set(f"Saved {len(frames)} frames to {folder} "
+                                       "(no ffmpeg on the path — PNGs instead of an MP4).")
+        except Exception as e:
+            messagebox.showerror("Save clip", f"Couldn't save the clip:\n{e}")
+
     def _repair_popout_compose(self):
         """Baseline and tweaked side by side on one canvas \u2014 same left/right order as the
         main panel, 8 px seam. Falls back to whichever image exists alone."""
@@ -23783,6 +24443,9 @@ class LoRATrainerGUI:
 
     def _repair_popout_preview(self):
         """Open (or raise) a resizable pop-out showing baseline and tweaked side by side."""
+        if self._repair_is_h3() and self._repair_clips.get("tweaked") is not None:
+            self._repair_clip_player_open()
+            return
         if self._repair_popout_window is not None:
             try:
                 if self._repair_popout_window.winfo_exists():
@@ -23809,28 +24472,7 @@ class LoRATrainerGUI:
         # Metrics strip along the bottom — packed FIRST so the image label can never
         # squeeze it out; the fit math below sizes from the LABEL so the image never
         # overflows behind it.
-        bar = tk.Frame(win, bg=COLORS["bg_deep"])
-        bar.pack(side=tk.BOTTOM, fill=tk.X)
-        tk.Button(bar, text="📷 Reference…", font=(FONT_FAMILY, 9),
-                  bg=COLORS["bg_surface"], fg=COLORS["text_primary"],
-                  activebackground=COLORS["bg_hover"], activeforeground=COLORS["text_primary"],
-                  relief="flat", bd=0, padx=8, pady=2, cursor="hand2",
-                  command=self._browse_repair_metrics_ref).pack(side=tk.LEFT, padx=(8, 2), pady=4)
-        self._repair_popout_ref_lbl = tk.Label(bar, text="", font=(FONT_FAMILY, 9),
-                                               fg=COLORS["text_explain"], bg=COLORS["bg_deep"])
-        self._repair_popout_ref_lbl.pack(side=tk.LEFT, padx=(0, 2))
-        tk.Button(bar, text="✕", font=(FONT_FAMILY, 9), bg=COLORS["bg_deep"],
-                  fg=COLORS["text_muted"], activebackground=COLORS["bg_deep"],
-                  activeforeground=COLORS["text_primary"], relief="flat", bd=0,
-                  padx=4, pady=0, cursor="hand2",
-                  command=self._clear_repair_metrics_ref).pack(side=tk.LEFT, padx=(0, 10))
-        self._repair_popout_metric_lbls = {}
-        for key in ("likeness", "grid", "texture", "clip", "sat"):
-            c = tk.Label(bar, text="", font=(FONT_FAMILY, 9),
-                         fg=COLORS["text_explain"], bg=COLORS["bg_deep"])
-            c.pack(side=tk.LEFT, padx=(0, 14), pady=4)
-            self._repair_popout_metric_lbls[key] = c
-        self._repair_popout_refresh_ref_label()
+        self._repair_build_metrics_bar(win)
 
         lbl = tk.Label(win, bg="#000000")
         lbl.pack(fill=tk.BOTH, expand=True)
@@ -23861,8 +24503,39 @@ class LoRATrainerGUI:
         self._repair_update_popout()
         self._repair_metrics_refresh()
 
+    def _repair_build_metrics_bar(self, win):
+        """The likeness/quality metrics strip shared by the still compare pop-out and the H3
+        clip player. Packed at the BOTTOM of `win` first so the picture can never squeeze it
+        out. Registers the chip labels the metrics worker paints into."""
+        bar = tk.Frame(win, bg=COLORS["bg_deep"])
+        bar.pack(side=tk.BOTTOM, fill=tk.X)
+        tk.Button(bar, text="📷 Reference…", font=(FONT_FAMILY, 9),
+                  bg=COLORS["bg_surface"], fg=COLORS["text_primary"],
+                  activebackground=COLORS["bg_hover"], activeforeground=COLORS["text_primary"],
+                  relief="flat", bd=0, padx=8, pady=2, cursor="hand2",
+                  command=self._browse_repair_metrics_ref).pack(side=tk.LEFT, padx=(8, 2), pady=4)
+        self._repair_popout_ref_lbl = tk.Label(bar, text="", font=(FONT_FAMILY, 9),
+                                               fg=COLORS["text_explain"], bg=COLORS["bg_deep"])
+        self._repair_popout_ref_lbl.pack(side=tk.LEFT, padx=(0, 2))
+        tk.Button(bar, text="✕", font=(FONT_FAMILY, 9), bg=COLORS["bg_deep"],
+                  fg=COLORS["text_muted"], activebackground=COLORS["bg_deep"],
+                  activeforeground=COLORS["text_primary"], relief="flat", bd=0,
+                  padx=4, pady=0, cursor="hand2",
+                  command=self._clear_repair_metrics_ref).pack(side=tk.LEFT, padx=(0, 10))
+        self._repair_popout_metric_lbls = {}
+        for key in ("likeness", "grid", "texture", "clip", "sat"):
+            c = tk.Label(bar, text="", font=(FONT_FAMILY, 9),
+                         fg=COLORS["text_explain"], bg=COLORS["bg_deep"])
+            c.pack(side=tk.LEFT, padx=(0, 14), pady=4)
+            self._repair_popout_metric_lbls[key] = c
+        self._repair_popout_refresh_ref_label()
+        return bar
+
     def _repair_update_popout(self):
         """Push the current baseline+tweaked pair to the pop-out window, scaled to fit."""
+        if getattr(self, "_repair_player", None) is not None:
+            self._repair_clip_player_reload()
+            return
         if self._repair_popout_window is None or self._repair_popout_label is None:
             return
         try:
@@ -24139,6 +24812,7 @@ class LoRATrainerGUI:
             return
         self._repair_unload_tries = 0
         self._repair_unload_wanted = False
+        self._repair_clip_player_close()     # a looping player must not outlive the tab
         if self.repair_engine is not None and self.repair_engine.pipeline is not None:
             print("[repair] tab-switch unload: freeing models…", flush=True)
             try:
@@ -24282,6 +24956,8 @@ class LoRATrainerGUI:
                                 "before resetting the session.")
             return
         # Close pop-out preview window if open
+        self._repair_clip_player_close()
+        self._repair_clips = {}
         if self._repair_popout_window is not None:
             try:
                 self._repair_popout_window.destroy()

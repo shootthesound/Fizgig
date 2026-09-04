@@ -173,6 +173,7 @@ _big = _MiniEngine()
 _big.dit, _big._cache_device = _BigDiT(), "cuda"
 _big._RESUME_HEADROOM_GB = _H3E._RESUME_HEADROOM_GB
 _big._RESUME_HEADROOM_FRAC = _H3E._RESUME_HEADROOM_FRAC
+_big._RESUME_GPU_MAX_GB = _H3E._RESUME_GPU_MAX_GB
 _big.resume_cache_gb = _H3E.resume_cache_gb.__get__(_big)
 _big._resume_cache_device = _H3E._resume_cache_device.__get__(_big)
 _gb56 = _big.resume_cache_gb(768, 768, 56)
@@ -187,12 +188,12 @@ try:
        _big._resume_cache_device(768, 640, 22) == "cuda" and _big._resume_cache_device(512, 416, 22) == "cuda"
        and _big._resume_cache_device(768, 768, 56) == "cpu")
     _devmod.plannable_free_vram = lambda: 12.0
-    ck("12 GB free: the 56-frame cache (5.1 + 2.6 + 3 = 10.7 needed) fits on the GPU",
-       _big._resume_cache_device(768, 768, 56) == "cuda")
-    _devmod.plannable_free_vram = lambda: 3.5
-    ck("3.5 GB free but the previous same-key cache (4.3 GB) is on the GPU: reclaimable, stays on the GPU",
-       _big._resume_cache_device(640, 768, 56, reclaim_gb=_big.resume_cache_gb(640, 768, 56)) == "cuda"
-       and _big._resume_cache_device(640, 768, 56) == "cpu")
+    ck("12 GB free: a 56-frame cache (5.1 GB) is still parked on the CPU — above the 2.5 GB GPU cap (paging, 4 Sep)",
+       _big._resume_cache_device(768, 768, 56) == "cpu")
+    _devmod.plannable_free_vram = lambda: 4.5
+    ck("4.5 GB free but the previous same-key 22-frame cache (1.85 GB) is on the GPU: reclaimable, stays on the GPU",
+       _big._resume_cache_device(768, 640, 22, reclaim_gb=_big.resume_cache_gb(768, 640, 22)) == "cuda"
+       and _big._resume_cache_device(768, 640, 22) == "cpu")
     _big._cache_device = "cpu"
     ck("a CPU-tier load never records on the GPU", _big._resume_cache_device(512, 416, 22) == "cpu")
 finally:

@@ -1039,6 +1039,7 @@ class H3RepairEngine:
                 self._invalidate_activation_cache()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+            self._evict_gpu_cache_if_tight(width, height, frames)
             # The previous render's cache (same key) is replaced by this one: if it sits on
             # the GPU it is reclaimable, not "used" — without this the plan flip-flopped
             # cuda / cpu on alternate renders (Peter's log, 4 Sep).
@@ -1416,8 +1417,13 @@ class H3RepairEngine:
     # Measured 4 Sep at 768×768×56 with 8.4 GB free: a 5.1 GB cache + the render did NOT
     # fit (needed ~3 GB of working set + fragmentation on top), so that size parks on the
     # CPU on a 32 GB card; the 22-frame dial (0.9 GB) stays on the GPU.
-    _RESUME_HEADROOM_GB = 3.0
+    _RESUME_HEADROOM_GB = 4.0
     _RESUME_HEADROOM_FRAC = 0.5
+    # Never on the GPU above this: a 56-frame cache (4-5 GB) beside the 21 GB base left a
+    # render that "fitted" by the numbers paging through the Windows driver instead of
+    # failing — All off at 768×640×56 took 4½ minutes (Peter, 4 Sep). The 22-frame caches
+    # (≤ 2.3 GB) are the ones the resume pays off on anyway; the CPU nets the same saving.
+    _RESUME_GPU_MAX_GB = 2.5
 
     def resume_cache_gb(self, width, height, frames) -> float:
         """Size of one pass-1 cache for this canvas / length: every main block's input row
@@ -1430,6 +1436,33 @@ class H3RepairEngine:
         toks = (lt * (int(height) // 16 // 2) * (int(width) // 16 // 2)
                 + audio_latents_for_frames(int(frames)) * AUDIO_CHANNELS + 256)
         return len(self.dit.blocks) * toks * int(cfg.hidden_size) * 2 / float(2 ** 30)
+
+    def _evict_gpu_cache_if_tight(self, width, height, frames) -> None:
+        """A same-key cache sitting on the GPU is moved to the CPU when the card no longer
+        has the render's working set free beside it (~0.7 × the cache size + 1.5 GB) —
+        whatever took the room (a parked encoder's residue, another app). Paging is the
+        alternative, and it is minutes."""
+        entries = self._act_cache
+        if not entries or getattr(self, "_act_cache_device", None) != "cuda":
+            return
+        try:
+            from fizgig.utils.device import plannable_free_vram
+            free = float(plannable_free_vram())
+            est = self.resume_cache_gb(width, height, frames)
+        except Exception:
+            return
+        if free >= 0.7 * est + 1.5:
+            return
+        logger.info("[h3-workbench] %.1f GB free beside a %.1f GB GPU cache — parking it on "
+                    "the CPU for this render", free, est)
+        for e in entries.values():
+            try:
+                e.block_inputs = [(t.to("cpu") if hasattr(t, "to") else t) for t in e.block_inputs]
+            except Exception:
+                pass
+        self._act_cache_device = "cpu"
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     def _resume_cache_device(self, width, height, frames, reclaim_gb: float = 0.0) -> str:
         """Where THIS render's pass-1 cache lives: the GPU when it fits beside the model with
@@ -1455,7 +1488,7 @@ class H3RepairEngine:
         need = est * (1.0 + self._RESUME_HEADROOM_FRAC) + self._RESUME_HEADROOM_GB
         if reclaim_gb and reclaim_gb > 0:
             need = est + self._RESUME_HEADROOM_GB
-        dev = "cuda" if need <= free else "cpu"
+        dev = "cuda" if (need <= free and est <= self._RESUME_GPU_MAX_GB) else "cpu"
         if getattr(self, "_last_cache_plan", None) != (round(est, 2), dev):
             self._last_cache_plan = (round(est, 2), dev)
             logger.info("[h3-workbench] pass-1 cache %.2f GB for %dx%d x%d -> %s (%.1f GB free)",

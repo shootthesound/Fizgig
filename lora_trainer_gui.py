@@ -19320,11 +19320,11 @@ class LoRATrainerGUI:
         for _txt, _cmd, _tip in (
                 ("Reset all", self._reset_repair_sliders, "Every slider back to its default."),
                 ("All off", lambda: self._repair_bulk_primary("off"),
-                 "Every block's primary strength to 0 (the LoRA fully out)."),
+                 "Untick every block's primary enable (strengths kept)."),
                 ("All on", lambda: self._repair_bulk_primary("on"),
-                 "Every block's primary strength to 1.0."),
+                 "Tick every block's primary enable (strengths kept)."),
                 ("Invert", lambda: self._repair_bulk_primary("invert"),
-                 "Flip the sign of every block's primary strength.")):
+                 "Flip every block's primary enable: on becomes off, off becomes on.")):
             _b = ttk.Button(self._repair_bulk_row, text=_txt, command=_cmd, width=9)
             _b.pack(side=tk.LEFT, padx=(0, 6))
             ToolTip(_b, _tip + " Primary rows only; one render for the lot.")
@@ -26228,22 +26228,20 @@ class LoRATrainerGUI:
             messagebox.showerror("Error", f"Save failed:\n{traceback.format_exc()}")
 
     def _repair_bulk_primary(self, what):
-        """All off / All on / Invert for every block's primary strength, one render."""
+        """All off / All on / Invert on every block's primary ENABLE tick (the strengths are
+        left as they are — Peter, 4 Sep), one render."""
         self._repair_master_mutating = True
         try:
             for bid, v in self.repair_block_vars.items():
-                var = v.get("primary_strength")
+                var = v.get("primary_enabled")
                 if var is None:
                     continue
                 if what == "off":
-                    var.set(0.0)
+                    var.set(False)
                 elif what == "on":
-                    var.set(1.0)
+                    var.set(True)
                 else:
-                    try:
-                        var.set(-float(var.get()))
-                    except (TypeError, ValueError):
-                        pass
+                    var.set(not bool(var.get()))
         finally:
             self._repair_master_mutating = False
         self._schedule_preview(force=True)

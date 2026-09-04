@@ -746,16 +746,20 @@ try:
     app.repair_primary_scale_var.set("1.0"); app.repair_state.primary_scale = 1.0
     # bulk row: all off / all on / invert / reset — primary rows, one render
     ck("bulk row shown under H3", bool(app._repair_bulk_row.winfo_manager()))
-    app._repair_bulk_primary("off")
-    ck("All off: every primary strength 0",
-       all(float(v["primary_strength"].get()) == 0.0 for v in app.repair_block_vars.values()))
-    app._repair_bulk_primary("on")
     app.repair_block_vars["h3blk_21"]["primary_strength"].set(0.5)
+    app._repair_bulk_primary("off")
+    ck("All off: every primary enable unticked, strengths kept",
+       all(not v["primary_enabled"].get() for v in app.repair_block_vars.values())
+       and float(app.repair_block_vars["h3blk_21"]["primary_strength"].get()) == 0.5)
+    app.repair_block_vars["h3blk_3"]["primary_enabled"].set(True)
     app._repair_bulk_primary("invert")
-    ck("Invert flips every sign", float(app.repair_block_vars["h3blk_21"]["primary_strength"].get()) == -0.5
-       and float(app.repair_block_vars["h3blk_0"]["primary_strength"].get()) == -1.0)
+    ck("Invert flips every tick", not app.repair_block_vars["h3blk_3"]["primary_enabled"].get()
+       and all(v["primary_enabled"].get() for b, v in app.repair_block_vars.items() if b != "h3blk_3"))
+    app._repair_bulk_primary("on")
+    ck("All on: every tick on", all(v["primary_enabled"].get() for v in app.repair_block_vars.values()))
     app._reset_repair_sliders()
-    ck("Reset all: back to 1.0", all(float(v["primary_strength"].get()) == 1.0 for v in app.repair_block_vars.values()))
+    ck("Reset all: back to 1.0 / on", all(float(v["primary_strength"].get()) == 1.0 and v["primary_enabled"].get()
+                                        for v in app.repair_block_vars.values()))
     if app._repair_preview_after_id is not None:
         root.after_cancel(app._repair_preview_after_id); app._repair_preview_after_id = None
     fam("klein")

@@ -674,9 +674,12 @@ class H3RepairEngine:
         # after — a whole-model .to is safe because this engine never block-swaps. The
         # streamed build only needs its rings (~2 GB text, ~12.7 GB with vision): the DiT
         # stays put for a text encode when the card has the room.
-        # a text encode on the streamed (vision) build: rings ~2 GB + its GPU-resident
-        # embedding table ~1.5 GB
-        need = (13.5 if want_vision else 4.5) if streamed else 27.0
+        # The streamed build needs ~4.2 GB at most (measured 4 Sep: two references at
+        # 768×640, or a 600-token prompt — rings + the resident embedding table), so the
+        # DiT stays on the card for every encode; only the resident build (27 GB) parks
+        # it. Parking the 21 GB base to the CPU and back was also leaving ~15 GB of host
+        # memory retained per encode.
+        need = 5.0 if streamed else 27.0
         free = None
         try:
             from fizgig.utils.device import plannable_free_vram
@@ -739,8 +742,10 @@ class H3RepairEngine:
     # layers through the GPU, so it can simply be KEPT for the session: the next prompt costs
     # seconds. Only when the box has the RAM: ~24 GB available to stage it, and it is let go
     # again if available RAM drops under 8 GB. Otherwise the old path — resident build, freed.
-    _TE_PARK_MIN_AVAIL_GB = 24.0
-    _TE_KEEP_MIN_AVAIL_GB = 8.0
+    # Measured 4 Sep: the parked build costs ~35 GB of process RSS in the app (packed
+    # weights + pinned staging), and freed pinned blocks are not all handed back to the OS.
+    _TE_PARK_MIN_AVAIL_GB = 40.0
+    _TE_KEEP_MIN_AVAIL_GB = 12.0
 
     @staticmethod
     def _ram_available_gb():
@@ -865,8 +870,10 @@ class H3RepairEngine:
             torch.cuda.empty_cache()
             # The streamed build's weights are PINNED host memory; PyTorch's host caching
             # allocator keeps freed pinned blocks for reuse, so ~24 GB stayed "in use"
-            # after the encoder was dropped (measured 4 Sep). Hand them back to the OS.
+            # after the encoder was dropped (measured 4 Sep). Hand them back to the OS
+            # (blocks with a copy event still pending are skipped — hence the sync first).
             try:
+                torch.cuda.synchronize()
                 torch._C._host_emptyCache()
             except Exception:
                 pass

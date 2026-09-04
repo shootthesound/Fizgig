@@ -1049,9 +1049,7 @@ class H3RepairEngine:
         try:
             px = dec.decode_middle_frame(lat.float())[0]      # [3, H, W] in [0, 1]
         finally:
-            self.decoder = dec.to("cpu")
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            self._decoder_after_use(dec)
         arr = (px.permute(1, 2, 0).clamp(0, 1) * 255).byte().cpu().numpy()
         return Image.fromarray(arr)
 
@@ -1147,6 +1145,8 @@ class H3RepairEngine:
                 self._invalidate_activation_cache()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+            self._last_canvas = (int(width), int(height), int(frames))
+            self._park_decoder_if_tight(width, height, frames)
             self._evict_gpu_cache_if_tight(width, height, frames)
             # The previous render's cache (same key) is replaced by this one: if it sits on
             # the GPU it is reclaimable, not "used" — without this the plan flip-flopped
@@ -1225,9 +1225,7 @@ class H3RepairEngine:
                 px = dec.decode_clip(z)[0]                            # [3, F, H, W] in [0, 1]
             px = (px.permute(1, 2, 3, 0).clamp(0, 1) * 255).byte().cpu().numpy()
         finally:
-            self.decoder = dec.to("cpu")
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            self._decoder_after_use(dec)
         return [Image.fromarray(px[i]) for i in range(px.shape[0])]
 
     @torch.no_grad()
@@ -1377,9 +1375,7 @@ class H3RepairEngine:
             px = dec.decode_middle_frame(latent.to(self.device).float())[0]
             arr = (px.permute(1, 2, 0).clamp(0, 1) * 255).byte().cpu().numpy()
         finally:
-            self.decoder = dec.to("cpu")
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            self._decoder_after_use(dec)
         return Image.fromarray(arr)
 
     @staticmethod
@@ -1544,6 +1540,55 @@ class H3RepairEngine:
         toks = (lt * (int(height) // 16 // 2) * (int(width) // 16 // 2)
                 + audio_latents_for_frames(int(frames)) * AUDIO_CHANNELS + 256)
         return len(self.dit.blocks) * toks * int(cfg.hidden_size) * 2 / float(2 ** 30)
+
+    # The 4.5 GB fp16 video decoder: moving it to the card and back costs ~1.1 s per decode
+    # (measured 4 Sep), and a Dial render decodes twice (early look + clip) — ~2 s of a
+    # 4–6 s render. It stays RESIDENT when the card has the next render's working set free
+    # beside it, and is parked on the CPU only when the room is needed.
+    _DECODER_GB = 4.5
+
+    def _working_set_gb(self) -> float:
+        """The render's own working set at the last canvas (~0.7 × the pass-1 cache size)."""
+        try:
+            w, h, f = self._last_canvas
+            return 0.7 * self.resume_cache_gb(w, h, f)
+        except Exception:
+            return 2.0
+
+    def _decoder_after_use(self, dec) -> None:
+        """After a decode: keep the decoder on the card if the room is there, else park it."""
+        free = None
+        try:
+            from fizgig.utils.device import plannable_free_vram
+            free = float(plannable_free_vram())
+        except Exception:
+            pass
+        if free is not None and free >= self._working_set_gb() + 2.0:
+            self.decoder = dec                        # resident
+            self._decoder_resident = True
+            return
+        self.decoder = dec.to("cpu")
+        self._decoder_resident = False
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    def _park_decoder_if_tight(self, width, height, frames) -> None:
+        """Before a render: a resident decoder gives way when the card lacks the working set."""
+        if not getattr(self, "_decoder_resident", False) or self.decoder is None:
+            return
+        try:
+            from fizgig.utils.device import plannable_free_vram
+            free = float(plannable_free_vram())
+            need = 0.7 * self.resume_cache_gb(width, height, frames) + 1.5
+        except Exception:
+            return
+        if free >= need:
+            return
+        logger.info("[h3-workbench] %.1f GB free — parking the decoder for this render", free)
+        self.decoder = self.decoder.to("cpu")
+        self._decoder_resident = False
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     def _evict_gpu_cache_if_tight(self, width, height, frames) -> None:
         """A same-key cache sitting on the GPU is moved to the CPU when the card no longer

@@ -512,6 +512,31 @@ if _ap:
     ck("a full-model-space AdaLN row is injected and not wired as a module",
        len(_cap(dit, _full)) == 1 and len(_apply_lora(dit, dict(sd, **_full), 1.0, "cpu", torch.float32).unet_loras) == 3)
 
+
+# --- the decoder stays on the card when there is room, gives way when there is not ---------------
+class _DecStub:
+    def __init__(self): self.moves = []
+    def to(self, dev, *a, **k): self.moves.append(str(dev)); return self
+_de = _MiniEngine()
+for _nm in ("_decoder_after_use", "_park_decoder_if_tight", "_working_set_gb"):
+    setattr(_de, _nm, getattr(_H3E, _nm).__get__(_de))
+_de.resume_cache_gb = _H3E.resume_cache_gb.__get__(_de)
+_de.dit = _BigDiT(); _de._last_canvas = (512, 416, 22)                # dial: cache 0.89 -> working ~0.6 GB
+_d = _DecStub(); _orig_free3 = _devmod.plannable_free_vram
+try:
+    _devmod.plannable_free_vram = lambda: 6.0
+    _de._decoder_after_use(_d)
+    ck("6 GB free after a decode: the decoder stays resident", _de._decoder_resident and _d.moves == [])
+    _de._park_decoder_if_tight(512, 416, 22)
+    ck("...and stays for the next dial render", _de._decoder_resident and _d.moves == [])
+    _devmod.plannable_free_vram = lambda: 1.0
+    _de._park_decoder_if_tight(768, 768, 56)
+    ck("1 GB free before a 56-frame render: the resident decoder is parked", not _de._decoder_resident and _d.moves == ["cpu"])
+    _de._decoder_after_use(_d)
+    ck("...and parked again after a decode with no room", not _de._decoder_resident and _d.moves == ["cpu", "cpu"])
+finally:
+    _devmod.plannable_free_vram = _orig_free3
+
 if _fails:
     print(f"{len(_fails)} FAILED: " + ", ".join(_fails))
     sys.exit(1)

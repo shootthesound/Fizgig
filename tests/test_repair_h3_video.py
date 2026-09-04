@@ -860,6 +860,36 @@ try:
     ck("bulk row hidden under Klein", not app._repair_bulk_row.winfo_manager())
     fam("minimax")
 
+    # --- 11. a family switch mid-render cancels and waits — never a Busy box, never a hang --
+    fam("minimax")
+    class _CancelEng:
+        pipeline = object()
+        def __init__(self): self.calls = []
+        def request_cancel(self): self.calls.append("cancel")
+        def reset(self): self.calls.append("reset")
+    _ce = _CancelEng(); app.repair_engine = _ce
+    app._repair_preview_in_flight = True          # a worker holds the engine
+    app._repair_swap_wanted = False
+    _shown = []
+    _info = G.messagebox.showinfo; G.messagebox.showinfo = lambda *a, **k: _shown.append(a)
+    try:
+        app.repair_family_var.set("klein9b"); app._on_repair_family_changed()
+        ck("switch mid-render: the engine is told to cancel, the aborted render may not re-fire, no Busy box, no reset yet",
+           _ce.calls == ["cancel"] and app._repair_swap_wanted and not _shown
+           and "Cancelling" in app.repair_status_var.get(),
+           (_ce.calls, _shown, app.repair_status_var.get()[:60]))
+        root.update()
+        ck("...the H3 layout is still up while it waits", bool(app._repair_h3_row.winfo_manager()))
+        app._repair_preview_in_flight = False     # the worker lands
+        ok = wait_for(lambda: "reset" in _ce.calls and not app._repair_swap_wanted, 4.0)
+        ck("the worker lands: the session resets and the family switches, from the Tk loop",
+           ok and app.repair_status_var.get().startswith("Switched to") and app._repair_family_current == "klein9b",
+           (_ce.calls, app.repair_status_var.get()[:60]))
+    finally:
+        G.messagebox.showinfo = _info
+        app._repair_preview_in_flight = False
+        app._repair_swap_wanted = False
+
 finally:
     G.messagebox.showerror = _err
     try:

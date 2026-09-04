@@ -19686,13 +19686,59 @@ class LoRATrainerGUI:
     def _on_repair_family_changed(self):
         """Family toggle: reset any loaded session (engine type changes), reset the slider
         state + rebuild the panel for the new block layout, relabel the DiT toggle, hide/show
-        Master Controls, and persist the choice."""
+        Master Controls, and persist the choice.
+
+        A render, a LoRA load or the library builder may be holding the engine. The switch
+        never blocks the UI on them and never shows a Busy box: it cancels the render and
+        the builder, then comes back every quarter second from the Tk loop until every
+        worker has landed, and only then resets (Peter, 5 Sep: a switch mid-render used to
+        wait on the worker and could hang the app). A load can't be cancelled; it is
+        waited for the same way. After 60 s the radio goes back to the old family."""
         from fizgig.repair_studio.state import SliderState
+        fam = self.repair_family_var.get()
+        _lat_t = getattr(self, "_repair_cache_thread", None)
+        busy = (getattr(self, "_repair_preview_in_flight", False)
+                or getattr(self, "_repair_loading", False)
+                or (_lat_t is not None and _lat_t.is_alive()))
+        if busy:
+            self._repair_swap_wanted = True          # an aborted render must not re-fire
+            if self._repair_preview_after_id is not None:
+                try:
+                    self.master.after_cancel(self._repair_preview_after_id)
+                except Exception:
+                    pass
+                self._repair_preview_after_id = None
+            self._repair_preview_dirty = False
+            if _lat_t is not None and _lat_t.is_alive():
+                self._repair_cache_stop_build(wait_s=0.0)
+            eng = self.repair_engine
+            if eng is not None and hasattr(eng, "request_cancel"):
+                try:
+                    eng.request_cancel()
+                except Exception:
+                    pass
+            tries = getattr(self, "_repair_family_switch_tries", 0) + 1
+            self._repair_family_switch_tries = tries
+            if tries <= 240:                         # 60 s of patience
+                self.repair_status_var.set("Cancelling the render for the family switch…")
+                self.master.after(250, self._on_repair_family_changed)
+                return
+            self._repair_family_switch_tries = 0
+            self._repair_swap_wanted = False
+            old = getattr(self, "_repair_family_current", None) or self.last_used.get("repair_family")
+            if old and old != fam:
+                self.repair_family_var.set(old)
+            self.repair_status_var.set("The render is not letting go of the engine — family "
+                                       "switch abandoned. Try again when it finishes.")
+            print("[repair] family switch gave up waiting for the render worker", flush=True)
+            return
+        self._repair_family_switch_tries = 0
         try:
             self._reset_repair_session()
         except Exception:
             pass
-        fam = self.repair_family_var.get()
+        self._repair_swap_wanted = False
+        self._repair_family_current = fam
         self.repair_state = (SliderState.default_krea2() if fam == "krea2"
                              else SliderState.default_h3() if fam == "minimax"
                              else SliderState.default_klein9b())

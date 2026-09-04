@@ -234,24 +234,24 @@ try:
     P = app._repair_player
     ck("player opened via the compare entry point", P is not None and P["win"].winfo_exists())
     ck("player is playing, 5 frames, sides baseline|tweaked",
-       P["playing"] and P["n"] == 5 and P["sides"][:2] == ["baseline", "tweaked"])
+       P["playing"] and P["n"] == 5 and P["sides"] == ["nolora", "baseline", "tweaked"])
     ck("tweaked pane says Up to date after the clips landed",
-       "Up to date" in P["titles"][1].cget("text"), P["titles"][1].cget("text"))
+       "Up to date" in P["titles"][2].cget("text"), P["titles"][2].cget("text"))
     app._on_preview_param_changed()
     ck("...and Pending refresh the moment a change is queued",
-       "Pending refresh" in P["titles"][1].cget("text"), P["titles"][1].cget("text"))
+       "Pending refresh" in P["titles"][2].cget("text"), P["titles"][2].cget("text"))
     if app._repair_preview_after_id is not None:
         root.after_cancel(app._repair_preview_after_id); app._repair_preview_after_id = None
     app._repair_preview_dirty = False
     app._repair_clip_player_freshness()
-    ck("...and back to Up to date once nothing is queued", "Up to date" in P["titles"][1].cget("text"))
+    ck("...and back to Up to date once nothing is queued", "Up to date" in P["titles"][2].cget("text"))
     ck("metrics strip registered on the player window",
        app._repair_popout_window is P["win"] and set(app._repair_popout_metric_lbls) == {
            "likeness", "grid", "texture", "clip", "sat"})
     app._repair_clip_player_swap()
-    ck("swap trades sides", P["sides"][:2] == ["tweaked", "baseline"])
-    ck("titles follow the swap", "Tweaked" in P["titles"][0].cget("text")
-       and "Baseline" in P["titles"][1].cget("text"))
+    ck("swap trades sides", P["sides"] == ["nolora", "tweaked", "baseline"])
+    ck("titles follow the swap", "Tweaked" in P["titles"][1].cget("text")
+       and "Baseline" in P["titles"][2].cget("text"))
     app._repair_clip_player_stop()
     app._repair_clip_player_paint(2)
     app._repair_clip_player_step(+1)
@@ -266,7 +266,7 @@ try:
     app._repair_preview_in_flight = True
     app._set_repair_preview_clips(_clip("black", 3, "confirm"), _clip("gray", 3, "confirm"))
     ck("new clips reload the open player", app._repair_player is P and P["n"] == 3
-       and "steps" in P["titles"][0].cget("text"))
+       and "steps" in P["titles"][1].cget("text"))
     app._reset_repair_session()
     ck("session reset closes the player and drops the clips",
        app._repair_player is None and app._repair_clips == {})
@@ -625,12 +625,12 @@ try:
     root.update()
     P = app._repair_player
     ck("player shows three panes", all(P["panes"][i].winfo_manager() == "grid" for i in range(3))
-       and "No LoRA" in P["titles"][2].cget("text"), [P["titles"][i].cget("text") for i in range(3)])
+       and "No LoRA" in P["titles"][0].cget("text"), [P["titles"][i].cget("text") for i in range(3)])
     ck("player bar carries the same tick", any(isinstance(w, G.ttk.Checkbutton) and "No LoRA" in str(w.cget("text"))
                                              for w in P["win"].winfo_children()[1].winfo_children())
        if len(P["win"].winfo_children()) > 1 else True)
     app._repair_clip_player_swap()
-    ck("swap trades the left pair, the no-LoRA pane stays right", P["sides"] == ["tweaked", "baseline", "nolora"])
+    ck("swap trades the LoRA pair, the no-LoRA pane stays left", P["sides"] == ["nolora", "tweaked", "baseline"])
     # a slider move: the pair re-renders, the no-LoRA clip is served from memory (no new render)
     app.repair_block_vars["h3blk_21"]["primary_strength"].set(0.5)
     wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
@@ -641,15 +641,15 @@ try:
     app._on_repair_h3_nolora_toggled()
     root.update()
     ck("tick off: the clip is dropped and the pane hidden",
-       app._repair_clips.get("nolora") is None and P["panes"][2].winfo_manager() == ""
-       and P["panes"][0].winfo_manager() == "grid")
+       app._repair_clips.get("nolora") is None and P["panes"][0].winfo_manager() == ""
+       and P["panes"][1].winfo_manager() == "grid")
     app.repair_h3_nolora_var.set(True)
     app._on_repair_h3_nolora_toggled()
     wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
              and app._repair_clips.get("nolora") is not None, timeout=15.0)
     root.update()
     ck("tick on again: served from the engine's memory (still one render), pane back",
-       nolora_calls == [512] and P["panes"][2].winfo_manager() == "grid", nolora_calls)
+       nolora_calls == [512] and P["panes"][0].winfo_manager() == "grid", nolora_calls)
     app._repair_clip_player_close()
     CacheEngine.render_latent = _orig_rl
 

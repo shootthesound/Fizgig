@@ -25448,7 +25448,8 @@ class LoRATrainerGUI:
                           command=self._repair_clip_player_scrubbed)
         scrub.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(6, 6))
         _btn("💾 Save left clip…", self._repair_clip_player_save,
-             "Write the LEFT pane's clip as an MP4 (with its sound) — or PNG frames + WAV "
+             "Write the left LoRA pane's clip (Baseline or Tweaked, whichever is left; never "
+             "the No-LoRA pane) as an MP4 with its sound — or PNG frames + WAV "
              "when ffmpeg isn't on the path.")
 
         # Two panes with titles (a third, no-LoRA, when ticked); grid weights keep the shown
@@ -25470,7 +25471,7 @@ class LoRATrainerGUI:
 
         self._repair_player = {
             "win": win, "panes": panes, "titles": titles, "top": top,
-            "sides": ["baseline", "tweaked", "nolora"],
+            "sides": ["nolora", "baseline", "tweaked"],   # No-LoRA on the LEFT (Peter)
             "idx": 0, "playing": False, "t0": None, "offset": 0.0, "speed": 1.0, "gen": 0,
             "job": None, "cache": {}, "n": 1, "photo": [None, None, None], "play_btn": play_btn,
             "speed_var": speed_var, "sound_var": sound_var, "scrub": scrub, "pos_lbl": pos_lbl,
@@ -25561,7 +25562,7 @@ class LoRATrainerGUI:
                                          fg=COLORS["text_muted"])
                 continue
             reg = self._repair_h3_regime_label(clip)
-            snd = " · 🔊" if (i == 0 and clip.get("wav_path")) else ""
+            snd = " · 🔊" if (side == self._repair_player_main_side(P) and clip.get("wav_path")) else ""
             src = " · from cache" if clip.get("cached") else ""
             txt = f"{names[side]} — {reg}{src}{snd}"
             P.setdefault("title_text", {})[i] = txt
@@ -25693,7 +25694,7 @@ class LoRATrainerGUI:
         self._repair_stop_wav()
         if not P["sound_var"].get() or abs(P["speed"] - 1.0) > 1e-6:
             return
-        clip = self._repair_clips.get(P["sides"][0])
+        clip = self._repair_clips.get(self._repair_player_main_side(P))
         if clip is None or not clip.get("wav_path"):
             return
         if restart and P["offset"] > 0.05:
@@ -25785,7 +25786,14 @@ class LoRATrainerGUI:
         P = getattr(self, "_repair_player", None)
         if P is None:
             return
-        P["sides"][0], P["sides"][1] = P["sides"][1], P["sides"][0]   # the no-LoRA pane stays right
+        a, b = [k for k, sd in enumerate(P["sides"]) if sd != "nolora"]
+        P["sides"][a], P["sides"][b] = P["sides"][b], P["sides"][a]   # the no-LoRA pane stays left
+
+    @staticmethod
+    def _repair_player_main_side(P):
+        """The left LoRA pane (Baseline or Tweaked, whichever is left) — the one the sound and
+        'Save left clip' follow; the No-LoRA pane sits left of it and is never that."""
+        return next((sd for sd in P["sides"] if sd != "nolora"), "baseline")
         self._repair_clip_player_reload()
 
     def _repair_nolora_shown(self):
@@ -25798,7 +25806,7 @@ class LoRATrainerGUI:
         P = getattr(self, "_repair_player", None)
         if P is None:
             return
-        side = P["sides"][0]
+        side = self._repair_player_main_side(P)
         clip = self._repair_clips.get(side)
         if clip is None:
             return

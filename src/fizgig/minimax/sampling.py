@@ -29,7 +29,7 @@ import logging
 
 import torch
 
-from fizgig.minimax.model import AUDIO_CHANNELS, audio_latents_for_frames
+from fizgig.minimax.model import AUDIO_CHANNELS, ForwardAborted, audio_latents_for_frames
 
 logger = logging.getLogger(__name__)
 
@@ -165,7 +165,7 @@ class BlockCacheContext:
 
 
 @torch.no_grad()
-def sample_image(model, text_embeds, *, width=512, height=512, steps=8, cfg_scale=1.0,
+def _sample_image_impl(model, text_embeds, *, width=512, height=512, steps=8, cfg_scale=1.0,
                  uncond_embeds=None, seed=0, shift=12.0, device="cuda",
                  dtype=torch.bfloat16, latent_channels=24, spatial=16, log_steps=False,
                  sampler="res_multistep", schedule_mode="comfy",
@@ -411,3 +411,13 @@ def encode_sample_prompts(te_path, prompts, *, device="cuda", quantize=True):
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
     return out
+
+
+def sample_image(*args, **kwargs):
+    """See _sample_image_impl. A cancel that lands between blocks (model.ForwardAborted, the
+    Repair Studio's per-block abort) surfaces as the same PreviewAborted a step-boundary
+    cancel does, so every caller handles one exception."""
+    try:
+        return _sample_image_impl(*args, **kwargs)
+    except ForwardAborted as e:
+        raise PreviewAborted("render cancelled mid-forward") from e

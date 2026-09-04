@@ -221,6 +221,7 @@ class H3RepairEngine:
         self.dit = load_minimax_h3_dit(dit_path, device=device, compute_dtype=self.dtype,
                                        quantize=True, blocks_to_swap=0, base_quant=base_quant)
         self.dit.eval()
+        self.dit._abort_event = self._cancel_event      # a cancel lands within one block
 
         if turbo_lora_path and os.path.exists(turbo_lora_path):
             try:
@@ -952,7 +953,7 @@ class H3RepairEngine:
     def render_clip(self, state, *, frames: Optional[int] = None, regime: str = "confirm",
                     with_audio: bool = True, cache=None, early_step: int = 0,
                     on_early=None, no_lora: bool = False, steps=None, turbo_strength=None,
-                    **_ignored) -> dict:
+                    decode: bool = True, **_ignored) -> dict:
         """Render + decode one clip for the slider state. Returns
         {"latent", "audio_rows", "frames": [PIL...], "wav": [2, L] or None, "middle": PIL,
          "regime", "steps", "turbo_strength", "frames_n", "cached": bool}.
@@ -983,10 +984,19 @@ class H3RepairEngine:
                                           on_denoised=_on_denoised if early_step > 0 else None,
                                           no_lora=no_lora)
             cached = False
-        imgs = self.decode_clip_frames(lat)
-        wav = self.decode_audio(aud) if (with_audio and frames > 1) else None
+        if decode:
+            imgs = self.decode_clip_frames(lat)
+            wav = self.decode_audio(aud) if (with_audio and frames > 1) else None
+            middle = imgs[len(imgs) // 2]
+        else:
+            # The library builder: the latent is the entry, a thumb is enough — and not even
+            # that if a cancel is already waiting (the render itself is never thrown away).
+            imgs, wav = [], None
+            _ev = getattr(self, "_cancel_event", None)
+            middle = (None if (_ev is not None and _ev.is_set())
+                      else self.decode_middle_frame_image(lat))
         clip = {"latent": lat, "audio_rows": aud, "frames": imgs, "wav": wav,
-                "middle": imgs[len(imgs) // 2], "regime": regime, "steps": steps,
+                "middle": middle, "regime": regime, "steps": steps,
                 "turbo_strength": strength, "frames_n": frames, "cached": cached, "sig": sig}
         if cache is not None and not cached:
             try:

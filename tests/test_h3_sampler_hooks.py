@@ -146,6 +146,31 @@ try:
 except ValueError:
     ck("exact_frames=True refuses 10 (not on the token grid)", True)
 
+
+# --- per-block abort: the owner's event set mid-forward surfaces as PreviewAborted ---------------
+import threading as _thr
+_ev = _thr.Event()
+dit._abort_event = _ev
+_hits = []
+_orig_blk = dit.blocks[1].forward
+def _trip(*a, **k):
+    _hits.append(1)
+    _ev.set()                       # a cancel lands while block 1 runs
+    return _orig_blk(*a, **k)
+dit.blocks[1].forward = _trip
+try:
+    render()
+    ck("a cancel between blocks aborts the render as PreviewAborted", False)
+except sampling.PreviewAborted:
+    ck("a cancel between blocks aborts the render as PreviewAborted", True)
+ck("...within the same step (block 2 never ran that pass)", len(_hits) == 1, _hits)
+dit.blocks[1].forward = _orig_blk
+_ev.clear()
+_again, _ = render()
+_again2, _ = render()
+ck("...and with the event clear the render runs again, deterministic", torch.equal(_again, _again2))
+del dit._abort_event
+
 if fails:
     print(f"{len(fails)} FAILED: " + ", ".join(fails))
     sys.exit(1)

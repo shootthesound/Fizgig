@@ -24653,7 +24653,7 @@ class LoRATrainerGUI:
                                 st.blocks[bid].primary_strength = 0.0
                             t0 = _time.time()
                             eng.render_clip(st, frames=opts["frames"], regime=opts["regime"],
-                                            with_audio=False, cache=cache,
+                                            with_audio=False, cache=cache, decode=False,
                                             steps=opts.get("steps"),
                                             turbo_strength=opts.get("turbo_strength"))
                             n_done += 1

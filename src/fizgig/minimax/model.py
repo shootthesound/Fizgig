@@ -467,6 +467,12 @@ class FinalLayer(nn.Module):
 
 # --- model -------------------------------------------------------------------------------
 
+class ForwardAborted(RuntimeError):
+    """Raised between blocks when the module's `_abort_event` (set by the owner — the Repair
+    Studio engine's cancel) is set: a cancel lands within one block (~0.15 s) instead of at
+    the next sampler step (up to ~7 s at 56 frames full size)."""
+
+
 def _run_block(blocks, i, swap_from, h, t_emb, mod_row, cos, sin):
     """One DiT block, optionally CPU-parked ('block swap').
 
@@ -888,6 +894,9 @@ class MiniMaxH3DiT(nn.Module):
                     _run_block, self.blocks, i, self._swap_from, h, t_emb, mod_row, cos, sin,
                     use_reentrant=False)
             else:
+                _ev = getattr(self, '_abort_event', None)
+                if _ev is not None and _ev.is_set():
+                    raise ForwardAborted()
                 h = _run_block(self.blocks, i, self._swap_from, h, t_emb, mod_row, cos, sin)
             # H2D streaming: the block's forward is done — free its ring slot and start the
             # copy for the block ring_size ahead, overlapping the next blocks' compute. Sits
@@ -1032,6 +1041,9 @@ class MiniMaxH3DiT(nn.Module):
         for i in range(start, nblocks):
             if new_cache is not None:
                 new_cache.block_inputs[i] = h.detach().to(cache_device)
+            _ev = getattr(self, '_abort_event', None)
+            if _ev is not None and _ev.is_set():
+                raise ForwardAborted()
             h = _run_block(self.blocks, i, self._swap_from, h, t_emb, mod_row, cos, sin)
             _off = getattr(self, "_h2d_offloader", None)
             if _off is not None and i >= self._swap_from:

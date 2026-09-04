@@ -23,7 +23,7 @@ Repair Studio on H3 used to show one frame of a clip. Now it renders the clip �
 
 **The text encoder stays parked in RAM.** After the first prompt of a session the 32B encoder stays parked in system RAM when the machine has the room (about 40 GB free — a 64 GB box), so every new or edited prompt after that costs seconds rather than a fresh stream from disk. With less RAM the encoder loads per prompt and the base steps aside for it — unloaded and reloaded from disk on a 32 GB machine rather than copied into RAM, which would page — and returns bit-identical. Released if RAM runs short or when the studio unloads.
 
-**Short clips.** Length now goes down to 5 frames, plus 9 and 13 (marked off-grid — never trained on, render fine). Fewer frames, fewer tokens: a 5-frame move is a fraction of the 22-frame time, for reading a block's effect on the picture before judging motion at 22. The Clip row and every Browse dialog's last folder are remembered across restarts.
+**Lengths and canvas.** Length runs from a still and 5 frames up to 124 (about five seconds), plus 9 and 13 (marked off-grid — never trained on, render fine). Width and Height are separate menus, 512 to 1536 each, so tall and wide clips are a pick rather than a list; H3 likes one side at 768 or more, and 768 × 640 is the default. Fewer frames, fewer tokens: a 5-frame move is a fraction of the 22-frame time, for reading a block's effect on the picture before judging motion at 22. The Clip row and every Browse dialog's last folder are remembered across restarts.
 
 **No-LoRA clip.** A tick on the Clip row (and in the player) adds a third pane: the same seed and prompt rendered by the base model with no LoRA, so you see what the LoRA adds rather than only what the sliders changed. Rendered once per setup and cached. The player also gained a 0.1× speed.
 
@@ -35,7 +35,7 @@ Also fixed on the way: a LoRA carrying AdaLN keys (any run trained with AdaLN on
 
 Klein and Krea 2 Repair Studio are unchanged.
 
-**Small things on the same tab.** A **Reset all / All off / All on / Invert** row above the block sliders, acting on the enable ticks (strengths untouched). **Up to date** / **Pending refresh…** under the tweaked pane's title. **640 × 640** in the Size list — under spec, a help on smaller cards. A change made while a render is running aborts it within one block and starts the new one; a donor path cleared by hand unloads the donor on the next Update. Any LoRA or photo Browse dialog opens in the folder you last picked from.
+**Small things on the same tab.** A **Reset all / All off / All on / Invert** row above the block sliders, acting on the enable ticks (strengths untouched). **Up to date** / **Pending refresh…** under the tweaked pane's title. **512** and **640** rungs in the Width / Height menus — under spec, a help on smaller cards. A change made while a render is running aborts it within one block and starts the new one; a donor path cleared by hand unloads the donor on the next Update. Any LoRA or photo Browse dialog opens in the folder you last picked from.
 
 ## Small things
 

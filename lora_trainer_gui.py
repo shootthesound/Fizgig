@@ -19510,24 +19510,26 @@ class LoRATrainerGUI:
     # 5 is the shortest length on the model's 17k+5 grid (what the trainer and ComfyUI allow);
     # 9 and 13 are a partial temporal group — the token grid can express them and the VAE
     # decodes them, but nothing was ever trained on them, so they're marked off-grid.
+    # Longer lengths (Peter, 5 Sep: "it's a creative tool too") — every 17k+5 rung the
+    # trainer's own preview list goes to; ~24 fps for the seconds.
     _REPAIR_H3_LENGTHS = {"Still (1 frame)": 1, "5 frames (~0.2s)": 5,
                           "9 frames (~0.4s, off-grid)": 9, "13 frames (~0.5s, off-grid)": 13,
-                          "22 frames (~1s)": 22, "56 frames (~2.3s)": 56}
-    # The Size list, in Peter's order (4 Sep): landscape default first, then portrait,
-    # square, and the 1024 rungs. Any "W × H" text parses, so an older saved value survives.
-    _REPAIR_H3_SIZES = ("768 × 640", "640 × 768", "768 × 768", "640 × 640", "1024 × 1024",
-                        "1024 × 768", "768 × 1024")      # 640² is under spec, a help on small cards
-
-    def _repair_h3_size_values(self):
-        return list(self._REPAIR_H3_SIZES)
+                          "22 frames (~1s)": 22, "39 frames (~1.6s)": 39, "56 frames (~2.3s)": 56,
+                          "73 frames (~3s)": 73, "90 frames (~3.8s)": 90,
+                          "107 frames (~4.5s)": 107, "124 frames (~5.2s)": 124}
+    # Width and Height are separate dropdowns (Peter, 5 Sep) so tall and wide clips are a
+    # pick, not a list: every rung is a multiple of 32 (H3's 16-px VAE stride × the 2-px
+    # patch). 768×640 is the default; H3 likes at least one side at 768 or more.
+    _REPAIR_H3_DIMS = (512, 640, 768, 960, 1024, 1152, 1280, 1536)
 
     def _repair_h3_size(self):
-        """(width, height) from the Size combo; 768x768 for anything unparseable."""
-        import re
-        m = re.match(r"\s*(\d+)\s*×\s*(\d+)", self.repair_h3_size_var.get())
-        if not m:
+        """(width, height) from the Width / Height combos; 768 × 640 for anything unparseable."""
+        try:
+            w = int(str(self.repair_h3_width_var.get()).strip())
+            h = int(str(self.repair_h3_height_var.get()).strip())
+        except (AttributeError, ValueError):
             return 768, 640
-        return int(m.group(1)), int(m.group(2))
+        return max(256, w // 32 * 32), max(256, h // 32 * 32)
 
     def _repair_h3_frames(self):
         return int(self._REPAIR_H3_LENGTHS.get(self.repair_h3_frames_var.get(), 22))
@@ -19551,7 +19553,8 @@ class LoRATrainerGUI:
         try:
             st, tu = self._repair_h3_steps_turbo()
             self.last_used["repair_h3_frames"] = self.repair_h3_frames_var.get()
-            self.last_used["repair_h3_size"] = self.repair_h3_size_var.get()
+            self.last_used["repair_h3_width"] = self.repair_h3_width_var.get()
+            self.last_used["repair_h3_height"] = self.repair_h3_height_var.get()
             self.last_used["repair_h3_sound"] = bool(self.repair_h3_sound_var.get())
             self.last_used["repair_h3_dial_scale"] = self.repair_h3_dial_scale_var.get()
             self.last_used["repair_h3_steps"] = st
@@ -19647,7 +19650,7 @@ class LoRATrainerGUI:
     _REPAIR_H3_EARLY_STEP = 2
 
     def _repair_h3_canvas(self, regime=None):
-        """(width, height) every render uses: the Size combo scaled by the Render size
+        """(width, height) every render uses: Width × Height scaled by the Render size
         fraction, each side snapped to /32 (`regime` is ignored — a leftover)."""
         w, h = self._repair_h3_size()
         var = getattr(self, "repair_h3_dial_scale_var", None)
@@ -20005,21 +20008,31 @@ class LoRATrainerGUI:
                             width=24, values=list(self._REPAIR_H3_LENGTHS))
         _len.pack(side=tk.LEFT, padx=(0, 12))
         _len.bind("<<ComboboxSelected>>", lambda e: self._on_repair_h3_clip_changed())
-        ttk.Label(_l1, text="Size:").pack(side=tk.LEFT, padx=(0, 4))
-        _saved = str(self.last_used.get("repair_h3_size", "768 × 640"))
-        _m = re.match(r"\s*(\d+)\s*×\s*(\d+)", _saved)
-        _saved = f"{_m.group(1)} × {_m.group(2)}" if _m else "768 × 640"
-        self.repair_h3_size_var = tk.StringVar(
-            value=_saved if _saved in self._REPAIR_H3_SIZES else "768 × 640")
-        self._repair_h3_size_combo = ttk.Combobox(
-            _l1, textvariable=self.repair_h3_size_var, state="readonly", width=12,
-            values=self._repair_h3_size_values())
-        self._repair_h3_size_combo.pack(side=tk.LEFT, padx=(0, 12))
-        self._repair_h3_size_combo.bind("<<ComboboxSelected>>",
-                                        lambda e: self._on_repair_h3_clip_changed())
-        ToolTip(self._repair_h3_size_combo,
-                "The clip's canvas. 768 on the long side is H3's native size; the 1024 rungs "
-                "are slower and need more VRAM (Render size scales any of them down).")
+        _dims = [str(d) for d in self._REPAIR_H3_DIMS]
+        _w = str(self.last_used.get("repair_h3_width", "768"))
+        _h = str(self.last_used.get("repair_h3_height", "640"))
+        self.repair_h3_width_var = tk.StringVar(value=_w if _w in _dims else "768")
+        self.repair_h3_height_var = tk.StringVar(value=_h if _h in _dims else "640")
+        ttk.Label(_l1, text="W:").pack(side=tk.LEFT, padx=(0, 4))
+        self._repair_h3_width_combo = ttk.Combobox(
+            _l1, textvariable=self.repair_h3_width_var, state="readonly", width=5, values=_dims)
+        self._repair_h3_width_combo.pack(side=tk.LEFT, padx=(0, 6))
+        self._repair_h3_width_combo.bind("<<ComboboxSelected>>",
+                                         lambda e: self._on_repair_h3_clip_changed())
+        ttk.Label(_l1, text="H:").pack(side=tk.LEFT, padx=(0, 4))
+        self._repair_h3_height_combo = ttk.Combobox(
+            _l1, textvariable=self.repair_h3_height_var, state="readonly", width=5, values=_dims)
+        self._repair_h3_height_combo.pack(side=tk.LEFT, padx=(0, 6))
+        self._repair_h3_height_combo.bind("<<ComboboxSelected>>",
+                                          lambda e: self._on_repair_h3_clip_changed())
+        _hint = tk.Label(_l1, text="H3 likes one side at 768+", bg=COLORS["bg_surface"],
+                         fg=COLORS["text_secondary"], font=(FONT_FAMILY, 8))
+        _hint.pack(side=tk.LEFT, padx=(0, 12))
+        for _c in (self._repair_h3_width_combo, self._repair_h3_height_combo):
+            ToolTip(_c, "The clip's canvas, any width by any height. H3 likes at least one "
+                        "side at 768 or more; 768 × 640 is the default. Bigger canvases and "
+                        "longer clips need more VRAM — Render size scales any of them down, "
+                        "and Base: Stream blocks makes room for the biggest on any card.")
         ttk.Label(_l1, text="Render size:").pack(side=tk.LEFT, padx=(0, 4))
         self.repair_h3_dial_scale_var = tk.StringVar(
             value=str(self.last_used.get("repair_h3_dial_scale", "⅔")))
@@ -24676,8 +24689,8 @@ class LoRATrainerGUI:
                 self._repair_progress_end()
                 if "out of memory" in err.lower():
                     self.repair_status_var.set(
-                        "Out of VRAM for this clip — fewer frames or a smaller Size fits "
-                        "(a 56-frame clip at 768² needs roughly 2.4× the room of 22 frames).")
+                        "Out of VRAM for this clip — fewer frames, a smaller canvas, or "
+                        "Base: Stream blocks (the exact base with room for the biggest clips).")
                 else:
                     self.repair_status_var.set("Preview error — see console.")
                 print(err)

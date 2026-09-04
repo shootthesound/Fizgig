@@ -111,19 +111,24 @@ try:
 
     # --- 2. size choices + parser ---------------------------------------------------------
     fam("minimax")
-    vals = list(app._repair_h3_size_combo["values"])
-    ck("sizes: Peter's six, landscape default first",
-       vals == ["768 × 640", "640 × 768", "768 × 768", "640 × 640", "1024 × 1024", "1024 × 768", "768 × 1024"], vals)
-    ck("no 'allow lower' any more", not hasattr(app, "repair_h3_lower_var"))
-    app.repair_h3_size_var.set("1024 × 768")
+    _dims = ["512", "640", "768", "960", "1024", "1152", "1280", "1536"]
+    ck("Width and Height menus: Peter's rungs, all multiples of 32",
+       list(app._repair_h3_width_combo["values"]) == _dims and list(app._repair_h3_height_combo["values"]) == _dims
+       and all(int(d) % 32 == 0 for d in _dims), list(app._repair_h3_width_combo["values"]))
+    ck("no Size combo, no 'allow lower' any more",
+       not hasattr(app, "_repair_h3_size_combo") and not hasattr(app, "repair_h3_lower_var"))
+    ck("lengths run to 124 on the 17k+5 grid, off-grid 9 and 13 kept",
+       [v for v in app._REPAIR_H3_LENGTHS.values()] == [1, 5, 9, 13, 22, 39, 56, 73, 90, 107, 124]
+       and all((f - 5) % 17 == 0 for f in (39, 73, 90, 107, 124)))
+    app.repair_h3_width_var.set("1024"); app.repair_h3_height_var.set("768")
     ck("parser: 1024x768", app._repair_h3_size() == (1024, 768))
-    app.repair_h3_size_var.set("640 × 768")
+    app.repair_h3_width_var.set("640"); app.repair_h3_height_var.set("768")
     ck("parser: portrait 640x768", app._repair_h3_size() == (640, 768))
-    app.repair_h3_size_var.set("768 × 640")
-    ck("parser: an older saved label still parses", app._repair_h3_size() == (768, 640))
-    app.repair_h3_size_var.set("nonsense")
+    app.repair_h3_width_var.set("1536"); app.repair_h3_height_var.set("512")
+    ck("parser: wide 1536x512", app._repair_h3_size() == (1536, 512))
+    app.repair_h3_width_var.set("nonsense")
     ck("parser: garbage -> the default 768x640", app._repair_h3_size() == (768, 640))
-    app.repair_h3_size_var.set("768 × 640")
+    app.repair_h3_width_var.set("768"); app.repair_h3_height_var.set("640")
     app.repair_h3_frames_var.set("56 frames (~2.3s)")
     ck("length parser", app._repair_h3_frames() == 56)
     app.repair_h3_frames_var.set("Still (1 frame)")
@@ -181,7 +186,7 @@ try:
     app.repair_engine = FakeEngine()
     app.repair_prompt_var.set("zwxem test prompt")
     app.repair_seed_var.set("7")
-    app.repair_h3_size_var.set("768 × 640")
+    app.repair_h3_width_var.set("768"); app.repair_h3_height_var.set("640")
     app._repair_h3_apply_preset("confirm", render=False)
     app.repair_h3_sound_var.set(True)
     app._repair_preview_in_flight = False
@@ -451,7 +456,7 @@ try:
     app.repair_prompt_var.set("zwxem cache prompt")
     app.repair_seed_var.set("3")
     app.repair_h3_frames_var.set("22 frames (~1s)")
-    app.repair_h3_size_var.set("768 × 640")
+    app.repair_h3_width_var.set("768"); app.repair_h3_height_var.set("640")
     app.repair_h3_dial_scale_var.set("⅔")
     app._repair_h3_apply_preset("dial", render=False)
     app.repair_h3_sound_var.set(False)
@@ -677,7 +682,7 @@ try:
     app.repair_prompt_var.set("zwxem nolora prompt")
     app.repair_seed_var.set("11")
     app.repair_h3_frames_var.set("22 frames (~1s)")
-    app.repair_h3_size_var.set("768 × 640")
+    app.repair_h3_width_var.set("768"); app.repair_h3_height_var.set("640")
     app.repair_h3_dial_scale_var.set("⅔")
     app._repair_h3_apply_preset("dial", render=False)
     app.repair_h3_sound_var.set(False)

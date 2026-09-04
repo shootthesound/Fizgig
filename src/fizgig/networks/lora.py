@@ -272,14 +272,22 @@ class LoRAInfModule(LoRAModule):
         return weight
 
     def default_forward(self, x):
+        # Inference only (the training class above is untouched): the epilogue is ONE
+        # add with a scalar alpha instead of two bf16 multiplies and an add — three
+        # elementwise kernels over [tokens, out] per module became one. On the H3 Repair
+        # Studio that is ~1,000 module forwards per Dial render (measured 4 Sep: ~0.4 s of
+        # a 3.8 s move). Same maths; multiplier x scale is formed once in fp32.
         if self.split_dims is None:
             lx = self.lora_down(x)
             lx = self.lora_up(lx)
-            return self.org_forward(x) + lx * self.multiplier * self.scale
         else:
             lxs = [lora_down(x) for lora_down in self.lora_down]
             lxs = [lora_up(lx) for lora_up, lx in zip(self.lora_up, lxs)]
-            return self.org_forward(x) + torch.cat(lxs, dim=-1) * self.multiplier * self.scale
+            lx = torch.cat(lxs, dim=-1)
+        m = self.multiplier
+        if isinstance(m, torch.Tensor):                    # a tensor multiplier keeps the old path
+            return self.org_forward(x) + lx * m * self.scale
+        return torch.add(self.org_forward(x), lx, alpha=float(m) * float(self.scale))
 
     def compute_delta(self, x: torch.Tensor) -> torch.Tensor:
         """Return just the LoRA contribution (base output NOT added) for a given

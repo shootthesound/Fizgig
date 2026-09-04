@@ -1,7 +1,7 @@
 <!-- DRAFT — unreleased -->
 # Fizgig v5.3.0
 
-Repair Studio watches the clip, and 24 GB cards get the accurate base there too.
+LoRA surgery on video. Open a MiniMax H3 LoRA and see what every one of its 52 blocks does to a moving clip — the motion, the face, the sound — one click each, every one an exact render. Pin the first and last frame, feed it reference photos, compare against the bare model, and save the fix at the strength it was built for. On 24 GB cards too.
 
 ## MiniMax H3: 4-bit HQQ moves to group 8 — a third less base error at the same size
 
@@ -9,7 +9,7 @@ HQQ 4-bit now quantises in groups of 8 instead of 16, taking the frozen base fro
 
 On speed: where blocks stream — the 12–24 GB tiers HQQ exists for — the dequant hides behind the PCIe transfers and group 16 measured level with NF4 (**[@rintic-13](https://github.com/rintic-13)**, 16 GB card); plain group 8 cost him 6% there. On a big card with nothing streamed the dequant is exposed: about half NF4's step speed at group 16, and group 8 a further ~15% on a 5090. If group 8's cost doesn't hide on the streamed tiers once measured there, group 16 goes back to being the default.
 
-## Repair Studio sees motion (MiniMax H3)
+## LoRA surgery on video: Repair Studio on MiniMax H3
 
 Repair Studio on H3 used to show one frame of a clip. Now it renders the clip — 22 frames with its sound by default, or a still, or 56 frames — and plays both sides **in the app**: click either preview and baseline and tweaked loop side by side in lockstep, with pause, frame stepping, a scrub bar, slow motion and **S** to swap sides (the left one carries the sound). The metrics strip and the Profiler cross-link still read the middle frame.
 

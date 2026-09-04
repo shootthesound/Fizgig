@@ -604,8 +604,16 @@ class H3RepairEngine:
             if self._act_cache_key == key and self._act_cache:
                 entries = self._act_cache
                 resume = self._resume_from_diff(state)
+            elif self._act_cache:
+                # Another setup's cache is dead weight — on the GPU it can be several GB
+                # (56 frames at 768² records ~5.1 GB), and it must go BEFORE the free-VRAM
+                # check below, not sit there while this render fights for room.
+                self._invalidate_activation_cache()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            dev = self._resume_cache_device(width, height, frames)
             ctx = sampling.BlockCacheContext(entries=entries, resume_from=resume,
-                                             cache_device=self._cache_device, record_steps={0})
+                                             cache_device=dev, record_steps={0})
             self.last_resume_from = resume
 
         def _render(block_cache):
@@ -632,6 +640,12 @@ class H3RepairEngine:
                 except Exception:
                     logger.exception("pass-1 resume failed — falling back to a full render")
                     self._invalidate_activation_cache()
+                    # The half-recorded cache of the failed pass is still referenced by ctx;
+                    # after an OOM it is exactly the memory the plain render needs back.
+                    ctx.new_entries.clear()
+                    ctx.entries = {}
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
                     lat, audio = _render(None)
             else:
                 lat, audio = _render(None)
@@ -919,6 +933,42 @@ class H3RepairEngine:
         self._act_cache = None
         self._act_cache_key = None
         self._act_cache_state = None
+
+    # VRAM the pass-1 cache must leave free beside itself for the render's own activations
+    # (the int8 GEMM's fp32 temp alone is ~1 GB per linear at 56 frames × 768²).
+    _RESUME_HEADROOM_GB = 3.0
+
+    def resume_cache_gb(self, width, height, frames) -> float:
+        """Size of one pass-1 cache for this canvas / length: every main block's input row
+        block, [tokens, hidden] bf16. 512×416×22 ≈ 0.9 GB; 768×640×22 ≈ 1.9 GB;
+        768×768×22 ≈ 2.3 GB; 768×768×56 ≈ 5.1 GB."""
+        from fizgig.minimax.model import (latent_frames_for_pixels, audio_latents_for_frames,
+                                          AUDIO_CHANNELS)
+        cfg = self.dit.config
+        lt = latent_frames_for_pixels(int(frames), exact=True)
+        toks = (lt * (int(height) // 16 // 2) * (int(width) // 16 // 2)
+                + audio_latents_for_frames(int(frames)) * AUDIO_CHANNELS + 256)
+        return len(self.dit.blocks) * toks * int(cfg.hidden_size) * 2 / float(2 ** 30)
+
+    def _resume_cache_device(self, width, height, frames) -> str:
+        """Where THIS render's pass-1 cache lives: the GPU when it fits beside the model with
+        headroom, else the CPU (parked over PCIe — measured to net the same saving at 22
+        frames). Decided per render because the cache scales with tokens: the load-time
+        "cuda" tier was sized for the 22-frame dial, and a 56-frame Confirm at 768² is
+        2.4× that — recording it on the GPU is what ran the 5090 out of VRAM (4 Sep)."""
+        try:
+            est = self.resume_cache_gb(width, height, frames)
+        except Exception:
+            return "cpu"
+        self.last_resume_cache_gb = est
+        if self._cache_device != "cuda":
+            return "cpu"
+        try:
+            from fizgig.utils.device import plannable_free_vram
+            free = float(plannable_free_vram())
+        except Exception:
+            return "cpu"
+        return "cuda" if est + self._RESUME_HEADROOM_GB <= free else "cpu"
 
     def mark_blocks_changed(self, blocks) -> None:
         pass          # the resume point derives from a state diff at render time (race-free)

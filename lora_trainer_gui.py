@@ -24184,7 +24184,12 @@ class LoRATrainerGUI:
             err = traceback.format_exc()
             def _show():
                 self._repair_progress_end()
-                self.repair_status_var.set("Preview error — see console.")
+                if "out of memory" in err.lower():
+                    self.repair_status_var.set(
+                        "Out of VRAM for this clip — fewer frames or a smaller Size fits "
+                        "(a 56-frame clip at 768² needs roughly 2.4× the room of 22 frames).")
+                else:
+                    self.repair_status_var.set("Preview error — see console.")
                 print(err)
                 self._repair_preview_in_flight = False
                 # If params changed while we were erroring, still re-fire.

@@ -156,6 +156,39 @@ ck("after a no_lora render the state's flags are back (block 2 off, block 0 + re
 _again, _ = _eng.render_latent(_st, frames=5, steps=2)
 ck("...and the next LoRA'd render is bit-identical to the one before it", torch.equal(_lora, _again))
 
+# --- the pass-1 cache is sized per render and parked on the CPU when the GPU can't hold it -------
+import fizgig.utils.device as _devmod  # noqa: E402
+
+
+class _BigDiT:
+    class config:
+        hidden_size = 5376
+    blocks = [None] * 50
+
+
+_big = _MiniEngine()
+_big.dit, _big._cache_device = _BigDiT(), "cuda"
+_big._RESUME_HEADROOM_GB = _H3E._RESUME_HEADROOM_GB
+_big.resume_cache_gb = _H3E.resume_cache_gb.__get__(_big)
+_big._resume_cache_device = _H3E._resume_cache_device.__get__(_big)
+_gb56 = _big.resume_cache_gb(768, 768, 56)
+_gb22 = _big.resume_cache_gb(768, 640, 22)
+_gbd = _big.resume_cache_gb(512, 416, 22)
+ck("pass-1 cache estimate: 768x768x56 ≈ 5.1 GB, 768x640x22 ≈ 1.9 GB, dial 512x416x22 ≈ 0.9 GB",
+   4.8 < _gb56 < 5.4 and 1.7 < _gb22 < 2.1 and 0.7 < _gbd < 1.1, (round(_gb56, 2), round(_gb22, 2), round(_gbd, 2)))
+_free_orig = _devmod.plannable_free_vram
+try:
+    _devmod.plannable_free_vram = lambda: 8.0
+    ck("8 GB free: the 22-frame caches record on the GPU, the 56-frame one is parked on the CPU",
+       _big._resume_cache_device(768, 640, 22) == "cuda" and _big._resume_cache_device(512, 416, 22) == "cuda"
+       and _big._resume_cache_device(768, 768, 56) == "cpu")
+    _devmod.plannable_free_vram = lambda: 12.0
+    ck("12 GB free: the 56-frame cache fits on the GPU", _big._resume_cache_device(768, 768, 56) == "cuda")
+    _big._cache_device = "cpu"
+    ck("a CPU-tier load never records on the GPU", _big._resume_cache_device(512, 416, 22) == "cpu")
+finally:
+    _devmod.plannable_free_vram = _free_orig
+
 # --- the LoKR whitelist fix: quantized Linear subclasses are mappable -----------------------------
 from fizgig.networks.lora import _build_dit_linear_map  # noqa: E402
 

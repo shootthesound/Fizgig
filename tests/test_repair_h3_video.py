@@ -121,6 +121,8 @@ try:
     ck("length parser", app._repair_h3_frames() == 56)
     app.repair_h3_frames_var.set("Still (1 frame)")
     ck("length parser: still", app._repair_h3_frames() == 1)
+    app.repair_h3_frames_var.set("9 frames (~0.4s, off-grid)")
+    ck("length parser: 9 (off-grid)", app._repair_h3_frames() == 9)
     app.repair_h3_frames_var.set("22 frames (~1s)")
 
     # --- 3/4. worker dispatch --------------------------------------------------------------

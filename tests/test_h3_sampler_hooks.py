@@ -123,6 +123,29 @@ out_b, _ = render(None, _boom)
 ck("a raising callback never takes the render down", torch.equal(out_b, plain_now))
 
 print()
+
+# --- 4. exact (off-grid) short clips ------------------------------------------------------
+from fizgig.minimax.model import AUDIO_CHANNELS, audio_latents_for_frames    # noqa: E402
+_kw9 = dict(KW, num_frames=9)
+with torch.no_grad():
+    lat9, aud9 = sampling.sample_image(dit, txt, exact_frames=True, **_kw9)
+    lat9s, aud9s = sampling.sample_image(dit, txt, **_kw9)
+ck("9 frames, exact_frames=True -> 3 latents (a partial temporal group)", lat9.shape[2] == 3,
+   tuple(lat9.shape))
+ck("...and its audio rows follow the 9-frame clock (15 latents x 2 channels)",
+   aud9.shape[0] == audio_latents_for_frames(9) * AUDIO_CHANNELS, tuple(aud9.shape))
+ck("9 frames without the flag still snaps down to 2 latents (trainer semantics untouched)",
+   lat9s.shape[2] == 2, tuple(lat9s.shape))
+with torch.no_grad():
+    lat13, _ = sampling.sample_image(dit, txt, exact_frames=True, **dict(KW, num_frames=13))
+ck("13 frames exact -> 4 latents", lat13.shape[2] == 4, tuple(lat13.shape))
+try:
+    with torch.no_grad():
+        sampling.sample_image(dit, txt, exact_frames=True, **dict(KW, num_frames=10))
+    ck("exact_frames=True refuses 10 (not on the token grid)", False)
+except ValueError:
+    ck("exact_frames=True refuses 10 (not on the token grid)", True)
+
 if fails:
     print(f"{len(fails)} FAILED: " + ", ".join(fails))
     sys.exit(1)

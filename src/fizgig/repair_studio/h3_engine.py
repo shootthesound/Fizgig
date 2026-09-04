@@ -508,7 +508,8 @@ class H3RepairEngine:
                     width=width, height=height, steps=steps, cfg_scale=1.0,
                     seed=int(seed), device=self.device, dtype=self.dtype,
                     num_frames=frames, on_slow_step=_abort_check, slow_step_s=0.0,
-                    block_cache=block_cache, keyframes=getattr(state, "keyframes", None))
+                    block_cache=block_cache, keyframes=getattr(state, "keyframes", None),
+                    exact_frames=True)
 
         if ctx is not None:
             try:
@@ -604,7 +605,7 @@ class H3RepairEngine:
                     seed=int(seed), device=self.device, dtype=self.dtype,
                     num_frames=frames, on_slow_step=_abort_check, slow_step_s=0.0,
                     return_audio=True, keyframes=keyframes, block_cache=block_cache,
-                    on_denoised=on_denoised)
+                    on_denoised=on_denoised, exact_frames=True)
 
         if ctx is not None:
             try:

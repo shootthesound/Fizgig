@@ -172,11 +172,14 @@ def sample_image(model, text_embeds, *, width=512, height=512, steps=8, cfg_scal
                  ref_latents=None, text_token_tags=None, num_frames: int = 1,
                  on_slow_step=None, slow_step_s: float = 120.0, return_audio=False,
                  block_cache: "BlockCacheContext | None" = None, keyframes=None,
-                 on_denoised=None):
+                 on_denoised=None, exact_frames: bool = False):
     """Denoise one image OR clip and return its LATENT [1, 24, T, H/16, W/16].
 
     num_frames is PIXEL frames on the model's 17n+5 grid (5, 22, ..., 124, 141); off-grid
     values snap DOWN like the reference trainer. 1 = the classic still (T=1 keyframe layout).
+    exact_frames=True keeps a token-grid count as asked (9 -> 3 latents, 13 -> 4: a partial
+    temporal group, off-distribution — the Repair Studio's short-clip lengths) and raises on
+    any count that isn't on that grid.
     The model's trained range is ~124-362 frames — a 124-frame clip samples the regime the
     checkpoint was actually trained in, where a lone still is out of distribution.
 
@@ -217,7 +220,7 @@ def sample_image(model, text_embeds, *, width=512, height=512, steps=8, cfg_scal
     # reason on the training side).
     lat_h, lat_w = (lat_h // 2) * 2, (lat_w // 2) * 2
     from fizgig.minimax.model import latent_frames_for_pixels, pixel_frames_for_latent
-    latent_t = latent_frames_for_pixels(int(num_frames))
+    latent_t = latent_frames_for_pixels(int(num_frames), exact=exact_frames)
     pixel_frames = pixel_frames_for_latent(latent_t)        # the snapped-down truth
     gen = torch.Generator(device="cpu").manual_seed(int(seed))
     x = torch.randn(1, latent_channels, latent_t, lat_h, lat_w,

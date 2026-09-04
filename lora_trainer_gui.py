@@ -19458,7 +19458,12 @@ class LoRATrainerGUI:
             pass
 
     # ----- H3 clip controls ---------------------------------------------------------------
-    _REPAIR_H3_LENGTHS = {"Still (1 frame)": 1, "22 frames (~1s)": 22, "56 frames (~2.3s)": 56}
+    # 5 is the shortest length on the model's 17k+5 grid (what the trainer and ComfyUI allow);
+    # 9 and 13 are a partial temporal group — the token grid can express them and the VAE
+    # decodes them, but nothing was ever trained on them, so they're marked off-grid.
+    _REPAIR_H3_LENGTHS = {"Still (1 frame)": 1, "5 frames (~0.2s)": 5,
+                          "9 frames (~0.4s, off-grid)": 9, "13 frames (~0.5s, off-grid)": 13,
+                          "22 frames (~1s)": 22, "56 frames (~2.3s)": 56}
     _REPAIR_H3_SHORT_SIDES = (768, 704, 640)
     _REPAIR_H3_SHORT_SIDES_LOW = (576, 512)
 
@@ -19764,7 +19769,7 @@ class LoRATrainerGUI:
         self.repair_h3_frames_var = tk.StringVar(
             value=str(self.last_used.get("repair_h3_frames", "22 frames (~1s)")))
         _len = ttk.Combobox(h3_row, textvariable=self.repair_h3_frames_var, state="readonly",
-                            width=17, values=list(self._REPAIR_H3_LENGTHS))
+                            width=24, values=list(self._REPAIR_H3_LENGTHS))
         _len.pack(side=tk.LEFT, padx=(0, 12))
         _len.bind("<<ComboboxSelected>>", lambda e: self._on_repair_h3_clip_changed())
         ttk.Label(h3_row, text="Size:").pack(side=tk.LEFT, padx=(0, 4))

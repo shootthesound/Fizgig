@@ -139,23 +139,38 @@ def audio_latents_for_frames(num_frames: int = 1) -> int:
 
 
 def pixel_frames_for_latent(latent_t: int) -> int:
-    """Latent frames -> the pixel frames they encode: 5n+2 latents <-> 17n+5 pixels.
+    """Latent frames -> the pixel frames they encode, summed off the (1, 4, 4, 4, 4) token
+    grid: 5n+2 latents <-> 17n+5 pixels (the trained / ComfyUI grid: 1, 5, 22, 39, 56, ...).
 
-    The lone-latent still (latent_t == 1) is its own case — one keyframe, one pixel frame.
-    Anything else must sit on the 5n+2 grid; a count off the grid means the caller built a
-    latent the VAE could never have produced, and silently rounding it would misalign the
-    audio clock against the video rows, so it raises instead."""
-    if latent_t == 1:
-        return 1
-    if latent_t < 2 or (latent_t - 2) % 5:
-        raise ValueError(f"latent_t={latent_t} is not on the 5n+2 grid (2, 7, 12, ...)")
-    return 17 * (latent_t - 2) // 5 + 5
+    A PARTIAL temporal group is exact arithmetic too (3 -> 9, 4 -> 13, 6 -> 18) — the audio
+    clock follows the summed pixel count, so nothing misaligns — but it is off-distribution:
+    neither the reference trainer nor ComfyUI ever builds one. Only the Repair Studio's
+    short-clip lengths ask for it (`latent_frames_for_pixels(..., exact=True)`); the trainer
+    snaps down and never does."""
+    t = int(latent_t)
+    if t < 1:
+        raise ValueError(f"latent_t={latent_t} must be >= 1")
+    return sum(FRAME_PER_TOKEN[k % 5] for k in range(t))
 
 
-def latent_frames_for_pixels(num_frames: int) -> int:
+def latent_frames_for_pixels(num_frames: int, exact: bool = False) -> int:
     """Pixel frames -> latent frames, snapping DOWN onto the 17n+5 grid like the reference
     trainer does (align_num_frames_down): 5..21 -> 2 latents, 22..38 -> 7, 124 -> 37.
-    num_frames == 1 is the still case -> 1 latent."""
+    num_frames == 1 is the still case -> 1 latent.
+
+    exact=True (Repair Studio short clips): the count must sit on the token grid itself —
+    1, 5, 9, 13, 17, 18, 22, 26, ... — and comes back as that many latents, partial temporal
+    group included (9 -> 3, 13 -> 4); anything else raises instead of snapping."""
+    if exact:
+        n = int(num_frames)
+        total, t = 0, 0
+        while total < n:
+            total += FRAME_PER_TOKEN[t % 5]
+            t += 1
+        if total != n:
+            raise ValueError(f"num_frames={num_frames} is not on the (1, 4, 4, 4, 4) token "
+                             f"grid (1, 5, 9, 13, 17, 18, 22, ...)")
+        return max(1, t)
     if num_frames <= 1:
         return 1
     n = max(5, int(num_frames))

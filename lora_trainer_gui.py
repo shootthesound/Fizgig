@@ -19864,53 +19864,7 @@ class LoRATrainerGUI:
                 "next Start / Update (~25 s).")
         r += 1
 
-        # MiniMax H3 only (shown / hidden with the family): which H3 checkpoint the studio
-        # runs — fl2va (first / last frame) or ref2va (reference images, <Picture N> in the
-        # prompt). Same two labels as the Training tab's Training Base.
-        self._repair_h3_model_label = ttk.Label(parent, text="Model:")
-        self._repair_h3_model_label.grid(row=r, column=0, sticky=tk.W, padx=4, pady=2)
-        _mv = str(self.last_used.get("repair_h3_model", MINIMAX_TRAIN_BASE_OPTIONS[0]))
-        if _mv not in MINIMAX_TRAIN_BASE_OPTIONS:
-            _mv = MINIMAX_TRAIN_BASE_OPTIONS[0]
-        self.repair_h3_model_var = tk.StringVar(value=_mv)
-        self._repair_h3_ref_flag = minimax_train_base(_mv) == "ref2va"
-        self._repair_h3_model_combo = ttk.Combobox(
-            parent, textvariable=self.repair_h3_model_var, state="readonly", width=34,
-            values=list(MINIMAX_TRAIN_BASE_OPTIONS))
-        self._repair_h3_model_combo.grid(row=r, column=1, sticky=tk.W, padx=4, pady=2)
-        self._repair_h3_model_combo.bind("<<ComboboxSelected>>",
-                                         lambda e: self._on_repair_h3_model_changed())
-        ToolTip(self._repair_h3_model_combo,
-                "First/last frame runs the standard fl2va checkpoint (DiT path in Preferences). "
-                "Reference runs the ref2va fine-tune (DiT (reference) in Preferences): the "
-                "First / Last Frame card becomes Reference Images and <Picture 1> / "
-                "<Picture 2> in the prompt refer to them. Switching reloads the model on the "
-                "next Start / Update (~25 s).")
-        r += 1
 
-        # MiniMax H3 only (shown / hidden with the family): which H3 checkpoint the studio
-        # runs — fl2va (first / last frame) or ref2va (reference images, <Picture N> in the
-        # prompt). Same two labels as the Training tab's Training Base.
-        self._repair_h3_model_label = ttk.Label(parent, text="Model:")
-        self._repair_h3_model_label.grid(row=r, column=0, sticky=tk.W, padx=4, pady=2)
-        _mv = str(self.last_used.get("repair_h3_model", MINIMAX_TRAIN_BASE_OPTIONS[0]))
-        if _mv not in MINIMAX_TRAIN_BASE_OPTIONS:
-            _mv = MINIMAX_TRAIN_BASE_OPTIONS[0]
-        self.repair_h3_model_var = tk.StringVar(value=_mv)
-        self._repair_h3_ref_flag = minimax_train_base(_mv) == "ref2va"
-        self._repair_h3_model_combo = ttk.Combobox(
-            parent, textvariable=self.repair_h3_model_var, state="readonly", width=34,
-            values=list(MINIMAX_TRAIN_BASE_OPTIONS))
-        self._repair_h3_model_combo.grid(row=r, column=1, sticky=tk.W, padx=4, pady=2)
-        self._repair_h3_model_combo.bind("<<ComboboxSelected>>",
-                                         lambda e: self._on_repair_h3_model_changed())
-        ToolTip(self._repair_h3_model_combo,
-                "First/last frame runs the standard fl2va checkpoint (DiT path in Preferences). "
-                "Reference runs the ref2va fine-tune (DiT (reference) in Preferences): the "
-                "First / Last Frame card becomes Reference Images and <Picture 1> / "
-                "<Picture 2> in the prompt refer to them. Switching reloads the model on the "
-                "next Start / Update (~25 s).")
-        r += 1
 
         # Prompt row
         ttk.Label(parent, text="Prompt:").grid(row=r, column=0, sticky=tk.W, padx=4, pady=2)

@@ -113,7 +113,7 @@ try:
     fam("minimax")
     vals = list(app._repair_h3_size_combo["values"])
     ck("sizes: Peter's six, landscape default first",
-       vals == ["768 × 640", "640 × 768", "768 × 768", "1024 × 1024", "1024 × 768", "768 × 1024"], vals)
+       vals == ["768 × 640", "640 × 768", "768 × 768", "640 × 640", "1024 × 1024", "1024 × 768", "768 × 1024"], vals)
     ck("no 'allow lower' any more", not hasattr(app, "repair_h3_lower_var"))
     app.repair_h3_size_var.set("1024 × 768")
     ck("parser: 1024x768", app._repair_h3_size() == (1024, 768))

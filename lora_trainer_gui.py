@@ -19517,8 +19517,8 @@ class LoRATrainerGUI:
                           "22 frames (~1s)": 22, "56 frames (~2.3s)": 56}
     # The Size list, in Peter's order (4 Sep): landscape default first, then portrait,
     # square, and the 1024 rungs. Any "W × H" text parses, so an older saved value survives.
-    _REPAIR_H3_SIZES = ("768 × 640", "640 × 768", "768 × 768", "1024 × 1024", "1024 × 768",
-                        "768 × 1024")
+    _REPAIR_H3_SIZES = ("768 × 640", "640 × 768", "768 × 768", "640 × 640", "1024 × 1024",
+                        "1024 × 768", "768 × 1024")      # 640² is under spec, a help on small cards
 
     def _repair_h3_size_values(self):
         return list(self._REPAIR_H3_SIZES)

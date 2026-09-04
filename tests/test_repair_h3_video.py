@@ -186,7 +186,7 @@ try:
     ck("H3 run_async: frames on the snapshot", captured["snap"].preview_frames == 22)
     o = captured["opts"]
     ck("H3 run_async: opts carry frames/regime/early; sound only with an audio VAE configured",
-       o == {"frames": 22, "regime": "confirm", "early_step": 2,
+       o == {"frames": 22, "regime": "confirm", "early_step": 2, "nolora": False,
              "with_audio": bool(app._repair_h3_audio_vae_path())}, o)
     app.repair_h3_sound_var.set(False)
     app._repair_preview_in_flight = False
@@ -240,12 +240,12 @@ try:
     P = app._repair_player
     ck("player opened via the compare entry point", P is not None and P["win"].winfo_exists())
     ck("player is playing, 5 frames, sides baseline|tweaked",
-       P["playing"] and P["n"] == 5 and P["sides"] == ["baseline", "tweaked"])
+       P["playing"] and P["n"] == 5 and P["sides"][:2] == ["baseline", "tweaked"])
     ck("metrics strip registered on the player window",
        app._repair_popout_window is P["win"] and set(app._repair_popout_metric_lbls) == {
            "likeness", "grid", "texture", "clip", "sat"})
     app._repair_clip_player_swap()
-    ck("swap trades sides", P["sides"] == ["tweaked", "baseline"])
+    ck("swap trades sides", P["sides"][:2] == ["tweaked", "baseline"])
     ck("titles follow the swap", "Tweaked" in P["titles"][0].cget("text")
        and "Baseline" in P["titles"][1].cget("text"))
     app._repair_clip_player_stop()
@@ -571,6 +571,80 @@ try:
     ck("reset drops the cache and the title", app._repair_cache is None
        and app._repair_tweaked_title.cget("text") == "Tweaked (current sliders)")
     shutil.rmtree(cache_root, ignore_errors=True)
+    # --- 8. No-LoRA clip: tab tick + player tick share one var; rendered once per setup ------------
+    fam("minimax")
+    CacheEngine.nolora_clip = _H3E.nolora_clip
+    nolora_calls = []
+    _orig_rl = CacheEngine.render_latent
+
+    def _rl_spy(self, st, on_denoised=None, **kw):
+        if kw.get("no_lora"):
+            nolora_calls.append(st.preview_width)
+        return _orig_rl(self, st, on_denoised=on_denoised, **kw)
+    CacheEngine.render_latent = _rl_spy
+    app.repair_engine = CacheEngine()
+    app._refresh_block_slider_activity()
+    app.repair_prompt_var.set("zwxem nolora prompt")
+    app.repair_seed_var.set("11")
+    app.repair_h3_frames_var.set("22 frames (~1s)")
+    app.repair_h3_size_var.set("768 × 640  (landscape)")
+    app.repair_h3_dial_scale_var.set("⅔")
+    app.repair_h3_regime_var.set("dial")
+    app.repair_h3_sound_var.set(False)
+    app.repair_h3_early_var.set(False)
+    app.repair_h3_nolora_var.set(False)
+    if app._repair_preview_after_id is not None:
+        root.after_cancel(app._repair_preview_after_id)
+        app._repair_preview_after_id = None
+    app._repair_preview_in_flight = False
+    app._run_preview_async()
+    wait_for(lambda: not app._repair_preview_in_flight and app._repair_clips.get("tweaked") is not None
+             and app._repair_cache is not None, timeout=15.0)
+    wait_for(lambda: app._repair_cache.complete() and not app._repair_cache_thread.is_alive(), timeout=15.0)
+    ck("tick off: no no-LoRA render, no third clip",
+       not nolora_calls and app._repair_clips.get("nolora") is None and not app._repair_nolora_shown())
+    ck("render opts carry the tick", app._repair_h3_render_opts().get("nolora") is False)
+    app.repair_h3_nolora_var.set(True)
+    app._on_repair_h3_nolora_toggled()
+    wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
+             and app._repair_clips.get("nolora") is not None, timeout=15.0)
+    ck("tick on: the no-LoRA clip is rendered once, at the dial canvas",
+       nolora_calls == [512] and app._repair_clips.get("nolora") is not None, nolora_calls)
+    ck("...and it is not pending any more", app._repair_nolora_pending is False)
+    ck("...cached on disk under 'nolora' with its label",
+       app._repair_cache.has("nolora") and app._repair_cache.info("nolora").get("label") == "No LoRA")
+    app._repair_clip_player_open()
+    root.update()
+    P = app._repair_player
+    ck("player shows three panes", all(P["panes"][i].winfo_manager() == "grid" for i in range(3))
+       and "No LoRA" in P["titles"][2].cget("text"), [P["titles"][i].cget("text") for i in range(3)])
+    ck("player bar carries the same tick", any(isinstance(w, G.ttk.Checkbutton) and "No LoRA" in str(w.cget("text"))
+                                             for w in P["win"].winfo_children()[1].winfo_children())
+       if len(P["win"].winfo_children()) > 1 else True)
+    app._repair_clip_player_swap()
+    ck("swap trades the left pair, the no-LoRA pane stays right", P["sides"] == ["tweaked", "baseline", "nolora"])
+    # a slider move: the pair re-renders, the no-LoRA clip is served from memory (no new render)
+    app.repair_block_vars["h3blk_21"]["primary_strength"].set(0.5)
+    wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
+             and app._repair_clips.get("nolora") is not None and not app._repair_nolora_pending, timeout=15.0)
+    ck("a slider move keeps the no-LoRA clip without re-rendering it",
+       nolora_calls == [512] and app._repair_clips.get("nolora") is not None, nolora_calls)
+    app.repair_h3_nolora_var.set(False)
+    app._on_repair_h3_nolora_toggled()
+    root.update()
+    ck("tick off: the clip is dropped and the pane hidden",
+       app._repair_clips.get("nolora") is None and P["panes"][2].winfo_manager() == ""
+       and P["panes"][0].winfo_manager() == "grid")
+    app.repair_h3_nolora_var.set(True)
+    app._on_repair_h3_nolora_toggled()
+    wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
+             and app._repair_clips.get("nolora") is not None, timeout=15.0)
+    root.update()
+    ck("tick on again: served from the engine's memory (still one render), pane back",
+       nolora_calls == [512] and P["panes"][2].winfo_manager() == "grid", nolora_calls)
+    app._repair_clip_player_close()
+    CacheEngine.render_latent = _orig_rl
+
 finally:
     G.messagebox.showerror = _err
     try:

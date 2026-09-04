@@ -19544,11 +19544,13 @@ class LoRATrainerGUI:
         early = 0
         if getattr(self, "repair_h3_early_var", None) is not None and self.repair_h3_early_var.get():
             early = self._REPAIR_H3_EARLY_STEP
+        nol = getattr(self, "repair_h3_nolora_var", None)
         return {"frames": self._repair_h3_frames(),
                 "regime": self.repair_h3_regime_var.get() or "dial",
                 "with_audio": bool(self.repair_h3_sound_var.get()
                                    and self._repair_h3_audio_vae_path()),
-                "early_step": early}
+                "early_step": early,
+                "nolora": bool(nol is not None and nol.get())}
 
     _REPAIR_H3_DIAL_SCALES = {"Full": 1.0, "⅔": 2.0 / 3.0, "½": 0.5}
     # The pass whose estimate "Show early" puts up. Measured 3 Sep at Turbo 1.0: the
@@ -19575,6 +19577,24 @@ class LoRATrainerGUI:
             self._save_last_used_paths()
         except Exception:
             pass
+
+    def _on_repair_h3_nolora_toggled(self):
+        """The player's third pane. On: fetch the no-LoRA clip through a normal preview pass
+        (the tweaked clip is a cache hit, so it costs one render, once per setup). Off: drop
+        it and the player goes back to two panes. Shared by the tab tick and the player's."""
+        on = bool(self.repair_h3_nolora_var.get())
+        try:
+            self.last_used["repair_h3_nolora"] = on
+            self._save_last_used_paths()
+        except Exception:
+            pass
+        if on:
+            if self._repair_clips.get("nolora") is None and self._repair_is_h3():
+                self._on_preview_param_changed()
+        else:
+            self._repair_clips.pop("nolora", None)
+            self._repair_nolora_pending = False
+            self._repair_clip_player_reload()
 
     def _on_repair_family_changed(self):
         """Family toggle: reset any loaded session (engine type changes), reset the slider
@@ -19835,6 +19855,14 @@ class LoRATrainerGUI:
                         "passes finish it — the real render, unfinished, with a badge. "
                         "You see something ~1 s sooner; the finished clip lands ~1.5 s "
                         "later (one extra decode).")
+        self.repair_h3_nolora_var = tk.BooleanVar(
+            value=bool(self.last_used.get("repair_h3_nolora", False)))
+        _nol = ttk.Checkbutton(h3_row, text="No-LoRA clip", variable=self.repair_h3_nolora_var,
+                               command=self._on_repair_h3_nolora_toggled)
+        _nol.pack(side=tk.LEFT, padx=(10, 0))
+        ToolTip(_nol, "Also render the same seed and prompt with no LoRA at all, shown as a "
+                      "third pane in the player. Rendered once per setup and cached, so it "
+                      "costs one extra render — not one per slider move.")
         r += 1
 
         # Reference image row (Klein is an edit model — condition the preview on a
@@ -19965,7 +19993,8 @@ class LoRATrainerGUI:
         self._repair_popout_window = None
         self._repair_popout_label = None
         self._repair_popout_tk_img = None
-        self._repair_clips = {}          # H3: "baseline"/"tweaked" -> clip bundle (frames+wav)
+        self._repair_clips = {}          # H3: "baseline"/"tweaked"/"nolora" -> clip bundle (frames+wav)
+        self._repair_nolora_pending = False
         self._repair_player = None       # H3: the open clip player's state, or None
         # H3 render cache + block library (exact renders cached to disk per slider state;
         # every block-off clip pre-rendered in the background). One engine, two users — the
@@ -24091,6 +24120,7 @@ class LoRATrainerGUI:
                     snapshot.keyframes = self._repair_h3_prepare_keyframes(
                         snapshot.preview_width, snapshot.preview_height, h3_opts["frames"])
                     cache = self._repair_cache_for(snapshot, h3_opts)
+                    want_nolora = bool(h3_opts.pop("nolora", False))
                     print(f"[repair] worker: H3 baseline clip {snapshot.preview_width}x"
                           f"{snapshot.preview_height} x{h3_opts['frames']} ({h3_opts['regime']})"
                           + (f" + {len(snapshot.keyframes)} keyframe(s)" if snapshot.keyframes else ""))
@@ -24110,8 +24140,21 @@ class LoRATrainerGUI:
                     tweak_clip = self.repair_engine.render_clip(
                         snapshot, cache=cache, early_step=early,
                         on_early=_on_early if early > 0 else None, **h3_opts)
-                self.master.after(0, lambda: self._set_repair_preview_clips(
-                    base_clip, tweak_clip, snapshot=snapshot, opts=h3_opts))
+                    can_nolora = want_nolora and hasattr(self.repair_engine, "nolora_clip")
+                    # The pair goes up first; the no-LoRA clip (base model, same seed) follows
+                    # — a render only the first time per setup, a decode after that.
+                    self.master.after(0, lambda: self._set_repair_preview_clips(
+                        base_clip, tweak_clip, snapshot=snapshot, opts=h3_opts,
+                        nolora="pending" if can_nolora else None))
+                    if can_nolora:
+                        try:
+                            print("[repair] worker: H3 no-LoRA clip")
+                            nolora_clip = self.repair_engine.nolora_clip(
+                                snapshot, cache=cache, **h3_opts)
+                        except PreviewAborted:
+                            nolora_clip = None            # a newer edit took the engine
+                        self.master.after(0, lambda: self._repair_set_nolora_clip(
+                            nolora_clip, _gen))
                 return
             # Fresh render cycle — clear any pending cancel from a previous aborted pass.
             if hasattr(self.repair_engine, "clear_cancel"):
@@ -24181,29 +24224,58 @@ class LoRATrainerGUI:
 
     _REPAIR_H3_FPS = 24
 
+    _REPAIR_KEEP = object()          # _set_repair_preview_clips: leave the no-LoRA clip alone
+
+    def _repair_clip_wav(self, side, clip):
+        """Write the clip's soundtrack to a temp wav (winsound plays files); None if silent."""
+        import tempfile
+        try:
+            from fizgig.minimax.trainer import write_wav
+        except Exception:
+            return None
+        if clip.get("wav") is None:
+            return None
+        try:
+            wav_path = os.path.join(tempfile.gettempdir(), f"fizgig_repair_{side}.wav")
+            write_wav(wav_path, clip["wav"])
+            return wav_path
+        except Exception:
+            return None
+
+    def _repair_set_nolora_clip(self, clip, gen):
+        """The no-LoRA clip landed (Tk thread) — unless a newer render generation has started,
+        in which case its own worker brings the right one."""
+        if gen != self._repair_render_gen:
+            return
+        self._repair_nolora_pending = False
+        if clip is None:
+            self._repair_clips.pop("nolora", None)
+        else:
+            clip["wav_path"] = self._repair_clip_wav("nolora", clip)
+            self._repair_clips["nolora"] = clip
+        self._repair_clip_player_reload()
+
     def _set_repair_preview_clips(self, base_clip, tweak_clip, snapshot=None, opts=None,
-                                  peek=None):
+                                  peek=None, nolora=_REPAIR_KEEP):
         """A rendered clip pair landed (Tk thread). Keep the frames + sound for the player,
         write each soundtrack to a temp wav (winsound plays files), then hand the middle
         frames to the still path — which repaints, refreshes metrics and clears in-flight.
         Every render here is exact: a cache hit is the stored exact render, a peek is a
         library entry shown without touching the sliders."""
-        import tempfile
-        try:
-            from fizgig.minimax.trainer import write_wav
-        except Exception:
-            write_wav = None
         self._repair_stop_wav()
         for side, clip in (("baseline", base_clip), ("tweaked", tweak_clip)):
-            wav_path = None
-            if clip.get("wav") is not None and write_wav is not None:
-                try:
-                    wav_path = os.path.join(tempfile.gettempdir(), f"fizgig_repair_{side}.wav")
-                    write_wav(wav_path, clip["wav"])
-                except Exception:
-                    wav_path = None
-            clip["wav_path"] = wav_path
+            clip["wav_path"] = self._repair_clip_wav(side, clip)
             self._repair_clips[side] = clip
+        if nolora is not self._REPAIR_KEEP:
+            # From the worker: None = the tick is off (drop it), "pending" = its render
+            # follows (the pane says so), a dict = the clip itself. Peeks / history views
+            # pass nothing and leave it be.
+            self._repair_nolora_pending = (nolora == "pending")
+            if isinstance(nolora, dict):
+                nolora["wav_path"] = self._repair_clip_wav("nolora", nolora)
+                self._repair_clips["nolora"] = nolora
+            else:
+                self._repair_clips.pop("nolora", None)
         self._repair_peek = peek
         self._repair_set_tweaked_title(
             f"{peek} — library entry (sliders untouched)" if peek else None,
@@ -25190,7 +25262,8 @@ class LoRATrainerGUI:
         sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
         base = self._repair_clips.get("baseline") or self._repair_clips.get("tweaked")
         fw, fh = base["frames"][0].size if base else (768, 768)
-        _w = min(fw * 2 + 8 + 16, int(sw * 0.9))
+        npanes = 3 if self._repair_nolora_shown() else 2
+        _w = min(fw * npanes + 8 * (npanes - 1) + 16, int(sw * 0.9))
         _h = min(fh + 120, int(sh * 0.85))
         win.geometry(f"{_w}x{_h}")
         win.minsize(480, 320)
@@ -25216,6 +25289,13 @@ class LoRATrainerGUI:
         _btn("⏭", lambda: self._repair_clip_player_step(+1), "Right arrow — one frame on")
         _btn("⇄ Swap", self._repair_clip_player_swap,
              "S / Tab — trade sides. Sound follows the LEFT pane.")
+        if getattr(self, "repair_h3_nolora_var", None) is not None:
+            _nol = ttk.Checkbutton(bar, text="No LoRA", variable=self.repair_h3_nolora_var,
+                                   command=self._on_repair_h3_nolora_toggled)
+            _nol.pack(side=tk.LEFT, padx=(10, 0), pady=4)
+            ToolTip(_nol, "Third pane: the same seed and prompt rendered by the base model "
+                          "with no LoRA at all. Same tick as on the tab; rendered once per "
+                          "setup and cached.")
         speed_var = tk.StringVar(value="1")
         ttk.Label(bar, text="Speed:").pack(side=tk.LEFT, padx=(12, 2))
         spd = ttk.Combobox(bar, textvariable=speed_var, values=["0.1", "0.25", "0.5", "1"],
@@ -25238,28 +25318,28 @@ class LoRATrainerGUI:
              "Write the LEFT pane's clip as an MP4 (with its sound) — or PNG frames + WAV "
              "when ffmpeg isn't on the path.")
 
-        # Two panes with titles; grid weights keep them equal and letterboxed.
+        # Two panes with titles (a third, no-LoRA, when ticked); grid weights keep the shown
+        # ones equal and letterboxed — _repair_clip_player_reload shows / hides the third.
         top = tk.Frame(win, bg="#000000")
         top.pack(fill=tk.BOTH, expand=True)
-        top.columnconfigure(0, weight=1, uniform="pane")
-        top.columnconfigure(1, weight=1, uniform="pane")
         top.rowconfigure(1, weight=1)
         titles, panes = [], []
-        for col in (0, 1):
+        for col in (0, 1, 2):
             t = tk.Label(top, text="", font=(FONT_FAMILY, 10, "bold"), fg=COLORS["text_primary"],
                          bg="#000000")
             t.grid(row=0, column=col, pady=(4, 2))
             p = tk.Label(top, bg="#000000", cursor="hand2")
-            p.grid(row=1, column=col, sticky="nsew", padx=(0 if col else 4, 4 if col else 0),
+            p.grid(row=1, column=col, sticky="nsew", padx=(4 if col == 0 else 2, 2),
                    pady=(0, 4))
             p.bind("<Button-1>", lambda e: self._repair_clip_player_swap())
             titles.append(t)
             panes.append(p)
 
         self._repair_player = {
-            "win": win, "panes": panes, "titles": titles, "sides": ["baseline", "tweaked"],
+            "win": win, "panes": panes, "titles": titles, "top": top,
+            "sides": ["baseline", "tweaked", "nolora"],
             "idx": 0, "playing": False, "t0": None, "offset": 0.0, "speed": 1.0, "gen": 0,
-            "job": None, "cache": {}, "n": 1, "photo": [None, None], "play_btn": play_btn,
+            "job": None, "cache": {}, "n": 1, "photo": [None, None, None], "play_btn": play_btn,
             "speed_var": speed_var, "sound_var": sound_var, "scrub": scrub, "pos_lbl": pos_lbl,
             "scrubbing": False, "last_wrap": -1, "resize_job": None,
         }
@@ -25322,12 +25402,31 @@ class LoRATrainerGUI:
         tweak = self._repair_clips.get("tweaked")
         if base is None or tweak is None:
             return
-        P["n"] = max(1, min(len(base["frames"]), len(tweak["frames"])))
+        nol = self._repair_clips.get("nolora")
+        shown = self._repair_nolora_shown()
+        lens = [len(base["frames"]), len(tweak["frames"])] + ([len(nol["frames"])] if nol else [])
+        P["n"] = max(1, min(lens))
         P["cache"] = {}
         P["scrub"].configure(to=max(P["n"] - 1, 1))
-        names = {"baseline": "Baseline (LoRA at 1.0)", "tweaked": "Tweaked (current sliders)"}
+        names = {"baseline": "Baseline (LoRA at 1.0)", "tweaked": "Tweaked (current sliders)",
+                 "nolora": "No LoRA (base model, same seed)"}
         for i, side in enumerate(P["sides"]):
-            clip = self._repair_clips[side]
+            col = P["panes"][i].grid_info().get("column", i)
+            if side == "nolora" and not shown:
+                P["panes"][i].grid_remove()
+                P["titles"][i].grid_remove()
+                P["top"].columnconfigure(col, weight=0, uniform="")
+                continue
+            P["panes"][i].grid()
+            P["titles"][i].grid()
+            P["top"].columnconfigure(col, weight=1, uniform="pane")
+            clip = self._repair_clips.get(side)
+            if clip is None:                                   # no-LoRA still rendering
+                P["panes"][i].configure(image="")
+                P["photo"][i] = None
+                P["titles"][i].configure(text=f"{names[side]} — rendering…",
+                                         fg=COLORS["text_muted"])
+                continue
             reg = "Dial" if clip.get("regime") == "dial" else "Confirm"
             snd = " · 🔊" if (i == 0 and clip.get("wav_path")) else ""
             src = " · from cache" if clip.get("cached") else ""
@@ -25375,7 +25474,7 @@ class LoRATrainerGUI:
             return
         idx = max(0, min(int(idx), P["n"] - 1))
         P["idx"] = idx
-        for i in (0, 1):
+        for i in range(len(P["panes"])):
             ph = self._repair_clip_player_photo(i, idx)
             if ph is not None:
                 P["photo"][i] = ph                   # keep a ref or Tk blanks the label
@@ -25523,8 +25622,13 @@ class LoRATrainerGUI:
         P = getattr(self, "_repair_player", None)
         if P is None:
             return
-        P["sides"].reverse()
+        P["sides"][0], P["sides"][1] = P["sides"][1], P["sides"][0]   # the no-LoRA pane stays right
         self._repair_clip_player_reload()
+
+    def _repair_nolora_shown(self):
+        """Whether the player shows the third pane: the no-LoRA clip is here, or on its way."""
+        return (self._repair_clips.get("nolora") is not None
+                or bool(getattr(self, "_repair_nolora_pending", False)))
 
     def _repair_clip_player_save(self):
         """Save the LEFT pane's clip: MP4 with sound via ffmpeg, else PNG frames + WAV."""
@@ -26080,6 +26184,7 @@ class LoRATrainerGUI:
         # mid-render — a reset under it would hang on CUDA).
         self._repair_clip_player_close()
         self._repair_clips = {}
+        self._repair_nolora_pending = False
         if not self._repair_cache_stop_build(wait_s=20.0):
             messagebox.showinfo("Busy", "The library builder is still finishing its render — "
                                 "try again in a moment.")

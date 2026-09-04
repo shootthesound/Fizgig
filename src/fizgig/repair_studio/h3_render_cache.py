@@ -30,6 +30,7 @@ import torch
 CACHE_FORMAT = 2
 MANIFEST = "manifest.json"
 BASE_SIG = "base"
+NOLORA_SIG = "nolora"       # the base model with no LoRA at all (primary + donor off)
 
 
 def setup_key(*, primary_hash: str, donor_hash: str, prompt: str, seed: int, frames: int,

@@ -114,6 +114,8 @@ class H3RepairEngine:
         self._baseline_cache_image: Optional[Image.Image] = None
         self._baseline_clip_key = None
         self._baseline_clip: Optional[dict] = None
+        self._nolora_clip_key = None
+        self._nolora_clip: Optional[dict] = None
         self._last_frame_latent = None   # Klein-only chain; kept None for Royale's workers
 
         # Activation cache. `_turbo_enabled` is the OLD whole-render resume behind
@@ -541,7 +543,7 @@ class H3RepairEngine:
                       prompt: Optional[str] = None, width: Optional[int] = None,
                       height: Optional[int] = None, frames: Optional[int] = None,
                       steps: Optional[int] = None, turbo_strength: Optional[float] = None,
-                      keyframes=None, on_denoised=None):
+                      keyframes=None, on_denoised=None, no_lora: bool = False):
         """Apply the slider state and sample ONE clip: returns (latent [1,24,T,H/16,W/16] on
         CPU fp32, audio_rows [2*A, 32] on CPU fp32 or None). No decode — the caller decides
         (decode_clip_frames / decode_audio, or store it in the render cache).
@@ -560,9 +562,17 @@ class H3RepairEngine:
         (resuming them anyway was measured to keep ~6% of a tweak's effect — never again).
         Only pass 1 is recorded (one step's block inputs, not a whole render's). Off with
         keyframes (forward_cached doesn't lay them out). Measured 3 Sep at 768×640×22 Dial:
-        bit-exact, saves 2% / 12% / 22% of the render for a change at block 5 / 25 / 45."""
+        bit-exact, saves 2% / 12% / 22% of the render for a change at block 5 / 25 / 45.
+
+        no_lora: the base model on its own — every primary / donor module off for this render
+        (the Turbo regime stays: it is the sampler, not the LoRA under test); the state is
+        re-applied afterwards so the next render is unaffected, and the resume sits out."""
         from fizgig.minimax import sampling
         self.apply_state(state)
+        if no_lora and self.primary_network is not None:
+            self.primary_network.set_enabled(False)
+            if self.donor_network is not None:
+                self.donor_network.set_enabled(False)
         prompt = prompt if prompt is not None else state.prompt
         seed = seed if seed is not None else state.seed
         width = width or state.preview_width
@@ -587,7 +597,8 @@ class H3RepairEngine:
         ctx = None
         key = (self.primary_path, self.donor_path, int(seed), prompt, int(width), int(height),
                int(frames), int(steps), self._turbo_strength)
-        if self.resume_enabled and not keyframes and hasattr(self.dit, "forward_cached"):
+        if (self.resume_enabled and not keyframes and not no_lora
+                and hasattr(self.dit, "forward_cached")):
             resume = None
             entries = {}
             if self._act_cache_key == key and self._act_cache:
@@ -607,22 +618,27 @@ class H3RepairEngine:
                     return_audio=True, keyframes=keyframes, block_cache=block_cache,
                     on_denoised=on_denoised, exact_frames=True)
 
-        if ctx is not None:
-            try:
-                lat, audio = _render(ctx)
-                e0 = ctx.new_entries.get(0)
-                if e0 is not None:
-                    self._act_cache = {0: e0}
-                    self._act_cache_key = key
-                    self._act_cache_state = state.copy()
-            except sampling.PreviewAborted:
-                raise
-            except Exception:
-                logger.exception("pass-1 resume failed — falling back to a full render")
-                self._invalidate_activation_cache()
+        try:
+            if ctx is not None:
+                try:
+                    lat, audio = _render(ctx)
+                    e0 = ctx.new_entries.get(0)
+                    if e0 is not None:
+                        self._act_cache = {0: e0}
+                        self._act_cache_key = key
+                        self._act_cache_state = state.copy()
+                except sampling.PreviewAborted:
+                    raise
+                except Exception:
+                    logger.exception("pass-1 resume failed — falling back to a full render")
+                    self._invalidate_activation_cache()
+                    lat, audio = _render(None)
+            else:
                 lat, audio = _render(None)
-        else:
-            lat, audio = _render(None)
+        finally:
+            if no_lora and self.primary_network is not None:
+                self.primary_network.set_enabled(True)
+                self.apply_state(state)               # per-block flags back as they were
         lat = lat.detach().float().cpu()
         audio = audio.detach().float().cpu() if audio is not None else None
         return lat, audio
@@ -701,7 +717,7 @@ class H3RepairEngine:
 
     def render_clip(self, state, *, frames: Optional[int] = None, regime: str = "confirm",
                     with_audio: bool = True, cache=None, early_step: int = 0,
-                    on_early=None, **_ignored) -> dict:
+                    on_early=None, no_lora: bool = False, **_ignored) -> dict:
         """Render + decode one clip for the slider state. Returns
         {"latent", "audio_rows", "frames": [PIL...], "wav": [2, L] or None, "middle": PIL,
          "regime", "steps", "turbo_strength", "frames_n", "cached": bool}.
@@ -710,11 +726,12 @@ class H3RepairEngine:
         (decode only, "cached": True); a fresh render is stored into it under the state's
         signature. early_step + on_early: "show early" — after pass `early_step` the
         clean-latent estimate's middle frame is decoded and handed to on_early(pil, step, n)
-        while the remaining passes run. Never fires on a cache hit."""
-        from fizgig.repair_studio.h3_render_cache import signature
+        while the remaining passes run. Never fires on a cache hit. no_lora renders the
+        base model alone (see render_latent) under the "nolora" signature."""
+        from fizgig.repair_studio.h3_render_cache import signature, NOLORA_SIG
         steps, strength = self.regime_params(regime)
         frames = int(frames or getattr(state, "preview_frames", 0) or H3_PREVIEW_FRAMES)
-        sig = signature(state)
+        sig = NOLORA_SIG if no_lora else signature(state)
         hit = cache.get(sig) if cache is not None else None
         if hit is not None:
             lat, aud = hit
@@ -728,7 +745,8 @@ class H3RepairEngine:
 
             lat, aud = self.render_latent(state, frames=frames, steps=steps,
                                           turbo_strength=strength,
-                                          on_denoised=_on_denoised if early_step > 0 else None)
+                                          on_denoised=_on_denoised if early_step > 0 else None,
+                                          no_lora=no_lora)
             cached = False
         imgs = self.decode_clip_frames(lat)
         wav = self.decode_audio(aud) if (with_audio and frames > 1) else None
@@ -738,7 +756,7 @@ class H3RepairEngine:
         if cache is not None and not cached:
             try:
                 cache.put(sig, lat, aud, middle=clip["middle"], regime=regime,
-                          label=self.describe_state(state))
+                          label="No LoRA" if no_lora else self.describe_state(state))
             except Exception:
                 logger.exception("render cache: put failed (render still shown)")
         return clip
@@ -813,6 +831,32 @@ class H3RepairEngine:
         self._baseline_clip = clip
         return clip
 
+    def nolora_clip(self, state, *, frames: Optional[int] = None, regime: str = "confirm",
+                    with_audio: bool = True, cache=None, **_ignored) -> dict:
+        """The same seed / prompt / canvas / length / keyframes rendered by the base model
+        with no LoRA at all — the player's third pane. Cached in memory like the baseline
+        (a slider move never re-renders it) and on disk under "nolora"."""
+        from fizgig.repair_studio.state import SliderState
+        steps, strength = self.regime_params(regime)
+        frames = int(frames or getattr(state, "preview_frames", 0) or H3_PREVIEW_FRAMES)
+        key = self.clip_key(state, frames=frames, steps=steps, turbo_strength=strength,
+                            with_audio=with_audio)
+        if (getattr(self, "_nolora_clip_key", None) == key
+                and getattr(self, "_nolora_clip", None) is not None):
+            return self._nolora_clip
+        base = SliderState.default_h3()
+        base.seed = state.seed
+        base.prompt = state.prompt
+        base.preview_width = state.preview_width
+        base.preview_height = state.preview_height
+        base.preview_frames = frames
+        base.keyframes = getattr(state, "keyframes", None)
+        clip = self.render_clip(base, frames=frames, regime=regime, with_audio=with_audio,
+                                cache=cache, no_lora=True)
+        self._nolora_clip_key = key
+        self._nolora_clip = clip
+        return clip
+
     def generate_baseline(self, state) -> Image.Image:
         """Baseline = primary at default 1.0 / all enabled, donor off. Cached on
         (primary_path, seed, prompt, w, h) — slider tweaks don't invalidate it."""
@@ -868,6 +912,8 @@ class H3RepairEngine:
         self._baseline_cache_image = None
         self._baseline_clip_key = None
         self._baseline_clip = None
+        self._nolora_clip_key = None
+        self._nolora_clip = None
 
     def _invalidate_activation_cache(self) -> None:
         self._act_cache = None

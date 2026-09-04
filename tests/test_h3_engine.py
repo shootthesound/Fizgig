@@ -1,0 +1,257 @@
+"""Phase B of H3-in-the-workbench: block layout, engine wiring, bake mapping, GUI tri-state.
+
+Silent failures pinned: a block regex that lets h3blk_2 touch blocks_20 (a slider that edits
+the wrong block LOOKS fine), the zero-init trap (a LoRA that applies but contributes nothing),
+the LoKR whitelist gap (LyCORIS modules skipped on quantized bases — loads "successfully" with
+0 modules), the bake mapper calling H3 keys block_N (sliders silently ignored at save), and a
+prompt disk-cache that misses and quietly reloads the 32B TE every session.
+
+Run: venv/Scripts/python.exe tests/test_h3_engine.py
+"""
+
+import hashlib
+import os
+import re
+import sys
+import tempfile
+
+os.environ["FIZGIG_NO_PERSIST"] = "1"
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+import torch  # noqa: E402
+import torch.nn as nn  # noqa: E402
+
+_fails = []
+
+
+def ck(name, ok, detail=""):
+    print(("PASS  " if ok else "FAIL  ") + name + (f"  {detail}" if detail else ""))
+    if not ok:
+        _fails.append(name)
+
+
+TMP = tempfile.mkdtemp(prefix="fizgig_h3_eng_")
+
+# --- block layout ---------------------------------------------------------------------------------
+from fizgig.repair_studio.h3_blocks import (  # noqa: E402
+    all_block_ids_h3, block_regex_h3, extract_block_ids_h3)
+from fizgig.repair_studio.state import SliderState  # noqa: E402
+
+ids = all_block_ids_h3()
+ck("52 block ids: 50 main + 2 refiner", len(ids) == 52 and ids[0] == "h3blk_0"
+   and ids[49] == "h3blk_49" and ids[50] == "h3_rf_0")
+
+_r2 = block_regex_h3("h3blk_2")
+ck("h3blk_2 matches blocks_2 only",
+   re.search(_r2, "lora_unet_blocks_2_attn_qkv_proj") is not None
+   and re.search(_r2, "lora_unet_blocks_20_attn_qkv_proj") is None
+   and re.search(_r2, "lora_unet_blocks_21_mlp_fc1") is None
+   and re.search(_r2, "lora_unet_token_refiner_blocks_2_attn_qkv_proj") is None)
+_rr = block_regex_h3("h3_rf_1")
+ck("h3_rf_1 matches only the refiner",
+   re.search(_rr, "lora_unet_token_refiner_blocks_1_mlp_fc1") is not None
+   and re.search(_rr, "lora_unet_blocks_1_mlp_fc1") is None)
+
+st = SliderState.default_h3()
+ck("default_h3: 52 blocks at 768x768",
+   len(st.blocks) == 52 and st.preview_width == 768 and st.preview_height == 768)
+
+# --- the bake mapper: H3 keys resolve against the STATE's namespace -------------------------------
+from fizgig.repair_studio.bake import _block_id_from_key  # noqa: E402
+
+h3_ids = set(st.blocks.keys())
+ck("bake maps H3 main keys to h3blk_N when the state is H3",
+   _block_id_from_key("lora_unet_blocks_3_mlp_fc1.lora_up.weight".split(".")[0], h3_ids) == "h3blk_3")
+ck("...and to block_N for a Krea 2 state (shared raw key shape)",
+   _block_id_from_key("lora_unet_blocks_3_mlp_fc1", {"block_3"}) == "block_3")
+ck("...refiner keys map to h3_rf_N",
+   _block_id_from_key("lora_unet_token_refiner_blocks_1_attn_qkv_proj", h3_ids) == "h3_rf_1")
+ck("...Klein keys are untouched",
+   _block_id_from_key("lora_unet_double_blocks_4_img_attn_proj", h3_ids) == "double_4")
+
+# --- LoRA apply on a tiny H3-shaped DiT: zero-init pin + per-block isolation ----------------------
+from fizgig.minimax.model import MiniMaxH3Config, MiniMaxH3DiT  # noqa: E402
+from fizgig.repair_studio.h3_engine import _apply_lora  # noqa: E402
+
+torch.manual_seed(0)
+cfg = MiniMaxH3Config(hidden_size=64, num_layers=3, token_refiner_num_layers=2,
+                      num_attention_heads=4, attention_head_dim=16, ffn_hidden_size=48,
+                      latents_dim=24, audio_latents_dim=6, patch_size=(1, 2, 2), text_dim=20,
+                      timestep_input_dim=16, time_embed_hidden_size=64, time_embed_dim=32,
+                      rope_inv_freq_len=2)
+dit = MiniMaxH3DiT(cfg).eval()
+
+# A tiny LoRA over blocks 0 and 2 + refiner 1, kohya keys matching the tiny DiT's Linears.
+sd = {}
+for dotted in ("blocks.0.attn.qkv_proj", "blocks.2.mlp.fc1", "token_refiner.blocks.1.mlp.fc1"):
+    mod = dict(dit.named_modules())[dotted]
+    name = "lora_unet_" + dotted.replace(".", "_")
+    r = 4
+    sd[f"{name}.lora_down.weight"] = torch.randn(r, mod.in_features) * 0.3
+    sd[f"{name}.lora_up.weight"] = torch.randn(mod.out_features, r) * 0.3
+    sd[f"{name}.alpha"] = torch.tensor(float(r))
+
+net = _apply_lora(dit, sd, 1.0, "cpu", torch.float32)
+ck("3 modules wired", len(net.unet_loras) == 3)
+ck("weights actually loaded (the zero-init trap)",
+   all(float(m.lora_up.weight.abs().sum()) > 0 for m in net.unet_loras))
+ck("extract_block_ids_h3 sees them",
+   extract_block_ids_h3(net) == {"h3blk_0", "h3blk_2", "h3_rf_1"})
+
+net.set_module_multiplier_by_pattern(block_regex_h3("h3blk_2"), 0.25)
+mults = {m.lora_name: m.multiplier for m in net.unet_loras}
+ck("per-block multiplier isolation",
+   mults["lora_unet_blocks_2_mlp_fc1"] == 0.25
+   and mults["lora_unet_blocks_0_attn_qkv_proj"] == 1.0
+   and mults["lora_unet_token_refiner_blocks_1_mlp_fc1"] == 1.0)
+
+# --- the no-LoRA render (the player's third pane): every module off for that render only ----------
+import threading  # noqa: E402
+from fizgig.repair_studio.h3_engine import H3RepairEngine as _H3E  # noqa: E402
+from fizgig.repair_studio.state import SliderState as _SS  # noqa: E402
+
+_txt = torch.randn(1, 5, cfg.text_dim)
+
+
+class _MiniEngine:
+    """Just enough of H3RepairEngine for render_latent on the tiny DiT — the real method,
+    bound onto a stub, so the no-LoRA path is the shipped code."""
+    render_latent = _H3E.render_latent
+    apply_state = _H3E.apply_state
+
+    def __init__(self):
+        self.dit, self.primary_network, self.donor_network = dit, net, None
+        self.device, self.dtype, self._steps = "cpu", torch.float32, 2
+        self.resume_enabled, self._cache_device = False, "cpu"
+        self._act_cache = self._act_cache_key = self._act_cache_state = None
+        self.primary_path, self.donor_path, self._turbo_strength = "p", None, 1.0
+        self._cancel_event, self.on_step, self.last_resume_from = threading.Event(), None, None
+
+    def _encode_prompt(self, prompt):
+        return _txt
+
+    def set_turbo_strength(self, s):
+        pass
+
+
+_eng = _MiniEngine()
+_st = _SS.default_h3()
+_st.seed, _st.prompt, _st.preview_width, _st.preview_height, _st.preview_frames = 3, "x", 64, 64, 5
+_st.blocks["h3blk_2"].primary_enabled = False          # one block off in the state itself
+_lora, _ = _eng.render_latent(_st, frames=5, steps=2)
+_nolora, _ = _eng.render_latent(_st, frames=5, steps=2, no_lora=True)
+_flags = {m.lora_name: m.enabled for m in net.unet_loras}
+_off = _SS.default_h3()
+_off.seed, _off.prompt, _off.preview_width, _off.preview_height, _off.preview_frames = 3, "x", 64, 64, 5
+for _bs in _off.blocks.values():
+    _bs.primary_enabled = False
+_alloff, _ = _eng.render_latent(_off, frames=5, steps=2)
+ck("no_lora render == every block disabled by hand (the base model alone)",
+   torch.equal(_nolora, _alloff))
+ck("...and differs from the LoRA'd render", not torch.equal(_lora, _nolora))
+ck("after a no_lora render the state's flags are back (block 2 off, block 0 + refiner on)",
+   _flags["lora_unet_blocks_2_mlp_fc1"] is False and _flags["lora_unet_blocks_0_attn_qkv_proj"] is True
+   and _flags["lora_unet_token_refiner_blocks_1_mlp_fc1"] is True, _flags)
+_again, _ = _eng.render_latent(_st, frames=5, steps=2)
+ck("...and the next LoRA'd render is bit-identical to the one before it", torch.equal(_lora, _again))
+
+# --- the LoKR whitelist fix: quantized Linear subclasses are mappable -----------------------------
+from fizgig.networks.lora import _build_dit_linear_map  # noqa: E402
+
+
+class ConvRotInt8Linear(nn.Linear):     # same class NAME the real int8 base uses
+    pass
+
+
+class _FakeBlock(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.qkv_proj = ConvRotInt8Linear(8, 8)
+
+
+class _FakeDiT(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.blocks = nn.ModuleList([_FakeBlock()])
+
+
+_map = _build_dit_linear_map(_FakeDiT(), None)
+ck("LyCORIS module map includes quantized Linear subclasses (the H3 LoKR gap)",
+   "lora_unet_blocks_0_qkv_proj" in _map)
+
+# --- prompt disk cache: a hit never touches the TE ------------------------------------------------
+from fizgig.repair_studio.h3_engine import H3RepairEngine  # noqa: E402
+from safetensors.torch import save_file  # noqa: E402
+
+eng = H3RepairEngine()
+eng.te_path = "X:/fake_te.safetensors"
+eng._te_cache_dir = os.path.join(TMP, "te_prompts")
+os.makedirs(eng._te_cache_dir, exist_ok=True)
+_prompt = "a portrait of zwxem"
+_emb = torch.randn(7, 5120)
+save_file({"hidden_states": _emb}, eng._prompt_disk_path(_prompt))
+
+import fizgig.minimax.sampling as _samp  # noqa: E402
+_real_esp = _samp.encode_sample_prompts
+_samp.encode_sample_prompts = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("TE loaded!"))
+try:
+    got = eng._encode_prompt(_prompt)
+    ck("disk-cache hit bypasses the 32B TE entirely",
+       got.shape == (1, 7, 5120) and torch.equal(got[0], _emb))
+    got2 = eng._encode_prompt(_prompt)      # in-memory hit
+    ck("...and the session cache serves repeats", got2 is got)
+finally:
+    _samp.encode_sample_prompts = _real_esp
+
+# --- GUI: Repair Studio tri-state (headless) ------------------------------------------------------
+import tkinter as tk  # noqa: E402
+import lora_trainer_gui as G  # noqa: E402
+
+G.LoRATrainerGUI.save_prefs = lambda self, *a, **k: None      # neuter; never patch _persist_disabled
+G.LoRATrainerGUI._save_training_queue = lambda self, *a, **k: None
+
+PREFS = os.path.join(os.path.dirname(__file__), "..", "prefs.json")
+_before = hashlib.sha256(open(PREFS, "rb").read()).hexdigest() if os.path.exists(PREFS) else None
+
+root = tk.Tk()
+app = G.LoRATrainerGUI(root)
+app.prefs["minimax_extras_prompt_dismissed"] = True
+
+app.repair_family_var.set("minimax")
+app._on_repair_family_changed()
+root.update()
+ck("H3 slider panel builds 52 rows", len(app.repair_block_vars) == 52
+   and "h3blk_49" in app.repair_block_vars and "h3_rf_1" in app.repair_block_vars)
+ck("...master controls hidden (no block map)",
+   app._repair_master_container.winfo_manager() == "")
+ck("...DiT radios disabled (H3 auto-plans)",
+   "disabled" in app._repair_dit_radio_a.state())
+ck("...preview res defaults to 768", app.repair_res_var.get() == "768")
+ck("...presets collapse to Reset All",
+   app._repair_preset_list()[0].endswith("Reset All"))
+ck("...state is H3-shaped", len(app.repair_state.blocks) == 52)
+
+_routed = []
+app._repair_engine_plan_h3 = lambda: _routed.append("h3") or {}
+app._repair_engine_plan()
+ck("engine dispatch routes minimax to the H3 engine", _routed == ["h3"])
+
+app.repair_family_var.set("klein")
+app._on_repair_family_changed()
+root.update()
+ck("switching back to Klein restores 32 rows + master controls",
+   len(app.repair_block_vars) == 32
+   and app._repair_master_container.winfo_manager() != ""
+   and "disabled" not in app._repair_dit_radio_a.state())
+
+root.destroy()
+
+_after = hashlib.sha256(open(PREFS, "rb").read()).hexdigest() if os.path.exists(PREFS) else None
+ck("prefs.json is byte-identical after the run", _before == _after)
+
+print()
+if _fails:
+    print(f"{len(_fails)} FAILED: " + ", ".join(_fails))
+    sys.exit(1)
+print("ALL PASS")

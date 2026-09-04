@@ -151,6 +151,8 @@ Two render regimes. **Dial** is the loop you turn sliders in: 4 steps with the b
 
 **Short clips.** The Length menu goes down to 5 frames, and to 9 and 13 (marked off-grid: the model was never trained on a part-filled temporal group, but it renders them fine). Fewer frames means fewer tokens, so a 5-frame Dial move comes back in a fraction of the 22-frame time — use it to read a block's effect on the picture, then go back to 22 to judge the motion. Every Clip-row setting, and the folder each Browse dialog last picked from, is remembered across restarts.
 
+**No-LoRA clip.** Tick it (on the Clip row or in the player) and the player grows a third pane: the same seed and prompt rendered by the base model with no LoRA at all, so you can see what the LoRA adds, not just what your sliders changed. It renders once per setup and is cached, so it costs one extra render, not one per slider move. The player's speed menu goes down to 0.1×.
+
 ### Video and sound: how do I…
 
 **…train on video clips?** Cut them with **Gizmo** (launch it from the Image Prep tab, or the *Launch Gizmo* .bat) — it exports clips already on H3's spec — drop them into the training folder next to your images, and caption them on the **Captions tab** like a photo. **Photos, clips and voice recordings all train together in the same folder** — no settings, no separate runs.

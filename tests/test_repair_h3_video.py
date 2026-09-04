@@ -836,6 +836,13 @@ try:
     _enc_calls = []
     app.repair_engine.encode_reference_image = lambda img, w, h: (_enc_calls.append((img.size, w, h)) or (img, torch.zeros(1, 24, 1, 4, 4)))
     _kf, _refs = app._repair_h3_prepare_cond(512, 416, 22)
+    app._repair_start_btn.configure(text="Start")
+    app._repair_kf_crop_dialog = lambda path, initial=None: (0, 0, 100, 100)
+    _sched = app._repair_preview_after_id
+    app._repair_kf_accept("last", _rp)
+    ck("adding a picture arms Update instead of rendering",
+       app._repair_start_btn.cget("text") == "Update" and app._repair_preview_after_id is _sched)
+    app._repair_h3_kf["last"] = None
     ck("ref mode: references prepared (cropped image + latent), no keyframes",
        _kf is None and _refs is not None and len(_refs) == 1 and _enc_calls == [((240, 200), 512, 416)])
     _kf2, _refs2 = app._repair_h3_prepare_cond(512, 416, 22)

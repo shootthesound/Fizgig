@@ -429,19 +429,18 @@ try:
     _loads.clear()
     _pe._ram_available_gb = lambda: 100.0
     _te, _keep = _pe._te_get(False)
-    ck("RAM plentiful: the streamed build, parked", _loads == [("stream", False)] and _keep and _pe._te_parked is _te)
+    ck("RAM plentiful: the streamed build (always with vision), parked", _loads == [("stream", True)] and _keep and _pe._te_parked is _te)
     _pe._te_park()
     ck("park: rings unloaded, resident parts to the CPU (not the layers)",
-       _te.layer_streamer.unloaded == 1 and set(_te.moves) == {("embed", "cpu"), ("norm", "cpu")})
+       _te.layer_streamer.unloaded == 1 and set(_te.moves) == {("embed", "cpu"), ("norm", "cpu"), ("visual", "cpu")})
     _te.moves.clear(); _loads.clear()
     _pe.device = "cuda"
     _te2, _keep2 = _pe._te_get(False)
     ck("next prompt: the parked encoder, woken (no load, each part back to where it lived — the CPU embedding stays on the CPU)",
-       _te2 is _te and _keep2 and not _loads and set(_te.moves) == {("embed", "cpu"), ("norm", "cuda:0")}, _te.moves)
+       _te2 is _te and _keep2 and not _loads and set(_te.moves) == {("embed", "cpu"), ("norm", "cuda:0"), ("visual", "cuda:0")}, _te.moves)
     _te3, _keep3 = _pe._te_get(True)
-    ck("references arrive: the text-only parked build is replaced by a vision build",
-       _loads == [("stream", True)] and _te3 is not _te and _pe._te_parked is _te3 and _pe._te_parked_vision)
-    _loads.clear()
+    ck("references arrive: the same parked build serves them (no second build in the session)",
+       not _loads and _te3 is _te and _pe._te_parked_vision)
     _te4, _ = _pe._te_get(False)
     ck("...and the vision build serves a plain prompt afterwards", _te4 is _te3 and not _loads)
     _pe._te_park()

@@ -674,7 +674,9 @@ class H3RepairEngine:
         # after — a whole-model .to is safe because this engine never block-swaps. The
         # streamed build only needs its rings (~2 GB text, ~12.7 GB with vision): the DiT
         # stays put for a text encode when the card has the room.
-        need = (13.5 if want_vision else 2.5) if streamed else 27.0
+        # a text encode on the streamed (vision) build: rings ~2 GB + its GPU-resident
+        # embedding table ~1.5 GB
+        need = (13.5 if want_vision else 4.5) if streamed else 27.0
         free = None
         try:
             from fizgig.utils.device import plannable_free_vram
@@ -765,9 +767,13 @@ class H3RepairEngine:
                 and os.environ.get("FIZGIG_NO_TE_PARK") != "1":
             try:
                 from fizgig.minimax.embedderH2D import load_minimax_h3_te as _load_h2d
+                # Always the vision build: it encodes plain prompts identically (same
+                # language stack) and serves references without a second build — one
+                # session, one parked encoder (two of them + a parked DiT is what pushed
+                # a 137 GB box into paging when fl2va switched to ref mode, 4 Sep).
                 te = _load_h2d(self.te_path, device=self.device, compute_dtype=torch.bfloat16,
-                               quantize=True, with_vision=with_vision, layer_streaming=True)
-                self._te_parked, self._te_parked_vision = te, bool(with_vision)
+                               quantize=True, with_vision=True, layer_streaming=True)
+                self._te_parked, self._te_parked_vision = te, True
                 logger.info("[h3-workbench] text encoder parked in system RAM for the session "
                             "(%.0f GB available) — the next prompt costs seconds", avail)
                 return te, True
@@ -857,6 +863,13 @@ class H3RepairEngine:
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+            # The streamed build's weights are PINNED host memory; PyTorch's host caching
+            # allocator keeps freed pinned blocks for reuse, so ~24 GB stayed "in use"
+            # after the encoder was dropped (measured 4 Sep). Hand them back to the OS.
+            try:
+                torch._C._host_emptyCache()
+            except Exception:
+                pass
 
     # ----- preview -----------------------------------------------------------
     def generate_preview(self, state, *, seed: Optional[int] = None,

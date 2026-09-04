@@ -25255,7 +25255,7 @@ class LoRATrainerGUI:
             return
         self._repair_h3_kf[slot] = {"path": path, "rect": rect}
         self._repair_kf_refresh_thumbs()
-        self._on_preview_param_changed()
+        self._repair_mark_update_needed()          # like the prompt: yours to render on Update
 
     def _repair_kf_install_drop(self):
         """Let a photo be dragged from Explorer onto either frame slot — the Windows shell
@@ -25309,14 +25309,14 @@ class LoRATrainerGUI:
             return
         self._repair_h3_kf[slot] = {"path": cur["path"], "rect": rect}
         self._repair_kf_refresh_thumbs()
-        self._on_preview_param_changed()
+        self._repair_mark_update_needed()
 
     def _repair_kf_clear(self, slot):
         if not self._repair_h3_kf.get(slot):
             return
         self._repair_h3_kf[slot] = None
         self._repair_kf_refresh_thumbs()
-        self._on_preview_param_changed()
+        self._repair_mark_update_needed()
 
     def _repair_kf_refresh_thumbs(self):
         from PIL import Image as _PILImage

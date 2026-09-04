@@ -472,14 +472,45 @@ _orig_planned2 = _emb.load_minimax_h3_te_planned
 _emb.load_minimax_h3_te_planned = lambda path, **kw: (_ev.append(("load_resident",)) or _TEStub())
 _orig_free = _devmod.plannable_free_vram
 try:
+    for _nm in ("_dit_offload", "_dit_release", "_dit_restore"):
+        setattr(_le, _nm, getattr(_H3E, _nm).__get__(_le))
+    _le._DIT_PARK_MIN_AVAIL_GB = _H3E._DIT_PARK_MIN_AVAIL_GB
+    _le._turbo_adaln, _le._primary_adaln, _le._donor_adaln, _le._adaln_installed = [], [], [], None
+    _le.primary_path, _le.donor_path = "p.safetensors", None
+    _le._load_dit_and_turbo = lambda: (_ev.append(("reload_dit",)), setattr(_le, "dit", _DitStub()))
+    _le._wire_primary = lambda path: _ev.append(("wire_primary", path))
+    _le._wire_donor = lambda path: _ev.append(("wire_donor", path))
+    _le._invalidate_activation_cache = lambda: None
     _devmod.plannable_free_vram = lambda: 9.0             # the DiT is on the card
-    _le._ram_available_gb = lambda: 10.0                  # ...and the box has no RAM to park
+    _le._ram_available_gb = lambda: 35.0                  # no room to park the ENCODER, room to park the DiT
     _le._encode_prompt("x")
-    ck("10 GB RAM: DiT parked BEFORE the resident encoder loads, encoder freed, DiT restored",
+    ck("35 GB RAM: DiT parked to RAM BEFORE the resident encoder loads, freed after, DiT back",
        _ev == [("dit", "cpu"), ("load_resident",), ("encode",), ("dit", "cuda")] and _le._te_parked is None, _ev)
+    _ev.clear(); _le._prompt_cache_key = None
+    _le._ram_available_gb = lambda: 10.0                  # a 32 GB box: no room for a 21 GB copy either
+    _le._encode_prompt("y")
+    ck("10 GB RAM: the DiT is UNLOADED (no RAM copy), the resident encoder loads, then the DiT reloads and the primary re-wires",
+       _ev == [("load_resident",), ("encode",), ("reload_dit",), ("wire_primary", "p.safetensors")] and _le.dit is not None, _ev)
 finally:
     _emb.load_minimax_h3_te_planned = _orig_planned2
     _devmod.plannable_free_vram = _orig_free
+
+
+# --- AdaLN rows: only the ones no module can host are injected (fitting ones are modules) ---------
+_ap = [(n, m) for n, m in dit.named_modules() if type(m).__name__ == "AdalnProj"]
+ck("the tiny DiT has AdaLN projections to test against", bool(_ap))
+if _ap:
+    _n0, _m0 = _ap[0]
+    _name = f"lora_unet_{_n0.replace('.', '_')}_linear"
+    _fit = {f"{_name}.lora_down.weight": torch.randn(4, _m0.linear.in_features) * 0.1,
+            f"{_name}.lora_up.weight": torch.randn(_m0.linear.out_features, 4) * 0.1, f"{_name}.alpha": torch.tensor(4.0)}
+    _full = {f"{_name}.lora_down.weight": torch.randn(4, _m0.linear.in_features + 8) * 0.1,
+             f"{_name}.lora_up.weight": torch.randn(_m0.linear.out_features, 4) * 0.1, f"{_name}.alpha": torch.tensor(4.0)}
+    from fizgig.repair_studio.h3_engine import _collect_adaln_pairs as _cap
+    ck("an AdaLN adapter shaped for this base is a MODULE, not an injected row",
+       _cap(dit, _fit) == [] and len(_apply_lora(dit, dict(sd, **_fit), 1.0, "cpu", torch.float32).unet_loras) == 4)
+    ck("a full-model-space AdaLN row is injected and not wired as a module",
+       len(_cap(dit, _full)) == 1 and len(_apply_lora(dit, dict(sd, **_full), 1.0, "cpu", torch.float32).unet_loras) == 3)
 
 if _fails:
     print(f"{len(_fails)} FAILED: " + ", ".join(_fails))

@@ -117,6 +117,12 @@ def _collect_adaln_pairs(dit, sd):
         up = sd.get(f"{name}.lora_up.weight")
         if down is None or up is None or up.shape[0] != ap.linear.out_features:
             continue
+        if down.shape[1] == ap.linear.in_features:
+            # Shaped for THIS base's projection: it is wired as an ordinary module by
+            # _apply_lora (a LoRA trained on the pruned base with AdaLN as a target).
+            # Injecting it as well doubled its effect (4 Sep). Only full-model-space rows
+            # — the ones no module can host — are injected.
+            continue
         out.append((name, ap, down.clone(), up.clone()))
     return out
 
@@ -132,6 +138,8 @@ class H3RepairEngine:
 
         self.on_status = None          # callable(str) — the GUI's status line, if it wants it
         self._te_parked = None         # the layer-streamed text encoder kept in system RAM
+        self._turbo_lora_path = ""
+        self._turbo_lora_strength = 0.75
         self._te_parked_vision = False # ...built with the vision tower (serves text too)
         self.dit_path: Optional[str] = None
         self._prompt_cache_tags = None # token tags that go with _prompt_cache (ref mode only)
@@ -198,6 +206,61 @@ class H3RepairEngine:
         self._act_cache_state = None
 
     # ----- pipeline + LoRA loading -------------------------------------------
+    def _load_dit_and_turbo(self) -> None:
+        """The DiT (base precision planned from free VRAM) + the Turbo LoRA. Called once by
+        ensure_pipeline — and again by _dit_restore on a small-RAM machine that unloads
+        the base for a text-encoder pass instead of parking 21 GB of it in RAM."""
+        from fizgig.minimax.loader import load_minimax_h3_dit
+        try:
+            from fizgig.utils.device import plannable_free_vram
+            free = plannable_free_vram()
+        except Exception:
+            free = 0.0
+        base_quant = "int8" if free >= 28.0 else "nf4"
+        logger.info("[h3-workbench] %.1f GB free -> %s base, no block swap "
+                    "(int8 needs ~21 GB resident + decode headroom; NF4-of-pruned is ~10.5 GB)",
+                    free, base_quant)
+        self.dit = load_minimax_h3_dit(self.dit_path, device=self.device, compute_dtype=self.dtype,
+                                       quantize=True, blocks_to_swap=0, base_quant=base_quant)
+        self.dit.eval()
+        self.dit._abort_event = self._cancel_event      # a cancel lands within one block
+
+        if self._turbo_lora_path and os.path.exists(self._turbo_lora_path):
+            try:
+                from fizgig.minimax.trainer import load_preview_turbo, turbo_adaln_patch
+                self._turbo_net, _folded = load_preview_turbo(
+                    self.dit, self._turbo_lora_path, float(self._turbo_lora_strength))
+                self._turbo_net.to(device=self.device, dtype=self.dtype)
+                for _m in self._turbo_net.unet_loras:
+                    _m.enabled = True
+                # Keep the AdaLN rows UNSCALED (load_preview_turbo folds the load strength
+                # into B; rescaling that bf16 fold to another strength is not exact) — the
+                # composer folds the dialled strength in at install time, exactly.
+                try:
+                    from safetensors.torch import load_file as _lf
+                    from fizgig.networks.lora import ensure_kohya_lora_state_dict as _ek
+                    self._turbo_adaln = [(m, a, b) for _nm, m, a, b in
+                                         _collect_adaln_pairs(self.dit, _ek(_lf(self._turbo_lora_path)))]
+                except Exception:
+                    logger.exception("Turbo AdaLN rows: unscaled collection failed — using the folded ones")
+                    self._turbo_adaln = [(m, a, b / float(self._turbo_lora_strength)) for m, a, b in _folded]                         if abs(float(self._turbo_lora_strength)) > 1e-9 else []
+                self._steps = 6
+                self._turbo_strength = float(self._turbo_lora_strength)
+                self._turbo_load_strength = float(self._turbo_lora_strength)
+                self._adaln_installed = None
+                self._reinstall_adaln()
+                n_ad = len(self._adaln_installed or ())
+                logger.info("[h3-workbench] Turbo LoRA on for all previews — 6 steps at %g"
+                            + (", %d adaln injected" % n_ad if n_ad else ""),
+                            float(self._turbo_lora_strength))
+            except Exception:
+                logger.exception("[h3-workbench] Turbo LoRA failed to load — previews run "
+                                 "the standard 20 steps")
+                self._turbo_net, self._turbo_adaln, self._steps = None, [], 20
+        else:
+            logger.info("[h3-workbench] no Turbo LoRA configured — previews run 20 steps "
+                        "(set it in Preferences for 6-step previews)")
+
     def ensure_pipeline(self, dit_path: str, vae_path: str, text_encoder_path: str,
                         device: str = "cuda", turbo_lora_path: str = "",
                         turbo_lora_strength: float = 0.75, te_cache_dir: str = "",
@@ -215,55 +278,9 @@ class H3RepairEngine:
         self._audio_vae_path = audio_vae_path or None
         self._te_cache_dir = te_cache_dir or None
 
-        try:
-            from fizgig.utils.device import plannable_free_vram
-            free = plannable_free_vram()
-        except Exception:
-            free = 0.0
-        base_quant = "int8" if free >= 28.0 else "nf4"
-        logger.info("[h3-workbench] %.1f GB free -> %s base, no block swap "
-                    "(int8 needs ~21 GB resident + decode headroom; NF4-of-pruned is ~10.5 GB)",
-                    free, base_quant)
-        self.dit = load_minimax_h3_dit(dit_path, device=device, compute_dtype=self.dtype,
-                                       quantize=True, blocks_to_swap=0, base_quant=base_quant)
-        self.dit.eval()
-        self.dit._abort_event = self._cancel_event      # a cancel lands within one block
-
-        if turbo_lora_path and os.path.exists(turbo_lora_path):
-            try:
-                from fizgig.minimax.trainer import load_preview_turbo, turbo_adaln_patch
-                self._turbo_net, _folded = load_preview_turbo(
-                    self.dit, turbo_lora_path, float(turbo_lora_strength))
-                self._turbo_net.to(device=device, dtype=self.dtype)
-                for _m in self._turbo_net.unet_loras:
-                    _m.enabled = True
-                # Keep the AdaLN rows UNSCALED (load_preview_turbo folds the load strength
-                # into B; rescaling that bf16 fold to another strength is not exact) — the
-                # composer folds the dialled strength in at install time, exactly.
-                try:
-                    from safetensors.torch import load_file as _lf
-                    from fizgig.networks.lora import ensure_kohya_lora_state_dict as _ek
-                    self._turbo_adaln = [(m, a, b) for _nm, m, a, b in
-                                         _collect_adaln_pairs(self.dit, _ek(_lf(turbo_lora_path)))]
-                except Exception:
-                    logger.exception("Turbo AdaLN rows: unscaled collection failed — using the folded ones")
-                    self._turbo_adaln = [(m, a, b / float(turbo_lora_strength)) for m, a, b in _folded]                         if abs(float(turbo_lora_strength)) > 1e-9 else []
-                self._steps = 6
-                self._turbo_strength = float(turbo_lora_strength)
-                self._turbo_load_strength = float(turbo_lora_strength)
-                self._adaln_installed = None
-                self._reinstall_adaln()
-                n_ad = len(self._adaln_installed or ())
-                logger.info("[h3-workbench] Turbo LoRA on for all previews — 6 steps at %g"
-                            + (", %d adaln injected" % n_ad if n_ad else ""),
-                            float(turbo_lora_strength))
-            except Exception:
-                logger.exception("[h3-workbench] Turbo LoRA failed to load — previews run "
-                                 "the standard 20 steps")
-                self._turbo_net, self._turbo_adaln, self._steps = None, [], 20
-        else:
-            logger.info("[h3-workbench] no Turbo LoRA configured — previews run 20 steps "
-                        "(set it in Preferences for 6-step previews)")
+        self._turbo_lora_path = turbo_lora_path or ""
+        self._turbo_lora_strength = float(turbo_lora_strength)
+        self._load_dit_and_turbo()
         # Pass-1 resume cache placement. The step-0 block inputs are 1.7 GB at 768×640×22f
         # (~0.8 GB at the ⅔ dial canvas). Measured 3 Sep on the 5090 (int8 plan): a
         # CPU-parked cache costs +0.2 s per render for the PCIe round trip and the resumed
@@ -477,6 +494,9 @@ class H3RepairEngine:
             raise RuntimeError("Pipeline not loaded; call ensure_pipeline() first.")
         if self.primary_network is not None:
             raise RuntimeError("Primary already loaded — call reset() to swap.")
+        self._wire_primary(path)
+
+    def _wire_primary(self, path: str) -> None:
         from safetensors.torch import load_file
         from fizgig.networks.lora import ensure_kohya_lora_state_dict
         sd = ensure_kohya_lora_state_dict(load_file(path))
@@ -535,6 +555,9 @@ class H3RepairEngine:
             raise RuntimeError("Load primary LoRA before donor.")
         if self.donor_network is not None:
             raise RuntimeError("Donor already loaded — unload_donor() or reset() first.")
+        self._wire_donor(path)
+
+    def _wire_donor(self, path: str) -> None:
         from safetensors.torch import load_file
         from fizgig.networks.lora import ensure_kohya_lora_state_dict
         sd = ensure_kohya_lora_state_dict(load_file(path))
@@ -661,18 +684,12 @@ class H3RepairEngine:
         logger.info("[h3-workbench] encoding prompt with the 32B TE (one-off per prompt — "
                     "cached to disk after this)")
         want_vision = bool(images)
-        _parked = False
+        _parked = None
         if self.dit is not None and not self._te_can_park():
             # Small-RAM machine: no parked encoder, so the planned build is coming — the
             # resident one needs the whole card, and the planner decides with the card
             # empty. The DiT goes first, as it always did before parking existed.
-            self.dit.to("cpu")
-            if self._turbo_net is not None:
-                self._turbo_net.to("cpu")
-            _parked = True
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            _parked = self._dit_offload()
         te, keep = self._te_get(want_vision)
         streamed = getattr(te, "layer_streamer", None) is not None
         if keep and streamed and getattr(self, "_te_was_parked", False):
@@ -698,14 +715,8 @@ class H3RepairEngine:
             free = float(plannable_free_vram())
         except Exception:
             pass
-        if not _parked and self.dit is not None and (free is None or free < need + 1.0):
-            self.dit.to("cpu")
-            if self._turbo_net is not None:
-                self._turbo_net.to("cpu")
-            _parked = True
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+        if _parked is None and self.dit is not None and (free is None or free < need + 1.0):
+            _parked = self._dit_offload()
         tags = None
         try:
             if images:
@@ -721,12 +732,7 @@ class H3RepairEngine:
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
             if _parked:
-                self.dit.to(self.device)
-                if self._turbo_net is not None:
-                    self._turbo_net.to(device=self.device, dtype=self.dtype)
-                gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+                self._dit_restore(_parked)
             self._status("Rendering…")
         emb = emb.cpu()
         tags = tags.cpu() if tags is not None else None
@@ -765,6 +771,68 @@ class H3RepairEngine:
             return psutil.virtual_memory().available / 1e9
         except Exception:
             return None
+
+    # Getting the base out of the way for a resident text-encoder pass (small-RAM machines
+    # only — the streamed encoder never needs it). Parking = the 21 GB base copied to system
+    # RAM and back (fast, ~6 s each way) — but on a 32 GB box that copy alone starts the
+    # machine paging (Peter, 4 Sep). Below the threshold the base is UNLOADED instead and
+    # reloaded from disk after (~25 s from a fast SSD / the page cache), the LoRAs re-wired
+    # from their files: no RAM needed at all.
+    _DIT_PARK_MIN_AVAIL_GB = 29.0            # 21 GB copy + headroom
+
+    def _dit_offload(self) -> str:
+        """Free the card of the DiT for an encode. Returns the token _dit_restore needs."""
+        if self.dit is None:
+            return "none"
+        avail = self._ram_available_gb()
+        park = (avail is not None and avail >= self._DIT_PARK_MIN_AVAIL_GB
+                and os.environ.get("FIZGIG_DIT_UNLOAD") != "1")
+        if park:
+            self.dit.to("cpu")
+            if self._turbo_net is not None:
+                self._turbo_net.to("cpu")
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            return "park"
+        logger.info("[h3-workbench] %s GB RAM available — unloading the base for the encoder "
+                    "pass and reloading it after (no RAM copy)",
+                    "?" if avail is None else f"{avail:.0f}")
+        self._status("Unloading the base for the text encoder (small-RAM machine), reloading after…")
+        self._dit_release()
+        return "unload"
+
+    def _dit_release(self) -> None:
+        """Drop the DiT, the Turbo net and the LoRA networks (paths kept for re-wiring)."""
+        for mod, a, b in (self._turbo_adaln or []):
+            if "forward" in mod.__dict__:
+                del mod.forward
+        self._turbo_adaln, self._primary_adaln, self._donor_adaln = [], [], []
+        self._adaln_installed, self._adaln_bid = None, {}
+        self.primary_network = None
+        self.donor_network = None
+        self._turbo_net = None
+        self.dit = None
+        self._invalidate_activation_cache()
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    def _dit_restore(self, token: str) -> None:
+        if token == "park" and self.dit is not None:
+            self.dit.to(self.device)
+            if self._turbo_net is not None:
+                self._turbo_net.to(device=self.device, dtype=self.dtype)
+        elif token == "unload":
+            self._status("Reloading the base…")
+            self._load_dit_and_turbo()
+            if self.primary_path:
+                self._wire_primary(self.primary_path)
+            if self.donor_path:
+                self._wire_donor(self.donor_path)
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     def _te_can_park(self) -> bool:
         """A parked encoder exists, or the box has the RAM to hold one."""

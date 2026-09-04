@@ -19543,9 +19543,9 @@ class LoRATrainerGUI:
                 "nolora": bool(nol is not None and nol.get())}
 
     _REPAIR_H3_DIAL_SCALES = {"Full": 1.0, "⅔": 2.0 / 3.0, "½": 0.5}
-    # Presets fill the three render controls (steps, Turbo strength, render size); the boxes
-    # are the truth — there is no regime switch (dropped 4 Sep: with the numbers dialable it
-    # only gated the library build and picked the canvas, both of which the boxes now own).
+    # The boxes are the truth — there is no regime switch (dropped 4 Sep: with the numbers
+    # dialable it only gated the library build and picked the canvas, both of which the boxes
+    # now own) and no preset buttons either (Peter). The table stays for tests / defaults.
     _REPAIR_H3_PRESETS = {"dial": (4, 1.0, "⅔"), "confirm": (6, 0.75, "Full")}
 
     def _repair_h3_last_num(self, key, default, cast):
@@ -19568,8 +19568,9 @@ class LoRATrainerGUI:
         return st, tu
 
     def _repair_h3_apply_preset(self, name, render=True):
-        """Dial / Confirm button: fill steps, Turbo and render size, then the usual
-        re-render (render=False just sets the controls)."""
+        """Fill steps, Turbo and render size from a named preset (no button any more — a
+        helper for the defaults and the tests), then the usual re-render (render=False just
+        sets the controls)."""
         st, tu, size = self._REPAIR_H3_PRESETS[name]
         self.repair_h3_steps_var.set(str(st))
         self.repair_h3_turbo_var.set(f"{tu:g}")
@@ -19877,19 +19878,21 @@ class LoRATrainerGUI:
         _ds.bind("<<ComboboxSelected>>", lambda e: self._on_repair_h3_clip_changed())
         ToolTip(_ds, "Every render at this fraction of the Size (⅔ of 768×640 is 512×416 — "
                      "about twice as fast). Exact at its size; framing can differ from full "
-                     "size. The Dial preset picks ⅔, Confirm picks Full.")
+                     "size.")
         ttk.Label(_l2, text="Steps:").pack(side=tk.LEFT, padx=(0, 3))
         self.repair_h3_steps_var = tk.StringVar(
             value=str(self._repair_h3_last_num("repair_h3_steps", 4, int)))
         _se = ttk.Entry(_l2, textvariable=self.repair_h3_steps_var, width=3)
         _se.pack(side=tk.LEFT, padx=(0, 8))
-        ToolTip(_se, "Model passes per render (1–40). Dial preset 4, Confirm 6; type your own.")
+        ToolTip(_se, "Model passes per render (1–40). 4 with Turbo at 1.0 is the fast loop; 6 at "
+                     "0.75 matches in-training previews.")
         ttk.Label(_l2, text="Turbo:").pack(side=tk.LEFT, padx=(0, 3))
         self.repair_h3_turbo_var = tk.StringVar(
             value=f"{self._repair_h3_last_num('repair_h3_turbo', 1.0, float):g}")
         _te = ttk.Entry(_l2, textvariable=self.repair_h3_turbo_var, width=4)
         _te.pack(side=tk.LEFT, padx=(0, 8))
-        ToolTip(_te, "Strength of the built-in Turbo LoRA (Dial preset 1.0, Confirm 0.75). "
+        ToolTip(_te, "Strength of the built-in Turbo LoRA (1.0 for the fast loop, 0.75 matches "
+                     "in-training previews). "
                      "0 switches it off — the render is the base plus your LoRAs at the steps "
                      "above. That is how you edit a Turbo LoRA: load it as the primary and set "
                      "this to 0.")
@@ -19897,16 +19900,6 @@ class LoRATrainerGUI:
             _w.bind("<Return>", lambda e: self._on_repair_h3_turbo_edited())
             _w.bind("<FocusOut>", lambda e: self._on_repair_h3_turbo_edited())
         self._repair_h3_last_nums = self._repair_h3_steps_turbo()
-        ttk.Label(_l2, text="Presets:").pack(side=tk.LEFT, padx=(4, 3))
-        for _name, _txt, _tip in (
-                ("dial", "Dial", "The fast loop: 4 steps, Turbo 1.0, ⅔ render size (~4 s a "
-                                 "move on a 5090)."),
-                ("confirm", "Confirm", "The render that matches in-training previews: 6 steps, "
-                                       "Turbo 0.75, full size. Use it before saving.")):
-            _pb = ttk.Button(_l2, text=_txt, width=8,
-                             command=lambda n=_name: self._repair_h3_apply_preset(n))
-            _pb.pack(side=tk.LEFT, padx=(0, 4))
-            ToolTip(_pb, _tip)
         self.repair_h3_sound_var = tk.BooleanVar(
             value=bool(self.last_used.get("repair_h3_sound", True)))
         self._repair_h3_sound_chk = ttk.Checkbutton(

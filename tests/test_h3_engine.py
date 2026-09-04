@@ -451,6 +451,36 @@ try:
 finally:
     _h2d.load_minimax_h3_te, _emb.load_minimax_h3_te_planned = _orig_h2d, _orig_planned
 
+
+# --- small-RAM machine: the resident encoder gets the card to itself (DiT parked FIRST) ----------
+_ev = []
+class _DitStub:
+    def to(self, dev, *a, **k): _ev.append(("dit", str(dev))); return self
+class _TEStub:
+    layer_streamer = None
+    def encode(self, prompt, max_length=None): _ev.append(("encode",)); return torch.zeros(1, 4, 8)
+    def encode_with_reference(self, prompt, images): _ev.append(("encode_ref",)); return torch.zeros(1, 4, 8), torch.zeros(4, dtype=torch.long)
+_le = _MiniEngine()
+for _nm in ("_encode_prompt", "_te_get", "_te_can_park", "_te_park", "_te_wake", "_te_free", "_status", "_prompt_disk_path", "_ram_available_gb"):
+    setattr(_le, _nm, getattr(_H3E, _nm).__get__(_le))
+_le._te_resident_modules, _le._ref_fingerprint = _H3E._te_resident_modules, _H3E._ref_fingerprint
+_le._TE_PARK_MIN_AVAIL_GB, _le._TE_KEEP_MIN_AVAIL_GB = _H3E._TE_PARK_MIN_AVAIL_GB, _H3E._TE_KEEP_MIN_AVAIL_GB
+_le._te_parked, _le._te_parked_vision, _le.te_path, _le._te_cache_dir = None, False, "te.safetensors", None
+_le._prompt_cache_key = _le._prompt_cache = _le._prompt_cache_tags = None
+_le.on_status = None; _le.dit = _DitStub(); _le.device = "cuda"; _le._turbo_net = None
+_orig_planned2 = _emb.load_minimax_h3_te_planned
+_emb.load_minimax_h3_te_planned = lambda path, **kw: (_ev.append(("load_resident",)) or _TEStub())
+_orig_free = _devmod.plannable_free_vram
+try:
+    _devmod.plannable_free_vram = lambda: 9.0             # the DiT is on the card
+    _le._ram_available_gb = lambda: 10.0                  # ...and the box has no RAM to park
+    _le._encode_prompt("x")
+    ck("10 GB RAM: DiT parked BEFORE the resident encoder loads, encoder freed, DiT restored",
+       _ev == [("dit", "cpu"), ("load_resident",), ("encode",), ("dit", "cuda")] and _le._te_parked is None, _ev)
+finally:
+    _emb.load_minimax_h3_te_planned = _orig_planned2
+    _devmod.plannable_free_vram = _orig_free
+
 if _fails:
     print(f"{len(_fails)} FAILED: " + ", ".join(_fails))
     sys.exit(1)

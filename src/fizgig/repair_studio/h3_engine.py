@@ -661,6 +661,18 @@ class H3RepairEngine:
         logger.info("[h3-workbench] encoding prompt with the 32B TE (one-off per prompt — "
                     "cached to disk after this)")
         want_vision = bool(images)
+        _parked = False
+        if self.dit is not None and not self._te_can_park():
+            # Small-RAM machine: no parked encoder, so the planned build is coming — the
+            # resident one needs the whole card, and the planner decides with the card
+            # empty. The DiT goes first, as it always did before parking existed.
+            self.dit.to("cpu")
+            if self._turbo_net is not None:
+                self._turbo_net.to("cpu")
+            _parked = True
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
         te, keep = self._te_get(want_vision)
         streamed = getattr(te, "layer_streamer", None) is not None
         if keep and streamed and getattr(self, "_te_was_parked", False):
@@ -686,8 +698,7 @@ class H3RepairEngine:
             free = float(plannable_free_vram())
         except Exception:
             pass
-        _parked = False
-        if self.dit is not None and (free is None or free < need + 1.0):
+        if not _parked and self.dit is not None and (free is None or free < need + 1.0):
             self.dit.to("cpu")
             if self._turbo_net is not None:
                 self._turbo_net.to("cpu")
@@ -754,6 +765,15 @@ class H3RepairEngine:
             return psutil.virtual_memory().available / 1e9
         except Exception:
             return None
+
+    def _te_can_park(self) -> bool:
+        """A parked encoder exists, or the box has the RAM to hold one."""
+        if self._te_parked is not None:
+            return True
+        if os.environ.get("FIZGIG_NO_TE_PARK") == "1":
+            return False
+        avail = self._ram_available_gb()
+        return avail is not None and avail >= self._TE_PARK_MIN_AVAIL_GB
 
     def _te_get(self, with_vision: bool):
         """(encoder, keep): a parked streamed build (loading one if RAM allows), else the

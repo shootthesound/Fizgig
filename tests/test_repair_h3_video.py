@@ -254,6 +254,28 @@ try:
        and app.repair_engine is not None, app.repair_status_var.get())
     root.after_cancel(app._repair_start_after)
     app._repair_preview_in_flight = False
+    # a donor path cleared by hand: Start / Update drops the loaded donor
+    _eng = app.repair_engine
+    _eng.donor_network, _eng.donor_path = object(), "C:/fake/donor.safetensors"
+    app.repair_donor_var.set("C:/fake/donor.safetensors")
+    app._repair_start_btn.configure(text="Start")
+    app.repair_donor_var.set("")
+    ck("clearing the donor field arms Update", app._repair_start_btn.cget("text") == "Update")
+    _unloads = []
+    _orig_unload = app._unload_repair_donor
+    app._unload_repair_donor = lambda: (_unloads.append(1), setattr(_eng, "donor_network", None), setattr(_eng, "donor_path", None))
+    _eng_primary = _eng.primary_path
+    _eng.primary_path = os.path.abspath(__file__)          # exists, and matches the field
+    app.repair_primary_var.set(_eng.primary_path)
+    app._repair_start_retries = 0
+    app._repair_start()
+    ck("Start with an empty donor field unloads the donor", _unloads == [1] and _eng.donor_network is None,
+       (_unloads, app.repair_status_var.get()))
+    app._unload_repair_donor = _orig_unload
+    _eng.primary_path = _eng_primary
+    app.repair_primary_var.set(_orig_primary)
+    if app._repair_preview_after_id is not None:
+        root.after_cancel(app._repair_preview_after_id); app._repair_preview_after_id = None
     app._repair_loading = True
     app._run_preview_async()
     ck("no preview starts while the engine is loading", not app._repair_preview_in_flight)

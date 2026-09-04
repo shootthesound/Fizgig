@@ -19805,6 +19805,7 @@ class LoRATrainerGUI:
         # Donor LoRA
         ttk.Label(parent, text="Donor LoRA (optional):").grid(row=r, column=0, sticky=tk.W, padx=4, pady=2)
         self.repair_donor_var = tk.StringVar()
+        self.repair_donor_var.trace_add("write", self._on_repair_donor_path_edited)
         ttk.Entry(parent, textvariable=self.repair_donor_var).grid(
             row=r, column=1, sticky=tk.EW, padx=4, pady=2)
         donor_btn_frame = ttk.Frame(parent)
@@ -23754,6 +23755,11 @@ class LoRATrainerGUI:
                 if self.repair_engine.donor_network is not None:
                     self._unload_repair_donor()
                 self._load_repair_donor(on_done=self._force_regenerate_preview)
+            elif not donor_path and self.repair_engine.donor_network is not None:
+                # The donor path was cleared by hand (not "Unload Donor"): Start / Update
+                # honours the empty field and drops the donor (Peter, 4 Sep).
+                self._unload_repair_donor()
+                self._force_regenerate_preview()
             else:
                 self._force_regenerate_preview()
 
@@ -23919,6 +23925,16 @@ class LoRATrainerGUI:
         """Prompt or seed changed — show 'Update' on the Start button instead of auto-regenerating."""
         if self.repair_engine is not None and self.repair_engine.primary_network is not None:
             self._repair_start_btn.configure(text="Update")
+
+    def _on_repair_donor_path_edited(self, *_):
+        """The donor field typed / cleared by hand: arm Update when it no longer matches the
+        loaded donor (an empty field with a donor loaded means "drop it")."""
+        eng = self.repair_engine
+        if eng is None or eng.primary_network is None:
+            return
+        want = self.repair_donor_var.get().strip() or None
+        if want != (eng.donor_path or None):
+            self._repair_mark_update_needed()
 
     def _repair_randomize_seed(self):
         """Randomize seed — and on a live session, regenerate immediately.

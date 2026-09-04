@@ -19472,30 +19472,20 @@ class LoRATrainerGUI:
     _REPAIR_H3_LENGTHS = {"Still (1 frame)": 1, "5 frames (~0.2s)": 5,
                           "9 frames (~0.4s, off-grid)": 9, "13 frames (~0.5s, off-grid)": 13,
                           "22 frames (~1s)": 22, "56 frames (~2.3s)": 56}
-    _REPAIR_H3_SHORT_SIDES = (768, 704, 640)
-    _REPAIR_H3_SHORT_SIDES_LOW = (576, 512)
+    # The Size list, in Peter's order (4 Sep): landscape default first, then portrait,
+    # square, and the 1024 rungs. Any "W × H" text parses, so an older saved value survives.
+    _REPAIR_H3_SIZES = ("768 × 640", "640 × 768", "768 × 768", "1024 × 1024", "1024 × 768",
+                        "768 × 1024")
 
     def _repair_h3_size_values(self):
-        """'W × H' choices: long side 768, short side stepping down; portrait and landscape
-        for every non-square rung; the 576/512 rungs only with 'allow lower' ticked."""
-        sides = list(self._REPAIR_H3_SHORT_SIDES)
-        if getattr(self, "repair_h3_lower_var", None) is not None and self.repair_h3_lower_var.get():
-            sides += list(self._REPAIR_H3_SHORT_SIDES_LOW)
-        vals = []
-        for s in sides:
-            if s == 768:
-                vals.append("768 × 768")
-            else:
-                vals.append(f"768 × {s}  (landscape)")
-                vals.append(f"{s} × 768  (portrait)")
-        return vals
+        return list(self._REPAIR_H3_SIZES)
 
     def _repair_h3_size(self):
         """(width, height) from the Size combo; 768x768 for anything unparseable."""
         import re
         m = re.match(r"\s*(\d+)\s*×\s*(\d+)", self.repair_h3_size_var.get())
         if not m:
-            return 768, 768
+            return 768, 640
         return int(m.group(1)), int(m.group(2))
 
     def _repair_h3_frames(self):
@@ -19516,40 +19506,31 @@ class LoRATrainerGUI:
         else:
             chk.state(["disabled"])
 
-    def _on_repair_h3_lower_toggled(self):
-        combo = self._repair_h3_size_combo
-        combo.configure(values=self._repair_h3_size_values())
-        if self.repair_h3_size_var.get() not in combo["values"]:
-            self.repair_h3_size_var.set("768 × 640  (landscape)")    # a now-locked rung falls back to the default
-            self._on_repair_h3_clip_changed()
+    def _repair_h3_persist_clip(self):
         try:
-            self.last_used["repair_h3_allow_lower"] = bool(self.repair_h3_lower_var.get())
+            st, tu = self._repair_h3_steps_turbo()
+            self.last_used["repair_h3_frames"] = self.repair_h3_frames_var.get()
+            self.last_used["repair_h3_size"] = self.repair_h3_size_var.get()
+            self.last_used["repair_h3_sound"] = bool(self.repair_h3_sound_var.get())
+            self.last_used["repair_h3_dial_scale"] = self.repair_h3_dial_scale_var.get()
+            self.last_used["repair_h3_steps"] = st
+            self.last_used["repair_h3_turbo"] = tu
             self._save_last_used_paths()
         except Exception:
             pass
 
     def _on_repair_h3_clip_changed(self):
-        """Length / Size / Regime / Sound changed: remember it, drop the baseline (it was
-        rendered under the old settings) and re-render."""
-        try:
-            self.last_used["repair_h3_frames"] = self.repair_h3_frames_var.get()
-            self.last_used["repair_h3_size"] = self.repair_h3_size_var.get()
-            self.last_used["repair_h3_regime"] = self.repair_h3_regime_var.get()
-            self.last_used["repair_h3_sound"] = bool(self.repair_h3_sound_var.get())
-            self.last_used["repair_h3_dial_scale"] = self.repair_h3_dial_scale_var.get()
-            self.last_used["repair_h3_regime_params"] = {
-                k: list(v) for k, v in self._repair_h3_regime_params.items()}
-            self._save_last_used_paths()
-        except Exception:
-            pass
+        """Length / Size / render size / steps / Turbo / Sound changed: remember it, drop
+        the baseline (it was rendered under the old settings) and re-render."""
+        self._repair_h3_persist_clip()
         self._on_preview_param_changed()
 
     def _repair_h3_render_opts(self, regime=None):
-        """What the H3 worker renders with, read on the Tk thread: frames, regime and its
-        dialled steps / Turbo strength, sound, the early-look pass (0 = off), the No-LoRA
-        tick. `regime` overrides the radio (the library and peeks always use Dial)."""
-        regime = regime or (self.repair_h3_regime_var.get() or "dial")
-        steps, turbo = self._repair_h3_regime_numbers(regime)
+        """What the H3 worker renders with, read on the Tk thread: frames, the dialled
+        steps / Turbo strength, sound, the early-look pass (0 = off), the No-LoRA tick.
+        (`regime` is a leftover of the Dial / Confirm switch — every render is "custom".)"""
+        regime = "custom"
+        steps, turbo = self._repair_h3_steps_turbo()
         early = 0
         if getattr(self, "repair_h3_early_var", None) is not None and self.repair_h3_early_var.get():
             early = max(0, min(self._REPAIR_H3_EARLY_STEP, steps - 1))
@@ -19562,62 +19543,71 @@ class LoRATrainerGUI:
                 "nolora": bool(nol is not None and nol.get())}
 
     _REPAIR_H3_DIAL_SCALES = {"Full": 1.0, "⅔": 2.0 / 3.0, "½": 0.5}
-    _REPAIR_H3_REGIME_DEFAULTS = {"dial": (4, 1.0), "confirm": (6, 0.75)}
+    # Presets fill the three render controls (steps, Turbo strength, render size); the boxes
+    # are the truth — there is no regime switch (dropped 4 Sep: with the numbers dialable it
+    # only gated the library build and picked the canvas, both of which the boxes now own).
+    _REPAIR_H3_PRESETS = {"dial": (4, 1.0, "⅔"), "confirm": (6, 0.75, "Full")}
 
-    def _repair_h3_regime_numbers(self, regime=None):
-        """(steps, turbo_strength) for a regime: what its boxes hold."""
-        regime = regime or (self.repair_h3_regime_var.get() or "dial")
-        st, tu = self._repair_h3_regime_params.get(regime, self._REPAIR_H3_REGIME_DEFAULTS.get(regime, (4, 1.0)))
-        return int(st), float(tu)
+    def _repair_h3_last_num(self, key, default, cast):
+        try:
+            return cast(self.last_used.get(key, default))
+        except (TypeError, ValueError):
+            return default
 
-    def _on_repair_h3_regime_changed(self):
-        """Dial / Confirm picked: the boxes show that regime's numbers, then the usual
-        re-render."""
-        st, tu = self._repair_h3_regime_numbers()
-        self.repair_h3_steps_var.set(str(st))
-        self.repair_h3_turbo_var.set(f"{tu:g}")
-        self._on_repair_h3_clip_changed()
-
-    def _on_repair_h3_turbo_edited(self):
-        """Steps / Turbo typed: validate, store for the current regime, re-render if changed."""
-        regime = self.repair_h3_regime_var.get() or "dial"
-        cur = list(self._repair_h3_regime_numbers(regime))
+    def _repair_h3_steps_turbo(self):
+        """(steps, turbo_strength) the boxes hold, validated (1–40 steps, 0–1.5 Turbo)."""
+        last = getattr(self, "_repair_h3_last_nums", None) or (4, 1.0)
         try:
             st = max(1, min(40, int(float(self.repair_h3_steps_var.get().strip()))))
-        except (TypeError, ValueError):
-            st = cur[0]
+        except (TypeError, ValueError, AttributeError):
+            st = int(last[0])                         # garbage typed: keep what it was
         try:
             tu = max(0.0, min(1.5, float(self.repair_h3_turbo_var.get().strip())))
-        except (TypeError, ValueError):
-            tu = cur[1]
+        except (TypeError, ValueError, AttributeError):
+            tu = float(last[1])
+        return st, tu
+
+    def _repair_h3_apply_preset(self, name, render=True):
+        """Dial / Confirm button: fill steps, Turbo and render size, then the usual
+        re-render (render=False just sets the controls)."""
+        st, tu, size = self._REPAIR_H3_PRESETS[name]
         self.repair_h3_steps_var.set(str(st))
         self.repair_h3_turbo_var.set(f"{tu:g}")
-        if [st, tu] == cur:
+        self.repair_h3_dial_scale_var.set(size)
+        self._repair_h3_last_nums = (st, tu)
+        if render:
+            self._on_repair_h3_clip_changed()
+        else:
+            self._repair_h3_persist_clip()
+
+    def _on_repair_h3_turbo_edited(self):
+        """Steps / Turbo typed: validate, normalise the boxes, re-render if changed."""
+        st, tu = self._repair_h3_steps_turbo()
+        self.repair_h3_steps_var.set(str(st))
+        self.repair_h3_turbo_var.set(f"{tu:g}")
+        if (st, tu) == tuple(getattr(self, "_repair_h3_last_nums", (None, None))):
             return
-        self._repair_h3_regime_params[regime] = [st, tu]
+        self._repair_h3_last_nums = (st, tu)
         self._on_repair_h3_clip_changed()
 
     @staticmethod
     def _repair_h3_regime_label(clip):
-        """'Dial · 4 steps · Turbo 1.0' for a clip dict (Turbo off / none spelled out)."""
-        reg = "Dial" if clip.get("regime") == "dial" else "Confirm"
+        """'4 steps · Turbo 1' for a clip dict (Turbo off / none spelled out)."""
         st = clip.get("steps")
         tu = clip.get("turbo_strength")
         tut = ("no Turbo LoRA" if tu is None else "Turbo off" if abs(float(tu)) < 1e-9
                else f"Turbo {float(tu):g}")
-        return f"{reg} · {st} steps · {tut}" if st else reg
+        return f"{st} steps · {tut}" if st else "render"
     # The pass whose estimate "Show early" puts up. Measured 3 Sep at Turbo 1.0: the
     # pass-1 estimate is mush, pass 2 is a readable rough picture (composition, pose,
     # expression), so 2 — at the ⅔ dial canvas that is ~2.8 s in, with the finished clip
     # ~1.5 s later than it would be without the extra decode.
     _REPAIR_H3_EARLY_STEP = 2
 
-    def _repair_h3_canvas(self, regime):
-        """(width, height) a render of this regime uses: the Size combo for Confirm, the
-        Size scaled by the Dial size fraction (each side snapped to /32) for Dial."""
+    def _repair_h3_canvas(self, regime=None):
+        """(width, height) every render uses: the Size combo scaled by the Render size
+        fraction, each side snapped to /32 (`regime` is ignored — a leftover)."""
         w, h = self._repair_h3_size()
-        if regime != "dial":
-            return w, h
         var = getattr(self, "repair_h3_dial_scale_var", None)
         f = self._REPAIR_H3_DIAL_SCALES.get(var.get() if var is not None else "Full", 1.0)
         if f >= 0.999:
@@ -19864,73 +19854,59 @@ class LoRATrainerGUI:
         _len.pack(side=tk.LEFT, padx=(0, 12))
         _len.bind("<<ComboboxSelected>>", lambda e: self._on_repair_h3_clip_changed())
         ttk.Label(_l1, text="Size:").pack(side=tk.LEFT, padx=(0, 4))
-        self.repair_h3_lower_var = tk.BooleanVar(
-            value=bool(self.last_used.get("repair_h3_allow_lower", False)))
+        _saved = str(self.last_used.get("repair_h3_size", "768 × 640"))
+        _m = re.match(r"\s*(\d+)\s*×\s*(\d+)", _saved)
+        _saved = f"{_m.group(1)} × {_m.group(2)}" if _m else "768 × 640"
         self.repair_h3_size_var = tk.StringVar(
-            value=str(self.last_used.get("repair_h3_size", "768 × 640  (landscape)")))
+            value=_saved if _saved in self._REPAIR_H3_SIZES else "768 × 640")
         self._repair_h3_size_combo = ttk.Combobox(
-            _l1, textvariable=self.repair_h3_size_var, state="readonly", width=20,
+            _l1, textvariable=self.repair_h3_size_var, state="readonly", width=12,
             values=self._repair_h3_size_values())
-        self._repair_h3_size_combo.pack(side=tk.LEFT, padx=(0, 4))
+        self._repair_h3_size_combo.pack(side=tk.LEFT, padx=(0, 12))
         self._repair_h3_size_combo.bind("<<ComboboxSelected>>",
                                         lambda e: self._on_repair_h3_clip_changed())
-        _low = ttk.Checkbutton(_l1, text="allow lower", variable=self.repair_h3_lower_var,
-                               command=self._on_repair_h3_lower_toggled)
-        _low.pack(side=tk.LEFT, padx=(0, 12))
-        ToolTip(_low, "Unlock 576 and 512 short sides. Below 640 H3 drifts off its trained "
-                      "canvas — fine for a quick block read, not for judging quality.")
-        ttk.Label(_l1, text="Dial size:").pack(side=tk.LEFT, padx=(0, 4))
+        ToolTip(self._repair_h3_size_combo,
+                "The clip's canvas. 768 on the long side is H3's native size; the 1024 rungs "
+                "are slower and need more VRAM (Render size scales any of them down).")
+        ttk.Label(_l1, text="Render size:").pack(side=tk.LEFT, padx=(0, 4))
         self.repair_h3_dial_scale_var = tk.StringVar(
             value=str(self.last_used.get("repair_h3_dial_scale", "⅔")))
         _ds = ttk.Combobox(_l1, textvariable=self.repair_h3_dial_scale_var, state="readonly",
                            width=5, values=list(self._REPAIR_H3_DIAL_SCALES))
         _ds.pack(side=tk.LEFT, padx=(0, 12))
         _ds.bind("<<ComboboxSelected>>", lambda e: self._on_repair_h3_clip_changed())
-        ToolTip(_ds, "Dial renders at this fraction of the Size (⅔ of 768×640 is 512×416 — "
-                     "about twice as fast). Confirm always renders at the full Size. The "
-                     "small render is exact at its size; framing can differ from full size.")
-        ttk.Label(_l1, text="Regime:").pack(side=tk.LEFT, padx=(0, 4))
-        self.repair_h3_regime_var = tk.StringVar(
-            value=str(self.last_used.get("repair_h3_regime", "dial")))
-        # Each regime's numbers — the preset until you type your own (remembered per regime).
-        self._repair_h3_regime_params = {k: list(v) for k, v in self._REPAIR_H3_REGIME_DEFAULTS.items()}
-        try:
-            for k, v in dict(self.last_used.get("repair_h3_regime_params", {}) or {}).items():
-                if k in self._repair_h3_regime_params and len(v) == 2:
-                    self._repair_h3_regime_params[k] = [int(v[0]), float(v[1])]
-        except Exception:
-            pass
-        for _val, _txt, _tip in (
-                ("dial", "Dial (4 steps, Turbo 1.0)",
-                 "The fast loop for turning sliders — the bundled Turbo LoRA at full "
-                 "strength, 4 steps."),
-                ("confirm", "Confirm (6 steps, Turbo 0.75)",
-                 "The render that matches in-training previews — 6 steps at 0.75. Use it "
-                 "to confirm what the Dial showed before saving.")):
-            _rb = ttk.Radiobutton(_l1, text=_txt, variable=self.repair_h3_regime_var,
-                                  value=_val, style="Surface.TRadiobutton",
-                                  command=self._on_repair_h3_regime_changed)
-            _rb.pack(side=tk.LEFT, padx=(0, 10))
-            ToolTip(_rb, _tip)
-        _st0, _tu0 = self._repair_h3_regime_params.get(self.repair_h3_regime_var.get() or "dial",
-                                                       [4, 1.0])
+        ToolTip(_ds, "Every render at this fraction of the Size (⅔ of 768×640 is 512×416 — "
+                     "about twice as fast). Exact at its size; framing can differ from full "
+                     "size. The Dial preset picks ⅔, Confirm picks Full.")
         ttk.Label(_l2, text="Steps:").pack(side=tk.LEFT, padx=(0, 3))
-        self.repair_h3_steps_var = tk.StringVar(value=str(int(_st0)))
+        self.repair_h3_steps_var = tk.StringVar(
+            value=str(self._repair_h3_last_num("repair_h3_steps", 4, int)))
         _se = ttk.Entry(_l2, textvariable=self.repair_h3_steps_var, width=3)
         _se.pack(side=tk.LEFT, padx=(0, 8))
-        ToolTip(_se, "Model passes for this regime — the preset is Dial 4 / Confirm 6; type "
-                     "your own (1–40). Remembered per regime.")
+        ToolTip(_se, "Model passes per render (1–40). Dial preset 4, Confirm 6; type your own.")
         ttk.Label(_l2, text="Turbo:").pack(side=tk.LEFT, padx=(0, 3))
-        self.repair_h3_turbo_var = tk.StringVar(value=f"{float(_tu0):g}")
+        self.repair_h3_turbo_var = tk.StringVar(
+            value=f"{self._repair_h3_last_num('repair_h3_turbo', 1.0, float):g}")
         _te = ttk.Entry(_l2, textvariable=self.repair_h3_turbo_var, width=4)
-        _te.pack(side=tk.LEFT, padx=(0, 10))
-        ToolTip(_te, "Strength of the built-in Turbo LoRA for this regime (preset Dial 1.0 / "
-                     "Confirm 0.75). 0 switches it off — the render is the base plus your "
-                     "LoRAs at the steps above. That is how you edit a Turbo LoRA: load it as "
-                     "the primary and set this to 0.")
+        _te.pack(side=tk.LEFT, padx=(0, 8))
+        ToolTip(_te, "Strength of the built-in Turbo LoRA (Dial preset 1.0, Confirm 0.75). "
+                     "0 switches it off — the render is the base plus your LoRAs at the steps "
+                     "above. That is how you edit a Turbo LoRA: load it as the primary and set "
+                     "this to 0.")
         for _w in (_se, _te):
             _w.bind("<Return>", lambda e: self._on_repair_h3_turbo_edited())
             _w.bind("<FocusOut>", lambda e: self._on_repair_h3_turbo_edited())
+        self._repair_h3_last_nums = self._repair_h3_steps_turbo()
+        ttk.Label(_l2, text="Presets:").pack(side=tk.LEFT, padx=(4, 3))
+        for _name, _txt, _tip in (
+                ("dial", "Dial", "The fast loop: 4 steps, Turbo 1.0, ⅔ render size (~4 s a "
+                                 "move on a 5090)."),
+                ("confirm", "Confirm", "The render that matches in-training previews: 6 steps, "
+                                       "Turbo 0.75, full size. Use it before saving.")):
+            _pb = ttk.Button(_l2, text=_txt, width=8,
+                             command=lambda n=_name: self._repair_h3_apply_preset(n))
+            _pb.pack(side=tk.LEFT, padx=(0, 4))
+            ToolTip(_pb, _tip)
         self.repair_h3_sound_var = tk.BooleanVar(
             value=bool(self.last_used.get("repair_h3_sound", True)))
         self._repair_h3_sound_chk = ttk.Checkbutton(
@@ -24083,7 +24059,7 @@ class LoRATrainerGUI:
             # H3 renders a clip on its own canvas — the Clip row, not the square Res combo.
             # Dial renders at the dial fraction of that canvas (Confirm at the full size).
             h3_opts = self._repair_h3_render_opts()
-            _w, _h = self._repair_h3_canvas(h3_opts["regime"])
+            _w, _h = self._repair_h3_canvas()
             self.repair_state.preview_width = _w
             self.repair_state.preview_height = _h
             self.repair_state.preview_frames = h3_opts["frames"]
@@ -24118,7 +24094,7 @@ class LoRATrainerGUI:
               f"h={snapshot.preview_height} seed={snapshot.seed} prompt={snapshot.prompt!r}")
         self.repair_status_var.set("Generating preview…" if h3_opts is None else
                                    f"Rendering {h3_opts['frames']}-frame clip "
-                                   f"({'Dial' if h3_opts['regime'] == 'dial' else 'Confirm'})…")
+                                   f"({h3_opts['steps']} steps · Turbo {h3_opts['turbo_strength']:g})…")
         self._repair_progress_begin()
         import threading
         thread = threading.Thread(target=self._repair_preview_worker, args=(snapshot, h3_opts),
@@ -24537,10 +24513,10 @@ class LoRATrainerGUI:
 
     def _repair_cache_after_exact(self, snapshot, opts):
         """An exact render landed (Tk thread): auto-start the library build for this setup
-        if it isn't complete. Only the Dial regime builds — the library IS the fast loop;
-        Confirm renders are judged one at a time."""
+        if it isn't complete — whatever the steps / Turbo / size (it yields to every slider
+        move; at Confirm-like settings a 52-block library is ~10 min instead of ~3)."""
         cache = self._repair_cache
-        if cache is not None and opts.get("regime") == "dial" and not cache.complete() \
+        if cache is not None and not cache.complete() \
                 and not self._repair_cache_paused.is_set():
             self._repair_cache_start_build(snapshot, opts)
         self._repair_cache_refresh_ui()
@@ -24658,8 +24634,8 @@ class LoRATrainerGUI:
             cache = self._repair_cache
             if cache is not None and not cache.complete() and self._repair_clips.get("tweaked"):
                 snap = self.repair_state.copy()
-                opts = dict(self._repair_h3_render_opts("dial"))
-                snap.preview_width, snap.preview_height = self._repair_h3_canvas("dial")
+                opts = dict(self._repair_h3_render_opts())
+                snap.preview_width, snap.preview_height = self._repair_h3_canvas()
                 self._repair_cache_start_build(snap, opts)
         else:
             self._repair_cache_paused.set()
@@ -24737,10 +24713,10 @@ class LoRATrainerGUI:
             self.repair_status_var.set("A render is in flight — try the peek when it lands.")
             return
         from fizgig.repair_studio.state import SliderState
-        opts = dict(self._repair_h3_render_opts("dial"))
+        opts = dict(self._repair_h3_render_opts())
         st = SliderState.default_h3()
         st.seed, st.prompt = self.repair_state.seed, self.repair_state.prompt
-        st.preview_width, st.preview_height = self._repair_h3_canvas("dial")
+        st.preview_width, st.preview_height = self._repair_h3_canvas()
         st.preview_frames = opts["frames"]
         st.primary_scale = float(getattr(self.repair_state, "primary_scale", 1.0))
         st.donor_scale = float(getattr(self.repair_state, "donor_scale", 1.0))

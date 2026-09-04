@@ -97,26 +97,19 @@ try:
 
     # --- 2. size choices + parser ---------------------------------------------------------
     fam("minimax")
-    app.repair_h3_lower_var.set(False)
-    app._on_repair_h3_lower_toggled()
     vals = list(app._repair_h3_size_combo["values"])
-    ck("default sizes: 768 square + 704/640 both ways, nothing lower",
-       vals == ["768 × 768", "768 × 704  (landscape)", "704 × 768  (portrait)",
-                "768 × 640  (landscape)", "640 × 768  (portrait)"], vals)
-    app.repair_h3_lower_var.set(True)
-    app._on_repair_h3_lower_toggled()
-    vals = list(app._repair_h3_size_combo["values"])
-    ck("allow lower adds 576 and 512 rungs",
-       any(v.startswith("768 × 512") for v in vals) and any(v.startswith("576 × 768") for v in vals))
-    app.repair_h3_size_var.set("768 × 512  (landscape)")
-    ck("parser: landscape 768x512", app._repair_h3_size() == (768, 512))
-    app.repair_h3_size_var.set("640 × 768  (portrait)")
+    ck("sizes: Peter's six, landscape default first",
+       vals == ["768 × 640", "640 × 768", "768 × 768", "1024 × 1024", "1024 × 768", "768 × 1024"], vals)
+    ck("no 'allow lower' any more", not hasattr(app, "repair_h3_lower_var"))
+    app.repair_h3_size_var.set("1024 × 768")
+    ck("parser: 1024x768", app._repair_h3_size() == (1024, 768))
+    app.repair_h3_size_var.set("640 × 768")
     ck("parser: portrait 640x768", app._repair_h3_size() == (640, 768))
-    app.repair_h3_size_var.set("768 × 512  (landscape)")
-    app.repair_h3_lower_var.set(False)
-    app._on_repair_h3_lower_toggled()
-    ck("un-ticking with a locked rung selected falls back to the default (768×640)",
-       app.repair_h3_size_var.get() == "768 × 640  (landscape)")
+    app.repair_h3_size_var.set("768 × 640")
+    ck("parser: an older saved label still parses", app._repair_h3_size() == (768, 640))
+    app.repair_h3_size_var.set("nonsense")
+    ck("parser: garbage -> the default 768x640", app._repair_h3_size() == (768, 640))
+    app.repair_h3_size_var.set("768 × 640")
     app.repair_h3_frames_var.set("56 frames (~2.3s)")
     ck("length parser", app._repair_h3_frames() == 56)
     app.repair_h3_frames_var.set("Still (1 frame)")
@@ -174,8 +167,8 @@ try:
     app.repair_engine = FakeEngine()
     app.repair_prompt_var.set("zwxem test prompt")
     app.repair_seed_var.set("7")
-    app.repair_h3_size_var.set("768 × 640  (landscape)")
-    app.repair_h3_regime_var.set("confirm")
+    app.repair_h3_size_var.set("768 × 640")
+    app._repair_h3_apply_preset("confirm", render=False)
     app.repair_h3_sound_var.set(True)
     app._repair_preview_in_flight = False
     app._run_preview_async()
@@ -186,7 +179,7 @@ try:
     ck("H3 run_async: frames on the snapshot", captured["snap"].preview_frames == 22)
     o = captured["opts"]
     ck("H3 run_async: opts carry frames/regime/early; sound only with an audio VAE configured",
-       o == {"frames": 22, "regime": "confirm", "early_step": 2, "nolora": False,
+       o == {"frames": 22, "regime": "custom", "early_step": 2, "nolora": False,
              "steps": 6, "turbo_strength": 0.75,
              "with_audio": bool(app._repair_h3_audio_vae_path())}, o)
     app.repair_h3_sound_var.set(False)
@@ -234,7 +227,7 @@ try:
        and len(app._repair_clips["tweaked"]["frames"]) == 5)
     ck("panel shows the middle frames",
        app.repair_pil_images["tweaked"] is app._repair_clips["tweaked"]["middle"])
-    ck("status names the regime + length", "Dial" in app.repair_status_var.get()
+    ck("status names the steps + length", "4 steps" in app.repair_status_var.get()
        and "5 frames" in app.repair_status_var.get(), app.repair_status_var.get())
     ck("in-flight cleared", not app._repair_preview_in_flight)
     app._repair_popout_preview()
@@ -263,7 +256,7 @@ try:
     app._repair_preview_in_flight = True
     app._set_repair_preview_clips(_clip("black", 3, "confirm"), _clip("gray", 3, "confirm"))
     ck("new clips reload the open player", app._repair_player is P and P["n"] == 3
-       and "Confirm" in P["titles"][0].cget("text"))
+       and "steps" in P["titles"][0].cget("text"))
     app._reset_repair_session()
     ck("session reset closes the player and drops the clips",
        app._repair_player is None and app._repair_clips == {})
@@ -366,18 +359,17 @@ try:
     app.repair_prompt_var.set("zwxem cache prompt")
     app.repair_seed_var.set("3")
     app.repair_h3_frames_var.set("22 frames (~1s)")
-    app.repair_h3_size_var.set("768 × 640  (landscape)")
+    app.repair_h3_size_var.set("768 × 640")
     app.repair_h3_dial_scale_var.set("⅔")
-    app.repair_h3_regime_var.set("dial")
+    app._repair_h3_apply_preset("dial", render=False)
     app.repair_h3_sound_var.set(False)
     app.repair_h3_early_var.set(True)
     ck("library row managed under H3", bool(app._repair_cache_row.winfo_manager()))
-    ck("dial canvas: ⅔ of 768x640 snapped to /32", app._repair_h3_canvas("dial") == (512, 416))
-    ck("confirm canvas: the full Size", app._repair_h3_canvas("confirm") == (768, 640))
+    ck("render size ⅔: 768x640 snapped to /32", app._repair_h3_canvas() == (512, 416))
     app.repair_h3_dial_scale_var.set("½")
-    ck("dial canvas: ½", app._repair_h3_canvas("dial") == (384, 320))
+    ck("render size ½", app._repair_h3_canvas() == (384, 320))
     app.repair_h3_dial_scale_var.set("Full")
-    ck("dial canvas: Full = Size", app._repair_h3_canvas("dial") == (768, 640))
+    ck("render size Full = Size", app._repair_h3_canvas() == (768, 640))
     app.repair_h3_dial_scale_var.set("⅔")
     ck("no cache before the first render", app._repair_cache is None)
     if app._repair_preview_after_id is not None:      # (donor-var traces, see above)
@@ -458,16 +450,19 @@ try:
              and app._repair_peek is None, timeout=6.0)
     ck("a slider move ends the peek and restores the title",
        app._repair_peek is None and app._repair_tweaked_title.cget("text") == "Tweaked (current sliders)")
-    # regime switch = another setup key; Confirm renders at the full Size and never builds
-    app.repair_h3_regime_var.set("confirm")
+    # the Confirm preset = another setup key (6 steps, Turbo 0.75, full Size) — and it
+    # builds its own library too (no regime gate any more)
     renders.clear()
-    app._on_repair_h3_clip_changed()
+    app._repair_h3_apply_preset("confirm")
     wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
              and any(r[0] == "render_latent" and r[2] == 768 for r in renders), timeout=6.0)
-    ck("Confirm renders at the full Size", any(r[0] == "render_latent" and r[2] == 768 for r in renders))
-    ck("Confirm setup is its own cache, and does not build a library",
-       app._repair_cache is not cache and (app._repair_cache_thread is None
-                                          or not app._repair_cache_thread.is_alive()))
+    ck("Confirm preset renders at the full Size", any(r[0] == "render_latent" and r[2] == 768 for r in renders))
+    wait_for(lambda: app._repair_cache is not cache and app._repair_cache is not None
+             and (app._repair_cache.complete() or app._repair_cache_thread.is_alive()), timeout=6.0)
+    ck("Confirm setup is its own cache and builds its library too",
+       app._repair_cache is not cache and app._repair_cache is not None
+       and (app._repair_cache.complete() or app._repair_cache_thread.is_alive()))
+    wait_for(lambda: app._repair_cache.complete() and not app._repair_cache_thread.is_alive(), timeout=15.0)
     # restart: a fresh cache on the dial key finds everything
     from fizgig.repair_studio.h3_render_cache import RenderCache
     again = RenderCache(cache_root, cache.key, sorted(ACTIVE))
@@ -547,7 +542,7 @@ try:
        app._repair_peek == "Block 21 off" and app._repair_clips["tweaked"].get("sig") == sig,
        app._repair_peek)
     # pin it as the baseline: the next render's baseline pane is that entry (same setup)
-    app.repair_h3_regime_var.set("dial")
+    app._repair_h3_apply_preset("dial", render=False)
     app._repair_history_pin(sig)
     ck("pin marks the strip + the baseline title",
        app._repair_pinned_sig == sig and "Pinned" in app._repair_baseline_title.cget("text"))
@@ -557,19 +552,19 @@ try:
        app._repair_clips["baseline"].get("sig") == sig)
     # a setup change (Confirm regime) drops the pin instead of leaving the title lying
     app._repair_history_pin(sig, rerender=False)
-    app.repair_h3_regime_var.set("confirm"); app._on_repair_h3_clip_changed()
+    app._repair_h3_apply_preset("confirm")
     wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
              and app._repair_pinned_sig is None and "Pinned" not in app._repair_baseline_title.cget("text"), 6.0)
     ck("a setup change drops the pin and its title",
        app._repair_pinned_sig is None and "Pinned" not in app._repair_baseline_title.cget("text")
        and not app._repair_clips["baseline"].get("pinned"))
-    app.repair_h3_regime_var.set("dial")
+    app._repair_h3_apply_preset("dial", render=False)
     fam("klein")
     ck("Klein: keyframe card + history strip hidden",
        not app._repair_kf_container.winfo_manager() and not app._repair_history_row.winfo_manager())
     fam("minimax")
     app.repair_engine = CacheEngine(); app._repair_cache = cache
-    app.repair_h3_regime_var.set("dial")
+    app._repair_h3_apply_preset("dial", render=False)
     app._reset_repair_session()
     ck("reset drops the cache and the title", app._repair_cache is None
        and app._repair_tweaked_title.cget("text") == "Tweaked (current sliders)")
@@ -590,9 +585,9 @@ try:
     app.repair_prompt_var.set("zwxem nolora prompt")
     app.repair_seed_var.set("11")
     app.repair_h3_frames_var.set("22 frames (~1s)")
-    app.repair_h3_size_var.set("768 × 640  (landscape)")
+    app.repair_h3_size_var.set("768 × 640")
     app.repair_h3_dial_scale_var.set("⅔")
-    app.repair_h3_regime_var.set("dial")
+    app._repair_h3_apply_preset("dial", render=False)
     app.repair_h3_sound_var.set(False)
     app.repair_h3_early_var.set(False)
     app.repair_h3_nolora_var.set(False)
@@ -648,46 +643,35 @@ try:
     app._repair_clip_player_close()
     CacheEngine.render_latent = _orig_rl
 
-    # --- 9. Steps / Turbo boxes per regime + load-strength dials ---------------------------------
-    app.repair_h3_regime_var.set("dial"); app._on_repair_h3_regime_changed()
+    # --- 9. Steps / Turbo boxes + presets + load-strength dials ------------------------------------
+    app._repair_h3_apply_preset("dial", render=False)
     if app._repair_preview_after_id is not None:
         root.after_cancel(app._repair_preview_after_id); app._repair_preview_after_id = None
-    ck("Dial shows its preset in the boxes", app.repair_h3_steps_var.get() == "4" and app.repair_h3_turbo_var.get() == "1")
+    ck("Dial preset fills the boxes + render size", app.repair_h3_steps_var.get() == "4"
+       and app.repair_h3_turbo_var.get() == "1" and app.repair_h3_dial_scale_var.get() == "⅔")
     app.repair_h3_early_var.set(True)
     app.repair_h3_steps_var.set("3"); app.repair_h3_turbo_var.set("0")
     app._on_repair_h3_turbo_edited()
     if app._repair_preview_after_id is not None:
         root.after_cancel(app._repair_preview_after_id); app._repair_preview_after_id = None
     o = app._repair_h3_render_opts()
-    ck("typed numbers are the Dial's now: 3 steps, Turbo off; early look clamped below the steps",
-       o["steps"] == 3 and o["turbo_strength"] == 0.0 and o["early_step"] == 2 and o["regime"] == "dial", o)
-    ck("...remembered per regime", app.last_used.get("repair_h3_regime_params", {}).get("dial") == [3, 0.0])
+    ck("typed numbers: 3 steps, Turbo off; early look clamped below the steps",
+       o["steps"] == 3 and o["turbo_strength"] == 0.0 and o["early_step"] == 2 and o["regime"] == "custom", o)
+    ck("...remembered", app.last_used.get("repair_h3_steps") == 3 and app.last_used.get("repair_h3_turbo") == 0.0)
     app.repair_h3_steps_var.set("2"); app._on_repair_h3_turbo_edited()
     if app._repair_preview_after_id is not None:
         root.after_cancel(app._repair_preview_after_id); app._repair_preview_after_id = None
     ck("2 steps: the early look clamps to pass 1", app._repair_h3_render_opts()["early_step"] == 1)
-    app.repair_h3_steps_var.set("3"); app._on_repair_h3_turbo_edited()
-    if app._repair_preview_after_id is not None:
-        root.after_cancel(app._repair_preview_after_id); app._repair_preview_after_id = None
-    app.repair_h3_regime_var.set("confirm"); app._on_repair_h3_regime_changed()
-    if app._repair_preview_after_id is not None:
-        root.after_cancel(app._repair_preview_after_id); app._repair_preview_after_id = None
-    ck("Confirm still shows its own preset", app.repair_h3_steps_var.get() == "6" and app.repair_h3_turbo_var.get() == "0.75")
-    app.repair_h3_regime_var.set("dial"); app._on_repair_h3_regime_changed()
-    if app._repair_preview_after_id is not None:
-        root.after_cancel(app._repair_preview_after_id); app._repair_preview_after_id = None
-    ck("back to Dial: the typed numbers are back", app.repair_h3_steps_var.get() == "3" and app.repair_h3_turbo_var.get() == "0")
-    ck("the library / peeks always use the Dial numbers", app._repair_h3_render_opts("dial")["steps"] == 3
-       and app._repair_h3_render_opts("confirm")["steps"] == 6)
+    app._repair_h3_apply_preset("confirm", render=False)
+    ck("Confirm preset: 6 / 0.75 / Full", app.repair_h3_steps_var.get() == "6"
+       and app.repair_h3_turbo_var.get() == "0.75" and app.repair_h3_dial_scale_var.get() == "Full")
     app.repair_h3_steps_var.set("abc"); app._on_repair_h3_turbo_edited()
-    ck("garbage in a box snaps back", app.repair_h3_steps_var.get() == "3")
-    app.repair_h3_steps_var.set("4"); app.repair_h3_turbo_var.set("1.0"); app._on_repair_h3_turbo_edited()
-    if app._repair_preview_after_id is not None:
-        root.after_cancel(app._repair_preview_after_id); app._repair_preview_after_id = None
-    ck("regime label spells the numbers",
-       app._repair_h3_regime_label({"regime": "dial", "steps": 3, "turbo_strength": 0.0}) == "Dial · 3 steps · Turbo off"
-       and app._repair_h3_regime_label({"regime": "confirm", "steps": 6, "turbo_strength": 0.75}) == "Confirm · 6 steps · Turbo 0.75"
-       and app._repair_h3_regime_label({"regime": "confirm", "steps": 20, "turbo_strength": None}) == "Confirm · 20 steps · no Turbo LoRA")
+    ck("garbage in a box snaps back", app.repair_h3_steps_var.get() == "6")
+    app._repair_h3_apply_preset("dial", render=False)
+    ck("label spells the numbers",
+       app._repair_h3_regime_label({"steps": 3, "turbo_strength": 0.0}) == "3 steps · Turbo off"
+       and app._repair_h3_regime_label({"steps": 6, "turbo_strength": 0.75}) == "6 steps · Turbo 0.75"
+       and app._repair_h3_regime_label({"steps": 20, "turbo_strength": None}) == "20 steps · no Turbo LoRA")
     # load strength
     ck("strength dials shown under H3", all(spin.winfo_manager() == "pack" for _l, spin in app._repair_scale_widgets))
     app.repair_primary_scale_var.set("0.8"); app._on_repair_scale_changed()

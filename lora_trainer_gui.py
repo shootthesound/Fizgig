@@ -19850,40 +19850,46 @@ class LoRATrainerGUI:
         h3_row = ttk.Frame(parent)
         h3_row.grid(row=r, column=1, columnspan=3, sticky=tk.EW, padx=4, pady=2)
         self._repair_h3_row = h3_row
-        ttk.Label(h3_row, text="Length:").pack(side=tk.LEFT, padx=(0, 4))
+        # Two lines: what the clip IS (length, size, dial size, regime) and how it is
+        # rendered / shown (steps, Turbo, sound, show early, No-LoRA) — one line overflowed.
+        _l1 = ttk.Frame(h3_row)
+        _l1.pack(side=tk.TOP, fill=tk.X, anchor=tk.W)
+        _l2 = ttk.Frame(h3_row)
+        _l2.pack(side=tk.TOP, fill=tk.X, anchor=tk.W, pady=(4, 0))
+        ttk.Label(_l1, text="Length:").pack(side=tk.LEFT, padx=(0, 4))
         self.repair_h3_frames_var = tk.StringVar(
             value=str(self.last_used.get("repair_h3_frames", "22 frames (~1s)")))
-        _len = ttk.Combobox(h3_row, textvariable=self.repair_h3_frames_var, state="readonly",
+        _len = ttk.Combobox(_l1, textvariable=self.repair_h3_frames_var, state="readonly",
                             width=24, values=list(self._REPAIR_H3_LENGTHS))
         _len.pack(side=tk.LEFT, padx=(0, 12))
         _len.bind("<<ComboboxSelected>>", lambda e: self._on_repair_h3_clip_changed())
-        ttk.Label(h3_row, text="Size:").pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Label(_l1, text="Size:").pack(side=tk.LEFT, padx=(0, 4))
         self.repair_h3_lower_var = tk.BooleanVar(
             value=bool(self.last_used.get("repair_h3_allow_lower", False)))
         self.repair_h3_size_var = tk.StringVar(
             value=str(self.last_used.get("repair_h3_size", "768 × 640  (landscape)")))
         self._repair_h3_size_combo = ttk.Combobox(
-            h3_row, textvariable=self.repair_h3_size_var, state="readonly", width=20,
+            _l1, textvariable=self.repair_h3_size_var, state="readonly", width=20,
             values=self._repair_h3_size_values())
         self._repair_h3_size_combo.pack(side=tk.LEFT, padx=(0, 4))
         self._repair_h3_size_combo.bind("<<ComboboxSelected>>",
                                         lambda e: self._on_repair_h3_clip_changed())
-        _low = ttk.Checkbutton(h3_row, text="allow lower", variable=self.repair_h3_lower_var,
+        _low = ttk.Checkbutton(_l1, text="allow lower", variable=self.repair_h3_lower_var,
                                command=self._on_repair_h3_lower_toggled)
         _low.pack(side=tk.LEFT, padx=(0, 12))
         ToolTip(_low, "Unlock 576 and 512 short sides. Below 640 H3 drifts off its trained "
                       "canvas — fine for a quick block read, not for judging quality.")
-        ttk.Label(h3_row, text="Dial size:").pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Label(_l1, text="Dial size:").pack(side=tk.LEFT, padx=(0, 4))
         self.repair_h3_dial_scale_var = tk.StringVar(
             value=str(self.last_used.get("repair_h3_dial_scale", "⅔")))
-        _ds = ttk.Combobox(h3_row, textvariable=self.repair_h3_dial_scale_var, state="readonly",
+        _ds = ttk.Combobox(_l1, textvariable=self.repair_h3_dial_scale_var, state="readonly",
                            width=5, values=list(self._REPAIR_H3_DIAL_SCALES))
         _ds.pack(side=tk.LEFT, padx=(0, 12))
         _ds.bind("<<ComboboxSelected>>", lambda e: self._on_repair_h3_clip_changed())
         ToolTip(_ds, "Dial renders at this fraction of the Size (⅔ of 768×640 is 512×416 — "
                      "about twice as fast). Confirm always renders at the full Size. The "
                      "small render is exact at its size; framing can differ from full size.")
-        ttk.Label(h3_row, text="Regime:").pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Label(_l1, text="Regime:").pack(side=tk.LEFT, padx=(0, 4))
         self.repair_h3_regime_var = tk.StringVar(
             value=str(self.last_used.get("repair_h3_regime", "dial")))
         # Each regime's numbers — the preset until you type your own (remembered per regime).
@@ -19901,22 +19907,22 @@ class LoRATrainerGUI:
                 ("confirm", "Confirm (6 steps, Turbo 0.75)",
                  "The render that matches in-training previews — 6 steps at 0.75. Use it "
                  "to confirm what the Dial showed before saving.")):
-            _rb = ttk.Radiobutton(h3_row, text=_txt, variable=self.repair_h3_regime_var,
+            _rb = ttk.Radiobutton(_l1, text=_txt, variable=self.repair_h3_regime_var,
                                   value=_val, style="Surface.TRadiobutton",
                                   command=self._on_repair_h3_regime_changed)
             _rb.pack(side=tk.LEFT, padx=(0, 10))
             ToolTip(_rb, _tip)
         _st0, _tu0 = self._repair_h3_regime_params.get(self.repair_h3_regime_var.get() or "dial",
                                                        [4, 1.0])
-        ttk.Label(h3_row, text="Steps:").pack(side=tk.LEFT, padx=(0, 3))
+        ttk.Label(_l2, text="Steps:").pack(side=tk.LEFT, padx=(0, 3))
         self.repair_h3_steps_var = tk.StringVar(value=str(int(_st0)))
-        _se = ttk.Entry(h3_row, textvariable=self.repair_h3_steps_var, width=3)
+        _se = ttk.Entry(_l2, textvariable=self.repair_h3_steps_var, width=3)
         _se.pack(side=tk.LEFT, padx=(0, 8))
         ToolTip(_se, "Model passes for this regime — the preset is Dial 4 / Confirm 6; type "
                      "your own (1–40). Remembered per regime.")
-        ttk.Label(h3_row, text="Turbo:").pack(side=tk.LEFT, padx=(0, 3))
+        ttk.Label(_l2, text="Turbo:").pack(side=tk.LEFT, padx=(0, 3))
         self.repair_h3_turbo_var = tk.StringVar(value=f"{float(_tu0):g}")
-        _te = ttk.Entry(h3_row, textvariable=self.repair_h3_turbo_var, width=4)
+        _te = ttk.Entry(_l2, textvariable=self.repair_h3_turbo_var, width=4)
         _te.pack(side=tk.LEFT, padx=(0, 10))
         ToolTip(_te, "Strength of the built-in Turbo LoRA for this regime (preset Dial 1.0 / "
                      "Confirm 0.75). 0 switches it off — the render is the base plus your "
@@ -19928,7 +19934,7 @@ class LoRATrainerGUI:
         self.repair_h3_sound_var = tk.BooleanVar(
             value=bool(self.last_used.get("repair_h3_sound", True)))
         self._repair_h3_sound_chk = ttk.Checkbutton(
-            h3_row, text="Sound", variable=self.repair_h3_sound_var,
+            _l2, text="Sound", variable=self.repair_h3_sound_var,
             command=self._on_repair_h3_clip_changed)
         self._repair_h3_sound_chk.pack(side=tk.LEFT)
         ToolTip(self._repair_h3_sound_chk,
@@ -19936,7 +19942,7 @@ class LoRATrainerGUI:
                 "path set on the Preferences tab.")
         self.repair_h3_early_var = tk.BooleanVar(
             value=bool(self.last_used.get("repair_h3_early", True)))
-        _early = ttk.Checkbutton(h3_row, text="Show early", variable=self.repair_h3_early_var,
+        _early = ttk.Checkbutton(_l2, text="Show early", variable=self.repair_h3_early_var,
                                  command=self._on_repair_h3_early_toggled)
         _early.pack(side=tk.LEFT, padx=(10, 0))
         ToolTip(_early, "Put a rough picture up after the second pass while the remaining "
@@ -19945,7 +19951,7 @@ class LoRATrainerGUI:
                         "later (one extra decode).")
         self.repair_h3_nolora_var = tk.BooleanVar(
             value=bool(self.last_used.get("repair_h3_nolora", False)))
-        _nol = ttk.Checkbutton(h3_row, text="No-LoRA clip", variable=self.repair_h3_nolora_var,
+        _nol = ttk.Checkbutton(_l2, text="No-LoRA clip", variable=self.repair_h3_nolora_var,
                                command=self._on_repair_h3_nolora_toggled)
         _nol.pack(side=tk.LEFT, padx=(10, 0))
         ToolTip(_nol, "Also render the same seed and prompt with no LoRA at all, shown as a "

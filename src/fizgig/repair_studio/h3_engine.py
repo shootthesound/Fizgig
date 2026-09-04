@@ -25,6 +25,7 @@ import gc
 import hashlib
 import logging
 import os
+import re
 import threading
 from typing import Optional, Set
 
@@ -50,6 +51,33 @@ def _apply_lora(target, sd, multiplier, device, dtype):
     load leaves lora_up at zero and the LoRA contributes nothing)."""
     from fizgig.networks.lora import create_network_from_weights, ensure_kohya_lora_state_dict
     sd = ensure_kohya_lora_state_dict(sd)
+    # Only standard-LoRA modules whose target Linear exists on THIS base with matching shapes
+    # become modules — the same prefilter load_preview_turbo applies. A Turbo LoRA's 2688-wide
+    # AdaLN rows fail that on the pruned base (they are injected at render time instead,
+    # see _collect_adaln_pairs); until 4 Sep they were built as modules anyway and blew up in
+    # the first forward. LyCORIS modules (no lora_down) pass through untouched.
+    linears = {f"lora_unet_{n.replace('.', '_')}": m
+               for n, m in target.named_modules() if isinstance(m, torch.nn.Linear)}
+    keep, dropped = {}, []
+    for name in sorted({k.split(".")[0] for k in sd if "." in k}):
+        down = sd.get(f"{name}.lora_down.weight")
+        up = sd.get(f"{name}.lora_up.weight")
+        if down is not None and up is not None:
+            m = linears.get(name)
+            if not (m is not None and down.shape[1] == m.in_features
+                    and up.shape[0] == m.out_features):
+                dropped.append(name)
+                continue
+        for k, v in sd.items():
+            if k.split(".")[0] == name:
+                keep[k] = v
+    if dropped:
+        logger.info("%d LoRA modules don't fit the loaded base and are not wired as modules "
+                    "(AdaLN rows are injected separately): %s%s", len(dropped),
+                    ", ".join(dropped[:3]), "…" if len(dropped) > 3 else "")
+    if not keep:
+        raise RuntimeError("no module in this LoRA matches the loaded base — wrong file?")
+    sd = keep
     net = create_network_from_weights(None, float(multiplier), sd, None, target, for_inference=True)
     net.apply_to(text_encoders=None, unet=target, apply_text_encoder=False, apply_unet=True)
     net.load_state_dict(sd, strict=False)
@@ -66,6 +94,31 @@ def _apply_lora(target, sd, multiplier, device, dtype):
         if w is not None and w.dtype == torch.float32:
             m.to(torch.float32)
     return net
+
+
+def _collect_adaln_pairs(dit, sd):
+    """The full-model AdaLN rows of a LoRA that the pruned base cannot host as modules —
+    the same matching load_preview_turbo does for the built-in Turbo. Returns
+    [(lora_name, adaln_module, A, B)] with B UNscaled (the engine folds strength and the
+    block's slider in at install time). Empty for a LoRA without AdaLN keys."""
+    try:
+        parents = {f"lora_unet_{n.replace('.', '_')}_linear": m
+                   for n, m in dit.named_modules() if type(m).__name__ == "AdalnProj"}
+    except Exception:
+        return []
+    if not parents:
+        return []
+    out = []
+    for name in sorted({k.split(".")[0] for k in sd}):
+        ap = parents.get(name)
+        if ap is None:
+            continue
+        down = sd.get(f"{name}.lora_down.weight")
+        up = sd.get(f"{name}.lora_up.weight")
+        if down is None or up is None or up.shape[0] != ap.linear.out_features:
+            continue
+        out.append((name, ap, down.clone(), up.clone()))
+    return out
 
 
 class H3RepairEngine:
@@ -95,7 +148,12 @@ class H3RepairEngine:
         self._steps = 20               # 6 when the Turbo LoRA loads
         self._turbo_strength = 0.75    # the strength the Turbo was loaded at (Confirm regime)
         self._turbo_load_strength = 0.75   # what the AdaLN injection pairs were folded at
-        self._turbo_adaln_on = 0.0         # the strength the AdaLN rows are installed at now
+        self._primary_adaln = []           # (name, module, A, B) — a Turbo LoRA loaded as primary
+        self._donor_adaln = []
+        self._adaln_installed = None       # signature of the injection installed right now
+        self._adaln_no_lora = False        # a no-LoRA render is in progress: LoRA rows stay out
+        self._adaln_bid = {}               # lora_name -> block id (memo)
+        self._last_state = None
         # Lazily-loaded, CPU-parked between uses: the audio VAE decoder (previews with
         # sound) and the video VAE ENCODER (first/last-frame keyframes). Both optional.
         self._audio_vae_path = None
@@ -167,16 +225,28 @@ class H3RepairEngine:
         if turbo_lora_path and os.path.exists(turbo_lora_path):
             try:
                 from fizgig.minimax.trainer import load_preview_turbo, turbo_adaln_patch
-                self._turbo_net, self._turbo_adaln = load_preview_turbo(
+                self._turbo_net, _folded = load_preview_turbo(
                     self.dit, turbo_lora_path, float(turbo_lora_strength))
                 self._turbo_net.to(device=device, dtype=self.dtype)
                 for _m in self._turbo_net.unet_loras:
                     _m.enabled = True
-                n_ad = turbo_adaln_patch(self.dit, self._turbo_adaln, device, self.dtype)
+                # Keep the AdaLN rows UNSCALED (load_preview_turbo folds the load strength
+                # into B; rescaling that bf16 fold to another strength is not exact) — the
+                # composer folds the dialled strength in at install time, exactly.
+                try:
+                    from safetensors.torch import load_file as _lf
+                    from fizgig.networks.lora import ensure_kohya_lora_state_dict as _ek
+                    self._turbo_adaln = [(m, a, b) for _nm, m, a, b in
+                                         _collect_adaln_pairs(self.dit, _ek(_lf(turbo_lora_path)))]
+                except Exception:
+                    logger.exception("Turbo AdaLN rows: unscaled collection failed — using the folded ones")
+                    self._turbo_adaln = [(m, a, b / float(turbo_lora_strength)) for m, a, b in _folded]                         if abs(float(turbo_lora_strength)) > 1e-9 else []
                 self._steps = 6
                 self._turbo_strength = float(turbo_lora_strength)
                 self._turbo_load_strength = float(turbo_lora_strength)
-                self._turbo_adaln_on = float(turbo_lora_strength) if n_ad else 0.0
+                self._adaln_installed = None
+                self._reinstall_adaln()
+                n_ad = len(self._adaln_installed or ())
                 logger.info("[h3-workbench] Turbo LoRA on for all previews — 6 steps at %g"
                             + (", %d adaln injected" % n_ad if n_ad else ""),
                             float(turbo_lora_strength))
@@ -263,33 +333,94 @@ class H3RepairEngine:
             _m.enabled = abs(s) > 1e-9
             _m.multiplier = s
         self._turbo_strength = s
-        self._apply_turbo_adaln(s)
+        self._reinstall_adaln()
 
-    def _apply_turbo_adaln(self, strength: float) -> None:
-        """Install the Turbo AdaLN injection at `strength` (0 = remove it). Instance-attribute
-        forwards, so removal is a plain delete — see trainer.turbo_adaln_patch."""
-        pairs = getattr(self, "_turbo_adaln", None) or []
-        cur = float(getattr(self, "_turbo_adaln_on", 0.0) or 0.0)
-        s = float(strength)
-        if not pairs or abs(s - cur) < 1e-9:
+    def _block_factor(self, state, name, which):
+        """The slider factor a LoRA's AdaLN row gets: its block's strength (0 when the block is
+        off), 1.0 for a row no block pattern claims. Memoised name -> block id."""
+        if state is None:
+            return 1.0
+        memo = getattr(self, "_adaln_bid", None)
+        if memo is None:
+            memo = self._adaln_bid = {}
+        bid = memo.get(name)
+        if bid is None:
+            bid = ""
+            for cand in state.blocks:
+                try:
+                    if re.search(block_regex_h3(cand), name):
+                        bid = cand
+                        break
+                except ValueError:
+                    continue
+            memo[name] = bid
+        bs = state.blocks.get(bid) if bid else None
+        if bs is None:
+            # A row no block owns (the final layer's): on while any block of that LoRA is
+            # on, off when every block is off — so "all off" really is the LoRA out.
+            for row in state.blocks.values():
+                on = row.primary_enabled if which == "primary" else row.donor_enabled
+                strength = row.primary_strength if which == "primary" else row.donor_strength
+                if on and abs(float(strength)) > 1e-9:
+                    return 1.0
+            return 0.0
+        on = bs.primary_enabled if which == "primary" else bs.donor_enabled
+        strength = bs.primary_strength if which == "primary" else bs.donor_strength
+        return float(strength) if on else 0.0
+
+    def _adaln_pairs_now(self, no_lora=False):
+        """Everything the AdaLN injection should add right now, as (module, A, B·factor):
+        the built-in Turbo's rows at the dialled strength, plus the primary's / donor's
+        rows at their load strength × block slider —
+        none of the LoRAs' rows for a no-LoRA render."""
+        pairs, sig = [], []
+        turbo = getattr(self, "_turbo_adaln", None) or []          # unscaled rows
+        ts = float(getattr(self, "_turbo_strength", 0.0) or 0.0)
+        if turbo and abs(ts) > 1e-9:
+            f = ts
+            for m, a, b in turbo:
+                pairs.append((m, a, b * f))
+                sig.append((id(m), id(a), round(f, 6)))
+        if not no_lora:
+            st = getattr(self, "_last_state", None)
+            for plist, which in ((getattr(self, "_primary_adaln", None) or [], "primary"),
+                                 (getattr(self, "_donor_adaln", None) or [], "donor")):
+                scale = float(getattr(st, f"{which}_scale", 1.0)) if st is not None else 1.0
+                for name, m, a, b in plist:
+                    f = scale * self._block_factor(st, name, which)
+                    if abs(f) < 1e-9:
+                        continue
+                    pairs.append((m, a, b * f))
+                    sig.append((id(m), id(a), round(f, 6)))
+        return pairs, tuple(sig)
+
+    def _reinstall_adaln(self, no_lora=None):
+        """(Re)install the AdaLN injection when what it should contain changed — see
+        _adaln_pairs_now. Instance-attribute forwards, so removal is a plain delete.
+        no_lora=None reads the render's sticky flag (set for a no-LoRA render)."""
+        if getattr(self, "dit", None) is None:
             return
-        for mod, _a, _b in pairs:
-            if "forward" in mod.__dict__:
-                del mod.forward
-        self._turbo_adaln_on = 0.0
-        if abs(s) < 1e-9:
+        if no_lora is None:
+            no_lora = bool(getattr(self, "_adaln_no_lora", False))
+        pairs, sig = self._adaln_pairs_now(no_lora)
+        if sig == getattr(self, "_adaln_installed", None):
             return
-        load = float(getattr(self, "_turbo_load_strength", 0.0) or 0.0)
-        if abs(load) < 1e-9:
-            return                      # folded at 0 — nothing to rescale
+        mods = {id(m): m for m, _a, _b in (getattr(self, "_turbo_adaln", None) or [])}
+        for plist in (getattr(self, "_primary_adaln", None) or [], getattr(self, "_donor_adaln", None) or []):
+            for _n, m, _a, _b in plist:
+                mods[id(m)] = m
+        for m in mods.values():
+            if "forward" in m.__dict__:
+                del m.forward
+        self._adaln_installed = ()
+        if not pairs:
+            return
         try:
             from fizgig.minimax.trainer import turbo_adaln_patch
-            f = s / load
-            n = turbo_adaln_patch(self.dit, [(m, a, b * f) for m, a, b in pairs],
-                                  self.device, self.dtype)
-            self._turbo_adaln_on = s if n else 0.0
+            turbo_adaln_patch(self.dit, pairs, self.device, self.dtype)
+            self._adaln_installed = sig
         except Exception:
-            logger.exception("Turbo AdaLN re-injection failed — rows stay off at this strength")
+            logger.exception("AdaLN injection failed — rows stay off")
 
     # ----- keyframes ---------------------------------------------------------
     @torch.no_grad()
@@ -321,9 +452,19 @@ class H3RepairEngine:
         if self.primary_network is not None:
             raise RuntimeError("Primary already loaded — call reset() to swap.")
         from safetensors.torch import load_file
-        self.primary_network = _apply_lora(self.dit, load_file(path), 1.0, self.device, self.dtype)
+        from fizgig.networks.lora import ensure_kohya_lora_state_dict
+        sd = ensure_kohya_lora_state_dict(load_file(path))
+        self.primary_network = _apply_lora(self.dit, sd, 1.0, self.device, self.dtype)
         self.primary_path = path
         self.primary_block_ids = extract_block_ids_h3(self.primary_network)
+        # A Turbo LoRA's AdaLN rows (full-model space) can't be modules on the pruned base —
+        # they are injected at render time like the built-in Turbo's, scaled by the load
+        # strength and each block's slider (missing until 4 Sep: a Turbo LoRA edited as the
+        # primary lost its modulation and rendered badly at few steps).
+        self._primary_adaln = _collect_adaln_pairs(self.dit, sd)
+        if self._primary_adaln:
+            logger.info("H3 primary carries %d AdaLN rows — injected at render time",
+                        len(self._primary_adaln))
         self._invalidate_baseline_cache()
         try:
             from fizgig.profiler.visualize import compute_lora_hash
@@ -369,9 +510,12 @@ class H3RepairEngine:
         if self.donor_network is not None:
             raise RuntimeError("Donor already loaded — unload_donor() or reset() first.")
         from safetensors.torch import load_file
-        net = _apply_lora(self.dit, load_file(path), 1.0, self.device, self.dtype)
+        from fizgig.networks.lora import ensure_kohya_lora_state_dict
+        sd = ensure_kohya_lora_state_dict(load_file(path))
+        net = _apply_lora(self.dit, sd, 1.0, self.device, self.dtype)
         net.set_enabled(False)  # donor blocks are opt-in per-slider
         self.donor_network = net
+        self._donor_adaln = _collect_adaln_pairs(self.dit, sd)
         self.donor_path = path
         self.donor_block_ids = extract_block_ids_h3(net)
         try:
@@ -388,6 +532,8 @@ class H3RepairEngine:
             self.donor_path = None
             self.donor_hash = None
             self.donor_block_ids = set()
+            self._donor_adaln = []
+            self._reinstall_adaln()
 
     def cache_key_for(self, state, *, frames, regime, steps=None, turbo_strength=None,
                       **_ignored) -> Optional[str]:
@@ -424,6 +570,8 @@ class H3RepairEngine:
             if self.donor_network is not None:
                 self.donor_network.set_module_enabled_by_pattern(pat, bool(bs.donor_enabled))
                 self.donor_network.set_module_multiplier_by_pattern(pat, float(bs.donor_strength) * ds)
+        self._last_state = state
+        self._reinstall_adaln()
 
     # ----- cancellation ------------------------------------------------------
     def request_cancel(self) -> None:
@@ -613,6 +761,11 @@ class H3RepairEngine:
             self.primary_network.set_enabled(False)
             if self.donor_network is not None:
                 self.donor_network.set_enabled(False)
+            # Sticky for the whole render: set_turbo_strength below re-composes the
+            # injection and must keep the LoRAs' rows out (it didn't — the "no LoRA"
+            # render carried the primary's AdaLN rows, 4 Sep).
+            self._adaln_no_lora = True
+            self._reinstall_adaln()
         prompt = prompt if prompt is not None else state.prompt
         seed = seed if seed is not None else state.seed
         width = width or state.preview_width
@@ -703,7 +856,8 @@ class H3RepairEngine:
         finally:
             if no_lora and self.primary_network is not None:
                 self.primary_network.set_enabled(True)
-                self.apply_state(state)               # per-block flags back as they were
+                self._adaln_no_lora = False
+                self.apply_state(state)               # per-block flags + AdaLN rows back
         lat = lat.detach().float().cpu()
         audio = audio.detach().float().cpu() if audio is not None else None
         return lat, audio
@@ -1089,12 +1243,19 @@ class H3RepairEngine:
         try:
             from fizgig.minimax.trainer import turbo_adaln_unpatch
             turbo_adaln_unpatch(self._turbo_adaln)
+            turbo_adaln_unpatch([(m, a, b) for _n, m, a, b in
+                                 (self._primary_adaln or []) + (self._donor_adaln or [])])
         except Exception:
             pass
         self.primary_network = None
         self.donor_network = None
         self._turbo_net = None
         self._turbo_adaln = []
+        self._primary_adaln = []
+        self._donor_adaln = []
+        self._adaln_installed = None
+        self._adaln_bid = {}
+        self._last_state = None
         # Field leak (19 Aug): the whole DiT survived reset, pinned from outside the engine
         # (~1657 params alive, 20 GB). Dropping our reference isn't enough for a pinned
         # module — strip its storages so the VRAM comes back regardless of the holder.

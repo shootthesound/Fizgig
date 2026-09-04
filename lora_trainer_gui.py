@@ -23700,6 +23700,26 @@ class LoRATrainerGUI:
 
         if getattr(self, "_repair_loading", False):
             return   # a load is already in flight
+        # A render or the library builder mid-forward would make the swap below refuse (and
+        # the old code then loaded onto a live primary — "Primary already loaded", 4 Sep).
+        # Cancel them and come back in a moment instead of blocking the UI.
+        _busy = (getattr(self, "_repair_preview_in_flight", False)
+                 or (self._repair_cache_thread is not None and self._repair_cache_thread.is_alive()))
+        if self.repair_engine is not None and _busy:
+            n = getattr(self, "_repair_start_retries", 0)
+            if n < 80:
+                self._repair_start_retries = n + 1
+                self._repair_swap_wanted = True          # the aborted render must not re-fire
+                try:
+                    self.repair_engine.request_cancel()
+                except Exception:
+                    pass
+                self._repair_cache_stop_build(wait_s=0.0)
+                self.repair_status_var.set("Stopping the current render, then loading…")
+                self._repair_start_after = self.master.after(250, self._repair_start)
+                return
+        self._repair_start_retries = 0
+        self._repair_swap_wanted = False
 
         # The loads run on worker threads (a 10-20 GB pipeline load froze the UI here), so
         # the primary → donor → preview order is kept by chaining completions rather than by
@@ -23716,7 +23736,9 @@ class LoRATrainerGUI:
                 or self.repair_engine.primary_network is None:
             # New or changed primary — reset and reload
             if self.repair_engine is not None and self.repair_engine.primary_network is not None:
-                self._reset_repair_session()
+                if not self._reset_repair_session():
+                    self._repair_reset_start_button()
+                    return                       # busy: nothing loaded onto the live primary
                 import gc, torch
                 gc.collect()
                 if torch.cuda.is_available():
@@ -23786,9 +23808,11 @@ class LoRATrainerGUI:
 
         def _work():
             try:
-                if plan:
-                    engine.ensure_pipeline(**plan)
-                engine.load_primary(path)
+                # Under the engine lock: nothing renders on the engine while it is built.
+                with self._repair_engine_lock:
+                    if plan:
+                        engine.ensure_pipeline(**plan)
+                    engine.load_primary(path)
                 err = None
             except Exception as ex:
                 import traceback
@@ -24043,6 +24067,12 @@ class LoRATrainerGUI:
 
     def _run_preview_async(self):
         self._repair_preview_after_id = None
+        if getattr(self, "_repair_loading", False):
+            # The engine is being (re)built on a worker thread — a render now would run on
+            # a half-loaded engine (froze the app 4 Sep). The load's completion schedules
+            # the preview itself.
+            print("[repair] run_async: engine loading — the load will render when it lands")
+            return
         if self._repair_preview_in_flight:
             # A preview is running. Mark dirty so its completion hook
             # (_set_repair_preview_images) fires a fresh preview once it lands.
@@ -24314,8 +24344,9 @@ class LoRATrainerGUI:
                 self._repair_progress_end()
                 self._repair_preview_in_flight = False
                 self._repair_preview_dirty = False
-                if getattr(self, "_repair_unload_wanted", False):
-                    return   # the abort came from a pending tab-switch unload — don't re-fire
+                if getattr(self, "_repair_unload_wanted", False) \
+                        or getattr(self, "_repair_swap_wanted", False):
+                    return   # a pending unload / LoRA swap owns the engine next — don't re-fire
                 self._schedule_preview(force=True)
             self.master.after(0, _refire)
         except Exception:
@@ -26394,7 +26425,16 @@ class LoRATrainerGUI:
         if getattr(self, "_repair_preview_in_flight", False):
             messagebox.showinfo("Busy", "A preview is still rendering — wait for it to finish "
                                 "before resetting the session.")
-            return
+            return False
+        # A queued preview must not fire into the reset / reload (it did — the aborted
+        # render's re-fire landed on a half-loaded engine, 4 Sep).
+        if self._repair_preview_after_id is not None:
+            try:
+                self.master.after_cancel(self._repair_preview_after_id)
+            except Exception:
+                pass
+            self._repair_preview_after_id = None
+        self._repair_preview_dirty = False
         # Close pop-out preview window if open; stop the library builder (it holds the engine
         # mid-render — a reset under it would hang on CUDA).
         self._repair_clip_player_close()
@@ -26403,7 +26443,7 @@ class LoRATrainerGUI:
         if not self._repair_cache_stop_build(wait_s=20.0):
             messagebox.showinfo("Busy", "The library builder is still finishing its render — "
                                 "try again in a moment.")
-            return
+            return False
         self._repair_cache = None
         self._repair_peek = None
         self._repair_set_tweaked_title(None, "")
@@ -26477,6 +26517,7 @@ class LoRATrainerGUI:
         except Exception:
             pass
         self.repair_status_var.set("Session reset. Load a primary LoRA to start.")
+        return True
 
     def _find_repair_profile_match(self):
         """Look up a Profiler sidecar whose hash matches the loaded primary.

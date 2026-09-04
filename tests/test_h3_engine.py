@@ -119,6 +119,9 @@ class _MiniEngine:
     bound onto a stub, so the no-LoRA path is the shipped code."""
     render_latent = _H3E.render_latent
     apply_state = _H3E.apply_state
+    _reinstall_adaln = _H3E._reinstall_adaln
+    _adaln_pairs_now = _H3E._adaln_pairs_now
+    _block_factor = _H3E._block_factor
 
     def __init__(self):
         self.dit, self.primary_network, self.donor_network = dit, net, None
@@ -210,7 +213,6 @@ ck("SliderState carries the scales through copy / json",
 
 _eng._turbo_net, _eng._turbo_adaln = net, []
 _eng.REGIMES = _big.REGIMES = _H3E.REGIMES
-_eng._apply_turbo_adaln = _H3E._apply_turbo_adaln.__get__(_eng)
 ck("regime_params: presets", _eng.__class__.__dict__.get("regime_params") is None
    and _H3E.regime_params(_eng, "dial") == (4, 1.0) and _H3E.regime_params(_eng, "confirm") == (6, 0.75))
 ck("regime_params: dialled numbers override, 0 = Turbo off",
@@ -337,4 +339,72 @@ print()
 if _fails:
     print(f"{len(_fails)} FAILED: " + ", ".join(_fails))
     sys.exit(1)
+
+# --- the AdaLN injection is composed from the built-in Turbo AND a Turbo LoRA loaded as primary -----
+class _FakeMod:
+    pass
+
+
+_m0, _m2, _mt = _FakeMod(), _FakeMod(), _FakeMod()
+_A, _B = torch.ones(2, 4), torch.ones(6, 2)
+_ce = _MiniEngine()
+_ce._turbo_adaln = [(_mt, _A, _B)]                  # built-in rows, unscaled
+_ce._turbo_strength, _ce._turbo_load_strength = 1.0, 0.75
+_ce._primary_adaln = [("lora_unet_blocks_0_adaln_linear", _m0, _A, _B),
+                      ("lora_unet_blocks_2_adaln_linear", _m2, _A, _B)]
+_ce._donor_adaln = []
+_mf = _FakeMod()
+_ce._primary_adaln.append(("lora_unet_final_layer_adaln_proj_linear", _mf, _A, _B))   # no block owns it
+_stc = _SS.default_h3()
+_stc.primary_scale = 0.8
+_stc.blocks["h3blk_2"].primary_strength = 0.5
+_ce._last_state = _stc
+_pairs, _sig = _ce._adaln_pairs_now()
+_fac = {id(m): float(b[0, 0]) for m, a, b in _pairs}
+ck("AdaLN rows: built-in at the dialled 1.0, primary block 0 at 0.8, block 2 at 0.8x0.5",
+   abs(_fac[id(_mt)] - 1.0) < 1e-6 and abs(_fac[id(_m0)] - 0.8) < 1e-6 and abs(_fac[id(_m2)] - 0.4) < 1e-6, _fac)
+_stc.blocks["h3blk_0"].primary_enabled = False
+_pairs, _ = _ce._adaln_pairs_now()
+ck("...a block switched off drops its AdaLN row", id(_m0) not in {id(m) for m, a, b in _pairs})
+ck("...the final-layer row (no block owns it) rides at the load strength while any block is on",
+   abs({id(m): float(b[0, 0]) for m, a, b in _pairs}[id(_mf)] - 0.8) < 1e-6)
+for _row in _stc.blocks.values():
+    _row.primary_enabled = False
+_pairs, _ = _ce._adaln_pairs_now()
+ck("...and goes with every block off (the LoRA is out)", id(_mf) not in {id(m) for m, a, b in _pairs}
+   and id(_m2) not in {id(m) for m, a, b in _pairs})
+for _row in _stc.blocks.values():
+    _row.primary_enabled = True
+_stc.blocks["h3blk_0"].primary_enabled = False
+_ce._turbo_strength = 0.0
+_pairs, _ = _ce._adaln_pairs_now()
+ck("...Turbo at 0 drops the built-in rows, keeps the primary's", {id(m) for m, a, b in _pairs} == {id(_m2), id(_mf)})
+_pairs, _ = _ce._adaln_pairs_now(no_lora=True)
+ck("...a no-LoRA render installs nothing (Turbo 0)", not _pairs)
+_ce._turbo_strength = 0.6
+_pairs, _ = _ce._adaln_pairs_now(no_lora=True)
+ck("...a no-LoRA render keeps only the built-in Turbo rows", {id(m) for m, a, b in _pairs} == {id(_mt)}
+   and abs({id(m): float(b[0, 0]) for m, a, b in _pairs}[id(_mt)] - 0.6) < 1e-6)
+ck("_collect_adaln_pairs: a LoRA without AdaLN keys yields none on the tiny DiT",
+   _H3E.__module__ and __import__("fizgig.repair_studio.h3_engine", fromlist=["_collect_adaln_pairs"])._collect_adaln_pairs(dit, sd) == [])
+
+
+# --- _apply_lora prefilters modules to the base's Linears (a Turbo LoRA's AdaLN rows are not modules) -
+_sd2 = dict(sd)
+_bad = "lora_unet_blocks_1_attn_qkv_proj"          # exists, but with the WRONG in_features
+_sd2[f"{_bad}.lora_down.weight"] = torch.randn(4, 999) * 0.1
+_sd2[f"{_bad}.lora_up.weight"] = torch.randn(dict(dit.named_modules())["blocks.1.attn.qkv_proj"].out_features, 4) * 0.1
+_sd2[f"{_bad}.alpha"] = torch.tensor(4.0)
+_sd2["lora_unet_nowhere_linear.lora_down.weight"] = torch.randn(4, 8)
+_sd2["lora_unet_nowhere_linear.lora_up.weight"] = torch.randn(8, 4)
+_net2 = _apply_lora(dit, _sd2, 1.0, "cpu", torch.float32)
+ck("mismatched / unknown modules are dropped, the 3 that fit are wired",
+   len(_net2.unet_loras) == 3 and _bad not in {m.lora_name for m in _net2.unet_loras})
+try:
+    _apply_lora(dit, {"lora_unet_nowhere_linear.lora_down.weight": torch.randn(4, 8),
+                      "lora_unet_nowhere_linear.lora_up.weight": torch.randn(8, 4)}, 1.0, "cpu", torch.float32)
+    ck("a LoRA with nothing that fits is refused", False)
+except RuntimeError:
+    ck("a LoRA with nothing that fits is refused", True)
+
 print("ALL PASS")

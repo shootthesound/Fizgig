@@ -230,6 +230,25 @@ try:
     ck("status names the steps + length", "4 steps" in app.repair_status_var.get()
        and "5 frames" in app.repair_status_var.get(), app.repair_status_var.get())
     ck("in-flight cleared", not app._repair_preview_in_flight)
+    # Update while a render is in flight: never loads onto the live primary — it cancels and
+    # comes back (the old path raised "Primary already loaded")
+    app._repair_preview_in_flight = True
+    app._repair_start_retries = 0
+    _orig_primary = app.repair_primary_var.get()
+    app.repair_primary_var.set(os.path.abspath(__file__))       # exists, differs from the loaded one
+    app._repair_start()
+    ck("Start while busy: cancels, retries later, no reset / load",
+       app._repair_start_retries == 1 and "Stopping the current render" in app.repair_status_var.get()
+       and app.repair_engine is not None, app.repair_status_var.get())
+    root.after_cancel(app._repair_start_after)
+    app._repair_preview_in_flight = False
+    app._repair_loading = True
+    app._run_preview_async()
+    ck("no preview starts while the engine is loading", not app._repair_preview_in_flight)
+    app._repair_loading = False
+    app._repair_swap_wanted = False
+    app._repair_start_retries = 0
+    app.repair_primary_var.set(_orig_primary)
     app._repair_popout_preview()
     P = app._repair_player
     ck("player opened via the compare entry point", P is not None and P["win"].winfo_exists())

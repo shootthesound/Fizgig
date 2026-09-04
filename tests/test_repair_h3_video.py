@@ -115,8 +115,8 @@ try:
     app.repair_h3_size_var.set("768 × 512  (landscape)")
     app.repair_h3_lower_var.set(False)
     app._on_repair_h3_lower_toggled()
-    ck("un-ticking with a locked rung selected falls back to square",
-       app.repair_h3_size_var.get() == "768 × 768")
+    ck("un-ticking with a locked rung selected falls back to the default (768×640)",
+       app.repair_h3_size_var.get() == "768 × 640  (landscape)")
     app.repair_h3_frames_var.set("56 frames (~2.3s)")
     ck("length parser", app._repair_h3_frames() == 56)
     app.repair_h3_frames_var.set("Still (1 frame)")

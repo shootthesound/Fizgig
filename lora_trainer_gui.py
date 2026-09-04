@@ -19507,7 +19507,7 @@ class LoRATrainerGUI:
         combo = self._repair_h3_size_combo
         combo.configure(values=self._repair_h3_size_values())
         if self.repair_h3_size_var.get() not in combo["values"]:
-            self.repair_h3_size_var.set("768 × 768")    # a now-locked rung falls back to square
+            self.repair_h3_size_var.set("768 × 640  (landscape)")    # a now-locked rung falls back to the default
             self._on_repair_h3_clip_changed()
         try:
             self.last_used["repair_h3_allow_lower"] = bool(self.repair_h3_lower_var.get())
@@ -19771,7 +19771,7 @@ class LoRATrainerGUI:
         self.repair_h3_lower_var = tk.BooleanVar(
             value=bool(self.last_used.get("repair_h3_allow_lower", False)))
         self.repair_h3_size_var = tk.StringVar(
-            value=str(self.last_used.get("repair_h3_size", "768 × 768")))
+            value=str(self.last_used.get("repair_h3_size", "768 × 640  (landscape)")))
         self._repair_h3_size_combo = ttk.Combobox(
             h3_row, textvariable=self.repair_h3_size_var, state="readonly", width=20,
             values=self._repair_h3_size_values())

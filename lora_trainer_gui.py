@@ -19714,6 +19714,7 @@ class LoRATrainerGUI:
         """Wrap the Repair Studio tab in a vertical scrolling canvas. Returns the
         inner Frame into which all tab content should be placed."""
         outer_canvas = tk.Canvas(tab, highlightthickness=0, bg=COLORS["bg_deep"])
+        self._repair_outer_canvas = outer_canvas
         outer_scroll = ttk.Scrollbar(tab, orient="vertical", command=outer_canvas.yview)
         outer_canvas.configure(yscrollcommand=outer_scroll.set)
         outer_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)

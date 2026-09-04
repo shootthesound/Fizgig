@@ -45,7 +45,7 @@ txt = os.path.join(TMP, "notes.txt")
 open(txt, "w").write("not a photo")
 
 root = tk.Tk()
-root.geometry("1500x1000+0+0")
+root.geometry("1500x1400+0+0")        # the Setup card grew (Model row, multi-line prompt): both slots must be on screen
 root.attributes("-topmost", True)          # winfo_containing must see OUR widgets at the point
 app = G.LoRATrainerGUI(root)
 app.notebook.select(app.repair_studio_tab)
@@ -129,13 +129,18 @@ if app._repair_kf_can_drop:
        os.path.normcase(app.last_used.get("kf_browse_dir", "")) == os.path.normcase(TMP))
     ck("...and the thumb shows it", app._repair_h3_kf_widgets["first"]["thumb"].image is not None)
 
+    # the last slot sits low on a tall tab: scroll it up into the window before dropping
+    app._repair_outer_canvas.yview_moveto(0.3)
+    root.update()
     x2, y2 = thumb_point("last")
     drop(png, x2, y2)
     ck("a photo dropped on the last slot lands in the last slot",
-       app._repair_h3_kf.get("last") == {"path": png, "rect": (0, 0, 48, 48)} and len(crops) == 2)
+       app._repair_h3_kf.get("last") == {"path": png, "rect": (0, 0, 48, 48)} and len(crops) == 2,
+       (app._repair_kf_slot_at(x2, y2), app._repair_h3_kf_widgets["last"]["thumb"].winfo_viewable(), (x2, y2), root.winfo_height()))
 
     app._repair_h3_kf["first"] = None
     app._repair_kf_refresh_thumbs()
+    x, y = thumb_point("first")                   # moved with the scroll above
     n = len(crops)
     app.repair_status_var.set("")
     drop(txt, x, y)

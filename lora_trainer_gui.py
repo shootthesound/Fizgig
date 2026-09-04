@@ -24023,6 +24023,7 @@ class LoRATrainerGUI:
         print(f"[repair] schedule preview: force={force} in_flight={self._repair_preview_in_flight} "
               f"delay={delay}ms dirty={self._repair_preview_dirty}")
         self._repair_preview_after_id = self.master.after(delay, self._run_preview_async)
+        self._repair_clip_player_freshness()
 
     def _run_preview_async(self):
         self._repair_preview_after_id = None
@@ -24090,6 +24091,7 @@ class LoRATrainerGUI:
         self._repair_preview_dirty = False
         self._repair_preview_in_flight = True
         self._repair_render_gen += 1
+        self._repair_clip_player_freshness()
         print(f"[repair] run_async: starting worker w={snapshot.preview_width} "
               f"h={snapshot.preview_height} seed={snapshot.seed} prompt={snapshot.prompt!r}")
         self.repair_status_var.set("Generating preview…" if h3_opts is None else
@@ -24313,6 +24315,7 @@ class LoRATrainerGUI:
                     self.repair_status_var.set("Preview error — see console.")
                 print(err)
                 self._repair_preview_in_flight = False
+                self._repair_clip_player_freshness()
                 # If params changed while we were erroring, still re-fire.
                 if self._repair_preview_dirty:
                     self._repair_preview_dirty = False
@@ -25567,13 +25570,43 @@ class LoRATrainerGUI:
             reg = self._repair_h3_regime_label(clip)
             snd = " · 🔊" if (i == 0 and clip.get("wav_path")) else ""
             src = " · from cache" if clip.get("cached") else ""
-            P["titles"][i].configure(text=f"{names[side]} — {reg}{src}{snd}",
-                                     fg=COLORS["text_primary"])
+            txt = f"{names[side]} — {reg}{src}{snd}"
+            P.setdefault("title_text", {})[i] = txt
+            P["titles"][i].configure(text=txt, fg=COLORS["text_primary"])
+        self._repair_clip_player_freshness()
         if P["n"] == 1:
             self._repair_clip_player_stop()
         self._repair_clip_player_paint(min(P["idx"], P["n"] - 1))
         if P["n"] > 1 and P["playing"]:
             self._repair_clip_player_play(self._repair_clip_player_pos())
+
+    def _repair_clip_player_freshness(self):
+        """A second line under the tweaked pane's title: 'Up to date' when the clip shown is
+        the sliders as they stand, 'Pending refresh…' while a re-render is queued or running,
+        or the library note during a peek. Called by the scheduler, the worker and reload."""
+        P = getattr(self, "_repair_player", None)
+        if P is None:
+            return
+        try:
+            if not P["win"].winfo_exists():
+                return
+        except Exception:
+            return
+        pending = (self._repair_preview_after_id is not None or self._repair_preview_in_flight
+                   or bool(getattr(self, "_repair_preview_dirty", False)))
+        for i, side in enumerate(P["sides"]):
+            if side != "tweaked":
+                continue
+            base = P.get("title_text", {}).get(i)
+            if base is None:
+                continue
+            if getattr(self, "_repair_peek", None):
+                line, col = "Library entry — not your sliders", "#3B9FD8"
+            elif pending:
+                line, col = "Pending refresh…", "#E0A030"
+            else:
+                line, col = "Up to date", COLORS["text_primary"]
+            P["titles"][i].configure(text=f"{base}" + chr(10) + f"{line}", fg=col, justify=tk.CENTER)
 
     def _repair_clip_player_resized(self):
         P = getattr(self, "_repair_player", None)

@@ -235,6 +235,16 @@ try:
     ck("player opened via the compare entry point", P is not None and P["win"].winfo_exists())
     ck("player is playing, 5 frames, sides baseline|tweaked",
        P["playing"] and P["n"] == 5 and P["sides"][:2] == ["baseline", "tweaked"])
+    ck("tweaked pane says Up to date after the clips landed",
+       "Up to date" in P["titles"][1].cget("text"), P["titles"][1].cget("text"))
+    app._on_preview_param_changed()
+    ck("...and Pending refresh the moment a change is queued",
+       "Pending refresh" in P["titles"][1].cget("text"), P["titles"][1].cget("text"))
+    if app._repair_preview_after_id is not None:
+        root.after_cancel(app._repair_preview_after_id); app._repair_preview_after_id = None
+    app._repair_preview_dirty = False
+    app._repair_clip_player_freshness()
+    ck("...and back to Up to date once nothing is queued", "Up to date" in P["titles"][1].cget("text"))
     ck("metrics strip registered on the player window",
        app._repair_popout_window is P["win"] and set(app._repair_popout_metric_lbls) == {
            "likeness", "grid", "texture", "clip", "sat"})

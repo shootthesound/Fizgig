@@ -19314,7 +19314,26 @@ class LoRATrainerGUI:
             "Range ±3.0. Greyed-out rows are blocks the LoRA doesn't touch. "
             "Colour bands match the Profiler's 5-bucket scheme: blue Style+Comp, teal Style/ID, green Identity, olive ID/Detail, orange Details.",
         )
-        self._build_repair_slider_panel(sliders_card)
+        # Bulk row above the sliders (H3 only — shown / hidden with the family): reset, all
+        # off, all on, invert — the primary rows; the donor stays as it is.
+        self._repair_bulk_row = tk.Frame(sliders_card, bg=COLORS["bg_surface"])
+        for _txt, _cmd, _tip in (
+                ("Reset all", self._reset_repair_sliders, "Every slider back to its default."),
+                ("All off", lambda: self._repair_bulk_primary("off"),
+                 "Every block's primary strength to 0 (the LoRA fully out)."),
+                ("All on", lambda: self._repair_bulk_primary("on"),
+                 "Every block's primary strength to 1.0."),
+                ("Invert", lambda: self._repair_bulk_primary("invert"),
+                 "Flip the sign of every block's primary strength.")):
+            _b = ttk.Button(self._repair_bulk_row, text=_txt, command=_cmd, width=9)
+            _b.pack(side=tk.LEFT, padx=(0, 6))
+            ToolTip(_b, _tip + " Primary rows only; one render for the lot.")
+        # The sliders live in their own host: a family switch rebuilds the panel by
+        # destroying the host's children, and the bulk row must survive that.
+        _host = tk.Frame(sliders_card, bg=COLORS["bg_surface"])
+        _host.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        self._repair_sliders_host = _host
+        self._build_repair_slider_panel(_host)
         self._repair_sliders_container = sliders_card.master.master
 
         # Card 5: Actions
@@ -19450,11 +19469,15 @@ class LoRATrainerGUI:
                 self._repair_h3_label.grid()
                 self._repair_h3_row.grid()
                 self._repair_scale_controls(True)
+                if not self._repair_bulk_row.winfo_manager():
+                    self._repair_bulk_row.pack(side=tk.TOP, fill=tk.X, pady=(0, 6),
+                                               before=self._repair_sliders_host)
                 self._refresh_repair_h3_sound_state()
             else:
                 self._repair_h3_label.grid_remove()
                 self._repair_h3_row.grid_remove()
                 self._repair_scale_controls(False)
+                self._repair_bulk_row.pack_forget()
                 if not self._repair_res_label.winfo_manager():
                     # Keep the Res pair ahead of the Turbo tick when that is showing (Klein);
                     # under Krea 2 the tick is hidden and `before=` it would raise.
@@ -26137,6 +26160,27 @@ class LoRATrainerGUI:
         except Exception:
             import traceback
             messagebox.showerror("Error", f"Save failed:\n{traceback.format_exc()}")
+
+    def _repair_bulk_primary(self, what):
+        """All off / All on / Invert for every block's primary strength, one render."""
+        self._repair_master_mutating = True
+        try:
+            for bid, v in self.repair_block_vars.items():
+                var = v.get("primary_strength")
+                if var is None:
+                    continue
+                if what == "off":
+                    var.set(0.0)
+                elif what == "on":
+                    var.set(1.0)
+                else:
+                    try:
+                        var.set(-float(var.get()))
+                    except (TypeError, ValueError):
+                        pass
+        finally:
+            self._repair_master_mutating = False
+        self._schedule_preview(force=True)
 
     def _reset_repair_sliders(self):
         from fizgig.repair_studio.state import SliderState

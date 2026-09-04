@@ -711,8 +711,23 @@ try:
        and torch.allclose((_b - _e)[:, _i21], torch.full_like(_e[:, _i21], 0.8 * (_i21 + 1))),
        (float(_b[0, _i21, 0, 0, 0]), float((_b - _e)[0, _i21, 0, 0, 0])))
     app.repair_primary_scale_var.set("1.0"); app.repair_state.primary_scale = 1.0
+    # bulk row: all off / all on / invert / reset — primary rows, one render
+    ck("bulk row shown under H3", bool(app._repair_bulk_row.winfo_manager()))
+    app._repair_bulk_primary("off")
+    ck("All off: every primary strength 0",
+       all(float(v["primary_strength"].get()) == 0.0 for v in app.repair_block_vars.values()))
+    app._repair_bulk_primary("on")
+    app.repair_block_vars["h3blk_21"]["primary_strength"].set(0.5)
+    app._repair_bulk_primary("invert")
+    ck("Invert flips every sign", float(app.repair_block_vars["h3blk_21"]["primary_strength"].get()) == -0.5
+       and float(app.repair_block_vars["h3blk_0"]["primary_strength"].get()) == -1.0)
+    app._reset_repair_sliders()
+    ck("Reset all: back to 1.0", all(float(v["primary_strength"].get()) == 1.0 for v in app.repair_block_vars.values()))
+    if app._repair_preview_after_id is not None:
+        root.after_cancel(app._repair_preview_after_id); app._repair_preview_after_id = None
     fam("klein")
     ck("strength dials hidden under Klein", all(spin.winfo_manager() == "" for _l, spin in app._repair_scale_widgets))
+    ck("bulk row hidden under Klein", not app._repair_bulk_row.winfo_manager())
     fam("minimax")
 
 finally:

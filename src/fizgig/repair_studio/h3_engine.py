@@ -806,7 +806,12 @@ class H3RepairEngine:
                 self._invalidate_activation_cache()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-            dev = self._resume_cache_device(width, height, frames)
+            # The previous render's cache (same key) is replaced by this one: if it sits on
+            # the GPU it is reclaimable, not "used" — without this the plan flip-flopped
+            # cuda / cpu on alternate renders (Peter's log, 4 Sep).
+            reclaim = (self.resume_cache_gb(width, height, frames)
+                       if entries and getattr(self, "_act_cache_device", None) == "cuda" else 0.0)
+            dev = self._resume_cache_device(width, height, frames, reclaim_gb=reclaim)
             ctx = sampling.BlockCacheContext(entries=entries, resume_from=resume,
                                              cache_device=dev, record_steps={0})
             self.last_resume_from = resume
@@ -831,6 +836,7 @@ class H3RepairEngine:
                         self._act_cache = {0: e0}
                         self._act_cache_key = key
                         self._act_cache_state = state.copy()
+                        self._act_cache_device = ctx.cache_device
                 except sampling.PreviewAborted:
                     raise
                 except Exception:
@@ -1153,6 +1159,7 @@ class H3RepairEngine:
         self._act_cache = None
         self._act_cache_key = None
         self._act_cache_state = None
+        self._act_cache_device = None
 
     # VRAM the pass-1 cache must leave free beside itself for the render's own working set
     # — which grows with the cache (both scale with tokens): 3 GB plus half the cache.
@@ -1174,7 +1181,7 @@ class H3RepairEngine:
                 + audio_latents_for_frames(int(frames)) * AUDIO_CHANNELS + 256)
         return len(self.dit.blocks) * toks * int(cfg.hidden_size) * 2 / float(2 ** 30)
 
-    def _resume_cache_device(self, width, height, frames) -> str:
+    def _resume_cache_device(self, width, height, frames, reclaim_gb: float = 0.0) -> str:
         """Where THIS render's pass-1 cache lives: the GPU when it fits beside the model with
         headroom, else the CPU (parked over PCIe — measured to net the same saving at 22
         frames). Decided per render because the cache scales with tokens: the load-time
@@ -1189,10 +1196,15 @@ class H3RepairEngine:
             return "cpu"
         try:
             from fizgig.utils.device import plannable_free_vram
-            free = float(plannable_free_vram())
+            free = float(plannable_free_vram()) + float(reclaim_gb or 0.0)
         except Exception:
             return "cpu"
+        # Fresh choice: the cache, half again for the render's working set, and the fixed
+        # headroom. Staying: a same-key cache already on the GPU has proven the render fits
+        # beside it, so only the cache plus the fixed headroom is needed (no flip-flop).
         need = est * (1.0 + self._RESUME_HEADROOM_FRAC) + self._RESUME_HEADROOM_GB
+        if reclaim_gb and reclaim_gb > 0:
+            need = est + self._RESUME_HEADROOM_GB
         dev = "cuda" if need <= free else "cpu"
         if getattr(self, "_last_cache_plan", None) != (round(est, 2), dev):
             self._last_cache_plan = (round(est, 2), dev)

@@ -189,6 +189,10 @@ try:
     _devmod.plannable_free_vram = lambda: 12.0
     ck("12 GB free: the 56-frame cache (5.1 + 2.6 + 3 = 10.7 needed) fits on the GPU",
        _big._resume_cache_device(768, 768, 56) == "cuda")
+    _devmod.plannable_free_vram = lambda: 3.5
+    ck("3.5 GB free but the previous same-key cache (4.3 GB) is on the GPU: reclaimable, stays on the GPU",
+       _big._resume_cache_device(640, 768, 56, reclaim_gb=_big.resume_cache_gb(640, 768, 56)) == "cuda"
+       and _big._resume_cache_device(640, 768, 56) == "cpu")
     _big._cache_device = "cpu"
     ck("a CPU-tier load never records on the GPU", _big._resume_cache_device(512, 416, 22) == "cpu")
 finally:

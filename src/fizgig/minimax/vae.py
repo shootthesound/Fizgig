@@ -528,9 +528,12 @@ class MiniMaxH3VideoVAEDecoder(nn.Module):
             if part.shape[2] <= 0:
                 return
             if dec is None:
+                # fp32 from the start: copy_ casts each part exactly as the old final
+                # .float() did, and the scale below runs in place — no second full-clip
+                # copy (316 MB at 768×640×56 — the allocation a 24 GB card ran out on).
                 shape = list(part.shape)
                 shape[2] = out_frames
-                dec = torch.empty(shape, dtype=part.dtype, device=part.device)
+                dec = torch.empty(shape, dtype=torch.float32, device=part.device)
             n = min(part.shape[2], max(0, dec.shape[2] - write_pos))
             if n > 0:
                 dec[:, :, write_pos:write_pos + n].copy_(part[:, :, :n])
@@ -558,7 +561,7 @@ class MiniMaxH3VideoVAEDecoder(nn.Module):
                 dec_overlap = None
             del clip_dec, clip
 
-        dec = dec.float() * self.pixel_std.to(dec) + self.pixel_mean.to(dec)
+        dec.mul_(self.pixel_std.to(dec)).add_(self.pixel_mean.to(dec))
         return dec.clamp_(0.0, 1.0)
 
     @torch.no_grad()

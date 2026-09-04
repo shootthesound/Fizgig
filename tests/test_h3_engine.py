@@ -122,8 +122,12 @@ class _MiniEngine:
     _reinstall_adaln = _H3E._reinstall_adaln
     _adaln_pairs_now = _H3E._adaln_pairs_now
     _block_factor = _H3E._block_factor
+    # every render now runs these (they left the resume-only branch 4 Sep); no-ops here
+    _park_decoder_if_tight = lambda self, *a: None
+    _evict_gpu_cache_if_tight = lambda self, *a: None
 
     def __init__(self):
+        self._act_cache, self._act_cache_key = None, None
         self.dit, self.primary_network, self.donor_network = dit, net, None
         self.device, self.dtype, self._steps = "cpu", torch.float32, 2
         self.resume_enabled, self._cache_device = False, "cpu"
@@ -536,6 +540,14 @@ try:
     ck("...and parked again after a decode with no room", not _de._decoder_resident and _d.moves == ["cpu", "cpu"])
 finally:
     _devmod.plannable_free_vram = _orig_free3
+
+
+# --- the base plan by free VRAM: resident int8 / int8 with streamed blocks / NF4 -----------------
+ck("32 GB class: int8 resident, no swap", _H3E.plan_base(31.8) == ("int8", 0))
+ck("24 GB class (23.5 free): the int8 base with 20 blocks streamed (10 GB headroom: the decode phase + a resident decoder, not just the render)", _H3E.plan_base(23.5) == ("int8", 20))
+ck("24 GB card as measured (22.2 free): 24 streamed", _H3E.plan_base(22.2) == ("int8", 24))
+ck("20 GB class: int8 with 29 streamed", _H3E.plan_base(20.0) == ("int8", 29))
+ck("16 GB class (15.5 free): the NF4 base", _H3E.plan_base(15.5) == ("nf4", 0))
 
 if _fails:
     print(f"{len(_fails)} FAILED: " + ", ".join(_fails))

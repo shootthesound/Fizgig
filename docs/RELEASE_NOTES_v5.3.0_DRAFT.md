@@ -18,13 +18,15 @@ Repair Studio on H3 used to show one frame of a clip. Now it renders the clip �
 
 **Reference mode.** A Model picker on the Setup card runs either checkpoint: First/last frame (fl2va) or Reference (ref2va). Under Reference the frame card becomes Reference Images — up to two photos, cropped to the clip's shape and sized to its canvas — and `<Picture 1>` / `<Picture 2>` in the prompt refer to them, the same convention as the r2v workflow. The prompt-plus-pictures encode is paid once per combination and cached; the status line tells you when the encoder is running.
 
-**The text encoder stays parked in RAM.** After the first prompt of a session the 32B encoder stays parked in system RAM (given ~24 GB free), so every new or edited prompt after that costs seconds rather than a fresh stream from disk. Released if RAM runs short or when the studio unloads.
+**The text encoder stays parked in RAM.** After the first prompt of a session the 32B encoder stays parked in system RAM when the machine has the room (about 40 GB free — a 64 GB box), so every new or edited prompt after that costs seconds rather than a fresh stream from disk. With less RAM the encoder loads per prompt and the base steps aside for it — unloaded and reloaded from disk on a 32 GB machine rather than copied into RAM, which would page — and returns bit-identical. Released if RAM runs short or when the studio unloads.
 
 **Short clips.** Length now goes down to 5 frames, plus 9 and 13 (marked off-grid — never trained on, render fine). Fewer frames, fewer tokens: a 5-frame Dial move is a fraction of the 22-frame time, for reading a block's effect on the picture before judging motion at 22. The Clip row and every Browse dialog's last folder are remembered across restarts.
 
 **No-LoRA clip.** A tick on the Clip row (and in the player) adds a third pane: the same seed and prompt rendered by the base model with no LoRA, so you see what the LoRA adds rather than only what the sliders changed. Rendered once per setup and cached. The player also gained a 0.1× speed.
 
 **Load strength.** An "at strength" dial per LoRA — the strength it was designed for. Block sliders stay relative to it, the baseline is the LoRA at that strength, and the saved file keeps its original scale so it looks in ComfyUI exactly as it did in the player, at that same strength.
+
+**24 GB cards run the int8 base.** The studio plans its base from free VRAM at Start: 32 GB keeps the int8 base resident; 24 GB runs the same int8 base with its last ~24 blocks streamed from system RAM each pass (0.2% base error, not the NF4 base's 9.5% — the base's own error must not be in the picture when you're judging a block); under ~18 GB free the NF4 base takes over. On a simulated 24 GB card: load 26 s, a Dial move at ⅔ size 4.5 s, the No-LoRA clip 3.7 s, a 56-frame 768×640 clip at 6 steps about a minute. The pass-1 resume sits out on the streamed plan.
 
 Also fixed on the way: a LoRA carrying AdaLN keys (any run trained with AdaLN on, AI-Toolkit's files) failed to load in Repair Studio on H3; and the first clip decode of a session no longer costs ~10 s in the middle of the first preview.
 

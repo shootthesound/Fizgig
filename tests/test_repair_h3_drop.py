@@ -140,7 +140,17 @@ if app._repair_kf_can_drop:
 
     app._repair_h3_kf["first"] = None
     app._repair_kf_refresh_thumbs()
-    x, y = thumb_point("first")                   # moved with the scroll above
+    # Scroll the slot into the middle of the view: with the Model picker card above the
+    # frame card, the 0.3 scroll above leaves the first thumb under the notebook's tab
+    # strip (point resolves to the notebook, not the slot — and a real drop there isn't
+    # on the slot either).
+    c = app._repair_outer_canvas
+    w = app._repair_h3_kf_widgets["first"]["thumb"]
+    root.update()
+    inner_y = w.winfo_rooty() - c.winfo_rooty() + c.canvasy(0)
+    total = float((c.bbox("all") or (0, 0, 0, 1))[3]) or 1.0
+    c.yview_moveto(max(0.0, (inner_y - c.winfo_height() / 2) / total))
+    x, y = thumb_point("first")
     n = len(crops)
     app.repair_status_var.set("")
     drop(txt, x, y)

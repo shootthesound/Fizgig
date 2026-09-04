@@ -206,6 +206,38 @@ class H3RepairEngine:
         self._act_cache_state = None
 
     # ----- pipeline + LoRA loading -------------------------------------------
+    # Which base the studio runs, from free VRAM at load. 32 GB-class: the int8 base
+    # resident. 24 GB-class (and 20 GB): the SAME int8 file with the last n blocks parked on
+    # the CPU and streamed through per pass (0.39 GB each, rintic-13's H2D offloader) — the
+    # int8 weights' 0.2% error instead of the NF4 base's 9.5%, which matters when you are
+    # judging a block's effect. Below ~18 GB free the streamed count gets silly and the NF4
+    # base (10.5 GB) takes over — 16 GB cards.
+    _INT8_RESIDENT_GB = 21.3
+    _INT8_BLOCK_GB = 0.39
+    # Headroom over the resident int8 weights: the LoRA nets (~1.3) + the ring (0.8) + the
+    # larger of the two phases — a render's working set (≤3.5 at 56 f) or the DECODE, which
+    # is the 4.5 GB fp16 decoder + ~1 GB of tiled activations + ~2 GB the allocator loses to
+    # fragmentation while it churns. 6 GB covered the renders and lost a 56-frame decode at
+    # 768×640 by 316 MB (simulated 24 GB card, 4 Sep); 9 GB also leaves the decoder resident
+    # between 22-frame renders (two round-trips saved per Dial move) — at 9 GB the decoder
+    # was still parked after every decode (6.9 GB free beside the loaded base, 2.4 with the
+    # decoder on it — under the working-set + 2 GB rule), so 10: three more blocks streamed
+    # (~0.4 s per Dial move) against ~2 s of decoder round-trips saved.
+    _STUDIO_HEADROOM_GB = 10.0
+    _INT8_SWAP_MIN_FREE_GB = 18.0
+
+    @classmethod
+    def plan_base(cls, free_gb: float):
+        """(base_quant, blocks_to_swap) for `free_gb` of plannable VRAM."""
+        import math
+        free_gb = float(free_gb or 0.0)
+        if free_gb >= 28.0:
+            return "int8", 0
+        if free_gb >= cls._INT8_SWAP_MIN_FREE_GB:
+            n = math.ceil((cls._INT8_RESIDENT_GB + cls._STUDIO_HEADROOM_GB - free_gb) / cls._INT8_BLOCK_GB)
+            return "int8", max(1, min(40, n))
+        return "nf4", 0
+
     def _load_dit_and_turbo(self) -> None:
         """The DiT (base precision planned from free VRAM) + the Turbo LoRA. Called once by
         ensure_pipeline — and again by _dit_restore on a small-RAM machine that unloads
@@ -216,12 +248,26 @@ class H3RepairEngine:
             free = plannable_free_vram()
         except Exception:
             free = 0.0
-        base_quant = "int8" if free >= 28.0 else "nf4"
-        logger.info("[h3-workbench] %.1f GB free -> %s base, no block swap "
-                    "(int8 needs ~21 GB resident + decode headroom; NF4-of-pruned is ~10.5 GB)",
-                    free, base_quant)
+        base_quant, n_swap = self.plan_base(free)
+        self._blocks_swapped = int(n_swap)
+        if n_swap:
+            logger.info("[h3-workbench] %.1f GB free -> int8 base with the last %d blocks streamed "
+                        "from CPU per pass (24 GB-class card: the int8 weights, 0.2%% error, "
+                        "rather than the NF4 base's 9.5%%; the pass-1 resume sits out)",
+                        free, n_swap)
+        else:
+            logger.info("[h3-workbench] %.1f GB free -> %s base, no block swap "
+                        "(int8 needs ~21 GB resident + headroom; NF4-of-pruned is ~10.5 GB)",
+                        free, base_quant)
         self.dit = load_minimax_h3_dit(self.dit_path, device=self.device, compute_dtype=self.dtype,
-                                       quantize=True, blocks_to_swap=0, base_quant=base_quant)
+                                       quantize=True, blocks_to_swap=int(n_swap),
+                                       base_quant=base_quant)
+        if n_swap:
+            # The loader only PARKS the tail blocks' weights; this sets the swap boundary
+            # and installs the int8 ring offloader (static weights — norms, AdaLN — back
+            # on the card, the int8 flats streamed per pass), exactly as the trainer does.
+            self._blocks_swapped = int(self.dit.enable_block_swap(int(n_swap), h2d_only=True,
+                                                                  ring_size=2))
         self.dit.eval()
         self.dit._abort_event = self._cancel_event      # a cancel lands within one block
 
@@ -294,9 +340,13 @@ class H3RepairEngine:
             free_after = 0.0
         self.resume_enabled = True
         self._cache_device = "cuda" if free_after >= 8.0 else "cpu"
-        logger.info("[h3-workbench] exact pass-1 resume ON, step-0 cache on the %s "
-                    "(%.1f GB free after the DiT)", "GPU" if self._cache_device == "cuda"
-                    else "CPU", free_after)
+        if getattr(self, "_blocks_swapped", 0):
+            logger.info("[h3-workbench] pass-1 resume sits out on the streamed-block plan "
+                        "(%.1f GB free after the DiT)", free_after)
+        else:
+            logger.info("[h3-workbench] exact pass-1 resume ON, step-0 cache on the %s "
+                        "(%.1f GB free after the DiT)", "GPU" if self._cache_device == "cuda"
+                        else "CPU", free_after)
         # Warm the clip decoder now, on the CPU: the first decode of a session otherwise
         # pays ~10 s (4.8 GB off disk + first CUDA calls) in the middle of the first preview
         # — measured 3 Sep: 11.6 s cold, 1.8 s every decode after.
@@ -708,7 +758,7 @@ class H3RepairEngine:
         # DiT stays on the card for every encode; only the resident build (27 GB) parks
         # it. Parking the 21 GB base to the CPU and back was also leaving ~15 GB of host
         # memory retained per encode.
-        need = 5.0 if streamed else 27.0
+        need = 4.5 if streamed else 27.0             # streamed: measured 4.2 GB peak
         free = None
         try:
             from fizgig.utils.device import plannable_free_vram
@@ -786,7 +836,10 @@ class H3RepairEngine:
             return "none"
         avail = self._ram_available_gb()
         park = (avail is not None and avail >= self._DIT_PARK_MIN_AVAIL_GB
-                and os.environ.get("FIZGIG_DIT_UNLOAD") != "1")
+                and os.environ.get("FIZGIG_DIT_UNLOAD") != "1"
+                # a base with streamed blocks must never be moved with .to(): the H2D
+                # offloader's ring bindings don't survive it (its field notes) — unload
+                and not getattr(self, "_blocks_swapped", 0))
         if park:
             self.dit.to("cpu")
             if self._turbo_net is not None:
@@ -812,6 +865,12 @@ class H3RepairEngine:
         self.primary_network = None
         self.donor_network = None
         self._turbo_net = None
+        try:
+            _off = getattr(self.dit, "_h2d_offloader", None)
+            if _off is not None:
+                _off.release()                    # its pinned staging goes with it
+        except Exception:
+            pass
         self.dit = None
         self._invalidate_activation_cache()
         gc.collect()
@@ -1131,23 +1190,30 @@ class H3RepairEngine:
                round(float(getattr(state, "primary_scale", 1.0)), 4),
                round(float(getattr(state, "donor_scale", 1.0)), 4),
                getattr(self, "dit_path", None))
-        if (self.resume_enabled and not keyframes and not references and not no_lora
-                and hasattr(self.dit, "forward_cached")):
+        resume_ok = (self.resume_enabled and not keyframes and not references and not no_lora
+                     and not getattr(self, "_blocks_swapped", 0)
+                     and hasattr(self.dit, "forward_cached"))
+        if self._act_cache and not (resume_ok and self._act_cache_key == key):
+            # Another setup's cache is dead weight — on the GPU it can be several GB
+            # (56 frames at 768² records ~5.1 GB), and it must go BEFORE the free-VRAM
+            # checks below, not sit there while this render fights for room. That holds
+            # for a keyframe / reference / no-LoRA render too, which never resumes.
+            self._invalidate_activation_cache()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        # Every render, resume or not: the canvas the decoder-residency rule sizes its
+        # working set from, and the decoder / GPU cache giving way when the card is tight.
+        # (These sat inside the resume branch until 4 Sep — on the streamed-block tier,
+        # and for keyframe / reference / no-LoRA renders, the rule ran on a 2 GB guess.)
+        self._last_canvas = (int(width), int(height), int(frames))
+        self._park_decoder_if_tight(width, height, frames)
+        self._evict_gpu_cache_if_tight(width, height, frames)
+        if resume_ok:
             resume = None
             entries = {}
             if self._act_cache_key == key and self._act_cache:
                 entries = self._act_cache
                 resume = self._resume_from_diff(state)
-            elif self._act_cache:
-                # Another setup's cache is dead weight — on the GPU it can be several GB
-                # (56 frames at 768² records ~5.1 GB), and it must go BEFORE the free-VRAM
-                # check below, not sit there while this render fights for room.
-                self._invalidate_activation_cache()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-            self._last_canvas = (int(width), int(height), int(frames))
-            self._park_decoder_if_tight(width, height, frames)
-            self._evict_gpu_cache_if_tight(width, height, frames)
             # The previous render's cache (same key) is replaced by this one: if it sits on
             # the GPU it is reclaimable, not "used" — without this the plan flip-flopped
             # cuda / cpu on alternate renders (Peter's log, 4 Sep).
@@ -1560,6 +1626,12 @@ class H3RepairEngine:
         free = None
         try:
             from fizgig.utils.device import plannable_free_vram
+            if torch.cuda.is_available():
+                # The decode's tiled churn leaves gigabytes reserved-but-free, and the
+                # driver counts reserved as used: measured on the simulated 24 GB card,
+                # 8 GB free with the decoder off the card read as 1.7 with it on. Judge
+                # the true allocation.
+                torch.cuda.empty_cache()
             free = float(plannable_free_vram())
         except Exception:
             pass
@@ -1578,8 +1650,10 @@ class H3RepairEngine:
             return
         try:
             from fizgig.utils.device import plannable_free_vram
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()          # judge the allocation, not the churn
             free = float(plannable_free_vram())
-            need = 0.7 * self.resume_cache_gb(width, height, frames) + 1.5
+            need = 0.7 * self.resume_cache_gb(width, height, frames) + 2.0
         except Exception:
             return
         if free >= need:
@@ -1675,6 +1749,12 @@ class H3RepairEngine:
         """Full unload — drop networks (break forward-hook ref cycles), unpatch the Turbo's
         AdaLN forwards, then the DiT + decoder."""
         from fizgig.utils.device import release_module_tensors as _strip
+        try:
+            _off = getattr(self.dit, "_h2d_offloader", None)
+            if _off is not None:
+                _off.release()                    # the ring's pinned staging goes with it
+        except Exception:
+            pass
         for net in (self.primary_network, self.donor_network, self._turbo_net):
             if net is not None:
                 try:

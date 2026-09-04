@@ -251,7 +251,7 @@ try:
     app._repair_clip_player_swap()
     ck("swap trades sides", P["sides"] == ["nolora", "tweaked", "baseline"])
     ck("titles follow the swap", "Tweaked" in P["titles"][1].cget("text")
-       and "Baseline" in P["titles"][2].cget("text"))
+       and "Baseline" in P["titles"][2].cget("text"), [P["titles"][i].cget("text") for i in range(3)] + [P["sides"]])
     app._repair_clip_player_stop()
     app._repair_clip_player_paint(2)
     app._repair_clip_player_step(+1)

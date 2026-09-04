@@ -25788,13 +25788,13 @@ class LoRATrainerGUI:
             return
         a, b = [k for k, sd in enumerate(P["sides"]) if sd != "nolora"]
         P["sides"][a], P["sides"][b] = P["sides"][b], P["sides"][a]   # the no-LoRA pane stays left
+        self._repair_clip_player_reload()
 
     @staticmethod
     def _repair_player_main_side(P):
         """The left LoRA pane (Baseline or Tweaked, whichever is left) — the one the sound and
         'Save left clip' follow; the No-LoRA pane sits left of it and is never that."""
         return next((sd for sd in P["sides"] if sd != "nolora"), "baseline")
-        self._repair_clip_player_reload()
 
     def _repair_nolora_shown(self):
         """Whether the player shows the third pane: the no-LoRA clip is here, or on its way."""

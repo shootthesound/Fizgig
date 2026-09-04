@@ -377,6 +377,80 @@ _big.dit_path = "b.safetensors"
 _k_b = _big.cache_key_for(_sc1, frames=22, regime="dial")
 ck("render-cache setup key changes with the H3 checkpoint (fl2va vs ref2va)", _k_a != _k_b)
 
+
+# --- the text encoder parked in system RAM: decision logic with stubs -----------------------------
+class _FakeTE:
+    def __init__(self, vision):
+        self.vision = vision
+        self.moves = []
+        class _LS:
+            def __init__(s2): s2.unloaded = 0
+            def unload_all(s2): s2.unloaded += 1
+        self.layer_streamer = _LS()
+        class _Child(torch.nn.Module):
+            def __init__(s2, owner, nm, dev="cuda:0"):
+                super().__init__(); s2.owner, s2.nm = owner, nm
+                s2.w = torch.nn.Parameter(torch.zeros(1)); s2.home = dev
+            def parameters(s2, recurse=True):
+                class _P:                          # reports the pretend home device
+                    device = s2.home
+                yield _P()
+            def to(s2, dev, *a, **k): s2.owner.moves.append((s2.nm, str(dev))); return s2
+        class _Decoder(torch.nn.Module):
+            def __init__(s2, owner):
+                super().__init__()
+                s2.embed_tokens = _Child(owner, "embed", "cpu"); s2.norm = _Child(owner, "norm")   # text-only: embeddings live on the CPU
+                s2.layers = torch.nn.ModuleList([torch.nn.Linear(2, 2)])
+        class _Model(torch.nn.Module):
+            def __init__(s2, owner, vision):
+                super().__init__()
+                s2.language_model = _Decoder(owner)
+                if vision: s2.visual = _Child(owner, "visual")
+        self.model = _Model(self, vision)
+    def _get_decoder_and_embeddings(self):
+        return self.model.language_model, self.model.language_model.embed_tokens
+
+_loads = []
+_pe = _MiniEngine()
+_pe._te_parked, _pe._te_parked_vision, _pe.te_path = None, False, "te.safetensors"
+for _nm in ("_te_get", "_te_park", "_te_wake", "_te_free"):
+    setattr(_pe, _nm, getattr(_H3E, _nm).__get__(_pe))
+_pe._te_resident_modules = _H3E._te_resident_modules
+_pe._TE_PARK_MIN_AVAIL_GB, _pe._TE_KEEP_MIN_AVAIL_GB = _H3E._TE_PARK_MIN_AVAIL_GB, _H3E._TE_KEEP_MIN_AVAIL_GB
+import fizgig.minimax.embedderH2D as _h2d, fizgig.minimax.embedder as _emb  # noqa: E402
+_orig_h2d, _orig_planned = _h2d.load_minimax_h3_te, _emb.load_minimax_h3_te_planned
+_h2d.load_minimax_h3_te = lambda path, **kw: (_loads.append(("stream", kw.get("with_vision"))) or _FakeTE(kw.get("with_vision")))
+_emb.load_minimax_h3_te_planned = lambda path, **kw: (_loads.append(("resident", kw.get("with_vision"))) or _FakeTE(kw.get("with_vision")))
+try:
+    _pe._ram_available_gb = lambda: 4.0
+    _te, _keep = _pe._te_get(False)
+    ck("RAM short (4 GB): the resident build, not kept", _loads == [("resident", False)] and not _keep and _pe._te_parked is None)
+    _loads.clear()
+    _pe._ram_available_gb = lambda: 100.0
+    _te, _keep = _pe._te_get(False)
+    ck("RAM plentiful: the streamed build, parked", _loads == [("stream", False)] and _keep and _pe._te_parked is _te)
+    _pe._te_park()
+    ck("park: rings unloaded, resident parts to the CPU (not the layers)",
+       _te.layer_streamer.unloaded == 1 and set(_te.moves) == {("embed", "cpu"), ("norm", "cpu")})
+    _te.moves.clear(); _loads.clear()
+    _pe.device = "cuda"
+    _te2, _keep2 = _pe._te_get(False)
+    ck("next prompt: the parked encoder, woken (no load, each part back to where it lived — the CPU embedding stays on the CPU)",
+       _te2 is _te and _keep2 and not _loads and set(_te.moves) == {("embed", "cpu"), ("norm", "cuda:0")}, _te.moves)
+    _te3, _keep3 = _pe._te_get(True)
+    ck("references arrive: the text-only parked build is replaced by a vision build",
+       _loads == [("stream", True)] and _te3 is not _te and _pe._te_parked is _te3 and _pe._te_parked_vision)
+    _loads.clear()
+    _te4, _ = _pe._te_get(False)
+    ck("...and the vision build serves a plain prompt afterwards", _te4 is _te3 and not _loads)
+    _pe._te_park()
+    ck("park moves the vision tower too", ("visual", "cpu") in _te3.moves)
+    _pe._ram_available_gb = lambda: 5.0
+    _pe._te_park()
+    ck("RAM gets short while parked: the encoder is released", _pe._te_parked is None)
+finally:
+    _h2d.load_minimax_h3_te, _emb.load_minimax_h3_te_planned = _orig_h2d, _orig_planned
+
 if _fails:
     print(f"{len(_fails)} FAILED: " + ", ".join(_fails))
     sys.exit(1)

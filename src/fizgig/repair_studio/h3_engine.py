@@ -131,6 +131,8 @@ class H3RepairEngine:
         self.dtype = torch.bfloat16
 
         self.on_status = None          # callable(str) — the GUI's status line, if it wants it
+        self._te_parked = None         # the layer-streamed text encoder kept in system RAM
+        self._te_parked_vision = False # ...built with the vision tower (serves text too)
         self.dit_path: Optional[str] = None
         self._prompt_cache_tags = None # token tags that go with _prompt_cache (ref mode only)
         self.primary_network = None
@@ -656,16 +658,31 @@ class H3RepairEngine:
                 self._prompt_cache_key, self._prompt_cache = key, emb
                 self._prompt_cache_tags = tags
                 return emb
-        from fizgig.minimax.sampling import encode_sample_prompts
         logger.info("[h3-workbench] encoding prompt with the 32B TE (one-off per prompt — "
                     "cached to disk after this)")
-        self._status("Encoding the prompt with the 32B text encoder — a couple of quiet "
-                     "minutes, once per prompt" + (" + reference set" if images else "") + "…")
-        # The TE (~15.7 GB) and the resident base must never be co-resident (the trainer's
-        # rule; the int8 base alone is ~21 GB). Park the DiT + Turbo net for the encode and
-        # restore after — safe as a whole-model .to because this engine never block-swaps.
+        want_vision = bool(images)
+        te, keep = self._te_get(want_vision)
+        streamed = getattr(te, "layer_streamer", None) is not None
+        if keep and streamed and getattr(self, "_te_was_parked", False):
+            self._status("Encoding the prompt (text encoder parked in RAM — seconds)…")
+        else:
+            self._status("Encoding the prompt with the 32B text encoder — a couple of quiet "
+                         "minutes, once" + (" (then it stays parked in RAM)" if keep else "")
+                         + ("; reference set" if images else "") + "…")
+        # The resident TE (~15.7 GB) and the resident base must never be co-resident (the
+        # int8 base alone is ~21 GB): park the DiT + Turbo net for the encode and restore
+        # after — a whole-model .to is safe because this engine never block-swaps. The
+        # streamed build only needs its rings (~2 GB text, ~12.7 GB with vision): the DiT
+        # stays put for a text encode when the card has the room.
+        need = (13.5 if want_vision else 2.5) if streamed else 27.0
+        free = None
+        try:
+            from fizgig.utils.device import plannable_free_vram
+            free = float(plannable_free_vram())
+        except Exception:
+            pass
         _parked = False
-        if self.dit is not None:
+        if self.dit is not None and (free is None or free < need + 1.0):
             self.dit.to("cpu")
             if self._turbo_net is not None:
                 self._turbo_net.to("cpu")
@@ -676,10 +693,17 @@ class H3RepairEngine:
         tags = None
         try:
             if images:
-                emb, tags = self._encode_with_vision(prompt, images)
+                emb, tags = te.encode_with_reference(prompt, list(images))
             else:
-                emb = encode_sample_prompts(self.te_path, [prompt], device=self.device)[0]
+                emb = te.encode(prompt)
         finally:
+            if keep:
+                self._te_park()
+            else:
+                del te
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
             if _parked:
                 self.dit.to(self.device)
                 if self._turbo_net is not None:
@@ -706,27 +730,133 @@ class H3RepairEngine:
         self._prompt_cache_tags = tags
         return emb
 
-    def _encode_with_vision(self, prompt: str, images):
-        """The ref2va prompt: the FULL Qwen3-VL (vision tower + language stack) sees
-        `<Picture i>:` + each reference image ahead of the caption. Loaded for the call and
-        freed after, like the text-only encoder. Returns (emb [1, L, 5120], tags [L])."""
+    # ----- the text encoder, parked in system RAM between prompts -------------------------
+    # A new prompt used to stream the 32B encoder in from disk every time (a minute or two —
+    # editing a long prompt word by word paid it per Update). The layer-streamed build (#79,
+    # @mabseyuk / rintic-13) keeps the packed ~19 GB model in system RAM and only rings two
+    # layers through the GPU, so it can simply be KEPT for the session: the next prompt costs
+    # seconds. Only when the box has the RAM: ~24 GB available to stage it, and it is let go
+    # again if available RAM drops under 8 GB. Otherwise the old path — resident build, freed.
+    _TE_PARK_MIN_AVAIL_GB = 24.0
+    _TE_KEEP_MIN_AVAIL_GB = 8.0
+
+    @staticmethod
+    def _ram_available_gb():
+        try:
+            import psutil
+            return psutil.virtual_memory().available / 1e9
+        except Exception:
+            return None
+
+    def _te_get(self, with_vision: bool):
+        """(encoder, keep): a parked streamed build (loading one if RAM allows), else the
+        planned resident build to be freed after the encode. A parked vision build serves
+        text prompts too; a text-only one is replaced when references arrive."""
+        te = self._te_parked
+        if te is not None and (self._te_parked_vision or not with_vision):
+            self._te_was_parked = True
+            self._te_wake(te)
+            return te, True
+        if te is not None:                        # text-only parked, vision needed now
+            self._te_free()
+        self._te_was_parked = False
+        avail = self._ram_available_gb()
+        if avail is not None and avail >= self._TE_PARK_MIN_AVAIL_GB \
+                and os.environ.get("FIZGIG_NO_TE_PARK") != "1":
+            try:
+                from fizgig.minimax.embedderH2D import load_minimax_h3_te as _load_h2d
+                te = _load_h2d(self.te_path, device=self.device, compute_dtype=torch.bfloat16,
+                               quantize=True, with_vision=with_vision, layer_streaming=True)
+                self._te_parked, self._te_parked_vision = te, bool(with_vision)
+                logger.info("[h3-workbench] text encoder parked in system RAM for the session "
+                            "(%.0f GB available) — the next prompt costs seconds", avail)
+                return te, True
+            except Exception:
+                logger.exception("streamed text encoder failed — using the resident build")
         from fizgig.minimax.embedder import load_minimax_h3_te_planned
+        te = load_minimax_h3_te_planned(self.te_path, device=self.device,
+                                        compute_dtype=torch.bfloat16, quantize=True,
+                                        with_vision=bool(with_vision))
+        return te, False
+
+    @staticmethod
+    def _te_resident_modules(te):
+        """The parts of a streamed encoder that live on the GPU between layers: everything
+        except the streamed decoder layers (embeddings, norms, the vision tower)."""
+        mods = []
         try:
-            te = load_minimax_h3_te_planned(self.te_path, device=self.device,
-                                            compute_dtype=torch.bfloat16, quantize=True,
-                                            with_vision=True)
-        except TypeError:
-            from fizgig.minimax.embedder import load_minimax_h3_te
-            te = load_minimax_h3_te(self.te_path, device=self.device,
-                                    compute_dtype=torch.bfloat16, quantize=True, with_vision=True)
+            decoder, _emb = te._get_decoder_and_embeddings()
+        except Exception:
+            return mods
+        for name, child in decoder.named_children():
+            if name != "layers":
+                mods.append(child)
+        if te.model is not decoder:
+            for _name, child in te.model.named_children():
+                if child is not decoder:
+                    mods.append(child)
+        return mods
+
+    def _te_park(self):
+        """After an encode: rings off the GPU, resident parts to the CPU — unless the box is
+        short of RAM now, in which case the encoder is let go."""
+        te = self._te_parked
+        if te is None:
+            return
+        avail = self._ram_available_gb()
+        if avail is not None and avail < self._TE_KEEP_MIN_AVAIL_GB:
+            logger.info("[h3-workbench] only %.1f GB RAM available — releasing the parked "
+                        "text encoder", avail)
+            self._te_free()
+            return
         try:
-            emb, tags = te.encode_with_reference(prompt, list(images))
-        finally:
-            del te
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        return emb, tags
+            ls = getattr(te, "layer_streamer", None)
+            if ls is not None:
+                ls.unload_all()
+            # Remember where each resident part LIVES (the text-only streamed build keeps
+            # its embedding table on the CPU on purpose — waking it onto the GPU broke the
+            # lookup, 4 Sep), then park them all on the CPU.
+            if getattr(self, "_te_home", None) is None:
+                home = []
+                for m in self._te_resident_modules(te):
+                    try:
+                        dev = str(next(m.parameters()).device)
+                    except StopIteration:
+                        dev = str(self.device)
+                    home.append((m, dev))
+                self._te_home = home
+            for m, _dev in self._te_home:
+                m.to("cpu")
+        except Exception:
+            logger.exception("parking the text encoder failed — releasing it")
+            self._te_free()
+            return
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    def _te_wake(self, te):
+        """Before an encode on a parked encoder: each resident part back to where it lived
+        (the rings reload themselves on the first layer)."""
+        for m, dev in (getattr(self, "_te_home", None) or []):
+            m.to(dev)
+
+    def _te_free(self):
+        te = self._te_parked
+        self._te_parked, self._te_parked_vision = None, False
+        self._te_home = None
+        if te is None:
+            return
+        try:
+            ls = getattr(te, "layer_streamer", None)
+            if ls is not None:
+                ls.unload_all()
+        except Exception:
+            pass
+        del te
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     # ----- preview -----------------------------------------------------------
     def generate_preview(self, state, *, seed: Optional[int] = None,
@@ -1384,6 +1514,10 @@ class H3RepairEngine:
         self._turbo_net = None
         self._turbo_adaln = []
         self._primary_adaln = []
+        try:
+            self._te_free()
+        except Exception:
+            pass
         self._donor_adaln = []
         self._adaln_installed = None
         self._adaln_bid = {}

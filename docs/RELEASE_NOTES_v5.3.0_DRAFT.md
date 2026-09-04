@@ -18,6 +18,8 @@ Repair Studio on H3 used to show one frame of a clip. Now it renders the clip �
 
 **Reference mode.** A Model picker on the Setup card runs either checkpoint: First/last frame (fl2va) or Reference (ref2va). Under Reference the frame card becomes Reference Images — up to two photos, cropped to the clip's shape and sized to its canvas — and `<Picture 1>` / `<Picture 2>` in the prompt refer to them, the same convention as the r2v workflow. The prompt-plus-pictures encode is paid once per combination and cached; the status line tells you when the encoder is running.
 
+**The text encoder stays parked in RAM.** After the first prompt of a session the 32B encoder stays parked in system RAM (given ~24 GB free), so every new or edited prompt after that costs seconds rather than a fresh stream from disk. Released if RAM runs short or when the studio unloads.
+
 **Short clips.** Length now goes down to 5 frames, plus 9 and 13 (marked off-grid — never trained on, render fine). Fewer frames, fewer tokens: a 5-frame Dial move is a fraction of the 22-frame time, for reading a block's effect on the picture before judging motion at 22. The Clip row and every Browse dialog's last folder are remembered across restarts.
 
 **No-LoRA clip.** A tick on the Clip row (and in the player) adds a third pane: the same seed and prompt rendered by the base model with no LoRA, so you see what the LoRA adds rather than only what the sliders changed. Rendered once per setup and cached. The player also gained a 0.1× speed.

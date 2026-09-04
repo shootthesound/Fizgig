@@ -147,7 +147,9 @@ Two render regimes. **Dial** is the loop you turn sliders in: 4 steps with the b
 
 **The block library.** After your first Dial render, Fizgig renders every block switched off in the background (about 3½ minutes for a 52-block LoRA, and it pauses whenever you move a slider). From then on the **●** beside each slider is live: hover for a thumbnail, click to see the clip with that block removed, instantly — "what does this block do" for all 52 blocks without waiting. Every render you make is kept too, so a state you've already seen comes back in a couple of seconds, and the **History** strip under the previews holds all of them: click one to view it, right-click to **pin it as the baseline** (compare two tweaks head to head) or save it as an MP4. The library and history live in your cache folder and survive restarts; **Clear cache…** removes them.
 
-**First / Last Frame.** Pin the clip's first and/or last frame to a photo: pick it, drag an aspect-locked box over the part you want, done. The clip you judge then starts (or ends) on that picture on every render — sliders, library and Confirm alike — so what you're comparing is the LoRA's effect, not the shot the seed happened to pick.
+**First / Last Frame.** Pin the clip's first and/or last frame to a photo: pick it (or drag it from Explorer straight onto the slot), drag an aspect-locked box over the part you want, done. The clip you judge then starts (or ends) on that picture on every render — sliders, library and Confirm alike — so what you're comparing is the LoRA's effect, not the shot the seed happened to pick.
+
+**Short clips.** The Length menu goes down to 5 frames, and to 9 and 13 (marked off-grid: the model was never trained on a part-filled temporal group, but it renders them fine). Fewer frames means fewer tokens, so a 5-frame Dial move comes back in a fraction of the 22-frame time — use it to read a block's effect on the picture, then go back to 22 to judge the motion. Every Clip-row setting, and the folder each Browse dialog last picked from, is remembered across restarts.
 
 ### Video and sound: how do I…
 

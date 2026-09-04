@@ -14,7 +14,9 @@ Repair Studio on H3 used to show one frame of a clip. Now it renders the clip �
 
 **The block library.** After your first Dial render, every block is rendered switched off in the background (about 3½ minutes for a 52-block LoRA; it pauses the moment you move a slider). From then on the ● beside each slider is live: hover for a thumbnail, click to see the clip with that block removed, instantly. Every render you make is kept as well, so a state you've already seen comes back in a couple of seconds, and the new **History** strip holds all of them — click to view, right-click to pin one as the baseline (compare two tweaks head to head) or save it as an MP4. Library and history live in your cache folder, survive restarts, and go with **Clear cache…**.
 
-**First / Last Frame.** Pin the clip's first and/or last frame to a photo — pick it, drag an aspect-locked box over the part you want — and every render starts (or ends) on that picture, so what you compare is the LoRA's effect rather than the shot the seed picked.
+**First / Last Frame.** Pin the clip's first and/or last frame to a photo — pick it or drag it from Explorer onto the slot, drag an aspect-locked box over the part you want — and every render starts (or ends) on that picture, so what you compare is the LoRA's effect rather than the shot the seed picked.
+
+**Short clips.** Length now goes down to 5 frames, plus 9 and 13 (marked off-grid — never trained on, render fine). Fewer frames, fewer tokens: a 5-frame Dial move is a fraction of the 22-frame time, for reading a block's effect on the picture before judging motion at 22. The Clip row and every Browse dialog's last folder are remembered across restarts.
 
 Also fixed on the way: a LoRA carrying AdaLN keys (any run trained with AdaLN on, AI-Toolkit's files) failed to load in Repair Studio on H3; and the first clip decode of a session no longer costs ~10 s in the middle of the first preview.
 

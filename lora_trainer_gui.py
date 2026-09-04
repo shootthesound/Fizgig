@@ -16895,6 +16895,7 @@ class LoRATrainerGUI:
         )
         if filepath:
             self.extract_source_var.set(filepath)
+            self._remember_browse_dir("lora_browse_dir", filepath)
             self._update_extract_output_name()
             # Header-only family sniff — picking a LoRA from the wrong family auto-switches
             # instead of erroring at run time (same as Explorer / Profiler).
@@ -17439,6 +17440,7 @@ class LoRATrainerGUI:
         )
         if filepath:
             self.metadata_file_var.set(filepath)
+            self._remember_browse_dir("lora_browse_dir", filepath)
             self._load_metadata_file(filepath)
 
     def _load_metadata_file(self, path):
@@ -18876,6 +18878,7 @@ class LoRATrainerGUI:
         )
         if filepath:
             self.profiler_lora_var.set(filepath)
+            self._remember_browse_dir("lora_browse_dir", filepath)
             # Same auto-switch the Explorer does: a header-only sniff, so picking a LoRA from
             # the wrong family Just Works instead of erroring at run time.
             try:
@@ -19283,6 +19286,7 @@ class LoRATrainerGUI:
         )
         self._build_repair_keyframe_card(kf_card)
         self._repair_kf_container = kf_card.master.master
+        self._repair_kf_install_drop()
 
         # Card 2: Preview
         preview_card = self._start_section_card(
@@ -20563,11 +20567,34 @@ class LoRATrainerGUI:
             return ""
         return d if d and os.path.isdir(d) else ""
 
+    def _remembered_dir(self, key: str) -> str:
+        """The folder a Browse dialog last picked from (last_used[key]), if it still exists."""
+        try:
+            d = str(self.last_used.get(key, "") or "")
+        except Exception:
+            return ""
+        return d if d and os.path.isdir(d) else ""
+
+    def _remember_browse_dir(self, key: str, path: str):
+        """Remember the folder `path` was picked from so the next Browse of that kind opens
+        there (last_used[key]); a missing folder later just falls through to the pref."""
+        try:
+            d = os.path.dirname(os.path.abspath(path))
+            if os.path.isdir(d):
+                self.last_used[key] = d
+                self._save_last_used_paths()
+        except Exception:
+            pass
+
     def _lora_initialdir(self) -> str:
-        """Start folder for every LoRA-loading Browse dialog: the input_lora_dir pref
-        when set, else wherever trained LoRAs are written. Without the fallback a fresh
-        session's dialog opens in the process cwd — on a pod that's the git clone, which
-        contains no .safetensors and made the picker look broken (found on RunPod)."""
+        """Start folder for every LoRA-loading Browse dialog: the folder the last LoRA was
+        picked from (remembered across restarts), else the input_lora_dir pref, else wherever
+        trained LoRAs are written. Without the fallback a fresh session's dialog opens in the
+        process cwd — on a pod that's the git clone, which contains no .safetensors and made
+        the picker look broken (found on RunPod)."""
+        d = self._remembered_dir("lora_browse_dir")
+        if d:
+            return d
         d = self._pref_initialdir("input_lora_dir")
         if d:
             return d
@@ -20588,6 +20615,7 @@ class LoRATrainerGUI:
         )
         if filepath:
             var.set(filepath)
+            self._remember_browse_dir("lora_browse_dir", filepath)
 
     def _repair_engine_plan(self):
         """Main-thread half of the engine load: validate paths (messageboxes live here),
@@ -24570,9 +24598,12 @@ class LoRATrainerGUI:
                              fg=COLORS["text_muted"], font=(FONT_FAMILY, 9), cursor="hand2")
             thumb.grid(row=r, column=1, sticky=tk.W, padx=4, pady=4)
             thumb.bind("<Button-1>", lambda e, sl=slot: self._repair_kf_browse(sl))
-            ToolTip(thumb, tip + " Click to pick a photo; you then crop it to the clip's shape.")
+            thumb._repair_kf_slot = slot          # a drop landing here goes to this slot
+            ToolTip(thumb, tip + " Click to pick a photo, or drag one from Explorer onto it; "
+                               "you then crop it to the clip's shape.")
             btns = ttk.Frame(parent)
             btns.grid(row=r, column=2, sticky=tk.W, padx=4)
+            btns._repair_kf_slot = slot
             ttk.Button(btns, text="Browse…", command=lambda sl=slot: self._repair_kf_browse(sl)
                        ).pack(side=tk.LEFT, padx=(0, 4))
             ttk.Button(btns, text="Re-crop", command=lambda sl=slot: self._repair_kf_recrop(sl)
@@ -24582,6 +24613,7 @@ class LoRATrainerGUI:
             info = tk.Label(parent, text="", font=(FONT_FAMILY, 9), fg=COLORS["text_secondary"],
                             bg=COLORS["bg_surface"], anchor=tk.W)
             info.grid(row=r, column=3, sticky=tk.W, padx=8)
+            info._repair_kf_slot = slot
             self._repair_h3_kf_widgets[slot] = {"thumb": thumb, "info": info}
         parent.columnconfigure(3, weight=1)
         tk.Label(parent, text="Frame conditioning turns the pass-1 resume off for those renders "
@@ -24591,20 +24623,70 @@ class LoRATrainerGUI:
                  anchor=tk.W, justify=tk.LEFT).grid(row=2, column=0, columnspan=4, sticky=tk.W,
                                                      padx=4, pady=(6, 0))
 
+    _REPAIR_KF_IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
+
     def _repair_kf_browse(self, slot):
         from tkinter import filedialog
         path = filedialog.askopenfilename(
             title=f"Photo for the {slot} frame",
             filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp"), ("All files", "*.*")],
-            initialdir=self._pref_initialdir("input_ref_dir"))
+            initialdir=(self._remembered_dir("kf_browse_dir")
+                        or self._pref_initialdir("input_ref_dir")))
         if not path:
             return
+        self._remember_browse_dir("kf_browse_dir", path)
+        self._repair_kf_accept(slot, path)
+
+    def _repair_kf_accept(self, slot, path):
+        """A photo arrived for `slot` — from Browse or a drop: crop it, store it, re-render."""
         rect = self._repair_kf_crop_dialog(path)
         if rect is None:
             return
         self._repair_h3_kf[slot] = {"path": path, "rect": rect}
         self._repair_kf_refresh_thumbs()
         self._on_preview_param_changed()
+
+    def _repair_kf_install_drop(self):
+        """Let a photo be dragged from Explorer onto either frame slot — the Windows shell
+        route Gizmo uses (fizgig.utils.win_drop), so no new dependency. Explorer shows the
+        drop cursor over the whole window; only a drop that lands on a slot does anything.
+        Off Windows (a pod) this quietly leaves the Browse buttons as the only route."""
+        self._repair_kf_can_drop = False
+        try:
+            from fizgig.utils.win_drop import enable_file_drop
+            self._repair_kf_can_drop = bool(enable_file_drop(self.master, self._repair_kf_on_drop))
+        except Exception:
+            self._repair_kf_can_drop = False
+        if self._repair_kf_can_drop:
+            self._repair_kf_refresh_thumbs()          # the empty slots now say "drop a photo"
+
+    def _repair_kf_empty_text(self):
+        return ("drop a photo\nor click" if getattr(self, "_repair_kf_can_drop", False)
+                else "(none)")
+
+    def _repair_kf_slot_at(self, x_root, y_root):
+        """The frame slot ('first' / 'last') under a screen point, or None."""
+        try:
+            w = self.master.winfo_containing(int(x_root), int(y_root))
+        except Exception:
+            return None
+        while w is not None:
+            slot = getattr(w, "_repair_kf_slot", None)
+            if slot:
+                return slot
+            w = getattr(w, "master", None)
+        return None
+
+    def _repair_kf_on_drop(self, path, x_root, y_root):
+        slot = self._repair_kf_slot_at(x_root, y_root)
+        if slot is None:
+            return                                    # dropped somewhere that isn't a slot
+        if not str(path).lower().endswith(self._REPAIR_KF_IMAGE_EXTS):
+            self.repair_status_var.set(f"Dropped {os.path.basename(path)} — the {slot} frame "
+                                       "takes a photo (png / jpg / webp / bmp).")
+            return
+        self._remember_browse_dir("kf_browse_dir", path)
+        self._repair_kf_accept(slot, path)
 
     def _repair_kf_recrop(self, slot):
         cur = self._repair_h3_kf.get(slot)
@@ -24630,7 +24712,8 @@ class LoRATrainerGUI:
         for slot, w in self._repair_h3_kf_widgets.items():
             cur = self._repair_h3_kf.get(slot)
             if not cur:
-                w["thumb"].configure(image="", text="(none)", width=14, height=4)
+                w["thumb"].configure(image="", text=self._repair_kf_empty_text(),
+                                     width=14, height=4)
                 w["thumb"].image = None
                 w["info"].configure(text="")
                 continue
@@ -26777,6 +26860,7 @@ class LoRATrainerGUI:
         if path:
             self.entries["CONTEXT_LORA_PATH"].delete(0, tk.END)
             self.entries["CONTEXT_LORA_PATH"].insert(0, path)
+            self._remember_browse_dir("lora_browse_dir", path)
 
     def browse_file(self, setting_name, input_type):
         # Resume Training points at a saved state dir, which lives under the LoRA

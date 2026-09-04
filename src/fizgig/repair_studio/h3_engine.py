@@ -140,6 +140,8 @@ class H3RepairEngine:
         self._te_parked = None         # the layer-streamed text encoder kept in system RAM
         self._turbo_lora_path = ""
         self._turbo_lora_strength = 0.75
+        self.base_mode = "auto"          # the Base picker: auto / stream / nf4
+        self.base_plan = None            # (base_quant, blocks streamed) actually loaded
         self._te_parked_vision = False # ...built with the vision tower (serves text too)
         self.dit_path: Optional[str] = None
         self._prompt_cache_tags = None # token tags that go with _prompt_cache (ref mode only)
@@ -225,12 +227,25 @@ class H3RepairEngine:
     # (~0.4 s per Dial move) against ~2 s of decoder round-trips saved.
     _STUDIO_HEADROOM_GB = 10.0
     _INT8_SWAP_MIN_FREE_GB = 18.0
+    # "Stream blocks" (the Base picker): the exact int8 base on ANY card with enough blocks
+    # streamed to leave room for the biggest clips — 1024×1024 × 56 frames with keyframes is
+    # ~18k tokens, about 2.4× the 768×640 clip's working set and decode (Peter's OOM on the
+    # 5090, 5 Sep). 18 GB over the resident weights covers it; on a 5090 that is 18 blocks.
+    _STREAM_HEADROOM_GB = 18.0
 
     @classmethod
-    def plan_base(cls, free_gb: float):
-        """(base_quant, blocks_to_swap) for `free_gb` of plannable VRAM."""
+    def plan_base(cls, free_gb: float, mode: str = "auto"):
+        """(base_quant, blocks_to_swap) for `free_gb` of plannable VRAM.
+        mode: "auto" (by free VRAM), "stream" (int8, blocks streamed for big-clip room on any
+        card), "nf4" (the 4-bit base, smallest — 9.5% base error)."""
         import math
         free_gb = float(free_gb or 0.0)
+        mode = (mode or "auto").lower()
+        if mode == "nf4":
+            return "nf4", 0
+        if mode == "stream":
+            n = math.ceil((cls._INT8_RESIDENT_GB + cls._STREAM_HEADROOM_GB - free_gb) / cls._INT8_BLOCK_GB)
+            return "int8", max(1, min(40, n))
         if free_gb >= 28.0:
             return "int8", 0
         if free_gb >= cls._INT8_SWAP_MIN_FREE_GB:
@@ -248,9 +263,13 @@ class H3RepairEngine:
             free = plannable_free_vram()
         except Exception:
             free = 0.0
-        base_quant, n_swap = self.plan_base(free)
+        base_quant, n_swap = self.plan_base(free, getattr(self, "base_mode", "auto"))
         self._blocks_swapped = int(n_swap)
-        if n_swap:
+        self.base_plan = (base_quant, int(n_swap))
+        if getattr(self, "base_mode", "auto") != "auto":
+            logger.info("[h3-workbench] Base picker: %s -> %s base, %d blocks streamed (%.1f GB free)",
+                        self.base_mode, base_quant, n_swap, free)
+        elif n_swap:
             logger.info("[h3-workbench] %.1f GB free -> int8 base with the last %d blocks streamed "
                         "from CPU per pass (24 GB-class card: the int8 weights, 0.2%% error, "
                         "rather than the NF4 base's 9.5%%; the pass-1 resume sits out)",
@@ -310,12 +329,14 @@ class H3RepairEngine:
     def ensure_pipeline(self, dit_path: str, vae_path: str, text_encoder_path: str,
                         device: str = "cuda", turbo_lora_path: str = "",
                         turbo_lora_strength: float = 0.75, te_cache_dir: str = "",
-                        audio_vae_path: str = "", **_ignored) -> None:
-        """Load the DiT (base precision auto-planned from free VRAM) + the Turbo LoRA once.
-        The video VAE decoder loads lazily at first decode; the TE loads only on a prompt-cache
-        miss (and is freed straight after)."""
+                        audio_vae_path: str = "", base_mode: str = "auto", **_ignored) -> None:
+        """Load the DiT (base precision auto-planned from free VRAM, or forced by the Base
+        picker: `base_mode` auto / stream / nf4) + the Turbo LoRA once. The video VAE decoder
+        loads lazily at first decode; the TE loads only on a prompt-cache miss (and is freed
+        straight after)."""
         if self.pipeline is not None and self.pipeline.is_loaded:
             return
+        self.base_mode = (base_mode or "auto").lower()
         from fizgig.minimax.loader import load_minimax_h3_dit
         self.device = device
         self.te_path = text_encoder_path

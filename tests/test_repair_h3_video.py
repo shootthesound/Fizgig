@@ -890,6 +890,28 @@ try:
         app._repair_preview_in_flight = False
         app._repair_swap_wanted = False
 
+    # --- 12. the Base picker (H3 only): shown with the family, arms Update, reloads on Start --
+    fam("minimax")
+    ck("H3: Base picker managed under the Model picker", bool(app._repair_h3_base_combo.winfo_manager()))
+    ck("Base picker offers Auto / Stream blocks / NF4", [v.split(" ")[0] for v in app._repair_h3_base_combo.cget("values")] == ["Auto", "Stream", "NF4"])
+    class _BaseEng:
+        pipeline = None; primary_network = object(); dit_path = app._repair_h3_dit_path() or "x.safetensors"
+        base_mode = "auto"
+        def reset(self): pass
+    app.repair_engine = _BaseEng()
+    app.repair_h3_base_var.set(app._repair_h3_base_combo.cget("values")[1]); app._on_repair_h3_base_changed()
+    ck("picking Stream blocks arms Update and the loaded engine counts as mismatched (Start reloads)",
+       app._repair_h3_base_mode() == "stream" and app._repair_start_btn.cget("text") == "Update"
+       and app._repair_h3_model_mismatch() is True)
+    app.repair_engine.base_mode = "stream"
+    ck("...an engine loaded in that mode matches again", app._repair_h3_model_mismatch() is False or bool(app._repair_h3_dit_path()) is False)
+    app.repair_h3_base_var.set(app._repair_h3_base_combo.cget("values")[0]); app._on_repair_h3_base_changed()
+    app.repair_engine = None
+    fam("klein")
+    ck("Klein: Base picker hidden", not app._repair_h3_base_combo.winfo_manager())
+    ck("no duplicate Model / Base rows: one Model combo, one Base combo in the Setup card",
+       sum(1 for w in app._repair_h3_model_combo.master.winfo_children() if isinstance(w, G.ttk.Combobox) and w.cget("values") and str(w.cget("values")[0]).startswith(("First", "Auto"))) == 2)
+
 finally:
     G.messagebox.showerror = _err
     try:

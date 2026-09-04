@@ -662,6 +662,10 @@ def minimax_block_spec(raw):
 # architecture and shapes, so the trainer takes either — a LoRA is most faithful on the base it
 # trained against, which is the point of the choice. Deliberately NOT preset-affected: the var
 # lives outside self.entries and is never collected, so presets/last-train can't flip it.
+REPAIR_H3_BASE_OPTIONS = ("Auto (by free VRAM)",
+                          "Stream blocks (exact int8, room for big clips)",
+                          "NF4 (smallest, 9.5% base error)")
+
 MINIMAX_TRAIN_BASE_OPTIONS = [
     "First/last frame (fl2va) — standard",
     "Reference (ref2va)",
@@ -19476,12 +19480,8 @@ class LoRATrainerGUI:
                 self._repair_scale_controls(True)
                 self._repair_h3_model_label.grid()
                 self._repair_h3_model_combo.grid()
-                self._repair_kf_relabel()
-                self._repair_h3_model_label.grid()
-                self._repair_h3_model_combo.grid()
-                self._repair_kf_relabel()
-                self._repair_h3_model_label.grid()
-                self._repair_h3_model_combo.grid()
+                self._repair_h3_base_label.grid()
+                self._repair_h3_base_combo.grid()
                 self._repair_kf_relabel()
                 if not self._repair_bulk_row.winfo_manager():
                     self._repair_bulk_row.pack(side=tk.TOP, fill=tk.X, pady=(0, 6),
@@ -19493,10 +19493,8 @@ class LoRATrainerGUI:
                 self._repair_scale_controls(False)
                 self._repair_h3_model_label.grid_remove()
                 self._repair_h3_model_combo.grid_remove()
-                self._repair_h3_model_label.grid_remove()
-                self._repair_h3_model_combo.grid_remove()
-                self._repair_h3_model_label.grid_remove()
-                self._repair_h3_model_combo.grid_remove()
+                self._repair_h3_base_label.grid_remove()
+                self._repair_h3_base_combo.grid_remove()
                 self._repair_bulk_row.pack_forget()
                 if not self._repair_res_label.winfo_manager():
                     # Keep the Res pair ahead of the Turbo tick when that is showing (Klein);
@@ -19908,6 +19906,30 @@ class LoRATrainerGUI:
                 "First / Last Frame card becomes Reference Images and <Picture 1> / "
                 "<Picture 2> in the prompt refer to them. Switching reloads the model on the "
                 "next Start / Update (~25 s).")
+        r += 1
+        # Base picker (H3 only): Auto plans from free VRAM; Stream blocks keeps the exact
+        # int8 base on any card with blocks streamed from RAM so the biggest clips fit;
+        # NF4 is the smallest base at 9.5% error. Takes effect on the next Start / Update.
+        self._repair_h3_base_label = ttk.Label(parent, text="Base:")
+        self._repair_h3_base_label.grid(row=r, column=0, sticky=tk.W, padx=4, pady=2)
+        _bv = str(self.last_used.get("repair_h3_base", REPAIR_H3_BASE_OPTIONS[0]))
+        if _bv not in REPAIR_H3_BASE_OPTIONS:
+            _bv = REPAIR_H3_BASE_OPTIONS[0]
+        self.repair_h3_base_var = tk.StringVar(value=_bv)
+        self._repair_h3_base_combo = ttk.Combobox(
+            parent, textvariable=self.repair_h3_base_var, state="readonly", width=34,
+            values=list(REPAIR_H3_BASE_OPTIONS))
+        self._repair_h3_base_combo.grid(row=r, column=1, sticky=tk.W, padx=4, pady=2)
+        self._repair_h3_base_combo.bind("<<ComboboxSelected>>",
+                                        lambda e: self._on_repair_h3_base_changed())
+        ToolTip(self._repair_h3_base_combo,
+                "Auto: the accurate int8 base when it fits (32 GB resident, 24 GB with blocks "
+                "streamed), else NF4. Stream blocks: the same exact int8 base on any card with "
+                "enough blocks streamed from system RAM to leave room for the biggest clips "
+                "(1024² × 56 frames with keyframes) — costs PCIe time per pass, nothing else. "
+                "NF4: the 4-bit base, ~11 GB instead of ~22, at 9.5% base error (the studio "
+                "then judges blocks on a base that isn't the one ComfyUI renders). Takes "
+                "effect on the next Start / Update.")
         r += 1
 
 
@@ -21001,7 +21023,8 @@ class LoRATrainerGUI:
             dit_path=dit_path, vae_path=vae_path, text_encoder_path=te_path,
             device="cuda", turbo_lora_path=turbo_path,
             turbo_lora_strength=0.75, te_cache_dir=te_cache,
-            audio_vae_path=self._repair_h3_audio_vae_path())
+            audio_vae_path=self._repair_h3_audio_vae_path(),
+            base_mode=self._repair_h3_base_mode())
 
     # ------------------------------------------------------------------
     # LoRA Royale — render every epoch on one seed, crossfade to the sweet spot
@@ -24103,13 +24126,30 @@ class LoRATrainerGUI:
         return (v.get().strip() if v is not None else "")
 
     def _repair_h3_model_mismatch(self):
-        """The loaded engine runs a different H3 checkpoint than the picker wants."""
+        """The loaded engine runs a different H3 checkpoint — or a different base (the Base
+        picker) — than the pickers want."""
         eng = self.repair_engine
         cur = getattr(eng, "dit_path", None) if eng is not None else None
         if not cur or not self._repair_is_h3():
             return False
+        if getattr(eng, "base_mode", "auto") != self._repair_h3_base_mode():
+            return True
         want = self._repair_h3_dit_path()
         return bool(want) and os.path.normcase(os.path.abspath(cur)) != os.path.normcase(os.path.abspath(want))
+
+    def _repair_h3_base_mode(self):
+        """The Base picker as the engine's mode: auto / stream / nf4."""
+        var = getattr(self, "repair_h3_base_var", None)
+        v = str(var.get()) if var is not None else ""
+        return "stream" if v.startswith("Stream") else "nf4" if v.startswith("NF4") else "auto"
+
+    def _on_repair_h3_base_changed(self):
+        try:
+            self.last_used["repair_h3_base"] = self.repair_h3_base_var.get()
+            self._save_last_used_paths()
+        except Exception:
+            pass
+        self._repair_mark_update_needed()
 
     def _on_repair_h3_model_changed(self):
         self._repair_h3_ref_flag = minimax_train_base(self.repair_h3_model_var.get()) == "ref2va"
@@ -24164,121 +24204,6 @@ class LoRATrainerGUI:
         key = "minimax_ref_dit" if self._repair_h3_ref_mode() else "minimax_dit"
         v = self.prefs_vars.get(key) if hasattr(self, "prefs_vars") else None
         return (v.get().strip() if v is not None else "")
-
-    def _repair_h3_model_mismatch(self):
-        """The loaded engine runs a different H3 checkpoint than the picker wants."""
-        eng = self.repair_engine
-        cur = getattr(eng, "dit_path", None) if eng is not None else None
-        if not cur or not self._repair_is_h3():
-            return False
-        want = self._repair_h3_dit_path()
-        return bool(want) and os.path.normcase(os.path.abspath(cur)) != os.path.normcase(os.path.abspath(want))
-
-    def _on_repair_h3_model_changed(self):
-        self._repair_h3_ref_flag = minimax_train_base(self.repair_h3_model_var.get()) == "ref2va"
-        try:
-            self.last_used["repair_h3_model"] = self.repair_h3_model_var.get()
-            self._save_last_used_paths()
-        except Exception:
-            pass
-        self._repair_kf_relabel()
-        self._repair_mark_update_needed()
-
-    def _repair_kf_relabel(self):
-        """The First / Last Frame card reads as Reference Images under ref2va."""
-        widgets = getattr(self, "_repair_h3_kf_widgets", None)
-        if not widgets:
-            return
-        ref = self._repair_h3_ref_mode()
-        rows = {"first": "Reference 1:" if ref else "First frame:",
-                "last": "Reference 2:" if ref else "Last frame:"}
-        for slot, w in widgets.items():
-            t = w.get("title")
-            if t is not None:
-                t.configure(text=rows[slot])
-        labels = getattr(self, "_repair_kf_card_labels", None) or []
-        if len(labels) >= 2:
-            if ref:
-                labels[0].configure(text="Reference Images")
-                labels[1].configure(text="Up to two photos the clip takes its subject from — "
-                                         "say <Picture 1> / <Picture 2> in the prompt. Cropped to "
-                                         "the clip's shape and sized to its canvas; the same "
-                                         "picture goes to the encoder and the condition rows. "
-                                         "Applies to every render — sliders, library and "
-                                         "No-LoRA alike.")
-            else:
-                labels[0].configure(text=getattr(self, "_repair_kf_title_default", "First / Last Frame"))
-                labels[1].configure(text=getattr(self, "_repair_kf_desc_default", ""))
-
-    def _repair_engine_status(self, msg):
-        """The engine's status hook (worker thread) -> the status line."""
-        try:
-            self.master.after(0, lambda: self.repair_status_var.set(str(msg)))
-        except Exception:
-            pass
-
-    def _repair_h3_ref_mode(self):
-        """True when the H3 studio runs the ref2va checkpoint (a plain flag, safe from a
-        worker thread — set on the Tk thread whenever the picker changes)."""
-        return self._repair_is_h3() and bool(getattr(self, "_repair_h3_ref_flag", False))
-
-    def _repair_h3_dit_path(self):
-        """The H3 checkpoint the picker asks for: DiT (reference) for ref2va, else the DiT."""
-        key = "minimax_ref_dit" if self._repair_h3_ref_mode() else "minimax_dit"
-        v = self.prefs_vars.get(key) if hasattr(self, "prefs_vars") else None
-        return (v.get().strip() if v is not None else "")
-
-    def _repair_h3_model_mismatch(self):
-        """The loaded engine runs a different H3 checkpoint than the picker wants."""
-        eng = self.repair_engine
-        cur = getattr(eng, "dit_path", None) if eng is not None else None
-        if not cur or not self._repair_is_h3():
-            return False
-        want = self._repair_h3_dit_path()
-        return bool(want) and os.path.normcase(os.path.abspath(cur)) != os.path.normcase(os.path.abspath(want))
-
-    def _on_repair_h3_model_changed(self):
-        self._repair_h3_ref_flag = minimax_train_base(self.repair_h3_model_var.get()) == "ref2va"
-        try:
-            self.last_used["repair_h3_model"] = self.repair_h3_model_var.get()
-            self._save_last_used_paths()
-        except Exception:
-            pass
-        self._repair_kf_relabel()
-        self._repair_mark_update_needed()
-
-    def _repair_kf_relabel(self):
-        """The First / Last Frame card reads as Reference Images under ref2va."""
-        widgets = getattr(self, "_repair_h3_kf_widgets", None)
-        if not widgets:
-            return
-        ref = self._repair_h3_ref_mode()
-        rows = {"first": "Reference 1:" if ref else "First frame:",
-                "last": "Reference 2:" if ref else "Last frame:"}
-        for slot, w in widgets.items():
-            t = w.get("title")
-            if t is not None:
-                t.configure(text=rows[slot])
-        labels = getattr(self, "_repair_kf_card_labels", None) or []
-        if len(labels) >= 2:
-            if ref:
-                labels[0].configure(text="Reference Images")
-                labels[1].configure(text="Up to two photos the clip takes its subject from — "
-                                         "say <Picture 1> / <Picture 2> in the prompt. Cropped to "
-                                         "the clip's shape and sized to its canvas; the same "
-                                         "picture goes to the encoder and the condition rows. "
-                                         "Applies to every render — sliders, library and "
-                                         "No-LoRA alike.")
-            else:
-                labels[0].configure(text=getattr(self, "_repair_kf_title_default", "First / Last Frame"))
-                labels[1].configure(text=getattr(self, "_repair_kf_desc_default", ""))
-
-    def _repair_engine_status(self, msg):
-        """The engine's status hook (worker thread) -> the status line."""
-        try:
-            self.master.after(0, lambda: self.repair_status_var.set(str(msg)))
-        except Exception:
-            pass
 
     def _repair_mark_update_needed(self):
         """Prompt or seed changed — show 'Update' on the Start button instead of auto-regenerating."""

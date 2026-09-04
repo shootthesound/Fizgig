@@ -548,6 +548,10 @@ ck("24 GB class (23.5 free): the int8 base with 20 blocks streamed (10 GB headro
 ck("24 GB card as measured (22.2 free): 24 streamed", _H3E.plan_base(22.2) == ("int8", 24))
 ck("20 GB class: int8 with 29 streamed", _H3E.plan_base(20.0) == ("int8", 29))
 ck("16 GB class (15.5 free): the NF4 base", _H3E.plan_base(15.5) == ("nf4", 0))
+ck("Base picker Stream blocks on a 5090 (32.5 free): int8 with 18 streamed (18 GB headroom for 1024² × 56 f)", _H3E.plan_base(32.5, "stream") == ("int8", 18))
+ck("Stream blocks on a 24 GB card: capped at 40 streamed", _H3E.plan_base(22.2, "stream") == ("int8", 40))
+ck("Base picker NF4 on any card: the NF4 base, nothing streamed", _H3E.plan_base(32.5, "nf4") == ("nf4", 0) and _H3E.plan_base(15.5, "nf4") == ("nf4", 0))
+ck("Auto is the default mode", _H3E.plan_base(32.5, "auto") == _H3E.plan_base(32.5))
 
 if _fails:
     print(f"{len(_fails)} FAILED: " + ", ".join(_fails))

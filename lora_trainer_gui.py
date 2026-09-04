@@ -25218,7 +25218,7 @@ class LoRATrainerGUI:
              "S / Tab — trade sides. Sound follows the LEFT pane.")
         speed_var = tk.StringVar(value="1")
         ttk.Label(bar, text="Speed:").pack(side=tk.LEFT, padx=(12, 2))
-        spd = ttk.Combobox(bar, textvariable=speed_var, values=["0.25", "0.5", "1"],
+        spd = ttk.Combobox(bar, textvariable=speed_var, values=["0.1", "0.25", "0.5", "1"],
                            state="readonly", width=5)
         spd.pack(side=tk.LEFT)
         spd.bind("<<ComboboxSelected>>", lambda e: self._repair_clip_player_set_speed())

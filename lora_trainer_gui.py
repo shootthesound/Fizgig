@@ -19822,8 +19822,20 @@ class LoRATrainerGUI:
         # Prompt row
         ttk.Label(parent, text="Prompt:").grid(row=r, column=0, sticky=tk.W, padx=4, pady=2)
         self.repair_prompt_var = tk.StringVar(value="")
-        prompt_entry = ttk.Entry(parent, textvariable=self.repair_prompt_var)
+        # A growing multi-line box (2–10 lines, wraps by word) that mirrors repair_prompt_var
+        # both ways, so everything that reads / sets the var keeps working (presets, the
+        # Explorer hand-off, restore). Long H3 prompts run to paragraphs (Peter, 4 Sep).
+        prompt_entry = tk.Text(parent, height=2, wrap="word", bg=COLORS["bg_surface"],
+                               fg=COLORS["text_primary"], insertbackground=COLORS["text_primary"],
+                               font=(FONT_FAMILY, 10), relief="flat", highlightthickness=1,
+                               highlightbackground=COLORS["border"],
+                               highlightcolor=COLORS["border_focus"], undo=True)
         prompt_entry.grid(row=r, column=1, sticky=tk.EW, padx=4, pady=2)
+        self._repair_prompt_text = prompt_entry
+        self._repair_prompt_syncing = False
+        prompt_entry.bind("<<Modified>>", self._on_repair_prompt_text_modified)
+        prompt_entry.bind("<Configure>", lambda e: self._repair_prompt_grow())
+        self.repair_prompt_var.trace_add("write", self._on_repair_prompt_var_written)
         self.repair_prompt_var.trace_add("write", lambda *_: self._repair_mark_update_needed())
         params_frame = ttk.Frame(parent)
         params_frame.grid(row=r, column=2, columnspan=2, sticky=tk.EW, padx=4, pady=2)
@@ -23920,6 +23932,67 @@ class LoRATrainerGUI:
 
         import threading
         threading.Thread(target=_work, daemon=True).start()
+
+    def _on_repair_prompt_text_modified(self, _e=None):
+        """Text box -> repair_prompt_var (the box's edited flag is reset each time)."""
+        w = self._repair_prompt_text
+        try:
+            if not w.edit_modified():
+                return
+            w.edit_modified(False)
+        except Exception:
+            return
+        if self._repair_prompt_syncing:
+            return
+        self._repair_prompt_syncing = True
+        try:
+            self.repair_prompt_var.set(w.get("1.0", "end-1c"))
+        finally:
+            self._repair_prompt_syncing = False
+        self._repair_prompt_grow()
+
+    def _on_repair_prompt_var_written(self, *_):
+        """repair_prompt_var -> Text box (presets, restore, the Explorer hand-off)."""
+        if self._repair_prompt_syncing:
+            return
+        w = self._repair_prompt_text
+        try:
+            cur = w.get("1.0", "end-1c")
+            new = self.repair_prompt_var.get()
+            if cur == new:
+                return
+            self._repair_prompt_syncing = True
+            try:
+                w.delete("1.0", "end")
+                w.insert("1.0", new)
+                w.edit_modified(False)
+            finally:
+                self._repair_prompt_syncing = False
+        except Exception:
+            return
+        self._repair_prompt_grow()
+
+    def _repair_prompt_grow(self):
+        """Size the prompt box to its wrapped content: 2 to 10 lines."""
+        w = getattr(self, "_repair_prompt_text", None)
+        if w is None:
+            return
+        try:
+            w.update_idletasks()
+            txt = w.get("1.0", "end-1c")
+            rows = txt.split(chr(10))
+            # logical lines + an estimate of word-wraps; the display count only when the
+            # widget is actually laid out (headless it reports stale numbers)
+            per_line = max(40, int(w.winfo_width() or 0) // 7)
+            est = len(rows) + sum(len(r) // per_line for r in rows)
+            disp = 0
+            if w.winfo_viewable():
+                disp = int(w.count("1.0", "end-1c", "displaylines")[0] or 0)
+            lines = max(2, min(10, max(est, disp)))
+            if int(w.cget("height")) != lines:
+                w.configure(height=lines)
+        except Exception:
+            pass
 
     def _repair_mark_update_needed(self):
         """Prompt or seed changed — show 'Update' on the Start button instead of auto-regenerating."""

@@ -95,6 +95,20 @@ try:
     ck("Klein (from Krea 2): Res combo present, Turbo tick present",
        bool(app._repair_res_combo.winfo_manager()) and bool(app._repair_turbo_chk.winfo_manager()))
 
+    # --- 1b. multi-line prompt box mirrors the var both ways and grows ------------------------
+    app.repair_prompt_var.set("line one")
+    root.update()
+    ck("var -> box", app._repair_prompt_text.get("1.0", "end-1c") == "line one")
+    app._repair_prompt_text.insert("end", chr(10).join(["", "line two", "line three", "line four"]))
+    app._on_repair_prompt_text_modified()
+    root.update()
+    ck("box -> var, newlines kept", app.repair_prompt_var.get() == chr(10).join(["line one", "line two", "line three", "line four"]))
+    ck("the box grew to its lines", int(app._repair_prompt_text.cget("height")) >= 4)
+    app.repair_prompt_var.set("short")
+    root.update()
+    ck("...and shrinks back (min 2)", app._repair_prompt_text.get("1.0", "end-1c") == "short"
+       and int(app._repair_prompt_text.cget("height")) == 2)
+
     # --- 2. size choices + parser ---------------------------------------------------------
     fam("minimax")
     vals = list(app._repair_h3_size_combo["values"])
@@ -306,6 +320,7 @@ try:
     import threading as _thr, time as _tm
     _dead = _thr.Thread(target=lambda: None); _dead.start(); _dead.join()
     app._repair_preview_thread = _dead; app._repair_preview_in_flight = True
+    app._repair_worker_dead_since = None        # (an automatic tick may have stamped an old one)
     app._repair_watchdog_tick()
     ck("watchdog: first sight of a dead worker starts the grace, in-flight kept", app._repair_preview_in_flight)
     app._repair_worker_dead_since = _tm.monotonic() - 3.0

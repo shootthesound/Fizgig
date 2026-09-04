@@ -24085,7 +24085,12 @@ class LoRATrainerGUI:
             if hasattr(self.repair_engine, "request_cancel"):
                 self.repair_engine.request_cancel()
             print("[repair] run_async: in-flight, requested cancel + marked dirty; will refire")
+            self.repair_status_var.set("Restarting with your latest change…")
             return
+        if getattr(self, "_repair_nolora_pending", False) and hasattr(self.repair_engine, "request_cancel"):
+            # The pair is up but the worker still holds the engine for the no-LoRA clip —
+            # let it go; the new render's worker brings that clip back.
+            self.repair_engine.request_cancel()
         # Sync state from UI to repair_state (prompt/seed/res live in entries, not bound)
         prompt_text = self.repair_prompt_var.get().strip()
         if not prompt_text:
@@ -24287,6 +24292,12 @@ class LoRATrainerGUI:
                 # FIRST and the cancel cleared inside it: a pending cancel is what makes a
                 # mid-render library entry yield the engine to us.
                 with self._repair_engine_lock:
+                    # A newer change arrived while we waited for the engine (the library
+                    # builder was aborting its entry — and it consumed the cancel meant for
+                    # us): this snapshot is stale, re-fire with the latest instead of
+                    # rendering it in full (Peter, 4 Sep: quick successive block ticks).
+                    if self._repair_preview_dirty:
+                        raise PreviewAborted("stale snapshot")
                     if hasattr(self.repair_engine, "clear_cancel"):
                         self.repair_engine.clear_cancel()
                     # First / last frame photos -> latents at THIS canvas (cached encodes).
@@ -24303,6 +24314,8 @@ class LoRATrainerGUI:
                             cache, h3_opts["regime"], h3_opts["with_audio"])
                         if pinned is not None and pinned.get("pinned"):
                             base_clip = pinned
+                    if self._repair_preview_dirty:
+                        raise PreviewAborted("stale snapshot")     # changed during the baseline
                     print("[repair] worker: H3 tweaked clip")
                     early = int(h3_opts.pop("early_step", 0))
                     _gen = self._repair_render_gen
@@ -24319,6 +24332,9 @@ class LoRATrainerGUI:
                     self.master.after(0, lambda: self._set_repair_preview_clips(
                         base_clip, tweak_clip, snapshot=snapshot, opts=h3_opts,
                         nolora="pending" if can_nolora else None))
+                    if can_nolora and self._repair_preview_dirty:
+                        can_nolora = False                 # a newer change wants the engine
+                        self.master.after(0, lambda: self._repair_set_nolora_clip(None, _gen))
                     if can_nolora:
                         try:
                             print("[repair] worker: H3 no-LoRA clip")

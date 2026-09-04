@@ -230,6 +230,18 @@ try:
     ck("status names the steps + length", "4 steps" in app.repair_status_var.get()
        and "5 frames" in app.repair_status_var.get(), app.repair_status_var.get())
     ck("in-flight cleared", not app._repair_preview_in_flight)
+    # a change that landed while the worker was waiting for the engine: the stale snapshot is
+    # dropped without a render and the latest state re-fires (quick successive block ticks)
+    calls.clear()
+    app._repair_preview_dirty = True
+    app._repair_preview_in_flight = True
+    app._repair_preview_worker(st, {"frames": 5, "regime": "dial", "with_audio": False})
+    root.update()
+    ck("stale snapshot: no render, in-flight cleared, re-fired",
+       not calls and not app._repair_preview_in_flight and not app._repair_preview_dirty,
+       (calls, app._repair_preview_after_id))
+    if app._repair_preview_after_id is not None:
+        root.after_cancel(app._repair_preview_after_id); app._repair_preview_after_id = None
     # Update while a render is in flight: never loads onto the live primary — it cancels and
     # comes back (the old path raised "Primary already loaded")
     app._repair_preview_in_flight = True

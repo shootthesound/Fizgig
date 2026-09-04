@@ -130,6 +130,9 @@ class H3RepairEngine:
         self.device = "cuda"
         self.dtype = torch.bfloat16
 
+        self.on_status = None          # callable(str) — the GUI's status line, if it wants it
+        self.dit_path: Optional[str] = None
+        self._prompt_cache_tags = None # token tags that go with _prompt_cache (ref mode only)
         self.primary_network = None
         self.donor_network = None
         self.primary_path: Optional[str] = None
@@ -205,6 +208,7 @@ class H3RepairEngine:
         from fizgig.minimax.loader import load_minimax_h3_dit
         self.device = device
         self.te_path = text_encoder_path
+        self.dit_path = dit_path
         self._vae_path = vae_path
         self._audio_vae_path = audio_vae_path or None
         self._te_cache_dir = te_cache_dir or None
@@ -447,6 +451,25 @@ class H3RepairEngine:
                 torch.cuda.empty_cache()
         return z.float().cpu()
 
+    @torch.no_grad()
+    def encode_reference_image(self, image: Image.Image, width: int, height: int):
+        """A PIL image (already cropped) -> (resized PIL, normalized reference latent
+        [1, 24, 1, h, w]) for ref2va. Sized to the clip's pixel budget ("match": down-only,
+        32-px multiples) and THE SAME resized image goes to the VAE here and to the vision
+        blocks in _encode_prompt — the pairing the r2v workflow depends on."""
+        from fizgig.minimax.reference import resize_reference
+        import numpy as np
+        img = resize_reference(image, int(width), int(height), "match")
+        arr = torch.from_numpy(np.asarray(img).copy()).float().permute(2, 0, 1) / 127.5 - 1.0
+        enc = self._ensure_encoder().to(self.device)
+        try:
+            z = enc.encode(arr.unsqueeze(0).to(self.device))     # [1, 24, 1, h, w]
+        finally:
+            self.encoder = enc.to("cpu")
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        return img, z.float().cpu()
+
     def load_primary(self, path: str) -> None:
         if self.pipeline is None or not self.pipeline.is_loaded:
             raise RuntimeError("Pipeline not loaded; call ensure_pipeline() first.")
@@ -551,7 +574,8 @@ class H3RepairEngine:
                          steps=int(steps), turbo_strength=strength,
                          keyframe_sig=self.keyframe_signature(state),
                          primary_scale=float(getattr(state, "primary_scale", 1.0)),
-                         donor_scale=float(getattr(state, "donor_scale", 1.0)))
+                         donor_scale=float(getattr(state, "donor_scale", 1.0)),
+                         dit=os.path.basename(getattr(self, "dit_path", "") or ""))
 
     # ----- slider state ------------------------------------------------------
     def apply_state(self, state) -> None:
@@ -582,28 +606,61 @@ class H3RepairEngine:
         self._cancel_event.clear()
 
     # ----- prompt encoding (two-level cache) ---------------------------------
-    def _prompt_disk_path(self, prompt: str) -> Optional[str]:
+    def _status(self, msg: str) -> None:
+        cb = self.on_status
+        if cb is not None:
+            try:
+                cb(msg)
+            except Exception:
+                pass
+
+    @staticmethod
+    def _ref_fingerprint(images) -> str:
+        """A short hash of the reference images as they will be shown to the encoder (size +
+        pixels) — part of the prompt cache key, since the embedding depends on them."""
+        if not images:
+            return ""
+        h = hashlib.sha256()
+        for im in images:
+            im = im.convert("RGB")
+            h.update(f"{im.width}x{im.height}:".encode())
+            h.update(im.tobytes())
+        return h.hexdigest()[:16]
+
+    def _prompt_disk_path(self, prompt: str, ref_fp: str = "") -> Optional[str]:
         if not self._te_cache_dir:
             return None
-        h = hashlib.sha256((prompt + "\x00" + os.path.basename(self.te_path or ""))
-                           .encode("utf-8")).hexdigest()
+        h = hashlib.sha256((prompt + "\x00" + os.path.basename(self.te_path or "")
+                            + ("\x00ref:" + ref_fp if ref_fp else "")).encode("utf-8")).hexdigest()
         return os.path.join(self._te_cache_dir, f"{h}.safetensors")
 
-    def _encode_prompt(self, prompt: str):
+    def _encode_prompt(self, prompt: str, images=None):
         """[1, L, 5120] on CPU. In-memory hit -> free; disk hit -> milliseconds; miss -> the
         32B TE loads once (couple of minutes), encodes, frees, and the result persists so no
-        future session pays again."""
-        if self._prompt_cache_key == prompt and self._prompt_cache is not None:
+        future session pays again. With `images` (ref2va): the vision-capable encoder sees
+        `<Picture i>:` blocks ahead of the prompt and the per-row modality tags come back
+        alongside (self._prompt_cache_tags) — cached under prompt + image fingerprint."""
+        ref_fp = self._ref_fingerprint(images) if images else ""
+        key = (prompt, ref_fp)
+        if self._prompt_cache_key == key and self._prompt_cache is not None:
             return self._prompt_cache
-        disk = self._prompt_disk_path(prompt)
+        disk = self._prompt_disk_path(prompt, ref_fp)
         if disk and os.path.exists(disk):
             from safetensors.torch import load_file
-            emb = load_file(disk)["hidden_states"].unsqueeze(0)
-            self._prompt_cache_key, self._prompt_cache = prompt, emb
-            return emb
+            sd = load_file(disk)
+            emb = sd["hidden_states"].unsqueeze(0)
+            tags = sd.get("token_tags")
+            if ref_fp and tags is None:
+                pass                      # an old text-only file under a ref key: re-encode
+            else:
+                self._prompt_cache_key, self._prompt_cache = key, emb
+                self._prompt_cache_tags = tags
+                return emb
         from fizgig.minimax.sampling import encode_sample_prompts
         logger.info("[h3-workbench] encoding prompt with the 32B TE (one-off per prompt — "
                     "cached to disk after this)")
+        self._status("Encoding the prompt with the 32B text encoder — a couple of quiet "
+                     "minutes, once per prompt" + (" + reference set" if images else "") + "…")
         # The TE (~15.7 GB) and the resident base must never be co-resident (the trainer's
         # rule; the int8 base alone is ~21 GB). Park the DiT + Turbo net for the encode and
         # restore after — safe as a whole-model .to because this engine never block-swaps.
@@ -616,8 +673,12 @@ class H3RepairEngine:
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+        tags = None
         try:
-            emb = encode_sample_prompts(self.te_path, [prompt], device=self.device)[0]
+            if images:
+                emb, tags = self._encode_with_vision(prompt, images)
+            else:
+                emb = encode_sample_prompts(self.te_path, [prompt], device=self.device)[0]
         finally:
             if _parked:
                 self.dit.to(self.device)
@@ -626,17 +687,46 @@ class H3RepairEngine:
                 gc.collect()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+            self._status("Rendering…")
         emb = emb.cpu()
+        tags = tags.cpu() if tags is not None else None
         if disk:
             try:
                 os.makedirs(self._te_cache_dir, exist_ok=True)
                 from safetensors.torch import save_file
-                save_file({"hidden_states": emb[0].contiguous()}, disk,
-                          metadata={"prompt": prompt[:512], "te": os.path.basename(self.te_path or "")})
+                blob = {"hidden_states": emb[0].contiguous()}
+                if tags is not None:
+                    blob["token_tags"] = tags.contiguous()
+                save_file(blob, disk, metadata={"prompt": prompt[:512],
+                                                "te": os.path.basename(self.te_path or ""),
+                                                "refs": ref_fp})
             except Exception:
                 logger.exception("prompt disk-cache write failed (render continues)")
-        self._prompt_cache_key, self._prompt_cache = prompt, emb
+        self._prompt_cache_key, self._prompt_cache = key, emb
+        self._prompt_cache_tags = tags
         return emb
+
+    def _encode_with_vision(self, prompt: str, images):
+        """The ref2va prompt: the FULL Qwen3-VL (vision tower + language stack) sees
+        `<Picture i>:` + each reference image ahead of the caption. Loaded for the call and
+        freed after, like the text-only encoder. Returns (emb [1, L, 5120], tags [L])."""
+        from fizgig.minimax.embedder import load_minimax_h3_te_planned
+        try:
+            te = load_minimax_h3_te_planned(self.te_path, device=self.device,
+                                            compute_dtype=torch.bfloat16, quantize=True,
+                                            with_vision=True)
+        except TypeError:
+            from fizgig.minimax.embedder import load_minimax_h3_te
+            te = load_minimax_h3_te(self.te_path, device=self.device,
+                                    compute_dtype=torch.bfloat16, quantize=True, with_vision=True)
+        try:
+            emb, tags = te.encode_with_reference(prompt, list(images))
+        finally:
+            del te
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        return emb, tags
 
     # ----- preview -----------------------------------------------------------
     def generate_preview(self, state, *, seed: Optional[int] = None,
@@ -732,7 +822,8 @@ class H3RepairEngine:
                       prompt: Optional[str] = None, width: Optional[int] = None,
                       height: Optional[int] = None, frames: Optional[int] = None,
                       steps: Optional[int] = None, turbo_strength: Optional[float] = None,
-                      keyframes=None, on_denoised=None, no_lora: bool = False):
+                      keyframes=None, on_denoised=None, no_lora: bool = False,
+                      references=None):
         """Apply the slider state and sample ONE clip: returns (latent [1,24,T,H/16,W/16] on
         CPU fp32, audio_rows [2*A, 32] on CPU fp32 or None). No decode — the caller decides
         (decode_clip_frames / decode_audio, or store it in the render cache).
@@ -775,9 +866,19 @@ class H3RepairEngine:
         frames = int(frames or getattr(state, "preview_frames", 0) or H3_PREVIEW_FRAMES)
         if keyframes is None:
             keyframes = getattr(state, "keyframes", None)
+        if references is None:
+            references = getattr(state, "references", None)
         if turbo_strength is not None:
             self.set_turbo_strength(turbo_strength)
-        emb = self._encode_prompt(prompt)
+        ref_latents, text_tags = None, None
+        if references:
+            # ref2va: the prompt is encoded WITH the reference pictures (vision blocks), and
+            # the same pictures' latents ride as condition rows.
+            emb = self._encode_prompt(prompt, images=[im for im, _z in references])
+            text_tags = self._prompt_cache_tags
+            ref_latents = [z for _im, z in references]
+        else:
+            emb = self._encode_prompt(prompt)
 
         def _abort_check(_seconds, _step, _total):
             cb = self.on_step
@@ -792,8 +893,9 @@ class H3RepairEngine:
         key = (self.primary_path, self.donor_path, int(seed), prompt, int(width), int(height),
                int(frames), int(steps), self._turbo_strength,
                round(float(getattr(state, "primary_scale", 1.0)), 4),
-               round(float(getattr(state, "donor_scale", 1.0)), 4))
-        if (self.resume_enabled and not keyframes and not no_lora
+               round(float(getattr(state, "donor_scale", 1.0)), 4),
+               getattr(self, "dit_path", None))
+        if (self.resume_enabled and not keyframes and not references and not no_lora
                 and hasattr(self.dit, "forward_cached")):
             resume = None
             entries = {}
@@ -825,7 +927,8 @@ class H3RepairEngine:
                     seed=int(seed), device=self.device, dtype=self.dtype,
                     num_frames=frames, on_slow_step=_abort_check, slow_step_s=0.0,
                     return_audio=True, keyframes=keyframes, block_cache=block_cache,
-                    on_denoised=on_denoised, exact_frames=True)
+                    on_denoised=on_denoised, exact_frames=True,
+                    ref_latents=ref_latents, text_token_tags=text_tags)
 
         try:
             resume_failed = False
@@ -933,13 +1036,18 @@ class H3RepairEngine:
     def keyframe_signature(state):
         """A hashable stand-in for state.keyframes (index + tensor fingerprint per entry) —
         cheap enough for a cache key, specific enough that a different crop re-renders."""
-        kf = getattr(state, "keyframes", None)
-        if not kf:
+        kf = getattr(state, "keyframes", None) or []
+        refs = getattr(state, "references", None) or []
+        if not kf and not refs:
             return ()
         sig = []
         for idx, lat in kf:
             t = lat.float()
             sig.append((int(idx), tuple(t.shape), round(float(t.sum()), 3),
+                        round(float(t.abs().mean()), 5)))
+        for i, (_img, lat) in enumerate(refs):
+            t = lat.float()
+            sig.append(("ref", i, tuple(t.shape), round(float(t.sum()), 3),
                         round(float(t.abs().mean()), 5)))
         return tuple(sig)
 
@@ -1072,6 +1180,7 @@ class H3RepairEngine:
         base.preview_height = state.preview_height
         base.preview_frames = frames
         base.keyframes = getattr(state, "keyframes", None)
+        base.references = getattr(state, "references", None)
         base.primary_scale = float(getattr(state, "primary_scale", 1.0))
         base.donor_scale = float(getattr(state, "donor_scale", 1.0))
         clip = self.render_clip(base, frames=frames, regime=regime, with_audio=with_audio,
@@ -1101,6 +1210,7 @@ class H3RepairEngine:
         base.preview_height = state.preview_height
         base.preview_frames = frames
         base.keyframes = getattr(state, "keyframes", None)
+        base.references = getattr(state, "references", None)
         clip = self.render_clip(base, frames=frames, regime=regime, with_audio=with_audio,
                                 cache=cache, no_lora=True, steps=steps, turbo_strength=strength)
         self._nolora_clip_key = key

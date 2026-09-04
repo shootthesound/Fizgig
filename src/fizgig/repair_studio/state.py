@@ -62,6 +62,7 @@ class SliderState:
     # (presets never carry a conditioning image); copied by reference.
     preview_frames: int = 0
     keyframes: Any = None
+    references: Any = None      # H3 ref2va: [(PIL at the reference canvas, latent)] — like keyframes
     # Load strength of each LoRA (H3 Repair Studio): the strength it was designed to be used
     # at. Every block slider is relative to it — a block at 1.0 IS the block at this strength
     # — so the effective multiplier is slider × scale. Never baked into a saved file: the
@@ -134,6 +135,7 @@ class SliderState:
             ref_image_path=self.ref_image_path, ref_megapixels=self.ref_megapixels,
             ref_strength=self.ref_strength,
             preview_frames=self.preview_frames, keyframes=self.keyframes,
+            references=self.references,
             primary_scale=self.primary_scale, donor_scale=self.donor_scale,
         )
 

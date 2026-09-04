@@ -340,6 +340,43 @@ _after = hashlib.sha256(open(PREFS, "rb").read()).hexdigest() if os.path.exists(
 ck("prefs.json is byte-identical after the run", _before == _after)
 
 print()
+
+# --- ref2va: references ride as condition rows with the prompt's token tags ----------------------
+from PIL import Image as _PILImage  # noqa: E402
+_eng_r = _MiniEngine()
+_eng_r._prompt_cache_tags = None
+_L = _txt.shape[1]
+_tags = torch.zeros(_L, dtype=torch.long); _tags[:2] = 1        # 2 "video" rows up front, say
+_calls = []
+def _enc(prompt, images=None):
+    _calls.append((prompt, len(images) if images else 0))
+    if images:
+        _eng_r._prompt_cache_tags = _tags
+    return _txt
+_eng_r._encode_prompt = _enc
+_st_r = _SS.default_h3()
+_st_r.seed, _st_r.prompt, _st_r.preview_width, _st_r.preview_height, _st_r.preview_frames = 3, "x", 64, 64, 5
+_ref_img = _PILImage.new("RGB", (64, 64), (200, 100, 50))
+_ref_lat = torch.randn(1, 24, 1, 4, 4)
+_st_r.references = [(_ref_img, _ref_lat)]
+_lat_ref, _ = _eng_r.render_latent(_st_r, frames=5, steps=2)
+_st_r.references = None
+_lat_plain, _ = _eng_r.render_latent(_st_r, frames=5, steps=2)
+ck("a reference changes the render and the prompt was encoded WITH the picture",
+   not torch.equal(_lat_ref, _lat_plain) and _calls[0] == ("x", 1) and _calls[1] == ("x", 0), _calls)
+_st_r.references = [(_ref_img, _ref_lat)]
+_sig = _H3E.keyframe_signature(_st_r)
+ck("the conditioning signature covers references", len(_sig) == 1 and _sig[0][0] == "ref")
+_fp1 = _H3E._ref_fingerprint([_ref_img]); _fp2 = _H3E._ref_fingerprint([_PILImage.new("RGB", (64, 64), (0, 0, 0))])
+ck("reference fingerprints differ per picture, empty without", _fp1 != _fp2 and _H3E._ref_fingerprint([]) == "")
+_eng_r._te_cache_dir, _eng_r.te_path = "C:/tmp/tecache", "te.safetensors"
+ck("the prompt disk key differs with references", _H3E._prompt_disk_path(_eng_r, "x") != _H3E._prompt_disk_path(_eng_r, "x", _fp1))
+_big.dit_path = "a.safetensors"
+_k_a = _big.cache_key_for(_sc1, frames=22, regime="dial")
+_big.dit_path = "b.safetensors"
+_k_b = _big.cache_key_for(_sc1, frames=22, regime="dial")
+ck("render-cache setup key changes with the H3 checkpoint (fl2va vs ref2va)", _k_a != _k_b)
+
 if _fails:
     print(f"{len(_fails)} FAILED: " + ", ".join(_fails))
     sys.exit(1)

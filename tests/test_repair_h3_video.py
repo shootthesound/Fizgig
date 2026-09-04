@@ -811,7 +811,44 @@ try:
                                         for v in app.repair_block_vars.values()))
     if app._repair_preview_after_id is not None:
         root.after_cancel(app._repair_preview_after_id); app._repair_preview_after_id = None
+    # --- 10. Model picker: ref2va = Reference Images card, the reference DiT, references ride -------
+    ck("model picker shown under H3, fl2va by default",
+       bool(app._repair_h3_model_combo.winfo_manager()) and not app._repair_h3_ref_mode())
+    _pv = app.prefs_vars.get("minimax_ref_dit"); _pv_old = _pv.get() if _pv is not None else None
+    if _pv is not None:
+        _pv.set(os.path.abspath(__file__))                          # exists, stands in for the file
+    app._repair_start_btn.configure(text="Start")
+    app.repair_h3_model_var.set("Reference (ref2va)"); app._on_repair_h3_model_changed()
+    ck("ref2va picked: ref mode, Update armed, card relabelled",
+       app._repair_h3_ref_mode() and app._repair_start_btn.cget("text") == "Update"
+       and app._repair_h3_kf_widgets["first"]["title"].cget("text") == "Reference 1:"
+       and app._repair_kf_card_labels[0].cget("text") == "Reference Images")
+    ck("the plan asks for the reference DiT", os.path.normcase(app._repair_h3_dit_path()) == os.path.normcase(os.path.abspath(__file__)))
+    app.repair_engine.dit_path = "C:/fake/fl2va.safetensors"
+    ck("a loaded fl2va engine mismatches the ref2va pick (Start will reload)", app._repair_h3_model_mismatch())
+    app.repair_engine.dit_path = os.path.abspath(__file__)
+    ck("...and matches once the reference DiT is loaded", not app._repair_h3_model_mismatch())
+    # references prepared instead of keyframes
+    import tempfile as _tf
+    from PIL import Image as _PILImg
+    _rp = os.path.join(_tf.mkdtemp(prefix="fz_ref_"), "ref.png"); _PILImg.new("RGB", (300, 200), (10, 200, 30)).save(_rp)
+    app._repair_h3_kf["first"] = {"path": _rp, "rect": (0, 0, 240, 200)}
+    _enc_calls = []
+    app.repair_engine.encode_reference_image = lambda img, w, h: (_enc_calls.append((img.size, w, h)) or (img, torch.zeros(1, 24, 1, 4, 4)))
+    _kf, _refs = app._repair_h3_prepare_cond(512, 416, 22)
+    ck("ref mode: references prepared (cropped image + latent), no keyframes",
+       _kf is None and _refs is not None and len(_refs) == 1 and _enc_calls == [((240, 200), 512, 416)])
+    _kf2, _refs2 = app._repair_h3_prepare_cond(512, 416, 22)
+    ck("...cached per slot / crop / canvas", len(_enc_calls) == 1 and _refs2[0] is _refs[0])
+    app.repair_h3_model_var.set(G.MINIMAX_TRAIN_BASE_OPTIONS[0]); app._on_repair_h3_model_changed()
+    ck("back to fl2va: card reads First / Last Frame again",
+       not app._repair_h3_ref_mode() and app._repair_h3_kf_widgets["first"]["title"].cget("text") == "First frame:"
+       and app._repair_kf_card_labels[0].cget("text") == "First / Last Frame")
+    app._repair_h3_kf["first"] = None
+    if _pv is not None:
+        _pv.set(_pv_old)
     fam("klein")
+    ck("model picker hidden under Klein", not app._repair_h3_model_combo.winfo_manager())
     ck("strength dials hidden under Klein", all(spin.winfo_manager() == "" for _l, spin in app._repair_scale_widgets))
     ck("bulk row hidden under Klein", not app._repair_bulk_row.winfo_manager())
     fam("minimax")

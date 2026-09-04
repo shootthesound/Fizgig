@@ -20,6 +20,10 @@ Repair Studio on H3 used to show one frame of a clip. Now it renders the clip �
 
 **No-LoRA clip.** A tick on the Clip row (and in the player) adds a third pane: the same seed and prompt rendered by the base model with no LoRA, so you see what the LoRA adds rather than only what the sliders changed. Rendered once per setup and cached. The player also gained a 0.1× speed.
 
+**Steps and Turbo are yours to set.** Dial and Confirm stay as presets; the Steps and Turbo boxes beside them take any numbers, remembered per regime. Turbo 0 switches the built-in Turbo LoRA off, so a Turbo LoRA loaded as the primary can be edited on its own at the steps you choose.
+
+**Load strength.** An "at strength" dial per LoRA — the strength it was designed for. Block sliders stay relative to it, the baseline is the LoRA at that strength, and the saved file keeps its original scale so it looks in ComfyUI exactly as it did in the player, at that same strength.
+
 Also fixed on the way: a LoRA carrying AdaLN keys (any run trained with AdaLN on, AI-Toolkit's files) failed to load in Repair Studio on H3; and the first clip decode of a session no longer costs ~10 s in the middle of the first preview.
 
 Klein and Krea 2 Repair Studio are unchanged.

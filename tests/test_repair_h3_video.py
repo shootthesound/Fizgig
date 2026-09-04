@@ -187,6 +187,7 @@ try:
     o = captured["opts"]
     ck("H3 run_async: opts carry frames/regime/early; sound only with an audio VAE configured",
        o == {"frames": 22, "regime": "confirm", "early_step": 2, "nolora": False,
+             "steps": 6, "turbo_strength": 0.75,
              "with_audio": bool(app._repair_h3_audio_vae_path())}, o)
     app.repair_h3_sound_var.set(False)
     app._repair_preview_in_flight = False
@@ -303,8 +304,9 @@ try:
         _baseline_clip = None
         last_resume_from = None
 
-        def regime_params(self, regime):
-            return (4, 1.0) if regime == "dial" else (6, 0.75)
+        def regime_params(self, regime, steps=None, turbo_strength=None):
+            st, tu = (4, 1.0) if regime == "dial" else (6, 0.75)
+            return (int(steps) if steps else st), (float(turbo_strength) if turbo_strength is not None else tu)
 
         def request_cancel(self):
             pass
@@ -317,13 +319,14 @@ try:
             return (st.seed, st.prompt, st.preview_width, st.preview_height, kw.get("frames"),
                     kw.get("steps"), kw.get("turbo_strength"))
 
-        def cache_key_for(self, st, *, frames, regime, **_):
+        def cache_key_for(self, st, *, frames, regime, steps=None, turbo_strength=None, **_):
             from fizgig.repair_studio.h3_render_cache import setup_key
-            steps, strength = self.regime_params(regime)
+            steps, strength = self.regime_params(regime, steps, turbo_strength)
             return setup_key(primary_hash=self.primary_hash, donor_hash="", prompt=st.prompt,
                              seed=st.seed, frames=frames, width=st.preview_width,
                              height=st.preview_height, steps=steps, turbo_strength=strength,
-                             keyframe_sig=())
+                             keyframe_sig=(), primary_scale=float(getattr(st, "primary_scale", 1.0)),
+                             donor_scale=float(getattr(st, "donor_scale", 1.0)))
 
         def _latent(self, st):
             lat = torch.ones(1, 24, 2, 4, 4)
@@ -644,6 +647,63 @@ try:
        nolora_calls == [512] and P["panes"][2].winfo_manager() == "grid", nolora_calls)
     app._repair_clip_player_close()
     CacheEngine.render_latent = _orig_rl
+
+    # --- 9. Steps / Turbo boxes per regime + load-strength dials ---------------------------------
+    app.repair_h3_regime_var.set("dial"); app._on_repair_h3_regime_changed()
+    if app._repair_preview_after_id is not None:
+        root.after_cancel(app._repair_preview_after_id); app._repair_preview_after_id = None
+    ck("Dial shows its preset in the boxes", app.repair_h3_steps_var.get() == "4" and app.repair_h3_turbo_var.get() == "1")
+    app.repair_h3_early_var.set(True)
+    app.repair_h3_steps_var.set("3"); app.repair_h3_turbo_var.set("0")
+    app._on_repair_h3_turbo_edited()
+    if app._repair_preview_after_id is not None:
+        root.after_cancel(app._repair_preview_after_id); app._repair_preview_after_id = None
+    o = app._repair_h3_render_opts()
+    ck("typed numbers are the Dial's now: 3 steps, Turbo off; early look clamped below the steps",
+       o["steps"] == 3 and o["turbo_strength"] == 0.0 and o["early_step"] == 2 and o["regime"] == "dial", o)
+    ck("...remembered per regime", app.last_used.get("repair_h3_regime_params", {}).get("dial") == [3, 0.0])
+    app.repair_h3_steps_var.set("2"); app._on_repair_h3_turbo_edited()
+    if app._repair_preview_after_id is not None:
+        root.after_cancel(app._repair_preview_after_id); app._repair_preview_after_id = None
+    ck("2 steps: the early look clamps to pass 1", app._repair_h3_render_opts()["early_step"] == 1)
+    app.repair_h3_steps_var.set("3"); app._on_repair_h3_turbo_edited()
+    if app._repair_preview_after_id is not None:
+        root.after_cancel(app._repair_preview_after_id); app._repair_preview_after_id = None
+    app.repair_h3_regime_var.set("confirm"); app._on_repair_h3_regime_changed()
+    if app._repair_preview_after_id is not None:
+        root.after_cancel(app._repair_preview_after_id); app._repair_preview_after_id = None
+    ck("Confirm still shows its own preset", app.repair_h3_steps_var.get() == "6" and app.repair_h3_turbo_var.get() == "0.75")
+    app.repair_h3_regime_var.set("dial"); app._on_repair_h3_regime_changed()
+    if app._repair_preview_after_id is not None:
+        root.after_cancel(app._repair_preview_after_id); app._repair_preview_after_id = None
+    ck("back to Dial: the typed numbers are back", app.repair_h3_steps_var.get() == "3" and app.repair_h3_turbo_var.get() == "0")
+    ck("the library / peeks always use the Dial numbers", app._repair_h3_render_opts("dial")["steps"] == 3
+       and app._repair_h3_render_opts("confirm")["steps"] == 6)
+    app.repair_h3_steps_var.set("abc"); app._on_repair_h3_turbo_edited()
+    ck("garbage in a box snaps back", app.repair_h3_steps_var.get() == "3")
+    app.repair_h3_steps_var.set("4"); app.repair_h3_turbo_var.set("1.0"); app._on_repair_h3_turbo_edited()
+    if app._repair_preview_after_id is not None:
+        root.after_cancel(app._repair_preview_after_id); app._repair_preview_after_id = None
+    ck("regime label spells the numbers",
+       app._repair_h3_regime_label({"regime": "dial", "steps": 3, "turbo_strength": 0.0}) == "Dial · 3 steps · Turbo off"
+       and app._repair_h3_regime_label({"regime": "confirm", "steps": 6, "turbo_strength": 0.75}) == "Confirm · 6 steps · Turbo 0.75"
+       and app._repair_h3_regime_label({"regime": "confirm", "steps": 20, "turbo_strength": None}) == "Confirm · 20 steps · no Turbo LoRA")
+    # load strength
+    ck("strength dials shown under H3", all(spin.winfo_manager() == "pack" for _l, spin in app._repair_scale_widgets))
+    app.repair_primary_scale_var.set("0.8"); app._on_repair_scale_changed()
+    if app._repair_preview_after_id is not None:
+        root.after_cancel(app._repair_preview_after_id); app._repair_preview_after_id = None
+    ck("primary load strength lands on the state", app.repair_state.primary_scale == 0.8 and app.repair_state.donor_scale == 1.0)
+    app.repair_primary_scale_var.set("nope")
+    ck("unparseable strength reads as 1.0", app._repair_scale("primary") == 1.0)
+    app.repair_primary_scale_var.set("0.8")
+    _k_a = app.repair_engine.cache_key_for(app.repair_state, frames=22, regime="dial", steps=4, turbo_strength=1.0)
+    app.repair_state.primary_scale = 1.0
+    _k_b = app.repair_engine.cache_key_for(app.repair_state, frames=22, regime="dial", steps=4, turbo_strength=1.0)
+    ck("a different load strength is a different render setup (its own library)", _k_a != _k_b)
+    fam("klein")
+    ck("strength dials hidden under Klein", all(spin.winfo_manager() == "" for _l, spin in app._repair_scale_widgets))
+    fam("minimax")
 
 finally:
     G.messagebox.showerror = _err

@@ -94,6 +94,8 @@ class H3RepairEngine:
         self._turbo_adaln = []
         self._steps = 20               # 6 when the Turbo LoRA loads
         self._turbo_strength = 0.75    # the strength the Turbo was loaded at (Confirm regime)
+        self._turbo_load_strength = 0.75   # what the AdaLN injection pairs were folded at
+        self._turbo_adaln_on = 0.0         # the strength the AdaLN rows are installed at now
         # Lazily-loaded, CPU-parked between uses: the audio VAE decoder (previews with
         # sound) and the video VAE ENCODER (first/last-frame keyframes). Both optional.
         self._audio_vae_path = None
@@ -173,6 +175,8 @@ class H3RepairEngine:
                 n_ad = turbo_adaln_patch(self.dit, self._turbo_adaln, device, self.dtype)
                 self._steps = 6
                 self._turbo_strength = float(turbo_lora_strength)
+                self._turbo_load_strength = float(turbo_lora_strength)
+                self._turbo_adaln_on = float(turbo_lora_strength) if n_ad else 0.0
                 logger.info("[h3-workbench] Turbo LoRA on for all previews — 6 steps at %g"
                             + (", %d adaln injected" % n_ad if n_ad else ""),
                             float(turbo_lora_strength))
@@ -246,16 +250,46 @@ class H3RepairEngine:
         return self.encoder
 
     def set_turbo_strength(self, strength: float) -> None:
-        """Re-dial the Turbo LoRA's multiplier live (Dial regime = 4 steps @ 1.0, Confirm =
-        6 steps @ 0.75). The AdaLN injection rows were folded at load strength; on a pruned
-        base they are re-collected via turbo_adaln_patch only at load, so a strength change
-        scales the LoRA modules and leaves the injected AdaLN rows at load strength — a
-        second-order effect on a preview (Peter accepted the two-regime split)."""
+        """Re-dial the built-in Turbo LoRA live. 0 switches it OFF — every module disabled
+        and the AdaLN injection removed — so the render is the base plus your LoRAs at the
+        steps you chose (how a Turbo LoRA loaded as the primary is edited on its own). Any
+        other strength scales the modules AND re-installs the injected AdaLN rows at that
+        strength: they were folded at load strength, so they are rescaled by strength /
+        load strength (until 4 Sep they stayed at load strength whatever the dial said)."""
         if self._turbo_net is None:
             return
+        s = float(strength)
         for _m in self._turbo_net.unet_loras:
-            _m.multiplier = float(strength)
-        self._turbo_strength = float(strength)
+            _m.enabled = abs(s) > 1e-9
+            _m.multiplier = s
+        self._turbo_strength = s
+        self._apply_turbo_adaln(s)
+
+    def _apply_turbo_adaln(self, strength: float) -> None:
+        """Install the Turbo AdaLN injection at `strength` (0 = remove it). Instance-attribute
+        forwards, so removal is a plain delete — see trainer.turbo_adaln_patch."""
+        pairs = getattr(self, "_turbo_adaln", None) or []
+        cur = float(getattr(self, "_turbo_adaln_on", 0.0) or 0.0)
+        s = float(strength)
+        if not pairs or abs(s - cur) < 1e-9:
+            return
+        for mod, _a, _b in pairs:
+            if "forward" in mod.__dict__:
+                del mod.forward
+        self._turbo_adaln_on = 0.0
+        if abs(s) < 1e-9:
+            return
+        load = float(getattr(self, "_turbo_load_strength", 0.0) or 0.0)
+        if abs(load) < 1e-9:
+            return                      # folded at 0 — nothing to rescale
+        try:
+            from fizgig.minimax.trainer import turbo_adaln_patch
+            f = s / load
+            n = turbo_adaln_patch(self.dit, [(m, a, b * f) for m, a, b in pairs],
+                                  self.device, self.dtype)
+            self._turbo_adaln_on = s if n else 0.0
+        except Exception:
+            logger.exception("Turbo AdaLN re-injection failed — rows stay off at this strength")
 
     # ----- keyframes ---------------------------------------------------------
     @torch.no_grad()
@@ -355,35 +389,41 @@ class H3RepairEngine:
             self.donor_hash = None
             self.donor_block_ids = set()
 
-    def cache_key_for(self, state, *, frames, regime, **_ignored) -> Optional[str]:
+    def cache_key_for(self, state, *, frames, regime, steps=None, turbo_strength=None,
+                      **_ignored) -> Optional[str]:
         """The render-cache setup key for this state's render setup, or None before a
         primary is loaded. Sound doesn't enter the key: audio rows are part of every entry."""
         if self.primary_network is None or not self.primary_hash:
             return None
         from fizgig.repair_studio.h3_render_cache import setup_key
-        steps, strength = self.regime_params(regime)
+        steps, strength = self.regime_params(regime, steps, turbo_strength)
         frames = int(frames or getattr(state, "preview_frames", 0) or H3_PREVIEW_FRAMES)
         return setup_key(primary_hash=self.primary_hash, donor_hash=self.donor_hash or "",
                          prompt=state.prompt, seed=int(state.seed), frames=frames,
                          width=int(state.preview_width), height=int(state.preview_height),
                          steps=int(steps), turbo_strength=strength,
-                         keyframe_sig=self.keyframe_signature(state))
+                         keyframe_sig=self.keyframe_signature(state),
+                         primary_scale=float(getattr(state, "primary_scale", 1.0)),
+                         donor_scale=float(getattr(state, "donor_scale", 1.0)))
 
     # ----- slider state ------------------------------------------------------
     def apply_state(self, state) -> None:
         """Push the per-block slider config into the live networks (regex-based, no reload)."""
         if self.primary_network is None:
             return
+        # Load strength: each slider is relative to it (see SliderState.primary_scale).
+        ps = float(getattr(state, "primary_scale", 1.0))
+        ds = float(getattr(state, "donor_scale", 1.0))
         for bid, bs in state.blocks.items():
             try:
                 pat = block_regex_h3(bid)
             except ValueError:
                 continue
             self.primary_network.set_module_enabled_by_pattern(pat, bool(bs.primary_enabled))
-            self.primary_network.set_module_multiplier_by_pattern(pat, float(bs.primary_strength))
+            self.primary_network.set_module_multiplier_by_pattern(pat, float(bs.primary_strength) * ps)
             if self.donor_network is not None:
                 self.donor_network.set_module_enabled_by_pattern(pat, bool(bs.donor_enabled))
-                self.donor_network.set_module_multiplier_by_pattern(pat, float(bs.donor_strength))
+                self.donor_network.set_module_multiplier_by_pattern(pat, float(bs.donor_strength) * ds)
 
     # ----- cancellation ------------------------------------------------------
     def request_cancel(self) -> None:
@@ -596,7 +636,9 @@ class H3RepairEngine:
 
         ctx = None
         key = (self.primary_path, self.donor_path, int(seed), prompt, int(width), int(height),
-               int(frames), int(steps), self._turbo_strength)
+               int(frames), int(steps), self._turbo_strength,
+               round(float(getattr(state, "primary_scale", 1.0)), 4),
+               round(float(getattr(state, "donor_scale", 1.0)), 4))
         if (self.resume_enabled and not keyframes and not no_lora
                 and hasattr(self.dit, "forward_cached")):
             resume = None
@@ -712,12 +754,19 @@ class H3RepairEngine:
     # 1.0 (the fast loop), Confirm = 6 at 0.75 (the render that matches training previews).
     REGIMES = {"dial": (4, 1.0), "confirm": (6, 0.75)}
 
-    def regime_params(self, regime: str):
-        """(steps, turbo_strength) for a regime name. Without a Turbo LoRA both regimes are
-        the plain 20-step render (the strength has nothing to dial)."""
+    def regime_params(self, regime: str, steps=None, turbo_strength=None):
+        """(steps, turbo_strength) for a regime name — the preset (Dial 4 @ 1.0, Confirm
+        6 @ 0.75) unless the caller dials its own numbers: `steps` and `turbo_strength`
+        override (0 = the Turbo switched off for the render). Without a Turbo LoRA loaded
+        the strength has nothing to dial (None) and the steps default to the plain 20."""
         if self._turbo_net is None:
-            return self._steps, None
-        return self.REGIMES.get(regime, self.REGIMES["confirm"])
+            return (int(steps) if steps else self._steps), None
+        st, tu = self.REGIMES.get(regime, self.REGIMES["confirm"])
+        if steps:
+            st = max(1, int(steps))
+        if turbo_strength is not None:
+            tu = float(turbo_strength)
+        return st, tu
 
     @staticmethod
     def keyframe_signature(state):
@@ -736,11 +785,14 @@ class H3RepairEngine:
     def clip_key(self, state, *, frames, steps, turbo_strength, with_audio):
         return (self.primary_path, self.donor_path, int(state.seed), state.prompt,
                 int(state.preview_width), int(state.preview_height), int(frames), int(steps),
-                turbo_strength, bool(with_audio), self.keyframe_signature(state))
+                turbo_strength, bool(with_audio), self.keyframe_signature(state),
+                round(float(getattr(state, "primary_scale", 1.0)), 4),
+                round(float(getattr(state, "donor_scale", 1.0)), 4))
 
     def render_clip(self, state, *, frames: Optional[int] = None, regime: str = "confirm",
                     with_audio: bool = True, cache=None, early_step: int = 0,
-                    on_early=None, no_lora: bool = False, **_ignored) -> dict:
+                    on_early=None, no_lora: bool = False, steps=None, turbo_strength=None,
+                    **_ignored) -> dict:
         """Render + decode one clip for the slider state. Returns
         {"latent", "audio_rows", "frames": [PIL...], "wav": [2, L] or None, "middle": PIL,
          "regime", "steps", "turbo_strength", "frames_n", "cached": bool}.
@@ -752,7 +804,7 @@ class H3RepairEngine:
         while the remaining passes run. Never fires on a cache hit. no_lora renders the
         base model alone (see render_latent) under the "nolora" signature."""
         from fizgig.repair_studio.h3_render_cache import signature, NOLORA_SIG
-        steps, strength = self.regime_params(regime)
+        steps, strength = self.regime_params(regime, steps, turbo_strength)
         frames = int(frames or getattr(state, "preview_frames", 0) or H3_PREVIEW_FRAMES)
         sig = NOLORA_SIG if no_lora else signature(state)
         hit = cache.get(sig) if cache is not None else None
@@ -785,14 +837,14 @@ class H3RepairEngine:
         return clip
 
     def clip_from_cache(self, cache, sig: str, *, regime: str = "dial",
-                        with_audio: bool = True) -> Optional[dict]:
+                        with_audio: bool = True, steps=None, turbo_strength=None) -> Optional[dict]:
         """A clip dict straight from a cached entry (history strip, peeks, pinned baseline)
         — decode only, no state needed. None when the entry isn't there."""
         hit = cache.get(sig) if cache is not None else None
         if hit is None:
             return None
         lat, aud = hit
-        steps, strength = self.regime_params(regime)
+        steps, strength = self.regime_params(regime, steps, turbo_strength)
         imgs = self.decode_clip_frames(lat)
         wav = self.decode_audio(aud) if (with_audio and len(imgs) > 1) else None
         return {"latent": lat, "audio_rows": aud, "frames": imgs, "wav": wav,
@@ -830,12 +882,14 @@ class H3RepairEngine:
         return f"{len(moved)} block{'s' if len(moved) != 1 else ''} moved"
 
     def baseline_clip(self, state, *, frames: Optional[int] = None, regime: str = "confirm",
-                      with_audio: bool = True, cache=None, **_ignored) -> dict:
-        """The clip for the primary at 1.0 / all on, donor off — cached in memory on
-        everything the render depends on (a slider move never re-renders it; a regime,
-        length, size, seed, prompt or keyframe change does) and, through `cache`, on disk."""
+                      with_audio: bool = True, cache=None, steps=None, turbo_strength=None,
+                      **_ignored) -> dict:
+        """The clip for the primary at its load strength / all on, donor off — cached in
+        memory on everything the render depends on (a slider move never re-renders it; a
+        regime, length, size, seed, prompt, scale or keyframe change does) and, through
+        `cache`, on disk."""
         from fizgig.repair_studio.state import SliderState
-        steps, strength = self.regime_params(regime)
+        steps, strength = self.regime_params(regime, steps, turbo_strength)
         frames = int(frames or getattr(state, "preview_frames", 0) or H3_PREVIEW_FRAMES)
         key = self.clip_key(state, frames=frames, steps=steps, turbo_strength=strength,
                             with_audio=with_audio)
@@ -848,19 +902,22 @@ class H3RepairEngine:
         base.preview_height = state.preview_height
         base.preview_frames = frames
         base.keyframes = getattr(state, "keyframes", None)
+        base.primary_scale = float(getattr(state, "primary_scale", 1.0))
+        base.donor_scale = float(getattr(state, "donor_scale", 1.0))
         clip = self.render_clip(base, frames=frames, regime=regime, with_audio=with_audio,
-                                cache=cache)
+                                cache=cache, steps=steps, turbo_strength=strength)
         self._baseline_clip_key = key
         self._baseline_clip = clip
         return clip
 
     def nolora_clip(self, state, *, frames: Optional[int] = None, regime: str = "confirm",
-                    with_audio: bool = True, cache=None, **_ignored) -> dict:
+                    with_audio: bool = True, cache=None, steps=None, turbo_strength=None,
+                    **_ignored) -> dict:
         """The same seed / prompt / canvas / length / keyframes rendered by the base model
         with no LoRA at all — the player's third pane. Cached in memory like the baseline
         (a slider move never re-renders it) and on disk under "nolora"."""
         from fizgig.repair_studio.state import SliderState
-        steps, strength = self.regime_params(regime)
+        steps, strength = self.regime_params(regime, steps, turbo_strength)
         frames = int(frames or getattr(state, "preview_frames", 0) or H3_PREVIEW_FRAMES)
         key = self.clip_key(state, frames=frames, steps=steps, turbo_strength=strength,
                             with_audio=with_audio)
@@ -875,7 +932,7 @@ class H3RepairEngine:
         base.preview_frames = frames
         base.keyframes = getattr(state, "keyframes", None)
         clip = self.render_clip(base, frames=frames, regime=regime, with_audio=with_audio,
-                                cache=cache, no_lora=True)
+                                cache=cache, no_lora=True, steps=steps, turbo_strength=strength)
         self._nolora_clip_key = key
         self._nolora_clip = clip
         return clip

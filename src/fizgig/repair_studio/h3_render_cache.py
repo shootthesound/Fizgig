@@ -27,14 +27,15 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 import torch
 
-CACHE_FORMAT = 2
+CACHE_FORMAT = 3     # 3: load-strength scales in the key; Turbo AdaLN rows follow the dialled strength
 MANIFEST = "manifest.json"
 BASE_SIG = "base"
 NOLORA_SIG = "nolora"       # the base model with no LoRA at all (primary + donor off)
 
 
 def setup_key(*, primary_hash: str, donor_hash: str, prompt: str, seed: int, frames: int,
-              width: int, height: int, steps: int, turbo_strength, keyframe_sig) -> str:
+              width: int, height: int, steps: int, turbo_strength, keyframe_sig,
+              primary_scale: float = 1.0, donor_scale: float = 1.0) -> str:
     """sha256 over everything a render depends on (plus the format version), 20 hex chars —
     the cache directory name."""
     payload = json.dumps({
@@ -42,6 +43,7 @@ def setup_key(*, primary_hash: str, donor_hash: str, prompt: str, seed: int, fra
         "prompt": prompt, "seed": int(seed), "frames": int(frames), "w": int(width),
         "h": int(height), "steps": int(steps), "turbo": turbo_strength,
         "kf": [list(map(str, k)) for k in (keyframe_sig or ())],
+        "pscale": round(float(primary_scale), 4), "dscale": round(float(donor_scale), 4),
     }, sort_keys=True)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:20]
 

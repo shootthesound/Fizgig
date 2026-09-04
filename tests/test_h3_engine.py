@@ -191,6 +191,54 @@ try:
 finally:
     _devmod.plannable_free_vram = _free_orig
 
+# --- load strength (slider × scale) and the dialled Turbo (steps / strength / off) ---------------
+_sc = _SS.default_h3()
+_sc.primary_scale = 0.8
+_sc.blocks["h3blk_2"].primary_strength = 0.5
+_eng.apply_state(_sc)
+_m = {m.lora_name: m.multiplier for m in net.unet_loras}
+ck("load strength: a block at 1.0 runs at the scale, a block at 0.5 at half of it",
+   abs(_m["lora_unet_blocks_0_attn_qkv_proj"] - 0.8) < 1e-9 and abs(_m["lora_unet_blocks_2_mlp_fc1"] - 0.4) < 1e-9
+   and abs(_m["lora_unet_token_refiner_blocks_1_mlp_fc1"] - 0.8) < 1e-9, _m)
+_lat_s, _ = _eng.render_latent(_sc, frames=5, steps=2)
+_sc1 = _sc.copy(); _sc1.primary_scale = 1.0
+_lat_1, _ = _eng.render_latent(_sc1, frames=5, steps=2)
+ck("...and the render moves with it", not torch.equal(_lat_s, _lat_1))
+ck("SliderState carries the scales through copy / json",
+   _sc.copy().primary_scale == 0.8 and _SS.from_json(_sc.to_json()).primary_scale == 0.8
+   and _SS.from_json({}).primary_scale == 1.0)
+
+_eng._turbo_net, _eng._turbo_adaln = net, []
+_eng.REGIMES = _big.REGIMES = _H3E.REGIMES
+_eng._apply_turbo_adaln = _H3E._apply_turbo_adaln.__get__(_eng)
+ck("regime_params: presets", _eng.__class__.__dict__.get("regime_params") is None
+   and _H3E.regime_params(_eng, "dial") == (4, 1.0) and _H3E.regime_params(_eng, "confirm") == (6, 0.75))
+ck("regime_params: dialled numbers override, 0 = Turbo off",
+   _H3E.regime_params(_eng, "dial", 3, 0.6) == (3, 0.6) and _H3E.regime_params(_eng, "confirm", 8, 0.0) == (8, 0.0))
+_eng._turbo_net = None
+ck("regime_params without a Turbo LoRA: steps still yours, strength None",
+   _H3E.regime_params(_eng, "dial", 12) == (12, None))
+_eng._turbo_net = net
+_H3E.set_turbo_strength(_eng, 0.0)
+ck("Turbo at 0: every Turbo module disabled", all(not m.enabled for m in net.unet_loras))
+_H3E.set_turbo_strength(_eng, 0.6)
+ck("Turbo at 0.6: modules back on at 0.6",
+   all(m.enabled and abs(m.multiplier - 0.6) < 1e-9 for m in net.unet_loras))
+_H3E.set_turbo_strength(_eng, 1.0)
+_eng._turbo_net = None
+
+_big.primary_network, _big.primary_hash, _big.donor_hash = net, "abc", None
+_big.keyframe_signature = _H3E.keyframe_signature
+_big.regime_params = _H3E.regime_params.__get__(_big)
+_big.cache_key_for = _H3E.cache_key_for.__get__(_big)
+_big._turbo_net, _big._steps = net, 6
+_k1 = _big.cache_key_for(_sc1, frames=22, regime="dial")
+_k2 = _big.cache_key_for(_sc, frames=22, regime="dial")
+_k3 = _big.cache_key_for(_sc1, frames=22, regime="dial", steps=3, turbo_strength=1.0)
+_k4 = _big.cache_key_for(_sc1, frames=22, regime="dial", steps=4, turbo_strength=1.0)
+ck("render-cache setup key: changes with the load strength and with dialled steps, not with the preset spelled out",
+   _k1 != _k2 and _k1 != _k3 and _k1 == _k4, (_k1, _k2, _k3, _k4))
+
 # --- the LoKR whitelist fix: quantized Linear subclasses are mappable -----------------------------
 from fizgig.networks.lora import _build_dit_linear_map  # noqa: E402
 

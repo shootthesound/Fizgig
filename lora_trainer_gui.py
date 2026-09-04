@@ -2339,6 +2339,8 @@ class LoRATrainerGUI:
     _WORKBENCH_REMEMBER = [
         ("repair_primary_var", "repair_primary"),
         ("repair_donor_var", "repair_donor"),
+        ("repair_primary_scale_var", "repair_primary_scale"),
+        ("repair_donor_scale_var", "repair_donor_scale"),
         ("repair_prompt_var", "repair_prompt"),
         ("repair_seed_var", "repair_seed"),
         ("repair_res_var", "repair_res"),
@@ -19447,10 +19449,12 @@ class LoRATrainerGUI:
                 self._repair_res_combo.pack_forget()
                 self._repair_h3_label.grid()
                 self._repair_h3_row.grid()
+                self._repair_scale_controls(True)
                 self._refresh_repair_h3_sound_state()
             else:
                 self._repair_h3_label.grid_remove()
                 self._repair_h3_row.grid_remove()
+                self._repair_scale_controls(False)
                 if not self._repair_res_label.winfo_manager():
                     # Keep the Res pair ahead of the Turbo tick when that is showing (Klein);
                     # under Krea 2 the tick is hidden and `before=` it would raise.
@@ -19533,26 +19537,75 @@ class LoRATrainerGUI:
             self.last_used["repair_h3_regime"] = self.repair_h3_regime_var.get()
             self.last_used["repair_h3_sound"] = bool(self.repair_h3_sound_var.get())
             self.last_used["repair_h3_dial_scale"] = self.repair_h3_dial_scale_var.get()
+            self.last_used["repair_h3_regime_params"] = {
+                k: list(v) for k, v in self._repair_h3_regime_params.items()}
             self._save_last_used_paths()
         except Exception:
             pass
         self._on_preview_param_changed()
 
-    def _repair_h3_render_opts(self):
-        """What the H3 worker renders with, read on the Tk thread: frames, regime, sound,
-        and the early-look pass (0 = off)."""
+    def _repair_h3_render_opts(self, regime=None):
+        """What the H3 worker renders with, read on the Tk thread: frames, regime and its
+        dialled steps / Turbo strength, sound, the early-look pass (0 = off), the No-LoRA
+        tick. `regime` overrides the radio (the library and peeks always use Dial)."""
+        regime = regime or (self.repair_h3_regime_var.get() or "dial")
+        steps, turbo = self._repair_h3_regime_numbers(regime)
         early = 0
         if getattr(self, "repair_h3_early_var", None) is not None and self.repair_h3_early_var.get():
-            early = self._REPAIR_H3_EARLY_STEP
+            early = max(0, min(self._REPAIR_H3_EARLY_STEP, steps - 1))
         nol = getattr(self, "repair_h3_nolora_var", None)
         return {"frames": self._repair_h3_frames(),
-                "regime": self.repair_h3_regime_var.get() or "dial",
+                "regime": regime, "steps": steps, "turbo_strength": turbo,
                 "with_audio": bool(self.repair_h3_sound_var.get()
                                    and self._repair_h3_audio_vae_path()),
                 "early_step": early,
                 "nolora": bool(nol is not None and nol.get())}
 
     _REPAIR_H3_DIAL_SCALES = {"Full": 1.0, "⅔": 2.0 / 3.0, "½": 0.5}
+    _REPAIR_H3_REGIME_DEFAULTS = {"dial": (4, 1.0), "confirm": (6, 0.75)}
+
+    def _repair_h3_regime_numbers(self, regime=None):
+        """(steps, turbo_strength) for a regime: what its boxes hold."""
+        regime = regime or (self.repair_h3_regime_var.get() or "dial")
+        st, tu = self._repair_h3_regime_params.get(regime, self._REPAIR_H3_REGIME_DEFAULTS.get(regime, (4, 1.0)))
+        return int(st), float(tu)
+
+    def _on_repair_h3_regime_changed(self):
+        """Dial / Confirm picked: the boxes show that regime's numbers, then the usual
+        re-render."""
+        st, tu = self._repair_h3_regime_numbers()
+        self.repair_h3_steps_var.set(str(st))
+        self.repair_h3_turbo_var.set(f"{tu:g}")
+        self._on_repair_h3_clip_changed()
+
+    def _on_repair_h3_turbo_edited(self):
+        """Steps / Turbo typed: validate, store for the current regime, re-render if changed."""
+        regime = self.repair_h3_regime_var.get() or "dial"
+        cur = list(self._repair_h3_regime_numbers(regime))
+        try:
+            st = max(1, min(40, int(float(self.repair_h3_steps_var.get().strip()))))
+        except (TypeError, ValueError):
+            st = cur[0]
+        try:
+            tu = max(0.0, min(1.5, float(self.repair_h3_turbo_var.get().strip())))
+        except (TypeError, ValueError):
+            tu = cur[1]
+        self.repair_h3_steps_var.set(str(st))
+        self.repair_h3_turbo_var.set(f"{tu:g}")
+        if [st, tu] == cur:
+            return
+        self._repair_h3_regime_params[regime] = [st, tu]
+        self._on_repair_h3_clip_changed()
+
+    @staticmethod
+    def _repair_h3_regime_label(clip):
+        """'Dial · 4 steps · Turbo 1.0' for a clip dict (Turbo off / none spelled out)."""
+        reg = "Dial" if clip.get("regime") == "dial" else "Confirm"
+        st = clip.get("steps")
+        tu = clip.get("turbo_strength")
+        tut = ("no Turbo LoRA" if tu is None else "Turbo off" if abs(float(tu)) < 1e-9
+               else f"Turbo {float(tu):g}")
+        return f"{reg} · {st} steps · {tut}" if st else reg
     # The pass whose estimate "Show early" puts up. Measured 3 Sep at Turbo 1.0: the
     # pass-1 estimate is mush, pass 2 is a readable rough picture (composition, pose,
     # expression), so 2 — at the ⅔ dial canvas that is ~2.8 s in, with the finished clip
@@ -19725,9 +19778,14 @@ class LoRATrainerGUI:
         self.repair_primary_var = tk.StringVar()
         ttk.Entry(parent, textvariable=self.repair_primary_var).grid(
             row=r, column=1, sticky=tk.EW, padx=4, pady=2)
-        ttk.Button(parent, text="Browse",
-                   command=self._browse_and_load_primary).grid(
-            row=r, column=2, columnspan=2, padx=4, pady=2, sticky=tk.W)
+        primary_btn_frame = ttk.Frame(parent)
+        primary_btn_frame.grid(row=r, column=2, columnspan=2, padx=4, pady=2, sticky=tk.W)
+        ttk.Button(primary_btn_frame, text="Browse",
+                   command=self._browse_and_load_primary).pack(side=tk.LEFT)
+        self.repair_primary_scale_var = tk.StringVar(value="1.0")
+        self._repair_scale_widgets = []
+        self._build_repair_scale_control(primary_btn_frame, self.repair_primary_scale_var,
+                                         "the primary")
         r += 1
 
         # Donor LoRA
@@ -19741,6 +19799,9 @@ class LoRATrainerGUI:
                    command=self._browse_and_load_donor).pack(side=tk.LEFT, padx=(0, 4))
         ttk.Button(donor_btn_frame, text="Unload Donor",
                    command=self._unload_repair_donor).pack(side=tk.LEFT)
+        self.repair_donor_scale_var = tk.StringVar(value="1.0")
+        self._build_repair_scale_control(donor_btn_frame, self.repair_donor_scale_var,
+                                         "the donor")
         r += 1
 
         # Prompt row
@@ -19825,6 +19886,14 @@ class LoRATrainerGUI:
         ttk.Label(h3_row, text="Regime:").pack(side=tk.LEFT, padx=(0, 4))
         self.repair_h3_regime_var = tk.StringVar(
             value=str(self.last_used.get("repair_h3_regime", "dial")))
+        # Each regime's numbers — the preset until you type your own (remembered per regime).
+        self._repair_h3_regime_params = {k: list(v) for k, v in self._REPAIR_H3_REGIME_DEFAULTS.items()}
+        try:
+            for k, v in dict(self.last_used.get("repair_h3_regime_params", {}) or {}).items():
+                if k in self._repair_h3_regime_params and len(v) == 2:
+                    self._repair_h3_regime_params[k] = [int(v[0]), float(v[1])]
+        except Exception:
+            pass
         for _val, _txt, _tip in (
                 ("dial", "Dial (4 steps, Turbo 1.0)",
                  "The fast loop for turning sliders — the bundled Turbo LoRA at full "
@@ -19834,9 +19903,28 @@ class LoRATrainerGUI:
                  "to confirm what the Dial showed before saving.")):
             _rb = ttk.Radiobutton(h3_row, text=_txt, variable=self.repair_h3_regime_var,
                                   value=_val, style="Surface.TRadiobutton",
-                                  command=self._on_repair_h3_clip_changed)
+                                  command=self._on_repair_h3_regime_changed)
             _rb.pack(side=tk.LEFT, padx=(0, 10))
             ToolTip(_rb, _tip)
+        _st0, _tu0 = self._repair_h3_regime_params.get(self.repair_h3_regime_var.get() or "dial",
+                                                       [4, 1.0])
+        ttk.Label(h3_row, text="Steps:").pack(side=tk.LEFT, padx=(0, 3))
+        self.repair_h3_steps_var = tk.StringVar(value=str(int(_st0)))
+        _se = ttk.Entry(h3_row, textvariable=self.repair_h3_steps_var, width=3)
+        _se.pack(side=tk.LEFT, padx=(0, 8))
+        ToolTip(_se, "Model passes for this regime — the preset is Dial 4 / Confirm 6; type "
+                     "your own (1–40). Remembered per regime.")
+        ttk.Label(h3_row, text="Turbo:").pack(side=tk.LEFT, padx=(0, 3))
+        self.repair_h3_turbo_var = tk.StringVar(value=f"{float(_tu0):g}")
+        _te = ttk.Entry(h3_row, textvariable=self.repair_h3_turbo_var, width=4)
+        _te.pack(side=tk.LEFT, padx=(0, 10))
+        ToolTip(_te, "Strength of the built-in Turbo LoRA for this regime (preset Dial 1.0 / "
+                     "Confirm 0.75). 0 switches it off — the render is the base plus your "
+                     "LoRAs at the steps above. That is how you edit a Turbo LoRA: load it as "
+                     "the primary and set this to 0.")
+        for _w in (_se, _te):
+            _w.bind("<Return>", lambda e: self._on_repair_h3_turbo_edited())
+            _w.bind("<FocusOut>", lambda e: self._on_repair_h3_turbo_edited())
         self.repair_h3_sound_var = tk.BooleanVar(
             value=bool(self.last_used.get("repair_h3_sound", True)))
         self._repair_h3_sound_chk = ttk.Checkbutton(
@@ -20635,6 +20723,54 @@ class LoRATrainerGUI:
             out = ""
         out = out or (self.settings.get("LORA_OUTPUT_DIR", "") or "")
         return out if out and os.path.isdir(out) else ""
+
+    def _build_repair_scale_control(self, parent, var, who):
+        """'at strength' spinbox after a LoRA's Browse (MiniMax H3 only — shown / hidden by
+        _apply_repair_family_ui). The strength the LoRA is meant to be used at; every block
+        slider stays relative to it."""
+        lbl = ttk.Label(parent, text="at strength")
+        spin = ttk.Spinbox(parent, textvariable=var, from_=0.0, to=2.0, increment=0.05,
+                           width=5, command=self._on_repair_scale_changed)
+        spin.bind("<Return>", lambda e: self._on_repair_scale_changed())
+        spin.bind("<FocusOut>", lambda e: self._on_repair_scale_changed())
+        ToolTip(spin, f"Load strength for {who} — the strength it was designed to be used "
+                      "at (not always 1.0). The block sliders stay relative to it: a block at "
+                      "1.0 is that block at this strength, 0.5 is half of it. The saved file "
+                      "keeps its original scale — use it at this strength, and it looks exactly "
+                      "like the preview.")
+        self._repair_scale_widgets.append((lbl, spin))
+
+    def _repair_scale_controls(self, show):
+        for lbl, spin in getattr(self, "_repair_scale_widgets", ()):
+            if show:
+                if not lbl.winfo_manager():
+                    lbl.pack(side=tk.LEFT, padx=(10, 4))
+                    spin.pack(side=tk.LEFT)
+            else:
+                lbl.pack_forget()
+                spin.pack_forget()
+
+    def _repair_scale(self, which):
+        """The primary / donor load strength as a float (1.0 on anything unparseable)."""
+        var = getattr(self, f"repair_{which}_scale_var", None)
+        try:
+            v = float(str(var.get()).strip()) if var is not None else 1.0
+        except (TypeError, ValueError):
+            v = 1.0
+        return max(0.0, min(2.0, v))
+
+    def _on_repair_scale_changed(self):
+        """A load strength edited: the state carries it (slider × scale in the engine), the
+        baseline is a different render now, so re-render — H3 only."""
+        if not self._repair_is_h3():
+            return
+        ps, ds = self._repair_scale("primary"), self._repair_scale("donor")
+        if (abs(getattr(self.repair_state, "primary_scale", 1.0) - ps) < 1e-9
+                and abs(getattr(self.repair_state, "donor_scale", 1.0) - ds) < 1e-9):
+            return
+        self.repair_state.primary_scale = ps
+        self.repair_state.donor_scale = ds
+        self._on_preview_param_changed()
 
     def _browse_repair_lora(self, var):
         filepath = filedialog.askopenfilename(
@@ -23944,6 +24080,8 @@ class LoRATrainerGUI:
             self.repair_state.preview_width = _w
             self.repair_state.preview_height = _h
             self.repair_state.preview_frames = h3_opts["frames"]
+            self.repair_state.primary_scale = self._repair_scale("primary")
+            self.repair_state.donor_scale = self._repair_scale("donor")
             self._repair_peek = None      # a slider move ends a library peek
             # The interactive render always wins the engine: if the library builder is
             # mid-render, abort its entry (it retries that block after we're done).
@@ -24287,7 +24425,7 @@ class LoRATrainerGUI:
             "#3B9FD8" if peek else "")
         self._set_repair_preview_images(base_clip["middle"], tweak_clip["middle"])
         n = len(tweak_clip["frames"])
-        reg = "Dial" if tweak_clip.get("regime") == "dial" else "Confirm"
+        reg = self._repair_h3_regime_label(tweak_clip)
         snd = " with sound" if tweak_clip.get("wav_path") else ""
         src = ""
         if tweak_clip.get("cached"):
@@ -24358,7 +24496,8 @@ class LoRATrainerGUI:
         if eng is None or not hasattr(eng, "cache_key_for"):
             return None
         try:
-            key = eng.cache_key_for(snapshot, frames=opts["frames"], regime=opts["regime"])
+            key = eng.cache_key_for(snapshot, frames=opts["frames"], regime=opts["regime"],
+                                    steps=opts.get("steps"), turbo_strength=opts.get("turbo_strength"))
         except Exception:
             key = None
         if not key:
@@ -24380,7 +24519,10 @@ class LoRATrainerGUI:
                        donor=os.path.basename(eng.donor_path or ""),
                        prompt=snapshot.prompt, seed=int(snapshot.seed),
                        frames=int(opts["frames"]), width=int(snapshot.preview_width),
-                       height=int(snapshot.preview_height), regime=opts["regime"])
+                       height=int(snapshot.preview_height), regime=opts["regime"],
+                       steps=opts.get("steps"), turbo_strength=opts.get("turbo_strength"),
+                       primary_scale=float(getattr(snapshot, "primary_scale", 1.0)),
+                       donor_scale=float(getattr(snapshot, "donor_scale", 1.0)))
         self._repair_cache = cache
         print(f"[repair] render cache {key}: {cache.n_entries()} entries, "
               f"{len(cache.done_ids())}/{len(cache.block_ids)} block-off clips at {cache.dir}")
@@ -24405,7 +24547,8 @@ class LoRATrainerGUI:
             return
         self._repair_cache_stop.clear()
         snap = snapshot.copy()
-        run_opts = {"frames": opts["frames"], "regime": opts["regime"], "with_audio": False}
+        run_opts = {"frames": opts["frames"], "regime": opts["regime"], "with_audio": False,
+                    "steps": opts.get("steps"), "turbo_strength": opts.get("turbo_strength")}
         t = threading.Thread(target=self._repair_cache_worker, args=(cache, snap, run_opts),
                              daemon=True, name="repair-library")
         self._repair_cache_thread = t
@@ -24453,7 +24596,9 @@ class LoRATrainerGUI:
                                 st.blocks[bid].primary_strength = 0.0
                             t0 = _time.time()
                             eng.render_clip(st, frames=opts["frames"], regime=opts["regime"],
-                                            with_audio=False, cache=cache)
+                                            with_audio=False, cache=cache,
+                                            steps=opts.get("steps"),
+                                            turbo_strength=opts.get("turbo_strength"))
                             n_done += 1
                             rf = getattr(eng, "last_resume_from", None)
                             print(f"[repair] library: {bid} in {_time.time() - t0:.1f}s"
@@ -24502,9 +24647,8 @@ class LoRATrainerGUI:
             cache = self._repair_cache
             if cache is not None and not cache.complete() and self._repair_clips.get("tweaked"):
                 snap = self.repair_state.copy()
-                opts = dict(self._repair_h3_render_opts())
+                opts = dict(self._repair_h3_render_opts("dial"))
                 snap.preview_width, snap.preview_height = self._repair_h3_canvas("dial")
-                opts["regime"] = "dial"
                 self._repair_cache_start_build(snap, opts)
         else:
             self._repair_cache_paused.set()
@@ -24582,8 +24726,7 @@ class LoRATrainerGUI:
             self.repair_status_var.set("A render is in flight — try the peek when it lands.")
             return
         from fizgig.repair_studio.state import SliderState
-        opts = dict(self._repair_h3_render_opts())
-        opts["regime"] = "dial"
+        opts = dict(self._repair_h3_render_opts("dial"))
         st = SliderState.default_h3()
         st.seed, st.prompt = self.repair_state.seed, self.repair_state.prompt
         st.preview_width, st.preview_height = self._repair_h3_canvas("dial")
@@ -25432,7 +25575,7 @@ class LoRATrainerGUI:
                 P["titles"][i].configure(text=f"{names[side]} — rendering…",
                                          fg=COLORS["text_muted"])
                 continue
-            reg = "Dial" if clip.get("regime") == "dial" else "Confirm"
+            reg = self._repair_h3_regime_label(clip)
             snd = " · 🔊" if (i == 0 and clip.get("wav_path")) else ""
             src = " · from cache" if clip.get("cached") else ""
             P["titles"][i].configure(text=f"{names[side]} — {reg}{src}{snd}",

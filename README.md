@@ -153,6 +153,10 @@ Two render regimes. **Dial** is the loop you turn sliders in: 4 steps with the b
 
 **No-LoRA clip.** Tick it (on the Clip row or in the player) and the player grows a third pane: the same seed and prompt rendered by the base model with no LoRA at all, so you can see what the LoRA adds, not just what your sliders changed. It renders once per setup and is cached, so it costs one extra render, not one per slider move. The player's speed menu goes down to 0.1×.
 
+**Steps and Turbo are yours to set.** Dial and Confirm are presets (4 steps at Turbo 1.0, 6 at 0.75); the Steps and Turbo boxes next to them take any numbers, remembered per regime. Turbo 0 switches the built-in Turbo LoRA off entirely, so the render is the base plus your LoRAs at the steps you chose. That is how you edit a Turbo LoRA: load it as the primary, set Turbo to 0.
+
+**Load strength.** Each LoRA has an "at strength" dial next to its Browse button: the strength it was designed to be used at. The block sliders stay relative to it (a block at 1.0 is that block at the load strength), the baseline is the LoRA at that strength, and the saved file keeps its original scale, so you use it at the same strength and it looks exactly like the preview.
+
 ### Video and sound: how do I…
 
 **…train on video clips?** Cut them with **Gizmo** (launch it from the Image Prep tab, or the *Launch Gizmo* .bat) — it exports clips already on H3's spec — drop them into the training folder next to your images, and caption them on the **Captions tab** like a photo. **Photos, clips and voice recordings all train together in the same folder** — no settings, no separate runs.

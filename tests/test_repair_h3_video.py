@@ -333,7 +333,7 @@ try:
             for i, bid in enumerate(sorted(ACTIVE)):
                 bs = st.blocks[bid]
                 m = bs.primary_strength if bs.primary_enabled else 0.0
-                lat[:, i] += float(m) * (i + 1)
+                lat[:, i] += float(m) * float(getattr(st, "primary_scale", 1.0)) * (i + 1)
             return lat
 
         def render_latent(self, st, on_denoised=None, **kw):
@@ -701,6 +701,22 @@ try:
     app.repair_state.primary_scale = 1.0
     _k_b = app.repair_engine.cache_key_for(app.repair_state, frames=22, regime="dial", steps=4, turbo_strength=1.0)
     ck("a different load strength is a different render setup (its own library)", _k_a != _k_b)
+    # the library at 0.8 renders its entries AT 0.8 (the builder used to build them at 1.0)
+    app.repair_state.primary_scale = 0.8
+    app._repair_preview_in_flight = False
+    app._run_preview_async()
+    wait_for(lambda: not app._repair_preview_in_flight and app._repair_cache is not None
+             and app._repair_cache.meta.get("primary_scale") == 0.8 and app._repair_cache.complete()
+             and not app._repair_cache_thread.is_alive(), timeout=20.0)
+    _c = app._repair_cache
+    _i21 = sorted(ACTIVE).index("h3blk_21")
+    _b = _c.get("base")[0]; _e = _c.get("off:h3blk_21")[0]
+    ck("library at load strength 0.8: baseline entry carries 0.8 × block, the block-off entry drops exactly that",
+       _c.meta.get("primary_scale") == 0.8
+       and torch.allclose(_b[:, _i21], torch.full_like(_b[:, _i21], 1.0 + 0.8 * (_i21 + 1)))
+       and torch.allclose((_b - _e)[:, _i21], torch.full_like(_e[:, _i21], 0.8 * (_i21 + 1))),
+       (float(_b[0, _i21, 0, 0, 0]), float((_b - _e)[0, _i21, 0, 0, 0])))
+    app.repair_primary_scale_var.set("1.0"); app.repair_state.primary_scale = 1.0
     fam("klein")
     ck("strength dials hidden under Klein", all(spin.winfo_manager() == "" for _l, spin in app._repair_scale_widgets))
     fam("minimax")

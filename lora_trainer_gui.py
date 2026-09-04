@@ -24592,6 +24592,10 @@ class LoRATrainerGUI:
                             st.preview_frames = opts["frames"]
                             st.keyframes = self._repair_h3_prepare_keyframes(
                                 st.preview_width, st.preview_height, opts["frames"])
+                            # the library lives in a cache keyed on the load strengths —
+                            # its entries must render at them too (missed on 4 Sep: 1.0)
+                            st.primary_scale = float(getattr(snapshot, "primary_scale", 1.0))
+                            st.donor_scale = float(getattr(snapshot, "donor_scale", 1.0))
                             if bid != "__baseline__":
                                 st.blocks[bid].primary_strength = 0.0
                             t0 = _time.time()
@@ -24731,6 +24735,8 @@ class LoRATrainerGUI:
         st.seed, st.prompt = self.repair_state.seed, self.repair_state.prompt
         st.preview_width, st.preview_height = self._repair_h3_canvas("dial")
         st.preview_frames = opts["frames"]
+        st.primary_scale = float(getattr(self.repair_state, "primary_scale", 1.0))
+        st.donor_scale = float(getattr(self.repair_state, "donor_scale", 1.0))
         st.blocks[block_id].primary_strength = 0.0
         label = eng.describe_state(st)
         self._repair_preview_in_flight = True

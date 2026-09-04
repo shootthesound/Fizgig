@@ -627,6 +627,7 @@ class H3RepairEngine:
                     on_denoised=on_denoised, exact_frames=True)
 
         try:
+            resume_failed = False
             if ctx is not None:
                 try:
                     lat, audio = _render(ctx)
@@ -639,15 +640,23 @@ class H3RepairEngine:
                     raise
                 except Exception:
                     logger.exception("pass-1 resume failed — falling back to a full render")
-                    self._invalidate_activation_cache()
-                    # The half-recorded cache of the failed pass is still referenced by ctx;
-                    # after an OOM it is exactly the memory the plain render needs back.
-                    ctx.new_entries.clear()
-                    ctx.entries = {}
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-                    lat, audio = _render(None)
-            else:
+                    resume_failed = True
+            if resume_failed:
+                # OUTSIDE the except block on purpose: inside it the exception's traceback
+                # keeps every frame of the failed pass alive — including the half-filled
+                # cache entry (~5 GB at 56 frames × 768²) — so a fallback run from there
+                # ran out of VRAM too (measured 4 Sep). Out here the traceback is gone;
+                # drop what ctx still holds, collect, and give the allocator its room back.
+                self._invalidate_activation_cache()
+                ctx.new_entries.clear()
+                ctx.entries = {}
+                ctx = None
+                import gc
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                lat, audio = _render(None)
+            elif ctx is None:
                 lat, audio = _render(None)
         finally:
             if no_lora and self.primary_network is not None:
@@ -934,9 +943,13 @@ class H3RepairEngine:
         self._act_cache_key = None
         self._act_cache_state = None
 
-    # VRAM the pass-1 cache must leave free beside itself for the render's own activations
-    # (the int8 GEMM's fp32 temp alone is ~1 GB per linear at 56 frames × 768²).
+    # VRAM the pass-1 cache must leave free beside itself for the render's own working set
+    # — which grows with the cache (both scale with tokens): 3 GB plus half the cache.
+    # Measured 4 Sep at 768×768×56 with 8.4 GB free: a 5.1 GB cache + the render did NOT
+    # fit (needed ~3 GB of working set + fragmentation on top), so that size parks on the
+    # CPU on a 32 GB card; the 22-frame dial (0.9 GB) stays on the GPU.
     _RESUME_HEADROOM_GB = 3.0
+    _RESUME_HEADROOM_FRAC = 0.5
 
     def resume_cache_gb(self, width, height, frames) -> float:
         """Size of one pass-1 cache for this canvas / length: every main block's input row
@@ -968,7 +981,13 @@ class H3RepairEngine:
             free = float(plannable_free_vram())
         except Exception:
             return "cpu"
-        return "cuda" if est + self._RESUME_HEADROOM_GB <= free else "cpu"
+        need = est * (1.0 + self._RESUME_HEADROOM_FRAC) + self._RESUME_HEADROOM_GB
+        dev = "cuda" if need <= free else "cpu"
+        if getattr(self, "_last_cache_plan", None) != (round(est, 2), dev):
+            self._last_cache_plan = (round(est, 2), dev)
+            logger.info("[h3-workbench] pass-1 cache %.2f GB for %dx%d x%d -> %s (%.1f GB free)",
+                        est, int(width), int(height), int(frames), dev, free)
+        return dev
 
     def mark_blocks_changed(self, blocks) -> None:
         pass          # the resume point derives from a state diff at render time (race-free)

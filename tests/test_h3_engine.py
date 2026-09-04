@@ -169,6 +169,7 @@ class _BigDiT:
 _big = _MiniEngine()
 _big.dit, _big._cache_device = _BigDiT(), "cuda"
 _big._RESUME_HEADROOM_GB = _H3E._RESUME_HEADROOM_GB
+_big._RESUME_HEADROOM_FRAC = _H3E._RESUME_HEADROOM_FRAC
 _big.resume_cache_gb = _H3E.resume_cache_gb.__get__(_big)
 _big._resume_cache_device = _H3E._resume_cache_device.__get__(_big)
 _gb56 = _big.resume_cache_gb(768, 768, 56)
@@ -183,7 +184,8 @@ try:
        _big._resume_cache_device(768, 640, 22) == "cuda" and _big._resume_cache_device(512, 416, 22) == "cuda"
        and _big._resume_cache_device(768, 768, 56) == "cpu")
     _devmod.plannable_free_vram = lambda: 12.0
-    ck("12 GB free: the 56-frame cache fits on the GPU", _big._resume_cache_device(768, 768, 56) == "cuda")
+    ck("12 GB free: the 56-frame cache (5.1 + 2.6 + 3 = 10.7 needed) fits on the GPU",
+       _big._resume_cache_device(768, 768, 56) == "cuda")
     _big._cache_device = "cpu"
     ck("a CPU-tier load never records on the GPU", _big._resume_cache_device(512, 416, 22) == "cpu")
 finally:

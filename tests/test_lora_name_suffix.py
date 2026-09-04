@@ -29,6 +29,10 @@ def ck(label, cond, detail=""):
 root = tk.Tk()
 root.withdraw()
 g = G.LoRATrainerGUI(root)
+# A clean output folder: the retag refuses to touch a paused run's name (a
+# .fizgig_paused.json in the output folder blocks it, by design), and a stale one in
+# the machine's real output_loras made all five retag pins fail (found 4 Sep).
+g.settings["LORA_OUTPUT_DIR"] = tempfile.mkdtemp(prefix="fizgig_suffix_")
 
 
 def set_name(n):

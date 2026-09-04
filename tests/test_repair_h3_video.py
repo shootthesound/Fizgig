@@ -264,6 +264,20 @@ try:
     app._repair_preview_dirty = False
     app._repair_clip_player_freshness()
     ck("...and back to Up to date once nothing is queued", "Up to date" in P["titles"][2].cget("text"))
+    app._repair_preview_dirty = True
+    app._repair_clip_player_freshness()
+    ck("a stale dirty flag alone is not 'pending'", "Up to date" in P["titles"][2].cget("text"))
+    app._repair_preview_dirty = False
+    # a worker that died with in-flight set: the watchdog clears it after a 2 s grace
+    import threading as _thr, time as _tm
+    _dead = _thr.Thread(target=lambda: None); _dead.start(); _dead.join()
+    app._repair_preview_thread = _dead; app._repair_preview_in_flight = True
+    app._repair_watchdog_tick()
+    ck("watchdog: first sight of a dead worker starts the grace, in-flight kept", app._repair_preview_in_flight)
+    app._repair_worker_dead_since = _tm.monotonic() - 3.0
+    app._repair_watchdog_tick()
+    ck("watchdog: after the grace the stuck in-flight is cleared", not app._repair_preview_in_flight)
+    app._repair_preview_thread = None
     ck("metrics strip registered on the player window",
        app._repair_popout_window is P["win"] and set(app._repair_popout_metric_lbls) == {
            "likeness", "grid", "texture", "clip", "sat"})

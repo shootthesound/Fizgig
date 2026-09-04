@@ -20081,6 +20081,9 @@ class LoRATrainerGUI:
         self._repair_popout_tk_img = None
         self._repair_clips = {}          # H3: "baseline"/"tweaked"/"nolora" -> clip bundle (frames+wav)
         self._repair_nolora_pending = False
+        self._repair_preview_thread = None
+        self._repair_worker_dead_since = None
+        self.master.after(1000, self._repair_watchdog_tick)
         self._repair_player = None       # H3: the open clip player's state, or None
         # H3 render cache + block library (exact renders cached to disk per slider state;
         # every block-off clip pre-rendered in the background). One engine, two users — the
@@ -24147,6 +24150,7 @@ class LoRATrainerGUI:
         import threading
         thread = threading.Thread(target=self._repair_preview_worker, args=(snapshot, h3_opts),
                                   daemon=True)
+        self._repair_preview_thread = thread
         thread.start()
 
     def _repair_is_h3(self):
@@ -25628,6 +25632,33 @@ class LoRATrainerGUI:
         if P["n"] > 1 and P["playing"]:
             self._repair_clip_player_play(self._repair_clip_player_pos())
 
+    def _repair_watchdog_tick(self):
+        """Once a second: heal a render flagged in flight whose worker thread is gone (its
+        completion never posted — it left the freshness line on "Pending refresh…" and the
+        library builder waiting for ever), and keep the freshness line honest."""
+        import time as _time
+        try:
+            t = getattr(self, "_repair_preview_thread", None)
+            if self._repair_preview_in_flight and t is not None and not t.is_alive():
+                dead_since = getattr(self, "_repair_worker_dead_since", None)
+                if dead_since is None:
+                    self._repair_worker_dead_since = _time.monotonic()
+                elif _time.monotonic() - dead_since > 2.0:
+                    print("[repair] watchdog: preview worker gone with in-flight set — clearing")
+                    self._repair_worker_dead_since = None
+                    self._repair_preview_in_flight = False
+                    self._repair_progress_end()
+                    self.repair_status_var.set("Ready.")
+            else:
+                self._repair_worker_dead_since = None
+            self._repair_clip_player_freshness()
+        except Exception:
+            pass
+        try:
+            self.master.after(1000, self._repair_watchdog_tick)
+        except Exception:
+            pass
+
     def _repair_clip_player_freshness(self):
         """A second line under the tweaked pane's title: 'Up to date' when the clip shown is
         the sliders as they stand, 'Pending refresh…' while a re-render is queued or running,
@@ -25640,8 +25671,10 @@ class LoRATrainerGUI:
                 return
         except Exception:
             return
-        pending = (self._repair_preview_after_id is not None or self._repair_preview_in_flight
-                   or bool(getattr(self, "_repair_preview_dirty", False)))
+        # Only a queued or running render is "pending". The dirty flag alone is not: a
+        # settings change with no primary loaded sets it with nothing scheduled, and it
+        # left the line on "Pending refresh…" for good (Peter, 4 Sep).
+        pending = (self._repair_preview_after_id is not None or self._repair_preview_in_flight)
         for i, side in enumerate(P["sides"]):
             if side != "tweaked":
                 continue
@@ -25654,7 +25687,9 @@ class LoRATrainerGUI:
                 line, col = "Pending refresh…", "#E0A030"
             else:
                 line, col = "Up to date", COLORS["text_primary"]
-            P["titles"][i].configure(text=f"{base}" + chr(10) + f"{line}", fg=col, justify=tk.CENTER)
+            txt = f"{base}" + chr(10) + f"{line}"
+            if P["titles"][i].cget("text") != txt:
+                P["titles"][i].configure(text=txt, fg=col, justify=tk.CENTER)
 
     def _repair_clip_player_resized(self):
         P = getattr(self, "_repair_player", None)

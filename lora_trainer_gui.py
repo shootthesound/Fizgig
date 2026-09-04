@@ -20729,8 +20729,9 @@ class LoRATrainerGUI:
         _apply_repair_family_ui). The strength the LoRA is meant to be used at; every block
         slider stays relative to it."""
         lbl = ttk.Label(parent, text="at strength")
-        spin = ttk.Spinbox(parent, textvariable=var, from_=0.0, to=2.0, increment=0.05,
-                           width=5, command=self._on_repair_scale_changed)
+        # a plain themed Entry, like the Steps / Turbo boxes — ttk.Spinbox has no dark style
+        # in this app (white on white, Peter 4 Sep)
+        spin = ttk.Entry(parent, textvariable=var, width=5)
         spin.bind("<Return>", lambda e: self._on_repair_scale_changed())
         spin.bind("<FocusOut>", lambda e: self._on_repair_scale_changed())
         ToolTip(spin, f"Load strength for {who} — the strength it was designed to be used "

@@ -1,4 +1,3 @@
-<!-- DRAFT — unreleased -->
 # Fizgig v5.3.0
 
 LoRA surgery on video. Open a MiniMax H3 LoRA and see what every one of its 52 blocks does to a moving clip — the motion, the face, the sound — one click each, every one a real render. Pin the first and last frame, feed it reference photos, compare against the bare model, and save the fix at the strength it was built for. On 24 GB cards too.

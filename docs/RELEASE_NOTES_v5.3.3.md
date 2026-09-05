@@ -1,4 +1,3 @@
-<!-- DRAFT — unreleased -->
 # Fizgig v5.3.3
 
 A small one for MiniMax H3 training on tight cards.

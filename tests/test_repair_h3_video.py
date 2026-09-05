@@ -839,6 +839,21 @@ try:
        and all(v["primary_enabled"].get() for b, v in app.repair_block_vars.items() if b != "h3blk_3"))
     app._repair_bulk_primary("on")
     ck("All on: every tick on", all(v["primary_enabled"].get() for v in app.repair_block_vars.values()))
+    app.repair_block_vars["h3_rf_1"]["primary_enabled"].set(False)
+    app._repair_bulk_primary("alternate")
+    ck("Alternate: even main blocks on, odd off, 0 through 49; refiners untouched",
+       all(app.repair_block_vars[f"h3blk_{i}"]["primary_enabled"].get() is (i % 2 == 0) for i in range(50))
+       and app.repair_block_vars["h3_rf_0"]["primary_enabled"].get() is True
+       and app.repair_block_vars["h3_rf_1"]["primary_enabled"].get() is False)
+    app.repair_block_vars["h3_rf_1"]["primary_enabled"].set(True)
+    app._repair_bulk_primary("on")
+    app._repair_bulk_primary("detail")
+    ck("Toggle detail blocks: 46-49 all on -> all off, nothing else touched",
+       all(app.repair_block_vars[f"h3blk_{i}"]["primary_enabled"].get() is False for i in range(46, 50))
+       and all(app.repair_block_vars[f"h3blk_{i}"]["primary_enabled"].get() is True for i in range(46)))
+    app.repair_block_vars["h3blk_47"]["primary_enabled"].set(True)
+    app._repair_bulk_primary("detail")
+    ck("...a mixed 46-49 -> all on", all(app.repair_block_vars[f"h3blk_{i}"]["primary_enabled"].get() is True for i in range(46, 50)))
     app._reset_repair_sliders()
     ck("Reset all: back to 1.0 / on", all(float(v["primary_strength"].get()) == 1.0 and v["primary_enabled"].get()
                                         for v in app.repair_block_vars.values()))

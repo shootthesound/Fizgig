@@ -19333,7 +19333,12 @@ class LoRATrainerGUI:
                 ("All on", lambda: self._repair_bulk_primary("on"),
                  "Tick every block's primary enable (strengths kept)."),
                 ("Invert", lambda: self._repair_bulk_primary("invert"),
-                 "Flip every block's primary enable: on becomes off, off becomes on.")):
+                 "Flip every block's primary enable: on becomes off, off becomes on."),
+                ("Alternate", lambda: self._repair_bulk_primary("alternate"),
+                 "Block 0 on, 1 off, 2 on ... through 49 (even blocks on, odd off); "
+                 "refiners untouched. Invert for the other half."),
+                ("Toggle detail blocks", lambda: self._repair_bulk_primary("detail"),
+                 "Blocks 46-49 — the detail end of the model — all on or all off together.")):
             _b = ttk.Button(self._repair_bulk_row, text=_txt, command=_cmd, width=9)
             _b.pack(side=tk.LEFT, padx=(0, 6))
             ToolTip(_b, _tip + " Primary rows only; one render for the lot.")
@@ -26703,21 +26708,35 @@ class LoRATrainerGUI:
             import traceback
             messagebox.showerror("Error", f"Save failed:\n{traceback.format_exc()}")
 
+    _REPAIR_DETAIL_BLOCKS = ("h3blk_46", "h3blk_47", "h3blk_48", "h3blk_49")
+
     def _repair_bulk_primary(self, what):
-        """All off / All on / Invert on every block's primary ENABLE tick (the strengths are
-        left as they are — Peter, 4 Sep), one render."""
+        """All off / All on / Invert / Alternate / Toggle detail blocks on the blocks' primary
+        ENABLE ticks (the strengths are left as they are — Peter, 4 Sep), one render.
+        Alternate: main block 0 on, 1 off, 2 on ... to 49, refiners untouched (Peter, 5 Sep).
+        Detail: blocks 46-49 together — off when all four are on, else on."""
         self._repair_master_mutating = True
         try:
-            for bid, v in self.repair_block_vars.items():
-                var = v.get("primary_enabled")
-                if var is None:
-                    continue
-                if what == "off":
-                    var.set(False)
-                elif what == "on":
-                    var.set(True)
-                else:
-                    var.set(not bool(var.get()))
+            if what == "detail":
+                rows = [self.repair_block_vars[b]["primary_enabled"]
+                        for b in self._REPAIR_DETAIL_BLOCKS if b in self.repair_block_vars]
+                turn_on = not all(bool(v.get()) for v in rows)
+                for v in rows:
+                    v.set(turn_on)
+            else:
+                for bid, v in self.repair_block_vars.items():
+                    var = v.get("primary_enabled")
+                    if var is None:
+                        continue
+                    if what == "off":
+                        var.set(False)
+                    elif what == "on":
+                        var.set(True)
+                    elif what == "alternate":
+                        if bid.startswith("h3blk_"):
+                            var.set(int(bid.split("_")[1]) % 2 == 0)
+                    else:
+                        var.set(not bool(var.get()))
         finally:
             self._repair_master_mutating = False
         self._schedule_preview(force=True)

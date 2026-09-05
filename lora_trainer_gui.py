@@ -19648,8 +19648,7 @@ class LoRATrainerGUI:
         tu = clip.get("turbo_strength")
         tut = ("no Turbo LoRA" if tu is None else "Turbo off" if abs(float(tu)) < 1e-9
                else f"Turbo {float(tu):g}")
-        i8 = " · int8 attention" if clip.get("int8_attention") else ""
-        return f"{st} steps · {tut}{i8}" if st else "render"
+        return f"{st} steps · {tut}" if st else "render"
     # The pass whose estimate "Show early" puts up. Measured 3 Sep at Turbo 1.0: the
     # pass-1 estimate is mush, pass 2 is a readable rough picture (composition, pose,
     # expression), so 2 — at the ⅔ dial canvas that is ~2.8 s in, with the finished clip
@@ -19665,21 +19664,6 @@ class LoRATrainerGUI:
         if f >= 0.999:
             return w, h
         return max(256, int(w * f) // 32 * 32), max(256, int(h * f) // 32 * 32)
-
-    def _on_repair_h3_int8_attn_toggled(self):
-        """The Int8 attention tick: remembered, handed to the engine, re-rendered — it's a
-        render setting like Steps (the library is per setting: an int8 render and an exact
-        one never share a cache)."""
-        on = bool(self.repair_h3_int8_attn_var.get())
-        try:
-            self.last_used["repair_h3_int8_attn"] = on
-            self._save_last_used_paths()
-        except Exception:
-            pass
-        eng = self.repair_engine
-        if eng is not None and hasattr(eng, "int8_attention"):
-            eng.int8_attention = on
-        self._on_preview_param_changed()
 
     def _on_repair_h3_early_toggled(self):
         try:
@@ -20112,18 +20096,6 @@ class LoRATrainerGUI:
         ToolTip(_nol, "Also render the same seed and prompt with no LoRA at all, shown as a "
                       "third pane in the player. Rendered once per setup and cached, so it "
                       "costs one extra render — not one per slider move.")
-        self.repair_h3_int8_attn_var = tk.BooleanVar(
-            value=bool(self.last_used.get("repair_h3_int8_attn", False)))
-        _i8 = ttk.Checkbutton(_l2, text="Int8 attention", variable=self.repair_h3_int8_attn_var,
-                              command=self._on_repair_h3_int8_attn_toggled)
-        _i8.pack(side=tk.LEFT, padx=(10, 0))
-        ToolTip(_i8, "Attention through comfy-kitchen's INT8 kernel (NVIDIA, Apache-2.0) "
-                     "instead of PyTorch's: 3× faster on a 22-frame clip, 6–7× on 56 frames "
-                     "and the 1024 canvases, where attention is the biggest cost — a 1024² × "
-                     "56-frame render loses about a third of its time. Not an exact render "
-                     "(int8 Q/K/V, ~1.6% per attention call); NVIDIA cards only, AMD and "
-                     "older cards fall back to PyTorch attention and say so. The status line "
-                     "names which one rendered.")
         r += 1
 
         # Reference image row (Klein is an edit model — condition the preview on a
@@ -21063,9 +21035,10 @@ class LoRATrainerGUI:
         if self.repair_engine is None or not isinstance(self.repair_engine, H3RepairEngine):
             self.repair_engine = H3RepairEngine()
         self.repair_engine.on_status = self._repair_engine_status
-        self.repair_engine.int8_attention = bool(
-            getattr(self, "repair_h3_int8_attn_var", None) is not None
-            and self.repair_h3_int8_attn_var.get())
+        # Attention runs through comfy-kitchen's INT8 kernel wherever it exists (NVIDIA,
+        # RTX 20-series up) and silently through PyTorch's where it doesn't (AMD, older
+        # cards, a missing wheel) — Peter, 5 Sep: on by default, no switch.
+        self.repair_engine.int8_attention = True
         # _turbo_enabled stays False: the activation-cache resume was measured to under-apply
         # tweaks ~16x on H3 (see _apply_repair_family_ui) — previews always full-forward.
         self.repair_status_var.set("Loading MiniMax H3 (the 33B base takes a minute)…")

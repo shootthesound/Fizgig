@@ -931,31 +931,12 @@ try:
        and app.last_used.get("repair_h3_width") == "1024")
     app.repair_h3_width_var.set("768"); app._on_repair_h3_canvas_changed(); app.repair_engine = None
 
-    # --- 14. the Int8 attention tick: remembered, handed to the engine, named in the status --
+    # --- 14. int8 attention: always on for the engine, no tick, never named in the status ----
     fam("minimax")
-    class _AttnEng:
-        pipeline = None; primary_network = object(); int8_attention = False
-        def reset(self): pass
-        def _invalidate_baseline_cache(self): pass
-    app.repair_engine = _AttnEng()
-    app.repair_h3_int8_attn_var.set(True); app._on_repair_h3_int8_attn_toggled()
-    ck("ticking Int8 attention hands the flag to the engine, remembers it, and schedules a render",
-       app.repair_engine.int8_attention is True and app.last_used.get("repair_h3_int8_attn") is True
-       and app._repair_preview_after_id is not None)
-    try:
-        root.after_cancel(app._repair_preview_after_id)
-    except Exception:
-        pass
-    app._repair_preview_after_id = None
-    ck("the Ready line names it when the clip was rendered with it",
-       "int8 attention" in app._repair_h3_regime_label({"steps": 4, "turbo_strength": 1.0, "int8_attention": True})
-       and "int8" not in app._repair_h3_regime_label({"steps": 4, "turbo_strength": 1.0}))
-    app.repair_h3_int8_attn_var.set(False); app._on_repair_h3_int8_attn_toggled()
-    try:
-        root.after_cancel(app._repair_preview_after_id)
-    except Exception:
-        pass
-    app._repair_preview_after_id = None; app.repair_engine = None
+    ck("no Int8 attention tick (on by default, silently off where the kernel is missing)",
+       not hasattr(app, "repair_h3_int8_attn_var"))
+    ck("the Ready line never names the attention kernel",
+       "int8" not in app._repair_h3_regime_label({"steps": 4, "turbo_strength": 1.0, "int8_attention": True}))
 
 finally:
     G.messagebox.showerror = _err

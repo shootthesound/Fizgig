@@ -106,6 +106,10 @@ reset(fake)
 ck("kernel availability reads True with the per-render switch OFF (the clip dict is tagged after the render)",
    mm.int8_kernel_available() and not mm.int8_attention_wanted())
 
+# 6b. the engine wants it by default — no switch anywhere
+ck("the engine asks for int8 attention by default (silently PyTorch's where the kernel is missing)",
+   _H3E().int8_attention is True)
+
 # 7. the render-cache setup key changes with the flag (an int8 library never serves an exact render)
 from fizgig.repair_studio.h3_render_cache import setup_key, CACHE_FORMAT
 kw = dict(primary_hash="p", donor_hash="", prompt="x", seed=1, frames=22, width=768, height=640,

@@ -141,7 +141,7 @@ class H3RepairEngine:
         self._turbo_lora_path = ""
         self._turbo_lora_strength = 0.75
         self.base_mode = "auto"          # the Base picker: auto / stream / nf4
-        self.int8_attention = False      # the Clip row tick (comfy-kitchen kernel), per render
+        self.int8_attention = True       # comfy-kitchen's int8 attention wherever it exists
         self.base_plan = None            # (base_quant, blocks streamed) actually loaded
         self._te_parked_vision = False # ...built with the vision tower (serves text too)
         self.dit_path: Optional[str] = None

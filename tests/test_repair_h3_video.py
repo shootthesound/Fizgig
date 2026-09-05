@@ -494,36 +494,46 @@ try:
        any(r[0] == "render_latent" and r[2] == 512 for r in renders), renders[:3])
     ck("default sliders: the tweaked side is the baseline -> served from cache, no early look",
        app._repair_clips["tweaked"].get("cached") is True and not early_seen, early_seen)
-    ck("library complete: base + every block-off entry",
-       cache.complete() and cache.n_entries() == 1 + len(ACTIVE))
+    ck("library complete: base + every bank holding a touched block (0-4 for block 3, 20-24 for block 21; the refiner is in none)",
+       cache.complete() and cache.bank_sigs() == ["bank:0-4", "bank:20-24"]
+       and cache.n_entries() == 1 + len(cache.banks), (cache.bank_sigs(), cache.n_entries()))
     root.update()
-    ck("ticks: ● on active blocks (clickable), blank on untouched",
-       app.repair_block_vars["h3blk_21"]["cache_lbl"].cget("text") == "●"
-       and app.repair_block_vars["h3blk_5"]["cache_lbl"].cget("text") == "")
+    ck("bank chips above the sliders: one per bank, ● once built",
+       list(app._repair_bank_chips) == ["bank:0-4", "bank:20-24"]
+       and all(app._repair_bank_chips[s].cget("text").startswith("●") for s in app._repair_bank_chips)
+       and app._repair_bank_strip.winfo_manager() != "")
     ck("status: complete + counts", "complete" in app.repair_cache_status_var.get()
        and "renders cached" in app.repair_cache_status_var.get(), app.repair_cache_status_var.get())
-    ck("entries carry thumbs", os.path.isfile(cache.thumb_path("off:h3blk_21")))
-    e = cache.get("off:h3blk_21")[0]; b = cache.get("base")[0]
+    ck("entries carry thumbs", os.path.isfile(cache.thumb_path("bank:20-24")))
+    e = cache.get("bank:20-24")[0]; b = cache.get("base")[0]
     i21 = sorted(ACTIVE).index("h3blk_21")
-    ck("block-21-off entry is that exact render",
+    ck("the 20-24 bank entry is that exact render (block 21 is the only touched block in it)",
        torch.allclose((b - e)[:, i21], torch.full_like(e[:, i21], float(i21 + 1))))
-    # [0] on block 21 -> a cache HIT: no render, no early look, status says from cache
+    # unticking exactly blocks 20-24 by hand IS the bank state -> a cache HIT, no render
     renders.clear(); early_seen.clear()
-    app.repair_block_vars["h3blk_21"]["primary_strength"].set(0.0)
+    app._repair_master_mutating = True
+    for _i in range(20, 25):
+        app.repair_block_vars[f"h3blk_{_i}"]["primary_enabled"].set(False)
+    app._repair_master_mutating = False
+    app._schedule_preview(force=True)
     wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
              and "from cache" in app.repair_status_var.get(), timeout=6.0)
-    ck("[0] on a library block is served from the cache (no render, no early look)",
+    ck("unticking a bank's five blocks by hand is served from the cache (no render, no early look)",
        not any(r[0] == "render_latent" for r in renders) and not early_seen
-       and app._repair_clips["tweaked"].get("cached") is True, renders)
+       and app._repair_clips["tweaked"].get("cached") is True
+       and app._repair_clips["tweaked"].get("sig") == "bank:20-24", renders)
     ck("status says exact, from cache", "exact, from cache" in app.repair_status_var.get(),
        app.repair_status_var.get())
     # a new state renders, is cached, and re-rendering the same state hits
+    renders.clear()
+    app._reset_repair_sliders()
+    wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight, timeout=6.0)
     renders.clear()
     app.repair_block_vars["h3blk_21"]["primary_strength"].set(0.5)
     wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
              and app._repair_clips["tweaked"].get("cached") is False, timeout=6.0)
     ck("a new state renders (exact) and lands in the cache",
-       any(r[0] == "render_latent" for r in renders) and cache.n_entries() == 2 + len(ACTIVE))
+       any(r[0] == "render_latent" for r in renders) and cache.n_entries() == 2 + len(cache.banks))
     ck("show early fired during that render with pass 2 of 4 (pass 1 is mush), while in flight",
        early_seen and early_seen[0][:2] == (2, 4) and early_seen[0][2] is True
        and any(r[0] == "early_decode" for r in renders), early_seen)
@@ -533,31 +543,32 @@ try:
     wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
              and app._repair_clips["tweaked"].get("cached") is True, timeout=6.0)
     ck("back to 1.0 = baseline state, served from cache", app._repair_clips["tweaked"].get("cached") is True)
-    # peek: click ● on block 3 -> the sliders become "block 3 off" and the library serves it
+    # click the 0-4 bank chip -> the sliders become "blocks 0-4 off" and the library serves it
     renders.clear()
-    app._repair_cache_peek("h3blk_3")
+    app._repair_cache_peek_bank("bank:0-4")
     wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
-             and app._repair_clips["tweaked"].get("sig") == "off:h3blk_3", timeout=6.0)
-    ck("peek RESTORES the entry's state: block 3 unticked, every other row default, served from the library, no render",
-       app._repair_clips["tweaked"].get("sig") == "off:h3blk_3"
+             and app._repair_clips["tweaked"].get("sig") == "bank:0-4", timeout=6.0)
+    _bank = {f"h3blk_{i}" for i in range(0, 5)}
+    ck("a bank chip RESTORES the entry's state: blocks 0-4 unticked, every other row default, served from the library, no render",
+       app._repair_clips["tweaked"].get("sig") == "bank:0-4"
        and app._repair_clips["tweaked"].get("cached") is True
-       and app.repair_block_vars["h3blk_3"]["primary_enabled"].get() is False
+       and all(app.repair_block_vars[b]["primary_enabled"].get() is False for b in _bank)
        and all(app.repair_block_vars[b]["primary_enabled"].get() is True
                and float(app.repair_block_vars[b]["primary_strength"].get()) == 1.0
-               for b in app.repair_block_vars if b != "h3blk_3")
+               for b in app.repair_block_vars if b not in _bank)
        and app._repair_peek is None
        and app._repair_tweaked_title.cget("text") == "Tweaked (current sliders)"
        and not any(r[0] == "render_latent" for r in renders),
        (app._repair_clips["tweaked"].get("sig"), renders))
     ck("...so Save would write what is on screen (signature of the sliders == the entry shown)",
-       __import__("fizgig.repair_studio.h3_render_cache", fromlist=["signature"]).signature(app.repair_state) == "off:h3blk_3")
+       __import__("fizgig.repair_studio.h3_render_cache", fromlist=["signature"]).signature(app.repair_state) == "bank:0-4")
     # a slider move from there renders normally
     app.repair_block_vars["h3blk_3"]["primary_enabled"].set(True)
     app.repair_block_vars["h3blk_3"]["primary_strength"].set(0.8)
     wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
-             and app._repair_clips["tweaked"].get("sig") not in ("off:h3blk_3", "base"), timeout=6.0)
+             and app._repair_clips["tweaked"].get("sig") not in ("bank:0-4", "base"), timeout=6.0)
     ck("a slider move from a restored entry renders normally",
-       app._repair_clips["tweaked"].get("sig") not in ("off:h3blk_3", "base")
+       app._repair_clips["tweaked"].get("sig") not in ("bank:0-4", "base")
        and app._repair_tweaked_title.cget("text") == "Tweaked (current sliders)")
     # the Confirm preset = another setup key (6 steps, Turbo 0.75, full Size) — and it
     # builds its own library too (no regime gate any more)
@@ -643,7 +654,7 @@ try:
     cells = app._repair_history_inner.winfo_children()
     ck("history strip shows every cached render", len(cells) == cache.n_entries(), len(cells))
     # view an entry -> the sliders become that entry and the library serves it
-    sig = "off:h3blk_21"
+    sig = "bank:20-24"
     app._repair_preview_in_flight = False
     # the strip belongs to the CURRENT setup: back on the dial setup (the section above
     # ended on Confirm) before viewing, so the view, the pin and the re-render share a cache
@@ -651,9 +662,9 @@ try:
     app._repair_history_view(sig)
     wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
              and app._repair_clips["tweaked"].get("sig") == sig, 6.0)
-    ck("history view RESTORES the entry's sliders (block 21 unticked) and shows it from the library",
+    ck("history view RESTORES the entry's sliders (blocks 20-24 unticked) and shows it from the library",
        app._repair_clips["tweaked"].get("sig") == sig and app._repair_peek is None
-       and app.repair_block_vars["h3blk_21"]["primary_enabled"].get() is False,
+       and all(app.repair_block_vars[f"h3blk_{i}"]["primary_enabled"].get() is False for i in range(20, 25)),
        app._repair_clips["tweaked"].get("sig"))
     # pin it as the baseline: the next render's baseline pane is that entry (same setup)
     app._repair_history_pin(sig)
@@ -808,8 +819,8 @@ try:
              and not app._repair_cache_thread.is_alive(), timeout=20.0)
     _c = app._repair_cache
     _i21 = sorted(ACTIVE).index("h3blk_21")
-    _b = _c.get("base")[0]; _e = _c.get("off:h3blk_21")[0]
-    ck("library at load strength 0.8: baseline entry carries 0.8 × block, the block-off entry drops exactly that",
+    _b = _c.get("base")[0]; _e = _c.get("bank:20-24")[0]
+    ck("library at load strength 0.8: baseline entry carries 0.8 × block, the bank entry drops exactly that",
        _c.meta.get("primary_scale") == 0.8
        and torch.allclose(_b[:, _i21], torch.full_like(_b[:, _i21], 1.0 + 0.8 * (_i21 + 1)))
        and torch.allclose((_b - _e)[:, _i21], torch.full_like(_e[:, _i21], 0.8 * (_i21 + 1))),

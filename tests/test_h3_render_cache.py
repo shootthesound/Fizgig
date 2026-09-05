@@ -59,6 +59,24 @@ try:
     st4 = SliderState.default_h3()
     st4.blocks["h3_rf_1"].primary_strength = 0.0
     ck("refiner off -> off:h3_rf_1", RC.signature(st4) == "off:h3_rf_1")
+    # banks: five main blocks off, stride four, the last absorbs 49; refiners never in one
+    ck("12 banks: 0-4, 4-8 ... 40-44, 44-49 (overlap of one, the last takes the remainder)",
+       [b[0] for b in RC.all_banks()] == [f"bank:{a}-{a + 4}" for a in range(0, 44, 4)] + ["bank:44-49"]
+       and RC.all_banks()[-1][2] == [f"h3blk_{i}" for i in range(44, 50)]
+       and RC.all_banks()[1][1] == "Blocks 4–8 off")
+    st5 = SliderState.default_h3()
+    for _i in range(4, 9):
+        st5.blocks[f"h3blk_{_i}"].primary_enabled = False
+    ck("blocks 4-8 unticked -> bank:4-8", RC.signature(st5) == "bank:4-8")
+    st5.blocks["h3blk_9"].primary_enabled = False
+    ck("blocks 4-9 off -> a hash (not a bank)", len(RC.signature(st5)) == 16)
+    st6 = SliderState.default_h3()
+    for _i in range(44, 50):
+        st6.blocks[f"h3blk_{_i}"].primary_strength = 0.0
+    ck("blocks 44-49 at 0 -> bank:44-49 (strength 0 and unticked are the same render)",
+       RC.signature(st6) == "bank:44-49")
+    ck("bank_ids parses a bank signature and nothing else",
+       RC.bank_ids("bank:8-12") == [f"h3blk_{i}" for i in range(8, 13)] and RC.bank_ids("off:h3blk_3") is None)
 
     # --- store --------------------------------------------------------------------------
     ids = ["h3blk_0", "h3blk_7", "h3blk_30", "h3_rf_0"]
@@ -71,7 +89,11 @@ try:
     ck("setup key: canvas and regime each make a different setup",
        len({key, key_full, key_conf}) == 3 and len(key) == 20)
     c = RC.RenderCache(root, key, ids)
-    ck("fresh: nothing cached", not c.complete() and c.missing() == ids and c.n_entries() == 0)
+    BANKS = ["bank:0-4", "bank:4-8", "bank:28-32"]        # the banks holding a touched main block
+    ck("the LoRA's banks: those holding a block it touches (refiners in none)",
+       c.bank_sigs() == BANKS and c.bank_blocks("bank:4-8") == [f"h3blk_{i}" for i in range(4, 9)]
+       and c.bank_label("bank:28-32") == "Blocks 28–32 off")
+    ck("fresh: nothing cached", not c.complete() and c.missing() == BANKS and c.n_entries() == 0)
     lat = torch.randint(-16, 16, (1, 24, 7, 8, 8)).float() * 0.25   # fp16-exact, and so are +1/+2
     aud = torch.randn(74, 32)
     thumb = Image.new("RGB", (768, 640), "orange")
@@ -85,30 +107,32 @@ try:
     ck("thumb written as a <=256 px jpg",
        os.path.isfile(c.thumb_path("off:h3blk_7"))
        and max(Image.open(c.thumb_path("off:h3blk_7")).size) <= 256)
-    ck("done/missing follow the LoRA's blocks",
-       c.done_ids() == ["h3blk_7", "h3blk_30"] and c.missing() == ["h3blk_0", "h3_rf_0"])
+    ck("hand renders (single-block off) are entries but not banks",
+       c.done_banks() == [] and c.missing() == BANKS and c.n_entries() == 3)
+    c.put("bank:4-8", lat + 3, None, regime="dial", label="Blocks 4–8 off")
+    ck("done/missing follow the banks",
+       c.done_banks() == ["bank:4-8"] and c.missing() == ["bank:0-4", "bank:28-32"])
     ck("info + entries carry the meta", c.info("off:h3blk_7").get("label") == "Block 7 off"
-       and list(c.entries())[-1] == "off:h3blk_30")
+       and list(c.entries())[-1] == "bank:4-8")
     ck("a never-rendered state is a miss", c.get("deadbeefdeadbeef") is None)
 
     # --- resume from disk ---------------------------------------------------------------
     c2 = RC.RenderCache(root, key, ids)
     ck("fresh instance resumes every entry",
-       c2.n_entries() == 3 and torch.equal(c2.get("off:h3blk_30")[0], lat + 2)
-       and c2.info(RC.BASE_SIG).get("label") == "Baseline")
+       c2.n_entries() == 4 and torch.equal(c2.get("off:h3blk_30")[0], lat + 2)
+       and c2.info(RC.BASE_SIG).get("label") == "Baseline" and c2.has("bank:4-8"))
     open(os.path.join(c2.dir, "off__h3blk_0.safetensors.tmp"), "wb").close()
     c3 = RC.RenderCache(root, key, ids)
     ck("a stray .tmp is not an entry", not c3.has("off:h3blk_0"))
     os.remove(c3._path("off:h3blk_7"))
     c4 = RC.RenderCache(root, key, ids)
     ck("manifest entry whose file vanished is dropped", not c4.has("off:h3blk_7") and c4.has(RC.BASE_SIG))
-    c4.put("off:h3blk_7", lat, None); c4.put("off:h3blk_0", lat, None); c4.put("off:h3_rf_0", lat, None)
-    ck("complete once base + every block-off entry exist", c4.complete())
+    c4.put("bank:0-4", lat, None); c4.put("bank:28-32", lat, None)
+    ck("complete once base + every bank entry exist", c4.complete())
     ck("size reported", c4.size_bytes() > 0)
 
-    ck("build_order: main blocks ascending, refiners last",
-       RC.build_order(["h3blk_30", "h3_rf_0", "h3blk_7", "h3blk_0"])
-       == ["h3blk_0", "h3blk_7", "h3blk_30", "h3_rf_0"])
+    ck("build_order: banks ascending by first block",
+       RC.build_order(["bank:28-32", "bank:0-4", "bank:4-8"]) == ["bank:0-4", "bank:4-8", "bank:28-32"])
 
     os.makedirs(os.path.join(root, "not_a_cache"), exist_ok=True)
     n, freed = RC.clear_render_cache(root)

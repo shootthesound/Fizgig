@@ -19337,6 +19337,13 @@ class LoRATrainerGUI:
             _b = ttk.Button(self._repair_bulk_row, text=_txt, command=_cmd, width=9)
             _b.pack(side=tk.LEFT, padx=(0, 6))
             ToolTip(_b, _tip + " Primary rows only; one render for the lot.")
+        # The block library's bank chips (H3 only, shown with the bulk row): one per bank of
+        # five blocks — ● built (hover for the thumb, click to restore that state and see
+        # it), ○ still to build.
+        self._repair_bank_strip = tk.Frame(sliders_card, bg=COLORS["bg_surface"])
+        self._repair_bank_chips = {}
+        tk.Label(self._repair_bank_strip, text="Library:", bg=COLORS["bg_surface"],
+                 fg=COLORS["text_secondary"], font=(FONT_FAMILY, 8)).pack(side=tk.LEFT, padx=(0, 6))
         # The sliders live in their own host: a family switch rebuilds the panel by
         # destroying the host's children, and the bulk row must survive that.
         _host = tk.Frame(sliders_card, bg=COLORS["bg_surface"])
@@ -19486,6 +19493,9 @@ class LoRATrainerGUI:
                 if not self._repair_bulk_row.winfo_manager():
                     self._repair_bulk_row.pack(side=tk.TOP, fill=tk.X, pady=(0, 6),
                                                before=self._repair_sliders_host)
+                if not self._repair_bank_strip.winfo_manager():
+                    self._repair_bank_strip.pack(side=tk.TOP, fill=tk.X, pady=(0, 6),
+                                                 before=self._repair_sliders_host)
                 self._refresh_repair_h3_sound_state()
             else:
                 self._repair_h3_label.grid_remove()
@@ -19496,6 +19506,7 @@ class LoRATrainerGUI:
                 self._repair_h3_base_label.grid_remove()
                 self._repair_h3_base_combo.grid_remove()
                 self._repair_bulk_row.pack_forget()
+                self._repair_bank_strip.pack_forget()
                 if not self._repair_res_label.winfo_manager():
                     # Keep the Res pair ahead of the Turbo tick when that is showing (Klein);
                     # under Krea 2 the tick is hidden and `before=` it would raise.
@@ -20732,16 +20743,9 @@ class LoRATrainerGUI:
         val_lbl_p.grid(row=0, column=4, padx=(2, 2))
         btns_p = self._repair_quickset_buttons(rowf, primary_strength, 0, 5,
             balance_cb=lambda b=block_id: self._repair_balance_block(b, "primary"))
-        # H3 only: the library tick — ● this block's off clip is cached (click to see it,
-        # exact, instantly), ○ still to build, blank = the LoRA doesn't touch the block.
+        # (The library is banks of five blocks now — its chips sit above the sliders; no
+        # per-block dot. `cache_lbl` stays in the row dict as None for older callers.)
         cache_lbl = None
-        if block_id.startswith(("h3blk_", "h3_rf_")):
-            cache_lbl = tk.Label(rowf, text="", width=2, fg=COLORS["text_muted"],
-                                   bg=COLORS["bg_surface"], font=(FONT_FAMILY, 8))
-            cache_lbl.grid(row=0, column=9, padx=(0, 2))    # after the [0][1][±][⚖] set
-            cache_lbl.bind("<Button-1>", lambda e, b=block_id: self._repair_cache_peek(b))
-            cache_lbl.bind("<Enter>", lambda e, b=block_id: self._repair_cache_hover(b, e))
-            cache_lbl.bind("<Leave>", lambda e: self._repair_cache_hover(None, e))
 
         # Donor row (hidden until donor is loaded)
         donor_rowf = ttk.Frame(rowf)
@@ -24914,7 +24918,7 @@ class LoRATrainerGUI:
                        donor_scale=float(getattr(snapshot, "donor_scale", 1.0)))
         self._repair_cache = cache
         print(f"[repair] render cache {key}: {cache.n_entries()} entries, "
-              f"{len(cache.done_ids())}/{len(cache.block_ids)} block-off clips at {cache.dir}")
+              f"{len(cache.done_banks())}/{len(cache.banks)} banks at {cache.dir}")
         return cache
 
     def _repair_cache_after_exact(self, snapshot, opts):
@@ -24956,6 +24960,7 @@ class LoRATrainerGUI:
         from fizgig.repair_studio.state import SliderState
         eng = self.repair_engine
         queue = (["__baseline__"] if not cache.has(BASE_SIG) else []) + build_order(cache.missing())
+        # each entry: a bank of five blocks UNTICKED (the same state a click restores)
         t_start, n_done = _time.time(), 0
         try:
             for bid in queue:
@@ -24986,7 +24991,9 @@ class LoRATrainerGUI:
                             st.primary_scale = float(getattr(snapshot, "primary_scale", 1.0))
                             st.donor_scale = float(getattr(snapshot, "donor_scale", 1.0))
                             if bid != "__baseline__":
-                                st.blocks[bid].primary_strength = 0.0
+                                for _b in cache.bank_blocks(bid):
+                                    if _b in st.blocks:
+                                        st.blocks[_b].primary_enabled = False
                             t0 = _time.time()
                             eng.render_clip(st, frames=opts["frames"], regime=opts["regime"],
                                             with_audio=False, cache=cache, decode=False,
@@ -25057,17 +25064,18 @@ class LoRATrainerGUI:
         if var is None:
             return
         if cache is None:
-            var.set("Library: after the first Dial render, every block is rendered switched "
-                    "off in the background — click a block's ● to see it instantly.")
+            var.set("Library: after the first render, banks of five blocks are rendered "
+                    "switched off in the background — click a bank chip above the sliders "
+                    "to see it instantly.")
             try:
                 self._repair_cache_bar.configure(maximum=1, value=0)
             except Exception:
                 pass
-            self._repair_cache_refresh_ticks(None)
+            self._repair_bank_strip_refresh(None)
             self._repair_history_refresh()
             return
         self._repair_history_refresh()
-        done, total = len(cache.done_ids()), len(cache.block_ids)
+        done, total = len(cache.done_banks()), len(cache.banks)
         t = self._repair_cache_thread
         building = t is not None and t.is_alive() and not self._repair_cache_paused.is_set()
         if cache.complete():
@@ -25076,11 +25084,11 @@ class LoRATrainerGUI:
             state = "paused"
         elif building:
             cur = self._repair_cache_current
-            state = "building" + (f" {cur.replace('h3blk_', 'block ').replace('h3_rf_', 'refiner ')}"
+            state = "building" + (f" {cache.bank_label(cur).lower()}"
                                   if cur and cur != "__baseline__" else " baseline")
         else:
             state = "idle"
-        var.set(f"Library: {done}/{total} block-off clips ({state}) · "
+        var.set(f"Library: {done}/{total} banks of five ({state}) · "
                 f"{cache.n_entries()} renders cached · {cache.size_bytes() / 2**20:.0f} MB")
         try:
             self._repair_cache_bar.configure(maximum=max(total, 1), value=done)
@@ -25089,22 +25097,41 @@ class LoRATrainerGUI:
                 state="disabled" if cache.complete() else "normal")
         except Exception:
             pass
-        self._repair_cache_refresh_ticks(cache)
+        self._repair_bank_strip_refresh(cache)
 
-    def _repair_cache_refresh_ticks(self, cache):
-        eng = self.repair_engine
-        active = set(getattr(eng, "primary_block_ids", ()) or ()) if eng is not None else set()
-        for bid, vars_ in self.repair_block_vars.items():
-            lbl = vars_.get("cache_lbl")
-            if lbl is None:
-                continue
+    def _repair_bank_strip_refresh(self, cache):
+        """The bank chips: one per bank the library builds for this LoRA (rebuilt when the
+        set changes), ● built, ○ pending; blank strip before the first render."""
+        strip = getattr(self, "_repair_bank_strip", None)
+        if strip is None:
+            return
+        chips = self._repair_bank_chips
+        want = [] if cache is None else list(cache.banks)
+        if [sig for sig, _l, _i in want] != list(chips):
+            for w in list(chips.values()):
+                try:
+                    w.destroy()
+                except Exception:
+                    pass
+            chips.clear()
+            for sig, label, ids in want:
+                short = label.replace("Blocks ", "").replace(" off", "")
+                lbl = tk.Label(strip, text=f"○ {short}", bg=COLORS["bg_surface"],
+                               fg=COLORS["text_muted"], font=(FONT_FAMILY, 8), padx=3)
+                lbl.pack(side=tk.LEFT, padx=(0, 4))
+                lbl.bind("<Button-1>", lambda e, s=sig: self._repair_cache_peek_bank(s))
+                lbl.bind("<Enter>", lambda e, s=sig: self._repair_cache_hover(s, e))
+                lbl.bind("<Leave>", lambda e: self._repair_cache_hover(None, e))
+                ToolTip(lbl, f"{label}: click to set the sliders to that state and see the "
+                             "clip (instant once built); hover for a thumbnail.")
+                chips[sig] = lbl
+        for sig, lbl in chips.items():
+            short = cache.bank_label(sig).replace("Blocks ", "").replace(" off", "") if cache else sig
             try:
-                if cache is None or bid not in active:
-                    lbl.configure(text="", cursor="")
-                elif cache.has_block_off(bid):
-                    lbl.configure(text="●", fg="#2ECC71", cursor="hand2")
+                if cache is not None and cache.has(sig):
+                    lbl.configure(text=f"● {short}", fg="#2ECC71", cursor="hand2")
                 else:
-                    lbl.configure(text="○", fg=COLORS["text_muted"], cursor="")
+                    lbl.configure(text=f"○ {short}", fg=COLORS["text_muted"], cursor="")
             except Exception:
                 pass
 
@@ -25130,35 +25157,36 @@ class LoRATrainerGUI:
             self.repair_status_var.set(status)
         self._schedule_preview(force=True)
 
-    def _repair_block_off_state(self, block_id):
-        """The state a library 'Block N off' entry was rendered from: every row at its
-        default, that block's primary tick OFF (a disabled block and a block at 0 are the
-        same render and the same cache signature)."""
+    def _repair_blocks_off_state(self, block_ids):
+        """The state a library entry was rendered from: every row at its default, the given
+        blocks' primary ticks OFF (a disabled block and a block at 0 are the same render and
+        the same cache signature; the tick is what a person means by off)."""
         from fizgig.repair_studio.state import SliderState
         st = SliderState.default_h3()
-        if block_id in st.blocks:
-            st.blocks[block_id].primary_enabled = False
+        for b in block_ids:
+            if b in st.blocks:
+                st.blocks[b].primary_enabled = False
         return st
 
-    def _repair_cache_peek(self, block_id):
-        """Click on a block's ●: RESTORE the state that made the library entry — every
-        other block at its default, this one unticked — and render, which the library
+    def _repair_cache_peek_bank(self, sig):
+        """Click on a bank chip: RESTORE the state that made the library entry — every
+        block at its default, that bank's five unticked — and render, which the library
         serves instantly. The sliders then say what the clip is, and Save writes exactly
         that (Peter, 5 Sep: a view that leaves the sliders elsewhere is worth nothing)."""
         cache = self._repair_cache
         eng = self.repair_engine
-        if cache is None or eng is None or not cache.has_block_off(block_id):
+        if cache is None or eng is None or not cache.has(sig):
             return
         if self._repair_preview_in_flight:
-            self.repair_status_var.set("A render is in flight — try the peek when it lands.")
+            self.repair_status_var.set("A render is in flight — try the library when it lands.")
             return
-        st = self._repair_block_off_state(block_id)
-        label = eng.describe_state(st) if hasattr(eng, "describe_state") else f"{block_id} off"
+        st = self._repair_blocks_off_state(cache.bank_blocks(sig))
+        label = cache.bank_label(sig)
         self._repair_apply_slider_state(
             st, status=f"{label} — sliders set to match the library entry, loading it…")
 
-    def _repair_cache_hover(self, block_id, event):
-        """Hovering a ● shows the library entry's middle-frame thumb beside the cursor."""
+    def _repair_cache_hover(self, sig, event):
+        """Hovering a bank chip shows the library entry's middle-frame thumb beside the cursor."""
         win = getattr(self, "_repair_cache_hover_win", None)
         if win is not None:
             try:
@@ -25167,10 +25195,9 @@ class LoRATrainerGUI:
                 pass
             self._repair_cache_hover_win = None
         cache = self._repair_cache
-        if block_id is None or cache is None or not cache.has_block_off(block_id):
+        if sig is None or cache is None or not cache.has(sig):
             return
-        from fizgig.repair_studio.h3_render_cache import block_off_sig
-        path = cache.thumb_path(block_off_sig(block_id))
+        path = cache.thumb_path(sig)
         if not os.path.isfile(path):
             return
         try:
@@ -25184,8 +25211,8 @@ class LoRATrainerGUI:
             lbl = tk.Label(win, image=photo, bd=1, relief="solid", bg="#000")
             lbl.image = photo
             lbl.pack()
-            tk.Label(win, text=f"{block_id.replace('h3blk_', 'Block ').replace('h3_rf_', 'Refiner ')} off "
-                               "— click to view", font=(FONT_FAMILY, 8), bg="#000", fg="#ddd").pack(fill=tk.X)
+            tk.Label(win, text=f"{cache.bank_label(sig)} — click to set the sliders to it",
+                     font=(FONT_FAMILY, 8), bg="#000", fg="#ddd").pack(fill=tk.X)
             self._repair_cache_hover_win = win
         except Exception:
             self._repair_cache_hover_win = None
@@ -25724,7 +25751,9 @@ class LoRATrainerGUI:
         if sig == BASE_SIG:
             return SliderState.default_h3()
         if sig.startswith("off:"):
-            return self._repair_block_off_state(sig[4:])
+            return self._repair_blocks_off_state([sig[4:]])
+        if sig.startswith("bank:"):
+            return self._repair_blocks_off_state(cache.bank_blocks(sig))
         stored = cache.info(sig).get("state")
         if isinstance(stored, dict):
             try:

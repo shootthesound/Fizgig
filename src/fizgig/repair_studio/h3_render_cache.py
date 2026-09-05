@@ -20,6 +20,7 @@ disk until "Clear cache".
 
 import hashlib
 import json
+import re
 import os
 import threading
 import time
@@ -27,7 +28,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 import torch
 
-CACHE_FORMAT = 5     # 5: int8 attention (comfy-kitchen) is part of the setup key     # 4: the DiT (fl2va / ref2va) is part of the setup key     # 3: load-strength scales in the key; Turbo AdaLN rows follow the dialled strength
+CACHE_FORMAT = 6     # 6: the library is banks of five blocks (overlap 1), not single blocks     # 5: int8 attention (comfy-kitchen) is part of the setup key     # 4: the DiT (fl2va / ref2va) is part of the setup key     # 3: load-strength scales in the key; Turbo AdaLN rows follow the dialled strength
 MANIFEST = "manifest.json"
 BASE_SIG = "base"
 NOLORA_SIG = "nolora"       # the base model with no LoRA at all (primary + donor off)
@@ -62,6 +63,44 @@ def block_off_sig(block_id: str) -> str:
     return f"off:{block_id}"
 
 
+# ----- banks: what the library builds ---------------------------------------------------
+# Five main blocks off at a time, stride four (an overlap of ONE block between neighbours:
+# a feature both of two neighbouring entries lose sits in the block they share); the last
+# bank absorbs the remainder (44-49). Refiners are never in a bank — they stay on unless
+# the user turns one off. Peter, 5 Sep: single blocks rarely show on MiniMax, fives do,
+# and 12 entries build in under a minute where 52 took three and a half.
+BANK_SIZE = 5
+BANK_STRIDE = 4
+_MAIN_BLOCKS = 50
+
+
+def all_banks() -> List[Tuple[str, str, List[str]]]:
+    """[(sig, label, block ids)] over the 50 main blocks: 0-4, 4-8, ... 40-44, 44-49."""
+    out = []
+    a = 0
+    while a < _MAIN_BLOCKS:
+        b = a + BANK_SIZE - 1
+        if b + BANK_STRIDE >= _MAIN_BLOCKS:        # the next window would run off the end
+            b = _MAIN_BLOCKS - 1
+        out.append((f"bank:{a}-{b}", f"Blocks {a}–{b} off",
+                    [f"h3blk_{i}" for i in range(a, b + 1)]))
+        if b == _MAIN_BLOCKS - 1:
+            break
+        a += BANK_STRIDE
+    return out
+
+
+def bank_ids(sig: str) -> Optional[List[str]]:
+    """The block ids of a bank signature, or None when it isn't one."""
+    m = re.match(r"^bank:(\d+)-(\d+)$", sig or "")
+    if not m:
+        return None
+    return [f"h3blk_{i}" for i in range(int(m.group(1)), int(m.group(2)) + 1)]
+
+
+_BANK_BY_IDS = {tuple(ids): sig for sig, _lbl, ids in all_banks()}
+
+
 def signature(state) -> str:
     """The slider state's cache signature. "base" when every row is at its default (primary
     1.0 on, donor 0.0); "off:<bid>" when exactly one block is at 0 with everything else
@@ -75,13 +114,26 @@ def signature(state) -> str:
             moved.append((bid, row))
     if not moved:
         return BASE_SIG
-    if len(moved) == 1:
-        bid, (p_on, p_str, d_on, d_str) = moved[0]
+    def _is_off(row):
+        p_on, p_str, d_on, d_str = row
         eff = p_str if p_on else 0.0
-        if abs(eff) < 1e-9 and (not d_on or abs(d_str) < 1e-9):
-            return block_off_sig(bid)
+        return abs(eff) < 1e-9 and (not d_on or abs(d_str) < 1e-9)
+    if len(moved) == 1 and _is_off(moved[0][1]):
+        return block_off_sig(moved[0][0])
+    if all(_is_off(row) for _b, row in moved):
+        key = tuple(sorted((b for b, _r in moved), key=_block_index))
+        sig = _BANK_BY_IDS.get(key)
+        if sig:
+            return sig
     payload = json.dumps(moved, sort_keys=True)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def _block_index(bid: str) -> int:
+    try:
+        return int(bid.split("_")[-1]) + (1000 if bid.startswith("h3_rf_") else 0)
+    except ValueError:
+        return 10 ** 6
 
 
 def _safe_name(sig: str) -> str:
@@ -100,6 +152,11 @@ class RenderCache:
         self.key = key
         self.dir = os.path.join(root_dir, key)
         self.block_ids: List[str] = list(block_ids)      # blocks the LoRA touches
+        # The banks worth building: those holding at least one block the LoRA touches
+        # (a bank of untouched blocks renders the baseline again).
+        _touch = set(self.block_ids)
+        self.banks: List[Tuple[str, str, List[str]]] = [
+            bk for bk in all_banks() if any(b in _touch for b in bk[2])]
         self._lock = threading.RLock()
         self._ram: Dict[str, Tuple[torch.Tensor, Optional[torch.Tensor]]] = {}
         self._index: Dict[str, dict] = {}               # sig -> meta (what the manifest vouches)
@@ -193,14 +250,28 @@ class RenderCache:
         """sig -> meta for everything the manifest vouches for (newest last)."""
         return dict(sorted(self._index.items(), key=lambda kv: kv[1].get("when", 0)))
 
-    def has_block_off(self, block_id: str) -> bool:
-        return self.has(block_off_sig(block_id))
+    def bank_sigs(self) -> List[str]:
+        return [sig for sig, _l, _ids in self.banks]
 
-    def done_ids(self) -> List[str]:
-        return [b for b in self.block_ids if self.has_block_off(b)]
+    def bank_label(self, sig: str) -> str:
+        for s, lbl, _ids in self.banks:
+            if s == sig:
+                return lbl
+        ids = bank_ids(sig)
+        return f"Blocks {ids[0].split('_')[1]}–{ids[-1].split('_')[1]} off" if ids else sig
+
+    def bank_blocks(self, sig: str) -> List[str]:
+        for s, _lbl, ids in self.banks:
+            if s == sig:
+                return list(ids)
+        return bank_ids(sig) or []
+
+    def done_banks(self) -> List[str]:
+        return [sig for sig in self.bank_sigs() if self.has(sig)]
 
     def missing(self) -> List[str]:
-        return [b for b in self.block_ids if not self.has_block_off(b)]
+        """Bank signatures still to build, in build order."""
+        return [sig for sig in self.bank_sigs() if not self.has(sig)]
 
     def complete(self) -> bool:
         return self.has(BASE_SIG) and not self.missing()
@@ -238,11 +309,11 @@ def clear_render_cache(root_dir: str) -> Tuple[int, int]:
     return n, freed
 
 
-def build_order(block_ids: Iterable[str]) -> List[str]:
-    """The order the library builder renders block-off entries: main blocks ASCENDING (each
-    entry then differs from the previous one in two neighbouring blocks, so the exact pass-1
-    resume skips everything before them), token-refiner blocks last."""
-    main = sorted((b for b in block_ids if b.startswith("h3blk_")),
-                  key=lambda b: int(b.split("_")[1]))
-    refiners = sorted(b for b in block_ids if b.startswith("h3_rf_"))
-    return main + refiners
+def build_order(sigs: Iterable[str]) -> List[str]:
+    """The order the library builder renders bank entries: ASCENDING by first block (each
+    entry then differs from the previous one only from its first block on, so the exact
+    pass-1 resume skips everything before it)."""
+    def _start(sig):
+        ids = bank_ids(sig)
+        return int(ids[0].split("_")[1]) if ids else 10 ** 6
+    return sorted(sigs, key=_start)

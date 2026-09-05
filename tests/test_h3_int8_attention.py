@@ -134,8 +134,8 @@ ck("the real clip_from_cache builds a peek's clip dict (no NameError), tagged an
 from fizgig.repair_studio.h3_render_cache import setup_key, CACHE_FORMAT
 kw = dict(primary_hash="p", donor_hash="", prompt="x", seed=1, frames=22, width=768, height=640,
           steps=4, turbo_strength=1.0, keyframe_sig=())
-ck("setup key differs with int8 attention on (CACHE_FORMAT 5)",
-   setup_key(**kw) != setup_key(int8_attention=True, **kw) and CACHE_FORMAT == 5)
+ck("setup key differs with int8 attention on (CACHE_FORMAT 6)",
+   setup_key(**kw) != setup_key(int8_attention=True, **kw) and CACHE_FORMAT == 6)
 
 reset()
 print()

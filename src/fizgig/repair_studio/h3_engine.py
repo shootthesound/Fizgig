@@ -1511,6 +1511,9 @@ class H3RepairEngine:
             bid = sig[4:]
             return ("Refiner " + bid.split("_")[2] if bid.startswith("h3_rf_")
                     else "Block " + bid.split("_")[1]) + " off"
+        if sig.startswith("bank:"):
+            a, b = sig[5:].split("-")
+            return f"Blocks {a}–{b} off"
         moved = [b for b, bs in state.blocks.items()
                  if not (bs.primary_enabled and abs(bs.primary_strength - 1.0) < 1e-6
                          and abs(bs.donor_strength) < 1e-6)]

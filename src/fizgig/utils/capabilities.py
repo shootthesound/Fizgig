@@ -27,6 +27,49 @@ from .gpu_backend import is_rocm
 logger = logging.getLogger(__name__)
 
 
+# torch major.minor -> the triton major.minor releases it is known to work with (the
+# version the Linux torch wheel depends on, and the one before it, which the field has
+# proven). A triton built for a newer torch imports fine and then fails or hangs INSIDE
+# torch.compile, so an import check alone lets it through — that is how a fresh install
+# with an unpinned triton-windows 3.8 on torch 2.10 stalled Krea 2 previews with no log.
+_TRITON_FOR_TORCH = {
+    "2.8": ("3.3", "3.4"),
+    "2.9": ("3.4", "3.5"),
+    "2.10": ("3.5", "3.6"),
+    "2.11": ("3.6", "3.7"),
+    "2.12": ("3.7", "3.8"),
+}
+
+
+def _major_minor(v: str) -> str:
+    parts = str(v or "").split("+")[0].split(".")
+    return ".".join(parts[:2]) if len(parts) >= 2 else str(v or "")
+
+
+def triton_matches_torch(triton_version=None, torch_version=None):
+    """(ok, note): whether this triton is one torch is known to work with. Unknown torch
+    versions are not gated (ok, ""). Versions default to the installed ones."""
+    try:
+        if torch_version is None:
+            import torch as _t
+            torch_version = _t.__version__
+        if triton_version is None:
+            import triton as _tr
+            triton_version = getattr(_tr, "__version__", "")
+    except Exception:
+        return True, ""
+    want = _TRITON_FOR_TORCH.get(_major_minor(torch_version))
+    if not want:
+        return True, ""
+    have = _major_minor(triton_version)
+    if have in want:
+        return True, ""
+    return False, (f"triton {triton_version} does not pair with torch {torch_version} "
+                   f"(torch {_major_minor(torch_version)} needs triton {' or '.join(want)}; "
+                   f"a mismatched triton fails inside torch.compile, sometimes silently) — "
+                   f"reinstall with: pip install \"triton-windows>={want[0]}.0,<{float(want[1]) + 0.1:.1f}\"")
+
+
 def has_host_c_compiler(platform: Optional[str] = None) -> bool:
     """POSIX: is a C compiler on PATH? inductor/triton build small host-side stubs with one at
     runtime, so torch.compile without it dies with "Failed to find C compiler" — which is what
@@ -665,6 +708,9 @@ def should_compile(total_steps: int, quant_4bit: bool, quant_int8: str,
         import triton  # noqa: F401
     except Exception:
         return False, "triton is not installed (pip install triton-windows on Windows)"
+    _ok, _why = triton_matches_torch()
+    if not _ok:
+        return False, _why
     if not has_host_c_compiler():
         return False, ("no C compiler on this system — inductor/triton build host-side stubs "
                        "with one at runtime (on Debian/Ubuntu: apt install gcc); "

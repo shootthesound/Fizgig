@@ -32,7 +32,11 @@ comfy-kitchen==0.2.31
 # MSVC C++ Build Tools on Windows (not pip-installable — the installer/update scripts check
 # and print the direct download link). If triton is missing or incompatible, compile bails
 # gracefully to eager with a console note; training still runs.
-triton-windows ; sys_platform == 'win32'
+# PINNED to what torch 2.10 pairs with (the Linux torch wheel depends on triton 3.6; 3.5.1
+# is field-proven here). Unpinned, a fresh install picked up triton-windows 3.8 (built for a
+# newer torch) and Krea 2 previews hung inside torch.compile with no log line (a YouTube
+# report, 5 Sep 2026). Bump together with torch.
+triton-windows>=3.5.1,<3.7 ; sys_platform == 'win32'
 
 # Dataset config
 toml==0.10.2

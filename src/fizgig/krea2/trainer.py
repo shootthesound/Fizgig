@@ -394,6 +394,16 @@ def _compile_blocks(dit, blocks_to_swap: int, fp8_scaled: bool = False,
         logger.warning("[compile] ignored — triton is not installed (pip install triton-windows "
                        "on Windows, triton on Linux)")
         return
+    try:
+        from fizgig.utils.capabilities import triton_matches_torch
+        _ok, _why = triton_matches_torch()
+    except Exception:
+        _ok, _why = True, ""
+    if not _ok:
+        # A triton built for another torch imports fine and then fails or hangs INSIDE
+        # torch.compile (a preview that never comes back, no log) — say so and run eager.
+        logger.warning("[compile] ignored — %s. Training continues uncompiled.", _why)
+        return
     if not _find_host_compiler():
         return
     import torch._dynamo

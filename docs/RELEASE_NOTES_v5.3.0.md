@@ -36,6 +36,8 @@ Klein and Krea 2 Repair Studio are unchanged.
 
 ## MiniMax H3: 4-bit HQQ moves to group 8 — a third less base error at the same size
 
+HQQ is only ever what you pick under Base precision on the Training tab — Auto never chooses it, and Repair Studio never uses it — so nothing here changes for anyone who hasn't picked it.
+
 HQQ 4-bit now quantises in groups of 8 instead of 16, taking the frozen base from ~6.3% to ~4.8% error against the int8 reference. Plain group 8 would have doubled the per-group overhead to int8's own footprint, so the per-group scales and zeros are themselves stored as 8-bit codes with one affine per output row — measured at 4.83% versus plain group 8's 4.80%, at exactly the group-16 footprint (0.75 bytes per weight, ~15 GB resident on the pruned checkpoint). Group size and the 6% cost on a 16 GB card are **[@rintic-13](https://github.com/rintic-13)**'s numbers (#102).
 
 On speed: where blocks stream — the 12–24 GB tiers HQQ exists for — the dequant hides behind the PCIe transfers and group 16 measured level with NF4 (**[@rintic-13](https://github.com/rintic-13)**, 16 GB card); plain group 8 cost him 6% there. On a big card with nothing streamed the dequant is exposed: about half NF4's step speed at group 16, and group 8 a further ~15% on a 5090. If group 8's cost doesn't hide on the streamed tiers once measured there, group 16 goes back to being the default.

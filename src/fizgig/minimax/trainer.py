@@ -1283,6 +1283,35 @@ def load_preview_turbo(dit, path, strength, tag="turbo"):
     return net, adaln_pairs
 
 
+def park_frozen_lora(net, adaln_pairs=None):
+    """Move a frozen LoRA network's parameters (and its AdaLN row tensors) to the CPU for a
+    phase that never runs it — the preview renders with the training adapter's modules
+    disabled, so its ~150 MB was dead weight on the card, and on a 24 GB card that is the
+    difference between a preview that pages on every step and one that doesn't (a 4090
+    report, 5 Sep 2026). Returns the bytes moved. FIZGIG_NO_ADAPTER_PARK=1 disables it."""
+    if os.environ.get("FIZGIG_NO_ADAPTER_PARK") == "1":
+        return 0
+    moved = 0
+    if net is not None:
+        for p in net.parameters():
+            if p.is_cuda:
+                moved += p.numel() * p.element_size()
+        net.to("cpu")
+    if adaln_pairs:
+        for i, (mod, A, B) in enumerate(adaln_pairs):
+            if A.is_cuda:
+                moved += (A.numel() * A.element_size() + B.numel() * B.element_size())
+            adaln_pairs[i] = (mod, A.to("cpu"), B.to("cpu"))
+    return moved
+
+
+def restore_frozen_lora(net, device):
+    """Back onto the card after the preview (dtype untouched). The AdaLN rows stay on the
+    CPU: turbo_adaln_patch copies them to the device when it installs them."""
+    if net is not None:
+        net.to(device)
+
+
 def load_context_lora(dit, path, strength, device, dtype, tag="context", label="Context LoRA"):
     """A Context LoRA: an existing LoRA loaded FROZEN and ACTIVE on the base before the
     trainable network wraps it, so the new LoRA learns to coexist with it (Klein and Krea 2
@@ -3453,13 +3482,25 @@ def train_minimax(
         if adapter_net is not None:
             for _m in adapter_net.unet_loras:
                 _m.enabled = False
-            logger.info("[preview] training adapter off for the render (deployment view)")
+            _parked = park_frozen_lora(adapter_net, adapter_adaln)
+            _free_now = ""
+            if _parked and torch.cuda.is_available():
+                try:
+                    torch.cuda.empty_cache()
+                    from fizgig.utils.device import plannable_free_vram
+                    _free_now = f", {plannable_free_vram():.1f} GB free now"
+                except Exception:
+                    pass
+            logger.info("[preview] training adapter off for the render (deployment view)"
+                        + (f" — parked on the CPU ({_parked / 2**30:.2f} GB back to the card"
+                           f"{_free_now})" if _parked else ""))
 
     def _frozen_for_training():
         """Back to the training stack: Turbo/preview rows out, adapter on, adapter +
         context rows in. Idempotent — safe on the exception path."""
         turbo_adaln_unpatch(context_adaln + turbo_adaln)
         if adapter_net is not None:
+            restore_frozen_lora(adapter_net, device)
             for _m in adapter_net.unet_loras:
                 _m.enabled = True
         if adapter_adaln or context_adaln:

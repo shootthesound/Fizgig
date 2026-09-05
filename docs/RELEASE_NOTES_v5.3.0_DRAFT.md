@@ -44,7 +44,3 @@ On speed: where blocks stream — the 12–24 GB tiers HQQ exists for — the de
 ## Small things
 
 - The LoRA layer every preview runs through (Repair Studio, Explorer, Profiler, Extract, all three families) does its add in one kernel instead of three — a few percent off every preview, same maths. Training is untouched.
-
-## Multi Concept no longer switches identity-learn on
-
-Ticking Multi Concept now sets caption dropout to 0.10 (strong) and nothing else. It used to switch reference distillation on as well, with its references and identity-first phase; in our runs that wasn't what held two subjects apart — the trigger words do that work — and a data-layout tick quietly enabling a 21 GB-model experiment was the wrong shape. Identity-learn stays its own deliberate tick.

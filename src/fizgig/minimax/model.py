@@ -352,9 +352,68 @@ class Attention(nn.Module):
         q = q.transpose(0, 1).unsqueeze(0)
         k = k.transpose(0, 1).unsqueeze(0)
         v = v.transpose(0, 1).unsqueeze(0)
-        out = F.scaled_dot_product_attention(q, k, v)       # [1, H, S, D]
+        out = h3_attention(q, k, v)                         # [1, H, S, D]
         out = out.squeeze(0).transpose(0, 1).reshape(s, self.heads * self.head_dim)
         return self.out_proj(out)
+
+
+# ---- optional INT8 attention (comfy-kitchen) ------------------------------------------
+# NVIDIA's pure-INT8 SDPA from the comfy-kitchen wheel (Apache-2.0): Q / K / V to int8 after a
+# Hadamard rotation, P in uint8, softmax maths in fp32. Measured on a 5090 (5 Sep): 3.2x
+# PyTorch's attention at 1.3k tokens, 6-7x at 9k-18k (a 1024² × 56-frame clip's attention
+# goes from 6.3 s to 0.84 s per pass), at ~1.6% relative error per call against fp32 (the
+# bf16 path is 0.23%). An opt-in the H3 Repair Studio sets per render; nothing else turns it
+# on, and it is inference-only (never under grad). Three fallbacks, each announced once: the
+# package missing / not importable (AMD builds skip it), the kernel unavailable on this GPU
+# (compute < 7.5), a call raising at run time.
+_INT8_ATTN = {"wanted": False, "checked": False, "fn": None}
+
+
+def set_int8_attention(on: bool) -> None:
+    _INT8_ATTN["wanted"] = bool(on)
+
+
+def int8_attention_wanted() -> bool:
+    return bool(_INT8_ATTN["wanted"])
+
+
+def _int8_attention_fn():
+    st = _INT8_ATTN
+    if not st["checked"]:
+        st["checked"] = True
+        try:
+            import comfy_kitchen as _ck
+            if _ck.int8_attention_is_available():
+                st["fn"] = _ck.int8_attention
+                print("[h3] int8 attention: comfy-kitchen kernel active", flush=True)
+            else:
+                print("[h3] int8 attention: comfy-kitchen has no kernel for this GPU — "
+                      "PyTorch attention instead", flush=True)
+        except Exception as _e:
+            print(f"[h3] int8 attention: comfy-kitchen not available "
+                  f"({type(_e).__name__}) — PyTorch attention instead", flush=True)
+    return st["fn"]
+
+
+def int8_kernel_available() -> bool:
+    """True when the kernel is really there (import + GPU check + no run-time failure) —
+    what the studio's status line combines with its own tick. Not tied to the per-render
+    switch, which is only on while a render runs."""
+    return _int8_attention_fn() is not None
+
+
+def h3_attention(q, k, v):
+    """[1, H, S, D] SDPA — the int8 kernel when asked for and available, else PyTorch's."""
+    if _INT8_ATTN["wanted"] and not torch.is_grad_enabled():
+        fn = _int8_attention_fn()
+        if fn is not None:
+            try:
+                return fn(q, k, v)
+            except Exception as _e:
+                _INT8_ATTN["fn"] = None
+                print(f"[h3] int8 attention failed ({type(_e).__name__}: {_e}) — PyTorch "
+                      "attention for the rest of the run", flush=True)
+    return F.scaled_dot_product_attention(q, k, v)
 
 
 class MLP(nn.Module):

@@ -21,11 +21,11 @@ import sys
 from pathlib import Path
 
 # Installed by install_fizgig_rocm.bat / install_fizgig_rocm.sh instead.
-SKIP_PACKAGES = frozenset({"torch", "torchvision", "bitsandbytes", "nvidia-ml-py"})
+SKIP_PACKAGES = frozenset({"torch", "torchvision", "bitsandbytes", "nvidia-ml-py", "comfy-kitchen"})
 
 # Exact shape of today's requirements.txt CUDA/NVIDIA block. Bump deliberately when
 # upstream changes that block — silent drift is how AMD installs go weird.
-EXPECTED_SKIPPED_PACKAGES = frozenset({"torch", "torchvision", "bitsandbytes", "nvidia-ml-py"})
+EXPECTED_SKIPPED_PACKAGES = frozenset({"torch", "torchvision", "bitsandbytes", "nvidia-ml-py", "comfy-kitchen"})
 EXPECTED_CUDA_INDEX_LINES = 1  # --extra-index-url …/whl/cu128
 
 

@@ -141,6 +141,7 @@ class H3RepairEngine:
         self._turbo_lora_path = ""
         self._turbo_lora_strength = 0.75
         self.base_mode = "auto"          # the Base picker: auto / stream / nf4
+        self.int8_attention = False      # the Clip row tick (comfy-kitchen kernel), per render
         self.base_plan = None            # (base_quant, blocks streamed) actually loaded
         self._te_parked_vision = False # ...built with the vision tower (serves text too)
         self.dit_path: Optional[str] = None
@@ -669,6 +670,7 @@ class H3RepairEngine:
                          width=int(state.preview_width), height=int(state.preview_height),
                          steps=int(steps), turbo_strength=strength,
                          keyframe_sig=self.keyframe_signature(state),
+                         int8_attention=bool(getattr(self, "int8_attention", False)),
                          primary_scale=float(getattr(state, "primary_scale", 1.0)),
                          donor_scale=float(getattr(state, "donor_scale", 1.0)),
                          dit=os.path.basename(getattr(self, "dit_path", "") or ""))
@@ -1101,6 +1103,15 @@ class H3RepairEngine:
                 resume_from=resume, cache_device="cpu")
 
         def _render(block_cache):
+            from fizgig.minimax import model as _mm
+            _mm.set_int8_attention(bool(getattr(self, "int8_attention", False)))
+            try:
+                with torch.no_grad():
+                    return _sample(block_cache)
+            finally:
+                _mm.set_int8_attention(False)
+
+        def _sample(block_cache):
             with torch.no_grad():
                 return sampling.sample_image(
                     self.dit, emb.to(self.device, self.dtype),
@@ -1210,7 +1221,7 @@ class H3RepairEngine:
                int(frames), int(steps), self._turbo_strength,
                round(float(getattr(state, "primary_scale", 1.0)), 4),
                round(float(getattr(state, "donor_scale", 1.0)), 4),
-               getattr(self, "dit_path", None))
+               getattr(self, "dit_path", None), bool(getattr(self, "int8_attention", False)))
         resume_ok = (self.resume_enabled and not keyframes and not references and not no_lora
                      and not getattr(self, "_blocks_swapped", 0)
                      and hasattr(self.dit, "forward_cached"))
@@ -1246,6 +1257,15 @@ class H3RepairEngine:
             self.last_resume_from = resume
 
         def _render(block_cache):
+            from fizgig.minimax import model as _mm
+            _mm.set_int8_attention(bool(getattr(self, "int8_attention", False)))
+            try:
+                with torch.no_grad():
+                    return _sample(block_cache)
+            finally:
+                _mm.set_int8_attention(False)
+
+        def _sample(block_cache):
             with torch.no_grad():
                 return sampling.sample_image(
                     self.dit, emb.to(self.device, self.dtype),
@@ -1380,7 +1400,8 @@ class H3RepairEngine:
                 int(state.preview_width), int(state.preview_height), int(frames), int(steps),
                 turbo_strength, bool(with_audio), self.keyframe_signature(state),
                 round(float(getattr(state, "primary_scale", 1.0)), 4),
-                round(float(getattr(state, "donor_scale", 1.0)), 4))
+                round(float(getattr(state, "donor_scale", 1.0)), 4),
+                bool(getattr(self, "int8_attention", False)))
 
     def render_clip(self, state, *, frames: Optional[int] = None, regime: str = "confirm",
                     with_audio: bool = True, cache=None, early_step: int = 0,
@@ -1397,6 +1418,7 @@ class H3RepairEngine:
         while the remaining passes run. Never fires on a cache hit. no_lora renders the
         base model alone (see render_latent) under the "nolora" signature."""
         from fizgig.repair_studio.h3_render_cache import signature, NOLORA_SIG
+        from fizgig.minimax.model import int8_kernel_available as _int8_active
         steps, strength = self.regime_params(regime, steps, turbo_strength)
         frames = int(frames or getattr(state, "preview_frames", 0) or H3_PREVIEW_FRAMES)
         sig = NOLORA_SIG if no_lora else signature(state)
@@ -1429,7 +1451,8 @@ class H3RepairEngine:
                       else self.decode_middle_frame_image(lat))
         clip = {"latent": lat, "audio_rows": aud, "frames": imgs, "wav": wav,
                 "middle": middle, "regime": regime, "steps": steps,
-                "turbo_strength": strength, "frames_n": frames, "cached": cached, "sig": sig}
+                "turbo_strength": strength, "frames_n": frames, "cached": cached, "sig": sig,
+                "int8_attention": bool(getattr(self, "int8_attention", False)) and _int8_active()}
         if cache is not None and not cached:
             try:
                 cache.put(sig, lat, aud, middle=clip["middle"], regime=regime,
@@ -1452,6 +1475,7 @@ class H3RepairEngine:
         return {"latent": lat, "audio_rows": aud, "frames": imgs, "wav": wav,
                 "middle": imgs[len(imgs) // 2], "regime": regime, "steps": steps,
                 "turbo_strength": strength, "frames_n": len(imgs), "cached": True,
+                "int8_attention": bool(getattr(self, "int8_attention", False)) and _int8_active(),
                 "sig": sig, "label": cache.info(sig).get("label", "")}
 
     @torch.no_grad()

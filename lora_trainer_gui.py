@@ -19564,10 +19564,16 @@ class LoRATrainerGUI:
             pass
 
     def _on_repair_h3_clip_changed(self):
-        """Length / Size / render size / steps / Turbo / Sound changed: remember it, drop
-        the baseline (it was rendered under the old settings) and re-render."""
+        """Length / render size / steps / Turbo / Sound changed: remember it, drop the
+        baseline (it was rendered under the old settings) and re-render."""
         self._repair_h3_persist_clip()
         self._on_preview_param_changed()
+
+    def _on_repair_h3_canvas_changed(self):
+        """Width / Height changed: remember it and arm Update — no render until you ask
+        (Peter, 5 Sep: a canvas change is a decision, not a tweak)."""
+        self._repair_h3_persist_clip()
+        self._repair_mark_update_needed()
 
     def _repair_h3_render_opts(self, regime=None):
         """What the H3 worker renders with, read on the Tk thread: frames, the dialled
@@ -20018,13 +20024,13 @@ class LoRATrainerGUI:
             _l1, textvariable=self.repair_h3_width_var, state="readonly", width=5, values=_dims)
         self._repair_h3_width_combo.pack(side=tk.LEFT, padx=(0, 6))
         self._repair_h3_width_combo.bind("<<ComboboxSelected>>",
-                                         lambda e: self._on_repair_h3_clip_changed())
+                                         lambda e: self._on_repair_h3_canvas_changed())
         ttk.Label(_l1, text="H:").pack(side=tk.LEFT, padx=(0, 4))
         self._repair_h3_height_combo = ttk.Combobox(
             _l1, textvariable=self.repair_h3_height_var, state="readonly", width=5, values=_dims)
         self._repair_h3_height_combo.pack(side=tk.LEFT, padx=(0, 6))
         self._repair_h3_height_combo.bind("<<ComboboxSelected>>",
-                                          lambda e: self._on_repair_h3_clip_changed())
+                                          lambda e: self._on_repair_h3_canvas_changed())
         _hint = tk.Label(_l1, text="H3 likes one side at 768+", bg=COLORS["bg_surface"],
                          fg=COLORS["text_secondary"], font=(FONT_FAMILY, 8))
         _hint.pack(side=tk.LEFT, padx=(0, 12))

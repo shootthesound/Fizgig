@@ -917,6 +917,20 @@ try:
     ck("no duplicate Model / Base rows: one Model combo, one Base combo in the Setup card",
        sum(1 for w in app._repair_h3_model_combo.master.winfo_children() if isinstance(w, G.ttk.Combobox) and w.cget("values") and str(w.cget("values")[0]).startswith(("First", "Auto"))) == 2)
 
+    # --- 13. a Width / Height change arms Update, it never renders on its own ------------------
+    fam("minimax")
+    class _IdleEng:
+        pipeline = None; primary_network = object()
+        def reset(self): pass
+    app.repair_engine = _IdleEng(); app._repair_start_btn.configure(text="Start")
+    app._repair_preview_after_id = None
+    app.repair_h3_width_var.set("1024"); app._on_repair_h3_canvas_changed()
+    root.update()
+    ck("changing the width arms Update and schedules no render",
+       app._repair_start_btn.cget("text") == "Update" and app._repair_preview_after_id is None
+       and app.last_used.get("repair_h3_width") == "1024")
+    app.repair_h3_width_var.set("768"); app._on_repair_h3_canvas_changed(); app.repair_engine = None
+
 finally:
     G.messagebox.showerror = _err
     try:

@@ -25108,9 +25108,43 @@ class LoRATrainerGUI:
             except Exception:
                 pass
 
+    def _repair_apply_slider_state(self, state, status=None):
+        """Put a SliderState's block rows on the sliders and ticks (one render, not one per
+        row), then render — which is a cache hit when the state is a library entry."""
+        self._repair_master_mutating = True
+        try:
+            for bid, bs in state.blocks.items():
+                v = self.repair_block_vars.get(bid)
+                if v is None:
+                    continue
+                v["primary_enabled"].set(bool(bs.primary_enabled))
+                v["primary_strength"].set(float(bs.primary_strength))
+                if "donor_enabled" in v:
+                    v["donor_enabled"].set(bool(bs.donor_enabled))
+                    v["donor_strength"].set(float(bs.donor_strength))
+        finally:
+            self._repair_master_mutating = False
+        self._repair_peek = None
+        self._repair_set_tweaked_title(None, "")
+        if status:
+            self.repair_status_var.set(status)
+        self._schedule_preview(force=True)
+
+    def _repair_block_off_state(self, block_id):
+        """The state a library 'Block N off' entry was rendered from: every row at its
+        default, that block's primary tick OFF (a disabled block and a block at 0 are the
+        same render and the same cache signature)."""
+        from fizgig.repair_studio.state import SliderState
+        st = SliderState.default_h3()
+        if block_id in st.blocks:
+            st.blocks[block_id].primary_enabled = False
+        return st
+
     def _repair_cache_peek(self, block_id):
-        """Click on a block's ●: show the library's exact clip with that block off in the
-        tweaked pane (and the player), without touching the sliders."""
+        """Click on a block's ●: RESTORE the state that made the library entry — every
+        other block at its default, this one unticked — and render, which the library
+        serves instantly. The sliders then say what the clip is, and Save writes exactly
+        that (Peter, 5 Sep: a view that leaves the sliders elsewhere is worth nothing)."""
         cache = self._repair_cache
         eng = self.repair_engine
         if cache is None or eng is None or not cache.has_block_off(block_id):
@@ -25118,48 +25152,10 @@ class LoRATrainerGUI:
         if self._repair_preview_in_flight:
             self.repair_status_var.set("A render is in flight — try the peek when it lands.")
             return
-        from fizgig.repair_studio.state import SliderState
-        opts = dict(self._repair_h3_render_opts())
-        st = SliderState.default_h3()
-        st.seed, st.prompt = self.repair_state.seed, self.repair_state.prompt
-        st.preview_width, st.preview_height = self._repair_h3_canvas()
-        st.preview_frames = opts["frames"]
-        st.primary_scale = float(getattr(self.repair_state, "primary_scale", 1.0))
-        st.donor_scale = float(getattr(self.repair_state, "donor_scale", 1.0))
-        st.blocks[block_id].primary_strength = 0.0
-        label = eng.describe_state(st)
-        self._repair_preview_in_flight = True
-        self.repair_status_var.set(f"Loading {label} from the library…")
-        self._repair_progress_marquee_on()
-        # Same priority rule as a slider move: a builder entry mid-render yields the engine
-        # (measured 3 Sep: without this a peek waited ~4 s behind the entry in flight).
-        if self._repair_cache_busy and hasattr(eng, "request_cancel"):
-            eng.request_cancel()
-
-        def _work():
-            try:
-                with self._repair_engine_lock:
-                    if hasattr(eng, "clear_cancel"):
-                        eng.clear_cancel()
-                    st.keyframes, st.references = self._repair_h3_prepare_cond(
-                        st.preview_width, st.preview_height, opts["frames"])
-                    base = self._repair_baseline_for_display(cache, "dial", opts["with_audio"]) \
-                        or eng.baseline_clip(st, cache=cache, **opts)
-                    clip = eng.render_clip(st, cache=cache, **opts)
-                self.master.after(0, lambda: self._set_repair_preview_clips(
-                    base, clip, peek=label))
-            except Exception:
-                import traceback
-                err = traceback.format_exc()
-
-                def _show():
-                    self._repair_progress_end()
-                    self._repair_preview_in_flight = False
-                    self.repair_status_var.set("Library peek failed — see console.")
-                    print(err)
-                self.master.after(0, _show)
-
-        threading.Thread(target=_work, daemon=True).start()
+        st = self._repair_block_off_state(block_id)
+        label = eng.describe_state(st) if hasattr(eng, "describe_state") else f"{block_id} off"
+        self._repair_apply_slider_state(
+            st, status=f"{label} — sliders set to match the library entry, loading it…")
 
     def _repair_cache_hover(self, block_id, event):
         """Hovering a ● shows the library entry's middle-frame thumb beside the cursor."""
@@ -25665,7 +25661,10 @@ class LoRATrainerGUI:
             pass
 
     def _repair_history_view(self, sig):
-        """Show a cached render in the tweaked pane + player, sliders untouched."""
+        """Show a cached render: RESTORE the slider state that made it (stored with the
+        entry; derived for the 'base' and 'off:<block>' entries of an older library) and
+        render — a cache hit. The No-LoRA entry has no slider state: it is viewed as a
+        peek, sliders untouched."""
         cache = self._repair_cache
         eng = self.repair_engine
         if cache is None or eng is None or not cache.has(sig):
@@ -25674,6 +25673,11 @@ class LoRATrainerGUI:
             self.repair_status_var.set("A render is in flight — try again when it lands.")
             return
         label = cache.info(sig).get("label", sig)
+        st = self._repair_history_state(sig)
+        if st is not None:
+            self._repair_apply_slider_state(
+                st, status=f"{label} — sliders set to match the entry, loading it…")
+            return
         opts = dict(self._repair_h3_render_opts())
         regime = str(cache.meta.get("regime", "dial"))
         self._repair_preview_in_flight = True
@@ -25706,6 +25710,30 @@ class LoRATrainerGUI:
                 self.master.after(0, _show)
 
         threading.Thread(target=_work, daemon=True).start()
+
+    def _repair_history_state(self, sig):
+        """The SliderState behind a history entry, or None when it has none (No LoRA)."""
+        from fizgig.repair_studio.h3_render_cache import BASE_SIG, NOLORA_SIG
+        from fizgig.repair_studio.state import SliderState
+        cache = self._repair_cache
+        if cache is None or sig == NOLORA_SIG:
+            return None
+        # The library's own entries read best as ticks: "base" = every row default,
+        # "off:<block>" = that block unticked (the builder rendered it at strength 0 —
+        # the same render, the same signature; the tick is what a person means by "off").
+        if sig == BASE_SIG:
+            return SliderState.default_h3()
+        if sig.startswith("off:"):
+            return self._repair_block_off_state(sig[4:])
+        stored = cache.info(sig).get("state")
+        if isinstance(stored, dict):
+            try:
+                st = SliderState.from_json(stored)
+                if st.blocks:
+                    return st
+            except Exception:
+                pass
+        return None
 
     def _repair_baseline_for_display(self, cache, regime, with_audio):
         """Worker thread, under the lock: the baseline pane's clip — the pinned entry when

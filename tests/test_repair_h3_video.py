@@ -449,6 +449,7 @@ try:
     CacheEngine.baseline_clip = _H3E.baseline_clip
     CacheEngine.describe_state = staticmethod(_H3E.describe_state)
     CacheEngine.clip_from_cache = _H3E.clip_from_cache
+    CacheEngine._int8_tag = _H3E._int8_tag              # the real dict builders call it
 
     fam("minimax")
     app.repair_engine = CacheEngine()
@@ -532,21 +533,32 @@ try:
     wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
              and app._repair_clips["tweaked"].get("cached") is True, timeout=6.0)
     ck("back to 1.0 = baseline state, served from cache", app._repair_clips["tweaked"].get("cached") is True)
-    # peek: click ● on block 3 -> its off clip shows, sliders untouched
+    # peek: click ● on block 3 -> the sliders become "block 3 off" and the library serves it
     renders.clear()
     app._repair_cache_peek("h3blk_3")
-    wait_for(lambda: not app._repair_preview_in_flight and app._repair_peek is not None, timeout=6.0)
-    ck("peek shows the library entry without touching the sliders",
-       app._repair_peek == "Block 3 off"
-       and app.repair_block_vars["h3blk_3"]["primary_strength"].get() == 1.0
-       and "library" in app._repair_tweaked_title.cget("text")
-       and not any(r[0] == "render_latent" for r in renders), (app._repair_peek, renders))
-    # a slider move ends the peek
+    wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
+             and app._repair_clips["tweaked"].get("sig") == "off:h3blk_3", timeout=6.0)
+    ck("peek RESTORES the entry's state: block 3 unticked, every other row default, served from the library, no render",
+       app._repair_clips["tweaked"].get("sig") == "off:h3blk_3"
+       and app._repair_clips["tweaked"].get("cached") is True
+       and app.repair_block_vars["h3blk_3"]["primary_enabled"].get() is False
+       and all(app.repair_block_vars[b]["primary_enabled"].get() is True
+               and float(app.repair_block_vars[b]["primary_strength"].get()) == 1.0
+               for b in app.repair_block_vars if b != "h3blk_3")
+       and app._repair_peek is None
+       and app._repair_tweaked_title.cget("text") == "Tweaked (current sliders)"
+       and not any(r[0] == "render_latent" for r in renders),
+       (app._repair_clips["tweaked"].get("sig"), renders))
+    ck("...so Save would write what is on screen (signature of the sliders == the entry shown)",
+       __import__("fizgig.repair_studio.h3_render_cache", fromlist=["signature"]).signature(app.repair_state) == "off:h3blk_3")
+    # a slider move from there renders normally
+    app.repair_block_vars["h3blk_3"]["primary_enabled"].set(True)
     app.repair_block_vars["h3blk_3"]["primary_strength"].set(0.8)
     wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
-             and app._repair_peek is None, timeout=6.0)
-    ck("a slider move ends the peek and restores the title",
-       app._repair_peek is None and app._repair_tweaked_title.cget("text") == "Tweaked (current sliders)")
+             and app._repair_clips["tweaked"].get("sig") not in ("off:h3blk_3", "base"), timeout=6.0)
+    ck("a slider move from a restored entry renders normally",
+       app._repair_clips["tweaked"].get("sig") not in ("off:h3blk_3", "base")
+       and app._repair_tweaked_title.cget("text") == "Tweaked (current sliders)")
     # the Confirm preset = another setup key (6 steps, Turbo 0.75, full Size) — and it
     # builds its own library too (no regime gate any more)
     renders.clear()
@@ -630,23 +642,28 @@ try:
     root.update()
     cells = app._repair_history_inner.winfo_children()
     ck("history strip shows every cached render", len(cells) == cache.n_entries(), len(cells))
-    # view an entry -> tweaked pane shows it as a peek with its label
+    # view an entry -> the sliders become that entry and the library serves it
     sig = "off:h3blk_21"
     app._repair_preview_in_flight = False
-    app._repair_history_view(sig)
-    wait_for(lambda: not app._repair_preview_in_flight and app._repair_peek is not None, 6.0)
-    ck("history view shows the entry (sliders untouched)",
-       app._repair_peek == "Block 21 off" and app._repair_clips["tweaked"].get("sig") == sig,
-       app._repair_peek)
-    # pin it as the baseline: the next render's baseline pane is that entry (same setup)
+    # the strip belongs to the CURRENT setup: back on the dial setup (the section above
+    # ended on Confirm) before viewing, so the view, the pin and the re-render share a cache
     app._repair_h3_apply_preset("dial", render=False)
+    app._repair_history_view(sig)
+    wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
+             and app._repair_clips["tweaked"].get("sig") == sig, 6.0)
+    ck("history view RESTORES the entry's sliders (block 21 unticked) and shows it from the library",
+       app._repair_clips["tweaked"].get("sig") == sig and app._repair_peek is None
+       and app.repair_block_vars["h3blk_21"]["primary_enabled"].get() is False,
+       app._repair_clips["tweaked"].get("sig"))
+    # pin it as the baseline: the next render's baseline pane is that entry (same setup)
     app._repair_history_pin(sig)
     ck("pin marks the strip + the baseline title",
        app._repair_pinned_sig == sig and "Pinned" in app._repair_baseline_title.cget("text"))
     wait_for(lambda: app._repair_preview_after_id is None and not app._repair_preview_in_flight
              and app._repair_clips["baseline"].get("pinned") is True, 6.0)
     ck("baseline pane is the pinned entry after the re-render",
-       app._repair_clips["baseline"].get("sig") == sig)
+       app._repair_clips["baseline"].get("sig") == sig,
+       (app._repair_pinned_sig, app._repair_clips["baseline"].get("sig"), app._repair_clips["baseline"].get("pinned"), app._repair_clips["tweaked"].get("sig")))
     # a setup change (Confirm regime) drops the pin instead of leaving the title lying
     app._repair_history_pin(sig, rerender=False)
     app._repair_h3_apply_preset("confirm")

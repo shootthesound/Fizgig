@@ -1466,7 +1466,8 @@ class H3RepairEngine:
         if cache is not None and not cached:
             try:
                 cache.put(sig, lat, aud, middle=clip["middle"], regime=regime,
-                          label="No LoRA" if no_lora else self.describe_state(state))
+                          label="No LoRA" if no_lora else self.describe_state(state),
+                          state=None if no_lora else state.to_json())
             except Exception:
                 logger.exception("render cache: put failed (render still shown)")
         return clip

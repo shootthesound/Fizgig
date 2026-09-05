@@ -110,6 +110,26 @@ ck("kernel availability reads True with the per-render switch OFF (the clip dict
 ck("the engine asks for int8 attention by default (silently PyTorch's where the kernel is missing)",
    _H3E().int8_attention is True)
 
+# 6c. the REAL clip_from_cache (library peeks, history views, the pinned baseline) builds
+# its dict without a NameError — v5.3.0 shipped one that only render_clip had imported, and
+# every peek died on it; the GUI battery's stub engine hid it (Peter's console, 5 Sep).
+from PIL import Image as _Image
+class _CacheStub:
+    def get(self, sig): return (torch.zeros(1, 24, 2, 4, 4), None)
+    def info(self, sig): return {"label": "Block 3 off"}
+class _PeekEng:
+    int8_attention = True
+    clip_from_cache = _H3E.clip_from_cache
+    _int8_tag = _H3E._int8_tag
+    def regime_params(self, regime, steps, turbo): return 4, 1.0
+    def decode_clip_frames(self, lat): return [_Image.new("RGB", (8, 8)) for _ in range(5)]
+    def decode_audio(self, aud): return None
+reset()
+_clip = _PeekEng().clip_from_cache(_CacheStub(), "off:h3blk_3", regime="dial", with_audio=True)
+ck("the real clip_from_cache builds a peek's clip dict (no NameError), tagged and labelled",
+   _clip is not None and _clip["frames_n"] == 5 and _clip["label"] == "Block 3 off"
+   and _clip["cached"] is True and _clip["int8_attention"] in (True, False))
+
 # 7. the render-cache setup key changes with the flag (an int8 library never serves an exact render)
 from fizgig.repair_studio.h3_render_cache import setup_key, CACHE_FORMAT
 kw = dict(primary_hash="p", donor_hash="", prompt="x", seed=1, frames=22, width=768, height=640,

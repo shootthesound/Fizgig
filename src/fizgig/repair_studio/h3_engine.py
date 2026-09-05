@@ -1395,6 +1395,17 @@ class H3RepairEngine:
                         round(float(t.abs().mean()), 5)))
         return tuple(sig)
 
+    def _int8_tag(self) -> bool:
+        """What a clip dict records as its attention: the studio asked for int8 AND the
+        kernel is really there. One helper for every dict builder (render_clip's fresh and
+        cached paths, clip_from_cache) — v5.3.0 shipped a name that only one of them had
+        imported, and every library peek / history view died on it (Peter, 5 Sep)."""
+        try:
+            from fizgig.minimax.model import int8_kernel_available
+            return bool(getattr(self, "int8_attention", False)) and int8_kernel_available()
+        except Exception:
+            return False
+
     def clip_key(self, state, *, frames, steps, turbo_strength, with_audio):
         return (self.primary_path, self.donor_path, int(state.seed), state.prompt,
                 int(state.preview_width), int(state.preview_height), int(frames), int(steps),
@@ -1418,7 +1429,6 @@ class H3RepairEngine:
         while the remaining passes run. Never fires on a cache hit. no_lora renders the
         base model alone (see render_latent) under the "nolora" signature."""
         from fizgig.repair_studio.h3_render_cache import signature, NOLORA_SIG
-        from fizgig.minimax.model import int8_kernel_available as _int8_active
         steps, strength = self.regime_params(regime, steps, turbo_strength)
         frames = int(frames or getattr(state, "preview_frames", 0) or H3_PREVIEW_FRAMES)
         sig = NOLORA_SIG if no_lora else signature(state)
@@ -1452,7 +1462,7 @@ class H3RepairEngine:
         clip = {"latent": lat, "audio_rows": aud, "frames": imgs, "wav": wav,
                 "middle": middle, "regime": regime, "steps": steps,
                 "turbo_strength": strength, "frames_n": frames, "cached": cached, "sig": sig,
-                "int8_attention": bool(getattr(self, "int8_attention", False)) and _int8_active()}
+                "int8_attention": self._int8_tag()}
         if cache is not None and not cached:
             try:
                 cache.put(sig, lat, aud, middle=clip["middle"], regime=regime,
@@ -1475,7 +1485,7 @@ class H3RepairEngine:
         return {"latent": lat, "audio_rows": aud, "frames": imgs, "wav": wav,
                 "middle": imgs[len(imgs) // 2], "regime": regime, "steps": steps,
                 "turbo_strength": strength, "frames_n": len(imgs), "cached": True,
-                "int8_attention": bool(getattr(self, "int8_attention", False)) and _int8_active(),
+                "int8_attention": self._int8_tag(),
                 "sig": sig, "label": cache.info(sig).get("label", "")}
 
     @torch.no_grad()

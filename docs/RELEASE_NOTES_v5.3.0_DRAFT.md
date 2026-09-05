@@ -3,12 +3,6 @@
 
 LoRA surgery on video. Open a MiniMax H3 LoRA and see what every one of its 52 blocks does to a moving clip — the motion, the face, the sound — one click each, every one a real render. Pin the first and last frame, feed it reference photos, compare against the bare model, and save the fix at the strength it was built for. On 24 GB cards too.
 
-## MiniMax H3: 4-bit HQQ moves to group 8 — a third less base error at the same size
-
-HQQ 4-bit now quantises in groups of 8 instead of 16, taking the frozen base from ~6.3% to ~4.8% error against the int8 reference. Plain group 8 would have doubled the per-group overhead to int8's own footprint, so the per-group scales and zeros are themselves stored as 8-bit codes with one affine per output row — measured at 4.83% versus plain group 8's 4.80%, at exactly the group-16 footprint (0.75 bytes per weight, ~15 GB resident on the pruned checkpoint). Group size and the 6% cost on a 16 GB card are **[@rintic-13](https://github.com/rintic-13)**'s numbers (#102).
-
-On speed: where blocks stream — the 12–24 GB tiers HQQ exists for — the dequant hides behind the PCIe transfers and group 16 measured level with NF4 (**[@rintic-13](https://github.com/rintic-13)**, 16 GB card); plain group 8 cost him 6% there. On a big card with nothing streamed the dequant is exposed: about half NF4's step speed at group 16, and group 8 a further ~15% on a 5090. If group 8's cost doesn't hide on the streamed tiers once measured there, group 16 goes back to being the default.
-
 ## LoRA surgery on video: Repair Studio on MiniMax H3
 
 Repair Studio on H3 used to show one frame of a clip. Now it renders the clip — 22 frames with its sound by default, or a still, or 56 frames — and plays both sides **in the app**: click either preview and baseline and tweaked loop side by side in lockstep, with pause, frame stepping, a scrub bar, slow motion and **S** to swap sides (the left one carries the sound). The metrics strip and the Profiler cross-link still read the middle frame.
@@ -39,7 +33,13 @@ Also fixed on the way: a LoRA carrying AdaLN keys (any run trained with AdaLN on
 
 Klein and Krea 2 Repair Studio are unchanged.
 
-**Small things on the same tab.** A **Reset all / All off / All on / Invert** row above the block sliders, acting on the enable ticks (strengths untouched). **Up to date** / **Pending refresh…** under the tweaked pane's title. **512** and **640** rungs in the Width / Height menus — under spec, a help on smaller cards. A change made while a render is running aborts it within one block and starts the new one; switching model family mid-render cancels it and switches once it lets go, instead of waiting on it. Picking a donor loads it at once, sliders and all; a donor path cleared by hand unloads the donor on the next Update. Any LoRA or photo Browse dialog opens in the folder you last picked from.
+**Small things on the same tab.** A **Reset all / All off / All on / Invert** row above the block sliders, acting on the enable ticks. **Up to date** / **Pending refresh…** under the tweaked pane's title. A change mid-render aborts it within one block and starts the new one, and switching model family mid-render cancels it rather than waiting on it. Picking a donor loads it at once, sliders and all.
+
+## MiniMax H3: 4-bit HQQ moves to group 8 — a third less base error at the same size
+
+HQQ 4-bit now quantises in groups of 8 instead of 16, taking the frozen base from ~6.3% to ~4.8% error against the int8 reference. Plain group 8 would have doubled the per-group overhead to int8's own footprint, so the per-group scales and zeros are themselves stored as 8-bit codes with one affine per output row — measured at 4.83% versus plain group 8's 4.80%, at exactly the group-16 footprint (0.75 bytes per weight, ~15 GB resident on the pruned checkpoint). Group size and the 6% cost on a 16 GB card are **[@rintic-13](https://github.com/rintic-13)**'s numbers (#102).
+
+On speed: where blocks stream — the 12–24 GB tiers HQQ exists for — the dequant hides behind the PCIe transfers and group 16 measured level with NF4 (**[@rintic-13](https://github.com/rintic-13)**, 16 GB card); plain group 8 cost him 6% there. On a big card with nothing streamed the dequant is exposed: about half NF4's step speed at group 16, and group 8 a further ~15% on a 5090. If group 8's cost doesn't hide on the streamed tiers once measured there, group 16 goes back to being the default.
 
 ## Small things
 

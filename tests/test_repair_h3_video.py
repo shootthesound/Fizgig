@@ -978,6 +978,16 @@ try:
             try: os.remove(f)
             except Exception: pass
 
+    # --- 16. Render size defaults to Full (Peter, 5 Sep) ---------------------------------------
+    _saved_lu = dict(app.last_used); app.last_used.clear()
+    try:
+        import inspect
+        _src = inspect.getsource(G.LoRATrainerGUI)
+        ck("Render size defaults to Full on a fresh install",
+           'last_used.get("repair_h3_dial_scale", "Full")' in _src and 'last_used.get("repair_h3_dial_scale", "⅔")' not in _src)
+    finally:
+        app.last_used.update(_saved_lu)
+
 finally:
     G.messagebox.showerror = _err
     try:

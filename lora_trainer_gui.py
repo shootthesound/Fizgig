@@ -20041,7 +20041,7 @@ class LoRATrainerGUI:
                         "and Base: Stream blocks makes room for the biggest on any card.")
         ttk.Label(_l1, text="Render size:").pack(side=tk.LEFT, padx=(0, 4))
         self.repair_h3_dial_scale_var = tk.StringVar(
-            value=str(self.last_used.get("repair_h3_dial_scale", "⅔")))
+            value=str(self.last_used.get("repair_h3_dial_scale", "Full")))
         _ds = ttk.Combobox(_l1, textvariable=self.repair_h3_dial_scale_var, state="readonly",
                            width=5, values=list(self._REPAIR_H3_DIAL_SCALES))
         _ds.pack(side=tk.LEFT, padx=(0, 12))

@@ -938,6 +938,46 @@ try:
     ck("the Ready line never names the attention kernel",
        "int8" not in app._repair_h3_regime_label({"steps": 4, "turbo_strength": 1.0, "int8_attention": True}))
 
+    # --- 15. picking a donor with a primary loaded loads it at once — sliders appear on the pick --
+    fam("minimax")
+    _donor_file = os.path.join(tempfile.gettempdir(), "fizgig_donor_stub.safetensors")
+    open(_donor_file, "wb").close()
+    class _DonorEng:
+        pipeline = None; primary_network = object(); donor_network = None; donor_path = None
+        donor_block_ids = {"h3blk_0", "h3blk_1"}; primary_block_ids = set(app.repair_block_vars)
+        def mark_blocks_changed(self, *a, **k): pass
+        def load_donor(self, path): self.donor_network = object(); self.donor_path = path
+        def unload_donor(self): self.donor_network = None; self.donor_path = None
+        def reset(self): pass
+        def _invalidate_baseline_cache(self): pass
+    app.repair_engine = _DonorEng(); app._repair_donor_loaded = False
+    app._repair_preview_in_flight = False; app._repair_loading = False; app._repair_preview_after_id = None
+    _orig_browse = app._browse_repair_lora
+    app._browse_repair_lora = lambda var: var.set(_donor_file)
+    try:
+        app._browse_and_load_donor()
+        ok = wait_for(lambda: app._repair_donor_loaded, 5.0)
+        ck("donor picked with a primary loaded: it loads at once and the donor rows appear",
+           ok and app.repair_engine.donor_path == _donor_file
+           and any(v["donor_rowf"].winfo_manager() for v in app.repair_block_vars.values()),
+           app.repair_status_var.get()[:70])
+        if app._repair_preview_after_id is not None:
+            root.after_cancel(app._repair_preview_after_id); app._repair_preview_after_id = None
+        app._repair_preview_in_flight = True
+        open(_donor_file + "x", "wb").close()
+        app._browse_repair_lora = lambda var: var.set(_donor_file + "x")
+        app._repair_start_btn.configure(text="Start")
+        app._browse_and_load_donor()
+        ck("...but mid-render the pick only arms Update",
+           app._repair_start_btn.cget("text") == "Update" and app.repair_engine.donor_path == _donor_file)
+    finally:
+        app._browse_repair_lora = _orig_browse
+        app._repair_preview_in_flight = False
+        app._unload_repair_donor(); app.repair_engine = None; app.repair_donor_var.set("")
+        for f in (_donor_file, _donor_file + "x"):
+            try: os.remove(f)
+            except Exception: pass
+
 finally:
     G.messagebox.showerror = _err
     try:

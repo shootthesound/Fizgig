@@ -24279,15 +24279,26 @@ class LoRATrainerGUI:
             self._repair_mark_update_needed()
 
     def _browse_and_load_donor(self):
-        """Browse for a donor LoRA. Same contract as the primary: picking a file only arms
-        the Update button — the swap happens on the user's click."""
+        """Browse for a donor LoRA. With a primary loaded and the engine idle, the donor
+        loads right away so its sliders appear on the pick (Peter, 5 Sep: it used to need
+        an Update click first); mid-render, or before a primary, the pick arms Update and
+        Start / Update does the load."""
         self._browse_repair_lora(self.repair_donor_var)
         path = self.repair_donor_var.get().strip()
         if not path or not os.path.exists(path):
             return
-        if self.repair_engine is not None and self.repair_engine.primary_network is not None \
-                and self.repair_engine.donor_path != path:
+        eng = self.repair_engine
+        if eng is None or eng.primary_network is None or eng.donor_path == path:
+            return
+        busy = (getattr(self, "_repair_preview_in_flight", False)
+                or getattr(self, "_repair_loading", False)
+                or self._repair_preview_after_id is not None)
+        if busy:
             self._repair_mark_update_needed()
+            return
+        if eng.donor_network is not None:
+            self._unload_repair_donor()
+        self._load_repair_donor(on_done=self._force_regenerate_preview)
 
     def _unload_repair_donor(self):
         if self.repair_engine is None or self.repair_engine.donor_network is None:

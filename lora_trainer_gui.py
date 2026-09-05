@@ -19339,7 +19339,7 @@ class LoRATrainerGUI:
                  "refiners untouched. Invert for the other half."),
                 ("Toggle detail blocks", lambda: self._repair_bulk_primary("detail"),
                  "Blocks 46-49 — the detail end of the model — all on or all off together.")):
-            _b = ttk.Button(self._repair_bulk_row, text=_txt, command=_cmd, width=9)
+            _b = ttk.Button(self._repair_bulk_row, text=_txt, command=_cmd, width=max(9, len(_txt) + 1))
             _b.pack(side=tk.LEFT, padx=(0, 6))
             ToolTip(_b, _tip + " Primary rows only; one render for the lot.")
         # The block library's bank chips (H3 only, shown with the bulk row): one per bank of

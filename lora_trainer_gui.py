@@ -4914,6 +4914,23 @@ class LoRATrainerGUI:
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_adapter_hint.grid(row=43, column=0, columnspan=2, sticky=tk.W,
                                         padx=5, pady=(0, 4))
+        # --- TREAD token routing (experiment/tread branch) — MiniMax LoRA runs only ------
+        self.entries["MINIMAX_TREAD"] = tk.BooleanVar(
+            value=bool(self.settings.get("MINIMAX_TREAD", False)))
+        self._minimax_tread_cb = ttk.Checkbutton(
+            training_content, text="TREAD token routing (experimental) — half the video tokens skip the middle blocks each step",
+            variable=self.entries["MINIMAX_TREAD"])
+        self._minimax_tread_cb.grid(row=44, column=0, columnspan=2, sticky=tk.W,
+                                    padx=5, pady=(8, 0))
+        self._minimax_tread_hint = ttk.Label(
+            training_content,
+            text="On every training step a random half of the video tokens leaves the sequence at "
+                 "block 2 and rejoins at block 47 unchanged, so 45 of the 50 blocks process half "
+                 "the tokens (arXiv 2501.04765). Faster steps; previews and your saved LoRA are "
+                 "untouched. Experimental — judge the result by eye against a run without it.",
+            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
+        self._minimax_tread_hint.grid(row=45, column=0, columnspan=2, sticky=tk.W,
+                                      padx=5, pady=(0, 4))
 
         # Answers "when do changes take effect?" (issue #40) right where people wonder it.
         ttk.Label(training_content,
@@ -7675,7 +7692,9 @@ class LoRATrainerGUI:
                   # and ignored by the builder there — its saved value is left alone so it
                   # comes back exactly as set when FT is unticked.
                   getattr(self, "_minimax_adapter_cb", None),
-                  getattr(self, "_minimax_adapter_hint", None)):
+                  getattr(self, "_minimax_adapter_hint", None),
+                  getattr(self, "_minimax_tread_cb", None),
+                  getattr(self, "_minimax_tread_hint", None)):
             if w is not None:
                 self._set_widget_visible(w, not on)
         if hasattr(self, "_network_type_rowf"):
@@ -7894,6 +7913,7 @@ class LoRATrainerGUI:
                   self._minimax_blocks_label, self._minimax_blocks_frame, self._minimax_blocks_hint,
                   self._minimax_likeness_cb, self._minimax_likeness_hint,
                   self._minimax_adapter_cb, self._minimax_adapter_hint,
+                  self._minimax_tread_cb, self._minimax_tread_hint,
                   self._minimax_distill_frame, self._minimax_distill_hint,
                   self._minimax_quant_label, self._minimax_quant_frame,
                   self._minimax_quant_hint,
@@ -29832,6 +29852,9 @@ class LoRATrainerGUI:
             _adapter = self._krea2_pref(self._minimax_adapter_pref_key())
             if _adapter:
                 cmd += ["--training_adapter_path", _adapter]
+        # TREAD token routing (experiment) — LoRA runs only, half the video tokens, blocks 2-46.
+        if self.settings.get("MINIMAX_TREAD") and not _mft_cmd_on:
+            cmd += ["--tread_ratio", "0.5", "--tread_start", "2", "--tread_end", "47"]
         # Context LoRA — an existing H3 LoRA frozen + active under the trainable one (LoRA runs
         # only; validation refuses the fine-tune combination before we get here).
         ctx_path = (self.settings.get("CONTEXT_LORA_PATH") or "").strip()

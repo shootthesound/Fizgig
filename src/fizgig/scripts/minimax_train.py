@@ -237,6 +237,13 @@ def setup_parser() -> argparse.ArgumentParser:
                         "LoRA at 1.0 that de-distills the base while yours learns — on for every "
                         "training step, off for previews. Use the fl2va or ref2va file to match "
                         "--dit. Not available with --finetune_rotation.")
+    p.add_argument("--tread_ratio", type=float, default=0.0,
+                   help="TREAD token routing (experimental): this fraction of the video tokens "
+                        "skips the main blocks [--tread_start, --tread_end) on every training "
+                        "step and rejoins in its start-block state (arXiv 2501.04765). 0 = off. "
+                        "Previews never route. Not available with --finetune_rotation.")
+    p.add_argument("--tread_start", type=int, default=2)
+    p.add_argument("--tread_end", type=int, default=47)
     p.add_argument("--sample_audio", action="store_true",
                    help="Clip previews carry their generated SOUND: the jointly-denoised "
                         "audio rows are decoded to a .wav beside each sample. Needs "
@@ -383,6 +390,9 @@ def main():
         context_lora_path=args.context_lora_path,
         context_lora_strength=args.context_lora_strength,
         training_adapter_path=args.training_adapter_path,
+        tread_ratio=args.tread_ratio,
+        tread_start=args.tread_start,
+        tread_end=args.tread_end,
         sample_audio=args.sample_audio,
         audio_vae_path=args.audio_vae,
         finetune_rotation=args.finetune_rotation,

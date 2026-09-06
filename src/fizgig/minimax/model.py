@@ -956,19 +956,67 @@ class MiniMaxH3DiT(nn.Module):
         route = None
         _tread = getattr(self, "_tread", None) if torch.is_grad_enabled() else None
         n_video = h.shape[0] - video_start
+        # FizGigVid (Peter, 6 Sep 2026; experiment/tread): on CLIP steps a nested hourglass —
+        # each level [start, end, factor) shows the blocks in its span every frame at a lower
+        # resolution (factor x factor patches averaged into one token, the grid renumbered
+        # densely, so it is a genuine lower-res clip of the kind the model was trained on;
+        # every frame kept, so motion is intact) and adds what those blocks CHANGED back to
+        # each token's own start-block state at its end (a residual: nothing changed =
+        # identity, as TREAD). Levels nest (an inner span inside an outer one pools the
+        # already-pooled grid again). Text / audio rows ride along unpooled. Stills, clips
+        # with condition rows and grids a factor does not divide are left alone.
+        # dit._fizgigvid = [(start, end, factor), ...] outermost first; None = off.
+        levels = []
+        _hg = getattr(self, "_fizgigvid", None) if torch.is_grad_enabled() else None
+        _ph, _pw = lat_h // self.patch_size[1], lat_w // self.patch_size[2]
+        if _hg and latent_t > 1 and n_cond == 0 and n_video == latent_t * _ph * _pw:
+            _gh, _gw = _ph, _pw
+            _prev = None
+            for _ls, _le, _lf in _hg:
+                _ls, _le, _lf = int(_ls), min(int(_le), len(self.blocks)), int(_lf)
+                if not (0 <= _ls < _le and _lf >= 2 and _gh % _lf == 0 and _gw % _lf == 0):
+                    continue
+                if _prev is not None and not (_prev[0] <= _ls and _le <= _prev[1]):
+                    continue                                   # must nest inside the outer level
+                levels.append([_ls, _le, _lf, None])            # [start, end, factor, saved]
+                _prev = (_ls, _le)
+                _gh, _gw = _gh // _lf, _gw // _lf
         if _tread and n_video > 1:
             _ratio, _start, _end = float(_tread[0]), int(_tread[1]), int(_tread[2])
             _end = min(_end, len(self.blocks))
+            if levels:
+                # routing must not straddle a level boundary: it rides inside the outer
+                # level, after every inner level has rejoined
+                _start = max([levels[0][0]] + [lv[1] for lv in levels[1:]])
+                _end = levels[0][1]
             if 0.0 < _ratio < 1.0 and 0 <= _start < _end:
-                n_keep = max(1, int(round(n_video * (1.0 - _ratio))))
-                perm = torch.randperm(n_video, device=h.device)
-                keep_vid = perm[:n_keep].sort().values + video_start
-                keep_idx = torch.cat([torch.arange(video_start, device=h.device), keep_vid])
-                route = (_start, _end, keep_idx)
+                route = (_start, _end, _ratio)
+        _gh, _gw = _ph, _pw                                    # the CURRENT video grid
         for i in range(len(self.blocks)):
+            for lv in levels:
+                if i == lv[0]:
+                    _f = lv[2]
+                    C = h.shape[1]
+                    vid = h[video_start:].reshape(latent_t, _gh // _f, _f, _gw // _f, _f, C)
+                    h_vid_p = vid.mean(dim=(2, 4)).reshape(-1, C)
+                    _nh, _nw = _gh // _f, _gw // _f
+                    pos_p = image_position_ids(text_len, _nh * self.patch_size[1], _nw * self.patch_size[2],
+                                               n_audio_latents, latent_t=latent_t).to(device)
+                    cos_p, sin_p = rope_cos_sin(pos_p, self.rope.inv_freq.to(device))
+                    mod_p = mod_row[video_start:].reshape(latent_t, _gh, _gw)[:, ::_f, ::_f].reshape(-1)
+                    lv[3] = (h, cos, sin, mod_row, h_vid_p, _gh, _gw)
+                    h = torch.cat([h[:video_start], h_vid_p], 0)
+                    cos = torch.cat([cos[:video_start], cos_p[video_start:].to(dtype)], 0)
+                    sin = torch.cat([sin[:video_start], sin_p[video_start:].to(dtype)], 0)
+                    mod_row = torch.cat([mod_row[:video_start], mod_p], 0)
+                    _gh, _gw = _nh, _nw
             if route is not None and i == route[0]:
+                _nv = h.shape[0] - video_start
+                n_keep = max(1, int(round(_nv * (1.0 - route[2]))))
+                perm = torch.randperm(_nv, device=h.device)
+                keep_vid = perm[:n_keep].sort().values + video_start
+                _k = torch.cat([torch.arange(video_start, device=h.device), keep_vid])
                 _full = (h, cos, sin, mod_row)
-                _k = route[2]
                 h, cos, sin, mod_row = h[_k], cos[_k], sin[_k], mod_row[_k]
             if use_ckpt:
                 h = torch.utils.checkpoint.checkpoint(
@@ -983,9 +1031,19 @@ class MiniMaxH3DiT(nn.Module):
                 # rejoin: routed rows come back in their start-block state (identity)
                 h_full, cos, sin, mod_row = _full
                 h_new = h_full.clone()
-                h_new[route[2]] = h
+                h_new[_k] = h
                 h = h_new
                 _full = None
+            for lv in reversed(levels):
+                if i + 1 == lv[1] and lv[3] is not None:
+                    # unpool: each token = its own start state + the level's CHANGE, upsampled
+                    h_full, cos, sin, mod_row, h_in, _gh, _gw = lv[3]
+                    _f = lv[2]
+                    C = h.shape[1]
+                    delta = (h[video_start:] - h_in).reshape(latent_t, _gh // _f, _gw // _f, C)
+                    delta = delta.repeat_interleave(_f, dim=1).repeat_interleave(_f, dim=2).reshape(-1, C)
+                    h = torch.cat([h[:video_start], h_full[video_start:] + delta], 0)
+                    lv[3] = None
             # H2D streaming: the block's forward is done — free its ring slot and start the
             # copy for the block ring_size ahead, overlapping the next blocks' compute. Sits
             # OUTSIDE the checkpoint call: it must run once per forward pass, not again per

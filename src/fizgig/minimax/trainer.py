@@ -1283,6 +1283,34 @@ def load_preview_turbo(dit, path, strength, tag="turbo"):
     return net, adaln_pairs
 
 
+# FizGigVid presets: (start, end, factor) levels, outermost first; inner spans nest inside.
+# "4x front, 2x identity": the frozen front blocks (2-19, composition) see every frame at a
+# quarter of the token grid per side, the identity range (20-46) at half — a 64-px token
+# still holds an eye, the blocks that learn likeness keep a face rather than a thumbnail.
+FIZGIGVID_PRESETS = {
+    "off": [],
+    "front4_id2": [(2, 47, 2), (2, 20, 2)],
+    "all2": [(2, 47, 2)],
+    "all4": [(2, 47, 4)],
+}
+
+
+def fizgigvid_levels(spec):
+    """A preset name or 'a-b:f,a-b:f' -> [(start, end, factor), ...]; [] for off / empty."""
+    spec = (spec or "off").strip()
+    if spec in FIZGIGVID_PRESETS:
+        return list(FIZGIGVID_PRESETS[spec])
+    out = []
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        span, _, f = part.partition(":")
+        a, _, b = span.partition("-")
+        out.append((int(a), int(b), int(f or 2)))
+    return out
+
+
 def park_frozen_lora(net, adaln_pairs=None):
     """Move a frozen LoRA network's parameters (and its AdaLN row tensors) to the CPU for a
     phase that never runs it — the preview renders with the training adapter's modules
@@ -2432,6 +2460,10 @@ def train_minimax(
     tread_ratio: float = 0.0,
     tread_start: int = 2,
     tread_end: int = 47,
+    # FizGigVid (experiment, Peter's): on clip steps the middle blocks see each frame at a
+    # lower resolution (a nested residual hourglass — see model.forward); a preset name or
+    # an explicit schedule "start-end:factor,start-end:factor" (outermost first).
+    fizgigvid: str = "off",
     # Previews with sound: decode the jointly-denoised audio rows to a .wav beside each clip
     # sample. Needs the audio VAE (its decoder half); silently off without it.
     sample_audio: bool = False,
@@ -3463,6 +3495,17 @@ def train_minimax(
     # (the LoRA deploys paired with it — Klein/Krea 2 semantics).
     adapter_net, adapter_adaln = None, []
     context_net, context_adaln = None, []
+    _vid_levels = fizgigvid_levels(fizgigvid)
+    if _vid_levels:
+        if rotator is not None:
+            raise RuntimeError("FizGigVid is not available with fine-tuning on MiniMax H3 — "
+                               "set it to off or train a LoRA.")
+        dit._fizgigvid = _vid_levels
+        logger.info("[fizgigvid] ON for clip steps (%s): %s — every frame kept, each level adds its "
+                    "change back to every native token at its end; stills untouched; previews "
+                    "never do this. Experimental.", fizgigvid,
+                    "; ".join(f"blocks {a}-{b - 1} at 1/{f} per side"
+                              + (" more" if k else "") for k, (a, b, f) in enumerate(_vid_levels)))
     if tread_ratio and float(tread_ratio) > 0.0:
         if rotator is not None:
             raise RuntimeError("TREAD token routing is not available with fine-tuning on "
@@ -4166,8 +4209,9 @@ def train_minimax(
                                 if context_lora_path else "none"),
             "ss_context_lora_strength": (f"{float(context_lora_strength):g}"
                                          if context_lora_path else "0"),
-            "ss_tread": (f"{float(tread_ratio):g}@{int(tread_start)}-{int(tread_end)}"
-                         if tread_ratio and float(tread_ratio) > 0 else "off"),
+            "ss_tread": ((f"{float(tread_ratio):g}@{int(tread_start)}-{int(tread_end)}"
+                          if tread_ratio and float(tread_ratio) > 0 else "off")
+                         + (f"+fizgigvid:{fizgigvid}" if fizgigvid_levels(fizgigvid) else "")),
             "ss_training_adapter": (os.path.basename(training_adapter_path)
                                     if training_adapter_path else "none"),
             "ss_slow_blocks": _slow_used or "none",

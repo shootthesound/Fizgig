@@ -1292,6 +1292,11 @@ FIZGIGVID_PRESETS = {
     "front4_id2": [(2, 47, 2), (2, 20, 2)],
     "all2": [(2, 47, 2)],
     "all4": [(2, 47, 4)],
+    # Peter's, 6 Sep: a longer full-res tail — 0-1 full, 2-19 at 4x, 20-40 at 2x, 41-49 full
+    "front4_id2_tail9": [(2, 41, 2), (2, 20, 2)],
+    # ...and an alternating front: 0-1 full, blocks 2-19 alternate 2x / 4x (2 at 2x, 3 at 4x,
+    # ... 19 at 4x), 20-38 at 2x, 39-49 full
+    "frontalt_id2_tail11": [(2, 39, 2)] + [(b, b + 1, 2) for b in range(3, 20, 2)],
 }
 
 

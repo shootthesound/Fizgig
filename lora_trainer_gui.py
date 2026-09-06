@@ -673,6 +673,8 @@ FIZGIGVID_GUI_PRESETS = {
     "4× front, 2× identity range (recommended)": "front4_id2",
     "2× throughout": "all2",
     "4× throughout": "all4",
+    "4× front 2–19, 2× 20–40, full 41–49": "front4_id2_tail9",
+    "Alternating 2×/4× front 2–19, 2× 20–38, full 39–49": "frontalt_id2_tail11",
 }
 
 MINIMAX_TRAIN_BASE_OPTIONS = [

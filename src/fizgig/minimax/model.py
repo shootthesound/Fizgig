@@ -970,17 +970,25 @@ class MiniMaxH3DiT(nn.Module):
         _hg = getattr(self, "_fizgigvid", None) if torch.is_grad_enabled() else None
         _ph, _pw = lat_h // self.patch_size[1], lat_w // self.patch_size[2]
         if _hg and latent_t > 1 and n_cond == 0 and n_video == latent_t * _ph * _pw:
-            _gh, _gw = _ph, _pw
-            _prev = None
+            _spans = []
             for _ls, _le, _lf in _hg:
                 _ls, _le, _lf = int(_ls), min(int(_le), len(self.blocks)), int(_lf)
-                if not (0 <= _ls < _le and _lf >= 2 and _gh % _lf == 0 and _gw % _lf == 0):
+                if not (0 <= _ls < _le and _lf >= 2):
                     continue
-                if _prev is not None and not (_prev[0] <= _ls and _le <= _prev[1]):
-                    continue                                   # must nest inside the outer level
+                # a level must nest inside, or sit apart from, every level before it —
+                # siblings (e.g. alternating one-block 4x levels inside a 2x outer) are fine,
+                # a partial overlap is not
+                if any(not ((a <= _ls and _le <= b) or _le <= a or _ls >= b) for a, b in _spans):
+                    continue
+                # the grid this level pools = the native grid over every enclosing level
+                _f_enc = 1
+                for (a, b), lv in zip(_spans, levels):
+                    if a <= _ls and _le <= b:
+                        _f_enc *= lv[2]
+                if (_ph // _f_enc) % _lf or (_pw // _f_enc) % _lf:
+                    continue
                 levels.append([_ls, _le, _lf, None])            # [start, end, factor, saved]
-                _prev = (_ls, _le)
-                _gh, _gw = _gh // _lf, _gw // _lf
+                _spans.append((_ls, _le))
         if _tread and n_video > 1:
             _ratio, _start, _end = float(_tread[0]), int(_tread[1]), int(_tread[2])
             _end = min(_end, len(self.blocks))
@@ -1037,7 +1045,7 @@ class MiniMaxH3DiT(nn.Module):
             for lv in reversed(levels):
                 if i + 1 == lv[1] and lv[3] is not None:
                     # unpool: each token = its own start state + the level's CHANGE, upsampled
-                    h_full, cos, sin, mod_row, h_in, _gh, _gw = lv[3]
+                    h_full, cos, sin, mod_row, h_in, _gh, _gw = lv[3]   # restores the grid too
                     _f = lv[2]
                     C = h.shape[1]
                     delta = (h[video_start:] - h_in).reshape(latent_t, _gh // _f, _gw // _f, C)

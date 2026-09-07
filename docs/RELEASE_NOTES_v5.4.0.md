@@ -14,7 +14,11 @@ Both kernels now tune once per token-count bucket instead of once per exact toke
 
 ## TREAD token routing, on by default
 
-On every clip step a random half of the video tokens leaves the sequence at block 2 and rejoins at block 47 unchanged, so 45 of the 50 blocks process half the tokens (Krause et al., arXiv 2501.04765). Clip steps get markedly faster; the trained LoRA is an ordinary LoRA and previews never route. Photos — and the clip stills below — always run in full: a still has no neighbouring frames to lean on, and it is where the sharp identity signal lives. That split was the version that held up in our A/B, so it is the only version. LoRA runs; untick it on the Training tab to compare against a plain run.
+TREAD is from [Krause, Phan, Hu and Ommer, *TREAD: Token Routing for Efficient Architecture-agnostic Diffusion Training* (arXiv 2501.04765)](https://arxiv.org/abs/2501.04765). On every clip step a random half of the video tokens leaves the sequence at block 2 and rejoins at block 47 in exactly the state it left in, so 45 of the 50 blocks process half the tokens. Clip steps get markedly faster, and that is the smaller half of the point.
+
+The paper's finding is that routing makes a diffusion model *learn better*, not just cheaper. The late blocks receive a sequence in which half the tokens carry only their early-block state, so they cannot lean on a fully processed neighbour for every position and have to build the prediction from less. That works like a regulariser on the representation: in the paper's experiments the routed model converges in a fraction of the steps of the same model trained plainly and ends at better quality, with nothing added to the architecture and nothing changed at inference. That last part matters here: the trained LoRA is an ordinary LoRA, previews never route, and ComfyUI never knows it happened.
+
+Photos — and the clip stills below — always run in full: a still has no neighbouring frames to lean on, and it is where the sharp identity signal lives. In our A/B the split version — routed clips, untouched stills — was the one that held up, so it is the only version. LoRA runs; untick it on the Training tab to compare against a plain run.
 
 ## Every clip also trains its sharpest face frame as a photo
 

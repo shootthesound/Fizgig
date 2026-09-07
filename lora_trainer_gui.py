@@ -666,15 +666,6 @@ REPAIR_H3_BASE_OPTIONS = ("Auto (by free VRAM)",
                           "Stream blocks (exact int8, room for big clips)",
                           "NF4 (smallest, 9.5% base error)")
 
-# TREAD Plus FizGigVid presets (label -> --fizgigvid value); the first non-Off entry is the
-# recommended one (Peter, 6 Sep 2026).
-FIZGIGVID_GUI_PRESETS = {
-    "Off": "off",
-    "4× front, 2× identity range (recommended)": "front4_id2",
-    "2× throughout": "all2",
-    "4× throughout": "all4",
-}
-
 MINIMAX_TRAIN_BASE_OPTIONS = [
     "First/last frame (fl2va) — standard",
     "Reference (ref2va)",
@@ -4940,30 +4931,6 @@ class LoRATrainerGUI:
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_tread_hint.grid(row=45, column=0, columnspan=2, sticky=tk.W,
                                       padx=5, pady=(0, 4))
-        # --- TREAD Plus FizGigVid (Peter's; experiment/tread) — clip steps only -----------
-        self._minimax_fizgigvid_frame = ttk.Frame(training_content)
-        self._minimax_fizgigvid_frame.grid(row=46, column=0, columnspan=2, sticky=tk.W,
-                                           padx=5, pady=(4, 0))
-        ttk.Label(self._minimax_fizgigvid_frame, text="TREAD Plus FizGigVid (experimental):").pack(side=tk.LEFT, padx=(0, 6))
-        _fv = str(self.settings.get("MINIMAX_FIZGIGVID", "Off"))
-        if _fv not in FIZGIGVID_GUI_PRESETS:
-            _fv = "Off"
-        self.entries["MINIMAX_FIZGIGVID"] = tk.StringVar(value=_fv)
-        self._minimax_fizgigvid_combo = ttk.Combobox(
-            self._minimax_fizgigvid_frame, textvariable=self.entries["MINIMAX_FIZGIGVID"],
-            state="readonly", width=34, values=list(FIZGIGVID_GUI_PRESETS))
-        self._minimax_fizgigvid_combo.pack(side=tk.LEFT)
-        self._minimax_fizgigvid_hint = ttk.Label(
-            training_content,
-            text="On clip steps the middle blocks see every frame at a lower resolution — a genuine "
-                 "lower-res clip, every frame kept so motion is intact — and what they change is "
-                 "added back onto every full-resolution token at the end. '4× front, 2× identity' "
-                 "coarsens the frozen composition blocks (2-19) hardest and keeps a 64-px token in "
-                 "the blocks that learn the likeness (20-46). Photos are untouched; stacks with "
-                 "TREAD. Experimental — A/B against a plain run and a lower Target Megapixels.",
-            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
-        self._minimax_fizgigvid_hint.grid(row=47, column=0, columnspan=2, sticky=tk.W,
-                                          padx=5, pady=(0, 4))
 
         # Answers "when do changes take effect?" (issue #40) right where people wonder it.
         ttk.Label(training_content,
@@ -7727,9 +7694,7 @@ class LoRATrainerGUI:
                   getattr(self, "_minimax_adapter_cb", None),
                   getattr(self, "_minimax_adapter_hint", None),
                   getattr(self, "_minimax_tread_cb", None),
-                  getattr(self, "_minimax_tread_hint", None),
-                  getattr(self, "_minimax_fizgigvid_frame", None),
-                  getattr(self, "_minimax_fizgigvid_hint", None)):
+                  getattr(self, "_minimax_tread_hint", None)):
             if w is not None:
                 self._set_widget_visible(w, not on)
         if hasattr(self, "_network_type_rowf"):
@@ -7949,7 +7914,6 @@ class LoRATrainerGUI:
                   self._minimax_likeness_cb, self._minimax_likeness_hint,
                   self._minimax_adapter_cb, self._minimax_adapter_hint,
                   self._minimax_tread_cb, self._minimax_tread_hint,
-                  self._minimax_fizgigvid_frame, self._minimax_fizgigvid_hint,
                   self._minimax_distill_frame, self._minimax_distill_hint,
                   self._minimax_quant_label, self._minimax_quant_frame,
                   self._minimax_quant_hint,
@@ -29891,9 +29855,6 @@ class LoRATrainerGUI:
         # TREAD token routing (experiment) — LoRA runs only, half the video tokens, blocks 2-46.
         if self.settings.get("MINIMAX_TREAD") and not _mft_cmd_on:
             cmd += ["--tread_ratio", "0.5", "--tread_start", "2", "--tread_end", "47"]
-        _fv = FIZGIGVID_GUI_PRESETS.get(str(self.settings.get("MINIMAX_FIZGIGVID", "Off")), "off")
-        if _fv != "off" and not _mft_cmd_on:
-            cmd += ["--fizgigvid", _fv]
         # Context LoRA — an existing H3 LoRA frozen + active under the trainable one (LoRA runs
         # only; validation refuses the fine-tune combination before we get here).
         ctx_path = (self.settings.get("CONTEXT_LORA_PATH") or "").strip()

@@ -244,13 +244,6 @@ def setup_parser() -> argparse.ArgumentParser:
                         "Previews never route. Not available with --finetune_rotation.")
     p.add_argument("--tread_start", type=int, default=2)
     p.add_argument("--tread_end", type=int, default=47)
-    p.add_argument("--fizgigvid", default="off",
-                   help="FizGigVid (experimental): clip steps show the middle blocks each frame "
-                        "at a lower resolution, nested (every frame kept; what the blocks change "
-                        "is added back to every native token). A preset — off, front4_id2 (4x "
-                        "the frozen front 2-19, 2x the identity range 20-46), all2, all4 — or a "
-                        "schedule 'a-b:f,a-b:f' (outermost first). Stills untouched. Stacks with "
-                        "--tread_ratio (routing then rides inside the outer level).")
     p.add_argument("--sample_audio", action="store_true",
                    help="Clip previews carry their generated SOUND: the jointly-denoised "
                         "audio rows are decoded to a .wav beside each sample. Needs "
@@ -400,7 +393,6 @@ def main():
         tread_ratio=args.tread_ratio,
         tread_start=args.tread_start,
         tread_end=args.tread_end,
-        fizgigvid=args.fizgigvid,
         sample_audio=args.sample_audio,
         audio_vae_path=args.audio_vae,
         finetune_rotation=args.finetune_rotation,

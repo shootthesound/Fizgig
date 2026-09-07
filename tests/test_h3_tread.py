@@ -73,63 +73,12 @@ ck("a routed block sees all the non-video rows plus half the video rows; a block
    seen[0] == full - n_video // 2 and full > n_video, (seen, n_video))
 dit._tread = None
 
-# ---- FizGigVid: nested lower-res middle for clips --------------------------------------
-from fizgig.minimax.trainer import fizgigvid_levels, FIZGIGVID_PRESETS
-ck("presets parse: front4_id2 = 2x over 2-46 with 2x more over 2-19; a schedule string parses too",
-   fizgigvid_levels("front4_id2") == [(2, 47, 2), (2, 20, 2)] and fizgigvid_levels("all4") == [(2, 47, 4)]
-   and fizgigvid_levels("off") == [] and fizgigvid_levels("1-4:2,1-3:2") == [(1, 4, 2), (1, 3, 2)])
-dit._tread = None
-others = arows.shape[0] + 5                                    # audio rows + text rows
-dit._fizgigvid = [(1, 4, 2), (1, 3, 2)]                          # 4x for blocks 1-2, 2x for block 3
-with torch.no_grad():
-    ck("fizgigvid never runs under no_grad", torch.equal(dit(lat, t, txt, audio_rows=arows), ref))
-seen = []
-hooks = [dit.blocks[i].register_forward_pre_hook(lambda m, args: seen.append(args[0].shape[0])) for i in (2, 3, 5)]
-out_v = dit(lat, t, txt, audio_rows=arows)
-for hk in hooks: hk.remove()
-ck("nested levels: block 2 sees the video at 1/16, block 3 at 1/4, block 5 everything (non-video rows always there)",
-   seen == [others + n_video // 16, others + n_video // 4, others + n_video]
-   and out_v.shape == ref.shape and torch.isfinite(out_v).all(), (seen, others, n_video))
-out_v.float().square().mean().backward()
-ck("gradients flow through the pool / unpool", all(p.grad is None or torch.isfinite(p.grad).all() for p in dit.parameters()))
-dit.zero_grad(set_to_none=True)
-still = torch.randn(1, 24, 1, 8, 8)
-arows1 = torch.randn(audio_latents_for_frames(pixel_frames_for_latent(1)) * AUDIO_CHANNELS, cfg.audio_latents_dim)
-with torch.no_grad():
-    ref_still = dit(still, t, txt, audio_rows=arows1)
-ck("a still (one latent frame) is never pooled", torch.equal(dit(still, t, txt, audio_rows=arows1).detach(), ref_still))
-# identity: with the outer span's blocks replaced by identity the levels add nothing
-import types
-saved = [dit.blocks[i].forward for i in (1, 2, 3)]
-for i in (1, 2, 3):
-    dit.blocks[i].forward = types.MethodType(lambda self, x, *a, **k: x, dit.blocks[i])
-dit._fizgigvid = None
-with torch.no_grad():
-    ref_id = dit(lat, t, txt, audio_rows=arows)
-dit._fizgigvid = [(1, 4, 2), (1, 3, 2)]
-out_id = dit(lat, t, txt, audio_rows=arows).detach()
-for i, f in zip((1, 2, 3), saved):
-    dit.blocks[i].forward = f
-ck("identity middle blocks: the residual unpools add nothing and the output equals the plain forward",
-   torch.allclose(out_id, ref_id, atol=1e-5), float((out_id - ref_id).abs().max()))
-dit._fizgigvid = [(1, 4, 2), (1, 3, 2)]; dit._tread = (0.5, 1, 4)
-seen = []
-hooks = [dit.blocks[i].register_forward_pre_hook(lambda m, args: seen.append(args[0].shape[0])) for i in (2, 3)]
-out_both = dit(lat, t, txt, audio_rows=arows)
-for hk in hooks: hk.remove()
-ck("TREAD rides inside the outer level after the inner one rejoins: block 2 untouched by routing, block 3 sees half of the 1/4 grid",
-   seen == [others + n_video // 16, others + n_video // 8] and out_both.shape == ref.shape, (seen, n_video))
-dit._fizgigvid = [(1, 4, 3)]
-ck("a factor the grid does not divide is skipped (4x4 patches by 3)", torch.equal(dit(lat, t, txt, audio_rows=arows).detach(), ref) if False else dit(lat, t, txt, audio_rows=arows).shape == ref.shape)
-dit._fizgigvid = None; dit._tread = None
-
 # CLI plumbing
 import importlib.util
 spec = importlib.util.spec_from_file_location("mmt", os.path.join(REPO, "src", "fizgig", "scripts", "minimax_train.py"))
 src = open(spec.origin, encoding="utf-8").read()
-ck("CLI: --tread_ratio / --tread_start / --tread_end / --fizgigvid exist and are passed through",
-   src.count('add_argument("--tread_ratio"') == 1 and "tread_ratio=args.tread_ratio" in src and "tread_end=args.tread_end" in src
-   and src.count('add_argument("--fizgigvid"') == 1 and "fizgigvid=args.fizgigvid" in src)
+ck("CLI: --tread_ratio / --tread_start / --tread_end exist and are passed through",
+   src.count("--tread_ratio") == 1 and "tread_ratio=args.tread_ratio" in src and "tread_end=args.tread_end" in src)
 
 print()
 if fails:

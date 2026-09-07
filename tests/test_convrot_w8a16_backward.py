@@ -92,6 +92,25 @@ finally:
     KB.fused_w8a16_input_grad = real
     reset(None)
 
+# --- the FORWARD kernel's gate (rintic-13, #89): it must engage on a training forward -----
+# PyTorch runs a custom Function's forward with grad mode OFF, so the old
+# torch.is_grad_enabled() gate was never true and the kernel silently never ran in training
+# (v4.3.2 through v5.3.3). The signal is whether the input wants a gradient.
+def fwd_reset():
+    Fn._w8a16_state.update({"checked": False, "use": False, "announced": False})
+m = C.ConvRotInt8Linear(2688, 2688, bias=False).to(dev)
+m.qdata, m.wscale, m.rot, m.compute_dtype = q, s, 64, torch.bfloat16
+xt = torch.randn(1, 300, 2688, device=dev, dtype=torch.bfloat16, requires_grad=True)
+fwd_reset(); m(xt).float().sum().backward()
+ck("forward kernel engages on a training forward (input wants a gradient)", Fn._w8a16_state["announced"])
+fwd_reset(); torch.utils.checkpoint.checkpoint(m, xt, use_reentrant=False).float().sum().backward()
+ck("...and under the model's non-reentrant checkpointing", Fn._w8a16_state["announced"])
+fwd_reset()
+with torch.no_grad():
+    m(xt.detach())
+ck("...but not on a preview forward (no_grad, nothing wants a gradient)", not Fn._w8a16_state["announced"])
+fwd_reset()
+
 print()
 if fails:
     print(f"{len(fails)} FAILED: {fails}"); sys.exit(1)

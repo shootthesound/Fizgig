@@ -158,7 +158,7 @@ class _Int8RotLinearFn(torch.autograd.Function):
         return True
 
     @classmethod
-    def _use_w8a16(cls, x, dt):
+    def _use_w8a16(cls, x, dt, training):
         st = cls._w8a16_state
         if not st["checked"]:
             st["checked"] = True
@@ -176,8 +176,13 @@ class _Int8RotLinearFn(torch.autograd.Function):
         # benchmarking, context growth outside torch's allocator — tipped a working preview
         # into OOM (field). The kernel buys nothing in a 6-step preview anyway; the win is
         # the thousands of training forwards.
-        if not (st["use"] and dt == torch.bfloat16 and x.is_cuda
-                and torch.is_grad_enabled()):
+        #
+        # `training` is ctx.needs_input_grad[0], NOT torch.is_grad_enabled(): PyTorch runs a
+        # custom Function's forward with grad mode OFF, so the grad-mode test was always False
+        # here and the kernel silently never ran in training (found 7 Sep 2026 while landing
+        # the backward kernel). Whether the input wants a gradient is the signal that tells a
+        # training forward from a preview, and it is visible inside forward().
+        if not (st["use"] and dt == torch.bfloat16 and x.is_cuda and training):
             return False
         if not st["announced"]:
             st["announced"] = True
@@ -190,7 +195,7 @@ class _Int8RotLinearFn(torch.autograd.Function):
         ctx.save_for_backward(qdata, wscale)
         ctx.rot, ctx.dt = rot, dt
         xr = rotate(x.to(dt), rot) if rot > 1 else x.to(dt)
-        if _Int8RotLinearFn._use_w8a16(xr, dt):
+        if _Int8RotLinearFn._use_w8a16(xr, dt, bool(ctx.needs_input_grad[0])):
             try:
                 from fizgig.minimax.convrot_w8a16_triton import fused_w8a16_gemm
                 return fused_w8a16_gemm(xr, qdata, wscale, bias)

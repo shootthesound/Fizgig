@@ -925,9 +925,11 @@ MINIMAX_BUILT_IN_PRESETS = {
         # 50% likeness seven epochs sooner and peaked higher (61 vs 57). Every H3 preset
         # inherits this — Style included, the adapter is about the base, not the blocks.
         "MINIMAX_TRAINING_ADAPTER": True,
-        # Restrict video to the likeness blocks — the sub-tick of likeness mode, on by default
-        # (LoRA and FT alike since 2 Sep). Hidden, and not emitted, when likeness is off.
-        "MINIMAX_FT_CLIP_LIKENESS": True,
+        # TREAD token routing ships ON (Peter, 7 Sep, after his A/B): clip steps route half
+        # their video tokens around blocks 2-46; photos and clip stills always run in full.
+        "MINIMAX_TREAD": True,
+        # Each clip's sharpest face frame trains as a photo too (picked at cache time). ON.
+        "MINIMAX_CLIP_STILL": True,
         "MINIMAX_SLOW_BLOCKS": "", "MINIMAX_SLOW_LR_SCALE": "0.2",
         # The one experiment that graduated: the limiter ships ON. Validated on a real A/B
         # (8 Aug) — the last trained block always hogs 2-4x the median block's movement and
@@ -984,6 +986,8 @@ MINIMAX_BUILT_IN_PRESETS["✨ MiniMax H3 Style (LoRA 8)"] = {
     # MUST be off here: style measurably needs the early blocks the likeness mask freezes, and
     # with it on the blocks spec above would be ignored outright.
     "MINIMAX_LIKENESS_OPT": False,
+    # Style is about the look, not the face: no extra sharp-face stills from the clips.
+    "MINIMAX_CLIP_STILL": False,
 }
 
 # Fast is the shipped default (Peter, 22 Aug): the FIRST entry is what a family switch and a
@@ -1774,7 +1778,8 @@ class LoRATrainerGUI:
             # work H3 is for. The Style preset turns it OFF (style needs the early blocks).
             "MINIMAX_LIKENESS_OPT": True,
             "MINIMAX_TRAINING_ADAPTER": True,
-            "MINIMAX_FT_CLIP_LIKENESS": True,
+            "MINIMAX_TREAD": True,         # clip steps route half their video tokens (7 Sep)
+            "MINIMAX_CLIP_STILL": True,    # each clip's sharpest face frame trains as a photo
             "MINIMAX_DISTILL": False,      # off = ordinary training
             # Which H3 base ordinary training runs on ("fl2va"/"ref2va"). NOT in any preset —
             # the Training Base dropdown's var lives outside self.entries by design.
@@ -4690,62 +4695,6 @@ class LoRATrainerGUI:
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_limiter_hint.grid(row=38, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
 
-        # --- Reference distillation (MiniMax only, experimental) ---------------------------
-        # No picker: the dataset IS the reference pool, so there is nothing to choose.
-        self.minimax_distill_var = tk.BooleanVar(
-            value=bool(self.settings.get("MINIMAX_DISTILL", False)))
-        self._minimax_distill_frame = ttk.Frame(training_content)
-        self._minimax_distill_frame.grid(row=35, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(8, 0))
-        self._minimax_distill_cb = ttk.Checkbutton(
-            self._minimax_distill_frame, text="Learn identity from my dataset (reference distillation)",
-            variable=self.minimax_distill_var, command=self._on_minimax_distill_clicked)
-        self._minimax_distill_cb.pack(side=tk.LEFT)
-        # Multi Concept shows a warning while identity-learn is OFF (no reference steering), so
-        # that hint has to refresh when this checkbox moves, not only when the mode is toggled.
-        self.minimax_distill_var.trace_add(
-            "write", lambda *_a: self._on_minimax_multiconcept_toggle())
-        ttk.Label(self._minimax_distill_frame, text="   teacher ").pack(side=tk.LEFT)
-        self.entries["MINIMAX_DISTILL_WEIGHT"] = ttk.Combobox(
-            # 0.4/0.5 added 11 Aug — an even split is a reasonable thing to want and the list
-            # stopped at 0.6, so it could not be asked for. 1.0 removes the photo term entirely,
-            # which caps the LoRA at what reference mode can already do.
-            self._minimax_distill_frame,
-            values=["0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1.0"], width=5)
-        self.entries["MINIMAX_DISTILL_WEIGHT"].set(
-            str(self.settings.get("MINIMAX_DISTILL_WEIGHT", "0.8")))
-        self.entries["MINIMAX_DISTILL_WEIGHT"].pack(side=tk.LEFT)
-        ttk.Label(self._minimax_distill_frame, text="   references each ").pack(side=tk.LEFT)
-        self.entries["MINIMAX_DISTILL_REFS"] = ttk.Combobox(
-            self._minimax_distill_frame, values=["1", "2", "3", "4"], width=4)
-        self.entries["MINIMAX_DISTILL_REFS"].set(
-            str(self.settings.get("MINIMAX_DISTILL_REFS", "2")))
-        self.entries["MINIMAX_DISTILL_REFS"].pack(side=tk.LEFT)
-        # Identity-first: teacher-ONLY for the first stretch, then photos-only. A hard switch,
-        # not a blend — the point is where the adapter STARTS, so what phase 2 forgets about the
-        # teacher does not matter. Auto sizes phase 1 from the dataset (~650 steps, which is
-        # where the teacher error was measured to converge on a real run).
-        ttk.Label(self._minimax_distill_frame, text="   identity-first ").pack(side=tk.LEFT)
-        self.entries["MINIMAX_DISTILL_PHASE1"] = ttk.Combobox(
-            self._minimax_distill_frame, state="readonly", width=22,
-            values=["Auto (from dataset size)", "Off — blend throughout",
-                    "2 epochs", "4 epochs", "8 epochs", "16 epochs", "30 epochs"])
-        self.entries["MINIMAX_DISTILL_PHASE1"].set(
-            str(self.settings.get("MINIMAX_DISTILL_PHASE1", "Auto (from dataset size)")))
-        self.entries["MINIMAX_DISTILL_PHASE1"].pack(side=tk.LEFT)
-        self.entries["MINIMAX_DISTILL_PHASE1"].bind(
-            "<<ComboboxSelected>>", lambda _e: self._sync_distill_weight_state())
-        self._minimax_distill_hint = ttk.Label(
-            training_content,
-            text="EXPERIMENT — teaches the LoRA to reproduce identity the way H3 does when shown "
-                 "a photo. Needs the ref2va model in Preferences. See the MiniMax section of "
-                 "the README.",
-            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
-        self._minimax_distill_hint.grid(row=36, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
-
-
-
-
-
         # --- Multi Concept (MiniMax only) ---------------------------------------------------
         # Two subjects in ONE folder get cross-referenced by reference distillation: the pairing
         # rotation runs per [[datasets]] block, so a single block marks subject A's answers
@@ -4783,8 +4732,8 @@ class LoRATrainerGUI:
             training_content,
             text="Each folder needs its OWN trigger word, in every caption — that is the only "
                  "thing telling the two apart. Caption and prep both folders yourself first; "
-                 "this box is training-only. Ticking the mode sets caption dropout to 0.10 "
-                 "(strong) — still yours to change. See the MiniMax section of the README.",
+                 "this box is training-only and changes nothing else — caption dropout stays "
+                 "as you set it. See the MiniMax section of the README.",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT,
             wraplength=720)
         self._minimax_mc_hint.grid(row=51, column=0, columnspan=2, sticky=tk.W, padx=5,
@@ -4863,33 +4812,21 @@ class LoRATrainerGUI:
                                        padx=5, pady=(8, 0))
         self._minimax_likeness_hint = ttk.Label(
             training_content,
-            text=f"Photos train the identity blocks ({MINIMAX_LIKENESS_BLOCKS}) only, voice the "
-                 f"audio zone ({MINIMAX_AUDIO_BLOCKS}) only, clips the full model. Untick for "
-                 "style or scene training. See the MiniMax section of the README.",
+            text=f"Photos and clips train the identity blocks ({MINIMAX_LIKENESS_BLOCKS}) only, "
+                 f"voice the audio zone ({MINIMAX_AUDIO_BLOCKS}) only. Untick for style or "
+                 "scene training. See the MiniMax section of the README.",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_likeness_hint.grid(row=40, column=0, columnspan=2, sticky=tk.W,
                                          padx=5, pady=(0, 4))
         self._MINIMAX_LIKENESS_HINT_LORA = self._minimax_likeness_hint.cget("text")
         self._MINIMAX_LIKENESS_HINT_FT = (
-            f"Same meaning under fine-tune: photos train the identity blocks "
-            f"({MINIMAX_LIKENESS_BLOCKS}), voice the audio zone ({MINIMAX_AUDIO_BLOCKS}), "
-            f"video follows the tickbox below. See the MiniMax section of the README.")
-        # Restrict video to likeness blocks — sub-tick of likeness mode, LoRA and FT alike
-        # (Peter, 29 Aug: a confined overnight video run trained perfectly well; on by
-        # default, untick for whole-model video; extended to LoRA runs 2 Sep). Emitted as
-        # --clip_blocks whenever likeness is on; shown when the family is MiniMax and
-        # likeness is on (managed by _sync_minimax_likeness_state). The settings key keeps
-        # its historical MINIMAX_FT_ name so presets and saved settings still match.
-        self.entries["MINIMAX_FT_CLIP_LIKENESS"] = tk.BooleanVar(
-            value=bool(self.settings.get("MINIMAX_FT_CLIP_LIKENESS", True)))
-        self._minimax_ft_clip_cb = ttk.Checkbutton(
-            training_content,
-            text=f"Restrict video to likeness blocks ({MINIMAX_LIKENESS_BLOCKS}) — in our "
-                 "tests this trains video just as well, and it makes clips far lighter on "
-                 "VRAM. Untick to train video on the whole model.",
-            variable=self.entries["MINIMAX_FT_CLIP_LIKENESS"])
-        self._minimax_ft_clip_cb.grid(row=41, column=0, columnspan=2, sticky=tk.W,
-                                      padx=(21, 5), pady=(0, 4))
+            f"Same meaning under fine-tune: photos and clips train the identity blocks "
+            f"({MINIMAX_LIKENESS_BLOCKS}), voice the audio zone ({MINIMAX_AUDIO_BLOCKS}). "
+            f"See the MiniMax section of the README.")
+        # Clips are confined to the likeness blocks whenever likeness mode is on — LoRA and
+        # FT alike. It was a sub-tick (29 Aug, on by default; LoRA too since 2 Sep) until
+        # Peter retired the choice on 7 Sep: a confined video run trains just as well and
+        # is far lighter, so likeness mode simply means it. Emitted as --clip_blocks.
         # trace, not command=: preset loads set the var programmatically and must re-grey too.
         self.entries["MINIMAX_LIKENESS_OPT"].trace_add(
             "write", lambda *_a: self._sync_minimax_likeness_state())
@@ -4914,6 +4851,38 @@ class LoRATrainerGUI:
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_adapter_hint.grid(row=43, column=0, columnspan=2, sticky=tk.W,
                                         padx=5, pady=(0, 4))
+        # --- TREAD token routing — MiniMax LoRA runs only, ON by default (7 Sep 2026) -----
+        self.entries["MINIMAX_TREAD"] = tk.BooleanVar(
+            value=bool(self.settings.get("MINIMAX_TREAD", True)))
+        self._minimax_tread_cb = ttk.Checkbutton(
+            training_content, text="TREAD token routing — on clip steps, half the video tokens skip the middle blocks",
+            variable=self.entries["MINIMAX_TREAD"])
+        self._minimax_tread_cb.grid(row=44, column=0, columnspan=2, sticky=tk.W,
+                                    padx=5, pady=(8, 0))
+        self._minimax_tread_hint = ttk.Label(
+            training_content,
+            text="Faster clip steps: a random half of each clip's video tokens skips blocks 2-46 "
+                 "and rejoins unchanged. Photos and clip stills always run in full; previews and "
+                 "your saved LoRA are untouched. See the MiniMax section of the README.",
+            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
+        self._minimax_tread_hint.grid(row=45, column=0, columnspan=2, sticky=tk.W,
+                                      padx=5, pady=(0, 4))
+        # --- clip stills as photos (Peter, 7 Sep 2026) — MiniMax, LoRA and FT ---------------
+        self.entries["MINIMAX_CLIP_STILL"] = tk.BooleanVar(
+            value=bool(self.settings.get("MINIMAX_CLIP_STILL", True)))
+        self._minimax_clipstill_cb = ttk.Checkbutton(
+            training_content, text="Also train each clip's sharpest face frame as a photo",
+            variable=self.entries["MINIMAX_CLIP_STILL"])
+        self._minimax_clipstill_cb.grid(row=46, column=0, columnspan=2, sticky=tk.W,
+                                        padx=5, pady=(8, 0))
+        self._minimax_clipstill_hint = ttk.Label(
+            training_content,
+            text="Each clip's sharpest frame with a face is picked and encoded when the clips are "
+                 "cached, then trains on a step of its own with the clip's caption. Clips cached "
+                 "with this off use frame 0 until re-cached. See the MiniMax section of the README.",
+            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
+        self._minimax_clipstill_hint.grid(row=47, column=0, columnspan=2, sticky=tk.W,
+                                          padx=5, pady=(0, 4))
 
         # Answers "when do changes take effect?" (issue #40) right where people wonder it.
         ttk.Label(training_content,
@@ -5387,6 +5356,59 @@ class LoRATrainerGUI:
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_blocks_hint.grid(row=32, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
         self._refresh_minimax_blocks_count()
+
+        # --- Reference distillation (MiniMax only, experimental) — lives in Other Options
+        # since 7 Sep 2026 (Peter): an experiment most runs leave off, out of the main panel.
+        # No picker: the dataset IS the reference pool, so there is nothing to choose.
+        self.minimax_distill_var = tk.BooleanVar(
+            value=bool(self.settings.get("MINIMAX_DISTILL", False)))
+        self._minimax_distill_frame = ttk.Frame(scheduler_content)
+        self._minimax_distill_frame.grid(row=33, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(8, 0))
+        self._minimax_distill_cb = ttk.Checkbutton(
+            self._minimax_distill_frame, text="Learn identity from my dataset (reference distillation)",
+            variable=self.minimax_distill_var, command=self._on_minimax_distill_clicked)
+        self._minimax_distill_cb.pack(side=tk.LEFT)
+        # Multi Concept shows a warning while identity-learn is OFF (no reference steering), so
+        # that hint has to refresh when this checkbox moves, not only when the mode is toggled.
+        self.minimax_distill_var.trace_add(
+            "write", lambda *_a: self._on_minimax_multiconcept_toggle())
+        ttk.Label(self._minimax_distill_frame, text="   teacher ").pack(side=tk.LEFT)
+        self.entries["MINIMAX_DISTILL_WEIGHT"] = ttk.Combobox(
+            # 0.4/0.5 added 11 Aug — an even split is a reasonable thing to want and the list
+            # stopped at 0.6, so it could not be asked for. 1.0 removes the photo term entirely,
+            # which caps the LoRA at what reference mode can already do.
+            self._minimax_distill_frame,
+            values=["0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1.0"], width=5)
+        self.entries["MINIMAX_DISTILL_WEIGHT"].set(
+            str(self.settings.get("MINIMAX_DISTILL_WEIGHT", "0.8")))
+        self.entries["MINIMAX_DISTILL_WEIGHT"].pack(side=tk.LEFT)
+        ttk.Label(self._minimax_distill_frame, text="   references each ").pack(side=tk.LEFT)
+        self.entries["MINIMAX_DISTILL_REFS"] = ttk.Combobox(
+            self._minimax_distill_frame, values=["1", "2", "3", "4"], width=4)
+        self.entries["MINIMAX_DISTILL_REFS"].set(
+            str(self.settings.get("MINIMAX_DISTILL_REFS", "2")))
+        self.entries["MINIMAX_DISTILL_REFS"].pack(side=tk.LEFT)
+        # Identity-first: teacher-ONLY for the first stretch, then photos-only. A hard switch,
+        # not a blend — the point is where the adapter STARTS, so what phase 2 forgets about the
+        # teacher does not matter. Auto sizes phase 1 from the dataset (~650 steps, which is
+        # where the teacher error was measured to converge on a real run).
+        ttk.Label(self._minimax_distill_frame, text="   identity-first ").pack(side=tk.LEFT)
+        self.entries["MINIMAX_DISTILL_PHASE1"] = ttk.Combobox(
+            self._minimax_distill_frame, state="readonly", width=22,
+            values=["Auto (from dataset size)", "Off — blend throughout",
+                    "2 epochs", "4 epochs", "8 epochs", "16 epochs", "30 epochs"])
+        self.entries["MINIMAX_DISTILL_PHASE1"].set(
+            str(self.settings.get("MINIMAX_DISTILL_PHASE1", "Auto (from dataset size)")))
+        self.entries["MINIMAX_DISTILL_PHASE1"].pack(side=tk.LEFT)
+        self.entries["MINIMAX_DISTILL_PHASE1"].bind(
+            "<<ComboboxSelected>>", lambda _e: self._sync_distill_weight_state())
+        self._minimax_distill_hint = ttk.Label(
+            scheduler_content,
+            text="EXPERIMENT — teaches the LoRA to reproduce identity the way H3 does when shown "
+                 "a photo. Needs the ref2va model in Preferences. See the MiniMax section of "
+                 "the README.",
+            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
+        self._minimax_distill_hint.grid(row=34, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
 
         # Training Structure lives in Training Parameters now — see _build_minimax_structure_row,
         # called from that section. It used to sit here in Other Options, collapsed, which is
@@ -7295,18 +7317,12 @@ class LoRATrainerGUI:
             return
         locked = self._is_minimax_arch() and bool(
             self.entries["MINIMAX_LIKENESS_OPT"].get())
-        # The video-restriction sub-tick shows wherever likeness mode is on — LoRA and
-        # fine-tune alike since 2 Sep (same behaviour: clip steps confined to the likeness
-        # blocks; the LoRA path masks per step, the FT path tightens the cycle).
-        _clip_cb = getattr(self, "_minimax_ft_clip_cb", None)
-        if _clip_cb is not None and _clip_cb.winfo_exists():
-            self._set_widget_visible(_clip_cb, locked)
         if locked:
             combo.config(state="disabled")
             hint.config(text=self._MINIMAX_BLOCKS_HINT_LOCKED)
             lbl = getattr(self, "_minimax_blocks_count", None)
             if lbl is not None and lbl.winfo_exists():
-                lbl.config(text=f"photos: {MINIMAX_LIKENESS_BLOCKS} · clips: see video restriction",
+                lbl.config(text=f"photos and clips: {MINIMAX_LIKENESS_BLOCKS}",
                            fg=COLORS["text_explain"])
         else:
             combo.config(state="")               # editable, the widget's natural state
@@ -7675,7 +7691,9 @@ class LoRATrainerGUI:
                   # and ignored by the builder there — its saved value is left alone so it
                   # comes back exactly as set when FT is unticked.
                   getattr(self, "_minimax_adapter_cb", None),
-                  getattr(self, "_minimax_adapter_hint", None)):
+                  getattr(self, "_minimax_adapter_hint", None),
+                  getattr(self, "_minimax_tread_cb", None),
+                  getattr(self, "_minimax_tread_hint", None)):
             if w is not None:
                 self._set_widget_visible(w, not on)
         if hasattr(self, "_network_type_rowf"):
@@ -7894,6 +7912,8 @@ class LoRATrainerGUI:
                   self._minimax_blocks_label, self._minimax_blocks_frame, self._minimax_blocks_hint,
                   self._minimax_likeness_cb, self._minimax_likeness_hint,
                   self._minimax_adapter_cb, self._minimax_adapter_hint,
+                  self._minimax_tread_cb, self._minimax_tread_hint,
+                  self._minimax_clipstill_cb, self._minimax_clipstill_hint,
                   self._minimax_distill_frame, self._minimax_distill_hint,
                   self._minimax_quant_label, self._minimax_quant_frame,
                   self._minimax_quant_hint,
@@ -28418,10 +28438,11 @@ class LoRATrainerGUI:
             "MINIMAX_BLOCKS": ("all" if self.entries["MINIMAX_LIKENESS_OPT"].get()
                                else minimax_block_spec(self.entries["MINIMAX_BLOCKS"].get())),
             "MINIMAX_LIKENESS_OPT": bool(self.entries["MINIMAX_LIKENESS_OPT"].get()),
-            "MINIMAX_FT_CLIP_LIKENESS": bool(self.entries["MINIMAX_FT_CLIP_LIKENESS"].get())
-            if "MINIMAX_FT_CLIP_LIKENESS" in self.entries else True,
             "MINIMAX_TRAIN_ADALN": bool(self.entries["MINIMAX_TRAIN_ADALN"].get()),
             "MINIMAX_TRAINING_ADAPTER": bool(self.entries["MINIMAX_TRAINING_ADAPTER"].get()),
+            # experiment/tread: both ticks must be copied here or the builder reads a stale value
+            "MINIMAX_TREAD": bool(self.entries["MINIMAX_TREAD"].get()),
+            "MINIMAX_CLIP_STILL": bool(self.entries["MINIMAX_CLIP_STILL"].get()),
             "MINIMAX_DISTILL": bool(self.minimax_distill_var.get()),
             # Canonical key ("fl2va"/"ref2va"), never the display label. Preset-immune by
             # design — the var is outside self.entries and _collect_preset_values skips it.
@@ -29008,6 +29029,10 @@ class LoRATrainerGUI:
             _avae = self._krea2_pref("minimax_audio_vae")
             if _avae:
                 cmd += ["--audio_vae", _avae]
+            # Clip stills are picked + encoded at cache time; with --skip_existing the script
+            # re-encodes only the clips that have no pick yet.
+            if self.settings.get("MINIMAX_CLIP_STILL"):
+                cmd += ["--clip_still"]
             return cmd
         arch = self.settings["ARCHITECTURE"]
         python_path = self._venv_python()
@@ -29669,11 +29694,9 @@ class LoRATrainerGUI:
         # freezing on mixed). --train_blocks stays adapter-only and is never emitted under FT.
         if self.settings.get("MINIMAX_LIKENESS_OPT"):
             cmd += ["--photo_blocks", MINIMAX_LIKENESS_BLOCKS]
-            # Restrict video to likeness blocks (on by default with likeness, LoRA and FT
-            # alike): a confined overnight video run trained perfectly well (field, 29 Aug).
-            # Unticked, clips keep the original whole-model behaviour.
-            if self.settings.get("MINIMAX_FT_CLIP_LIKENESS", True):
-                cmd += ["--clip_blocks", MINIMAX_LIKENESS_BLOCKS]
+            # Clips are confined too — always, under likeness (a confined overnight video run
+            # trained perfectly well, 29 Aug; the sub-tick was retired 7 Sep).
+            cmd += ["--clip_blocks", MINIMAX_LIKENESS_BLOCKS]
         # Voice routing — audio steps train only the measured voice zone (34-49): outside it
         # they corrupt the visual blocks (A/B, 24 Aug). Under FT it always travels (the
         # trainer also tightens the cycle to the union of what the dataset trains); in LoRA
@@ -29832,6 +29855,11 @@ class LoRATrainerGUI:
             _adapter = self._krea2_pref(self._minimax_adapter_pref_key())
             if _adapter:
                 cmd += ["--training_adapter_path", _adapter]
+        # TREAD token routing (experiment) — LoRA runs only, half the video tokens, blocks 2-46.
+        if self.settings.get("MINIMAX_TREAD") and not _mft_cmd_on:
+            cmd += ["--tread_ratio", "0.5", "--tread_start", "2", "--tread_end", "47"]
+        if self.settings.get("MINIMAX_CLIP_STILL"):
+            cmd += ["--clip_still_as_photo"]
         # Context LoRA — an existing H3 LoRA frozen + active under the trainable one (LoRA runs
         # only; validation refuses the fine-tune combination before we get here).
         ctx_path = (self.settings.get("CONTEXT_LORA_PATH") or "").strip()

@@ -250,10 +250,12 @@ Each has a **Download link on its row in Preferences**:
 Every control has a hint in the app; the highlights:
 
 - **Training Structure** (default **Likeness and Style**) — how much of the run trains on nearly-clean images, where likeness *and* style live. **Model default, movement** is the reference trainer's schedule; **Custom** exposes the raw percentage. **Medium to High Noise LR** beside it is best left at 100.
-- **Optimised Likeness Learning** (default On) — photo steps train the identity blocks (20-49) only; clips train the full model. The measured best recipe for character and voice work — untick for style or scene training.
+- **Optimised Likeness Learning** (default On) — photo and clip steps train the identity blocks (20-49) only, voice steps the audio zone (34-49). The measured best recipe for character and voice work, and confining clips this way trains video just as well while making clip steps far lighter on VRAM. Untick for style or scene training, which trains the whole model.
+- **TREAD token routing** (default On, LoRA runs) — on every clip step a random half of the video tokens leaves the sequence at block 2 and rejoins at block 47 unchanged, so 45 of the 50 blocks process half the tokens (Krause et al., arXiv 2501.04765). Clip steps get markedly faster; the trained LoRA is an ordinary LoRA and previews never route. Photos — and the clip stills below — always run in full: a still has no neighbouring frames to lean on, and it is where the sharp identity signal lives. Untick to A/B against a plain run.
+- **Also train each clip's sharpest face frame as a photo** (default On) — when the clips are cached, every frame is scored for focus and the sharpest one that shows a face is picked (the score is taken on the face itself, so subject motion blur decides, not background texture) and encoded as a still. It then trains on a step of its own with the clip's caption: a sharp second look at every subject, at no cost to the clip step. Clips cached before this was on use frame 0 until they are re-cached — the cache step at the next launch adds the picks to just those clips. Voice items are unaffected.
 - **Blocks to Train** — hand-pick a subset of H3's 50 blocks (disabled while Optimised Likeness Learning owns the choice). The measured recipes: **`20-49` for likeness**, **`0-3, 6-47` for style** (the Style preset sets it), voice core `38-48`. Type ranges (`3-12, 22, 31-33`) to experiment beyond them.
 - **Reference distillation** (experimental) — teaches the LoRA to render your subject from the trigger word the way H3 renders them from a *photo*: each image is marked against the model shown *other* photos of the same person, so identity is learned without the scenery. Needs the ref2va model; the LoRA deploys on the ordinary model. **Identity-first** (Auto) trains a teacher-only first phase, then pure photos. A separate, deliberate tick — Multi Concept no longer switches it on for you.
-- **Multi Concept** — two subjects, two folders, two trigger words, one LoRA. Each subject's images are only ever compared against their own. Ticking it sets caption dropout to 0.10 (strong) and nothing else; separation rests on the trigger words, which in our tests is what actually does the work.
+- **Multi Concept** — two subjects, two folders, two trigger words, one LoRA. Each subject's images are only ever compared against their own. Ticking it changes nothing else — caption dropout stays as you set it (in our A/B, one folder *with* dropout beat two without); separation rests on the trigger words, which is what actually does the work.
 - **Adapter-relative LR** (default Off) — the LR box becomes a ceiling the run climbs toward, keeping each step proportional to the adapter's size. Worth trying when a run overshoots early.
 - **Caption dropout** (default 0.05) and **Weight averaging (EMA)** (default Off) — leave dropout on; switch EMA on when pushing LR hard.
 - **Using the Turbo LoRA in ComfyUI? Skip its custom sampler** — current ComfyUI samples H3 audio cleanly with stock Euler; community consensus is 8 steps, with `minimax_h3_turbo_v4_step600_ema` the strongest checkpoint.
@@ -309,9 +311,9 @@ tick Fine-tune, let the settings switch themselves, and change almost nothing.
 A few things worth knowing about that table: clip lengths follow Gizmo's grid, so **2.3 s
 means the 56-frame slot** — cut your clips there and everything fits, **confirmed by
 measured runs on every tier**. On **32 GB, 3.8 s is also confirmed**, even with video
-training the whole model. Beyond that, the **Restrict video to likeness blocks** tickbox
-(on by default with Optimised Likeness Learning — in our tests it trains video just as
-well, and it makes clips far lighter) extends the *expected* range: **up to 5.2 s on
+training the whole model. Beyond that, **Optimised Likeness Learning** (on by default;
+it confines clips to the likeness blocks — in our tests that trains video just as well,
+and it makes clips far lighter) extends the *expected* range: **up to 5.2 s on
 24 GB and 32 GB, and 3.8 s on 16 GB** — conservative arithmetic from the measured
 constants, not yet individually measured, so treat those as expected rather than
 promised. Whole-model 5.2 s clips need more than 32 GB (measured). With the restriction

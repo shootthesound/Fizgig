@@ -28,7 +28,9 @@ logger = logging.getLogger(__name__)
 # --- cache writers -----------------------------------------------------------
 def save_latent_cache_minimax(item_info: ItemInfo, latent: torch.Tensor,
                               audio_latent: torch.Tensor = None,
-                              audio_only: bool = False) -> None:
+                              audio_only: bool = False,
+                              still_latent: torch.Tensor = None,
+                              still_frame: int = None) -> None:
     """Save an H3 VAE latent to the item's cache file, optionally with the clip's audio.
 
     Two shapes, two keys, and the still one is unchanged on purpose:
@@ -72,6 +74,14 @@ def save_latent_cache_minimax(item_info: ItemInfo, latent: torch.Tensor,
     if audio_only:
         assert audio_latent is not None, "an audio-only item with no audio rows trains nothing"
         sd["audio_only"] = torch.tensor(True)
+    if still_latent is not None:
+        # The clip's chosen frame encoded as an ordinary still (C, H, W) — the "clip still as a
+        # photo" training item. Keyed OFF `latent_` on purpose: the collate must never see it
+        # as a second latent; __getitem__ swaps it in for the derived still item and drops it
+        # for the clip itself. `still_frame` records which pixel frame it was.
+        assert still_latent.dim() == 3, f"still_latent must be (C, H, W), got {tuple(still_latent.shape)}"
+        sd["still_latent"] = still_latent.detach().cpu().contiguous()
+        sd["still_frame"] = torch.tensor(int(still_frame if still_frame is not None else 0))
     for key, value in sd.items():
         if value.is_floating_point() and torch.isnan(value).any():
             logger.warning(f"NaN in {key} for {item_info.item_key} - replaced with 0")
@@ -183,8 +193,11 @@ def _is_clip(item: ItemInfo) -> bool:
     return is_video(str(item.item_key)) and isinstance(item.content, list) and len(item.content) > 1
 
 
-def _encode_clip(vae, item: ItemInfo, audio_vae, device, dtype) -> None:
-    """One clip -> one cache file holding its video latent and, if it has sound, its audio rows."""
+def _encode_clip(vae, item: ItemInfo, audio_vae, device, dtype, clip_still: bool = False) -> None:
+    """One clip -> one cache file holding its video latent and, if it has sound, its audio rows.
+
+    clip_still: also pick the clip's sharpest frame that shows a face (still_pick) and encode it
+    as an ordinary still into the same file, for the "clip still as a photo" training item."""
     from fizgig.minimax.audio import HOP_LENGTH
     from fizgig.minimax.clip import read_audio
     from fizgig.minimax.model import audio_latents_for_frames
@@ -197,6 +210,18 @@ def _encode_clip(vae, item: ItemInfo, audio_vae, device, dtype) -> None:
         # the latent frame count match the DiT's clock and what keeps peak VRAM off the clip's
         # length. See MiniMaxH3VideoVAEEncoder.encode_clip.
         latent = vae.encode_clip(x.to(device, dtype=dtype))[0]   # (24, T', H/16, W/16)
+
+    still_latent, still_frame = None, None
+    if clip_still:
+        from fizgig.minimax.still_pick import pick_still_frame
+        still_frame, info = pick_still_frame(frames.numpy())
+        with torch.no_grad():
+            still_latent = vae.encode(x[:, :, still_frame:still_frame + 1].to(device, dtype=dtype))[0]
+        still_latent = still_latent.squeeze(1) if still_latent.dim() == 4 else still_latent
+        logger.info("[still] %s: frame %d of %d (%s, face sharpness %.0f, %d detections)",
+                    os.path.basename(str(item.item_key)), still_frame, n_frames,
+                    "sharpest with a face" if info["face"] else "NO FACE FOUND — frame 0",
+                    info["score"], info["detections"])
 
     audio_rows = None
     if audio_vae is not None:
@@ -244,7 +269,9 @@ def _encode_clip(vae, item: ItemInfo, audio_vae, device, dtype) -> None:
 
     logger.info("latent cache: %s -> %s%s", item.item_key, tuple(latent.shape),
                 f" + audio {tuple(audio_rows.shape)}" if audio_rows is not None else " (no audio)")
-    save_latent_cache_minimax(item, latent.cpu(), audio_latent=audio_rows)
+    save_latent_cache_minimax(item, latent.cpu(), audio_latent=audio_rows,
+                              still_latent=None if still_latent is None else still_latent.cpu(),
+                              still_frame=still_frame)
 
 
 # --- audio-only voice items --------------------------------------------------
@@ -293,7 +320,8 @@ def _encode_audio_item(item: ItemInfo, audio_vae) -> None:
 
 
 # --- batch encoders (called by the cache scripts) ----------------------------
-def encode_and_save_latents(vae, batch: List[ItemInfo], audio_vae=None) -> None:
+def encode_and_save_latents(vae, batch: List[ItemInfo], audio_vae=None,
+                            clip_still: bool = False) -> None:
     """Encode a batch through the H3 video VAE and save each 24-ch latent.
 
     A CLIP takes a different route: its content is the whole list of frames, encoded together so
@@ -327,7 +355,7 @@ def encode_and_save_latents(vae, batch: List[ItemInfo], audio_vae=None) -> None:
             raise ValueError("a batch mixes clips and stills — MiniMax caches clips one at a "
                              "time; set Batch Size to 1")
         for item in clips:
-            _encode_clip(vae, item, audio_vae, device, dtype)
+            _encode_clip(vae, item, audio_vae, device, dtype, clip_still=clip_still)
         return
 
     contents = []

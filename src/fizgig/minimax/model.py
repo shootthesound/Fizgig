@@ -947,7 +947,34 @@ class MiniMaxH3DiT(nn.Module):
         # LoRA training (grads flow through it regardless), so a training-mode gate would
         # silently disable checkpointing for exactly the runs that need it.
         use_ckpt = self._gradient_checkpointing and torch.is_grad_enabled()
+        # TREAD token routing (Krause et al., arXiv 2501.04765; experiment/tread branch): on
+        # a TRAINING forward, a random `ratio` of the VIDEO rows leaves the sequence at block
+        # `start` and rejoins at block `end` in its start-block state (identity), so the
+        # blocks in between process fewer tokens; text / condition / audio rows always stay,
+        # the loss covers every token, and inference (no grad) never routes. Set by the
+        # trainer as dit._tread = (ratio, start, end); None = off. CLIP steps only: a photo
+        # (one latent frame) has no near-duplicate neighbouring frames to lean on, and the
+        # stills are where the sharp identity signal lives, so they always run in full
+        # (Peter, 7 Sep 2026, after seeing the A/B).
+        route = None
+        _tread = getattr(self, "_tread", None) if torch.is_grad_enabled() else None
+        n_video = h.shape[0] - video_start
+        if _tread and latent_t == 1:
+            _tread = None
+        if _tread and n_video > 1:
+            _ratio, _start, _end = float(_tread[0]), int(_tread[1]), int(_tread[2])
+            _end = min(_end, len(self.blocks))
+            if 0.0 < _ratio < 1.0 and 0 <= _start < _end:
+                n_keep = max(1, int(round(n_video * (1.0 - _ratio))))
+                perm = torch.randperm(n_video, device=h.device)
+                keep_vid = perm[:n_keep].sort().values + video_start
+                keep_idx = torch.cat([torch.arange(video_start, device=h.device), keep_vid])
+                route = (_start, _end, keep_idx)
         for i in range(len(self.blocks)):
+            if route is not None and i == route[0]:
+                _full = (h, cos, sin, mod_row)
+                _k = route[2]
+                h, cos, sin, mod_row = h[_k], cos[_k], sin[_k], mod_row[_k]
             if use_ckpt:
                 h = torch.utils.checkpoint.checkpoint(
                     _run_block, self.blocks, i, self._swap_from, h, t_emb, mod_row, cos, sin,
@@ -957,6 +984,13 @@ class MiniMaxH3DiT(nn.Module):
                 if _ev is not None and _ev.is_set():
                     raise ForwardAborted()
                 h = _run_block(self.blocks, i, self._swap_from, h, t_emb, mod_row, cos, sin)
+            if route is not None and i + 1 == route[1]:
+                # rejoin: routed rows come back in their start-block state (identity)
+                h_full, cos, sin, mod_row = _full
+                h_new = h_full.clone()
+                h_new[route[2]] = h
+                h = h_new
+                _full = None
             # H2D streaming: the block's forward is done — free its ring slot and start the
             # copy for the block ring_size ahead, overlapping the next blocks' compute. Sits
             # OUTSIDE the checkpoint call: it must run once per forward pass, not again per

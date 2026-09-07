@@ -2433,9 +2433,9 @@ def train_minimax(
     tread_start: int = 2,
     tread_end: int = 47,
     tread_skip_photos: bool = False,     # route clip steps only; photo steps go through in full
-    # Every clip's first frame also trains as a photo (its own step, the clip's caption) —
-    # sliced from the clip's cached latent, nothing re-encoded (Peter, 7 Sep 2026).
-    clip_first_frame_as_photo: bool = False,
+    # Every clip's sharpest face frame (picked + cached by --clip_still) also trains as a
+    # photo: its own step, the clip's caption. Frame 0 when the cache has no pick (Peter, 7 Sep).
+    clip_still_as_photo: bool = False,
     # Previews with sound: decode the jointly-denoised audio rows to a .wav beside each clip
     # sample. Needs the audio VAE (its decoder half); silently off without it.
     sample_audio: bool = False,
@@ -2614,10 +2614,10 @@ def train_minimax(
     # ---- dataset (built from the caches the two cache scripts wrote) ----
     shared_epoch = Value("i", 0)
     from fizgig.dataset.image_dataset import ImageDataset as _ImageDataset
-    _ImageDataset.clip_first_frame_as_photo = bool(clip_first_frame_as_photo)
-    if clip_first_frame_as_photo:
-        logger.info("[dataset] clip first frames train as photos too (their own steps, the "
-                    "clip's caption; sliced from the cached clip latent)")
+    _ImageDataset.clip_still_as_photo = bool(clip_still_as_photo)
+    if clip_still_as_photo:
+        logger.info("[dataset] clip stills train as photos too (each clip's sharpest frame "
+                    "with a face, on its own step with the clip's caption)")
     user_config = load_user_config(dataset_config)
     blueprint = BlueprintGenerator(ConfigSanitizer()).generate(
         user_config, argparse.Namespace(), architecture=ARCHITECTURE_MINIMAX)
@@ -3484,7 +3484,7 @@ def train_minimax(
                     float(tread_ratio) * 100, int(tread_start), int(tread_end) - 1,
                     "CLIP" if tread_skip_photos else "training", int(tread_start))
         if tread_skip_photos:
-            logger.info("[tread] photo steps are NOT routed — every still (clip first frames "
+            logger.info("[tread] photo steps are NOT routed — every still (clip stills "
                         "included) goes through the model in full")
     if training_adapter_path or context_lora_path:
         if rotator is not None:
@@ -4182,7 +4182,7 @@ def train_minimax(
             "ss_tread": ((f"{float(tread_ratio):g}@{int(tread_start)}-{int(tread_end)}"
                           + (" clips-only" if tread_skip_photos else ""))
                          if tread_ratio and float(tread_ratio) > 0 else "off"),
-            "ss_clip_first_frame_as_photo": str(bool(clip_first_frame_as_photo)),
+            "ss_clip_still_as_photo": str(bool(clip_still_as_photo)),
             "ss_training_adapter": (os.path.basename(training_adapter_path)
                                     if training_adapter_path else "none"),
             "ss_slow_blocks": _slow_used or "none",

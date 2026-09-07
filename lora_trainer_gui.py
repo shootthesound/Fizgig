@@ -4938,23 +4938,24 @@ class LoRATrainerGUI:
             variable=self.entries["MINIMAX_TREAD_SKIP_PHOTOS"])
         self._minimax_tread_photos_cb.grid(row=48, column=0, columnspan=2, sticky=tk.W,
                                            padx=(28, 5), pady=(0, 4))
-        # --- clip first frames as photos (Peter, 7 Sep 2026) — MiniMax, LoRA and FT ---------
-        self.entries["MINIMAX_CLIP_FIRST_FRAME"] = tk.BooleanVar(
-            value=bool(self.settings.get("MINIMAX_CLIP_FIRST_FRAME", False)))
-        self._minimax_firstframe_cb = ttk.Checkbutton(
-            training_content, text="Also train each clip's first frame as a photo",
-            variable=self.entries["MINIMAX_CLIP_FIRST_FRAME"])
-        self._minimax_firstframe_cb.grid(row=46, column=0, columnspan=2, sticky=tk.W,
-                                         padx=5, pady=(8, 0))
-        self._minimax_firstframe_hint = ttk.Label(
+        # --- clip stills as photos (Peter, 7 Sep 2026) — MiniMax, LoRA and FT ---------------
+        self.entries["MINIMAX_CLIP_STILL"] = tk.BooleanVar(
+            value=bool(self.settings.get("MINIMAX_CLIP_STILL", False)))
+        self._minimax_clipstill_cb = ttk.Checkbutton(
+            training_content, text="Also train each clip's sharpest face frame as a photo",
+            variable=self.entries["MINIMAX_CLIP_STILL"])
+        self._minimax_clipstill_cb.grid(row=46, column=0, columnspan=2, sticky=tk.W,
+                                        padx=5, pady=(8, 0))
+        self._minimax_clipstill_hint = ttk.Label(
             training_content,
-            text="Every clip's first frame also trains as a still on a step of its own, with the "
-                 "clip's caption. It is sliced from the clip's cached latent, so nothing is "
-                 "re-encoded and caching is unchanged. A cheap second look at every subject at "
-                 "full resolution — the frame fl2va pins to. Voice items are unaffected.",
+            text="When the clips are cached, the sharpest frame that shows a face is picked from "
+                 "each one (face-crop focus score, InsightFace on CPU) and encoded as a still. "
+                 "That still then trains on a step of its own with the clip's caption — a second "
+                 "look at every subject, sharp. Clips cached before this was ticked have no pick "
+                 "and use frame 0 until re-cached (Flush cache). Voice items are unaffected.",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
-        self._minimax_firstframe_hint.grid(row=47, column=0, columnspan=2, sticky=tk.W,
-                                           padx=5, pady=(0, 4))
+        self._minimax_clipstill_hint.grid(row=47, column=0, columnspan=2, sticky=tk.W,
+                                          padx=5, pady=(0, 4))
 
         # Answers "when do changes take effect?" (issue #40) right where people wonder it.
         ttk.Label(training_content,
@@ -7940,7 +7941,7 @@ class LoRATrainerGUI:
                   self._minimax_adapter_cb, self._minimax_adapter_hint,
                   self._minimax_tread_cb, self._minimax_tread_hint,
                   self._minimax_tread_photos_cb,
-                  self._minimax_firstframe_cb, self._minimax_firstframe_hint,
+                  self._minimax_clipstill_cb, self._minimax_clipstill_hint,
                   self._minimax_distill_frame, self._minimax_distill_hint,
                   self._minimax_quant_label, self._minimax_quant_frame,
                   self._minimax_quant_hint,
@@ -28472,7 +28473,7 @@ class LoRATrainerGUI:
             # experiment/tread: both ticks must be copied here or the builder reads a stale value
             "MINIMAX_TREAD": bool(self.entries["MINIMAX_TREAD"].get()),
             "MINIMAX_TREAD_SKIP_PHOTOS": bool(self.entries["MINIMAX_TREAD_SKIP_PHOTOS"].get()),
-            "MINIMAX_CLIP_FIRST_FRAME": bool(self.entries["MINIMAX_CLIP_FIRST_FRAME"].get()),
+            "MINIMAX_CLIP_STILL": bool(self.entries["MINIMAX_CLIP_STILL"].get()),
             "MINIMAX_DISTILL": bool(self.minimax_distill_var.get()),
             # Canonical key ("fl2va"/"ref2va"), never the display label. Preset-immune by
             # design — the var is outside self.entries and _collect_preset_values skips it.
@@ -29059,6 +29060,10 @@ class LoRATrainerGUI:
             _avae = self._krea2_pref("minimax_audio_vae")
             if _avae:
                 cmd += ["--audio_vae", _avae]
+            # Clip stills are picked + encoded at cache time; with --skip_existing the script
+            # re-encodes only the clips that have no pick yet.
+            if self.settings.get("MINIMAX_CLIP_STILL"):
+                cmd += ["--clip_still"]
             return cmd
         arch = self.settings["ARCHITECTURE"]
         python_path = self._venv_python()
@@ -29888,8 +29893,8 @@ class LoRATrainerGUI:
             cmd += ["--tread_ratio", "0.5", "--tread_start", "2", "--tread_end", "47"]
             if self.settings.get("MINIMAX_TREAD_SKIP_PHOTOS"):
                 cmd += ["--tread_skip_photos"]
-        if self.settings.get("MINIMAX_CLIP_FIRST_FRAME"):
-            cmd += ["--clip_first_frame_as_photo"]
+        if self.settings.get("MINIMAX_CLIP_STILL"):
+            cmd += ["--clip_still_as_photo"]
         # Context LoRA — an existing H3 LoRA frozen + active under the trainable one (LoRA runs
         # only; validation refuses the fine-tune combination before we get here).
         ctx_path = (self.settings.get("CONTEXT_LORA_PATH") or "").strip()

@@ -101,11 +101,16 @@ def encode_datasets(datasets, encode_fn, args):
                 # identical by name. Re-encode (overwrite) whenever the contained latent
                 # doesn't match the current bucket — that is the wipe-on-resolution-change.
                 from fizgig.dataset.image_dataset import ImageDataset as _ID
+                # An optional per-architecture hook (args.needs_reencode(path) -> bool) can
+                # veto the skip for a file that exists and matches — MiniMax uses it for a
+                # clip cached without the still that --clip_still asks for.
+                _needs = getattr(args, "needs_reencode", None)
                 batch = [item for item in batch
                          if not os.path.exists(item.latent_cache_path)
                          or _ID.latent_cache_matches_reso(item.latent_cache_path,
                                                           item.bucket_size,
-                                                          dataset.architecture) is not True]
+                                                          dataset.architecture) is not True
+                         or (_needs is not None and _needs(item.latent_cache_path))]
                 if not batch:
                     continue
 

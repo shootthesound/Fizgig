@@ -245,11 +245,12 @@ def setup_parser() -> argparse.ArgumentParser:
     p.add_argument("--tread_start", type=int, default=2)
     p.add_argument("--tread_end", type=int, default=47)
     p.add_argument("--tread_skip_photos", action="store_true",
-                   help="With TREAD on: route clip steps only — photo steps (clip first "
-                        "frames included) go through the model in full.")
-    p.add_argument("--clip_first_frame_as_photo", action="store_true",
-                   help="Every clip's first frame also trains as a photo on its own step, with the "
-                        "clip's caption — sliced from the cached clip latent, nothing re-encoded. "
+                   help="With TREAD on: route clip steps only — photo steps (clip stills "
+                        "included) go through the model in full.")
+    p.add_argument("--clip_still_as_photo", action="store_true",
+                   help="Every clip's picked still (its sharpest frame with a face, cached by "
+                        "minimax_cache_latents --clip_still) also trains as a photo on its own "
+                        "step, with the clip's caption. Frame 0 for clips cached without a pick. "
                         "Voice items unaffected.")
     p.add_argument("--sample_audio", action="store_true",
                    help="Clip previews carry their generated SOUND: the jointly-denoised "
@@ -401,7 +402,7 @@ def main():
         tread_start=args.tread_start,
         tread_end=args.tread_end,
         tread_skip_photos=args.tread_skip_photos,
-        clip_first_frame_as_photo=args.clip_first_frame_as_photo,
+        clip_still_as_photo=args.clip_still_as_photo,
         sample_audio=args.sample_audio,
         audio_vae_path=args.audio_vae,
         finetune_rotation=args.finetune_rotation,

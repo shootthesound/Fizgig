@@ -44,6 +44,10 @@ def setup_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num_workers", type=int, default=None, help="Number of workers")
     parser.add_argument("--skip_existing", action="store_true", help="Skip existing cache files")
     parser.add_argument("--keep_cache", action="store_true", help="Keep stale cache files")
+    parser.add_argument("--clip_still", action="store_true",
+                        help="For every clip, also pick its sharpest frame that shows a face and "
+                             "cache it as a still (the 'clip still as a photo' training item). "
+                             "With --skip_existing, clips cached without one are re-encoded.")
     return parser
 
 
@@ -88,7 +92,14 @@ def main():
         logger.info("[clip] no --audio_vae given: clips will train video only, and any sound "
                     "they carry is ignored.")
 
-    encode_datasets(datasets, lambda batch: encode_and_save_latents(vae, batch, audio_vae), args)
+    if args.clip_still:
+        # --skip_existing keeps a valid clip cache; this hook says a clip cached WITHOUT its
+        # still is not yet what this run asked for, so it goes through the encoder again.
+        from fizgig.dataset.image_dataset import ImageDataset as _ID
+        args.needs_reencode = (lambda path: _ID.latent_cache_frames(path) > 1
+                               and not _ID.latent_cache_has_still(path))
+    encode_datasets(datasets, lambda batch: encode_and_save_latents(vae, batch, audio_vae,
+                                                                    clip_still=args.clip_still), args)
 
 
 if __name__ == "__main__":

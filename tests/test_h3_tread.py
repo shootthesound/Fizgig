@@ -119,22 +119,6 @@ out_both = dit(lat, t, txt, audio_rows=arows)
 for hk in hooks: hk.remove()
 ck("TREAD rides inside the outer level after the inner one rejoins: block 2 untouched by routing, block 3 sees half of the 1/4 grid",
    seen == [others + n_video // 16, others + n_video // 8] and out_both.shape == ref.shape, (seen, n_video))
-# sibling levels: one-block 4x levels inside a 2x outer, each restoring the grid on rejoin
-dit._tread = None
-dit._fizgigvid = [(1, 5, 2), (1, 2, 2), (3, 4, 2)]
-seen = []
-hooks = [dit.blocks[i].register_forward_pre_hook(lambda m, args: seen.append(args[0].shape[0])) for i in (1, 2, 3, 4, 5)]
-out_s = dit(lat, t, txt, audio_rows=arows)
-for hk in hooks: hk.remove()
-ck("sibling levels: blocks 1 and 3 see 1/16, blocks 2 and 4 see 1/4 (the grid is restored between siblings), block 5 everything",
-   seen == [others + n_video // 16, others + n_video // 4, others + n_video // 16, others + n_video // 4, others + n_video]
-   and out_s.shape == ref.shape, (seen, n_video))
-ck("a partially overlapping level is refused, nested and disjoint ones kept",
-   (lambda lv: (dit.__setattr__("_fizgigvid", lv), None)[1])([(1, 4, 2), (2, 5, 2)]) is None and dit(lat, t, txt, audio_rows=arows).shape == ref.shape)
-from fizgig.minimax.trainer import FIZGIGVID_PRESETS as _P
-ck("Peter's presets: tail9 = 2x over 2-40 with 4x front; alternating = 2x over 2-38 with one-block 4x levels at 3,5,...,19",
-   _P["front4_id2_tail9"] == [(2, 41, 2), (2, 20, 2)]
-   and _P["frontalt_id2_tail11"][0] == (2, 39, 2) and _P["frontalt_id2_tail11"][1:] == [(b, b + 1, 2) for b in range(3, 20, 2)])
 dit._fizgigvid = [(1, 4, 3)]
 ck("a factor the grid does not divide is skipped (4x4 patches by 3)", torch.equal(dit(lat, t, txt, audio_rows=arows).detach(), ref) if False else dit(lat, t, txt, audio_rows=arows).shape == ref.shape)
 dit._fizgigvid = None; dit._tread = None

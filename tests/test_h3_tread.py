@@ -134,8 +134,7 @@ ck("a partially overlapping level is refused, nested and disjoint ones kept",
 from fizgig.minimax.trainer import FIZGIGVID_PRESETS as _P
 ck("Peter's presets: tail9 = 2x over 2-40 with 4x front; alternating = 2x over 2-38 with one-block 4x levels at 3,5,...,19",
    _P["front4_id2_tail9"] == [(2, 41, 2), (2, 20, 2)]
-   and _P["frontalt_id2_tail11"][0] == (2, 39, 2) and _P["frontalt_id2_tail11"][1:] == [(b, b + 1, 2) for b in range(3, 20, 2)]
-   and _P["front2_only"] == [(2, 20, 2)])
+   and _P["frontalt_id2_tail11"][0] == (2, 39, 2) and _P["frontalt_id2_tail11"][1:] == [(b, b + 1, 2) for b in range(3, 20, 2)])
 dit._fizgigvid = [(1, 4, 3)]
 ck("a factor the grid does not divide is skipped (4x4 patches by 3)", torch.equal(dit(lat, t, txt, audio_rows=arows).detach(), ref) if False else dit(lat, t, txt, audio_rows=arows).shape == ref.shape)
 dit._fizgigvid = None; dit._tread = None

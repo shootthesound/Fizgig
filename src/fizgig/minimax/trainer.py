@@ -1297,9 +1297,6 @@ FIZGIGVID_PRESETS = {
     # ...and an alternating front: 0-1 full, blocks 2-19 alternate 2x / 4x (2 at 2x, 3 at 4x,
     # ... 19 at 4x), 20-38 at 2x, 39-49 full
     "frontalt_id2_tail11": [(2, 39, 2)] + [(b, b + 1, 2) for b in range(3, 20, 2)],
-    # Peter's, 6 Sep: only the frozen front thinned — 0-1 full, 2-19 at 2x, 20-49 full, so
-    # every learning block sees native tokens and the saving is the front's compute alone
-    "front2_only": [(2, 20, 2)],
 }
 
 

@@ -132,8 +132,12 @@ class _Int8RotLinearFn(torch.autograd.Function):
     # FIZGIG_NO_TRITON_W8A16=1. Falls back to the eager path when Triton is missing, the
     # input is not CUDA-bf16, or the kernel ever raises (logged once).
     _w8a16_state = {"checked": False, "use": False, "announced": False}
-    # Dave Maybank's (@mabseyuk) fused W8A16 BACKWARD GEMM — opt IN with
-    # FIZGIG_TRITON_W8A16_BACKWARD=1 (convrot_w8a16_backward_triton.py). Same fallback rules.
+    # Dave Maybank's (@mabseyuk) fused W8A16 BACKWARD GEMM (convrot_w8a16_backward_triton.py)
+    # — ON by default on the int8 base (Peter, 7 Sep 2026: measured +2-8% per step, never
+    # negative, across 32 GB / streamed / 0.5 MP runs), opt OUT with
+    # FIZGIG_NO_TRITON_W8A16_BACKWARD=1. It only ever runs alongside the forward kernel: on
+    # its own it measured slightly slower than eager, so the forward's opt-out covers both.
+    # Same fallback rules as the forward.
     _w8a16_bwd_state = {"checked": False, "use": False, "announced": False}
 
     @classmethod
@@ -142,7 +146,8 @@ class _Int8RotLinearFn(torch.autograd.Function):
         if not st["checked"]:
             st["checked"] = True
             import os as _os
-            if _os.environ.get("FIZGIG_TRITON_W8A16_BACKWARD") == "1":
+            if (_os.environ.get("FIZGIG_NO_TRITON_W8A16_BACKWARD") != "1"
+                    and cls._w8a16_state["checked"] and cls._w8a16_state["use"]):
                 try:
                     from fizgig.minimax.convrot_w8a16_backward_triton import TRITON_AVAILABLE
                     st["use"] = bool(TRITON_AVAILABLE)
@@ -153,8 +158,8 @@ class _Int8RotLinearFn(torch.autograd.Function):
             return False
         if not st["announced"]:
             st["announced"] = True
-            print("[convrot] fused W8A16 Triton BACKWARD kernel active (Dave Maybank, @mabseyuk)",
-                  flush=True)
+            print("[convrot] fused W8A16 Triton BACKWARD kernel active (Dave Maybank, @mabseyuk) "
+                  "— opt out with FIZGIG_NO_TRITON_W8A16_BACKWARD=1", flush=True)
         return True
 
     @classmethod

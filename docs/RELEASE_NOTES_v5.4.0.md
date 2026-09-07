@@ -12,17 +12,17 @@ The fused W8A16 Triton kernel by **[@rintic-13](https://github.com/rintic-13)** 
 
 Both kernels now tune once per token-count bucket instead of once per exact token count. Keyed on the exact count, a first epoch spent minutes re-tuning for every caption length and kept re-tuning as caption dropout shifted lengths; now the tuning is a couple of dozen events in the first steps.
 
-## TREAD token routing, on by default
+## TREAD token routing — on by default, one tick to turn off
 
 TREAD is from [Krause, Phan, Hu and Ommer, *TREAD: Token Routing for Efficient Architecture-agnostic Diffusion Training* (arXiv 2501.04765)](https://arxiv.org/abs/2501.04765). On every clip step a random half of the video tokens leaves the sequence at block 2 and rejoins at block 47 in exactly the state it left in, so 45 of the 50 blocks process half the tokens. Clip steps get markedly faster, and that is the smaller half of the point.
 
 The paper's finding is that routing makes a diffusion model *learn better*, not just cheaper. The late blocks receive a sequence in which half the tokens carry only their early-block state, so they cannot lean on a fully processed neighbour for every position and have to build the prediction from less. That works like a regulariser on the representation: in the paper's experiments the routed model converges in a fraction of the steps of the same model trained plainly and ends at better quality, with nothing added to the architecture and nothing changed at inference. That last part matters here: the trained LoRA is an ordinary LoRA, previews never route, and ComfyUI never knows it happened.
 
-Photos — and the clip stills below — always run in full: a still has no neighbouring frames to lean on, and it is where the sharp identity signal lives. In our A/B the split version — routed clips, untouched stills — was the one that held up, so it is the only version. LoRA runs; untick it on the Training tab to compare against a plain run.
+Photos — and the clip stills below — always run in full: a still has no neighbouring frames to lean on, and it is where the sharp identity signal lives. In our A/B the split version — routed clips, untouched stills — was the one that held up, so it is the only version. It is a tickbox on the Training tab, on in every preset for LoRA runs: untick **TREAD token routing** for a plain run, or to compare.
 
-## Every clip also trains its sharpest face frame as a photo
+## Every clip also trains its sharpest face frame as a photo — optional, on by default
 
-When clips are cached, every frame is scored for focus and the sharpest one that shows a face is picked — the score is taken on the face itself, so subject motion blur decides, not background texture — and encoded as a still. It then trains on a step of its own with the clip's caption: a sharp second look at every subject, at no cost to the clip step. Frame-filling close-ups are handled. On by default in every preset except Style. Clips cached before this was on use frame 0 until they are re-cached; the cache step at your next launch adds the picks to just those clips and leaves everything else alone.
+When clips are cached, every frame is scored for focus and the sharpest one that shows a face is picked — the score is taken on the face itself, so subject motion blur decides, not background texture — and encoded as a still. It then trains on a step of its own with the clip's caption: a sharp second look at every subject, at no cost to the clip step. Frame-filling close-ups are handled. It is the tickbox **Also train each clip's sharpest face frame as a photo** on the Training tab, on in every preset except Style; untick it and clips train as clips only. Clips cached before this was on use frame 0 until they are re-cached; the cache step at your next launch adds the picks to just those clips and leaves everything else alone.
 
 ## Optimised Likeness Learning always confines clips
 

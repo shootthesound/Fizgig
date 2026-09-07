@@ -445,6 +445,12 @@ class BucketBatchManager:
         for item_info in bucket[start:end]:
             sd_latent = load_file(item_info.latent_cache_path)
             sd_te = load_file(item_info.text_encoder_output_cache_path)
+            if getattr(item_info, "first_frame_only", False):
+                # the clip's first frame as a still: [C, T, H, W] -> [C, H, W] (frame 0 of a
+                # causal VAE encodes pixel frame 0 alone), and no sound — a still has none
+                sd_latent = {k: (v[:, 0].contiguous() if (k.startswith("latent_") and v.dim() == 4) else v)
+                             for k, v in sd_latent.items()
+                             if k not in ("audio_latent", "audio_only")}
             sd = {**sd_latent, **sd_te}
             # MiniMax H3 reference distillation only: sibling `..._teref{N}.safetensors` files
             # hold the TEACHER's conditioning (caption + a `<Picture 1>` vision block), its
@@ -692,6 +698,14 @@ class ImageDirectoryDatasource:
 
 class ImageDataset(torch.utils.data.Dataset):
     """Klein 9B image dataset with bucketing, caching, and batch management."""
+
+    # MiniMax H3 only (Peter, 7 Sep 2026): every cached CLIP also contributes its FIRST FRAME
+    # as a photo item — its own step, the clip's own text encoding. H3's video VAE is causal
+    # and its token grid opens with a lone frame, so a clip latent's first temporal slice IS
+    # the still's latent: no extra encode, no extra cache file, just a derived item sliced at
+    # load. Set on the CLASS by the trainer before the dataset group is generated (the
+    # blueprint path builds and prepares the datasets in one go).
+    clip_first_frame_as_photo: bool = False
 
     def __init__(
         self,
@@ -1072,6 +1086,7 @@ class ImageDataset(torch.utils.data.Dataset):
         skipped_stale = 0
         skipped_wrong_reso = 0
         accepted_smaller_clips = 0
+        first_frame_items = 0
 
         bucketed: dict[Tuple, list[ItemInfo]] = {}   # (w, h), or ("audio", w, h) for voice items
         for cache_file in latent_cache_files:
@@ -1125,6 +1140,18 @@ class ImageDataset(torch.utils.data.Dataset):
             bucket = bucketed.get(bucket_key, [])
             for _ in range(self.num_repeats):
                 bucket.append(item_info)
+            # A clip's first frame as a photo of its own (see the class attribute): a
+            # derived item sharing both cache files, sliced in __getitem__. Voice items
+            # (audio sentinel bucket) never qualify; a still (3-D latent) is left alone.
+            if (self.clip_first_frame_as_photo and bucket_key != ("audio",) + AUDIO_SENTINEL_RESO
+                    and self.latent_cache_frames(cache_file) > 1):
+                ff = ItemInfo(item_key + "#frame0", "", image_size, bucket_reso,
+                              latent_cache_path=cache_file)
+                ff.text_encoder_output_cache_path = te_cache
+                ff.first_frame_only = True
+                for _ in range(self.num_repeats):
+                    bucket.append(ff)
+                first_frame_items += self.num_repeats
             bucketed[bucket_key] = bucket
 
         if skipped_stale:
@@ -1144,9 +1171,29 @@ class ImageDataset(torch.utils.data.Dataset):
                 f"training them at the cached size. Re-running cache preparation with more "
                 f"free VRAM re-encodes them at full size.")
 
+        if first_frame_items:
+            logger.info(
+                f"[dataset] {first_frame_items} clip first frame(s) added as photo items — each "
+                f"clip's frame 0 trains as a still on its own step, with the clip's caption "
+                f"(sliced from the clip's own latent; nothing re-encoded).")
         self.batch_manager = BucketBatchManager(bucketed, self.batch_size, num_timestep_buckets=num_timestep_buckets)
         self.batch_manager.show_bucket_info()
         self.num_train_items = sum(len(b) for b in bucketed.values())
+
+    @staticmethod
+    def latent_cache_frames(cache_file: str) -> int:
+        """Latent frames in a cached item, from the header alone (1 for a still or on any
+        trouble reading)."""
+        try:
+            from safetensors import safe_open
+            with safe_open(cache_file, framework="pt") as f:
+                for k in f.keys():
+                    if k.startswith("latent_") and not k.startswith("latent_control_"):
+                        shape = f.get_slice(k).get_shape()
+                        return int(shape[1]) if len(shape) == 4 else 1
+        except Exception:
+            pass
+        return 1
 
     # -- epoch / seed management -------------------------------------------
 

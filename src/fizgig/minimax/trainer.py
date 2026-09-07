@@ -2432,6 +2432,9 @@ def train_minimax(
     tread_ratio: float = 0.0,
     tread_start: int = 2,
     tread_end: int = 47,
+    # Every clip's first frame also trains as a photo (its own step, the clip's caption) —
+    # sliced from the clip's cached latent, nothing re-encoded (Peter, 7 Sep 2026).
+    clip_first_frame_as_photo: bool = False,
     # Previews with sound: decode the jointly-denoised audio rows to a .wav beside each clip
     # sample. Needs the audio VAE (its decoder half); silently off without it.
     sample_audio: bool = False,
@@ -2609,6 +2612,11 @@ def train_minimax(
 
     # ---- dataset (built from the caches the two cache scripts wrote) ----
     shared_epoch = Value("i", 0)
+    from fizgig.dataset.image_dataset import ImageDataset as _ImageDataset
+    _ImageDataset.clip_first_frame_as_photo = bool(clip_first_frame_as_photo)
+    if clip_first_frame_as_photo:
+        logger.info("[dataset] clip first frames train as photos too (their own steps, the "
+                    "clip's caption; sliced from the cached clip latent)")
     user_config = load_user_config(dataset_config)
     blueprint = BlueprintGenerator(ConfigSanitizer()).generate(
         user_config, argparse.Namespace(), architecture=ARCHITECTURE_MINIMAX)
@@ -4168,6 +4176,7 @@ def train_minimax(
                                          if context_lora_path else "0"),
             "ss_tread": (f"{float(tread_ratio):g}@{int(tread_start)}-{int(tread_end)}"
                          if tread_ratio and float(tread_ratio) > 0 else "off"),
+            "ss_clip_first_frame_as_photo": str(bool(clip_first_frame_as_photo)),
             "ss_training_adapter": (os.path.basename(training_adapter_path)
                                     if training_adapter_path else "none"),
             "ss_slow_blocks": _slow_used or "none",

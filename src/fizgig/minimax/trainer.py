@@ -2878,16 +2878,21 @@ def train_minimax(
         # (~21 GB int8) and streams the ~15 GB text encoder through it, on top of whatever
         # int8 staging the plan already holds. On a 32 GB-RAM box that exhausts Windows'
         # commit charge and the failure lands on the GUI as a bitmap-allocation error, not
-        # here (#120, a 24 GB card with 32 GB RAM over RDP). Say so up front.
+        # here (#120, a 24 GB card with 32 GB RAM over RDP). Say so up front — but only
+        # where the whole-base park happens: a 32 GB card keeps the base resident and parks
+        # just what the decode needs, so a 32 GB-RAM box is fine there.
         try:
             import psutil as _ps
             _ram_total_gb = _ps.virtual_memory().total / 1e9
+            _vram_total_gb = (torch.cuda.get_device_properties(0).total_memory / 1e9
+                              if torch.cuda.is_available() else 0.0)
         except Exception:
-            _ram_total_gb = None
-        if _ram_total_gb is not None and _ram_total_gb < 40.0:
+            _ram_total_gb, _vram_total_gb = None, 0.0
+        if _ram_total_gb is not None and _ram_total_gb < 40.0 and 0.0 < _vram_total_gb < 30.0:
             logger.warning(
-                f"[preview] this machine has {_ram_total_gb:.0f} GB of system RAM. Previews park "
-                f"the training base (~21 GB) into RAM and stream the text encoder (~15 GB) "
+                f"[preview] this machine has {_ram_total_gb:.0f} GB of system RAM and a "
+                f"{_vram_total_gb:.0f} GB card. On a card below 32 GB each preview parks the "
+                f"training base (~21 GB) into RAM and streams the text encoder (~15 GB) "
                 f"through it, so with previews ON a MiniMax H3 run wants ~48 GB, or a "
                 f"system-managed paging file on a fast drive (Windows counts pagefile as "
                 f"commit). If the app closes with a 'not enough memory resources' dialog, or "

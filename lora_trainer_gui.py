@@ -28460,6 +28460,9 @@ class LoRATrainerGUI:
             if "MINIMAX_FT_CLIP_LIKENESS" in self.entries else True,
             "MINIMAX_TRAIN_ADALN": bool(self.entries["MINIMAX_TRAIN_ADALN"].get()),
             "MINIMAX_TRAINING_ADAPTER": bool(self.entries["MINIMAX_TRAINING_ADAPTER"].get()),
+            # experiment/tread: both ticks must be copied here or the builder reads a stale value
+            "MINIMAX_TREAD": bool(self.entries["MINIMAX_TREAD"].get()),
+            "MINIMAX_CLIP_FIRST_FRAME": bool(self.entries["MINIMAX_CLIP_FIRST_FRAME"].get()),
             "MINIMAX_DISTILL": bool(self.minimax_distill_var.get()),
             # Canonical key ("fl2va"/"ref2va"), never the display label. Preset-immune by
             # design — the var is outside self.entries and _collect_preset_values skips it.

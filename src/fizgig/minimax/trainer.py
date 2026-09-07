@@ -2896,8 +2896,9 @@ def train_minimax(
                 f"through it, so with previews ON a MiniMax H3 run wants ~48 GB, or a "
                 f"system-managed paging file on a fast drive (Windows counts pagefile as "
                 f"commit). If the app closes with a 'not enough memory resources' dialog, or "
-                f"an RDP session drops, that is this: enlarge the paging file, or untick "
-                f"Enable Sample Generation and judge checkpoints in LoRA Royale one at a time.")
+                f"an RDP session drops, that is this: enlarge the paging file, and lighten the "
+                f"samples on the Samples tab — a smaller canvas such as 512x768, 22 frames "
+                f"rather than 56, or a still.")
         from fizgig.minimax.sampling import encode_sample_prompts
         logger.info(f"[preview] pre-encoding {len(sample_prompts)} sample prompt(s) "
                     f"(the text encoder is freed before the DiT loads)...")

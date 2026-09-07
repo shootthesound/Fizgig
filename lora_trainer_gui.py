@@ -925,6 +925,11 @@ MINIMAX_BUILT_IN_PRESETS = {
         # 50% likeness seven epochs sooner and peaked higher (61 vs 57). Every H3 preset
         # inherits this — Style included, the adapter is about the base, not the blocks.
         "MINIMAX_TRAINING_ADAPTER": True,
+        # TREAD token routing ships ON (Peter, 7 Sep, after his A/B): clip steps route half
+        # their video tokens around blocks 2-46; photos and clip stills always run in full.
+        "MINIMAX_TREAD": True,
+        # Each clip's sharpest face frame trains as a photo too (picked at cache time). ON.
+        "MINIMAX_CLIP_STILL": True,
         # Restrict video to the likeness blocks — the sub-tick of likeness mode, on by default
         # (LoRA and FT alike since 2 Sep). Hidden, and not emitted, when likeness is off.
         "MINIMAX_FT_CLIP_LIKENESS": True,
@@ -984,6 +989,8 @@ MINIMAX_BUILT_IN_PRESETS["✨ MiniMax H3 Style (LoRA 8)"] = {
     # MUST be off here: style measurably needs the early blocks the likeness mask freezes, and
     # with it on the blocks spec above would be ignored outright.
     "MINIMAX_LIKENESS_OPT": False,
+    # Style is about the look, not the face: no extra sharp-face stills from the clips.
+    "MINIMAX_CLIP_STILL": False,
 }
 
 # Fast is the shipped default (Peter, 22 Aug): the FIRST entry is what a family switch and a
@@ -1774,6 +1781,8 @@ class LoRATrainerGUI:
             # work H3 is for. The Style preset turns it OFF (style needs the early blocks).
             "MINIMAX_LIKENESS_OPT": True,
             "MINIMAX_TRAINING_ADAPTER": True,
+            "MINIMAX_TREAD": True,         # clip steps route half their video tokens (7 Sep)
+            "MINIMAX_CLIP_STILL": True,    # each clip's sharpest face frame trains as a photo
             "MINIMAX_FT_CLIP_LIKENESS": True,
             "MINIMAX_DISTILL": False,      # off = ordinary training
             # Which H3 base ordinary training runs on ("fl2va"/"ref2va"). NOT in any preset —
@@ -4914,27 +4923,25 @@ class LoRATrainerGUI:
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_adapter_hint.grid(row=43, column=0, columnspan=2, sticky=tk.W,
                                         padx=5, pady=(0, 4))
-        # --- TREAD token routing (experiment/tread branch) — MiniMax LoRA runs only ------
+        # --- TREAD token routing — MiniMax LoRA runs only, ON by default (7 Sep 2026) -----
         self.entries["MINIMAX_TREAD"] = tk.BooleanVar(
-            value=bool(self.settings.get("MINIMAX_TREAD", False)))
+            value=bool(self.settings.get("MINIMAX_TREAD", True)))
         self._minimax_tread_cb = ttk.Checkbutton(
-            training_content, text="TREAD token routing (experimental) — on clip steps, half the video tokens skip the middle blocks",
+            training_content, text="TREAD token routing — on clip steps, half the video tokens skip the middle blocks",
             variable=self.entries["MINIMAX_TREAD"])
         self._minimax_tread_cb.grid(row=44, column=0, columnspan=2, sticky=tk.W,
                                     padx=5, pady=(8, 0))
         self._minimax_tread_hint = ttk.Label(
             training_content,
-            text="On every clip step a random half of the video tokens leaves the sequence at "
-                 "block 2 and rejoins at block 47 unchanged, so 45 of the 50 blocks process half "
-                 "the tokens (arXiv 2501.04765). Faster clip steps. Photos and clip stills always "
-                 "run in full; previews and your saved LoRA are untouched. Experimental — judge "
-                 "the result by eye against a run without it.",
+            text="Faster clip steps: a random half of each clip's video tokens skips blocks 2-46 "
+                 "and rejoins unchanged. Photos and clip stills always run in full; previews and "
+                 "your saved LoRA are untouched. See the MiniMax section of the README.",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_tread_hint.grid(row=45, column=0, columnspan=2, sticky=tk.W,
                                       padx=5, pady=(0, 4))
         # --- clip stills as photos (Peter, 7 Sep 2026) — MiniMax, LoRA and FT ---------------
         self.entries["MINIMAX_CLIP_STILL"] = tk.BooleanVar(
-            value=bool(self.settings.get("MINIMAX_CLIP_STILL", False)))
+            value=bool(self.settings.get("MINIMAX_CLIP_STILL", True)))
         self._minimax_clipstill_cb = ttk.Checkbutton(
             training_content, text="Also train each clip's sharpest face frame as a photo",
             variable=self.entries["MINIMAX_CLIP_STILL"])
@@ -4942,11 +4949,9 @@ class LoRATrainerGUI:
                                         padx=5, pady=(8, 0))
         self._minimax_clipstill_hint = ttk.Label(
             training_content,
-            text="When the clips are cached, the sharpest frame that shows a face is picked from "
-                 "each one (face-crop focus score, InsightFace on CPU) and encoded as a still. "
-                 "That still then trains on a step of its own with the clip's caption — a second "
-                 "look at every subject, sharp. Clips cached before this was ticked have no pick "
-                 "and use frame 0 until re-cached (Flush cache). Voice items are unaffected.",
+            text="Each clip's sharpest frame with a face is picked and encoded when the clips are "
+                 "cached, then trains on a step of its own with the clip's caption. Clips cached "
+                 "with this off use frame 0 until re-cached. See the MiniMax section of the README.",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_clipstill_hint.grid(row=47, column=0, columnspan=2, sticky=tk.W,
                                           padx=5, pady=(0, 4))

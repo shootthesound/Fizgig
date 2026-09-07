@@ -93,6 +93,17 @@ ck("CLI: --tread_ratio / --tread_start / --tread_end exist and are passed throug
    src.count("--tread_ratio") == 1 and "tread_ratio=args.tread_ratio" in src and "tread_end=args.tread_end" in src)
 ck("CLI: no photo-routing switch exists any more", "tread_skip_photos" not in src)
 
+# presets: TREAD on everywhere; the clip still on everywhere except Style
+import importlib
+sys.path.insert(0, REPO)
+os.environ["FIZGIG_NO_PERSIST"] = "1"
+_g = importlib.import_module("lora_trainer_gui")
+_P = _g.MINIMAX_BUILT_IN_PRESETS
+ck("every H3 preset ships TREAD on", all(v.get("MINIMAX_TREAD") is True for v in _P.values()), list(_P))
+ck("every H3 preset ships the clip still on, except Style which ships it off",
+   all((v.get("MINIMAX_CLIP_STILL") is False) == ("Style" in k) for k, v in _P.items()),
+   {k: v.get("MINIMAX_CLIP_STILL") for k, v in _P.items()})
+
 print()
 if fails:
     print(f"{len(fails)} FAILED: {fails}")

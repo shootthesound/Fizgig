@@ -3479,7 +3479,7 @@ def train_minimax(
         logger.info("[tread] token routing ON — %.0f%% of the video tokens skip blocks %d-%d "
                     "on every CLIP step (they rejoin in their block-%d state; text, "
                     "condition and audio rows always stay; photo steps — clip stills "
-                    "included — and previews never route). arXiv 2501.04765 — experimental.",
+                    "included — and previews never route). arXiv 2501.04765.",
                     float(tread_ratio) * 100, int(tread_start), int(tread_end) - 1, int(tread_start))
     if training_adapter_path or context_lora_path:
         if rotator is not None:

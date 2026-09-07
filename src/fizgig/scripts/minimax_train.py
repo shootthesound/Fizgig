@@ -238,7 +238,7 @@ def setup_parser() -> argparse.ArgumentParser:
                         "training step, off for previews. Use the fl2va or ref2va file to match "
                         "--dit. Not available with --finetune_rotation.")
     p.add_argument("--tread_ratio", type=float, default=0.0,
-                   help="TREAD token routing (experimental): this fraction of the video tokens "
+                   help="TREAD token routing: this fraction of the video tokens "
                         "skips the main blocks [--tread_start, --tread_end) on every CLIP "
                         "step and rejoins in its start-block state (arXiv 2501.04765). 0 = off. "
                         "Photo steps and previews never route. Not available with "

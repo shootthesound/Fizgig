@@ -952,12 +952,14 @@ class MiniMaxH3DiT(nn.Module):
         # `start` and rejoins at block `end` in its start-block state (identity), so the
         # blocks in between process fewer tokens; text / condition / audio rows always stay,
         # the loss covers every token, and inference (no grad) never routes. Set by the
-        # trainer as dit._tread = (ratio, start, end); None = off.
+        # trainer as dit._tread = (ratio, start, end); None = off. CLIP steps only: a photo
+        # (one latent frame) has no near-duplicate neighbouring frames to lean on, and the
+        # stills are where the sharp identity signal lives, so they always run in full
+        # (Peter, 7 Sep 2026, after seeing the A/B).
         route = None
         _tread = getattr(self, "_tread", None) if torch.is_grad_enabled() else None
         n_video = h.shape[0] - video_start
-        # a 4th element, when present and true, leaves PHOTO steps (one latent frame) unrouted
-        if _tread and len(_tread) > 3 and _tread[3] and latent_t == 1:
+        if _tread and latent_t == 1:
             _tread = None
         if _tread and n_video > 1:
             _ratio, _start, _end = float(_tread[0]), int(_tread[1]), int(_tread[2])

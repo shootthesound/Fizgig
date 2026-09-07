@@ -4918,26 +4918,20 @@ class LoRATrainerGUI:
         self.entries["MINIMAX_TREAD"] = tk.BooleanVar(
             value=bool(self.settings.get("MINIMAX_TREAD", False)))
         self._minimax_tread_cb = ttk.Checkbutton(
-            training_content, text="TREAD token routing (experimental) — half the video tokens skip the middle blocks each step",
+            training_content, text="TREAD token routing (experimental) — on clip steps, half the video tokens skip the middle blocks",
             variable=self.entries["MINIMAX_TREAD"])
         self._minimax_tread_cb.grid(row=44, column=0, columnspan=2, sticky=tk.W,
                                     padx=5, pady=(8, 0))
         self._minimax_tread_hint = ttk.Label(
             training_content,
-            text="On every training step a random half of the video tokens leaves the sequence at "
+            text="On every clip step a random half of the video tokens leaves the sequence at "
                  "block 2 and rejoins at block 47 unchanged, so 45 of the 50 blocks process half "
-                 "the tokens (arXiv 2501.04765). Faster steps; previews and your saved LoRA are "
-                 "untouched. Experimental — judge the result by eye against a run without it.",
+                 "the tokens (arXiv 2501.04765). Faster clip steps. Photos and clip stills always "
+                 "run in full; previews and your saved LoRA are untouched. Experimental — judge "
+                 "the result by eye against a run without it.",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_tread_hint.grid(row=45, column=0, columnspan=2, sticky=tk.W,
                                       padx=5, pady=(0, 4))
-        self.entries["MINIMAX_TREAD_SKIP_PHOTOS"] = tk.BooleanVar(
-            value=bool(self.settings.get("MINIMAX_TREAD_SKIP_PHOTOS", False)))
-        self._minimax_tread_photos_cb = ttk.Checkbutton(
-            training_content, text="TREAD: leave photos unrouted (clip steps only)",
-            variable=self.entries["MINIMAX_TREAD_SKIP_PHOTOS"])
-        self._minimax_tread_photos_cb.grid(row=48, column=0, columnspan=2, sticky=tk.W,
-                                           padx=(28, 5), pady=(0, 4))
         # --- clip stills as photos (Peter, 7 Sep 2026) — MiniMax, LoRA and FT ---------------
         self.entries["MINIMAX_CLIP_STILL"] = tk.BooleanVar(
             value=bool(self.settings.get("MINIMAX_CLIP_STILL", False)))
@@ -7719,8 +7713,7 @@ class LoRATrainerGUI:
                   getattr(self, "_minimax_adapter_cb", None),
                   getattr(self, "_minimax_adapter_hint", None),
                   getattr(self, "_minimax_tread_cb", None),
-                  getattr(self, "_minimax_tread_hint", None),
-                  getattr(self, "_minimax_tread_photos_cb", None)):
+                  getattr(self, "_minimax_tread_hint", None)):
             if w is not None:
                 self._set_widget_visible(w, not on)
         if hasattr(self, "_network_type_rowf"):
@@ -7940,7 +7933,6 @@ class LoRATrainerGUI:
                   self._minimax_likeness_cb, self._minimax_likeness_hint,
                   self._minimax_adapter_cb, self._minimax_adapter_hint,
                   self._minimax_tread_cb, self._minimax_tread_hint,
-                  self._minimax_tread_photos_cb,
                   self._minimax_clipstill_cb, self._minimax_clipstill_hint,
                   self._minimax_distill_frame, self._minimax_distill_hint,
                   self._minimax_quant_label, self._minimax_quant_frame,
@@ -28472,7 +28464,6 @@ class LoRATrainerGUI:
             "MINIMAX_TRAINING_ADAPTER": bool(self.entries["MINIMAX_TRAINING_ADAPTER"].get()),
             # experiment/tread: both ticks must be copied here or the builder reads a stale value
             "MINIMAX_TREAD": bool(self.entries["MINIMAX_TREAD"].get()),
-            "MINIMAX_TREAD_SKIP_PHOTOS": bool(self.entries["MINIMAX_TREAD_SKIP_PHOTOS"].get()),
             "MINIMAX_CLIP_STILL": bool(self.entries["MINIMAX_CLIP_STILL"].get()),
             "MINIMAX_DISTILL": bool(self.minimax_distill_var.get()),
             # Canonical key ("fl2va"/"ref2va"), never the display label. Preset-immune by
@@ -29891,8 +29882,6 @@ class LoRATrainerGUI:
         # TREAD token routing (experiment) — LoRA runs only, half the video tokens, blocks 2-46.
         if self.settings.get("MINIMAX_TREAD") and not _mft_cmd_on:
             cmd += ["--tread_ratio", "0.5", "--tread_start", "2", "--tread_end", "47"]
-            if self.settings.get("MINIMAX_TREAD_SKIP_PHOTOS"):
-                cmd += ["--tread_skip_photos"]
         if self.settings.get("MINIMAX_CLIP_STILL"):
             cmd += ["--clip_still_as_photo"]
         # Context LoRA — an existing H3 LoRA frozen + active under the trainable one (LoRA runs

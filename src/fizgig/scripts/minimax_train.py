@@ -239,14 +239,12 @@ def setup_parser() -> argparse.ArgumentParser:
                         "--dit. Not available with --finetune_rotation.")
     p.add_argument("--tread_ratio", type=float, default=0.0,
                    help="TREAD token routing (experimental): this fraction of the video tokens "
-                        "skips the main blocks [--tread_start, --tread_end) on every training "
+                        "skips the main blocks [--tread_start, --tread_end) on every CLIP "
                         "step and rejoins in its start-block state (arXiv 2501.04765). 0 = off. "
-                        "Previews never route. Not available with --finetune_rotation.")
+                        "Photo steps and previews never route. Not available with "
+                        "--finetune_rotation.")
     p.add_argument("--tread_start", type=int, default=2)
     p.add_argument("--tread_end", type=int, default=47)
-    p.add_argument("--tread_skip_photos", action="store_true",
-                   help="With TREAD on: route clip steps only — photo steps (clip stills "
-                        "included) go through the model in full.")
     p.add_argument("--clip_still_as_photo", action="store_true",
                    help="Every clip's picked still (its sharpest frame with a face, cached by "
                         "minimax_cache_latents --clip_still) also trains as a photo on its own "
@@ -401,7 +399,6 @@ def main():
         tread_ratio=args.tread_ratio,
         tread_start=args.tread_start,
         tread_end=args.tread_end,
-        tread_skip_photos=args.tread_skip_photos,
         clip_still_as_photo=args.clip_still_as_photo,
         sample_audio=args.sample_audio,
         audio_vae_path=args.audio_vae,

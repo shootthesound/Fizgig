@@ -15,3 +15,7 @@ RTX 5090, MiniMax H3 int8 base, rank-8 LoRA, training adapter on, likeness mode 
 | 56-frame, default preset | 2.88 | 3.5× | 0.592 |
 
 Notes: the running loss rises with the amount of thinning, as expected (thinned tokens are predicted from a coarser state) — it is not a quality signal. The gains are below the pure-compute estimates (≈5× for the default on 22 f) because a step also carries the optimizer, the checkpoint recompute of everything outside the blocks, and data loading; they grow with clip length, as attention's share does. FizGigVid does nothing on photo steps by design.
+
+## Clip first frame as a photo — the slice is the still (7 Sep 2026)
+
+The feature slices a clip's cached latent at frame 0 instead of encoding the frame again. Checked on the real H3 video VAE encoder (5090, fp32, 22 random frames at 128×160): the clip latent's first frame against the first frame encoded alone differs by max 3.4e-3, mean 1.9e-4, against a mean |z| of 0.85 — 0.02% on average, numerical noise from the causal stack. Frame 1 also matches between a 22-frame and a 5-frame encode to 1e-2, i.e. later frames do not reach earlier latents.

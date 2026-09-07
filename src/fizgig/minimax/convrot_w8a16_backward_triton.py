@@ -18,8 +18,15 @@ and against an fp32 ground truth marginally CLOSER than the eager path (0.150 vs
 abs, the one-rounding argument again). Per GEMM 1.0-1.9x the eager backward, typically
 1.2-1.4x at clip-sized token counts. The Hadamard inverse rotation stays in convrot.py.
 
-Kernel, autotune configs and wrapper are Dave's, verbatim (his int64-offset variant — the
-#89 v2 hardening for M*N > 2^31). Opt in with FIZGIG_TRITON_W8A16_BACKWARD=1; the dispatch
+In a real run (Peter's recipe on the 23-clip / 23-still videotest set, int8 base streamed 8
+blocks, TREAD on, adapter on, 5090): 1.11 s/step against 1.39 s/step for the eager backward
+once tuned — a 20% faster training step, at the top of Dave's 5-15% estimate. The first
+epoch pays ~24 autotune events (a few seconds) and is already level with eager.
+
+Kernel, autotune configs and wrapper are Dave's (his int64-offset variant — the #89 v2
+hardening for M*N > 2^31), with one change: the autotune key buckets the token count to its
+power of 2 (see the kernel) so a training run tunes once per shape bucket, not once per
+caption length. Opt in with FIZGIG_TRITON_W8A16_BACKWARD=1; the dispatch
 lives in convrot.py and falls back to the eager path if the kernel ever raises.
 """
 
@@ -50,12 +57,16 @@ if TRITON_AVAILABLE:
             triton.Config({"BLOCK_M": 128, "BLOCK_K": 128, "BLOCK_N": 64},
                           num_stages=3, num_warps=8),
         ],
-        key=["M", "N", "K"],
+        # M_KEY, not M: keyed on the exact token count, a training run re-tunes for every
+        # caption length (measured: 1,488 config benchmarks in one 46-step epoch, 160 more in
+        # the next as caption dropout shifted lengths — 3x the epoch). Keyed on the power-of-2
+        # bucket of M there are ~6 keys per shape and the tuning is done in the first steps.
+        key=["M_KEY", "N", "K"],
     )
     @triton.jit
     def _w8a16_backward_kernel(
         G_ptr, W_ptr, S_ptr, O_ptr,
-        M, N, K,
+        M, N, K, M_KEY,
         stride_gm, stride_gn,
         stride_wn, stride_wk,
         stride_om, stride_ok,
@@ -118,7 +129,7 @@ if TRITON_AVAILABLE:
         )
         _w8a16_backward_kernel[grid](
             grad2d, qdata, scale, out,
-            M, N, K,
+            M, N, K, 1 << max(0, M - 1).bit_length(),      # M_KEY: the power-of-2 bucket of M
             grad2d.stride(0), grad2d.stride(1),
             qdata.stride(0), qdata.stride(1),
             out.stride(0), out.stride(1),

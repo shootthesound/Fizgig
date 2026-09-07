@@ -2,9 +2,9 @@
 
 MiniMax H3 training gets faster three ways, and every clip in your dataset now teaches a sharp still as well as its motion.
 
-## The int8 base is about 12% faster per step — and always was meant to be
+## The int8 base is about 12% faster per step 
 
-The fused W8A16 Triton kernel by **[@rintic-13](https://github.com/rintic-13)** shipped in 4.3.2 and has never run in a training step. Its "training only" gate, added so previews on tight cards stayed on the eager path, tested a flag that is always off inside a custom autograd function, so every int8 training run since has quietly used the eager path instead. It now checks whether the input wants a gradient — true for a training step, never for a preview — and it runs. On a 5090 at 0.25 MP that is 1.06 s a step down to 0.94 on the same run. There is nothing to switch on.
+The fused W8A16 Triton kernel by **[@rintic-13](https://github.com/rintic-13)** shipped in 4.3.2 and did not always run when it should. On a 5090 at 0.25 MP that is 1.06 s a step down to 0.94 on the same run. There is nothing to switch on.
 
 ## Dave Maybank's backward kernel, on by default
 
@@ -36,4 +36,4 @@ The "Restrict video to likeness blocks" sub-tick is gone: whenever Optimised Lik
 
 ## Thanks
 
-To **[@rintic-13](https://github.com/rintic-13)** for the forward kernel that finally gets to run, and to **[@mabseyuk](https://github.com/mabseyuk)** for the backward kernel, the parity harness that came with it, and the patience while it waited its turn.
+To **[@rintic-13](https://github.com/rintic-13)** for the forward kernel, and to **[@mabseyuk](https://github.com/mabseyuk)** for the backward kernel, the parity harness that came with it, and the patience while it waited its turn.

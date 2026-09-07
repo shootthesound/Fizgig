@@ -49,12 +49,16 @@ if TRITON_AVAILABLE:
             triton.Config({"BLOCK_M": 128, "BLOCK_N": 256, "BLOCK_K": 128, "GROUP_M": 8},
                           num_stages=3, num_warps=8),
         ],
-        key=["M", "N", "K"],
+        # M_KEY, not M (7 Sep 2026): keyed on the exact token count, every caption length
+        # is a new key — measured 244 s for a 46-step first epoch against 53 s eager, with
+        # tuning still leaking into later epochs as caption dropout shifts lengths. Keyed on
+        # the power-of-2 bucket of M the tuning is ~6 keys per shape, done in the first steps.
+        key=["M_KEY", "N", "K"],
     )
     @triton.jit
     def fused_w8a16_gemm_kernel(
         X_ptr, W_ptr, WS_ptr, B_ptr, O_ptr,
-        M, N, K,
+        M, N, K, M_KEY,
         stride_xm, stride_xk,
         stride_wm, stride_wk,
         stride_om, stride_on,
@@ -143,7 +147,7 @@ if TRITON_AVAILABLE:
         grid = lambda META: (triton.cdiv(M, META["BLOCK_M"]) * triton.cdiv(N, META["BLOCK_N"]),)
         fused_w8a16_gemm_kernel[grid](
             x2d, qdata, wscale, bias_ptr, out,
-            M, N, K,
+            M, N, K, 1 << max(0, M - 1).bit_length(),     # M_KEY: the power-of-2 bucket of M
             x2d.stride(0), x2d.stride(1),
             qdata.stride(0), qdata.stride(1),
             out.stride(0), out.stride(1),

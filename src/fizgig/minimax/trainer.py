@@ -2874,6 +2874,25 @@ def train_minimax(
     do_previews = bool((sample_every_n_epochs or sample_at_first) and sample_prompts and te_path)
     encoded_prompts = encoded_negative = sample_dir = None
     if do_previews:
+        # Previews are the RAM-heavy path: each one parks the training base into system RAM
+        # (~21 GB int8) and streams the ~15 GB text encoder through it, on top of whatever
+        # int8 staging the plan already holds. On a 32 GB-RAM box that exhausts Windows'
+        # commit charge and the failure lands on the GUI as a bitmap-allocation error, not
+        # here (#120, a 24 GB card with 32 GB RAM over RDP). Say so up front.
+        try:
+            import psutil as _ps
+            _ram_total_gb = _ps.virtual_memory().total / 1e9
+        except Exception:
+            _ram_total_gb = None
+        if _ram_total_gb is not None and _ram_total_gb < 40.0:
+            logger.warning(
+                f"[preview] this machine has {_ram_total_gb:.0f} GB of system RAM. Previews park "
+                f"the training base (~21 GB) into RAM and stream the text encoder (~15 GB) "
+                f"through it, so with previews ON a MiniMax H3 run wants ~48 GB, or a "
+                f"system-managed paging file on a fast drive (Windows counts pagefile as "
+                f"commit). If the app closes with a 'not enough memory resources' dialog, or "
+                f"an RDP session drops, that is this: enlarge the paging file, or untick "
+                f"Enable Sample Generation and judge checkpoints in LoRA Royale one at a time.")
         from fizgig.minimax.sampling import encode_sample_prompts
         logger.info(f"[preview] pre-encoding {len(sample_prompts)} sample prompt(s) "
                     f"(the text encoder is freed before the DiT loads)...")

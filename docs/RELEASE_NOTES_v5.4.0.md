@@ -14,7 +14,7 @@ Both kernels now tune once per token-count bucket instead of once per exact toke
 
 ## TREAD token routing — on by default, one tick to turn off
 
-TREAD is from [Krause, Phan, Hu and Ommer, *TREAD: Token Routing for Efficient Architecture-agnostic Diffusion Training* (arXiv 2501.04765)](https://arxiv.org/abs/2501.04765). On every clip step a random half of the video tokens leaves the sequence at block 2 and rejoins at block 47 in exactly the state it left in, so 45 of the 50 blocks process half the tokens. Clip steps get markedly faster, and that is the smaller half of the point.
+TREAD is from [*TREAD: Token Routing for Efficient Architecture-agnostic Diffusion Training* (arXiv 2501.04765)](https://arxiv.org/abs/2501.04765) by Felix Krause (**[@flixmk](https://github.com/flixmk)**), Timy Phan, Ming Gui (**[@mgui7](https://github.com/mgui7)**), Stefan Baumann (**[@stefan-baumann](https://github.com/stefan-baumann)**), Vincent Tao Hu (**[@dongzhuoyao](https://github.com/dongzhuoyao)**) and Björn Ommer of the **[CompVis](https://github.com/CompVis)** group at LMU Munich — code at [CompVis/tread](https://github.com/CompVis/tread). On every clip step a random half of the video tokens leaves the sequence at block 2 and rejoins at block 47 in exactly the state it left in, so 45 of the 50 blocks process half the tokens. Clip steps get markedly faster, and that is the smaller half of the point.
 
 The paper's finding is that routing makes a diffusion model *learn better*, not just cheaper. The late blocks receive a sequence in which half the tokens carry only their early-block state, so they cannot lean on a fully processed neighbour for every position and have to build the prediction from less. That works like a regulariser on the representation: in the paper's experiments the routed model converges in a fraction of the steps of the same model trained plainly and ends at better quality, with nothing added to the architecture and nothing changed at inference. That last part matters here: the trained LoRA is an ordinary LoRA, previews never route, and ComfyUI never knows it happened.
 
@@ -36,4 +36,4 @@ The "Restrict video to likeness blocks" sub-tick is gone: whenever Optimised Lik
 
 ## Thanks
 
-To **[@rintic-13](https://github.com/rintic-13)** for the forward kernel, and to **[@mabseyuk](https://github.com/mabseyuk)** for the backward kernel, the parity harness that came with it, and the patience while it waited its turn.
+To **[@rintic-13](https://github.com/rintic-13)** for the forward kernel, and to **[@mabseyuk](https://github.com/mabseyuk)** for the backward kernel, the parity harness that came with it, and the patience while it waited its turn. And to the TREAD authors at CompVis for a training idea that transfers straight to a video LoRA.

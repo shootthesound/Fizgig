@@ -2898,7 +2898,8 @@ def train_minimax(
                 f"commit). If the app closes with a 'not enough memory resources' dialog, or "
                 f"an RDP session drops, that is this: enlarge the paging file, and lighten the "
                 f"samples on the Samples tab — a smaller canvas such as 512x768, 22 frames "
-                f"rather than 56, or a still.")
+                f"rather than 56, or a still. As a last resort, untick Enable Sample Generation "
+                f"and judge the checkpoints in LoRA Royale afterwards.")
         from fizgig.minimax.sampling import encode_sample_prompts
         logger.info(f"[preview] pre-encoding {len(sample_prompts)} sample prompt(s) "
                     f"(the text encoder is freed before the DiT loads)...")

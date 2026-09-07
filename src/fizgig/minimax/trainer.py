@@ -2432,6 +2432,7 @@ def train_minimax(
     tread_ratio: float = 0.0,
     tread_start: int = 2,
     tread_end: int = 47,
+    tread_skip_photos: bool = False,     # route clip steps only; photo steps go through in full
     # Every clip's first frame also trains as a photo (its own step, the clip's caption) —
     # sliced from the clip's cached latent, nothing re-encoded (Peter, 7 Sep 2026).
     clip_first_frame_as_photo: bool = False,
@@ -3475,12 +3476,16 @@ def train_minimax(
         if rotator is not None:
             raise RuntimeError("TREAD token routing is not available with fine-tuning on "
                                "MiniMax H3 — untick it or train a LoRA.")
-        dit._tread = (float(tread_ratio), int(tread_start), int(tread_end))
+        dit._tread = (float(tread_ratio), int(tread_start), int(tread_end), bool(tread_skip_photos))
         logger.info("[tread] token routing ON — %.0f%% of the video tokens skip blocks %d-%d "
-                    "on every training step (they rejoin in their block-%d state; text, "
+                    "on every %s step (they rejoin in their block-%d state; text, "
                     "condition and audio rows always stay; previews never route). "
                     "arXiv 2501.04765 — experimental.",
-                    float(tread_ratio) * 100, int(tread_start), int(tread_end) - 1, int(tread_start))
+                    float(tread_ratio) * 100, int(tread_start), int(tread_end) - 1,
+                    "CLIP" if tread_skip_photos else "training", int(tread_start))
+        if tread_skip_photos:
+            logger.info("[tread] photo steps are NOT routed — every still (clip first frames "
+                        "included) goes through the model in full")
     if training_adapter_path or context_lora_path:
         if rotator is not None:
             _what = "The training adapter" if training_adapter_path else "Context LoRA"
@@ -4174,7 +4179,8 @@ def train_minimax(
                                 if context_lora_path else "none"),
             "ss_context_lora_strength": (f"{float(context_lora_strength):g}"
                                          if context_lora_path else "0"),
-            "ss_tread": (f"{float(tread_ratio):g}@{int(tread_start)}-{int(tread_end)}"
+            "ss_tread": ((f"{float(tread_ratio):g}@{int(tread_start)}-{int(tread_end)}"
+                          + (" clips-only" if tread_skip_photos else ""))
                          if tread_ratio and float(tread_ratio) > 0 else "off"),
             "ss_clip_first_frame_as_photo": str(bool(clip_first_frame_as_photo)),
             "ss_training_adapter": (os.path.basename(training_adapter_path)

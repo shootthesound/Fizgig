@@ -956,6 +956,9 @@ class MiniMaxH3DiT(nn.Module):
         route = None
         _tread = getattr(self, "_tread", None) if torch.is_grad_enabled() else None
         n_video = h.shape[0] - video_start
+        # a 4th element, when present and true, leaves PHOTO steps (one latent frame) unrouted
+        if _tread and len(_tread) > 3 and _tread[3] and latent_t == 1:
+            _tread = None
         if _tread and n_video > 1:
             _ratio, _start, _end = float(_tread[0]), int(_tread[1]), int(_tread[2])
             _end = min(_end, len(self.blocks))

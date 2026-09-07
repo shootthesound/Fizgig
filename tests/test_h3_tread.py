@@ -73,12 +73,30 @@ ck("a routed block sees all the non-video rows plus half the video rows; a block
    seen[0] == full - n_video // 2 and full > n_video, (seen, n_video))
 dit._tread = None
 
+# ---- photos unrouted (the 4th element) ---------------------------------------------------
+still = torch.randn(1, 24, 1, 8, 8)
+arows1 = torch.randn(audio_latents_for_frames(pixel_frames_for_latent(1)) * AUDIO_CHANNELS, cfg.audio_latents_dim)
+with torch.no_grad():
+    ref_still = dit(still, t, txt, audio_rows=arows1)
+dit._tread = (0.5, 1, 4, True)
+ck("skip-photos: a one-frame item is not routed",
+   torch.equal(dit(still, t, txt, audio_rows=arows1).detach(), ref_still))
+torch.manual_seed(3)
+ck("...while a clip still is", not torch.allclose(dit(lat, t, txt, audio_rows=arows).detach(), ref))
+dit._tread = (0.5, 1, 4, False)
+torch.manual_seed(3)
+ck("without the flag a one-frame item is routed",
+   not torch.allclose(dit(still, t, txt, audio_rows=arows1).detach(), ref_still))
+dit._tread = None
+
 # CLI plumbing
 import importlib.util
 spec = importlib.util.spec_from_file_location("mmt", os.path.join(REPO, "src", "fizgig", "scripts", "minimax_train.py"))
 src = open(spec.origin, encoding="utf-8").read()
 ck("CLI: --tread_ratio / --tread_start / --tread_end exist and are passed through",
    src.count("--tread_ratio") == 1 and "tread_ratio=args.tread_ratio" in src and "tread_end=args.tread_end" in src)
+ck("CLI: --tread_skip_photos exists and is passed through",
+   src.count("--tread_skip_photos") == 1 and "tread_skip_photos=args.tread_skip_photos" in src)
 
 print()
 if fails:

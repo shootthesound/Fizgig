@@ -765,7 +765,7 @@ Auto budgets from your *free* VRAM and the console explains its choice. If a pre
 
 See [the Auto table in its section](#minimax-h3--third-model-family) — 16 GB and up trains on the accurate int8 base with streamed block swap; ≤12 GB falls back to 4-bit. On 16 GB-class cards, previews cap themselves at **768×640 and 22 frames** (sound kept) — larger picks in the menus simply clamp, with a console note. On 24 GB cards the int8 base streams ~11 blocks, and clip previews clamp to **22 frames** for the same reason (resolution untouched); lower Target Megapixels if you want the 56-frame preview back on that tier.
 
-**12 GB cards + previews (Windows): leave the paging file system-managed.** Each preview parks the training model and optimizer in system RAM while the decoder runs, and that commit spike is what a fixed small paging file (e.g. 4 GB) can't cover — the run dies with **Windows error 1455** ("paging file is too small"), which says nothing about previews. Settings → System → About → Advanced system settings → Performance → Advanced → Virtual memory → *Automatically manage*. Reported and confirmed on a 12 GB RTX 5070 by David Maybank.
+**12 GB cards + previews (Windows): leave the paging file system-managed.** Each preview parks the training model and optimizer in system RAM while the decoder runs, and that commit spike is what a fixed small paging file (e.g. 4 GB) can't cover — the run dies with **Windows error 1455** ("paging file is too small"), which says nothing about previews. Settings → System → About → Advanced system settings → Performance → Advanced → Virtual memory → *Automatically manage*. Reported and confirmed on a 12 GB RTX 5070 by [@mabseyuk](https://github.com/mabseyuk).
 
 ### Desktop feels juddery while training? (Windows)
 

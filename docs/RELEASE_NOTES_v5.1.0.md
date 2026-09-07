@@ -41,7 +41,7 @@ base model in Preferences**, and LoRAs trained on top of it.
 - **12 GB cards, Windows:** previews park the model to system RAM, which spikes system
   commit — a fixed 4 GB paging file dies with error 1455 and a message that names
   nothing. Set the paging file to **system-managed**. Reported and confirmed on a 12 GB
-  RTX 5070 by **David Maybank**.
+  RTX 5070 by **[@mabseyuk](https://github.com/mabseyuk)**.
 - **Krea 2 LoKR previews need more than 16 GB** — the render runs on the resident training
   model with the LoKR net live. The trainer now says so up front, directly above where a
   16 GB card would otherwise stall.

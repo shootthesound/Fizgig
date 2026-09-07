@@ -1,4 +1,4 @@
-"""Fused W8A16 Triton BACKWARD GEMM for the int8-ConvRot base — by Dave Maybank (@mabseyuk).
+"""Fused W8A16 Triton BACKWARD GEMM for the int8-ConvRot base — by @mabseyuk.
 
 The companion to rintic-13's forward kernel (convrot_w8a16_triton.py). The eager backward in
 convrot.py computes the input gradient as
@@ -27,7 +27,7 @@ token counts (4k+), and at 300-1700 tokens cuBLAS is hard to beat. What it alway
 the eager backward's transient (a materialised bf16 weight per linear per step), which is
 what matters on the 16 GB tier. Hence opt-in, not default.
 
-Kernel, autotune configs and wrapper are Dave's (his int64-offset variant — the #89 v2
+Kernel, autotune configs and wrapper are @mabseyuk's (their int64-offset variant — the #89 v2
 hardening for M*N > 2^31), with one change: the autotune key buckets the token count to its
 power of 2 (see the kernel) so a training run tunes once per shape bucket, not once per
 caption length. Opt in with FIZGIG_TRITON_W8A16_BACKWARD=1; the dispatch

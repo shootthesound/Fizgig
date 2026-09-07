@@ -4725,7 +4725,7 @@ def train_minimax(
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-            # Fragmentation guard for tight cards (#92, David Maybank's 12 GB report): the
+            # Fragmentation guard for tight cards (#92, @mabseyuk's 12 GB report): the
             # preview's block up/down churn + the 4.85 GB decoder round-trip fragment the
             # allocator reserve (his post-preview census: ~4.8 GB inactive split), and
             # Windows torch has no expandable_segments — the NEXT training step's first

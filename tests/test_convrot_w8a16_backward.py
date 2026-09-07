@@ -1,4 +1,4 @@
-"""Dave Maybank's fused W8A16 backward (convrot_w8a16_backward_triton.py) through the real
+"""@mabseyuk's fused W8A16 backward (convrot_w8a16_backward_triton.py) through the real
 _Int8RotLinearFn: ON by default beside the forward kernel, OFF with
 FIZGIG_NO_TRITON_W8A16_BACKWARD=1 or when the forward kernel is opted out, grad_x within one
 bf16 ulp of the eager backward on the real ConvRot shapes (rotation included), sticky

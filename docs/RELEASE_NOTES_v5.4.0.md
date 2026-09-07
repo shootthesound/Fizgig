@@ -6,7 +6,7 @@ MiniMax H3 training gets faster three ways, and every clip in your dataset now t
 
 The fused W8A16 Triton kernel by **[@rintic-13](https://github.com/rintic-13)** shipped in 4.3.2 and did not always run when it should. On a 5090 at 0.25 MP that is 1.06 s a step down to 0.94 on the same run. There is nothing to switch on.
 
-## Dave Maybank's backward kernel, on by default
+## @mabseyuk's backward kernel, on by default
 
 **[@mabseyuk](https://github.com/mabseyuk)** wrote the companion: a fused backward for the int8 base that computes the input gradient without materialising a bf16 copy of each weight. Measured on the real ConvRot shapes, every element lands within one bf16 ulp of the eager backward, and against an fp32 reference it is marginally closer. On top of the forward kernel it is worth a few percent per step: 2–3% on a 5090 at 0.25 MP, 2% at 0.5 MP, 8% on a simulated 24 GB card streaming 34 blocks. It runs alongside the forward kernel on every int8 plan; `FIZGIG_NO_TRITON_W8A16_BACKWARD=1` turns it off, `FIZGIG_NO_TRITON_W8A16=1` turns both off.
 

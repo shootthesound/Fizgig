@@ -1194,7 +1194,7 @@ class LoRANetwork(torch.nn.Module):
             # at the end of an epoch that is the moment RAM is tightest, and on constrained
             # boxes it raised MemoryError (or a safetensors-rust PanicException) BEFORE the
             # checkpoint was written, killing the run over optional indexing metadata
-            # (#92, diagnosed by David Maybank on a 12 GB / 64 GB box). Optional metadata
+            # (#92, diagnosed by @mabseyuk on a 12 GB / 64 GB box). Optional metadata
             # must never cost a checkpoint: on those two failures, skip the hashes and save;
             # anything else is a real bug and still raises.
             try:

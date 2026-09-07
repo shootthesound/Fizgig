@@ -1,4 +1,4 @@
-"""H2D-only streaming for frozen MiniMax H3 NF4 blocks — by David Maybank (u/mabseyuk).
+"""H2D-only streaming for frozen MiniMax H3 NF4 blocks — by @mabseyuk.
 
 The NF4 sibling of rintic-13's int8 ring (#73): the packed bitsandbytes weight and its
 QuantState tensors remain authoritative in CPU RAM; two flat GPU ring slots are reused by

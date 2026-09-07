@@ -4695,62 +4695,6 @@ class LoRATrainerGUI:
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_limiter_hint.grid(row=38, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
 
-        # --- Reference distillation (MiniMax only, experimental) ---------------------------
-        # No picker: the dataset IS the reference pool, so there is nothing to choose.
-        self.minimax_distill_var = tk.BooleanVar(
-            value=bool(self.settings.get("MINIMAX_DISTILL", False)))
-        self._minimax_distill_frame = ttk.Frame(training_content)
-        self._minimax_distill_frame.grid(row=35, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(8, 0))
-        self._minimax_distill_cb = ttk.Checkbutton(
-            self._minimax_distill_frame, text="Learn identity from my dataset (reference distillation)",
-            variable=self.minimax_distill_var, command=self._on_minimax_distill_clicked)
-        self._minimax_distill_cb.pack(side=tk.LEFT)
-        # Multi Concept shows a warning while identity-learn is OFF (no reference steering), so
-        # that hint has to refresh when this checkbox moves, not only when the mode is toggled.
-        self.minimax_distill_var.trace_add(
-            "write", lambda *_a: self._on_minimax_multiconcept_toggle())
-        ttk.Label(self._minimax_distill_frame, text="   teacher ").pack(side=tk.LEFT)
-        self.entries["MINIMAX_DISTILL_WEIGHT"] = ttk.Combobox(
-            # 0.4/0.5 added 11 Aug — an even split is a reasonable thing to want and the list
-            # stopped at 0.6, so it could not be asked for. 1.0 removes the photo term entirely,
-            # which caps the LoRA at what reference mode can already do.
-            self._minimax_distill_frame,
-            values=["0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1.0"], width=5)
-        self.entries["MINIMAX_DISTILL_WEIGHT"].set(
-            str(self.settings.get("MINIMAX_DISTILL_WEIGHT", "0.8")))
-        self.entries["MINIMAX_DISTILL_WEIGHT"].pack(side=tk.LEFT)
-        ttk.Label(self._minimax_distill_frame, text="   references each ").pack(side=tk.LEFT)
-        self.entries["MINIMAX_DISTILL_REFS"] = ttk.Combobox(
-            self._minimax_distill_frame, values=["1", "2", "3", "4"], width=4)
-        self.entries["MINIMAX_DISTILL_REFS"].set(
-            str(self.settings.get("MINIMAX_DISTILL_REFS", "2")))
-        self.entries["MINIMAX_DISTILL_REFS"].pack(side=tk.LEFT)
-        # Identity-first: teacher-ONLY for the first stretch, then photos-only. A hard switch,
-        # not a blend — the point is where the adapter STARTS, so what phase 2 forgets about the
-        # teacher does not matter. Auto sizes phase 1 from the dataset (~650 steps, which is
-        # where the teacher error was measured to converge on a real run).
-        ttk.Label(self._minimax_distill_frame, text="   identity-first ").pack(side=tk.LEFT)
-        self.entries["MINIMAX_DISTILL_PHASE1"] = ttk.Combobox(
-            self._minimax_distill_frame, state="readonly", width=22,
-            values=["Auto (from dataset size)", "Off — blend throughout",
-                    "2 epochs", "4 epochs", "8 epochs", "16 epochs", "30 epochs"])
-        self.entries["MINIMAX_DISTILL_PHASE1"].set(
-            str(self.settings.get("MINIMAX_DISTILL_PHASE1", "Auto (from dataset size)")))
-        self.entries["MINIMAX_DISTILL_PHASE1"].pack(side=tk.LEFT)
-        self.entries["MINIMAX_DISTILL_PHASE1"].bind(
-            "<<ComboboxSelected>>", lambda _e: self._sync_distill_weight_state())
-        self._minimax_distill_hint = ttk.Label(
-            training_content,
-            text="EXPERIMENT — teaches the LoRA to reproduce identity the way H3 does when shown "
-                 "a photo. Needs the ref2va model in Preferences. See the MiniMax section of "
-                 "the README.",
-            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
-        self._minimax_distill_hint.grid(row=36, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
-
-
-
-
-
         # --- Multi Concept (MiniMax only) ---------------------------------------------------
         # Two subjects in ONE folder get cross-referenced by reference distillation: the pairing
         # rotation runs per [[datasets]] block, so a single block marks subject A's answers
@@ -4788,8 +4732,8 @@ class LoRATrainerGUI:
             training_content,
             text="Each folder needs its OWN trigger word, in every caption — that is the only "
                  "thing telling the two apart. Caption and prep both folders yourself first; "
-                 "this box is training-only. Ticking the mode sets caption dropout to 0.10 "
-                 "(strong) — still yours to change. See the MiniMax section of the README.",
+                 "this box is training-only and changes nothing else — caption dropout stays "
+                 "as you set it. See the MiniMax section of the README.",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT,
             wraplength=720)
         self._minimax_mc_hint.grid(row=51, column=0, columnspan=2, sticky=tk.W, padx=5,
@@ -5412,6 +5356,59 @@ class LoRATrainerGUI:
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_blocks_hint.grid(row=32, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
         self._refresh_minimax_blocks_count()
+
+        # --- Reference distillation (MiniMax only, experimental) — lives in Other Options
+        # since 7 Sep 2026 (Peter): an experiment most runs leave off, out of the main panel.
+        # No picker: the dataset IS the reference pool, so there is nothing to choose.
+        self.minimax_distill_var = tk.BooleanVar(
+            value=bool(self.settings.get("MINIMAX_DISTILL", False)))
+        self._minimax_distill_frame = ttk.Frame(scheduler_content)
+        self._minimax_distill_frame.grid(row=33, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(8, 0))
+        self._minimax_distill_cb = ttk.Checkbutton(
+            self._minimax_distill_frame, text="Learn identity from my dataset (reference distillation)",
+            variable=self.minimax_distill_var, command=self._on_minimax_distill_clicked)
+        self._minimax_distill_cb.pack(side=tk.LEFT)
+        # Multi Concept shows a warning while identity-learn is OFF (no reference steering), so
+        # that hint has to refresh when this checkbox moves, not only when the mode is toggled.
+        self.minimax_distill_var.trace_add(
+            "write", lambda *_a: self._on_minimax_multiconcept_toggle())
+        ttk.Label(self._minimax_distill_frame, text="   teacher ").pack(side=tk.LEFT)
+        self.entries["MINIMAX_DISTILL_WEIGHT"] = ttk.Combobox(
+            # 0.4/0.5 added 11 Aug — an even split is a reasonable thing to want and the list
+            # stopped at 0.6, so it could not be asked for. 1.0 removes the photo term entirely,
+            # which caps the LoRA at what reference mode can already do.
+            self._minimax_distill_frame,
+            values=["0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1.0"], width=5)
+        self.entries["MINIMAX_DISTILL_WEIGHT"].set(
+            str(self.settings.get("MINIMAX_DISTILL_WEIGHT", "0.8")))
+        self.entries["MINIMAX_DISTILL_WEIGHT"].pack(side=tk.LEFT)
+        ttk.Label(self._minimax_distill_frame, text="   references each ").pack(side=tk.LEFT)
+        self.entries["MINIMAX_DISTILL_REFS"] = ttk.Combobox(
+            self._minimax_distill_frame, values=["1", "2", "3", "4"], width=4)
+        self.entries["MINIMAX_DISTILL_REFS"].set(
+            str(self.settings.get("MINIMAX_DISTILL_REFS", "2")))
+        self.entries["MINIMAX_DISTILL_REFS"].pack(side=tk.LEFT)
+        # Identity-first: teacher-ONLY for the first stretch, then photos-only. A hard switch,
+        # not a blend — the point is where the adapter STARTS, so what phase 2 forgets about the
+        # teacher does not matter. Auto sizes phase 1 from the dataset (~650 steps, which is
+        # where the teacher error was measured to converge on a real run).
+        ttk.Label(self._minimax_distill_frame, text="   identity-first ").pack(side=tk.LEFT)
+        self.entries["MINIMAX_DISTILL_PHASE1"] = ttk.Combobox(
+            self._minimax_distill_frame, state="readonly", width=22,
+            values=["Auto (from dataset size)", "Off — blend throughout",
+                    "2 epochs", "4 epochs", "8 epochs", "16 epochs", "30 epochs"])
+        self.entries["MINIMAX_DISTILL_PHASE1"].set(
+            str(self.settings.get("MINIMAX_DISTILL_PHASE1", "Auto (from dataset size)")))
+        self.entries["MINIMAX_DISTILL_PHASE1"].pack(side=tk.LEFT)
+        self.entries["MINIMAX_DISTILL_PHASE1"].bind(
+            "<<ComboboxSelected>>", lambda _e: self._sync_distill_weight_state())
+        self._minimax_distill_hint = ttk.Label(
+            scheduler_content,
+            text="EXPERIMENT — teaches the LoRA to reproduce identity the way H3 does when shown "
+                 "a photo. Needs the ref2va model in Preferences. See the MiniMax section of "
+                 "the README.",
+            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
+        self._minimax_distill_hint.grid(row=34, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
 
         # Training Structure lives in Training Parameters now — see _build_minimax_structure_row,
         # called from that section. It used to sit here in Other Options, collapsed, which is

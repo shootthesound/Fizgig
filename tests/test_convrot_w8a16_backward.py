@@ -1,0 +1,98 @@
+"""Dave Maybank's fused W8A16 backward (convrot_w8a16_backward_triton.py) through the real
+_Int8RotLinearFn: OFF by default, ON with FIZGIG_TRITON_W8A16_BACKWARD=1, grad_x within one
+bf16 ulp of the eager backward on the real ConvRot shapes (rotation included), sticky
+fallback to eager when the kernel raises. Needs a CUDA card + Triton; skips otherwise.
+
+Run: venv/Scripts/python.exe tests/test_convrot_w8a16_backward.py
+"""
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+import torch
+
+fails = []
+
+
+def ck(label, cond, detail=""):
+    print(f"{'PASS' if cond else 'FAIL'}  {label}{('  ' + str(detail)) if detail else ''}")
+    if not cond:
+        fails.append(label)
+
+
+if not torch.cuda.is_available():
+    print("no CUDA — skipped"); sys.exit(0)
+try:
+    import triton  # noqa: F401
+except ImportError:
+    print("no Triton — skipped"); sys.exit(0)
+
+from fizgig.minimax import convrot as C  # noqa: E402
+from fizgig.minimax.convrot import _Int8RotLinearFn as Fn  # noqa: E402
+
+dev = "cuda"
+torch.manual_seed(0)
+
+
+def reset(env):
+    Fn._w8a16_bwd_state.update({"checked": False, "use": False, "announced": False})
+    if env is None:
+        os.environ.pop("FIZGIG_TRITON_W8A16_BACKWARD", None)
+    else:
+        os.environ["FIZGIG_TRITON_W8A16_BACKWARD"] = env
+
+
+def grad_x(x, q, s, rot):
+    x = x.detach().clone().requires_grad_(True)
+    y = Fn.apply(x, q, s, None, rot, torch.bfloat16)
+    y.float().square().mean().backward()
+    return x.grad.detach()
+
+
+def ulp_ok(a, b):
+    # one bf16 ulp is 2^-7 of the magnitude; allow that plus a hair of absolute slack
+    d = (a.float() - b.float()).abs()
+    tol = b.float().abs() * (2 ** -7) + 1e-3
+    return bool((d <= tol).all()), f"max|d|={d.max().item():.3e} over-tol={(d > tol).sum().item()}"
+
+
+# real ConvRot shapes (out, in), rotation like the checkpoint's (rot=64 groups)
+for (N, K), M in (((2688, 2688), 1666), ((8064, 2688), 300), ((2688, 5376), 4046), ((5376, 2688), 8806)):
+    w = torch.randn(N, K, device=dev) * 0.02
+    q, s = C.quantize_int8_convrot(w, rot=64)            # a power of 4 that divides every ConvRot dim
+    x = torch.randn(1, M, K, device=dev, dtype=torch.bfloat16)
+    reset(None)
+    g_eager = grad_x(x, q, s, 64)
+    ck(f"{N}x{K} M={M}: off by default — state stays off", Fn._w8a16_bwd_state["use"] is False)
+    reset("1")
+    g_fused = grad_x(x, q, s, 64)
+    ck(f"{N}x{K} M={M}: env=1 switches the kernel on", Fn._w8a16_bwd_state["use"] is True)
+    ok, det = ulp_ok(g_fused, g_eager)
+    ck(f"{N}x{K} M={M}: fused grad_x within one bf16 ulp of eager (rotation included)", ok, det)
+
+# sticky fallback: a raising kernel -> eager result, kernel off for the rest of the run
+import fizgig.minimax.convrot_w8a16_backward_triton as KB  # noqa: E402
+real = KB.fused_w8a16_input_grad
+KB.fused_w8a16_input_grad = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom"))
+try:
+    reset("1")
+    x = torch.randn(1, 300, 2688, device=dev, dtype=torch.bfloat16)
+    q = torch.randint(-127, 128, (2688, 2688), dtype=torch.int8, device=dev); s = torch.rand(2688, 1, device=dev) * 0.02
+    g = grad_x(x, q, s, 64)
+    reset(None); g_e = grad_x(x, q, s, 64)
+    ck("a raising kernel falls back to the eager backward (same result)", torch.equal(g, g_e))
+finally:
+    KB.fused_w8a16_input_grad = real
+reset("1"); grad_x(x, q, s, 64)
+KB.fused_w8a16_input_grad = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom"))
+try:
+    grad_x(x, q, s, 64)
+    ck("...and stays off afterwards", Fn._w8a16_bwd_state["use"] is False)
+finally:
+    KB.fused_w8a16_input_grad = real
+    reset(None)
+
+print()
+if fails:
+    print(f"{len(fails)} FAILED: {fails}"); sys.exit(1)
+print("ALL PASS")

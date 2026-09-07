@@ -132,6 +132,30 @@ class _Int8RotLinearFn(torch.autograd.Function):
     # FIZGIG_NO_TRITON_W8A16=1. Falls back to the eager path when Triton is missing, the
     # input is not CUDA-bf16, or the kernel ever raises (logged once).
     _w8a16_state = {"checked": False, "use": False, "announced": False}
+    # Dave Maybank's (@mabseyuk) fused W8A16 BACKWARD GEMM — opt IN with
+    # FIZGIG_TRITON_W8A16_BACKWARD=1 (convrot_w8a16_backward_triton.py). Same fallback rules.
+    _w8a16_bwd_state = {"checked": False, "use": False, "announced": False}
+
+    @classmethod
+    def _use_w8a16_backward(cls, grad_out, dt):
+        st = cls._w8a16_bwd_state
+        if not st["checked"]:
+            st["checked"] = True
+            import os as _os
+            if _os.environ.get("FIZGIG_TRITON_W8A16_BACKWARD") == "1":
+                try:
+                    from fizgig.minimax.convrot_w8a16_backward_triton import TRITON_AVAILABLE
+                    st["use"] = bool(TRITON_AVAILABLE)
+                except Exception:
+                    st["use"] = False
+        if not (st["use"] and dt == torch.bfloat16 and grad_out.is_cuda
+                and grad_out.dtype == torch.bfloat16):
+            return False
+        if not st["announced"]:
+            st["announced"] = True
+            print("[convrot] fused W8A16 Triton BACKWARD kernel active (Dave Maybank, @mabseyuk)",
+                  flush=True)
+        return True
 
     @classmethod
     def _use_w8a16(cls, x, dt):
@@ -193,8 +217,19 @@ class _Int8RotLinearFn(torch.autograd.Function):
         qdata, wscale = ctx.saved_tensors
         # grad_x = grad_out @ W = grad_out @ (q * s) = (grad_out * s) @ q — same identity, so
         # the [out, in] weight is never rebuilt here either.
-        gs = (grad_out.float() * wscale.reshape(-1).float()).to(ctx.dt)
-        gx = gs @ qdata.to(ctx.dt)                         # [..., out] @ [out, in]
+        gx = None
+        if _Int8RotLinearFn._use_w8a16_backward(grad_out, ctx.dt):
+            try:
+                from fizgig.minimax.convrot_w8a16_backward_triton import fused_w8a16_input_grad
+                gx = fused_w8a16_input_grad(grad_out, qdata, wscale)
+            except Exception as _ke:
+                _Int8RotLinearFn._w8a16_bwd_state["use"] = False
+                print(f"[convrot] W8A16 backward kernel failed ({type(_ke).__name__}: {_ke}) — "
+                      "falling back to the eager backward for the rest of the run.", flush=True)
+                gx = None
+        if gx is None:
+            gs = (grad_out.float() * wscale.reshape(-1).float()).to(ctx.dt)
+            gx = gs @ qdata.to(ctx.dt)                     # [..., out] @ [out, in]
         if ctx.rot > 1:
             gx = rotate(gx, ctx.rot)                       # H is symmetric: R^T == R
         return gx, None, None, None, None, None

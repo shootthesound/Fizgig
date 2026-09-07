@@ -18,10 +18,14 @@ and against an fp32 ground truth marginally CLOSER than the eager path (0.150 vs
 abs, the one-rounding argument again). Per GEMM 1.0-1.9x the eager backward, typically
 1.2-1.4x at clip-sized token counts. The Hadamard inverse rotation stays in convrot.py.
 
-In a real run (Peter's recipe on the 23-clip / 23-still videotest set, int8 base streamed 8
-blocks, TREAD on, adapter on, 5090): 1.11 s/step against 1.39 s/step for the eager backward
-once tuned — a 20% faster training step, at the top of Dave's 5-15% estimate. The first
-epoch pays ~24 autotune events (a few seconds) and is already level with eager.
+In a real run (Peter's recipe on the 23-clip / 23-still videotest set at 0.25 MP, int8 base
+streamed 8 blocks, TREAD on, adapter on, 5090; two epochs per state in ONE session, settled
+steps): eager both ways 1.06 s/step; forward kernel only 0.94; this kernel only 1.13; both
+0.91. So on that card and canvas it is neutral-to-slightly-slower on its own and
+worth ~3% on top of the forward kernel — the per-GEMM 1.2-1.4x only shows at clip-sized
+token counts (4k+), and at 300-1700 tokens cuBLAS is hard to beat. What it always saves is
+the eager backward's transient (a materialised bf16 weight per linear per step), which is
+what matters on the 16 GB tier. Hence opt-in, not default.
 
 Kernel, autotune configs and wrapper are Dave's (his int64-offset variant — the #89 v2
 hardening for M*N > 2^31), with one change: the autotune key buckets the token count to its

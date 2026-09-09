@@ -20,7 +20,3 @@ The numbers, from a four-way A/B on the same dataset and seed, 50 epochs each, s
 ## Previews on tight RAM: a warning instead of a crash
 
 On a card below 32 GB each preview parks the training base into system RAM and streams the text encoder through it, which on a 32 GB-RAM machine can exhaust Windows' memory commit — the app then closes with a "not enough memory resources" dialog, or an RDP session drops, with nothing in the training log to explain it. The trainer now says so at launch when previews are on, the card is under 32 GB and RAM is under 40 GB: enlarge the paging file, lighten the samples (a smaller canvas, 22 frames rather than 56, or a still), and as a last resort run without sample generation and judge checkpoints in LoRA Royale. The README's requirements line says the same.
-
-## Also
-
-- Contributor credit in the notes, README and code comments is by GitHub handle throughout.

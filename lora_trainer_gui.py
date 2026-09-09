@@ -9003,8 +9003,7 @@ class LoRATrainerGUI:
         self._refresh_network_type_hint()
         self._save_last_used_paths()
 
-    _NETWORK_HINT_GENERAL = ("LoKR: drop the learning rate to 5e-5 (Adaptive LR: min 5e-5, max 1e-4) · "
-                            "LoRA: ~20% faster training")
+    _NETWORK_HINT_GENERAL = "LoKR: potentially higher quality · LoRA: ~20% faster training"
     _NETWORK_HINT_LOKR = ("LoKR selected: set your learning rate to 5e-5 — or with Adaptive LR, set Max 1e-4 and "
                           "Min 5e-5.")
 

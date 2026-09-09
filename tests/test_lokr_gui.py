@@ -113,7 +113,8 @@ g.entries["NETWORK_TYPE"].set("LoKR (Kronecker)"); g._on_network_type_changed();
 ck("LoKR selected -> hint gives the 5e-5 / Adaptive 1e-4-5e-5 learning-rate advice",
    "5e-5" in g._network_type_hint.cget("text") and "Max 1e-4" in g._network_type_hint.cget("text"))
 g.entries["NETWORK_TYPE"].set("LoRA (standard)"); g._on_network_type_changed(); root.update()
-ck("LoRA selected -> the general trade line", g._network_type_hint.cget("text").startswith("LoKR: drop the learning rate"))
+ck("LoRA selected -> the general trade line, no learning-rate advice",
+   g._network_type_hint.cget("text") == "LoKR: potentially higher quality · LoRA: ~20% faster training")
 
 # Applying a built-in preset resets a LoKR selection back to standard.
 g.entries["NETWORK_TYPE"].set("LoKR (Kronecker)")

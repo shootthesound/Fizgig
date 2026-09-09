@@ -4311,7 +4311,10 @@ class LoRATrainerGUI:
         mp_frame.grid(row=16, column=1, sticky=tk.W, padx=5, pady=(8, 2))
         self._mp_combo = ttk.Combobox(
             mp_frame, textvariable=self.dataset_megapixels_var,
-            values=["0.25", "0.5", "0.75", "1.0", "1.5", "2.0", "2.4", "3.0", "4.2"], width=8)
+            # 0.37 = a 608-px side on every family's grid: the latent-side midpoint between 0.25
+            # (512) and 0.5 (704) — the halfway house Peter asked for after seeing 0.5's detail
+            # on Krea 2 (9 Sep 2026).
+            values=["0.25", "0.37", "0.5", "0.75", "1.0", "1.5", "2.0", "2.4", "3.0", "4.2"], width=8)
         self._mp_combo.pack(side=tk.LEFT, padx=(0, 10))
         # Shown (and the combo greyed) when the training folder is voice recordings only —
         # there are no pixels for this number to size. Managed by _refresh_audio_only_ui.
@@ -13765,7 +13768,7 @@ class LoRATrainerGUI:
         opts_row.pack(anchor=tk.W, pady=(12, 0))
         ttk.Label(opts_row, text="Target megapixels:").pack(side=tk.LEFT, padx=(0, 4))
         _max_combo = ttk.Combobox(opts_row, textvariable=self.prep_megapixels_var,
-                                  values=["0.25", "0.5", "0.75", "1.0", "1.5", "2.0", "2.4",
+                                  values=["0.25", "0.37", "0.5", "0.75", "1.0", "1.5", "2.0", "2.4",
                                           "3.0", "4.2"],
                                   state="readonly", width=6)
         _max_combo.pack(side=tk.LEFT)

@@ -36,6 +36,7 @@ from fizgig.modules.sdpa import consider_training_backend as _consider_training_
 from fizgig.networks.lora import create_network
 from fizgig.training.metadata import (
     ARCHITECTURE_KREA2, build_metadata, latest_sample_image, thumbnail_data_uri, resolve_title,
+    sample_for_epoch, refresh_checkpoint_thumbnail,
 )
 from fizgig.training.train_utils import LossRecorder, prune_state_dirs, validate_output_name
 
@@ -3315,6 +3316,14 @@ def train_krea2(
                                 prompts=prev_prompts)
                 if _last_p:
                     _last_sample_prompt = _last_p
+                # This epoch's checkpoint (if one was saved above) went out with the PREVIOUS
+                # epoch's preview as its auto thumbnail — the preview didn't exist yet (#122).
+                # Re-embed its own now. Explicit --metadata_thumbnail is the user's and stays.
+                _ck = os.path.join(output_dir, f"{output_name}-{epoch + 1:06d}.safetensors")
+                if os.path.exists(_ck) and not (metadata_thumbnail or "").strip():
+                    _own = sample_for_epoch(output_dir, output_name, epoch + 1)
+                    if _own:
+                        refresh_checkpoint_thumbnail(_ck, _own)
             except Exception as _prev_err:
                 # A preview failure — almost always CUDA OOM (the ~13 GB Turbo + the Qwen3-VL
                 # encoder won't fit alongside the parked training DiT on a small card) — must NEVER

@@ -56,6 +56,7 @@ from fizgig.klein.position import prc_img, prc_txt, scatter_ids, pack_control_la
 from fizgig.modules.schedulers import FlowMatchDiscreteScheduler, RexLR
 from fizgig.training.metadata import (
     build_metadata, latest_sample_image, thumbnail_data_uri, resolve_title,
+    sample_for_epoch, refresh_checkpoint_thumbnail,
     ARCHITECTURE_KLEIN_9B, ARCHITECTURE_KLEIN_9B_FULL,
 )
 from fizgig.training.train_utils import (
@@ -2877,6 +2878,7 @@ class KleinTrainer:
             optimizer_eval_fn()
             # Pause flag check — if requested, force save this epoch even if save_every_n_epochs would skip
             pause_requested = bool(args.pause_flag_path and os.path.exists(args.pause_flag_path))
+            _epoch_ckpt_path = None          # set when this epoch's checkpoint is written (thumbnail refresh)
             if args.save_every_n_epochs is not None:
                 saving = (epoch + 1) % args.save_every_n_epochs == 0 and (epoch + 1) < num_train_epochs
                 if pause_requested:
@@ -2884,6 +2886,7 @@ class KleinTrainer:
                 if is_main_process and saving:
                     ckpt_name = get_epoch_ckpt_name(args.output_name, epoch + 1)
                     save_model(ckpt_name, accelerator.unwrap_model(network), global_step, epoch + 1)
+                    _epoch_ckpt_path = os.path.join(args.output_dir, ckpt_name)
 
                     remove_epoch_no = get_remove_epoch_no(args, epoch + 1)
                     if remove_epoch_no is not None:
@@ -2901,6 +2904,14 @@ class KleinTrainer:
             # degrades gracefully here) — the checkpoint for this epoch is already saved.
             try:
                 self.sample_images(accelerator, args, epoch + 1, global_step, vae, transformer, sample_parameters, dit_dtype)
+                # The checkpoint above was saved BEFORE this preview existed, so its auto
+                # thumbnail was the previous epoch's picture (#122). Now that this epoch's own
+                # preview is on disk, re-embed it. Only the auto thumbnail — an explicit
+                # --metadata_thumbnail is the user's choice and stays.
+                if is_main_process and _epoch_ckpt_path and not (args.metadata_thumbnail or "").strip():
+                    _own = sample_for_epoch(args.output_dir, args.output_name, epoch + 1)
+                    if _own:
+                        refresh_checkpoint_thumbnail(_epoch_ckpt_path, _own)
             except Exception:
                 logger.warning("sample generation failed at epoch %d — training continues, "
                                "previews skipped this round", epoch + 1, exc_info=True)

@@ -848,6 +848,11 @@ SEED_TRAVEL_PRESETS = {
 # MiniMax H3 built-in presets — barebones image-only LoRA. Only the knobs the H3 trainer reads
 # apply (rank/alpha/lr/epochs/save/seed/adaptive/optimizer/grad-accum/max-grad-norm/megapixels);
 # the H3 base is always NF4 (no swap / fp8 / quant knobs). The first entry is applied on switch.
+# Weight averaging on Krea 2 ships OFF until it is measured there (H3's A/B does not transfer
+# automatically); the row is in Training Parameters so an A/B is one click.
+for _p in KREA2_BUILT_IN_PRESETS.values():
+    _p.setdefault("KREA2_EMA", "Off")
+
 MINIMAX_BUILT_IN_PRESETS = {
     # LoKR factor 8 rather than standard LoRA: the same call Krea 2 landed on after measurement
     # (highest likeness recorded here, no skin sheen). Dim/alpha still ride along for when the
@@ -4203,6 +4208,7 @@ class LoRATrainerGUI:
                                     "browse": None, "parent": training_content}
 
         self._build_minimax_structure_row(training_content)
+        self._build_krea2_ema_row(training_content)
 
         # Model Area to Train dropdown (blocks + timestep auto-fill)
         self._modelarea_label = ttk.Label(training_content, text="Model Area to Train:")
@@ -7083,6 +7089,29 @@ class LoRATrainerGUI:
         med = shift / (shift + 1.0)
         lbl.config(text=f"→ shift {shift:.3g}, median noise {med:.2f}", fg="#27AE60")
 
+    def _build_krea2_ema_row(self, parent):
+        """Weight averaging (EMA) for Krea 2 — in Training Parameters, not Other Options (Peter,
+        9 Sep 2026: "since we're adding it fresh to Krea 2, put it in the main settings").
+        Its own key (KREA2_EMA) so the two families' choices never bleed into each other.
+        Shown only under Krea 2 (_apply_training_arch_visibility)."""
+        self._krea2_ema_label = ttk.Label(parent, text="Weight averaging (EMA):")
+        self._krea2_ema_label.grid(row=25, column=0, sticky=tk.W, padx=5, pady=(8, 2))
+        self._krea2_ema_frame = ttk.Frame(parent)
+        self._krea2_ema_frame.grid(row=25, column=1, columnspan=2, sticky=tk.W, padx=5, pady=(8, 2))
+        self.entries["KREA2_EMA"] = ttk.Combobox(
+            self._krea2_ema_frame, values=["Off", "0.98", "0.99", "0.995"], width=8, state="readonly")
+        self.entries["KREA2_EMA"].set(str(self.settings.get("KREA2_EMA", "Off")))
+        self.entries["KREA2_EMA"].pack(side=tk.LEFT)
+        self._krea2_ema_hint = ttk.Label(
+            parent,
+            text="Checkpoints and previews come from a running average of the adapter's recent steps "
+                 "instead of whichever step the epoch ended on, so each checkpoint reflects the whole "
+                 "dataset rather than the tail of the shuffle. On MiniMax H3, 0.98 measured five "
+                 "likeness points above Off on the late epochs with half the epoch-to-epoch spread. "
+                 "New on Krea 2 — try 0.98 against Off on your own dataset.",
+            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
+        self._krea2_ema_hint.grid(row=26, column=0, columnspan=3, sticky=tk.W, padx=5, pady=(0, 4))
+
     def _build_minimax_structure_row(self, parent):
         """Training Structure — the MiniMax timestep density, named.
 
@@ -7861,6 +7890,11 @@ class LoRATrainerGUI:
         # Klein cannot run. (Klein's --quant_4bit still exists on its CLI.)
         for w in (self._quant_4bit_label, self.quant_4bit_check, self._quant_4bit_hint):
             self._set_widget_visible(w, is_krea2)
+        # Weight averaging for Krea 2 lives in Training Parameters (H3's is in Other Options).
+        for w in (getattr(self, "_krea2_ema_label", None), getattr(self, "_krea2_ema_frame", None),
+                  getattr(self, "_krea2_ema_hint", None)):
+            if w is not None:
+                self._set_widget_visible(w, is_krea2)
 
         # The two families resolve optimizer names differently, so the dropdown's contents follow
         # the selector. A name valid for one may not exist in the other (Klein takes module paths;
@@ -28457,6 +28491,7 @@ class LoRATrainerGUI:
             "MINIMAX_BLOCK_LIMIT": self.entries["MINIMAX_BLOCK_LIMIT"].get(),
             "MINIMAX_LR_WARMUP": self.entries["MINIMAX_LR_WARMUP"].get(),
             "MINIMAX_EMA": self.entries["MINIMAX_EMA"].get(),
+            "KREA2_EMA": self.entries["KREA2_EMA"].get(),
             "MINIMAX_ADAPTER_RAMP": self.entries["MINIMAX_ADAPTER_RAMP"].get(),
             "MINIMAX_CAPTION_DROPOUT": self.entries["MINIMAX_CAPTION_DROPOUT"].get(),
             "MINIMAX_DISTILL_WEIGHT": str(self.entries["MINIMAX_DISTILL_WEIGHT"].get() or "0.8").strip(),
@@ -29274,6 +29309,10 @@ class LoRATrainerGUI:
                     cmd += ["--max_grad_norm", str(float(_mgn))]
             except ValueError:
                 pass
+        # Weight averaging (EMA): "0.98" -> --ema_decay 0.98; Off sends nothing.
+        _ke = str(self.settings.get("KREA2_EMA", "Off") or "Off").split(" ")[0]
+        if _ke != "Off":
+            cmd += ["--ema_decay", _ke]
         # Optimizer family + free-form kwargs. Sent whenever set: the trainer's own default is
         # adamw8bit, so passing it explicitly is harmless and keeps the launched command a full
         # record of what the run actually used.

@@ -649,7 +649,7 @@ class _Krea2Collator:
 
 
 def _save_training_state(output_dir, output_name, network, optimizer, *, epoch, global_step,
-                         network_dim, network_alpha, dtype, extra=None):
+                         network_dim, network_alpha, dtype, extra=None, ema=None):
     """Save a resumable training-state dir matching Klein's naming: <name>-<NNNNNN>-state/.
 
     NNNNNN is the number of COMPLETED epochs (= the next 0-indexed epoch to run). The dir
@@ -660,7 +660,7 @@ def _save_training_state(output_dir, output_name, network, optimizer, *, epoch, 
     try:
         return _write_state_files(state_dir, network, optimizer, epoch=epoch,
                                   global_step=global_step, network_dim=network_dim,
-                                  network_alpha=network_alpha, dtype=dtype, extra=extra)
+                                  network_alpha=network_alpha, dtype=dtype, extra=extra, ema=ema)
     except Exception as _first:
         # Clean the partial dir (no training_state.json = no commit marker, but it would shadow
         # the previous good state in the GUI's latest-state scan), then retry ONCE after a short
@@ -677,17 +677,21 @@ def _save_training_state(output_dir, output_name, network, optimizer, *, epoch, 
             os.makedirs(state_dir, exist_ok=True)
             return _write_state_files(state_dir, network, optimizer, epoch=epoch,
                                       global_step=global_step, network_dim=network_dim,
-                                      network_alpha=network_alpha, dtype=dtype, extra=extra)
+                                      network_alpha=network_alpha, dtype=dtype, extra=extra, ema=ema)
         except Exception:
             shutil.rmtree(state_dir, ignore_errors=True)
             raise
 
 
 def _write_state_files(state_dir, network, optimizer, *, epoch, global_step,
-                       network_dim, network_alpha, dtype, extra=None):
+                       network_dim, network_alpha, dtype, extra=None, ema=None):
+    # The state dir holds the RAW training weights (resume continues the walk from them); the
+    # running average rides alongside in ema.pt so a resumed run keeps its history.
     _save_lora(network, os.path.join(state_dir, "lora.safetensors"), network_dim, network_alpha, dtype)
     if optimizer is not None:   # None under fused backward (per-parameter optimizers)
         torch.save(optimizer.state_dict(), os.path.join(state_dir, "optimizer.pt"))
+    if ema is not None:
+        torch.save(ema.state_dict(), os.path.join(state_dir, "ema.pt"))
     rng = {"torch": torch.get_rng_state()}
     if torch.cuda.is_available():
         rng["cuda"] = torch.cuda.get_rng_state_all()
@@ -1597,6 +1601,9 @@ def train_krea2(
     # process, so without this it re-runs window 0 (attn) instead of the next unfinished one.
     finetune_start_window: int = 0,
     max_grad_norm: float = 1.0,
+    # Weight averaging: >0 saves checkpoints and previews from the EMA of the adapter (decay per
+    # step; 0.98 measured best on H3). Training runs on the raw weights. Ignored under rotation FT.
+    ema_decay: float = 0.0,
     seed: int = 42,
     # Effective batch = batch_size (1) x this. Grads accumulate over N micro-batches, then one
     # optimizer step. Per-image LR still applies per micro-batch (each image scales its own loss).
@@ -2422,8 +2429,27 @@ def train_krea2(
     # `if resume_state_dir` — NOT `and os.path.isdir(...)`: a requested resume whose path is bad
     # (the .safetensors picked instead of its folder, a moved/typo'd dir) used to skip this block
     # silently and train from scratch. If a resume was asked for, it happens or the run refuses.
+    ema = None
+    if ema_decay and float(ema_decay) > 0:
+        if rotator is not None:
+            logger.info("[ema] weight averaging is ignored under fine-tune rotation (there is no "
+                        "adapter to average — the base itself is being trained)")
+        else:
+            from fizgig.training.ema import EMAWeights
+            ema = EMAWeights(network, float(ema_decay))
+            logger.info(f"[ema] ON at decay {float(ema_decay):g} — checkpoints and previews use the "
+                        f"running average of the adapter; training runs on the raw weights")
     if resume_state_dir:
         start_epoch, global_step, _resume_meta = _load_training_state(resume_state_dir, network, optimizer, device=device)
+        if ema is not None:
+            _ema_path = os.path.join(resume_state_dir, "ema.pt")
+            if os.path.exists(_ema_path):
+                ema.load_state_dict(torch.load(_ema_path, map_location="cpu"))
+                logger.info(f"[ema] restored the running average ({ema.n} updates)")
+            else:
+                ema.shadow = [p.detach().clone().float() for p in ema.params]
+                logger.info("[ema] no EMA state in the resume dir — restarting the average from "
+                            "the restored weights")
         if adaptive:
             adaptive.load_state_dict(_resume_meta.get("adaptive_lr_state"))
             logger.info(f"[resume] adaptive_lr state restored: best_loss={adaptive.best_loss} "
@@ -2784,7 +2810,13 @@ def train_krea2(
     elif sample_at_first and do_previews and start_epoch == 0:
         from safetensors.torch import load_file as _lf0
         _tmp0 = os.path.join(output_dir, "_sample_lora.safetensors")
-        _save_lora(network, _tmp0, network_dim, network_alpha, dtype)
+        if ema is not None:
+            ema.swap_in()
+        try:
+            _save_lora(network, _tmp0, network_dim, network_alpha, dtype)
+        finally:
+            if ema is not None:
+                ema.swap_out()
         logger.info("rendering epoch-0 preview (Sample at Start)...")
         dit.to("cpu")
         if getattr(dit, "_nf4_quantized", False):
@@ -2985,6 +3017,8 @@ def train_krea2(
                     scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
                 pending_accum = 0
+                if ema is not None:
+                    ema.update()             # after the clipped step, so the shadow tracks what was applied
             global_step += 1
             loss_recorder.add(epoch=epoch, step=i, loss=loss.item())
             if loss_watch is not None:
@@ -3027,6 +3061,8 @@ def train_krea2(
                 scheduler.step()
             optimizer.zero_grad(set_to_none=True)
             pending_accum = 0
+            if ema is not None:
+                ema.update()
         _ep_steps = global_step - _epoch_step0
         _ep_secs = time.time() - _epoch_t0
         _rate = f"  {_ep_secs / _ep_steps:.2f}s/it" if _ep_steps > 0 else ""
@@ -3127,9 +3163,17 @@ def train_krea2(
             else:
                 # comfy_format so a user's picked-best epoch is byte-format-identical to the final
                 # artifact (LoKR: LyCORIS-standard keys). No-op for standard LoRA.
-                _save_lora(network, os.path.join(output_dir, f"{output_name}-{epoch + 1:06d}.safetensors"),
-                           network_dim, network_alpha, dtype, extra_metadata=_sai_metadata(),
-                           comfy_format=True)
+                if ema is not None:
+                    ema.swap_in()
+                try:
+                    _save_lora(network, os.path.join(output_dir, f"{output_name}-{epoch + 1:06d}.safetensors"),
+                               network_dim, network_alpha, dtype,
+                               extra_metadata={**_sai_metadata(),
+                                               "ss_ema_decay": f"{float(ema_decay):g}" if ema is not None else "0"},
+                               comfy_format=True)
+                finally:
+                    if ema is not None:
+                        ema.swap_out()
                 # Resumable state rides the checkpoint cadence. Safe to snapshot here: pending_accum
                 # was flushed above, the adaptive-LR watcher has already made its call for this epoch,
                 # and any queued caption updates are applied — so the optimizer is settled.
@@ -3143,7 +3187,8 @@ def train_krea2(
                         _save_training_state(output_dir, output_name, network, optimizer,
                                              epoch=epoch + 1, global_step=global_step,
                                              network_dim=network_dim, network_alpha=network_alpha, dtype=dtype,
-                                             extra={"adaptive_lr_state": adaptive.state_dict()} if adaptive else None)
+                                             extra={"adaptive_lr_state": adaptive.state_dict()} if adaptive else None,
+                                         ema=ema)
                         state_saved_this_epoch = True
                     except Exception as _se:
                         logger.error("[state] saving the resume state FAILED (%s: %s). This is "
@@ -3219,7 +3264,13 @@ def train_krea2(
                 and (epoch + 1) % sample_every_n_epochs == 0):
             from safetensors.torch import load_file
             tmp = os.path.join(output_dir, "_sample_lora.safetensors")
-            _save_lora(network, tmp, network_dim, network_alpha, dtype)
+            if ema is not None:
+                ema.swap_in()
+            try:
+                _save_lora(network, tmp, network_dim, network_alpha, dtype)
+            finally:
+                if ema is not None:
+                    ema.swap_out()
             logger.info(f"rendering previews (epoch {epoch + 1}) on the fp8 Turbo...")
             # The preview loads the fp8 Turbo (~13 GB) on top of the resident training DiT
             # (~14 GB fp8) + the VAE — two full models won't fit (OOMs ~30 GB on a 32 GB card).
@@ -3340,7 +3391,8 @@ def train_krea2(
                     _save_training_state(output_dir, output_name, network, optimizer,
                                          epoch=epoch + 1, global_step=global_step,
                                          network_dim=network_dim, network_alpha=network_alpha, dtype=dtype,
-                                         extra={"adaptive_lr_state": adaptive.state_dict()} if adaptive else None)
+                                         extra={"adaptive_lr_state": adaptive.state_dict()} if adaptive else None,
+                                         ema=ema)
                 except Exception as _se:
                     logger.error("[pause] state save FAILED (%s: %s) — there is NO new resume "
                                  "point for this pause. Free disk space (on RunPod: check the "
@@ -3369,7 +3421,8 @@ def train_krea2(
             _save_training_state(output_dir, output_name, network, optimizer,
                                  epoch=max_train_epochs, global_step=global_step,
                                  network_dim=network_dim, network_alpha=network_alpha, dtype=dtype,
-                                 extra={"adaptive_lr_state": adaptive.state_dict()} if adaptive else None)
+                                 extra={"adaptive_lr_state": adaptive.state_dict()} if adaptive else None,
+                                         ema=ema)
             prune_state_dirs(output_dir, output_name, keep_last_n_states)
         except Exception as _se:
             logger.error("[state] end-of-run state save FAILED (%s: %s) — the finished LoRA is "
@@ -3380,7 +3433,8 @@ def train_krea2(
     out = os.path.join(output_dir, f"{output_name}.safetensors")
     # Record the context LoRA in metadata so users know to pair it at the same strength at
     # inference (the trained LoRA is context-dependent — same contract as Klein).
-    extra = {"ss_optimizer": optimizer_label}
+    extra = {"ss_optimizer": optimizer_label,
+             "ss_ema_decay": f"{float(ema_decay):g}" if ema is not None else "0"}
     if slider_pairs:
         # Deploy contract: the strength dial IS the slider. Tools read these to default
         # their range (Repair Studio / Royale scrub ±).
@@ -3403,6 +3457,8 @@ def train_krea2(
         logger.info("[ft-rotation] to train it further: --dit %s --finetune_start_window %d",
                     os.path.basename(out), _next_w)
         return out
+    if ema is not None:
+        ema.swap_in()                    # the final LoRA IS the average; nothing trains after this
     _save_lora(network, out, network_dim, network_alpha, dtype, extra_metadata=extra,
                comfy_format=True)
     logger.info(f"saved final LoRA -> {out}")

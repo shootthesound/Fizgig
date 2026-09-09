@@ -173,6 +173,10 @@ def setup_parser() -> argparse.ArgumentParser:
     p.add_argument("--gradient_accumulation_steps", type=int, default=1,
                    help="Accumulate grads over N micro-batches per optimizer step (effective batch = N)")
     p.add_argument("--max_grad_norm", type=float, default=1.0, help="Gradient clipping norm (0 disables)")
+    p.add_argument("--ema_decay", type=float, default=0.0, metavar="D",
+                   help="Weight averaging: save checkpoints and previews from an EMA of the adapter "
+                        "with this per-step decay (0.98 measured best on MiniMax H3). 0 = off. "
+                        "Training runs on the raw weights; ignored under fine-tune rotation.")
     p.add_argument("--optimizer_type", default="adamw8bit",
                    help="Optimizer family, or a full module.path.ClassName. Available here: "
                         + ", ".join(available_optimizers()))
@@ -276,6 +280,7 @@ def main():
         finetune_fused_backward=args.finetune_fused_backward,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         max_grad_norm=args.max_grad_norm,
+        ema_decay=args.ema_decay,
         optimizer_type=args.optimizer_type, optimizer_args=args.optimizer_args,
         compile_blocks=args.compile_blocks,
         lr_scheduler=args.lr_scheduler, lr_warmup_steps=args.lr_warmup_steps,

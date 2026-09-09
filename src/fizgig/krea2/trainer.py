@@ -1474,8 +1474,46 @@ def sample_previews(turbo_path, ae, encoded_prompts, lora_sd, out_dir, epoch, *,
     return result
 
 
+def _preview_vram(tag: str, reset_peak: bool = False) -> None:
+    """One line of VRAM state at a preview waypoint (#123 asked for these): allocated /
+    reserved now, the peak reserved since the preview started (the number that has to fit
+    the card), and free as the driver reports it — what goes to zero right before Windows
+    starts paging."""
+    try:
+        if not torch.cuda.is_available():
+            return
+        if reset_peak:
+            torch.cuda.reset_peak_memory_stats()
+        a = torch.cuda.memory_allocated() / 1024 ** 3
+        r = torch.cuda.memory_reserved() / 1024 ** 3
+        pk = torch.cuda.max_memory_reserved() / 1024 ** 3
+        f = torch.cuda.mem_get_info()[0] / 1024 ** 3
+        logger.info(f"[preview-vram] {tag}: allocated {a:.2f} GB, reserved {r:.2f} GB "
+                    f"(peak {pk:.2f} GB), free {f:.2f} GB")
+    except Exception:
+        pass
+
+
+def _small_card_previews() -> bool:
+    """16 GB-class cards (total < 20 GB) get the low-memory preview treatment: the training DiT
+    parks for the decode and the canvas caps at 768 px. Override with FIZGIG_PREVIEW_LOWMEM=1
+    (force on) / 0 (force off)."""
+    _ov = os.environ.get("FIZGIG_PREVIEW_LOWMEM", "").strip()
+    if _ov in ("0", "1"):
+        return _ov == "1"
+    try:
+        if not torch.cuda.is_available():
+            return False
+        _sim = os.environ.get("FIZGIG_SIM_VRAM_GB", "").strip()   # the small-card simulator
+        total_gb = float(_sim) if _sim else torch.cuda.get_device_properties(0).total_memory / 1e9
+        return total_gb < 20.0
+    except Exception:
+        return False
+
+
 def _render_prompt_set(model, ae, encoded_prompts, out_dir, epoch, *, output_name, steps,
-                       cfg_scale, neg, width, height, seed, device, prompts=None):
+                       cfg_scale, neg, width, height, seed, device, prompts=None,
+                       before_decode=None, after_decode=None):
     """Shared preview render loop — identical settings (mu=1.15 pinned) and the exact gallery
     filename pattern for both the Turbo-model path and the turbo-LoRA-on-training-DiT path.
 
@@ -1498,7 +1536,8 @@ def _render_prompt_set(model, ae, encoded_prompts, out_dir, epoch, *, output_nam
         with torch.no_grad():
             imgs = sampling.sample(model, ae, txt, txtmask, untxt=_untxt, untxtmask=_untxtmask,
                                    device=device, dtype=torch.bfloat16, width=width, height=height,
-                                   steps=steps, cfg_scale=cfg_scale, mu=1.15, seed=seed + i)
+                                   steps=steps, cfg_scale=cfg_scale, mu=1.15, seed=seed + i,
+                                   before_decode=before_decode, after_decode=after_decode)
         p = os.path.join(out_dir, f"{output_name}_e{epoch:06d}_{i:02d}_{ts}_{seed + i}.png")
         imgs[0].save(p)
         paths.append(p)
@@ -1528,7 +1567,41 @@ def sample_previews_on_dit(dit, turbo_net, turbo_diffb, ae, encoded_prompts, out
     """
     saved_biases = []
     was_training = dit.training
+    _nf4 = bool(getattr(dit, "_nf4_quantized", False))
+    _lowmem = _small_card_previews()
+
+    # #123 (RX 6800 16 GB, NF4): this path keeps the training DiT resident and the VAE joins it
+    # for the decode; at 1024 px that overshoots physical VRAM, WDDM demotes live training
+    # tensors to shared memory, and they stay there — every step after ran over PCIe. On small
+    # cards the DiT (NF4 packed weights included) now parks for the decode and comes back
+    # afterwards, which also re-promotes it into physical VRAM. The Turbo-checkpoint path
+    # already does exactly this for the whole preview.
+    def _park_for_decode():
+        _preview_vram("before decode")
+        dit.to("cpu")
+        if _nf4:
+            from fizgig.modules.nf4 import move_nf4_to_device
+            move_nf4_to_device(dit, "cpu")
+        turbo_net.to(device="cpu")
+        gc.collect()
+        torch.cuda.empty_cache()
+        _preview_vram("DiT parked for the decode")
+
+    def _restore_after_decode():
+        # Placement first, THEN the NF4 packed weights (the two are complementary — see the
+        # Turbo path's restore for why an elif here strands parameters on CPU).
+        if blocks_to_swap > 0:
+            dit.move_to_device_except_swap_blocks(torch.device(device))
+        else:
+            dit.to(device)
+        if _nf4:
+            from fizgig.modules.nf4 import move_nf4_to_device
+            move_nf4_to_device(dit, device)
+        turbo_net.to(device=device)
+        _preview_vram("after decode, DiT restored")
+
     try:
+        _preview_vram("preview start", reset_peak=True)
         dit.eval()
         if blocks_to_swap > 0:
             dit.switch_block_swap_for_inference()
@@ -1540,7 +1613,9 @@ def sample_previews_on_dit(dit, turbo_net, turbo_diffb, ae, encoded_prompts, out
         return _render_prompt_set(dit, ae, encoded_prompts, out_dir, epoch,
                                   output_name=output_name, steps=steps, cfg_scale=cfg_scale,
                                   neg=neg, width=width, height=height, seed=seed, device=device,
-                                  prompts=prompts)
+                                  prompts=prompts,
+                                  before_decode=_park_for_decode if _lowmem else None,
+                                  after_decode=_restore_after_decode if _lowmem else None)
     finally:
         for bias, snap in saved_biases:
             bias.data.copy_(snap)
@@ -1550,7 +1625,9 @@ def sample_previews_on_dit(dit, turbo_net, turbo_diffb, ae, encoded_prompts, out
             dit.switch_block_swap_for_training()
         if was_training:
             dit.train()
+        gc.collect()
         torch.cuda.empty_cache()
+        _preview_vram("after preview cleanup")
 
 
 def train_krea2(
@@ -2043,6 +2120,20 @@ def train_krea2(
                         "be ignored. Set Sample CFG Scale above 1 to use it.")
         sample_ae = load_vae(vae_path, input_channels=3, device="cpu", disable_mmap=True)
         sample_dir = os.path.join(output_dir, "sample")
+        if _small_card_previews():
+            # #123: on 16 GB-class cards the preview canvas caps at 768 px on the long side
+            # (with the DiT parked for the decode — see sample_previews_on_dit). Tiled VAE
+            # decode was considered and left out: the park removes the spike on its own and
+            # tiling would put seams at risk in every preview.
+            _long = max(int(sample_width), int(sample_height))
+            if _long > 768:
+                _sc = 768.0 / _long
+                sample_width = max(256, int(round(int(sample_width) * _sc / 16.0)) * 16)
+                sample_height = max(256, int(round(int(sample_height) * _sc / 16.0)) * 16)
+                logger.info(f"[preview] 16 GB-class card: preview canvas capped to "
+                            f"{sample_width}x{sample_height} (a 1024-px preview on top of the "
+                            f"resident base is what pages a 16 GB card — #123). Pick 768 on the "
+                            f"Samples tab to make this the setting rather than a clamp.")
 
     if fast_ft:
         # Fast FT only has meaning on the fp8 path (it swaps the block-64 scale layout for a
@@ -2430,6 +2521,7 @@ def train_krea2(
     # `if resume_state_dir` — NOT `and os.path.isdir(...)`: a requested resume whose path is bad
     # (the .safetensors picked instead of its folder, a moved/typo'd dir) used to skip this block
     # silently and train from scratch. If a resume was asked for, it happens or the run refuses.
+    _vram_after_preview = False      # #123 diagnostics: log the first step after a preview
     ema = None
     if ema_decay and float(ema_decay) > 0:
         if rotator is not None:
@@ -3021,6 +3113,9 @@ def train_krea2(
                 if ema is not None:
                     ema.update()             # after the clipped step, so the shadow tracks what was applied
             global_step += 1
+            if _vram_after_preview:
+                _vram_after_preview = False
+                _preview_vram(f"first training step after the preview (step {global_step})")
             loss_recorder.add(epoch=epoch, step=i, loss=loss.item())
             if loss_watch is not None:
                 loss_watch.observe(epoch=epoch + 1, step=global_step,
@@ -3250,6 +3345,7 @@ def train_krea2(
                                        neg=encoded_negative, width=prev_w, height=prev_h,
                                        seed=prev_seed, blocks_to_swap=blocks_to_swap, device=device,
                                        prompts=prev_prompts)
+                _vram_after_preview = True
                 if _last_p:
                     _last_sample_prompt = _last_p
             except Exception as _prev_err:

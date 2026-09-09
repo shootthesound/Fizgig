@@ -173,6 +173,8 @@ def sample(
     mu=None,
     should_abort=None,
     noise=None,
+    before_decode=None,
+    after_decode=None,
 ):
     """Denoise pre-encoded text embeddings to images: euler+CFG denoise -> decode.
 
@@ -276,9 +278,16 @@ def sample(
     # Move the VAE to the latent's device for decode (it is kept on CPU otherwise to save VRAM),
     # then move it back to CPU so the next generation starts with the decode VRAM freed. The DiT
     # stays put on its device; the decode is expected to fit alongside it via fp8 / block swap.
+    # Hooks around the decode (#123): a caller that keeps the DiT resident can park it for the
+    # decode and put it back — on a 16 GB card the VAE joining a resident base at 1024 px is the
+    # spike that makes WDDM demote live training tensors, and nothing re-promotes them after.
+    if before_decode is not None:
+        before_decode()
     ae = ae.to(img.device)
     pixels = ae.decode_to_pixels(img.to(torch.bfloat16))
     ae = ae.to("cpu")
+    if after_decode is not None:
+        after_decode()
     pixels = rearrange(pixels * 255.0, "b c h w -> b h w c").cpu().byte().numpy()
     gc.collect()
     if torch.cuda.is_available():

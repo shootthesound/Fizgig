@@ -4179,7 +4179,7 @@ class LoRATrainerGUI:
                                           lambda e: self._on_network_type_changed())
         self._network_type_hint = tk.Label(
             self._network_type_rowf,
-            text="LoKR: higher quality (you may need to lower learning rate to 1e-4) · LoRA: ~20% faster training",
+            text="LoKR: suits larger datasets (you may need to lower learning rate to 1e-4) · LoRA: ~20% faster, best on smaller datasets",
             font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
             justify=tk.LEFT)
         self._network_type_hint.pack(side=tk.LEFT, padx=(10, 0))
@@ -7941,7 +7941,7 @@ class LoRATrainerGUI:
             self._set_widget_visible(w, native)
         self._network_type_hint.config(
             text="LoRA recommended for MiniMax" if is_minimax
-            else "LoKR: higher quality (you may need to lower learning rate to 1e-4) · LoRA: ~20% faster training")
+            else "LoKR: suits larger datasets (you may need to lower learning rate to 1e-4) · LoRA: ~20% faster, best on smaller datasets")
 
         # Detail Focus is the inverse: MiniMax ONLY. Klein and Krea 2 already derive their shift
         # from the sample's token count, so there is nothing to dial there.

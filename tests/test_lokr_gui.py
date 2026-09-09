@@ -108,6 +108,13 @@ for name, preset in G.KREA2_BUILT_IN_PRESETS.items():
     ck(f"  built-in '{name[:30]}...' pins standard LoRA",
        preset.get("NETWORK_TYPE") == "LoRA (standard)")
 
+# The hint under Network Type follows the selection (9 Sep 2026).
+g.entries["NETWORK_TYPE"].set("LoKR (Kronecker)"); g._on_network_type_changed(); root.update()
+ck("LoKR selected -> hint gives the 5e-5 / Adaptive 1e-4-5e-5 learning-rate advice",
+   "5e-5" in g._network_type_hint.cget("text") and "Max 1e-4" in g._network_type_hint.cget("text"))
+g.entries["NETWORK_TYPE"].set("LoRA (standard)"); g._on_network_type_changed(); root.update()
+ck("LoRA selected -> the general trade line", g._network_type_hint.cget("text").startswith("LoKR: suits larger datasets"))
+
 # Applying a built-in preset resets a LoKR selection back to standard.
 g.entries["NETWORK_TYPE"].set("LoKR (Kronecker)")
 g._apply_preset_values(next(iter(G.KREA2_BUILT_IN_PRESETS.values())))

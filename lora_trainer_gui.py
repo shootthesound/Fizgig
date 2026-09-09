@@ -4179,7 +4179,7 @@ class LoRATrainerGUI:
                                           lambda e: self._on_network_type_changed())
         self._network_type_hint = tk.Label(
             self._network_type_rowf,
-            text="LoKR: suits larger datasets — drop the learning rate to 5e-5 (Adaptive LR: min 5e-5, max 1e-4) · LoRA: ~20% faster, best on smaller datasets",
+            text=self._NETWORK_HINT_GENERAL,
             font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
             justify=tk.LEFT)
         self._network_type_hint.pack(side=tk.LEFT, padx=(10, 0))
@@ -7939,9 +7939,7 @@ class LoRATrainerGUI:
         # LoRA speed edge measured on Krea 2 doesn't translate.
         for w in (self.labels["NETWORK_TYPE"], self._network_type_rowf):
             self._set_widget_visible(w, native)
-        self._network_type_hint.config(
-            text="LoRA recommended for MiniMax" if is_minimax
-            else "LoKR: suits larger datasets — drop the learning rate to 5e-5 (Adaptive LR: min 5e-5, max 1e-4) · LoRA: ~20% faster, best on smaller datasets")
+        self._refresh_network_type_hint()
 
         # Detail Focus is the inverse: MiniMax ONLY. Klein and Krea 2 already derive their shift
         # from the sample's token count, so there is nothing to dial there.
@@ -9002,7 +9000,29 @@ class LoRATrainerGUI:
             self.show_row("NETWORK_DIM")
             self.show_row("NETWORK_ALPHA")
             self.hide_row("LOKR_FACTOR")
+        self._refresh_network_type_hint()
         self._save_last_used_paths()
+
+    _NETWORK_HINT_GENERAL = ("LoKR: suits larger datasets — drop the learning rate to 5e-5 (Adaptive LR: min 5e-5, "
+                            "max 1e-4) · LoRA: ~20% faster, best on smaller datasets")
+    _NETWORK_HINT_LOKR = ("LoKR selected: set your learning rate to 5e-5 — or with Adaptive LR, set Max 1e-4 and "
+                          "Min 5e-5. Suits larger datasets; on small ones it can overfit before convergence.")
+
+    def _refresh_network_type_hint(self):
+        """The line under Network Type follows the selection (Peter, 9 Sep 2026): LoKR shows the
+        learning-rate advice it needs; LoRA shows the general trade; MiniMax keeps its own line."""
+        hint = getattr(self, "_network_type_hint", None)
+        if hint is None:
+            return
+        try:
+            if self._is_minimax_arch():
+                hint.config(text="LoRA recommended for MiniMax")
+            elif self._network_type_is_lokr():
+                hint.config(text=self._NETWORK_HINT_LOKR)
+            else:
+                hint.config(text=self._NETWORK_HINT_GENERAL)
+        except tk.TclError:
+            pass
 
     def toggle_scaled(self):
         """Enable or disable the Scaled checkbox based on FP8 checkbox state"""

@@ -7098,9 +7098,9 @@ class LoRATrainerGUI:
         Its own key (KREA2_EMA) so the two families' choices never bleed into each other.
         Shown only under Krea 2 (_apply_training_arch_visibility)."""
         self._krea2_ema_label = ttk.Label(parent, text="Weight averaging (EMA):")
-        self._krea2_ema_label.grid(row=25, column=0, sticky=tk.W, padx=5, pady=(8, 2))
+        self._krea2_ema_label.grid(row=27, column=0, sticky=tk.W, padx=5, pady=(8, 2))
         self._krea2_ema_frame = ttk.Frame(parent)
-        self._krea2_ema_frame.grid(row=25, column=1, columnspan=2, sticky=tk.W, padx=5, pady=(8, 2))
+        self._krea2_ema_frame.grid(row=27, column=1, columnspan=2, sticky=tk.W, padx=5, pady=(8, 2))
         self.entries["KREA2_EMA"] = ttk.Combobox(
             self._krea2_ema_frame, values=["Off", "0.98 (recommended)", "0.99 (stronger)", "0.995 (long runs only)"],
             width=22, state="readonly")
@@ -7114,7 +7114,7 @@ class LoRATrainerGUI:
                  "likeness points above Off on the late epochs with half the epoch-to-epoch spread, "
                  "and Krea 2 measured the same way (9 Sep). 0.98 is the default; Off is there for an A/B.",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
-        self._krea2_ema_hint.grid(row=26, column=0, columnspan=3, sticky=tk.W, padx=5, pady=(0, 4))
+        self._krea2_ema_hint.grid(row=28, column=0, columnspan=3, sticky=tk.W, padx=5, pady=(0, 4))
 
     def _build_minimax_structure_row(self, parent):
         """Training Structure — the MiniMax timestep density, named.

@@ -9003,10 +9003,10 @@ class LoRATrainerGUI:
         self._refresh_network_type_hint()
         self._save_last_used_paths()
 
-    _NETWORK_HINT_GENERAL = ("LoKR: suits larger datasets — drop the learning rate to 5e-5 (Adaptive LR: min 5e-5, "
-                            "max 1e-4) · LoRA: ~20% faster, best on smaller datasets")
+    _NETWORK_HINT_GENERAL = ("LoKR: drop the learning rate to 5e-5 (Adaptive LR: min 5e-5, max 1e-4) · "
+                            "LoRA: ~20% faster training")
     _NETWORK_HINT_LOKR = ("LoKR selected: set your learning rate to 5e-5 — or with Adaptive LR, set Max 1e-4 and "
-                          "Min 5e-5. Suits larger datasets; on small ones it can overfit before convergence.")
+                          "Min 5e-5.")
 
     def _refresh_network_type_hint(self):
         """The line under Network Type follows the selection (Peter, 9 Sep 2026): LoKR shows the

@@ -940,10 +940,11 @@ MINIMAX_BUILT_IN_PRESETS = {
         # presets and saved configs still load; the command builder never emits them.
         "MINIMAX_BLOCK_LIMIT": "Off",
         "MINIMAX_LR_WARMUP": "Off",
-        # EMA stays available but OFF by default: it saves the smoothed centre of the stride
-        # zigzag instead of a raw corner of it, which is worth having when a run is pushed hard
-        # and unnecessary when it is not.
-        "MINIMAX_EMA": "Off",
+        # EMA ships ON at 0.98 (Peter, 9 Sep 2026): a 4-way A/B (off / 0.98 / 0.99 / 0.995,
+        # 50 epochs, same seed, gallery ArcFace likeness) put 0.98 five points above off on the
+        # late-epoch plateau with half the epoch-to-epoch spread and no delay reaching 50%;
+        # 0.99 only smoothed, 0.995 lagged 13 epochs and finished below off (EMA lag).
+        "MINIMAX_EMA": "0.98 (recommended)",
         "MINIMAX_DISTILL": False,
     },
     # (An earlier "Fast (adaptive LR)" preset was retired 9 Aug when its recipe drifted from the
@@ -5266,10 +5267,10 @@ class LoRATrainerGUI:
             width=10, state="readonly")
         self.entries["MINIMAX_LR_WARMUP"].set("Off")
         self.entries["MINIMAX_EMA"] = ttk.Combobox(
-            self._minimax_smooth_frame, values=["Off", "0.98 (light)", "0.99 (recommended)",
-                                                "0.995 (strong)"],
+            self._minimax_smooth_frame, values=["Off", "0.98 (recommended)", "0.99 (stronger)",
+                                                "0.995 (long runs only)"],
             width=18, state="readonly")
-        self.entries["MINIMAX_EMA"].set(str(self.settings.get("MINIMAX_EMA", "Off")))
+        self.entries["MINIMAX_EMA"].set(str(self.settings.get("MINIMAX_EMA", "0.98 (recommended)")))
         self.entries["MINIMAX_EMA"].pack(side=tk.LEFT)
         self._minimax_smooth_hint = ttk.Label(
             scheduler_content,
@@ -29623,8 +29624,8 @@ class LoRATrainerGUI:
             cmd += ["--gradient_accumulation_steps", str(_accum)]
         # LR warmup: RETIRED alongside the clip — the ramp eases the first epochs in by
         # construction, and does not need an epoch count guessed up front. Never emitted.
-        # EMA stays: "0.99 (recommended)" -> 0.99.
-        _em = str(self.settings.get("MINIMAX_EMA", "Off") or "Off").split(" ")[0]
+        # EMA: "0.98 (recommended)" -> 0.98 (a saved "0.99 (recommended)" still parses to 0.99).
+        _em = str(self.settings.get("MINIMAX_EMA", "0.98") or "Off").split(" ")[0]
         if _em.replace(".", "", 1).isdigit():
             cmd += ["--ema_decay", _em]
         _ar = str(self.settings.get("MINIMAX_ADAPTER_RAMP", "Off") or "Off").split(" ")[0]

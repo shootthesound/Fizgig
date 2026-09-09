@@ -124,8 +124,9 @@ try:
     ck("Krea 2: EMA row mapped in Training Parameters", mapped(app._krea2_ema_label) and mapped(app.entries["KREA2_EMA"]))
     ck("Krea 2: the row is in the Training Parameters section, not Other Options",
        app._krea2_ema_label.master is app.collapsible_sections["training"].get_content_frame())
-    ck("Krea 2: options Off / 0.98 / 0.99 / 0.995, default Off",
-       tuple(app.entries["KREA2_EMA"].cget("values")) == ("Off", "0.98", "0.99", "0.995") and app.entries["KREA2_EMA"].get() == "Off")
+    ck("Krea 2: options Off / 0.98 (recommended) / 0.99 (stronger) / 0.995 (long runs only), default 0.98",
+       tuple(app.entries["KREA2_EMA"].cget("values")) == ("Off", "0.98 (recommended)", "0.99 (stronger)", "0.995 (long runs only)")
+       and app.entries["KREA2_EMA"].get().startswith("0.98"))
     settle(H3)
     ck("MiniMax: the Krea 2 row is hidden", not mapped(app._krea2_ema_label) and not mapped(app._krea2_ema_hint))
     ck("MiniMax: its own EMA control is untouched (0.98 recommended, in Other Options)",
@@ -136,15 +137,15 @@ try:
     gui_src = _io.open(os.path.join(REPO, "lora_trainer_gui.py"), encoding="utf-8").read()
     ck("launch dict carries KREA2_EMA", '"KREA2_EMA": self.entries["KREA2_EMA"].get()' in gui_src)
     for name, preset in G.KREA2_BUILT_IN_PRESETS.items():
-        ck(f"preset {name[:28]!r}... ships KREA2_EMA Off (A/B first)", preset.get("KREA2_EMA") == "Off")
+        ck(f"preset {name[:28]!r}... ships KREA2_EMA 0.98 (on by default, 9 Sep)", str(preset.get("KREA2_EMA", "")).split(" ")[0] == "0.98")
     ck("MiniMax presets do not carry KREA2_EMA", all("KREA2_EMA" not in p for p in G.MINIMAX_BUILT_IN_PRESETS.values()))
     base = dict(app.settings)
     base.update({"DATASET_CONFIG": "X:/ds.toml", "LORA_OUTPUT_DIR": "X:/out", "LORA_NAME": "t", "NETWORK_DIM": 16,
                  "NETWORK_ALPHA": 16, "LEARNING_RATE": 1e-4, "MAX_TRAIN_EPOCHS": 3, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 1,
                  "MAX_GRAD_NORM": "1.0", "OPTIMIZER_TYPE": "adamw8bit", "OPTIMIZER_ARGS": ""})
-    app.settings = dict(base, KREA2_EMA="0.98")
+    app.settings = dict(base, KREA2_EMA="0.98 (recommended)")
     c = [str(x) for x in app._build_krea2_train_command()]
-    ck("builder emits --ema_decay 0.98", "--ema_decay" in c and c[c.index("--ema_decay") + 1] == "0.98")
+    ck("builder emits --ema_decay 0.98 from the labelled value", "--ema_decay" in c and c[c.index("--ema_decay") + 1] == "0.98")
     app.settings = dict(base, KREA2_EMA="Off")
     c = [str(x) for x in app._build_krea2_train_command()]
     ck("...and nothing when Off", "--ema_decay" not in c)

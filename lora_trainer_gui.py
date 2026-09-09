@@ -848,10 +848,10 @@ SEED_TRAVEL_PRESETS = {
 # MiniMax H3 built-in presets — barebones image-only LoRA. Only the knobs the H3 trainer reads
 # apply (rank/alpha/lr/epochs/save/seed/adaptive/optimizer/grad-accum/max-grad-norm/megapixels);
 # the H3 base is always NF4 (no swap / fp8 / quant knobs). The first entry is applied on switch.
-# Weight averaging on Krea 2 ships OFF until it is measured there (H3's A/B does not transfer
-# automatically); the row is in Training Parameters so an A/B is one click.
+# Weight averaging ships ON at 0.98 on Krea 2 too (Peter, 9 Sep 2026: "EMA is definitely
+# working great in Krea 2 — 0.98 should be the recommended default and default to on").
 for _p in KREA2_BUILT_IN_PRESETS.values():
-    _p.setdefault("KREA2_EMA", "Off")
+    _p.setdefault("KREA2_EMA", "0.98 (recommended)")
 
 MINIMAX_BUILT_IN_PRESETS = {
     # LoKR factor 8 rather than standard LoRA: the same call Krea 2 landed on after measurement
@@ -4179,7 +4179,7 @@ class LoRATrainerGUI:
                                           lambda e: self._on_network_type_changed())
         self._network_type_hint = tk.Label(
             self._network_type_rowf,
-            text="LoKR: higher quality · LoRA: ~20% faster training",
+            text="LoKR: higher quality (you may need to lower learning rate to 1e-4) · LoRA: ~20% faster training",
             font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
             justify=tk.LEFT)
         self._network_type_hint.pack(side=tk.LEFT, padx=(10, 0))
@@ -7102,16 +7102,17 @@ class LoRATrainerGUI:
         self._krea2_ema_frame = ttk.Frame(parent)
         self._krea2_ema_frame.grid(row=25, column=1, columnspan=2, sticky=tk.W, padx=5, pady=(8, 2))
         self.entries["KREA2_EMA"] = ttk.Combobox(
-            self._krea2_ema_frame, values=["Off", "0.98", "0.99", "0.995"], width=8, state="readonly")
-        self.entries["KREA2_EMA"].set(str(self.settings.get("KREA2_EMA", "Off")))
+            self._krea2_ema_frame, values=["Off", "0.98 (recommended)", "0.99 (stronger)", "0.995 (long runs only)"],
+            width=22, state="readonly")
+        self.entries["KREA2_EMA"].set(str(self.settings.get("KREA2_EMA", "0.98 (recommended)")))
         self.entries["KREA2_EMA"].pack(side=tk.LEFT)
         self._krea2_ema_hint = ttk.Label(
             parent,
             text="Checkpoints and previews come from a running average of the adapter's recent steps "
                  "instead of whichever step the epoch ended on, so each checkpoint reflects the whole "
                  "dataset rather than the tail of the shuffle. On MiniMax H3, 0.98 measured five "
-                 "likeness points above Off on the late epochs with half the epoch-to-epoch spread. "
-                 "New on Krea 2 — try 0.98 against Off on your own dataset.",
+                 "likeness points above Off on the late epochs with half the epoch-to-epoch spread, "
+                 "and Krea 2 measured the same way (9 Sep). 0.98 is the default; Off is there for an A/B.",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._krea2_ema_hint.grid(row=26, column=0, columnspan=3, sticky=tk.W, padx=5, pady=(0, 4))
 
@@ -7940,7 +7941,7 @@ class LoRATrainerGUI:
             self._set_widget_visible(w, native)
         self._network_type_hint.config(
             text="LoRA recommended for MiniMax" if is_minimax
-            else "LoKR: higher quality · LoRA: ~20% faster training")
+            else "LoKR: higher quality (you may need to lower learning rate to 1e-4) · LoRA: ~20% faster training")
 
         # Detail Focus is the inverse: MiniMax ONLY. Klein and Krea 2 already derive their shift
         # from the sample's token count, so there is nothing to dial there.
@@ -29313,7 +29314,7 @@ class LoRATrainerGUI:
             except ValueError:
                 pass
         # Weight averaging (EMA): "0.98" -> --ema_decay 0.98; Off sends nothing.
-        _ke = str(self.settings.get("KREA2_EMA", "Off") or "Off").split(" ")[0]
+        _ke = str(self.settings.get("KREA2_EMA", "0.98") or "Off").split(" ")[0]
         if _ke != "Off":
             cmd += ["--ema_decay", _ke]
         # Optimizer family + free-form kwargs. Sent whenever set: the trainer's own default is

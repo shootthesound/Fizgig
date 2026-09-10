@@ -2292,13 +2292,15 @@ def train_minimax(
     base_quant: str = "auto",
     include_patterns: list = None,
     train_blocks: str = None,        # "14-37" = train only that block range (experiment)
-    likeness_cut_backward: bool = False,  # EXPERIMENT (10 Sep 2026): on a masked step, freeze the
-                                     # out-of-window LoRA params BEFORE the forward so autograd
-                                     # stops at the first trained block. Today's mask sets the
-                                     # out-of-window grads to None AFTER a full 50-block backward;
-                                     # measured (NF4, 0.25 MP): backward 0.32 s -> 0.19 s at
-                                     # 20-49, -> 0.13 s at 30-49, trained-param grads equal to
-                                     # within the base's own run-to-run noise. Off = today.
+    likeness_cut_backward: bool = True,  # Optimised Likeness (10 Sep 2026): on a masked step the
+                                     # out-of-window LoRA params AND the token refiner's LoRA
+                                     # are frozen BEFORE the forward, so autograd stops at the
+                                     # first trained block. Measured: -23% per step on int8,
+                                     # -27% on NF4 (0.25 MP); trained-block grads equal to the
+                                     # old post-hoc mask within run-to-run noise. Peter's A/B
+                                     # (same seed, 10 Sep): sharper previews, the epoch-to-epoch
+                                     # judder halved, likeness ahead at every epoch. False =
+                                     # the old full backward with the refiner training (A/B).
     photo_blocks: str = None,        # Optimised Likeness Learning: photo steps update only these
                                      # blocks (+refiners); video/audio clips update everything.
                                      # The 20-49 recipe: photo gradients into the front trunk are
@@ -3751,10 +3753,10 @@ def train_minimax(
             if "token_refiner" in _lora.lora_name:
                 _ref_ids.update(id(p) for p in _lora.parameters())
         _refiner_params = [p for p in params if id(p) in _ref_ids]
-        logger.info("[likeness] backward CUT at the window (experimental): out-of-window LoRA "
-                    "params AND the token refiner's %d LoRA tensors are frozen before each masked "
-                    "step's forward, so the backward stops at the first trained block instead of "
-                    "running all 50 and discarding. The refiner LoRA does not learn on masked steps.",
+        logger.info("[likeness] backward cut at the window: out-of-window LoRA params AND the "
+                    "token refiner's %d LoRA tensors are frozen before each masked step's forward, "
+                    "so the backward stops at the first trained block. The refiner LoRA does not "
+                    "learn on masked steps (--likeness_full_backward restores the old behaviour).",
                     len(_refiner_params))
     # Clip routing, LoRA mode (Peter, 2 Sep — same behaviour as the FT tickbox): clip-only
     # windows update only clip_blocks. Same mechanism as the photo mask.

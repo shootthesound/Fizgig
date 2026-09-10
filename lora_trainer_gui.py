@@ -1006,10 +1006,6 @@ MINIMAX_BUILT_IN_PRESETS = {
     **MINIMAX_BUILT_IN_PRESETS,
 }
 
-# Backward cut is an experiment: every MiniMax preset ships it OFF.
-for _p in MINIMAX_BUILT_IN_PRESETS.values():
-    _p.setdefault("MINIMAX_LIKENESS_CUT", False)
-
 # Directory for dataset configurations
 DATASET_DIR = os.path.join(os.path.dirname(__file__), "dataset")
 
@@ -4827,36 +4823,13 @@ class LoRATrainerGUI:
         self._minimax_likeness_hint = ttk.Label(
             training_content,
             text=f"Photos and clips train the identity blocks ({MINIMAX_LIKENESS_BLOCKS}) only, "
-                 f"voice the audio zone ({MINIMAX_AUDIO_BLOCKS}) only. Untick for style or "
-                 "scene training. See the MiniMax section of the README.",
+                 f"voice the audio zone ({MINIMAX_AUDIO_BLOCKS}) only. The backward stops at "
+                 "the window and the text token refiner stays frozen on those steps: about a "
+                 "quarter faster per step, and sharper, steadier previews (measured 10 Sep). "
+                 "Untick for style or scene training. See the MiniMax section of the README.",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_likeness_hint.grid(row=40, column=0, columnspan=2, sticky=tk.W,
                                          padx=5, pady=(0, 4))
-        # Backward cut (EXPERIMENT, 10 Sep 2026): freeze the out-of-window LoRA params before
-        # each masked step so the backward stops at the window. Measured NF4 0.25 MP: a step
-        # 0.48 s -> 0.35 s (20-49). Off by default until Peter's runs say otherwise.
-        self.entries["MINIMAX_LIKENESS_CUT"] = tk.BooleanVar(
-            value=bool(self.settings.get("MINIMAX_LIKENESS_CUT", False)))
-        # One grid row (41 — 42/43 are the adapter's): tick + hint packed inside a frame.
-        self._minimax_likeness_cut_frame = ttk.Frame(training_content)
-        self._minimax_likeness_cut_frame.grid(row=41, column=0, columnspan=2, sticky=tk.W,
-                                              padx=(24, 5), pady=(2, 4))
-        self._minimax_likeness_cut_cb = ttk.Checkbutton(
-            self._minimax_likeness_cut_frame, text="Cut the backward at the likeness window (experimental)",
-            variable=self.entries["MINIMAX_LIKENESS_CUT"])
-        self._minimax_likeness_cut_cb.pack(anchor=tk.W)
-        self._minimax_likeness_cut_hint = ttk.Label(
-            self._minimax_likeness_cut_frame,
-            text="Today a photo step runs the full 50-block backward and discards the gradients "
-                 "outside the likeness window. This freezes those blocks AND the text token "
-                 "refiner's LoRA before the step, so the backward stops at the window: measured "
-                 "-23% per step on int8, -27% on NF4 (0.25 MP), identical gradients on the "
-                 "trained blocks. The refiner LoRA then does not learn on photo/clip steps — the "
-                 "trigger is still learned in the blocks' attention, where text meets image; "
-                 "prompt following is the thing to watch. LoRA runs only; needs Optimised "
-                 "Likeness on.",
-            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=700)
-        self._minimax_likeness_cut_hint.pack(anchor=tk.W)
         self._MINIMAX_LIKENESS_HINT_LORA = self._minimax_likeness_hint.cget("text")
         self._MINIMAX_LIKENESS_HINT_FT = (
             f"Same meaning under fine-tune: photos and clips train the identity blocks "
@@ -7977,7 +7950,6 @@ class LoRATrainerGUI:
                   self._minimax_hnlr_label, self._minimax_hnlr_frame, self._minimax_hnlr_hint,
                   self._minimax_blocks_label, self._minimax_blocks_frame, self._minimax_blocks_hint,
                   self._minimax_likeness_cb, self._minimax_likeness_hint,
-                  self._minimax_likeness_cut_frame,
                   self._minimax_adapter_cb, self._minimax_adapter_hint,
                   self._minimax_tread_cb, self._minimax_tread_hint,
                   self._minimax_clipstill_cb, self._minimax_clipstill_hint,
@@ -28526,7 +28498,6 @@ class LoRATrainerGUI:
             "MINIMAX_BLOCKS": ("all" if self.entries["MINIMAX_LIKENESS_OPT"].get()
                                else minimax_block_spec(self.entries["MINIMAX_BLOCKS"].get())),
             "MINIMAX_LIKENESS_OPT": bool(self.entries["MINIMAX_LIKENESS_OPT"].get()),
-            "MINIMAX_LIKENESS_CUT": bool(self.entries["MINIMAX_LIKENESS_CUT"].get()),
             "MINIMAX_TRAIN_ADALN": bool(self.entries["MINIMAX_TRAIN_ADALN"].get()),
             "MINIMAX_TRAINING_ADAPTER": bool(self.entries["MINIMAX_TRAINING_ADAPTER"].get()),
             # experiment/tread: both ticks must be copied here or the builder reads a stale value
@@ -29791,8 +29762,6 @@ class LoRATrainerGUI:
             # Clips are confined too — always, under likeness (a confined overnight video run
             # trained perfectly well, 29 Aug; the sub-tick was retired 7 Sep).
             cmd += ["--clip_blocks", MINIMAX_LIKENESS_BLOCKS]
-            if self.settings.get("MINIMAX_LIKENESS_CUT"):
-                cmd += ["--likeness_cut_backward"]
         # Voice routing — audio steps train only the measured voice zone (34-49): outside it
         # they corrupt the visual blocks (A/B, 24 Aug). Under FT it always travels (the
         # trainer also tightens the cycle to the union of what the dataset trains); in LoRA

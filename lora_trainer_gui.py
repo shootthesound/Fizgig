@@ -607,6 +607,7 @@ MINIMAX_STRUCTURE_DESC = {
 MINIMAX_STRUCTURE_DEFAULT = "Likeness and Style — 60% clean-end"
 
 MINIMAX_BLOCK_OPTIONS = [
+    "6-49 · recommended (skips 0-5)",
     "all · every block (50 of 50)",
     "10-49 · skip the first 10",
     "14-37 · middle band",
@@ -622,6 +623,12 @@ MINIMAX_NUM_BLOCKS = 50          # H3's DiT block count (MiniMaxH3Config.num_lay
 # 20-26 adds pose/likeness stability, identity lives 27-49, and the front trunk 0-19 is where
 # photo gradients deform anatomy. One place to tweak as the add-back ladder refines the figures.
 MINIMAX_LIKENESS_BLOCKS = "20-49"
+
+# The recommendation when Optimised Likeness Learning is OFF and the run trains the model as a
+# whole. Blocks 0-5 are the damage: photo gradients there deform anatomy (Aug) and audio picks up
+# micro-distortion (10 Sep). Everything above them is useful capacity — 6-49 beat both the 20-49
+# window and the full 50 on the same dataset and seed. Filled into Blocks to Train on untick.
+MINIMAX_FULL_MODEL_BLOCKS = "6-49"
 
 # Voice routing — the block set audio-only steps train. 34-49 per the block map (audio core
 # 38-48 peak 41-42, shoulder 34-37) and Peter's A/B (24 Aug): audio-only trained at 34-49 is
@@ -7317,13 +7324,12 @@ class LoRATrainerGUI:
 
     # The Blocks to Train hint in both of its states — module-level truth so the greying
     # handler can swap them without duplicating the strings inline.
-    _MINIMAX_BLOCKS_HINT = ("Train only a subset of the 50 blocks. Type ranges and single "
-                            "blocks, comma-separated, like 3-12, 22, 31-33 (blocks 0-49). "
-                            "Measured answers: 20-49 for likeness — sharper, more "
-                            "prompt-responsive, better sound, faster and smoother to converge "
-                            "(Optimised Likeness Learning applies it to photos automatically) — "
-                            "and 0-3, 6-47 for style (the Style preset sets it). Full write-up "
-                            "in the README.")
+    _MINIMAX_BLOCKS_HINT = (f"Train a subset of the 50 blocks. {MINIMAX_FULL_MODEL_BLOCKS} is "
+                            "filled in for you and is the recommendation: blocks 0-5 deform "
+                            "anatomy and add micro-distortion to audio, everything above them is "
+                            "useful capacity. Type ranges and singles, comma-separated, like "
+                            "3-12, 22, 31-33. Style is the exception at 0-3, 6-47, set by the "
+                            "Style preset.")
     _MINIMAX_BLOCKS_HINT_LOCKED = ("Owned by Optimised Likeness Learning while it is on: photos "
                                    f"and clips {MINIMAX_LIKENESS_BLOCKS}. Untick it to hand-pick.")
 
@@ -7356,6 +7362,11 @@ class LoRATrainerGUI:
                            fg=COLORS["text_explain"])
         else:
             combo.config(state="")               # editable, the widget's natural state
+            # Unticking hands the choice back, so hand back the recommendation rather than the
+            # do-nothing "all" (Peter, 10 Sep 2026). A spec the user chose is never overwritten:
+            # only the value that means "every block" is replaced.
+            if minimax_block_spec(combo.get()).lower() == "all":
+                self._select_combo_by_token(combo, MINIMAX_FULL_MODEL_BLOCKS)
             hint.config(text=self._MINIMAX_BLOCKS_HINT)
             self._refresh_minimax_blocks_count()
 

@@ -598,6 +598,79 @@ def adapter_vram_gb(params: int, optimizer_type: str = "adamw8bit") -> float:
     return params * (2 + state_bytes) / 1e9     # bf16 weight + optimizer state
 
 
+def frozen_lora_vram_gb(path: str, bytes_per_elem: int = 2) -> float:
+    """GB a FROZEN side LoRA holds on the card for the whole run — the training adapter, or a
+    Context LoRA. Read from the safetensors HEADER, so this works before the DiT is built, like
+    adapter_param_count.
+
+    load_context_lora does `net.to(device=device, dtype=dtype)`, so the file lands in the training
+    dtype (bf16 = 2 bytes), not the dtype it was stored in — count elements, not file bytes. It is
+    applied to the DiT and never freed, so it belongs in the resident term exactly like the
+    trainable adapter's weights. Any AdaLN rows the file carries are injected from the same
+    tensors and are counted here too.
+
+    Not a rounding error: the training adapter is on by default in every H3 preset. Fizgig's
+    Preferences download is ostris's v1 (rank 16, 0.155 GB resident); upstream also publishes a
+    v2 at rank 32, which is 0.310 GB if a user points the path at it. This reads whichever file
+    is configured rather than assuming either.
+    """
+    if not path:
+        return 0.0
+    try:
+        if not os.path.isfile(path):
+            return 0.0
+        import json
+        import struct
+        with open(path, "rb") as f:
+            n = struct.unpack("<Q", f.read(8))[0]
+            hdr = json.loads(f.read(n))
+        elems = 0
+        for key, ent in hdr.items():
+            if key == "__metadata__" or not isinstance(ent, dict):
+                continue
+            shape = ent.get("shape") or []
+            c = 1
+            for d in shape:
+                c *= int(d)
+            elems += c if shape else 0
+        return elems * int(bytes_per_elem) / 1e9
+    except Exception:
+        return 0.0     # unreadable header: plan as before rather than refuse to plan
+
+
+def ema_shadow_gb(params: int) -> float:
+    """GB the EMA shadow holds. EMAWeights keeps `p.detach().clone().float()` per trainable
+    parameter — a full FP32 copy on the same device, live for the whole run (swap_in/swap_out
+    only bracket saves and previews). Four bytes, not two: 1.25 GB on LoKR factor 8, which is
+    most of the planner's whole reserve. Zero when EMA is off, and FT rotation forces it off
+    before the plan runs."""
+    return max(0, int(params)) * 4 / 1e9
+
+
+def plan_adapter_gb(params: int, optimizer_type: str = "adamw8bit", *,
+                    training_adapter_path: str = None, context_lora_path: str = None,
+                    ema_decay: float = 0.0, ft_rotation: int = 0):
+    """Everything the adapter side of a run keeps resident, as (total, frozen_gb, ema_gb) GB.
+
+    Pure so the gating is testable: the planner runs deep inside train_minimax behind a GPU and a
+    21 GB checkpoint, and until this existed the only coverage of the gates was grepping the
+    source for the lines that implement them, which passes whether or not they run.
+
+    The gates mirror what the run actually does. Under fine-tune rotation the training adapter
+    and a Context LoRA are refused outright (they raise at load time) and EMA is forced off by
+    the FT coercion block, so none of the three is resident there. Otherwise each term counts
+    only when it is really present.
+    """
+    total = adapter_vram_gb(params, optimizer_type)
+    frozen = ema = 0.0
+    if not ft_rotation:
+        frozen = (frozen_lora_vram_gb(training_adapter_path)
+                  + frozen_lora_vram_gb(context_lora_path))
+        if ema_decay and float(ema_decay) > 0:
+            ema = ema_shadow_gb(params)
+    return total + frozen + ema, frozen, ema
+
+
 def plan_base_quant(free_gb: float, pruned: bool, mp: float = 0.25, adapter_gb: float = 0.0):
     """Pick the base quantisation AND the swap plan together -> (mode, blocks_to_swap, ckpt, why).
 
@@ -2695,10 +2768,13 @@ def train_minimax(
             # The adapter is NOT a rounding error and it is not fixed: LoKR 8 trains ~313 M
             # parameters against a rank-16 LoRA's ~75 M, and fp32 Adam state is 4x the 8-bit
             # one. Planning without it was planning for a configuration nobody runs — the
-            # anchors were measured on rank-16 + adamw8bit (~0.45 GB) while the shipped default
-            # is LoKR 8 + adamw (~3.8 GB). Shapes come from the checkpoint header, so this is
-            # the real targeted module set for whichever file is loaded.
-            _pat = PRUNED_INCLUDE_PATTERNS if _pruned else DEFAULT_INCLUDE_PATTERNS
+            # anchors were measured on rank-16 + adamw8bit (~0.45 GB), while a LoKR 8 + adamw
+            # run (an opt-in Network Type; every shipped H3 preset is LoRA) reaches ~3.8 GB.
+            # Shapes come from the checkpoint header, so this is the real targeted module set
+            # for whichever file is loaded — and it must be the same pattern list the run will
+            # use, hence user_include_patterns first, exactly as the build resolves it below.
+            _pat = list(user_include_patterns or
+                        (PRUNED_INCLUDE_PATTERNS if _pruned else DEFAULT_INCLUDE_PATTERNS))
             if not train_adaln:
                 _pat = [p for p in _pat if "adaln" not in p]
             if not train_token_refiner:
@@ -2706,7 +2782,13 @@ def train_minimax(
             _ad_params = adapter_param_count(dit_path, _pat, network_type=network_type,
                                              network_dim=network_dim, lokr_factor=lokr_factor,
                                              train_blocks=train_blocks)
-            _adapter = adapter_vram_gb(_ad_params, optimizer_type)
+            # The frozen training adapter, a Context LoRA and the EMA shadow are resident for
+            # the whole run and were invisible to the plan until 10 Sep 2026 — see
+            # plan_adapter_gb for what each one is and when it counts.
+            _adapter, _frozen_gb, _ema_gb = plan_adapter_gb(
+                _ad_params, optimizer_type, training_adapter_path=training_adapter_path,
+                context_lora_path=context_lora_path, ema_decay=ema_decay,
+                ft_rotation=ft_rotation)
 
             if base_quant == "auto":
                 _mode, n_swap, _ckpt_auto, _why = plan_base_quant(
@@ -2726,10 +2808,16 @@ def train_minimax(
             _base_mode = _mode
             _resident = _resident_for(_mode, _pruned)
 
+            _extra_bits = []
+            if _frozen_gb:
+                _extra_bits.append(f"+{_frozen_gb:.2f} GB frozen LoRAs")
+            if _ema_gb:
+                _extra_bits.append(f"+{_ema_gb:.2f} GB EMA shadow")
+            _extra_txt = (" " + " ".join(_extra_bits)) if _extra_bits else ""
             logger.info(f"[vram] auto plan: free {_free_gb:.1f} GB, largest bucket {_mp:.2f} MP, "
                         f"base ~{_resident:.0f} GB ({_mode}, {'pruned' if _pruned else 'bf16'}), "
                         f"adapter ~{_adapter:.1f} GB ({_ad_params/1e6:.0f} M params, "
-                        f"{optimizer_type}) -> blocks_to_swap={n_swap}, "
+                        f"{optimizer_type}){_extra_txt} -> blocks_to_swap={n_swap}, "
                         f"checkpointing={'on' if _ckpt_auto else 'off'}")
             logger.info(f"[vram] base precision: {_mode} — {_why}")
             if _mode == "nf4" and _pruned and base_quant == "auto":
@@ -2742,6 +2830,25 @@ def train_minimax(
                     "inference. To force the accurate base, set Base Precision to int8 — expect "
                     "block swap and a several-times-slower run — or close other GPU apps and "
                     "re-launch.")
+                # Do not make them guess which knob to turn. On a big trainable adapter the
+                # EMA shadow alone is over a GB of the budget (fp32, 4 bytes a parameter), and
+                # it is the cheapest thing here to give up — it changes what is SAVED, not what
+                # is learned. Only said when these terms are big enough to have mattered.
+                _plan_without = plan_base_quant(
+                    _free_gb, _pruned, mp=_mp, adapter_gb=_adapter - _frozen_gb - _ema_gb)[0]
+                if _plan_without == "int8":
+                    _cand = []
+                    if _ema_gb >= 0.3:
+                        _cand.append(f"the EMA shadow ({_ema_gb:.1f} GB — Weight averaging off "
+                                     f"still trains identically, it only changes what is saved)")
+                    if _frozen_gb >= 0.3:
+                        _cand.append(f"the frozen LoRAs riding under yours ({_frozen_gb:.1f} GB "
+                                     f"— the training adapter and any Context LoRA)")
+                    if _cand:
+                        logger.warning(
+                            "[vram] int8 WOULD have fitted without the extras this run keeps "
+                            "resident: " + ", and ".join(_cand) + ". Drop one to get the "
+                            "accurate base back.")
             if n_swap > 0 and not _ring_planned():
                 # Only the CLASSIC parking swap earns the scary line — ring-streamed
                 # blocks (int8 and NF4 alike) cross PCIe one-way with prefetch and cost

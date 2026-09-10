@@ -1,4 +1,6 @@
-# Fizgig v5.6.0
+# Fizgig v5.6.0 (beta)
+
+> **Beta — superseded by [v5.6.1](https://github.com/shootthesound/Fizgig/releases/tag/v5.6.1).** On this build a MiniMax H3 run with Optimised Likeness Learning off refuses to start; 5.6.1 carries everything below plus the fix.
 
 MiniMax H3 training takes a big step: a large quality improvement in both the visual and the audio results, a much smoother climb through the epochs, and training steps about 30% faster. Nothing to set. It is the new default on every H3 LoRA run.
 

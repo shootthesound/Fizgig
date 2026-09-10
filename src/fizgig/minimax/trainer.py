@@ -2292,6 +2292,13 @@ def train_minimax(
     base_quant: str = "auto",
     include_patterns: list = None,
     train_blocks: str = None,        # "14-37" = train only that block range (experiment)
+    likeness_cut_backward: bool = False,  # EXPERIMENT (10 Sep 2026): on a masked step, freeze the
+                                     # out-of-window LoRA params BEFORE the forward so autograd
+                                     # stops at the first trained block. Today's mask sets the
+                                     # out-of-window grads to None AFTER a full 50-block backward;
+                                     # measured (NF4, 0.25 MP): backward 0.32 s -> 0.19 s at
+                                     # 20-49, -> 0.13 s at 30-49, trained-param grads equal to
+                                     # within the base's own run-to-run noise. Off = today.
     photo_blocks: str = None,        # Optimised Likeness Learning: photo steps update only these
                                      # blocks (+refiners); video/audio clips update everything.
                                      # The 20-49 recipe: photo gradients into the front trunk are
@@ -3733,6 +3740,10 @@ def train_minimax(
         else:
             logger.info("[likeness] photo_blocks %s covers every trained block — nothing to "
                         "mask (Blocks to Train already inside it?)", _photo_used)
+    if likeness_cut_backward and rotator is None:
+        logger.info("[likeness] backward CUT at the window (experimental): out-of-window LoRA "
+                    "params are frozen before each masked step's forward, so the backward stops "
+                    "at the first trained block instead of running all 50 and discarding")
     # Clip routing, LoRA mode (Peter, 2 Sep — same behaviour as the FT tickbox): clip-only
     # windows update only clip_blocks. Same mechanism as the photo mask.
     _clip_mask_params = []
@@ -4152,6 +4163,7 @@ def train_minimax(
                                     if training_adapter_path else "none"),
             "ss_slow_blocks": _slow_used or "none",
             "ss_photo_blocks": (_photo_used if _photo_mask_params else "off"),
+            "ss_likeness_cut_backward": "1" if (likeness_cut_backward and rotator is None) else "0",
             "ss_clip_blocks": (str(clip_blocks) if (clip_blocks and (_clip_mask_params or rotator is not None))
                                else "off"),
             "ss_block_limit": str(block_limit or 0),
@@ -5103,6 +5115,15 @@ def train_minimax(
                 _frz = (_ft_freeze["voice"] if _is_voice
                         else (_ft_freeze["photo"] if _is_photo
                               else _ft_freeze["clip"]))
+                for _p in _frz:
+                    _p.requires_grad_(False)
+            elif likeness_cut_backward and not _is_voice:
+                # Backward cut (LoRA mode): the params this step's mask will discard anyway are
+                # frozen for the forward+backward, so the graph ends at the first trained block.
+                # Exact per-step masking (a mixed accumulation window no longer trains the
+                # out-of-window blocks from its photo steps — those grads were None-d anyway on
+                # a photo-only window, and on a mixed window they only ever came from clips).
+                _frz = list(_photo_mask_params) if _is_photo else list(_clip_mask_params)
                 for _p in _frz:
                     _p.requires_grad_(False)
             if (distill and (_teacher_phase or not _p1_epochs) and "ref_hidden_states" in batch

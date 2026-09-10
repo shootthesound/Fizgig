@@ -245,6 +245,12 @@ def setup_parser() -> argparse.ArgumentParser:
                         "--finetune_rotation.")
     p.add_argument("--tread_start", type=int, default=2)
     p.add_argument("--tread_end", type=int, default=47)
+    p.add_argument("--likeness_cut_backward", action="store_true",
+                   help="EXPERIMENT: with --photo_blocks / --clip_blocks, freeze the out-of-window "
+                        "LoRA params before each masked step's forward so the backward stops at the "
+                        "first trained block (measured: backward -40%% at 20-49, -60%% at 30-49, "
+                        "same gradients on the trained blocks). Default: the full backward runs and "
+                        "the out-of-window grads are discarded.")
     p.add_argument("--clip_still_as_photo", action="store_true",
                    help="Every clip's picked still (its sharpest frame with a face, cached by "
                         "minimax_cache_latents --clip_still) also trains as a photo on its own "
@@ -353,6 +359,7 @@ def main():
         train_blocks=args.train_blocks,
         photo_blocks=args.photo_blocks,
         clip_blocks=args.clip_blocks,
+        likeness_cut_backward=args.likeness_cut_backward,
         audio_blocks=args.audio_blocks,
         distill=args.distill,
         distill_weight=args.distill_weight,

@@ -68,7 +68,8 @@ def settle(likeness=None, ft=None, arch=H3):
     app.architecture_var.set(arch)
     app.update_ui_for_architecture()
     if likeness is not None:
-        app.entries["MINIMAX_LIKENESS_OPT"].set(likeness)
+        app.entries["MINIMAX_LIKENESS_MODE"].set(
+            G.MINIMAX_MODE_FAST if likeness else G.MINIMAX_MODE_OFF)
     if ft is not None and hasattr(app, "minimax_finetune_var"):
         app.minimax_finetune_var.set(ft)
         app._on_minimax_ft_toggle()
@@ -93,7 +94,7 @@ BASE = {
     "MAX_GRAD_NORM": "1.0", "OPTIMIZER_TYPE": "adamw8bit", "OPTIMIZER_ARGS": "",
     "METADATA_TITLE": "", "METADATA_AUTHOR": "", "METADATA_DESCRIPTION": "",
     "METADATA_LICENSE": "", "METADATA_TAGS": "", "METADATA_TRIGGER_PHRASE": "",
-    "MINIMAX_LIKENESS_OPT": True, "MINIMAX_BLOCKS": "all",
+    "MINIMAX_LIKENESS_MODE": G.MINIMAX_MODE_FAST, "MINIMAX_BLOCKS": "all",
 }
 CFG = G.ARCHITECTURES[H3]
 
@@ -113,12 +114,12 @@ ck("FT + likeness -> --clip_blocks 20-49 emitted", has_clip_blocks(c))
 ck("...and --photo_blocks still travels", "--photo_blocks" in c)
 c = cmd_of(MINIMAX_FT_CLIP_LIKENESS=False)
 ck("a stale saved MINIMAX_FT_CLIP_LIKENESS=False changes nothing", has_clip_blocks(c))
-c = cmd_of(MINIMAX_LIKENESS_OPT=False)
+c = cmd_of(MINIMAX_LIKENESS_MODE=G.MINIMAX_MODE_OFF)
 ck("FT, likeness OFF -> no --clip_blocks (rides likeness only)", "--clip_blocks" not in c)
 app.minimax_finetune_var.set(False)
 c = cmd_of()
 ck("LoRA mode + likeness -> --clip_blocks too", has_clip_blocks(c))
-c = cmd_of(MINIMAX_LIKENESS_OPT=False)
+c = cmd_of(MINIMAX_LIKENESS_MODE=G.MINIMAX_MODE_OFF)
 ck("LoRA mode, likeness OFF -> none", "--clip_blocks" not in c)
 ck("launch dict no longer carries MINIMAX_FT_CLIP_LIKENESS",
    "MINIMAX_FT_CLIP_LIKENESS" not in open(os.path.join(REPO, "lora_trainer_gui.py"), encoding="utf-8").read())

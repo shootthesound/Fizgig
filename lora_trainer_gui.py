@@ -630,6 +630,31 @@ MINIMAX_LIKENESS_BLOCKS = "20-49"
 # window and the full 50 on the same dataset and seed. Filled into Blocks to Train on untick.
 MINIMAX_FULL_MODEL_BLOCKS = "6-49"
 
+# Training mode (was the Optimised Likeness Learning tickbox until 10 Sep 2026). Two measured
+# recipes and an escape hatch:
+#   fast  — photos and clips 20-49, voice 34-49. The backward stops at the window, so steps are
+#           the quickest of the three. Good on both picture and sound.
+#   ultra — 6-49 for every step type. Better likeness AND better audio by eye and ear, and it
+#           holds the dataset's global traits out of the LoRA far longer (the greyscale test:
+#           monochrome previews from epoch 2 on a full-model run, epoch 49 on 6-49, never on
+#           20-49). Slower per step: the backward covers 44 blocks instead of 30.
+#   off   — the blocks are yours to pick below. What Style uses (0-3, 6-47).
+MINIMAX_MODE_FAST = "Fast · good quality, quickest steps"
+MINIMAX_MODE_ULTRA = "Ultra quality · slower steps"
+MINIMAX_MODE_OFF = "Off · hand-pick the blocks below"
+MINIMAX_LIKENESS_MODE_OPTIONS = [MINIMAX_MODE_FAST, MINIMAX_MODE_ULTRA, MINIMAX_MODE_OFF]
+
+
+def minimax_likeness_mode(raw):
+    """Dropdown label -> "fast" | "ultra" | "off". Anything unrecognised is fast (the default)."""
+    s = str(raw or "").split("·")[0].strip().lower()
+    if s.startswith("ultra"):
+        return "ultra"
+    if s.startswith("off"):
+        return "off"
+    return "fast"
+
+
 # Voice routing — the block set audio-only steps train. 34-49 per the block map (audio core
 # 38-48 peak 41-42, shoulder 34-37) and Peter's A/B (24 Aug): audio-only trained at 34-49 is
 # clean; at 20-49 the audio training corrupted the visual blocks. Clips still train the full
@@ -931,10 +956,10 @@ MINIMAX_BUILT_IN_PRESETS = {
         "MINIMAX_TRAIN_ADALN": False,
         # The text token refiner is not a LoRA target (10 Sep): see the Other Options tick.
         "MINIMAX_TRAIN_REFINER": False,
-        # Optimised Likeness Learning ships ON: photos train the identity blocks (20-49) only,
-        # clips train the full model. The one measured exception is style — the Style preset
-        # turns it off (style needs the early blocks).
-        "MINIMAX_LIKENESS_OPT": True,
+        # Training mode ships FAST: photos and clips on the identity blocks (20-49), voice on
+        # the audio zone (34-49). Ultra quality (6-49 everywhere) is the slower, better one; the
+        # Style preset sets Off and picks its own blocks.
+        "MINIMAX_LIKENESS_MODE": MINIMAX_MODE_FAST,
         # Training adapter ships ON (Peter, 2 Sep): measured on the same dataset/seed it hit
         # 50% likeness seven epochs sooner and peaked higher (61 vs 57). Every H3 preset
         # inherits this — Style included, the adapter is about the base, not the blocks.
@@ -1000,7 +1025,7 @@ MINIMAX_BUILT_IN_PRESETS["✨ MiniMax H3 Style (LoRA 8)"] = {
     "MINIMAX_BLOCKS": "0-3, 6-47",
     # MUST be off here: style measurably needs the early blocks the likeness mask freezes, and
     # with it on the blocks spec above would be ignored outright.
-    "MINIMAX_LIKENESS_OPT": False,
+    "MINIMAX_LIKENESS_MODE": MINIMAX_MODE_OFF,
     # Style is about the look, not the face: no extra sharp-face stills from the clips.
     "MINIMAX_CLIP_STILL": False,
 }
@@ -1789,10 +1814,9 @@ class LoRATrainerGUI:
             # pruned build they were taking ~45% of all weight movement to do it.
             "MINIMAX_TRAIN_ADALN": False,
             "MINIMAX_TRAIN_REFINER": False,
-            # Optimised Likeness Learning — photo steps train blocks 20-49 only, clips train
-            # everything. On by default: it is the measured best recipe for the character/voice
-            # work H3 is for. The Style preset turns it OFF (style needs the early blocks).
-            "MINIMAX_LIKENESS_OPT": True,
+            # Training mode — Fast by default (photos and clips 20-49, voice 34-49): the
+            # measured recipe for the character/voice work H3 is for, and the quickest steps.
+            "MINIMAX_LIKENESS_MODE": MINIMAX_MODE_FAST,
             "MINIMAX_TRAINING_ADAPTER": True,
             "MINIMAX_TREAD": True,         # clip steps route half their video tokens (7 Sep)
             "MINIMAX_CLIP_STILL": True,    # each clip's sharpest face frame trains as a photo
@@ -4808,38 +4832,42 @@ class LoRATrainerGUI:
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_adaln_hint.grid(row=32, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
 
-        # Optimised Likeness Learning — photo steps train the identity blocks only; clips train
-        # the full model. BooleanVar in self.entries so presets/queue/last-train carry it free.
-        self.entries["MINIMAX_LIKENESS_OPT"] = tk.BooleanVar(
-            value=bool(self.settings.get("MINIMAX_LIKENESS_OPT", True)))
-        # Under FT the tickbox changes the rotation-cycle length (50 blocks -> the 20-49
-        # tighten), so the Save-every suggestion follows it live.
-        self.entries["MINIMAX_LIKENESS_OPT"].trace_add(
-            "write", lambda *_a: self._refresh_minimax_ft_save_box())
-        self._minimax_likeness_cb = ttk.Checkbutton(
-            training_content, text="Optimised Likeness Learning",
-            variable=self.entries["MINIMAX_LIKENESS_OPT"])
-        self._minimax_likeness_cb.grid(row=39, column=0, columnspan=2, sticky=tk.W,
-                                       padx=5, pady=(8, 0))
+        # Training mode — was the "Optimised Likeness Learning" tickbox until 10 Sep 2026.
+        # A StringVar in self.entries so presets/queue/last-train carry it free. A saved config
+        # from before the dropdown carries the old boolean instead: True was this Fast recipe,
+        # False was hand-picked blocks.
+        _mode0 = self.settings.get("MINIMAX_LIKENESS_MODE")
+        if _mode0 is None and "MINIMAX_LIKENESS_OPT" in self.settings:
+            _mode0 = MINIMAX_MODE_FAST if self.settings["MINIMAX_LIKENESS_OPT"] else MINIMAX_MODE_OFF
+        self.entries["MINIMAX_LIKENESS_MODE"] = tk.StringVar(value=str(_mode0 or MINIMAX_MODE_FAST))
+        self._minimax_likeness_label = ttk.Label(training_content, text="Training mode:")
+        self._minimax_likeness_label.grid(row=39, column=0, sticky=tk.W, padx=5, pady=(8, 2))
+        self._minimax_likeness_frame = ttk.Frame(training_content)
+        self._minimax_likeness_frame.grid(row=39, column=1, columnspan=2, sticky=tk.W,
+                                          padx=5, pady=(8, 2))
+        self._minimax_likeness_combo = ttk.Combobox(
+            self._minimax_likeness_frame, values=MINIMAX_LIKENESS_MODE_OPTIONS,
+            textvariable=self.entries["MINIMAX_LIKENESS_MODE"], state="readonly", width=34)
+        self._minimax_likeness_combo.pack(side=tk.LEFT)
         self._minimax_likeness_hint = ttk.Label(
-            training_content,
-            text=f"Photos and clips train blocks {MINIMAX_LIKENESS_BLOCKS}, voice "
-                 f"{MINIMAX_AUDIO_BLOCKS}. The backward stops at the window: about a quarter "
-                 "faster, sharper, steadier previews. Untick for style or scene training.",
+            training_content, text="",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_likeness_hint.grid(row=40, column=0, columnspan=2, sticky=tk.W,
                                          padx=5, pady=(0, 4))
-        self._MINIMAX_LIKENESS_HINT_LORA = self._minimax_likeness_hint.cget("text")
         self._MINIMAX_LIKENESS_HINT_FT = (
-            f"Same meaning under fine-tune: photos and clips train the identity blocks "
-            f"({MINIMAX_LIKENESS_BLOCKS}), voice the audio zone ({MINIMAX_AUDIO_BLOCKS}). "
-            f"See the MiniMax section of the README.")
-        # Clips are confined to the likeness blocks whenever likeness mode is on — LoRA and
-        # FT alike. It was a sub-tick (29 Aug, on by default; LoRA too since 2 Sep) until
-        # Peter retired the choice on 7 Sep: a confined video run trains just as well and
-        # is far lighter, so likeness mode simply means it. Emitted as --clip_blocks.
-        # trace, not command=: preset loads set the var programmatically and must re-grey too.
-        self.entries["MINIMAX_LIKENESS_OPT"].trace_add(
+            f"Under fine-tune the mode drives the rotation cycle instead of masking steps: in "
+            f"Fast, photos and clips train the identity blocks ({MINIMAX_LIKENESS_BLOCKS}) and "
+            f"voice the audio zone ({MINIMAX_AUDIO_BLOCKS}). Blocks to Train is adapter-only; the "
+            f"fine-tune has its own block field. See the MiniMax section of the README.")
+        # Clips are confined with the photos in Fast — LoRA and FT alike. It was a sub-tick
+        # (29 Aug, on by default; LoRA too since 2 Sep) until Peter retired the choice on
+        # 7 Sep: a confined video run trains just as well and is far lighter. Emitted as
+        # --clip_blocks. trace, not command=: preset loads set the var programmatically and
+        # must re-sync too. Under FT the mode changes the rotation-cycle length, so the
+        # Save-every suggestion follows it live.
+        self.entries["MINIMAX_LIKENESS_MODE"].trace_add(
+            "write", lambda *_a: self._refresh_minimax_ft_save_box())
+        self.entries["MINIMAX_LIKENESS_MODE"].trace_add(
             "write", lambda *_a: self._sync_minimax_likeness_state())
 
         # --- Training adapter (Ostris) — MiniMax LoRA runs only ---------------------------
@@ -5764,6 +5792,13 @@ class LoRATrainerGUI:
                     # Some boolean settings (e.g. IMG_IN_TXT_IN_OFFLOADING, PRESERVE_DISTRIBUTION)
                     # are stored in self.entries as BooleanVars — they don't support .delete/.insert.
                     entry.set(bool(value))
+                elif isinstance(entry, tk.Variable):
+                    # A StringVar/IntVar entry — e.g. MINIMAX_LIKENESS_MODE, a readonly dropdown
+                    # driven by its variable. Without this the fall-through below calls .delete()
+                    # on it, raises AttributeError and swallows the assignment in SILENCE: the
+                    # Style preset looked applied while its mode never changed (caught by
+                    # tests/test_minimax_likeness_gui.py, 10 Sep 2026).
+                    entry.set(value)
                 else:
                     try:
                         entry.delete(0, tk.END)
@@ -6472,8 +6507,11 @@ class LoRATrainerGUI:
             _hl = str(p.get("MINIMAX_HIGHNOISE_LR_PCT") or "100").strip()
             if _hl and _hl != "100":
                 bits.append(f"high-noise LR {_hl}%")
-            if p.get("MINIMAX_LIKENESS_OPT"):
-                bits.append("likeness-opt")
+            _pm = minimax_likeness_mode(p.get("MINIMAX_LIKENESS_MODE"))
+            if _pm == "fast":
+                bits.append(f"fast {MINIMAX_LIKENESS_BLOCKS}")
+            elif _pm == "ultra":
+                bits.append(f"ultra {MINIMAX_FULL_MODEL_BLOCKS}")
             else:
                 _bl = minimax_block_spec(p.get("MINIMAX_BLOCKS"))
                 if _bl.lower() != "all":
@@ -7324,14 +7362,29 @@ class LoRATrainerGUI:
 
     # The Blocks to Train hint in both of its states — module-level truth so the greying
     # handler can swap them without duplicating the strings inline.
-    _MINIMAX_BLOCKS_HINT = (f"Train a subset of the 50 blocks. {MINIMAX_FULL_MODEL_BLOCKS} is "
-                            "filled in for you and is the recommendation: blocks 0-5 deform "
-                            "anatomy and add micro-distortion to audio, everything above them is "
-                            "useful capacity. Type ranges and singles, comma-separated, like "
-                            "3-12, 22, 31-33. Style is the exception at 0-3, 6-47, set by the "
-                            "Style preset.")
-    _MINIMAX_BLOCKS_HINT_LOCKED = ("Owned by Optimised Likeness Learning while it is on: photos "
-                                   f"and clips {MINIMAX_LIKENESS_BLOCKS}. Untick it to hand-pick.")
+    _MINIMAX_BLOCKS_HINT = ("Train a subset of the 50 blocks. Type ranges and singles, "
+                            "comma-separated, like 3-12, 22, 31-33. Measured answers: "
+                            f"{MINIMAX_FULL_MODEL_BLOCKS} for the whole model (what Ultra quality "
+                            f"runs) and {MINIMAX_LIKENESS_BLOCKS} for likeness (Fast). Blocks 0-5 "
+                            "are in neither: they deform anatomy and pull the dataset's colour "
+                            "into the render. Style is the exception at 0-3, 6-47.")
+    _MINIMAX_BLOCKS_HINT_LOCKED = (f"Owned by the Training mode above: photos and clips "
+                                   f"{MINIMAX_LIKENESS_BLOCKS}, voice {MINIMAX_AUDIO_BLOCKS}. "
+                                   "Set the mode to Off to hand-pick.")
+    _MINIMAX_BLOCKS_HINT_ULTRA = (f"Owned by the Training mode above: every step type trains "
+                                  f"{MINIMAX_FULL_MODEL_BLOCKS}. Set the mode to Off to hand-pick.")
+    # The Training mode hint, one per setting.
+    _MINIMAX_MODE_HINTS = {
+        "fast": (f"Photos and clips train blocks {MINIMAX_LIKENESS_BLOCKS}, voice "
+                 f"{MINIMAX_AUDIO_BLOCKS}. The backward stops at the window, so this is the "
+                 "quickest mode, and it is good on both picture and sound."),
+        "ultra": (f"Every step type trains {MINIMAX_FULL_MODEL_BLOCKS} — better likeness and "
+                  "better audio, and the dataset's own quirks stay out of the LoRA far longer. "
+                  "Slower per step: the backward covers 44 blocks instead of 30. Blocks 0-5 stay "
+                  "out either way; they deform anatomy and colour."),
+        "off": ("The blocks are yours to pick below. For style, and for experiments. The Style "
+                "preset sets 0-3, 6-47."),
+    }
 
     def _minimax_adapter_pref_key(self):
         """The training-adapter pref that matches the base this run trains on — ref2va when
@@ -7342,31 +7395,36 @@ class LoRATrainerGUI:
         return "minimax_ref_training_adapter" if _ref else "minimax_training_adapter"
 
     def _sync_minimax_likeness_state(self):
-        """Grey Blocks to Train while Optimised Likeness Learning owns the block choice.
+        """Grey Blocks to Train while the Training mode owns the block choice, and keep both
+        hints saying what the current mode does.
 
-        The combobox VALUE is deliberately preserved — a hand-typed spec survives a toggle
-        round-trip; only the widget state and the hint change. Driven by the checkbox trace
-        (fires on preset loads too) and by arch switches."""
+        The Blocks combobox VALUE is deliberately preserved — a hand-typed spec survives a trip
+        through Fast and back; only the widget state and the hints change. Driven by the mode
+        trace (fires on preset loads too) and by arch switches."""
+        mode = minimax_likeness_mode(self.entries["MINIMAX_LIKENESS_MODE"].get()) \
+            if "MINIMAX_LIKENESS_MODE" in self.entries else "fast"
+        mhint = getattr(self, "_minimax_likeness_hint", None)
+        if mhint is not None and mhint.winfo_exists():
+            _ft = bool(getattr(self, "minimax_finetune_var", None)
+                       and self.minimax_finetune_var.get())
+            mhint.config(text=(self._MINIMAX_LIKENESS_HINT_FT if _ft
+                               else self._MINIMAX_MODE_HINTS[mode]))
         combo = self.entries.get("MINIMAX_BLOCKS")
         hint = getattr(self, "_minimax_blocks_hint", None)
         if combo is None or hint is None or not combo.winfo_exists():
             return
-        locked = self._is_minimax_arch() and bool(
-            self.entries["MINIMAX_LIKENESS_OPT"].get())
+        locked = self._is_minimax_arch() and mode != "off"
+        lbl = getattr(self, "_minimax_blocks_count", None)
         if locked:
             combo.config(state="disabled")
-            hint.config(text=self._MINIMAX_BLOCKS_HINT_LOCKED)
-            lbl = getattr(self, "_minimax_blocks_count", None)
+            hint.config(text=(self._MINIMAX_BLOCKS_HINT_ULTRA if mode == "ultra"
+                              else self._MINIMAX_BLOCKS_HINT_LOCKED))
             if lbl is not None and lbl.winfo_exists():
-                lbl.config(text=f"photos and clips: {MINIMAX_LIKENESS_BLOCKS}",
+                lbl.config(text=(f"every step type: {MINIMAX_FULL_MODEL_BLOCKS}" if mode == "ultra"
+                                 else f"photos and clips: {MINIMAX_LIKENESS_BLOCKS}"),
                            fg=COLORS["text_explain"])
         else:
             combo.config(state="")               # editable, the widget's natural state
-            # Unticking hands the choice back, so hand back the recommendation rather than the
-            # do-nothing "all" (Peter, 10 Sep 2026). A spec the user chose is never overwritten:
-            # only the value that means "every block" is replaced.
-            if minimax_block_spec(combo.get()).lower() == "all":
-                self._select_combo_by_token(combo, MINIMAX_FULL_MODEL_BLOCKS)
             hint.config(text=self._MINIMAX_BLOCKS_HINT)
             self._refresh_minimax_blocks_count()
 
@@ -7712,12 +7770,11 @@ class LoRATrainerGUI:
         for w in (self._minimax_ft_frame, self._minimax_ft_fused_cb,
                   self._minimax_reg_frame, self._minimax_ft_hint):
             self._set_widget_visible(w, on)
-        # The likeness tickbox STAYS — same meaning, different mechanism: under FT it drives
-        # the Blocks field (whole fine-tune on the identity blocks) instead of masking photo
-        # steps. Its hint swaps to say so. Blocks to Train is adapter-only and hides.
+        # The Training mode STAYS — same meaning, different mechanism: under FT it drives the
+        # rotation cycle instead of masking steps. Its hint swaps to say so. Blocks to Train is
+        # adapter-only and hides.
         if hasattr(self, "_minimax_likeness_hint"):
-            self._minimax_likeness_hint.config(
-                text=self._MINIMAX_LIKENESS_HINT_FT if on else self._MINIMAX_LIKENESS_HINT_LORA)
+            self._sync_minimax_likeness_state()
         for w in (getattr(self, "_minimax_blocks_label", None),
                   getattr(self, "_minimax_blocks_frame", None),
                   getattr(self, "_minimax_blocks_hint", None),
@@ -7954,7 +8011,8 @@ class LoRATrainerGUI:
                   self._minimax_structure_desc,
                   self._minimax_hnlr_label, self._minimax_hnlr_frame, self._minimax_hnlr_hint,
                   self._minimax_blocks_label, self._minimax_blocks_frame, self._minimax_blocks_hint,
-                  self._minimax_likeness_cb, self._minimax_likeness_hint,
+                  self._minimax_likeness_label, self._minimax_likeness_frame,
+                  self._minimax_likeness_hint,
                   self._minimax_adapter_cb, self._minimax_adapter_hint,
                   self._minimax_tread_cb, self._minimax_tread_hint,
                   self._minimax_clipstill_cb, self._minimax_clipstill_hint,
@@ -27913,9 +27971,9 @@ class LoRATrainerGUI:
         # has streamed in — and a queued run must never fail an hour later on a bad spec.
         if self._is_minimax_arch():
             _spec = minimax_block_spec(self.entries["MINIMAX_BLOCKS"].get())
-            # Likeness mode ignores (and disables) the box — a stale typo in it must not
-            # block the launch.
-            if self.entries["MINIMAX_LIKENESS_OPT"].get():
+            # Fast and Ultra ignore (and disable) the box — a stale typo in it must not block
+            # the launch.
+            if minimax_likeness_mode(self.entries["MINIMAX_LIKENESS_MODE"].get()) != "off":
                 _spec = "all"
             if _spec.lower() != "all":
                 try:
@@ -28501,9 +28559,14 @@ class LoRATrainerGUI:
             # Likeness mode owns the block choice: the launch dict says "all" so the queue card,
             # snapshot and builder stay honest, while the combobox keeps the user's typed spec
             # for when they untick.
-            "MINIMAX_BLOCKS": ("all" if self.entries["MINIMAX_LIKENESS_OPT"].get()
-                               else minimax_block_spec(self.entries["MINIMAX_BLOCKS"].get())),
-            "MINIMAX_LIKENESS_OPT": bool(self.entries["MINIMAX_LIKENESS_OPT"].get()),
+            # Fast leaves the blocks alone (it masks per step type instead); Ultra IS a block
+            # range; Off is whatever the box says.
+            "MINIMAX_BLOCKS": (
+                "all" if minimax_likeness_mode(self.entries["MINIMAX_LIKENESS_MODE"].get()) == "fast"
+                else (MINIMAX_FULL_MODEL_BLOCKS
+                      if minimax_likeness_mode(self.entries["MINIMAX_LIKENESS_MODE"].get()) == "ultra"
+                      else minimax_block_spec(self.entries["MINIMAX_BLOCKS"].get()))),
+            "MINIMAX_LIKENESS_MODE": str(self.entries["MINIMAX_LIKENESS_MODE"].get()),
             "MINIMAX_TRAIN_ADALN": bool(self.entries["MINIMAX_TRAIN_ADALN"].get()),
             "MINIMAX_TRAIN_REFINER": bool(self.entries["MINIMAX_TRAIN_REFINER"].get()),
             "MINIMAX_TRAINING_ADAPTER": bool(self.entries["MINIMAX_TRAINING_ADAPTER"].get()),
@@ -29759,21 +29822,30 @@ class LoRATrainerGUI:
         _blocks = minimax_block_spec(self.settings.get("MINIMAX_BLOCKS", "all"))
         if _blocks.lower() != "all" and not _mft_cmd_on:
             cmd += ["--train_blocks", _blocks]
-        # Optimised Likeness Learning — photo steps train the identity blocks only, clips train
-        # everything. The launch dict already forced MINIMAX_BLOCKS to "all" when this is on, so
-        # the two flags never fight. The flag TRAVELS under fine-tune too: the trainer honours
-        # the same semantics there (cycle-tighten on photo-only data, per-parameter photo
-        # freezing on mixed). --train_blocks stays adapter-only and is never emitted under FT.
-        if self.settings.get("MINIMAX_LIKENESS_OPT"):
+        # Training mode. FAST masks per step type: photos and clips to the identity blocks,
+        # voice to the audio zone (below), and the launch dict left MINIMAX_BLOCKS at "all" so
+        # the two never fight. The masks TRAVEL under fine-tune too: the trainer honours the same
+        # semantics there (cycle-tighten on photo-only data, per-parameter freezing on mixed).
+        # ULTRA is one range for every step type: in LoRA mode the launch dict put 6-49 in
+        # MINIMAX_BLOCKS and --train_blocks above carries it (the modules below block 6 are never
+        # built, so the file is smaller and the backward ends there on its own); under FT there
+        # are no modules to leave out, so the same confinement goes through the per-modality
+        # flags instead. Measured 10 Sep: better likeness and audio than Fast, slower per step.
+        _mode = minimax_likeness_mode(self.settings.get("MINIMAX_LIKENESS_MODE"))
+        if _mode == "fast":
             cmd += ["--photo_blocks", MINIMAX_LIKENESS_BLOCKS]
-            # Clips are confined too — always, under likeness (a confined overnight video run
-            # trained perfectly well, 29 Aug; the sub-tick was retired 7 Sep).
+            # Clips are confined too — always, in Fast (a confined overnight video run trained
+            # perfectly well, 29 Aug; the sub-tick was retired 7 Sep).
             cmd += ["--clip_blocks", MINIMAX_LIKENESS_BLOCKS]
+        elif _mode == "ultra" and _ft_now:
+            cmd += ["--photo_blocks", MINIMAX_FULL_MODEL_BLOCKS,
+                    "--clip_blocks", MINIMAX_FULL_MODEL_BLOCKS,
+                    "--audio_blocks", MINIMAX_FULL_MODEL_BLOCKS]
         # Voice routing — audio steps train only the measured voice zone (34-49): outside it
         # they corrupt the visual blocks (A/B, 24 Aug). Under FT it always travels (the
         # trainer also tightens the cycle to the union of what the dataset trains); in LoRA
         # mode it is part of Optimised Likeness Learning. Harmless without audio files.
-        if _ft_now or self.settings.get("MINIMAX_LIKENESS_OPT"):
+        if (_ft_now or _mode == "fast") and not (_mode == "ultra" and _ft_now):
             cmd += ["--audio_blocks", MINIMAX_AUDIO_BLOCKS]
         # Reference distillation. Both flags travel together; the trainer also needs --vae to
         # encode the reference, which the sample block may already have added.

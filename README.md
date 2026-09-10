@@ -130,12 +130,15 @@ Three built-in presets ship; **Fast** applies the moment you pick the family:
 
 <p align="center"><img src="assets/optimised_likeness.png" alt="Optimised Likeness Learning — the default-on Training-tab checkbox" width="713"></p>
 
-**Optimised Likeness Learning** ships ticked (Fast and Lower LR; Style unticks it): photos and
-clips train the identity blocks (**20-49**), voice the audio zone (**34-49**), and the LoRA leaves
-the model's text token refiner alone. Measured against full-model training: sharper faces and
-voices, much better prompt following, a smooth climb through the epochs with any epoch a fair
-checkpoint, fewer epochs to get there, and training steps about 30% faster. Untick it for style
-or scene training; while it's on, Blocks to Train is disabled with a note.
+**Training mode** picks the recipe. **Fast** (the default, and what every preset but Style ships)
+trains photos and clips on the identity blocks (**20-49**) and voice on the audio zone
+(**34-49**); the backward stops at the window, so steps are the quickest of the three, and it is
+good on both picture and sound. **Ultra quality** trains **6-49** on every step type: better
+likeness and better audio, and the dataset's own quirks stay out of the LoRA far longer — at the
+cost of a slower step, since the backward covers 44 blocks instead of 30. **Off** hands the blocks
+to you, which is what Style uses. In every mode the LoRA leaves the model's text token refiner
+alone, and blocks 0-5 are trained by nobody but you: they deform anatomy and pull the dataset's
+colour into the render.
 
 **0.25 MP is the default, and it holds up** — four times cheaper per step than 1 MP, and the extra resolution has not paid for itself in testing. Raise it if a specific dataset asks for it.
 
@@ -251,11 +254,11 @@ Each has a **Download link on its row in Preferences**:
 Every control has a hint in the app; the highlights:
 
 - **Training Structure** (default **Likeness and Style**) — how much of the run trains on nearly-clean images, where likeness *and* style live. **Model default, movement** is the reference trainer's schedule; **Custom** exposes the raw percentage. **Medium to High Noise LR** beside it is best left at 100.
-- **Optimised Likeness Learning** (default On) — photos and clips train the identity blocks (20-49), voice the audio zone (34-49). The measured best recipe for character and voice work; confining clips this way trains video just as well and makes clip steps far lighter on VRAM. Untick for style or scene training, which trains the whole model.
+- **Training mode** (default **Fast**) — Fast trains photos and clips on the identity blocks (20-49) and voice on the audio zone (34-49): the quickest steps, and the measured recipe for character and voice work; confining clips this way trains video just as well and makes clip steps far lighter on VRAM. **Ultra quality** trains 6-49 on every step type for better likeness and audio at a slower step. **Off** hands Blocks to Train to you, for style and experiments.
 - **Train the text token refiner** (default Off, in Other Options) — recommended off. Does not affect the ability to use a trigger word. The refiner sets how every prompt is read; training it softens output and makes previews judder between epochs. LoRA runs only.
 - **TREAD token routing** (default On, LoRA runs) — on every clip step a random half of the video tokens leaves the sequence at block 2 and rejoins at block 47 unchanged, so 45 of the 50 blocks process half the tokens (Krause et al., arXiv 2501.04765). Clip steps get markedly faster; the trained LoRA is an ordinary LoRA and previews never route. Photos — and the clip stills below — always run in full: a still has no neighbouring frames to lean on, and it is where the sharp identity signal lives. Untick to A/B against a plain run.
 - **Also train each clip's sharpest face frame as a photo** (default On) — when the clips are cached, every frame is scored for focus and the sharpest one that shows a face is picked (the score is taken on the face itself, so subject motion blur decides, not background texture) and encoded as a still. It then trains on a step of its own with the clip's caption: a sharp second look at every subject, at no cost to the clip step. Clips cached before this was on use frame 0 until they are re-cached — the cache step at the next launch adds the picks to just those clips. Voice items are unaffected.
-- **Blocks to Train** — hand-pick a subset of H3's 50 blocks (disabled while Optimised Likeness Learning owns the choice). Untick that and the box fills in **`6-49`**, the recommendation for training the model as a whole: blocks 0-5 deform anatomy and add micro-distortion to audio, everything above them is useful capacity. The other measured recipes: **`20-49` for likeness** (what Optimised Likeness Learning applies), **`0-3, 6-47` for style** (the Style preset sets it), voice core `38-48`. Type ranges (`3-12, 22, 31-33`) to experiment beyond them.
+- **Blocks to Train** — hand-pick a subset of H3's 50 blocks, live when Training mode is **Off** (the other modes own the choice and grey it out with a note). The measured recipes: **`6-49`** for the whole model (Ultra quality), **`20-49` for likeness** (Fast), **`0-3, 6-47` for style** (the Style preset sets it), voice core `38-48`. Type ranges (`3-12, 22, 31-33`) to experiment beyond them. Blocks 0-5 are in none of them: they deform anatomy and pull the dataset's colour into every render.
 - **Reference distillation** (experimental) — teaches the LoRA to render your subject from the trigger word the way H3 renders them from a *photo*: each image is marked against the model shown *other* photos of the same person, so identity is learned without the scenery. Needs the ref2va model; the LoRA deploys on the ordinary model. **Identity-first** (Auto) trains a teacher-only first phase, then pure photos. A separate, deliberate tick — Multi Concept no longer switches it on for you.
 - **Multi Concept** — two subjects, two folders, two trigger words, one LoRA. Each subject's images are only ever compared against their own. Ticking it changes nothing else — caption dropout stays as you set it (in our A/B, one folder *with* dropout beat two without); separation rests on the trigger words, which is what actually does the work.
 - **Adapter-relative LR** (default Off) — the LR box becomes a ceiling the run climbs toward, keeping each step proportional to the adapter's size. Worth trying when a run overshoots early.

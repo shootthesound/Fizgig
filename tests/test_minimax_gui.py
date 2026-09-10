@@ -115,7 +115,7 @@ ck("60% resolves to the uniform-base shift ~0.667", abs(_sh_uni - 0.667) < 0.01,
 for _k, _want in (("NETWORK_DIM", 8), ("NETWORK_ALPHA", 8), ("MAX_TRAIN_EPOCHS", 50),
                   ("DATASET_MEGAPIXELS", "0.25"), ("MINIMAX_BLOCKS", "all"),
                   ("MINIMAX_TRAIN_ADALN", False), ("MINIMAX_TRAIN_REFINER", False),
-                  ("MINIMAX_SLOW_BLOCKS", ""),
+                  ("MINIMAX_LIKENESS_MODE", G.MINIMAX_MODE_FAST), ("MINIMAX_SLOW_BLOCKS", ""),
                   ("MINIMAX_DISTILL", False), ("ADAPTIVE_LR", False),
                   ("NETWORK_TYPE", "LoRA (standard)"), ("LOKR_FACTOR", 8),
                   ("MINIMAX_ADAPTER_RAMP", "Off")):
@@ -249,24 +249,20 @@ app.sample_enabled_var.set(True)
 # Peter, 10 Sep 2026: 6-49 beat both the 20-49 window and the full 50 (blocks 0-5 deform anatomy
 # and add micro-distortion to audio). Untick has to hand back 6-49, not the do-nothing "all" —
 # and must never overwrite a spec the user chose. Silent either way if it regresses.
-app.entries["MINIMAX_LIKENESS_OPT"].set(True)
-app.entries["MINIMAX_BLOCKS"].config(state="")
-app.entries["MINIMAX_BLOCKS"].set("all")
-app.entries["MINIMAX_LIKENESS_OPT"].set(False)
-ck("unticking Optimised Likeness fills Blocks to Train with 6-49",
-   G.minimax_block_spec(app.entries["MINIMAX_BLOCKS"].get()) == G.MINIMAX_FULL_MODEL_BLOCKS,
-   app.entries["MINIMAX_BLOCKS"].get())
-ck("...and the box is editable again", str(app.entries["MINIMAX_BLOCKS"].cget("state")) != "disabled",
-   app.entries["MINIMAX_BLOCKS"].cget("state"))
+app.entries["MINIMAX_LIKENESS_MODE"].set(G.MINIMAX_MODE_OFF)
 app.entries["MINIMAX_BLOCKS"].set("14-37 · middle band")
-app.entries["MINIMAX_LIKENESS_OPT"].set(True)
-app.entries["MINIMAX_LIKENESS_OPT"].set(False)
-ck("a chosen spec survives a likeness toggle round-trip",
+app.entries["MINIMAX_LIKENESS_MODE"].set(G.MINIMAX_MODE_FAST)
+app.entries["MINIMAX_LIKENESS_MODE"].set(G.MINIMAX_MODE_ULTRA)
+app.entries["MINIMAX_LIKENESS_MODE"].set(G.MINIMAX_MODE_OFF)
+ck("a chosen spec survives a Fast/Ultra/Off round-trip",
    G.minimax_block_spec(app.entries["MINIMAX_BLOCKS"].get()) == "14-37",
    app.entries["MINIMAX_BLOCKS"].get())
+ck("...and the box is editable in Off",
+   str(app.entries["MINIMAX_BLOCKS"].cget("state")) != "disabled",
+   app.entries["MINIMAX_BLOCKS"].cget("state"))
 ck("6-49 is an offered option", any(str(o).split(" ")[0] == "6-49" for o in G.MINIMAX_BLOCK_OPTIONS),
    G.MINIMAX_BLOCK_OPTIONS)
-app.entries["MINIMAX_LIKENESS_OPT"].set(True)
+app.entries["MINIMAX_LIKENESS_MODE"].set(G.MINIMAX_MODE_FAST)
 
 # --- validate_inputs requires the three minimax_* paths ----------------------------------
 # validate_inputs pops a modal messagebox on failure (blocks headless) and returns False —

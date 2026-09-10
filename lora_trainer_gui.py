@@ -5435,14 +5435,9 @@ class LoRATrainerGUI:
         self._minimax_refiner_cb.grid(row=35, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(8, 0))
         self._minimax_refiner_hint = ttk.Label(
             scheduler_content,
-            text="Recommended off. The token refiner is the model's bridge from the text encoder "
-                 "into the DiT: it sets how every prompt is read, on every step. Training it "
-                 "moved that reading a little each epoch, which showed up as judder between "
-                 "previews and softer output. Leaving it off does NOT remove the model's ability "
-                 "to absorb a trigger word: the trigger is learned in the blocks' attention, "
-                 "where text meets image and sound. Measured 10 Sep: photos, voice and video all "
-                 "sharper and steadier with it off, and a voice had its likeness by epoch 4 "
-                 "instead of 12-14. LoRA runs only.",
+            text="Recommended off. Does not affect the ability to use a trigger word. The refiner "
+                 "sets how every prompt is read; training it softens output and makes previews "
+                 "judder between epochs. LoRA runs only.",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_refiner_hint.grid(row=36, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
 

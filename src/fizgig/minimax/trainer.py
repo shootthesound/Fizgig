@@ -562,7 +562,7 @@ def adapter_param_count(dit_path: str, include_patterns, network_type: str = "lo
         if len(shape) != 2:                     # Linears only, as create_modules wraps
             continue
         name = key[:-len(".weight")]
-        if not any(r.search(name) for r in rx):
+        if not any(r.fullmatch(name) for r in rx):   # fullmatch, as create_modules matches
             continue
         out_dim, in_dim = int(shape[0]), int(shape[1])
         if str(network_type).lower() == "lokr":
@@ -3574,7 +3574,7 @@ def train_minimax(
         import re as _re
         _targeted = [n for n, m in dit.named_modules()
                      if isinstance(m, torch.nn.Linear)
-                     and any(_re.search(p, n) for p in include_patterns)]
+                     and any(_re.fullmatch(p, n) for p in include_patterns)]   # fullmatch: what create_modules does
         if len(network.unet_loras) < len(_targeted):
             _kinds = sorted({type(dit.get_submodule(n)).__name__ for n in _targeted})
             raise RuntimeError(

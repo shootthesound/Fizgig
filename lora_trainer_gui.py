@@ -922,6 +922,8 @@ MINIMAX_BUILT_IN_PRESETS = {
         #                       _teref cache built, so defaulting it on would break a fresh run)
         "MINIMAX_BLOCKS": "all", "MINIMAX_BASE_QUANT": MINIMAX_BASE_QUANT_OPTIONS[0],
         "MINIMAX_TRAIN_ADALN": False,
+        # The text token refiner is not a LoRA target (10 Sep): see the Other Options tick.
+        "MINIMAX_TRAIN_REFINER": False,
         # Optimised Likeness Learning ships ON: photos train the identity blocks (20-49) only,
         # clips train the full model. The one measured exception is style — the Style preset
         # turns it off (style needs the early blocks).
@@ -1779,6 +1781,7 @@ class LoRATrainerGUI:
             # and nothing else — so its adapters cannot tell one subject from another, and on the
             # pruned build they were taking ~45% of all weight movement to do it.
             "MINIMAX_TRAIN_ADALN": False,
+            "MINIMAX_TRAIN_REFINER": False,
             # Optimised Likeness Learning — photo steps train blocks 20-49 only, clips train
             # everything. On by default: it is the measured best recipe for the character/voice
             # work H3 is for. The Style preset turns it OFF (style needs the early blocks).
@@ -5422,6 +5425,27 @@ class LoRATrainerGUI:
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_distill_hint.grid(row=34, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
 
+        # --- Train the text token refiner (MiniMax only, Other Options; Peter, 10 Sep 2026) ---
+        # Off by default. A BooleanVar in self.entries so presets / queue / last-train carry it.
+        self.entries["MINIMAX_TRAIN_REFINER"] = tk.BooleanVar(
+            value=bool(self.settings.get("MINIMAX_TRAIN_REFINER", False)))
+        self._minimax_refiner_cb = ttk.Checkbutton(
+            scheduler_content, text="Train the text token refiner",
+            variable=self.entries["MINIMAX_TRAIN_REFINER"])
+        self._minimax_refiner_cb.grid(row=35, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(8, 0))
+        self._minimax_refiner_hint = ttk.Label(
+            scheduler_content,
+            text="Recommended off. The token refiner is the model's bridge from the text encoder "
+                 "into the DiT: it sets how every prompt is read, on every step. Training it "
+                 "moved that reading a little each epoch, which showed up as judder between "
+                 "previews and softer output. Leaving it off does NOT remove the model's ability "
+                 "to absorb a trigger word: the trigger is learned in the blocks' attention, "
+                 "where text meets image and sound. Measured 10 Sep: photos, voice and video all "
+                 "sharper and steadier with it off, and a voice had its likeness by epoch 4 "
+                 "instead of 12-14. LoRA runs only.",
+            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
+        self._minimax_refiner_hint.grid(row=36, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
+
         # Training Structure lives in Training Parameters now — see _build_minimax_structure_row,
         # called from that section. It used to sit here in Other Options, collapsed, which is
         # where the single most consequential MiniMax setting was least likely to be found.
@@ -6476,6 +6500,8 @@ class LoRATrainerGUI:
                     bits.append(f"blocks {_bl}")
             if p.get("MINIMAX_TRAIN_ADALN") is False:
                 bits.append("no adaln")
+            if p.get("MINIMAX_TRAIN_REFINER"):
+                bits.append("refiner on")
             if p.get("MINIMAX_DISTILL"):
                 bits.append(f"distill x{p.get('MINIMAX_DISTILL_WEIGHT', '0.8')}"
                             f" ({p.get('MINIMAX_DISTILL_REFS', '2')} refs)")
@@ -7954,6 +7980,7 @@ class LoRATrainerGUI:
                   self._minimax_tread_cb, self._minimax_tread_hint,
                   self._minimax_clipstill_cb, self._minimax_clipstill_hint,
                   self._minimax_distill_frame, self._minimax_distill_hint,
+                  self._minimax_refiner_cb, self._minimax_refiner_hint,
                   self._minimax_quant_label, self._minimax_quant_frame,
                   self._minimax_quant_hint,
                   self._minimax_smooth_label, self._minimax_smooth_frame,
@@ -28499,6 +28526,7 @@ class LoRATrainerGUI:
                                else minimax_block_spec(self.entries["MINIMAX_BLOCKS"].get())),
             "MINIMAX_LIKENESS_OPT": bool(self.entries["MINIMAX_LIKENESS_OPT"].get()),
             "MINIMAX_TRAIN_ADALN": bool(self.entries["MINIMAX_TRAIN_ADALN"].get()),
+            "MINIMAX_TRAIN_REFINER": bool(self.entries["MINIMAX_TRAIN_REFINER"].get()),
             "MINIMAX_TRAINING_ADAPTER": bool(self.entries["MINIMAX_TRAINING_ADAPTER"].get()),
             # experiment/tread: both ticks must be copied here or the builder reads a stale value
             "MINIMAX_TREAD": bool(self.entries["MINIMAX_TREAD"].get()),
@@ -29782,6 +29810,9 @@ class LoRATrainerGUI:
         # AdaLN LOCKED off (Peter, 9 Aug): the pruned builds everyone deploys on cannot load
         # AdaLN LoRA keys, so training it only wastes capacity. Checkbox hidden; always opt out.
         cmd.append("--no_train_adaln")
+        # The text token refiner is off unless the Other Options tick says otherwise (10 Sep).
+        if self.settings.get("MINIMAX_TRAIN_REFINER"):
+            cmd.append("--train_token_refiner")
         # Depth-split LR is RETIRED (Peter, 9 Aug): it was the manual precursor of the limiter
         # + governor, which target whoever actually runs hot instead of a guessed range. The
         # controls are hidden and a stale saved range is deliberately not sent.

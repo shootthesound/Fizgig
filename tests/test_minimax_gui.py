@@ -114,7 +114,8 @@ ck("60% resolves to the uniform-base shift ~0.667", abs(_sh_uni - 0.667) < 0.01,
 # family switch and a fresh start apply.
 for _k, _want in (("NETWORK_DIM", 8), ("NETWORK_ALPHA", 8), ("MAX_TRAIN_EPOCHS", 50),
                   ("DATASET_MEGAPIXELS", "0.25"), ("MINIMAX_BLOCKS", "all"),
-                  ("MINIMAX_TRAIN_ADALN", False), ("MINIMAX_SLOW_BLOCKS", ""),
+                  ("MINIMAX_TRAIN_ADALN", False), ("MINIMAX_TRAIN_REFINER", False),
+                  ("MINIMAX_SLOW_BLOCKS", ""),
                   ("MINIMAX_DISTILL", False), ("ADAPTIVE_LR", False),
                   ("NETWORK_TYPE", "LoRA (standard)"), ("LOKR_FACTOR", 8),
                   ("MINIMAX_ADAPTER_RAMP", "Off")):

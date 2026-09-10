@@ -139,6 +139,13 @@ def setup_parser() -> argparse.ArgumentParser:
                    help="Keep an exponential moving average of the adapter and save/preview THAT "
                         "instead of the raw weights (0.99 recommended). Training still runs on "
                         "the raw weights. 0 = off.")
+    p.add_argument("--train_token_refiner", action="store_true",
+                   help="Add the text token refiner's Linears to the LoRA targets. Off by default: "
+                        "the refiner is the model's bridge from the text encoder into the DiT and "
+                        "sets how every prompt is read, and a LoRA on it moved that reading every "
+                        "epoch (preview judder, softer output). Leaving it off does not remove the "
+                        "model's ability to absorb a trigger word: the trigger is learned in the "
+                        "blocks' attention, where text meets image and sound.")
     p.add_argument("--no_train_adaln", dest="train_adaln", action="store_false",
                    help="EXPERIMENT: drop the per-block AdaLN adapters. AdaLN is a function of "
                         "the TIMESTEP only, so it cannot encode identity — yet on the pruned "
@@ -365,6 +372,7 @@ def main():
         distill_weight=args.distill_weight,
         distill_phase1_epochs=args.distill_phase1_epochs,
         train_adaln=args.train_adaln,
+        train_token_refiner=args.train_token_refiner,
         slow_blocks=args.slow_blocks,
         slow_block_lr_scale=args.slow_block_lr_scale,
         block_limit=args.block_limit,

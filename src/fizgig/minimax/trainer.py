@@ -2319,6 +2319,13 @@ def train_minimax(
                                      # measurably corrupt the visual blocks (A/B, 24 Aug —
                                      # audio-only @34-49 clean, @20-49 damaged visuals).
     train_adaln: bool = True,        # False = drop adaln_proj from the targets (pruned only)
+    train_token_refiner: bool = False,  # True = the text token refiner's Linears join the LoRA
+                                     # targets. Off by default (10 Sep 2026): the refiner is the
+                                     # model's bridge from the text encoder into the DiT and sets
+                                     # how every prompt is read; a LoRA on it moved that reading
+                                     # every epoch (preview judder, softer output). Photos, voice
+                                     # and video all measured sharper and steadier with it off; the
+                                     # trigger is learned in the blocks' attention regardless.
     distill: bool = False,           # reference distillation (references come from the dataset)
     distill_weight: float = 0.8,     # teacher share of the loss; the rest is the real photo
     distill_phase1_epochs: int = -1,  # identity-first: teacher-ONLY epochs, then photos-only
@@ -2694,6 +2701,8 @@ def train_minimax(
             _pat = PRUNED_INCLUDE_PATTERNS if _pruned else DEFAULT_INCLUDE_PATTERNS
             if not train_adaln:
                 _pat = [p for p in _pat if "adaln" not in p]
+            if not train_token_refiner:
+                _pat = [p for p in _pat if "token_refiner" not in p]
             _ad_params = adapter_param_count(dit_path, _pat, network_type=network_type,
                                              network_dim=network_dim, lokr_factor=lokr_factor,
                                              train_blocks=train_blocks)
@@ -3413,6 +3422,11 @@ def train_minimax(
         else:
             logger.info("[base] AdaLN was not a target on this checkpoint; the toggle changes "
                         "nothing here.")
+    # The text token refiner is off by default (10 Sep 2026): a LoRA there re-tunes how every
+    # prompt is read, for every block on every step, and it cannot hold a subject. The blocks'
+    # attention learns the trigger on its own.
+    if not train_token_refiner:
+        include_patterns = [p for p in include_patterns if "token_refiner" not in p]
     _blocks_used = "all"
     if train_blocks:
         _n_blocks = len(dit.blocks)
@@ -3420,14 +3434,16 @@ def train_minimax(
         _sel = parse_block_spec(train_blocks, _n_blocks)
         _blocks_used = format_block_spec(_sel)
         logger.info("[base] EXPERIMENT: training blocks %s only (%d of %d), text refiner "
-                    "included. Nobody has mapped what H3's blocks do — judge this against a "
+                    "%s. Nobody has mapped what H3's blocks do — judge this against a "
                     "full-model run on the same dataset, not on its own.",
-                    _blocks_used, len(_sel), _n_blocks)
+                    _blocks_used, len(_sel), _n_blocks,
+                    "included" if train_token_refiner else "off")
     # Report what is ACTUALLY targeted: this used to key off the checkpoint alone, so a run with
     # --no_train_adaln announced "+ AdaLN" one line after saying AdaLN adapters were off.
     _adaln_on = bool(dit.pruned_adaln and train_adaln)
-    logger.info("[base] %s checkpoint; LoRA targets: attention + MLP + token refiner%s",
+    logger.info("[base] %s checkpoint; LoRA targets: attention + MLP%s%s",
                 "pruned (curve-table AdaLN)" if dit.pruned_adaln else "full bf16",
+                " + token refiner" if train_token_refiner else " (text token refiner off)",
                 " + AdaLN (deploy-consistent on this build; rank caps at 8)" if _adaln_on
                 else (" (AdaLN excluded - turned off for this run)" if dit.pruned_adaln
                       else " (AdaLN excluded - dropped by pruned inference builds)"))
@@ -3753,12 +3769,18 @@ def train_minimax(
             if "token_refiner" in _lora.lora_name:
                 _ref_ids.update(id(p) for p in _lora.parameters())
         _refiner_params = [p for p in params if id(p) in _ref_ids]
-        logger.info("[likeness] backward cut at the window: out-of-window LoRA params AND the "
-                    "token refiner's %d LoRA tensors are frozen before each masked step's forward "
-                    "(photo, clip and voice steps alike), so the backward stops at the first "
-                    "trained block. The refiner LoRA does not learn on masked steps "
-                    "(--likeness_full_backward restores the old behaviour).",
-                    len(_refiner_params))
+        if _refiner_params:
+            logger.info("[likeness] backward cut at the window: out-of-window LoRA params AND the "
+                        "token refiner's %d LoRA tensors are frozen before each masked step's "
+                        "forward (photo, clip and voice steps alike), so the backward stops at the "
+                        "first trained block. The refiner LoRA does not learn on masked steps "
+                        "(--likeness_full_backward restores the old behaviour).",
+                        len(_refiner_params))
+        else:
+            logger.info("[likeness] backward cut at the window: out-of-window LoRA params are "
+                        "frozen before each masked step's forward (photo, clip and voice steps "
+                        "alike), so the backward stops at the first trained block "
+                        "(--likeness_full_backward restores the old behaviour).")
     # Clip routing, LoRA mode (Peter, 2 Sep — same behaviour as the FT tickbox): clip-only
     # windows update only clip_blocks. Same mechanism as the photo mask.
     _clip_mask_params = []
@@ -4163,6 +4185,7 @@ def train_minimax(
             "ss_highnoise_lr_scale": f"{float(highnoise_lr_scale):g}",
             "ss_train_blocks": _blocks_used,
             "ss_train_adaln": "1" if _adaln_on else "0",
+            "ss_train_token_refiner": "1" if train_token_refiner else "0",
             "ss_distill": "dataset" if distill else "off",
             "ss_distill_weight": (f"{distill_weight:g}" if distill else "0"),
             # Context LoRA: the file this LoRA was trained ON TOP OF and the strength it rode

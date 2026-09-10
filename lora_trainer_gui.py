@@ -645,6 +645,19 @@ MINIMAX_MODE_OFF = "Off · hand-pick the blocks below"
 MINIMAX_LIKENESS_MODE_OPTIONS = [MINIMAX_MODE_FAST, MINIMAX_MODE_ULTRA, MINIMAX_MODE_OFF]
 
 
+def minimax_mode_from_settings(d):
+    """The Training mode out of a settings / preset / queued-run dict.
+
+    A run saved before 10 Sep 2026 carries the old "Optimised Likeness Learning" boolean instead:
+    ticked was exactly today's Fast, and unticked meant "Blocks to Train rules", which is today's
+    Off — the saved blocks spec travels with it. Ultra is new, so no saved run was ever Ultra, and
+    mapping unticked to it would overwrite the user's own spec and change what they trained."""
+    v = d.get("MINIMAX_LIKENESS_MODE")
+    if v is None and "MINIMAX_LIKENESS_OPT" in d:
+        return MINIMAX_MODE_FAST if d["MINIMAX_LIKENESS_OPT"] else MINIMAX_MODE_OFF
+    return MINIMAX_MODE_FAST if v is None else v
+
+
 def minimax_likeness_mode(raw):
     """Dropdown label -> "fast" | "ultra" | "off". Anything unrecognised is fast (the default)."""
     s = str(raw or "").split("·")[0].strip().lower()
@@ -4836,10 +4849,8 @@ class LoRATrainerGUI:
         # A StringVar in self.entries so presets/queue/last-train carry it free. A saved config
         # from before the dropdown carries the old boolean instead: True was this Fast recipe,
         # False was hand-picked blocks.
-        _mode0 = self.settings.get("MINIMAX_LIKENESS_MODE")
-        if _mode0 is None and "MINIMAX_LIKENESS_OPT" in self.settings:
-            _mode0 = MINIMAX_MODE_FAST if self.settings["MINIMAX_LIKENESS_OPT"] else MINIMAX_MODE_OFF
-        self.entries["MINIMAX_LIKENESS_MODE"] = tk.StringVar(value=str(_mode0 or MINIMAX_MODE_FAST))
+        self.entries["MINIMAX_LIKENESS_MODE"] = tk.StringVar(
+            value=str(minimax_mode_from_settings(self.settings)))
         self._minimax_likeness_label = ttk.Label(training_content, text="Training mode:")
         self._minimax_likeness_label.grid(row=39, column=0, sticky=tk.W, padx=5, pady=(8, 2))
         self._minimax_likeness_frame = ttk.Frame(training_content)
@@ -5766,6 +5777,12 @@ class LoRATrainerGUI:
 
     def _apply_preset_values(self, preset):
         """Apply preset values to the UI (shared by load_default_preset and load_custom_preset)"""
+        # A preset or Load-Settings-From-Last-Train snapshot written before the Training mode
+        # dropdown (10 Sep 2026) carries the old Optimised Likeness boolean, whose key no longer
+        # exists in self.entries — without this the whole choice is dropped in silence and the
+        # restored run keeps whatever mode happens to be selected.
+        if "MINIMAX_LIKENESS_OPT" in preset and "MINIMAX_LIKENESS_MODE" not in preset:
+            preset = dict(preset, MINIMAX_LIKENESS_MODE=minimax_mode_from_settings(preset))
         for key, value in preset.items():
             if key in self.entries:
                 entry = self.entries[key]
@@ -7380,8 +7397,9 @@ class LoRATrainerGUI:
                  "quickest mode, and it is good on both picture and sound."),
         "ultra": (f"Every step type trains {MINIMAX_FULL_MODEL_BLOCKS} — better likeness and "
                   "better audio, and the dataset's own quirks stay out of the LoRA far longer. "
-                  "Slower per step: the backward covers 44 blocks instead of 30. Blocks 0-5 stay "
-                  "out either way; they deform anatomy and colour."),
+                  "Recommended for style and other non-identity work, which needs more of the "
+                  "model than the identity blocks. Slower per step: the backward covers 44 blocks "
+                  "instead of 30. Blocks 0-5 stay out either way; they deform anatomy and colour."),
         "off": ("The blocks are yours to pick below. For style, and for experiments. The Style "
                 "preset sets 0-3, 6-47."),
     }
@@ -29831,7 +29849,7 @@ class LoRATrainerGUI:
         # built, so the file is smaller and the backward ends there on its own); under FT there
         # are no modules to leave out, so the same confinement goes through the per-modality
         # flags instead. Measured 10 Sep: better likeness and audio than Fast, slower per step.
-        _mode = minimax_likeness_mode(self.settings.get("MINIMAX_LIKENESS_MODE"))
+        _mode = minimax_likeness_mode(minimax_mode_from_settings(self.settings))
         if _mode == "fast":
             cmd += ["--photo_blocks", MINIMAX_LIKENESS_BLOCKS]
             # Clips are confined too — always, in Fast (a confined overnight video run trained

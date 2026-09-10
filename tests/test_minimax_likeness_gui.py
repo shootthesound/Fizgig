@@ -176,6 +176,33 @@ ck("Off: no --photo_blocks", "--photo_blocks" not in c)
 c = cmd_of(MINIMAX_BLOCKS="all")
 ck("no key at all (old settings file): falls back to Fast", "--photo_blocks" in c)
 
+# --- 5b. a run saved BEFORE the dropdown restores as the mode it actually was -----------------
+# Ticked was exactly Fast; unticked meant "Blocks to Train rules", which is Off — and the saved
+# spec travels with it. Ultra is new, so no saved run was ever Ultra: mapping unticked to it
+# would overwrite the user's own spec and change what they trained. Without the mapping the key
+# is simply absent from self.entries and the whole choice is dropped in SILENCE.
+for _old, _want, _spec in ((True, "fast", "all"), (False, "off", "0-3, 6-47")):
+    app.entries["MINIMAX_LIKENESS_MODE"].set(G.MINIMAX_MODE_ULTRA)      # anything but the answer
+    app._apply_preset_values({"MINIMAX_LIKENESS_OPT": _old, "MINIMAX_BLOCKS": _spec})
+    root.update_idletasks()
+    ck(f"old saved run, likeness={_old} -> mode {_want}",
+       G.minimax_likeness_mode(app.entries["MINIMAX_LIKENESS_MODE"].get()) == _want,
+       app.entries["MINIMAX_LIKENESS_MODE"].get())
+    ck(f"...and its blocks spec survives ({_spec})",
+       G.minimax_block_spec(combo.get()) == _spec, combo.get())
+# and the same for a queued run, which launches straight from its own settings dict
+_q = dict(BASE, MINIMAX_LIKENESS_OPT=True, MINIMAX_BLOCKS="all")
+app.settings = _q
+ck("old queued run, likeness=True -> the Fast flags",
+   "--photo_blocks" in [str(x) for x in app.build_training_command(CFG)])
+app.settings = dict(BASE, MINIMAX_LIKENESS_OPT=False, MINIMAX_BLOCKS="0-3, 6-47")
+_c = [str(x) for x in app.build_training_command(CFG)]
+ck("old queued run, likeness=False -> its own spec, no Fast flags",
+   "--train_blocks" in _c and _c[_c.index("--train_blocks") + 1] == "0-3, 6-47"
+   and "--photo_blocks" not in _c)
+ck("Ultra hint recommends it for style / non-identity work",
+   "non-identity" in app._MINIMAX_MODE_HINTS["ultra"])
+
 # --- 6. prefs.json untouched -------------------------------------------------------------------------
 _hash1 = hashlib.sha256(open(PREFS, "rb").read()).hexdigest() if os.path.exists(PREFS) else None
 ck("prefs.json byte-identical", _hash0 == _hash1)

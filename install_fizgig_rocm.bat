@@ -12,9 +12,10 @@ set "PY312="
 set "PY312_SOURCE="
 set "ROCM_EXPERIMENTAL=0"
 
-REM Optional: install_fizgig_rocm.bat --experimental  -> floating multi-arch torch (no TORCH_PIN),
-REM leave BNB_ROCM_VERSION unset so bitsandbytes auto-picks its highest matching lib.
-REM Not the same as Linux ROCM_CHANNEL=nightly (constrained 7.14 / bnb 714 lane).
+REM Optional: install_fizgig_rocm.bat --experimental  -> floating packages from
+REM ROCM_EXPERIMENTAL_INDEX (whl-next), leave BNB_ROCM_VERSION unset so bitsandbytes
+REM auto-picks its highest matching lib. Not the same as Linux ROCM_CHANNEL=nightly
+REM (constrained 7.14 / bnb 714 lane), and not the pinned ROCM_INDEX multi-arch path.
 :parse_args
 if "%~1"=="" goto :args_done
 if /I "%~1"=="--experimental" set "ROCM_EXPERIMENTAL=1"
@@ -23,8 +24,11 @@ goto :parse_args
 :args_done
 
 REM Pinned stack confirmed working on RDNA (multi-arch nightlies). Override if needed.
-REM Ignored when --experimental is passed.
+REM Ignored when --experimental is passed (experimental uses ROCM_EXPERIMENTAL_INDEX).
 set "ROCM_INDEX=https://rocm.nightlies.amd.com/whl-multi-arch/"
+REM Floating --experimental only: AMD's newer whl-next nightlies (comfyui-rocm install.bat).
+REM Pinned TORCH_PIN wheels are NOT on this index - do not point the default install here.
+set "ROCM_EXPERIMENTAL_INDEX=https://nightly.repo.amd.com/rocm/whl-next/"
 if not defined TORCH_PIN set "TORCH_PIN=2.12.0+rocm7.15.0a20260728"
 if not defined TORCHVISION_PIN set "TORCHVISION_PIN=0.27.0+rocm7.15.0a20260728"
 if not defined ROCM_SDK_DEVEL_PIN set "ROCM_SDK_DEVEL_PIN=7.15.0a20260728"
@@ -43,12 +47,13 @@ echo.
 echo Requires Python 3.12 ^(the ROCm bitsandbytes wheel is cp312-only^).
 echo Fizgig's GUI needs Tkinter, which ships with a full python.org / pymanager install.
 echo.
-echo PyTorch / ROCm wheels come from AMD nightlies - not built by Fizgig:
-echo   Index:  !ROCM_INDEX!
+echo PyTorch / ROCm wheels come from AMD - not built by Fizgig:
 if !ROCM_EXPERIMENTAL!==1 (
-    echo   torch[device-ARCH] / torchvision[device-ARCH] / rocm-sdk-devel  ^(unpinned latest^)
+    echo   Index:  !ROCM_EXPERIMENTAL_INDEX!
+    echo   torch[device-ARCH] / torchvision[device-ARCH] / rocm-sdk-devel  ^(unpinned --pre^)
     echo   BNB_ROCM_VERSION: unset - bitsandbytes auto-selects its highest matching DLL
 ) else (
+    echo   Index:  !ROCM_INDEX!
     echo   torch==!TORCH_PIN!
     echo   torchvision==!TORCHVISION_PIN!
     echo   rocm-sdk-devel==!ROCM_SDK_DEVEL_PIN!
@@ -173,12 +178,13 @@ if !USE_LEGACY_URL!==1 (
 )
 
 if !ROCM_EXPERIMENTAL!==1 (
-    echo Installing floating ROCm experimental ^(multi-arch, unpinned^) for !arch!...
-    echo Source: !ROCM_INDEX!
+    echo Installing floating ROCm experimental ^(whl-next, unpinned --pre^) for !arch!...
+    echo Source: !ROCM_EXPERIMENTAL_INDEX!
     echo   torch[device-!arch!]
     echo   torchvision[device-!arch!]
     echo   rocm-sdk-devel
-    python -m uv pip install --index-strategy unsafe-best-match --index-url "!ROCM_INDEX!" ^
+    python -m uv pip install --index-strategy unsafe-best-match --prerelease allow ^
+        --index-url "!ROCM_EXPERIMENTAL_INDEX!" ^
         "torch[device-!arch!]" ^
         "torchvision[device-!arch!]" ^
         "rocm-sdk-devel"

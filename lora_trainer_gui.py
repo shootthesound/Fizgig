@@ -4031,11 +4031,9 @@ class LoRATrainerGUI:
             self._minimax_base_combo.pack(side=tk.LEFT)
             self._minimax_base_hint = tk.Label(
                 model_card,
-                text="Pick the H3 model you deploy on. First/last frame (fl2va) is the standard "
-                     "model most workflows run. Reference (ref2va) is the Reference-to-Video "
-                     "fine-tune — choose it if your LoRA's home is the r2v workflow (needs 'DiT "
-                     "(reference)' set in Preferences). Presets never change this; reference "
-                     "distillation always trains on ref2va regardless.",
+                text="The H3 model you deploy on. First/last frame (fl2va) for most workflows. "
+                     "Reference (ref2va) if the LoRA lives in the r2v workflow; needs DiT "
+                     "(reference) in Preferences. Presets never change this.",
                 font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"],
                 bg=COLORS["bg_surface"], wraplength=760, justify=tk.LEFT)
             self._minimax_base_frame.pack(anchor=tk.W, pady=(10, 0))
@@ -4298,15 +4296,10 @@ class LoRATrainerGUI:
         self.entries["CONTEXT_LORA_STRENGTH"].insert(0, "1.0")
         self.entries["CONTEXT_LORA_STRENGTH"].pack(side=tk.LEFT)
         self._contextlora_desc_label = ttk.Label(training_content,
-                  text="Train this LoRA with an existing LoRA already active on the base model. "
-                       "Pair with same context+strength at inference.",
+                  text="Trains with an existing LoRA active on the base. Use the same LoRA and "
+                       "strength at inference.",
                   foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"))
         self._contextlora_desc_label.grid(row=14, column=0, columnspan=2, sticky=tk.W, padx=5)
-        self._contextlora_warn_label = ttk.Label(training_content,
-                  text="⚠ Context LoRAs usually look better in ComfyUI than in training samples — "
-                       "don't worry if previews look rough, test the output LoRA in ComfyUI.",
-                  foreground="#E67E22", font=(FONT_FAMILY, 9, "italic"))
-        self._contextlora_warn_label.grid(row=15, column=0, columnspan=2, sticky=tk.W, padx=5)
 
         # Target Megapixels (training resolution) — moved here from Other Options
         ttk.Label(training_content, text="Target Megapixels:").grid(row=16, column=0, sticky=tk.W, padx=5, pady=(8, 2))
@@ -4329,11 +4322,9 @@ class LoRATrainerGUI:
                   foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9), wraplength=620,
                   justify=tk.LEFT).pack(side=tk.LEFT)
         ttk.Label(training_content,
-                  text="Images are automatically resized to fit this target area — no need to resize your dataset "
-                       "beforehand. 0.25 MP ≈ 512×512 of pixel area, and your images do NOT have to be square: any "
-                       "aspect ratio works (bucketing handles mixed shapes). Higher = more detail, but more VRAM per "
-                       "step: 4.2 MP is 4x the pixels of 1.0 and realistically wants 24-32 GB (or heavy block swap) — "
-                       "a 16 GB card will OOM well before it.",
+                  text="Images are resized to this area. Any aspect ratio, no additional prep needed "
+                       "beyond the Image Prep tab. Higher = more detail, more VRAM per step; 4.2 MP "
+                       "wants 24-32 GB.",
                   foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720).grid(
             row=17, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
 
@@ -4825,11 +4816,9 @@ class LoRATrainerGUI:
                                        padx=5, pady=(8, 0))
         self._minimax_likeness_hint = ttk.Label(
             training_content,
-            text=f"Photos and clips train the identity blocks ({MINIMAX_LIKENESS_BLOCKS}) only, "
-                 f"voice the audio zone ({MINIMAX_AUDIO_BLOCKS}) only. The backward stops at "
-                 "the window and the text token refiner stays frozen on those steps: about a "
-                 "quarter faster per step, and sharper, steadier previews (measured 10 Sep). "
-                 "Untick for style or scene training. See the MiniMax section of the README.",
+            text=f"Photos and clips train blocks {MINIMAX_LIKENESS_BLOCKS}, voice "
+                 f"{MINIMAX_AUDIO_BLOCKS}. The backward stops at the window: about a quarter "
+                 "faster, sharper, steadier previews. Untick for style or scene training.",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_likeness_hint.grid(row=40, column=0, columnspan=2, sticky=tk.W,
                                          padx=5, pady=(0, 4))
@@ -4892,17 +4881,16 @@ class LoRATrainerGUI:
                                         padx=5, pady=(8, 0))
         self._minimax_clipstill_hint = ttk.Label(
             training_content,
-            text="Each clip's sharpest frame with a face is picked and encoded when the clips are "
-                 "cached, then trains on a step of its own with the clip's caption. Clips cached "
-                 "with this off use frame 0 until re-cached. See the MiniMax section of the README.",
+            text="Each clip's sharpest face frame trains as a photo with the clip's caption. "
+                 "Picked at caching; clips cached with this off use frame 0 until re-cached.",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_clipstill_hint.grid(row=47, column=0, columnspan=2, sticky=tk.W,
                                           padx=5, pady=(0, 4))
 
         # Answers "when do changes take effect?" (issue #40) right where people wonder it.
         ttk.Label(training_content,
-                  text="Settings are read when a run launches; Pause → Resume picks up changes, "
-                       "dataset/caption changes need a fresh run.",
+                  text="Read at launch. Pause then Resume picks up changes; dataset or caption "
+                       "changes need a fresh run.",
                   foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"),
                   justify=tk.LEFT, wraplength=720).grid(
             row=30, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 6))
@@ -5046,14 +5034,10 @@ class LoRATrainerGUI:
         # The field had no explanation at all, which made the whole resume feature invisible
         # unless you already knew a state dir was a folder (not a .safetensors) and where it lived.
         tk.Label(memory_content,
-                 text="Leave empty for a normal run. To carry on from a saved state, Browse to a folder named "
-                      "like myLora-000012-state in your LoRA output folder — the number is the epoch it "
-                      "finished. Training continues at the next epoch with the optimizer, learning rate and "
-                      "seed exactly as they were, so it picks up mid-run rather than starting over. To train a "
-                      "FINISHED LoRA further, pick its highest-numbered state and raise Max Train Epochs first "
-                      "— otherwise there are no epochs left to run. Pausing writes one of these for you, and "
-                      "the Resume button fills this in automatically; you only need Browse for an older "
-                      "checkpoint or a run from a previous session.",
+                 text="Empty for a normal run. Browse to a state folder (myLora-000012-state; the number "
+                      "is the epoch finished) to continue with optimizer, LR and seed intact. To train a "
+                      "finished LoRA further, pick its last state and raise Max Train Epochs first. Pause "
+                      "and Resume fill this in for you.",
                  font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
                  wraplength=600, justify=tk.LEFT).grid(row=2, column=1, sticky=tk.W, padx=5, pady=(0, 4))
 
@@ -5205,10 +5189,9 @@ class LoRATrainerGUI:
                         variable=self.save_state_on_train_end_var,
                         style="Surface.TCheckbutton").pack(anchor=tk.W)
         tk.Label(memory_content,
-                 text="A state dir holds the LoRA plus the optimizer, so a run can pick up exactly where it "
-                      "left off — after a crash, or to train a finished LoRA further by raising Max Train "
-                      "Epochs and resuming. \"At each checkpoint\" follows Save Every N Epochs. Pause always "
-                      "saves state whether these are ticked or not.",
+                 text="A state holds the LoRA plus optimizer, so a run can resume exactly: after a crash, "
+                      "or to train a finished LoRA further. At each checkpoint follows Save Every N "
+                      "Epochs. Pause always saves one.",
                  font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
                  wraplength=600, justify=tk.LEFT).grid(row=13, column=1, sticky=tk.W, padx=5, pady=(0, 4))
 
@@ -5219,9 +5202,8 @@ class LoRATrainerGUI:
         self.entries["KEEP_LAST_N_STATES"].insert(0, str(self.settings.get("KEEP_LAST_N_STATES", 2)))
         self.entries["KEEP_LAST_N_STATES"].grid(row=14, column=1, sticky=tk.W, padx=5, pady=4)
         tk.Label(memory_content,
-                 text="States are big — roughly 470 MB at rank 32, 240 MB at rank 16 — so older ones are "
-                      "deleted as new ones are written. Only state dirs for THIS LoRA name are touched, and "
-                      "the newest is always kept.",
+                 text="States are big (about 470 MB at rank 32), so older ones are deleted. Only this "
+                      "LoRA's states are touched; the newest is always kept.",
                  font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
                  wraplength=600, justify=tk.LEFT).grid(row=15, column=1, sticky=tk.W, padx=5, pady=(0, 4))
 
@@ -5255,11 +5237,9 @@ class LoRATrainerGUI:
         self.entries["MINIMAX_BASE_QUANT"].pack(side=tk.LEFT)
         self._minimax_quant_hint = ttk.Label(
             memory_content,
-            text="Auto reads your FREE VRAM at launch and picks the base precision and block "
-                 "swap together — int8 is the most accurate, 4-bit fits smaller cards. 4-bit "
-                 "HQQ sits between them (about a third less base error than 4-bit, ~45% more "
-                 "VRAM; NF4's speed on streamed plans, ~half on a big card with no swap); Auto never picks it. "
-                 "Full write-up in the README.",
+            text="Auto reads free VRAM at launch and picks precision and block swap together. "
+                 "int8 is the most accurate, 4-bit fits smaller cards, 4-bit HQQ sits between "
+                 "(less error, more VRAM, slower with no swap). Auto never picks HQQ.",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_quant_hint.grid(row=17, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
 
@@ -5288,8 +5268,8 @@ class LoRATrainerGUI:
         self.entries["MINIMAX_EMA"].pack(side=tk.LEFT)
         self._minimax_smooth_hint = ttk.Label(
             scheduler_content,
-            text="Saves a smoothed average of the weights, so checkpoints come out crisper "
-                 "when you push the LR hard. Costs no speed. Full write-up in the README.",
+            text="A smoothed average of the weights, leading to better and more reliable "
+                 "previews.",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_smooth_hint.grid(row=26, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
 
@@ -5312,9 +5292,8 @@ class LoRATrainerGUI:
         self.entries["MINIMAX_ADAPTER_RAMP"].pack(side=tk.LEFT)
         self._minimax_ramp_hint = ttk.Label(
             scheduler_content,
-            text="Makes the Learning Rate box a CEILING the run climbs toward instead of a rate "
-                 "it starts at, so set the LR to where you want to end up. Full write-up in the "
-                 "README.",
+            text="Makes the Learning Rate box a ceiling the run climbs toward. Set it where you "
+                 "want to end up.",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_ramp_hint.grid(row=28, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
 
@@ -5419,9 +5398,8 @@ class LoRATrainerGUI:
             "<<ComboboxSelected>>", lambda _e: self._sync_distill_weight_state())
         self._minimax_distill_hint = ttk.Label(
             scheduler_content,
-            text="EXPERIMENT — teaches the LoRA to reproduce identity the way H3 does when shown "
-                 "a photo. Needs the ref2va model in Preferences. See the MiniMax section of "
-                 "the README.",
+            text="Experiment. Teaches the LoRA to reproduce identity the way H3 does from a "
+                 "reference photo. Needs the ref2va model in Preferences.",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
         self._minimax_distill_hint.grid(row=34, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
 
@@ -7205,13 +7183,9 @@ class LoRATrainerGUI:
             str(self.settings.get("MIXED_STOP_MODE", "")) or _RETIRE_MODES[0])
         self.entries["MIXED_STOP_MODE"].pack(side=tk.LEFT)
         self._mixed_stop_hint = tk.Label(
-            parent, text="If one category is a substantially different size from the other, "
-                         "it may be done (or start to overbake) well before the rest — finish "
-                         "it early instead of overtraining it. Blank = both train to the end. "
-                         "Anchor keeps the finished category at a true 10% learning rate — "
-                         "holding its quality against drift from the still-training category, "
-                         "with its epoch report staying live as the drift alarm. Stop skips "
-                         "its steps entirely: faster epochs, but that category goes unwatched.",
+            parent, text="Finish the smaller category early, before it overbakes. Blank = both "
+                         "train to the end. Anchor holds it at 10% LR and keeps its epoch report "
+                         "live. Stop skips its steps: faster, but unwatched.",
             font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
             justify=tk.LEFT, wraplength=720)
         self._MIXED_STOP_HINT_LORA = self._mixed_stop_hint.cget("text")
@@ -7257,8 +7231,8 @@ class LoRATrainerGUI:
         # without the Turbo LoRA and 100% holds face SHAPE better every time.
         self._minimax_hnlr_hint = tk.Label(
             parent,
-            text="Scales the learning rate of the noisy-half steps (pose, framing, face shape). "
-                 "See the MiniMax section of the README.",
+            text="Scales the LR of the noisy-half steps: pose, framing, face shape. Leave at 100 "
+                 "unless experimenting.",
             font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
             justify=tk.LEFT, wraplength=700)
         self._minimax_hnlr_hint.grid(row=26, column=0, columnspan=3, sticky=tk.W,
@@ -7350,9 +7324,8 @@ class LoRATrainerGUI:
                             "(Optimised Likeness Learning applies it to photos automatically) — "
                             "and 0-3, 6-47 for style (the Style preset sets it). Full write-up "
                             "in the README.")
-    _MINIMAX_BLOCKS_HINT_LOCKED = ("Disabled by Optimised Likeness Learning above — untick it "
-                                   "to hand-pick blocks. While it's on, photos train "
-                                   f"{MINIMAX_LIKENESS_BLOCKS}; video follows the restriction tickbox.")
+    _MINIMAX_BLOCKS_HINT_LOCKED = ("Owned by Optimised Likeness Learning while it is on: photos "
+                                   f"and clips {MINIMAX_LIKENESS_BLOCKS}. Untick it to hand-pick.")
 
     def _minimax_adapter_pref_key(self):
         """The training-adapter pref that matches the base this run trains on — ref2va when
@@ -8037,7 +8010,7 @@ class LoRATrainerGUI:
         # active on the resident DiT, so it's live in previews too). Under MiniMax fine-tune
         # it's refused at validation — the rotation path has no LoRA network to stack on.
         for w in (self._contextlora_label, self._contextlora_frame,
-                  self._contextlora_desc_label, self._contextlora_warn_label):
+                  self._contextlora_desc_label):
             self._set_widget_visible(w, True)
         if native:
             # Restore the rank/alpha <-> factor row swap for the current selection.
@@ -9230,8 +9203,8 @@ class LoRATrainerGUI:
         self.entries["ATTENTION_MECHANISM"] = ttk.Combobox(parent, textvariable=self.attention_var, values=attention_options, state="readonly")
         self.entries["ATTENTION_MECHANISM"].grid(row=row, column=1, sticky=tk.EW, padx=5, pady=2)
         row += 1
-        ttk.Label(parent, text="sdpa works on all GPUs. flash3 requires pip install flash-attn and an "
-                  "NVIDIA Hopper/Blackwell GPU (H100, RTX 5090, etc.).",
+        ttk.Label(parent, text="sdpa runs on any GPU. flash3 needs flash-attn and a Hopper or "
+                  "Blackwell card (H100, RTX 5090).",
                   foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic")).grid(
             row=row, column=0, columnspan=3, sticky=tk.W, padx=5)
         row += 1

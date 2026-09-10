@@ -1,6 +1,6 @@
 # Fizgig Headless CLI
 
-Everything the GUI does for training runs through the scripts in `src/fizgig/scripts/` — the GUI is a front-end that builds these exact commands and runs them as subprocesses. That means the CLI is always feature-complete: adaptive LR, the per-image loss watch, auto-recaptioning, Context LoRA, pause/resume — all of it is available from a plain terminal, on **Windows and Linux alike** (including display-less boxes).
+Everything the GUI does for training runs through the scripts in `src/fizgig/scripts/` — the GUI is a front-end that builds these exact commands and runs them as subprocesses. That means the CLI is always feature-complete for all three families — Klein 9B, Krea 2 and MiniMax H3: adaptive LR, the per-image loss watch, auto-recaptioning, Context LoRA, video and voice training, pause/resume — all of it is available from a plain terminal, on **Windows and Linux alike** (including display-less boxes).
 
 All commands below are run from the repo root. The scripts add `src/` to `sys.path` themselves, so the direct form always works:
 
@@ -33,6 +33,7 @@ Every script supports `--help` for the full argument list. This document covers 
 - [Preparing images and captions](#preparing-images-and-captions)
 - [Klein 9B training](#klein-9b-training)
 - [Krea 2 training](#krea-2-training)
+- [MiniMax H3 training](#minimax-h3-training)
 - [Sample previews during training](#sample-previews-during-training)
 - [Pause and resume](#pause-and-resume)
 - [VRAM guidance (block swap)](#vram-guidance-block-swap)
@@ -44,7 +45,7 @@ Every script supports `--help` for the full argument list. This document covers 
 
 ## Model files: where they come from, where they go
 
-Headless, there is no Preferences tab: **model locations are passed as flags on every command** (`--dit`, `--vae`, `--text_encoder`, and for Krea 2 previews `--turbo_dit`). The CLI does not read the GUI's `prefs.json` — put the paths in a shell script or Makefile once and forget about them. The files themselves are the same ones the GUI's Preferences tab links to:
+Headless, there is no Preferences tab: **model locations are passed as flags on every command** (`--dit`, `--vae`, `--text_encoder`, for Krea 2 previews `--turbo_dit`, for MiniMax H3 `--audio_vae`, `--turbo_lora_path` and `--training_adapter_path`). The CLI does not read the GUI's `prefs.json` — put the paths in a shell script or Makefile once and forget about them. The files themselves are the same ones the GUI's Preferences tab links to:
 
 **Klein 9B:**
 
@@ -66,6 +67,18 @@ Headless, there is no Preferences tab: **model locations are passed as flags on 
 | fp8 Turbo DiT | [krea2_turbo_fp8_scaled.safetensors](https://huggingface.co/Comfy-Org/Krea-2/blob/main/diffusion_models/krea2_turbo_fp8_scaled.safetensors) | 8-step previews (`--turbo_dit`) |
 | VAE `qwen_image_vae.safetensors` | [Krea-2 → vae](https://huggingface.co/Comfy-Org/Krea-2/blob/main/vae/qwen_image_vae.safetensors) | `--vae` |
 | Text encoder `qwen3vl_4b_bf16.safetensors` | [Krea-2 → text_encoders](https://huggingface.co/Comfy-Org/Krea-2/blob/main/text_encoders/qwen3vl_4b_bf16.safetensors) | `--text_encoder` |
+
+**MiniMax H3:**
+
+| File | Download | Used for |
+|---|---|---|
+| DiT, pruned int8 (~21 GB) | [minimax_h3_fl2va_pruned_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors) | training (`--dit`) — the same file ComfyUI runs |
+| DiT, reference build *(optional)* | [minimax_h3_ref2va_pruned_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors) | `--dit` for LoRAs that live in the reference-to-video workflow, and for `--distill` |
+| Text encoder, nvfp4 (~15.7 GB) | [qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors) | `--text_encoder` (caching, and pre-encoding preview prompts) |
+| Video VAE | [minimax_h3_video_vae_fp16.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/vae/minimax_h3_video_vae_fp16.safetensors) | `--vae` |
+| Audio VAE *(optional)* | [minimax_h3_audio_vae_fp32.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/vae/minimax_h3_audio_vae_fp32.safetensors) | `--audio_vae` — sound in clips, voice recordings, previews with sound |
+| Turbo LoRA *(optional)* | [minimax_h3_turbo_v4_step600.safetensors](https://huggingface.co/larryvrh/MiniMax-H3-Turbo-Lora/blob/main/minimax_h3_turbo_v4_step600.safetensors) | 6-step previews (`--turbo_lora_path`) |
+| Training adapter *(recommended)* | [minimax_h3_training_adapter_v1.safetensors](https://huggingface.co/ostris/minimax_h3_training_adapter/blob/main/minimax_h3_training_adapter_v1.safetensors) (fl2va) · [ref2va file](https://huggingface.co/ostris/minimax_h3_training_adapter/blob/main/minimax_h3_ref2va_training_adapter_v1.safetensors) | `--training_adapter_path` — match it to `--dit` |
 
 ---
 
@@ -96,6 +109,8 @@ The two model families share the dataset format and most of the workflow, but no
 
 The four intelligence toggles are Krea 2-only because auto-recaption needs a text encoder that can *see* — Krea 2's Qwen3-VL is a full vision-language model; Klein's stripped Qwen3-8B can't generate text or look at images.
 
+**MiniMax H3** is the third family and has its own three scripts and flag set: photos, video clips with their sound, and voice recordings in one dataset; Optimised Likeness Learning on by default; an int8 or 4-bit base sized to your card; weight averaging; Turbo previews as clips with sound; Context LoRA, the training adapter, TREAD, pause/resume, and full fine-tuning. See [MiniMax H3 training](#minimax-h3-training).
+
 ---
 
 ## The three-step pipeline
@@ -116,6 +131,14 @@ python src/fizgig/scripts/train.py         --dataset_config my_dataset.toml ... 
 python src/fizgig/scripts/krea2_cache_latents.py --dataset_config my_dataset.toml --vae /models/qwen_image_vae.safetensors
 python src/fizgig/scripts/krea2_cache_text.py    --dataset_config my_dataset.toml --text_encoder /models/qwen3vl_4b_bf16.safetensors
 python src/fizgig/scripts/krea2_train.py         --dataset_config my_dataset.toml ...   # full example below
+```
+
+**MiniMax H3:**
+
+```bash
+python src/fizgig/scripts/minimax_cache_latents.py --dataset_config my_dataset.toml --vae /models/minimax_h3_video_vae_fp16.safetensors --audio_vae /models/minimax_h3_audio_vae_fp32.safetensors --clip_still --skip_existing
+python src/fizgig/scripts/minimax_cache_text.py    --dataset_config my_dataset.toml --text_encoder /models/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors
+python src/fizgig/scripts/minimax_train.py         --dataset_config my_dataset.toml ...   # full example below
 ```
 
 Re-running a cache step is cheap: pass `--skip_existing` to only encode new images. Stale cache files for images that were removed from the dataset are deleted automatically (pass `--keep_cache` to keep them, but see the warning in the next section).
@@ -381,6 +404,93 @@ Two warnings worth internalising before you reach for the dropdown. **Learning r
 
 ---
 
+## MiniMax H3 training
+
+MiniMax H3 (33B) trains on photos, video clips with their sound, and voice recordings, all from one dataset folder — the [dataset TOML](#dataset-config-toml) is the same, and clips and audio files sit beside the images with their own `.txt` captions. You need the files from the [download table](#model-files-where-they-come-from-where-they-go): the pruned int8 DiT, the nvfp4 text encoder, the video VAE, and, for sound and voice, the audio VAE. The Turbo LoRA and the training adapter are optional but both are in the default recipe.
+
+The cache steps are the ones in [the three-step pipeline](#the-three-step-pipeline). `--audio_vae` on the latent cache is what makes a clip's sound a training target (and is required by voice recordings); `--clip_still` picks each clip's sharpest face frame and caches it as a still, for `--clip_still_as_photo` at training time.
+
+### Full example
+
+The GUI's **Fast** preset, exactly as it builds it — rank 8, flat 2e-4, 50 epochs, everything the app has on by default:
+
+```bash
+python src/fizgig/scripts/minimax_train.py \
+  --dataset_config my_dataset.toml \
+  --dit /models/minimax_h3_fl2va_pruned_int8_convrot.safetensors \
+  --output_dir ./output_loras/my_subject \
+  --output_name my_subject_mmh3 \
+  --network_dim 8 --network_alpha 8 \
+  --learning_rate 2e-4 \
+  --max_train_epochs 50 \
+  --save_every_n_epochs 1 \
+  --seed 42 \
+  --optimizer_type adamw \
+  --base_quant auto --blocks_to_swap auto --gradient_checkpointing auto \
+  --shift 0.666667 \
+  --ema_decay 0.98 \
+  --caption_dropout 0.05 \
+  --photo_blocks 20-49 --clip_blocks 20-49 --audio_blocks 34-49 \
+  --no_train_adaln \
+  --training_adapter_path /models/minimax_h3_training_adapter_v1.safetensors \
+  --tread_ratio 0.5 --tread_start 2 --tread_end 47 \
+  --clip_still_as_photo \
+  --save_state --save_state_on_train_end --keep_last_n_states 2 \
+  --text_encoder /models/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors \
+  --vae /models/minimax_h3_video_vae_fp16.safetensors \
+  --sample_prompts sample_prompts.txt \
+  --sample_every_n_epochs 1 --sample_at_first \
+  --sample_width 768 --sample_height 768 --sample_seed 1234 \
+  --sample_frames 56 --sample_audio --audio_vae /models/minimax_h3_audio_vae_fp32.safetensors \
+  --turbo_lora_path /models/minimax_h3_turbo_v4_step600.safetensors --turbo_lora_strength 0.75 --sample_steps 6
+```
+
+Two things are on with no flag at all: under `--photo_blocks` / `--clip_blocks` / `--audio_blocks` the backward pass stops at the trained window, and the LoRA does not train the model's text token refiner. Both are what the app ships; `--likeness_full_backward` and `--train_token_refiner` are the opt-outs, for A/Bs of your own.
+
+### The flags that matter
+
+**The recipe**
+
+- `--photo_blocks 20-49 --clip_blocks 20-49 --audio_blocks 34-49` — Optimised Likeness Learning: photos and clips train the identity blocks, voice the audio zone. Leave them out to train the whole model (style and scene LoRAs; the GUI's Style preset does).
+- `--training_adapter_path` — the training adapter, frozen at 1.0 for every training step, off for previews and absent from the saved LoRA. Use the fl2va or ref2va file to match `--dit`.
+- `--ema_decay 0.98` — weight averaging: checkpoints and previews come from a smoothed average of the weights. `0` turns it off.
+- `--shift 0.666667` — the GUI's **Likeness and Style** training structure, most of the run on nearly-clean images. Unset = the model's own movement-first schedule. `--highnoise_lr_scale` scales the LR of the noisy-half steps and is best left at 1.
+- `--no_train_adaln` — the app always passes it: the deployed pruned builds cannot load AdaLN LoRA keys.
+- `--tread_ratio 0.5 --tread_start 2 --tread_end 47` — TREAD token routing on clip steps; `--tread_ratio 0` turns it off.
+- `--clip_still_as_photo` — each clip's cached sharpest face frame trains as a photo of its own (needs `--clip_still` at caching).
+- `--caption_dropout 0.05` — a few percent of steps train with no caption (needs the empty-prompt embed the text cache writes).
+- `--network_type lokr --lokr_factor 8` — LoKR instead of LoRA. Standard LoRA stays the recommendation on H3.
+
+**Memory and precision**
+
+- `--base_quant auto|int8|nf4|hqq` — `auto` reads free VRAM at launch and picks the base precision and block swap together: int8 is the checkpoint's own weights and the most accurate (~21 GB resident), nf4 fits smaller cards (~11 GB), hqq sits between (never picked by auto). `--blocks_to_swap auto` plans the swap from free VRAM and the largest bucket; `--gradient_checkpointing auto` turns it on only when needed.
+- `--gradient_accumulation_steps N` — sum N batches per optimizer step.
+
+**Video and voice**
+
+- `--audio_weight` — the weight on the audio term for clips with sound; raise it if the per-epoch `[audio]` line shows sound taking a negligible share of the loss.
+- `--visual_stop_epoch N --visual_stop_mode anchor|stop`, `--audio_stop_epoch N --audio_stop_mode` — mixed datasets: finish the smaller category early. `anchor` keeps it at 10% LR with its epoch report live; `stop` skips its steps.
+
+**Previews** — see [Sample previews during training](#sample-previews-during-training) for the H3 flags (`--sample_frames`, `--sample_audio`, the Turbo LoRA).
+
+**Learning-rate helpers**
+
+- `--adapter_ramp R` — adapter-relative LR: the Learning Rate becomes a ceiling the run climbs toward (0.005 is the GUI's On value).
+- `--lr_warmup_epochs N` — linear warm-up over the first N epochs.
+
+**Experiments and opt-outs**
+
+- `--train_token_refiner` — adds the text token refiner to the LoRA targets. Recommended off; does not affect the ability to use a trigger word.
+- `--likeness_full_backward` — the old full backward under the likeness masks, with the refiner training on every step. A/B only.
+- `--train_blocks SPEC` — train only these of the 50 blocks (`'20-49'`, `'3-12, 22, 31-33'`). `--slow_blocks SPEC --slow_block_lr_scale X` trains a range at a reduced LR. `--block_limit N` caps any block's single-step movement at N× the median block's.
+- `--distill --distill_weight W --distill_phase1_epochs N` — reference distillation, trained on the ref2va DiT; needs `--reference_count K` on the text cache.
+- `--context_lora_path FILE --context_lora_strength S` — train with an existing H3 LoRA frozen and active underneath, in training and previews.
+- `--metadata_title/author/description/license/tags/trigger_phrase` — recorded in the saved LoRA.
+
+**Full fine-tuning** — `--finetune_rotation N` trains the base model itself in component windows on an NF4-resident base and saves exact int8 checkpoints; `--finetune_rotate_every`, `--finetune_scope all|photo`, `--finetune_blocks`, `--finetune_master auto|ram|disk`, `--finetune_scratch_dir` and `--reg_lr_multiplier` go with it. The GUI's Fine-tune checkbox builds these; see `docs/FINETUNE_HOWDOI.md` before running one headless. Context LoRA, the training adapter and TREAD are LoRA-only and refused under rotation.
+
+---
+
 ## Sample previews during training
 
 `--sample_prompts` takes a text file, one prompt per line, `#` lines are comments.
@@ -399,7 +509,9 @@ Pass `--sample_dit <distilled>` to render previews on the Distilled model (4-ste
 
 **Krea 2** prompt files are plain prompts only; geometry and seed come from `--sample_width` / `--sample_height` / `--sample_seed`, and previews render on the fp8 Turbo (`--turbo_dit`; `--sample_steps`, default 8). `--sample_cfg_scale` above 1 enables CFG on the previews — pair it with `--sample_negative` for a real uncond (with CFG at 1.0 a negative is ignored, with a log note). `--sample_at_first` renders an epoch-0 preview (base + zero-init LoRA) before training, and works even with `--sample_every_n_epochs 0`. `--sample_ref_image` enables the Qwen3-VL vision path (generate driven by a reference picture; works even with an empty prompt file). `--metadata_title/author/description/license/tags` are recorded in the saved LoRA as `modelspec.*` keys.
 
-Samples are written to `<output_dir>/sample/` with the epoch number in the filename. Prefer ~1024×1024 — sub-1024 previews degrade anatomy and undersell the checkpoint.
+**MiniMax H3** prompt files are plain prompts too. Previews are clips: `--sample_frames` sets the length on the model's 17n+5 frame grid (1 = a still, 56 ≈ 2.3 s, 124 = the trained minimum of ~5 s; off-grid values snap down), `--sample_audio` with `--audio_vae` decodes the clip's generated sound to a `.wav` beside the `.mp4`, and `--turbo_lora_path` with `--sample_steps 6` renders on the Turbo LoRA at `--turbo_lora_strength 0.75` (20 steps without it, matching ComfyUI's shipped template). `--sample_width/height` default to H3's native 768. The training adapter is switched off for previews; a Context LoRA stays on. Rendering a 56-frame clip every epoch costs more than the epoch's training on a small dataset — set `--sample_every_n_epochs` higher, or preview stills, when speed is the point.
+
+Samples are written to `<output_dir>/sample/` with the epoch number in the filename. Prefer ~1024×1024 on Klein and Krea 2 — sub-1024 previews degrade anatomy and undersell the checkpoint.
 
 ---
 
@@ -408,18 +520,19 @@ Samples are written to `<output_dir>/sample/` with the epoch number in the filen
 Pause is a file, which makes it fully scriptable:
 
 ```bash
-# request a graceful pause (both Klein and Krea 2)
+# request a graceful pause (Klein, Krea 2 and MiniMax H3)
 touch ./output_loras/my_subject/.pause_requested        # Linux/macOS
 New-Item ./output_loras/my_subject/.pause_requested     # Windows PowerShell
 ```
 
-At the next epoch boundary the trainer force-saves a full state dir, logs `[pause] requested ... Exiting cleanly`, and exits 0 — GPU freed, no quality loss. (Klein: pass `--pause_flag_path` as in the example so the trainer knows where to look. Krea 2 watches `<output_dir>/.pause_requested` automatically.)
+At the next epoch boundary the trainer force-saves a full state dir, logs `[pause] requested ... Exiting cleanly`, and exits 0 — GPU freed, no quality loss. (Klein: pass `--pause_flag_path` as in the example so the trainer knows where to look. Krea 2 and MiniMax H3 watch `<output_dir>/.pause_requested` automatically.)
 
 Resume by pointing at the state directory:
 
 ```bash
 python src/fizgig/scripts/train.py       ... --resume ./output_loras/my_subject/my_subject-000012-state
 python src/fizgig/scripts/krea2_train.py ... --resume ./output_loras/my_subject/my_subject-000012-state
+python src/fizgig/scripts/minimax_train.py ... --resume ./output_loras/my_subject/my_subject_mmh3-000012-state
 ```
 
 The epoch number is parsed from the dir name; optimizer, scheduler, RNG, dataloader state, adaptive-LR scalars, and (Krea 2) the full per-image watch history are all restored. Pass the same flags as the original run plus `--resume`.
@@ -447,6 +560,8 @@ python src/fizgig/scripts/krea2_train.py ... --max_train_epochs 45 \
 | < 10 GB | 16 | *(use `--quantize_4bit` instead)* |
 
 Klein's fp8 Base is only ~9.6 GB resident, so 16 GB+ cards skip swap entirely (faster — no PCIe transfers). Krea 2's fp8 RAW is ~14 GB resident, hence the more aggressive ladder. `--quantize_4bit` (both trainers) is the below-10 GB escape hatch and forces swap off.
+
+MiniMax H3 plans for itself: `--base_quant auto --blocks_to_swap auto` reads the free VRAM at launch and picks the base precision (int8 at ~21 GB resident on 32 GB cards, 4-bit at ~11 GB below that) and the swap together, and logs the plan as a `[vram]` line. Set either by hand to override.
 
 ---
 

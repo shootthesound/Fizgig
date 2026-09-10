@@ -40,7 +40,7 @@ def _shift_arg(v):
 
 
 def setup_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="MiniMax H3 image-only LoRA training (NF4 base, no samples)")
+    p = argparse.ArgumentParser(description="MiniMax H3 training: photos, video clips with sound, and voice recordings — LoRA, LoKR or full fine-tune")
     p.add_argument("--dit", required=True, help="H3 bf16 DiT (minimax_h3_fl2va_bf16.safetensors)")
     p.add_argument("--dataset_config", required=True, help="Dataset .toml")
     p.add_argument("--output_dir", required=True)
@@ -137,7 +137,7 @@ def setup_parser() -> argparse.ArgumentParser:
                         "0 = off.")
     p.add_argument("--ema_decay", type=float, default=0.0, metavar="D",
                    help="Keep an exponential moving average of the adapter and save/preview THAT "
-                        "instead of the raw weights (0.99 recommended). Training still runs on "
+                        "instead of the raw weights (0.98 recommended). Training still runs on "
                         "the raw weights. 0 = off.")
     p.add_argument("--train_token_refiner", action="store_true",
                    help="Add the text token refiner's Linears to the LoRA targets. Off by default: "
@@ -155,28 +155,28 @@ def setup_parser() -> argparse.ArgumentParser:
     p.add_argument("--train_blocks", default=None, metavar="SPEC",
                    help="EXPERIMENT: train only these DiT blocks (of 50) instead of all of them. "
                         "Ranges and singles, comma-separated: '14-37' or '3-12, 14-15, 22, 31-33'. "
-                        "The text refiner is always included. H3's blocks are identical and nobody "
-                        "has mapped what each one does, so any selection is a hypothesis — compare "
-                        "against a full-model run on the same dataset.")
+                        "H3's blocks are identical and nobody has mapped what each one does, so any "
+                        "selection is a hypothesis — compare against a full-model run on the same "
+                        "dataset.")
     p.add_argument("--photo_blocks", default=None, metavar="SPEC",
                    help="Optimised Likeness Learning: photo training steps update only these "
-                        "DiT blocks (the refiner always trains); video/audio clip steps update "
-                        "the full model. '20-49' is the measured likeness recipe — photo "
-                        "gradients into the front trunk erode rendering and anatomy while "
-                        "identity lives in the back blocks. Composes with --train_blocks.")
+                        "DiT blocks, and the backward stops at the first of them. '20-49' is the "
+                        "measured likeness recipe — photo gradients into the front trunk erode "
+                        "rendering and anatomy while identity lives in the back blocks. Pair with "
+                        "--clip_blocks and --audio_blocks (the GUI passes all three). Composes "
+                        "with --train_blocks.")
     p.add_argument("--audio_blocks", default=None, metavar="SPEC",
                    help="Voice routing: audio-only training steps update only these DiT "
-                        "blocks (the refiner always trains). '34-49' is the measured voice "
-                        "zone (core 38-48 + shoulder) — audio gradients outside it "
-                        "measurably corrupt the visual blocks (A/B, 24 Aug). Applies "
-                        "under the rotation fine-tune, and in LoRA mode alongside "
-                        "--photo_blocks.")
+                        "blocks, and the backward stops at the first of them. '34-49' is the "
+                        "measured voice zone (core 38-48 + shoulder) — audio gradients outside "
+                        "it measurably corrupt the visual blocks (A/B, 24 Aug). Applies under "
+                        "the rotation fine-tune, and in LoRA mode alongside --photo_blocks.")
     p.add_argument("--clip_blocks", default=None, metavar="SPEC",
-                   help="Fine-tune only: confine VIDEO CLIP training steps to these DiT "
-                        "blocks (the refiner always trains). The GUI's 'Restrict video to "
-                        "likeness blocks' passes the likeness set here — a confined "
-                        "overnight video run trained perfectly well (field, 29 Aug). "
-                        "Unset: clips train the full model, the original behaviour.")
+                   help="Confine VIDEO CLIP training steps to these DiT blocks (LoRA and "
+                        "fine-tune alike); the backward stops at the first of them. Optimised "
+                        "Likeness Learning passes the likeness set here — a confined overnight "
+                        "video run trained perfectly well (field, 29 Aug). Unset: clips train "
+                        "the full model.")
     p.add_argument("--base_quant", default="auto", choices=["auto", "int8", "nf4", "hqq"],
                    help="Frozen-base precision. 'int8' keeps the checkpoint's own ConvRot "
                         "weights (~0.17%% base error, ~21 GB) — what the reference trainer "

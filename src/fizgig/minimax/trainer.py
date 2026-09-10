@@ -3740,10 +3740,22 @@ def train_minimax(
         else:
             logger.info("[likeness] photo_blocks %s covers every trained block — nothing to "
                         "mask (Blocks to Train already inside it?)", _photo_used)
-    if likeness_cut_backward and rotator is None:
+    # Backward cut: the token refiner's LoRA must freeze on masked steps too. Its output enters
+    # the sequence at block 0 and is carried through every block, so a trainable refiner forces
+    # the gradient back through all 50 blocks whatever the block masks say (measured 10 Sep
+    # 2026: refiner trainable -> 50 blocks in the backward, no saving; frozen -> the window).
+    _refiner_params = []
+    if likeness_cut_backward and rotator is None and network is not None:
+        _ref_ids = set()
+        for _lora in network.unet_loras:
+            if "token_refiner" in _lora.lora_name:
+                _ref_ids.update(id(p) for p in _lora.parameters())
+        _refiner_params = [p for p in params if id(p) in _ref_ids]
         logger.info("[likeness] backward CUT at the window (experimental): out-of-window LoRA "
-                    "params are frozen before each masked step's forward, so the backward stops "
-                    "at the first trained block instead of running all 50 and discarding")
+                    "params AND the token refiner's %d LoRA tensors are frozen before each masked "
+                    "step's forward, so the backward stops at the first trained block instead of "
+                    "running all 50 and discarding. The refiner LoRA does not learn on masked steps.",
+                    len(_refiner_params))
     # Clip routing, LoRA mode (Peter, 2 Sep — same behaviour as the FT tickbox): clip-only
     # windows update only clip_blocks. Same mechanism as the photo mask.
     _clip_mask_params = []
@@ -5119,11 +5131,14 @@ def train_minimax(
                     _p.requires_grad_(False)
             elif likeness_cut_backward and not _is_voice:
                 # Backward cut (LoRA mode): the params this step's mask will discard anyway are
-                # frozen for the forward+backward, so the graph ends at the first trained block.
-                # Exact per-step masking (a mixed accumulation window no longer trains the
-                # out-of-window blocks from its photo steps — those grads were None-d anyway on
-                # a photo-only window, and on a mixed window they only ever came from clips).
-                _frz = list(_photo_mask_params) if _is_photo else list(_clip_mask_params)
+                # frozen for the forward+backward, PLUS the token refiner's LoRA (its text rows
+                # enter at block 0 — trainable, it drags the backward through every block), so
+                # the graph ends at the first trained block. Exact per-step masking (a mixed
+                # accumulation window no longer trains the out-of-window blocks from its photo
+                # steps — those grads were None-d anyway on a photo-only window).
+                _frz = (list(_photo_mask_params) if _is_photo else list(_clip_mask_params))
+                if _frz:
+                    _frz = _frz + _refiner_params
                 for _p in _frz:
                     _p.requires_grad_(False)
             if (distill and (_teacher_phase or not _p1_epochs) and "ref_hidden_states" in batch

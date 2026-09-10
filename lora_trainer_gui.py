@@ -4848,9 +4848,12 @@ class LoRATrainerGUI:
         self._minimax_likeness_cut_hint = ttk.Label(
             self._minimax_likeness_cut_frame,
             text="Today a photo step runs the full 50-block backward and discards the gradients "
-                 "outside the likeness window. This freezes those blocks before the step so the "
-                 "backward stops at the window: measured -27% per step at 20-49 on NF4 at 0.25 MP, "
-                 "identical gradients on the trained blocks. LoRA runs only; needs Optimised "
+                 "outside the likeness window. This freezes those blocks AND the text token "
+                 "refiner's LoRA before the step, so the backward stops at the window: measured "
+                 "-23% per step on int8, -27% on NF4 (0.25 MP), identical gradients on the "
+                 "trained blocks. The refiner LoRA then does not learn on photo/clip steps — the "
+                 "trigger is still learned in the blocks' attention, where text meets image; "
+                 "prompt following is the thing to watch. LoRA runs only; needs Optimised "
                  "Likeness on.",
             foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=700)
         self._minimax_likeness_cut_hint.pack(anchor=tk.W)

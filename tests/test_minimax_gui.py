@@ -264,6 +264,39 @@ ck("6-49 is an offered option", any(str(o).split(" ")[0] == "6-49" for o in G.MI
    G.MINIMAX_BLOCK_OPTIONS)
 app.entries["MINIMAX_LIKENESS_MODE"].set(G.MINIMAX_MODE_FAST)
 
+# --- applying a snapshot must not drag another family's widgets onto this tab ---------------
+# Peter, 10 Sep 2026: after Load Settings From Last Train on the MiniMax tab, Krea 2's
+# "Auto-recaption stuck images" tickbox appeared between Network Type and Medium to High Noise
+# LR. A snapshot carries EVERY family's keys, so applying one writes krea2_finetune_var and
+# minimax_finetune_var; their visibility handlers drove widgets the other families share
+# (auto-recaption, and the Network Type row) with no family guard of their own. Silent by
+# nature — the run is unaffected, the panel just grows a control that does nothing here.
+_watch = {"auto-recaption": app._krea2_autorecap_cb,
+          "per-image LR": app._krea2_perimglr_cb,
+          "krea2 fine-tune": app._krea2_ft_frame,
+          "Network Type row": app._network_type_rowf,
+          "Training mode": app._minimax_likeness_frame}
+# winfo_manager(), not winfo_ismapped(): this tab is never realised in a headless run, so
+# ismapped reads False for everything and would compare tab visibility instead of the
+# widgets. _set_widget_visible works by grid/grid_remove, which is exactly what manager
+# reports. (The bug itself was confirmed with ismapped on a realised tab.)
+_before = {k: bool(w.winfo_manager()) for k, w in _watch.items()}
+app._apply_preset_values(dict(app._collect_preset_values()))
+root.update_idletasks()
+_after = {k: bool(w.winfo_manager()) for k, w in _watch.items()}
+ck("a snapshot restore leaves the MiniMax panel exactly as it was",
+   _before == _after, [k for k in _watch if _before[k] != _after[k]])
+ck("...and Krea 2's auto-recaption box is not one of the things on it",
+   _after["auto-recaption"] is False)
+ck("...while MiniMax's own rows are still there",
+   _after["Network Type row"] and _after["Training mode"])
+# the guards themselves: each family's fine-tune visibility is a no-op on another family's tab
+app._apply_krea2_ft_visibility()
+app._apply_minimax_ft_visibility()
+root.update_idletasks()
+ck("calling either fine-tune visibility pass directly changes nothing here",
+   {k: bool(w.winfo_manager()) for k, w in _watch.items()} == _before)
+
 # --- validate_inputs requires the three minimax_* paths ----------------------------------
 # validate_inputs pops a modal messagebox on failure (blocks headless) and returns False —
 # stub showerror to capture the message text instead.

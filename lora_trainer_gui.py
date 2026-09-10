@@ -7591,6 +7591,17 @@ class LoRATrainerGUI:
         blocks-per-window picker only in block mode (component windows are fixed)."""
         if not hasattr(self, "_krea2_ft_frame"):
             return
+        # Krea 2 ONLY. This method also drives two widgets that are not its own — Krea 2's
+        # auto-recaption tickbox and the Network Type row every family shows — so running it on
+        # another family's tab pushed a Krea 2 checkbox into the MiniMax panel (between Network
+        # Type and Medium to High Noise LR) and, on a snapshot that carried KREA2_FINETUNE True,
+        # would have hidden MiniMax's own Network Type row. Peter hit the first one on 10 Sep
+        # 2026 via Load Settings From Last Train: the snapshot carries every family's keys, and
+        # applying it writes krea2_finetune_var, whose trace lands here regardless of the tab.
+        # The family-level _apply_training_arch_visibility calls this only when the family IS
+        # Krea 2 and hides the fine-tune widgets itself otherwise, so returning early is safe.
+        if not self._is_krea2_arch():
+            return
         on = bool(self.krea2_finetune_var.get())
         for w in (self._krea2_ft_frame, self._krea2_ft_fused_cb, self._krea2_fast_ft_cb,
                   self._krea2_reg_frame, self._krea2_ft_hint):
@@ -7783,6 +7794,14 @@ class LoRATrainerGUI:
         Likeness Learning, and Blocks to Train (the FT card's own Blocks field is the
         fine-tune's block restriction)."""
         if not hasattr(self, "_minimax_ft_frame"):
+            return
+        # MiniMax ONLY, for the same reason as _apply_krea2_ft_visibility: this drives the
+        # Network Type row, which every family shares and the family-level pass owns (Klein
+        # has no LoKR, so it hides the row). Unguarded, applying a snapshot on the Klein tab
+        # wrote minimax_finetune_var, landed here, and put Network Type back on a tab that
+        # does not have it. Found next to Peter's auto-recaption report, 10 Sep 2026. The
+        # family pass calls this only when the family IS MiniMax.
+        if not self._is_minimax_arch():
             return
         on = bool(self.minimax_finetune_var.get())
         for w in (self._minimax_ft_frame, self._minimax_ft_fused_cb,

@@ -3754,9 +3754,10 @@ def train_minimax(
                 _ref_ids.update(id(p) for p in _lora.parameters())
         _refiner_params = [p for p in params if id(p) in _ref_ids]
         logger.info("[likeness] backward cut at the window: out-of-window LoRA params AND the "
-                    "token refiner's %d LoRA tensors are frozen before each masked step's forward, "
-                    "so the backward stops at the first trained block. The refiner LoRA does not "
-                    "learn on masked steps (--likeness_full_backward restores the old behaviour).",
+                    "token refiner's %d LoRA tensors are frozen before each masked step's forward "
+                    "(photo, clip and voice steps alike), so the backward stops at the first "
+                    "trained block. The refiner LoRA does not learn on masked steps "
+                    "(--likeness_full_backward restores the old behaviour).",
                     len(_refiner_params))
     # Clip routing, LoRA mode (Peter, 2 Sep — same behaviour as the FT tickbox): clip-only
     # windows update only clip_blocks. Same mechanism as the photo mask.
@@ -5131,14 +5132,16 @@ def train_minimax(
                               else _ft_freeze["clip"]))
                 for _p in _frz:
                     _p.requires_grad_(False)
-            elif likeness_cut_backward and not _is_voice:
+            elif likeness_cut_backward:
                 # Backward cut (LoRA mode): the params this step's mask will discard anyway are
                 # frozen for the forward+backward, PLUS the token refiner's LoRA (its text rows
                 # enter at block 0 — trainable, it drags the backward through every block), so
-                # the graph ends at the first trained block. Exact per-step masking (a mixed
-                # accumulation window no longer trains the out-of-window blocks from its photo
-                # steps — those grads were None-d anyway on a photo-only window).
-                _frz = (list(_photo_mask_params) if _is_photo else list(_clip_mask_params))
+                # the graph ends at the first trained block: 20 for photos and clips, 34 for
+                # voice (Peter, 10 Sep: "do the same cut"). Exact per-step masking (a mixed
+                # accumulation window no longer trains the out-of-window blocks from its masked
+                # steps — those grads were None-d anyway on a single-modality window).
+                _frz = (list(_audio_mask_params) if _is_voice
+                        else (list(_photo_mask_params) if _is_photo else list(_clip_mask_params)))
                 if _frz:
                     _frz = _frz + _refiner_params
                 for _p in _frz:

@@ -95,6 +95,7 @@ COLORS = {
 
 # Typography
 FONT_FAMILY = "Segoe UI"
+HINT_FONT = (FONT_FAMILY, 10, "italic")   # the explain text under Training-tab controls (Peter, 11 Sep: one point up from 9)
 FONT_MONO = "Consolas"
 
 # Legacy color constants (for backwards compatibility during transition)
@@ -4079,7 +4080,7 @@ class LoRATrainerGUI:
                 text="The H3 model you deploy on. First/last frame (fl2va) for most workflows. "
                      "Reference (ref2va) if the LoRA lives in the r2v workflow; needs DiT "
                      "(reference) in Preferences. Presets never change this.",
-                font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"],
+                font=HINT_FONT, fg=COLORS["text_explain"],
                 bg=COLORS["bg_surface"], wraplength=760, justify=tk.LEFT)
             self._minimax_base_frame.pack(anchor=tk.W, pady=(10, 0))
             self._minimax_base_hint.pack(anchor=tk.W, pady=(2, 0))
@@ -4192,7 +4193,7 @@ class LoRATrainerGUI:
                        "probes UP on steady loss descent; reduces DOWN on loss plateau, heavy gradient clipping, "
                        "or runaway weight-norm growth (with a rollback to the previous epoch's weights on "
                        "stability events).",
-                  foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
+                  foreground=COLORS["text_explain"], font=HINT_FONT, justify=tk.LEFT, wraplength=720)
         self._adaptive_desc_label.grid(row=4, column=0, columnspan=2, sticky=tk.W, padx=(20, 5), pady=(0, 6))
         self._on_adaptive_lr_toggle()  # sync initial enabled/disabled state
 
@@ -4226,7 +4227,7 @@ class LoRATrainerGUI:
         self._network_type_hint = tk.Label(
             self._network_type_rowf,
             text=self._NETWORK_HINT_GENERAL,
-            font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
+            font=HINT_FONT, fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
             justify=tk.LEFT)
         self._network_type_hint.pack(side=tk.LEFT, padx=(10, 0))
         # rows entry is the FRAME (the gridded thing show_row/hide_row must toggle).
@@ -4246,7 +4247,7 @@ class LoRATrainerGUI:
         self._lokr_factor_hint = tk.Label(
             self._lokr_factor_rowf,
             text="8 is the sweet spot · 4 = stronger, bigger files · above 8: just use LoRA",
-            font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
+            font=HINT_FONT, fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
             justify=tk.LEFT)
         self._lokr_factor_hint.pack(side=tk.LEFT, padx=(10, 0))
         self.rows["LOKR_FACTOR"] = {"row": 19, "label": _lf_label,
@@ -4270,7 +4271,7 @@ class LoRATrainerGUI:
         self._modelarea_combo = training_preset_combo
         self._modelarea_desc_label = ttk.Label(training_content,
                   text="Identity = single 1-16  |  Style = style+comp blocks @ late ts (0-400)  |  Style+Composition = double 0-7 + single 0-1  |  Details = single 12-23",
-                  foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"))
+                  foreground=COLORS["text_explain"], font=HINT_FONT)
         self._modelarea_desc_label.grid(row=11, column=0, columnspan=2, sticky=tk.W, padx=5)
 
         # Custom block picker panel (hidden unless preset == Custom)
@@ -4322,7 +4323,7 @@ class LoRATrainerGUI:
 
         ttk.Label(self._training_custom_frame,
                   text="double + single 0-1 = style+composition  |  single 1-16 = identity (overlaps at 1 and 12-16)  |  single 12-23 = details  |  edit MIN/MAX_TIMESTEP on Advanced tab",
-                  foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic")).pack(anchor=tk.W, pady=(4, 0))
+                  foreground=COLORS["text_explain"], font=HINT_FONT).pack(anchor=tk.W, pady=(4, 0))
 
         self._training_custom_frame.grid_remove()  # hidden until preset == Custom
 
@@ -4343,7 +4344,7 @@ class LoRATrainerGUI:
         self._contextlora_desc_label = ttk.Label(training_content,
                   text="Trains with an existing LoRA active on the base. Use the same LoRA and "
                        "strength at inference.",
-                  foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"))
+                  foreground=COLORS["text_explain"], font=HINT_FONT)
         self._contextlora_desc_label.grid(row=14, column=0, columnspan=2, sticky=tk.W, padx=5)
 
         # Target Megapixels (training resolution) — moved here from Other Options
@@ -4370,7 +4371,7 @@ class LoRATrainerGUI:
                   text="Images are resized to this area. Any aspect ratio, no additional prep needed "
                        "beyond the Image Prep tab. Higher = more detail, more VRAM per step; 4.2 MP "
                        "wants 24-32 GB.",
-                  foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720).grid(
+                  foreground=COLORS["text_explain"], font=HINT_FONT, justify=tk.LEFT, wraplength=720).grid(
             row=17, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
 
         # --- Per-image loss watch (Krea 2 only for now — hidden under Klein via
@@ -4414,7 +4415,7 @@ class LoRATrainerGUI:
             training_content,
             text="Per-image features need Batch Size 1 (Dataset section) — a batch-mean loss "
                  "isn't a per-image signal, so these are disabled at the current batch size.",
-            font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
+            font=HINT_FONT, fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
             wraplength=680, justify=tk.LEFT)
         self._krea2_perimage_batch_note.grid(row=24, column=0, columnspan=2, sticky=tk.W,
                                              padx=5, pady=(2, 0))
@@ -4440,7 +4441,7 @@ class LoRATrainerGUI:
                        "so they refine the identity instead of fighting it while it forms; released early the "
                        "moment they start improving. Run the Look Filter (scan with 3 baselines) first — it saves "
                        "the scores with your dataset. Batch size 1.",
-                  foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
+                  foreground=COLORS["text_explain"], font=HINT_FONT, justify=tk.LEFT, wraplength=720)
         self._krea2_losswatch_hint.grid(row=24, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
 
         # --- Full fine-tune (rotating windows) — Krea 2 only, experimental branch.
@@ -4576,7 +4577,7 @@ class LoRATrainerGUI:
                        "compare like-for-like (~260 GB over a 40-epoch run). Checkpoints are written to the Output Directory above "
                        "(the usual LoRA folder) — point it somewhere with room, e.g. your ComfyUI models/unet. "
                        "Test the result in ComfyUI as a normal Krea 2 model.",
-                  foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"),
+                  foreground=COLORS["text_explain"], font=HINT_FONT,
                   justify=tk.LEFT, wraplength=720)
         self._krea2_ft_hint.grid(row=65, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 6))
 
@@ -4710,7 +4711,7 @@ class LoRATrainerGUI:
                        "start; H3 is uncalibrated — compare checkpoints). Point the Output "
                        "Directory somewhere with room, judge results in ComfyUI, and distil "
                        "to a shareable LoRA with Checkpoint to LoRA.",
-                  foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"),
+                  foreground=COLORS["text_explain"], font=HINT_FONT,
                   justify=tk.LEFT, wraplength=720)
         self._minimax_ft_hint.grid(row=70, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 6))
         # --- Per-step movement clip (MiniMax only) -----------------------------------------
@@ -4741,7 +4742,7 @@ class LoRATrainerGUI:
             text="STRONGLY RECOMMENDED ON — stops any single block overshooting in a step, the "
                  "classic source of distortion. Only the offending step is shortened, so it "
                  "costs nothing that was already learned. Full write-up in the README.",
-            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
+            foreground=COLORS["text_explain"], font=HINT_FONT, justify=tk.LEFT, wraplength=720)
         self._minimax_limiter_hint.grid(row=38, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
 
         # --- Multi Concept (MiniMax only) ---------------------------------------------------
@@ -4783,7 +4784,7 @@ class LoRATrainerGUI:
                  "thing telling the two apart. Caption and prep both folders yourself first; "
                  "this box is training-only and changes nothing else — caption dropout stays "
                  "as you set it. See the MiniMax section of the README.",
-            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT,
+            foreground=COLORS["text_explain"], font=HINT_FONT, justify=tk.LEFT,
             wraplength=720)
         self._minimax_mc_hint.grid(row=51, column=0, columnspan=2, sticky=tk.W, padx=5,
                                    pady=(0, 4))
@@ -4822,7 +4823,7 @@ class LoRATrainerGUI:
                  "fifth the rate. Same syntax as Blocks to Train, and only blocks you're actually "
                  "training count. Adaptive LR still works — it moves both rates together and "
                  "keeps the ratio.",
-            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
+            foreground=COLORS["text_explain"], font=HINT_FONT, justify=tk.LEFT, wraplength=720)
         self._minimax_slow_hint.grid(row=34, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
 
         # --- Train AdaLN (MiniMax only, experimental) --------------------------------------
@@ -4843,7 +4844,7 @@ class LoRATrainerGUI:
                  "that do see the image. It may sharpen likeness, or it may cost you the timing "
                  "control that makes the rest work — run it both ways on the same dataset. Only "
                  "applies to the pruned int8 base; the bf16 one never trains AdaLN anyway.",
-            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
+            foreground=COLORS["text_explain"], font=HINT_FONT, justify=tk.LEFT, wraplength=720)
         self._minimax_adaln_hint.grid(row=32, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
 
         # Training mode — was the "Optimised Likeness Learning" tickbox until 10 Sep 2026.
@@ -4863,7 +4864,7 @@ class LoRATrainerGUI:
         self._minimax_likeness_combo.pack(side=tk.LEFT)
         self._minimax_likeness_hint = ttk.Label(
             training_content, text="",
-            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
+            foreground=COLORS["text_explain"], font=HINT_FONT, justify=tk.LEFT, wraplength=720)
         self._minimax_likeness_hint.grid(row=40, column=0, columnspan=2, sticky=tk.W,
                                          padx=5, pady=(0, 4))
         self._MINIMAX_LIKENESS_HINT_FT = (
@@ -4899,7 +4900,7 @@ class LoRATrainerGUI:
             text="Loads Ostris's training adapter (ostris/minimax_h3_training_adapter) frozen at "
                  "1.0 under your LoRA for every training step, and switches it off for previews "
                  "and in your saved file.",
-            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
+            foreground=COLORS["text_explain"], font=HINT_FONT, justify=tk.LEFT, wraplength=720)
         self._minimax_adapter_hint.grid(row=43, column=0, columnspan=2, sticky=tk.W,
                                         padx=5, pady=(0, 4))
         # --- TREAD token routing — MiniMax LoRA runs only, ON by default (7 Sep 2026) -----
@@ -4915,7 +4916,7 @@ class LoRATrainerGUI:
             text="Faster clip steps: a random half of each clip's video tokens skips blocks 2-46 "
                  "and rejoins unchanged. Photos and clip stills always run in full; previews and "
                  "your saved LoRA are untouched. See the MiniMax section of the README.",
-            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
+            foreground=COLORS["text_explain"], font=HINT_FONT, justify=tk.LEFT, wraplength=720)
         self._minimax_tread_hint.grid(row=45, column=0, columnspan=2, sticky=tk.W,
                                       padx=5, pady=(0, 4))
         # --- clip stills as photos (Peter, 7 Sep 2026) — MiniMax, LoRA and FT ---------------
@@ -4930,7 +4931,7 @@ class LoRATrainerGUI:
             training_content,
             text="Each clip's sharpest face frame trains as a photo with the clip's caption. "
                  "Picked at caching; clips cached with this off use frame 0 until re-cached.",
-            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
+            foreground=COLORS["text_explain"], font=HINT_FONT, justify=tk.LEFT, wraplength=720)
         self._minimax_clipstill_hint.grid(row=47, column=0, columnspan=2, sticky=tk.W,
                                           padx=5, pady=(0, 4))
 
@@ -4938,7 +4939,7 @@ class LoRATrainerGUI:
         ttk.Label(training_content,
                   text="Read at launch. Pause then Resume picks up changes; dataset or caption "
                        "changes need a fresh run.",
-                  foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"),
+                  foreground=COLORS["text_explain"], font=HINT_FONT,
                   justify=tk.LEFT, wraplength=720).grid(
             row=30, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 6))
 
@@ -5085,7 +5086,7 @@ class LoRATrainerGUI:
                       "is the epoch finished) to continue with optimizer, LR and seed intact. To train a "
                       "finished LoRA further, pick its last state and raise Max Train Epochs first. Pause "
                       "and Resume fill this in for you.",
-                 font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
+                 font=HINT_FONT, fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
                  wraplength=600, justify=tk.LEFT).grid(row=2, column=1, sticky=tk.W, padx=5, pady=(0, 4))
 
         # FP8 Checkboxes. Row label + hint are captured on self (not locals) so
@@ -5116,7 +5117,7 @@ class LoRATrainerGUI:
             text="Converts a bf16 model to fp8 at load time. If your Base DiT is already fp8 "
                  "(e.g. flux-2-klein-base-9b-fp8), leave this unchecked — Fizgig detects "
                  "pre-quantised fp8 files automatically.",
-            font=(FONT_FAMILY, 9, "italic"),
+            font=HINT_FONT,
             fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
             wraplength=600, justify=tk.LEFT)
         self._fp8_hint.grid(row=4, column=1, sticky=tk.W, padx=5, pady=(0, 4))
@@ -5168,7 +5169,7 @@ class LoRATrainerGUI:
                       "no swap, at a slight quality cost. fp8 is the least compressed of the three and needs "
                       "the most VRAM, so it swaps blocks to fit. Anything you pick explicitly is planned "
                       "for — swap is sized for the option that will actually run.",
-                 font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
+                 font=HINT_FONT, fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
                  wraplength=600, justify=tk.LEFT)
         self._quant_4bit_hint.grid(row=7, column=1, sticky=tk.W, padx=5, pady=(0, 4))
         self._on_quant_4bit_mode_changed()  # derive the boolean + sync dependent locks
@@ -5188,7 +5189,7 @@ class LoRATrainerGUI:
                       "a 9B LoRA fit on a 16 GB card. Turning it OFF makes training ~20–30% faster but uses far more "
                       "VRAM, so it's only for big cards (24 GB+, ideally 32 GB) with Blocks Swap at 0. On 16 GB, or "
                       "with block swap on, leave it ON.",
-                 font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
+                 font=HINT_FONT, fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
                  wraplength=600, justify=tk.LEFT)
         self._grad_checkpoint_hint.grid(row=9, column=1, sticky=tk.W, padx=5, pady=(0, 4))
         # torch.compile (Krea 2 only — hidden under Klein by _apply_training_arch_visibility).
@@ -5214,7 +5215,7 @@ class LoRATrainerGUI:
                       "levels (~18 GB at 1024px, measured ~27% faster than uncompiled). Requires Triton and, on "
                       "Windows, a C++ compiler (VS Build Tools) — both located automatically. Never used with "
                       "Blocks Swap, since swapping moves weights and compiled graphs assume they stay put.",
-                 font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
+                 font=HINT_FONT, fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
                  wraplength=600, justify=tk.LEFT)
         self._compile_blocks_hint.grid(row=11, column=1, sticky=tk.W, padx=5, pady=(0, 4))
 
@@ -5239,7 +5240,7 @@ class LoRATrainerGUI:
                  text="A state holds the LoRA plus optimizer, so a run can resume exactly: after a crash, "
                       "or to train a finished LoRA further. At each checkpoint follows Save Every N "
                       "Epochs. Pause always saves one.",
-                 font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
+                 font=HINT_FONT, fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
                  wraplength=600, justify=tk.LEFT).grid(row=13, column=1, sticky=tk.W, padx=5, pady=(0, 4))
 
         tk.Label(memory_content, text="Keep Last:", font=(FONT_FAMILY, 10),
@@ -5251,7 +5252,7 @@ class LoRATrainerGUI:
         tk.Label(memory_content,
                  text="States are big (about 470 MB at rank 32), so older ones are deleted. Only this "
                       "LoRA's states are touched; the newest is always kept.",
-                 font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
+                 font=HINT_FONT, fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
                  wraplength=600, justify=tk.LEFT).grid(row=15, column=1, sticky=tk.W, padx=5, pady=(0, 4))
 
         # Re-sync now that the GC checkbox exists: the earlier _on_quant_4bit_toggle
@@ -5287,7 +5288,7 @@ class LoRATrainerGUI:
             text="Auto reads free VRAM at launch and picks precision and block swap together. "
                  "int8 is the most accurate, 4-bit fits smaller cards, 4-bit HQQ sits between "
                  "(less error, more VRAM, slower with no swap). Auto never picks HQQ.",
-            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
+            foreground=COLORS["text_explain"], font=HINT_FONT, justify=tk.LEFT, wraplength=720)
         self._minimax_quant_hint.grid(row=17, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
 
         # --- Weight averaging (MiniMax only): EMA ------------------------------------------
@@ -5317,7 +5318,7 @@ class LoRATrainerGUI:
             scheduler_content,
             text="A smoothed average of the weights, leading to better and more reliable "
                  "previews.",
-            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
+            foreground=COLORS["text_explain"], font=HINT_FONT, justify=tk.LEFT, wraplength=720)
         self._minimax_smooth_hint.grid(row=26, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
 
         # --- Adapter-relative LR ramp (MiniMax only, EXPERIMENT, default Off) ---------------
@@ -5341,7 +5342,7 @@ class LoRATrainerGUI:
             scheduler_content,
             text="Makes the Learning Rate box a ceiling the run climbs toward. Set it where you "
                  "want to end up.",
-            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
+            foreground=COLORS["text_explain"], font=HINT_FONT, justify=tk.LEFT, wraplength=720)
         self._minimax_ramp_hint.grid(row=28, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
 
         # --- Caption dropout (MiniMax only) -------------------------------------------------
@@ -5366,7 +5367,7 @@ class LoRATrainerGUI:
             scheduler_content,
             text="Trains a few percent of steps with no caption, so the LoRA does not lean "
                  "entirely on the trigger word.",
-            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
+            foreground=COLORS["text_explain"], font=HINT_FONT, justify=tk.LEFT, wraplength=720)
         self._minimax_capdrop_hint.grid(row=30, column=0, columnspan=2, sticky=tk.W, padx=5,
                                         pady=(0, 4))
 
@@ -5394,7 +5395,7 @@ class LoRATrainerGUI:
         self._minimax_blocks_hint = ttk.Label(
             scheduler_content,
             text=self._MINIMAX_BLOCKS_HINT,
-            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
+            foreground=COLORS["text_explain"], font=HINT_FONT, justify=tk.LEFT, wraplength=720)
         self._minimax_blocks_hint.grid(row=32, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
         self._refresh_minimax_blocks_count()
 
@@ -5447,7 +5448,7 @@ class LoRATrainerGUI:
             scheduler_content,
             text="Experiment. Teaches the LoRA to reproduce identity the way H3 does from a "
                  "reference photo. Needs the ref2va model in Preferences.",
-            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
+            foreground=COLORS["text_explain"], font=HINT_FONT, justify=tk.LEFT, wraplength=720)
         self._minimax_distill_hint.grid(row=34, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
 
         # --- Train the text token refiner (MiniMax only, Other Options; Peter, 10 Sep 2026) ---
@@ -5463,7 +5464,7 @@ class LoRATrainerGUI:
             text="Recommended off. Does not affect the ability to use a trigger word. The refiner "
                  "sets how every prompt is read; training it softens output and makes previews "
                  "judder between epochs. LoRA runs only.",
-            foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic"), justify=tk.LEFT, wraplength=720)
+            foreground=COLORS["text_explain"], font=HINT_FONT, justify=tk.LEFT, wraplength=720)
         self._minimax_refiner_hint.grid(row=36, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
 
         # Training Structure lives in Training Parameters now — see _build_minimax_structure_row,
@@ -7200,7 +7201,7 @@ class LoRATrainerGUI:
                                            lambda _e: self._on_minimax_structure_changed())
 
         self._minimax_structure_desc = tk.Label(
-            parent, text="", font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"],
+            parent, text="", font=HINT_FONT, fg=COLORS["text_explain"],
             bg=COLORS["bg_surface"], justify=tk.LEFT, wraplength=700)
         self._minimax_structure_desc.grid(row=23, column=0, columnspan=3, sticky=tk.W,
                                           padx=(12, 5), pady=(0, 4))
@@ -7249,7 +7250,7 @@ class LoRATrainerGUI:
             parent, text="Finish the smaller category early, before it overbakes. Blank = both "
                          "train to the end. Anchor holds it at 10% LR and keeps its epoch report "
                          "live. Stop skips its steps: faster, but unwatched.",
-            font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
+            font=HINT_FONT, fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
             justify=tk.LEFT, wraplength=720)
         self._MIXED_STOP_HINT_LORA = self._mixed_stop_hint.cget("text")
         # FT text is rebuilt live by _refresh_mixed_stop_hint (the cycle length rides on
@@ -7287,7 +7288,7 @@ class LoRATrainerGUI:
         self.entries["MINIMAX_HIGHNOISE_LR_PCT"].pack(side=tk.LEFT)
         tk.Label(self._minimax_hnlr_frame,
                  text="%  — best left at 100 unless you are experimenting.",
-                 font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"],
+                 font=HINT_FONT, fg=COLORS["text_explain"],
                  bg=COLORS["bg_surface"]).pack(side=tk.LEFT, padx=(4, 0))
         # Says what it does and what was measured, so lowering it is a decision rather than a
         # guess: across five datasets, at both densities, 0% and 100% render cleanly at 20 steps
@@ -7296,7 +7297,7 @@ class LoRATrainerGUI:
             parent,
             text="Scales the LR of the noisy-half steps: pose, framing, face shape. Leave at 100 "
                  "unless experimenting.",
-            font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
+            font=HINT_FONT, fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
             justify=tk.LEFT, wraplength=700)
         self._minimax_hnlr_hint.grid(row=26, column=0, columnspan=3, sticky=tk.W,
                                      padx=(12, 5), pady=(0, 8))
@@ -9311,7 +9312,7 @@ class LoRATrainerGUI:
         row += 1
         ttk.Label(parent, text="sdpa runs on any GPU. flash3 needs flash-attn and a Hopper or "
                   "Blackwell card (H100, RTX 5090).",
-                  foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic")).grid(
+                  foreground=COLORS["text_explain"], font=HINT_FONT).grid(
             row=row, column=0, columnspan=3, sticky=tk.W, padx=5)
         row += 1
 
@@ -9369,7 +9370,7 @@ class LoRATrainerGUI:
         self.entries["METADATA_TRIGGER_PHRASE"].grid(row=row, column=1, sticky=tk.EW, padx=5, pady=2)
         row += 1
         ttk.Label(parent, text="Blank uses the Captions tab's trigger word.",
-                  foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic")).grid(
+                  foreground=COLORS["text_explain"], font=HINT_FONT).grid(
             row=row, column=0, columnspan=3, sticky=tk.W, padx=5)
         row += 1
 
@@ -9379,7 +9380,7 @@ class LoRATrainerGUI:
         ttk.Button(parent, text="Browse", command=lambda: self.browse_file("METADATA_THUMBNAIL", "file")).grid(row=row, column=2, sticky=tk.W, padx=5)
         row += 1
         ttk.Label(parent, text="Blank auto-embeds the latest sample preview; type 'off' to disable.",
-                  foreground=COLORS["text_explain"], font=(FONT_FAMILY, 9, "italic")).grid(
+                  foreground=COLORS["text_explain"], font=HINT_FONT).grid(
             row=row, column=0, columnspan=3, sticky=tk.W, padx=5)
         row += 1
 

@@ -106,6 +106,11 @@ installer uses code from that project as follows:
   comfyui-rocm's `install.bat` (adapted for Fizgig's venv and
   requirements). The batch file itself is Apache-2.0; the bundled
   `detect_gpu.py` remains GPL-3.0.
+- `run_fizgig_rocm.bat` / `run_fizgig_rocm.sh` — Fizgig-authored launchers.
+  Legacy RDNA1/2 SDP overrides, aotriton gating, and MIOpen/rocBLAS tensile
+  DB path setup are adapted from comfyui-rocm's `comfyui-rocm.bat`. The
+  launchers themselves are Apache-2.0; Windows detection still goes through
+  the GPL-3.0 `detect_gpu.py` above.
 
 `detect_gpu.py` is free software: you may redistribute and/or modify it under
 the terms of the GNU General Public License as published by the Free Software

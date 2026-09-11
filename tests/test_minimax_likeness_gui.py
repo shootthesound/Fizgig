@@ -2,8 +2,7 @@
 Optimised Likeness Learning until 10 Sep 2026.
 
 The silent failure modes this pins: the mode not reaching the launch dict (the hand-curated
-settings.update trap), the Style preset inheriting Fast and having its 0-3,6-47 blocks spec
-silently ignored, a preset writing the blocks value into a DISABLED combobox and losing it, a
+settings.update trap), the Style preset failing to land its own mode (Ultra), a preset writing the blocks value into a DISABLED combobox and losing it, a
 stale typo in the greyed box blocking a launch it has no say in, and Ultra quietly emitting the
 Fast flags (or nothing at all).
 
@@ -60,10 +59,13 @@ ck("three modes offered", len(G.MINIMAX_LIKENESS_MODE_OPTIONS) == 3
    and [G.minimax_likeness_mode(o) for o in G.MINIMAX_LIKENESS_MODE_OPTIONS] == ["fast", "ultra", "off"])
 ck("collected into presets/snapshots",
    "MINIMAX_LIKENESS_MODE" in app._collect_preset_values())
-ck("preset dicts: Defaults Fast / Fast Fast / Style Off",
+ck("preset dicts: Defaults Fast / Fast Fast / Style ULTRA",
    G.minimax_likeness_mode(G.MINIMAX_BUILT_IN_PRESETS[DEFAULTS_KEY]["MINIMAX_LIKENESS_MODE"]) == "fast"
    and G.minimax_likeness_mode(G.MINIMAX_BUILT_IN_PRESETS[FAST_KEY]["MINIMAX_LIKENESS_MODE"]) == "fast"
-   and G.minimax_likeness_mode(G.MINIMAX_BUILT_IN_PRESETS[STYLE_KEY]["MINIMAX_LIKENESS_MODE"]) == "off")
+   and G.minimax_likeness_mode(G.MINIMAX_BUILT_IN_PRESETS[STYLE_KEY]["MINIMAX_LIKENESS_MODE"]) == "ultra")
+ck("Style carries no hand-picked block spec any more (Ultra owns the blocks)",
+   "MINIMAX_BLOCKS" not in G.MINIMAX_BUILT_IN_PRESETS[STYLE_KEY]
+   or G.minimax_block_spec(G.MINIMAX_BUILT_IN_PRESETS[STYLE_KEY]["MINIMAX_BLOCKS"]) == "all")
 
 # --- 1. visibility: on the MiniMax tab, gone under Klein --------------------------------------------
 ck("dropdown visible under MiniMax", bool(app._minimax_likeness_frame.winfo_manager())
@@ -103,15 +105,19 @@ ck("Off -> measured-answers hint restored",
    "Measured answers" in app._minimax_blocks_hint.cget("text"))
 ck("combobox VALUE survives the Fast/Ultra/Off round-trip", combo.get() == combo_before)
 
-# --- 3. the Style preset: False lands AND its blocks spec survives the disabled window -------------
+# --- 3. the Style preset lands ULTRA, and the mode can be switched within it -------------------
 app.entries["MINIMAX_LIKENESS_MODE"].set(G.MINIMAX_MODE_FAST)   # worst case: greyed on arrival
 app._apply_preset_values(G.MINIMAX_BUILT_IN_PRESETS[STYLE_KEY])
 root.update_idletasks()
-ck("Style preset sets the mode to Off",
-   G.minimax_likeness_mode(app.entries["MINIMAX_LIKENESS_MODE"].get()) == "off")
-ck("Style preset's blocks spec landed despite the apply-order",
-   G.minimax_block_spec(combo.get()) == "0-3, 6-47", repr(combo.get()))
-ck("and the combobox is editable after it", str(combo.cget("state")) != "disabled")
+ck("Style preset sets the mode to Ultra",
+   G.minimax_likeness_mode(app.entries["MINIMAX_LIKENESS_MODE"].get()) == "ultra")
+ck("...and the blocks box is owned (greyed) with the 6-49 readout",
+   str(combo.cget("state")) == "disabled" and G.MINIMAX_FULL_MODEL_BLOCKS in app._minimax_blocks_count.cget("text"))
+app.entries["MINIMAX_LIKENESS_MODE"].set(G.MINIMAX_MODE_FAST)
+root.update_idletasks()
+ck("the Fast version of Style is one dropdown change away",
+   G.minimax_likeness_mode(app.entries["MINIMAX_LIKENESS_MODE"].get()) == "fast"
+   and G.MINIMAX_LIKENESS_BLOCKS in app._minimax_blocks_count.cget("text"))
 app._apply_preset_values(G.MINIMAX_BUILT_IN_PRESETS[FAST_KEY])
 root.update_idletasks()
 ck("Fast preset sets Fast again and re-greys",
@@ -200,8 +206,8 @@ _c = [str(x) for x in app.build_training_command(CFG)]
 ck("old queued run, likeness=False -> its own spec, no Fast flags",
    "--train_blocks" in _c and _c[_c.index("--train_blocks") + 1] == "0-3, 6-47"
    and "--photo_blocks" not in _c)
-ck("Ultra hint recommends it for style / non-identity work",
-   "non-identity" in app._MINIMAX_MODE_HINTS["ultra"])
+ck("Ultra hint names it as the mode for style work",
+   "style" in app._MINIMAX_MODE_HINTS["ultra"].lower())
 
 # --- 6. prefs.json untouched -------------------------------------------------------------------------
 _hash1 = hashlib.sha256(open(PREFS, "rb").read()).hexdigest() if os.path.exists(PREFS) else None

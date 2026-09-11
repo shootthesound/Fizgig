@@ -638,7 +638,9 @@ MINIMAX_FULL_MODEL_BLOCKS = "6-49"
 #           holds the dataset's global traits out of the LoRA far longer (the greyscale test:
 #           monochrome previews from epoch 2 on a full-model run, epoch 49 on 6-49, never on
 #           20-49). Slower per step: the backward covers 44 blocks instead of 30.
-#   off   — the blocks are yours to pick below. What Style uses (0-3, 6-47).
+#   off   — the blocks are yours to pick below, for experiments.
+# The mode is chosen WITHIN a preset: every preset loads with one selected and the dropdown
+# switches it. Character presets load Fast; Style loads Ultra (11 Sep 2026).
 MINIMAX_MODE_FAST = "Fast · good quality, quickest steps"
 MINIMAX_MODE_ULTRA = "Ultra quality · slower steps"
 MINIMAX_MODE_OFF = "Off · hand-pick the blocks below"
@@ -970,8 +972,8 @@ MINIMAX_BUILT_IN_PRESETS = {
         # The text token refiner is not a LoRA target (10 Sep): see the Other Options tick.
         "MINIMAX_TRAIN_REFINER": False,
         # Training mode ships FAST: photos and clips on the identity blocks (20-49), voice on
-        # the audio zone (34-49). Ultra quality (6-49 everywhere) is the slower, better one; the
-        # Style preset sets Off and picks its own blocks.
+        # the audio zone (34-49). Ultra quality (6-49 everywhere) is the slower, better one and
+        # what the Style preset loads. Either can be picked within any preset.
         "MINIMAX_LIKENESS_MODE": MINIMAX_MODE_FAST,
         # Training adapter ships ON (Peter, 2 Sep): measured on the same dataset/seed it hit
         # 50% likeness seven epochs sooner and peaked higher (61 vs 57). Every H3 preset
@@ -1026,19 +1028,18 @@ MINIMAX_BUILT_IN_PRESETS["✨ MiniMax H3 Fast (LoRA 8, 50 epochs)"] = {
 }
 
 # --- MiniMax H3 Style -------------------------------------------------------------------------
-# The 19 Aug style ablation (Repair Studio, same instrument that found the likeness set): a
-# style LoRA's deltas matter across nearly the WHOLE model — droppable only at 4-5 (the dead
-# band / audio-embedder pipe) and 48-49 (subject-specific last-mile work: load-bearing for
-# likeness and voice, silent for style). Hence 0-3, 6-47. LR matches Fast's 2e-4 — Peter's
-# real style runs (20 Aug) found the halved 1e-4 unnecessary; drop it manually for an extra-
-# gentle run if a style ever fries.
+# Style needs most of the model, not the identity window — the 19 Aug ablation found a style
+# LoRA's deltas matter nearly everywhere. Until 11 Sep 2026 that meant Off + a hand-picked
+# 0-3, 6-47. It now loads ULTRA (6-49, every step type): the same "whole of the model that
+# matters" recipe that won on likeness and audio, and the measured reason to hold 0-5 out —
+# they deform anatomy and pull the dataset's colour into every render — applies to a style
+# just as much. The mode is a dropdown, so a user who wants the Fast version of Style just
+# switches it. LR matches Fast's 2e-4 — Peter's real style runs (20 Aug) found the halved 1e-4
+# unnecessary; drop it manually for an extra-gentle run if a style ever fries.
 MINIMAX_BUILT_IN_PRESETS["✨ MiniMax H3 Style (LoRA 8)"] = {
     **MINIMAX_BUILT_IN_PRESETS["✨ MiniMax H3 Fast (LoRA 8, 50 epochs)"],
     "LEARNING_RATE": 2e-4,
-    "MINIMAX_BLOCKS": "0-3, 6-47",
-    # MUST be off here: style measurably needs the early blocks the likeness mask freezes, and
-    # with it on the blocks spec above would be ignored outright.
-    "MINIMAX_LIKENESS_MODE": MINIMAX_MODE_OFF,
+    "MINIMAX_LIKENESS_MODE": MINIMAX_MODE_ULTRA,
     # Style is about the look, not the face: no extra sharp-face stills from the clips.
     "MINIMAX_CLIP_STILL": False,
 }
@@ -7384,7 +7385,7 @@ class LoRATrainerGUI:
                             f"{MINIMAX_FULL_MODEL_BLOCKS} for the whole model (what Ultra quality "
                             f"runs) and {MINIMAX_LIKENESS_BLOCKS} for likeness (Fast). Blocks 0-5 "
                             "are in neither: they deform anatomy and pull the dataset's colour "
-                            "into the render. Style is the exception at 0-3, 6-47.")
+                            "into the render.")
     _MINIMAX_BLOCKS_HINT_LOCKED = (f"Owned by the Training mode above: photos and clips "
                                    f"{MINIMAX_LIKENESS_BLOCKS}, voice {MINIMAX_AUDIO_BLOCKS}. "
                                    "Set the mode to Off to hand-pick.")
@@ -7397,11 +7398,10 @@ class LoRATrainerGUI:
                  "quickest mode, and it is good on both picture and sound."),
         "ultra": (f"Every step type trains {MINIMAX_FULL_MODEL_BLOCKS} — better likeness and "
                   "better audio, and the dataset's own quirks stay out of the LoRA far longer. "
-                  "Recommended for style and other non-identity work, which needs more of the "
-                  "model than the identity blocks. Slower per step: the backward covers 44 blocks "
-                  "instead of 30. Blocks 0-5 stay out either way; they deform anatomy and colour."),
-        "off": ("The blocks are yours to pick below. For style, and for experiments. The Style "
-                "preset sets 0-3, 6-47."),
+                  "The mode for style and scene work too, which needs more of the model than "
+                  "the identity blocks. Slower per step: the backward covers 44 blocks instead of "
+                  "30. Blocks 0-5 stay out either way; they deform anatomy and colour."),
+        "off": "The blocks are yours to pick below, for experiments.",
     }
 
     def _minimax_adapter_pref_key(self):

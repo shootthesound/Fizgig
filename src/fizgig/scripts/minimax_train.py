@@ -14,7 +14,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 # CUDA allocator policy, set before torch is imported below (the backend is fixed at CUDA init).
 # The 33B base + per-step tensor churn fragments the default allocator; expandable segments hold
 # the NF4 base within a 5090's budget. GUI sets this too; this covers headless runs.
-if not os.environ.get("PYTORCH_CUDA_ALLOC_CONF") and os.environ.get("FIZGIG_NO_EXPANDABLE") != "1":
+#
+# Not on Windows: the CUDA allocator there rejects the option outright ("expandable_segments not
+# supported on this platform") and falls back to the default allocator, so setting it bought
+# nothing and printed that warning on every launch (@marduk191's fix, same as train.py).
+if (
+    sys.platform != "win32"
+    and not os.environ.get("PYTORCH_CUDA_ALLOC_CONF")
+    and os.environ.get("FIZGIG_NO_EXPANDABLE") != "1"
+):
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 os.environ.setdefault("KMP_BLOCKTIME", "0")
 os.environ.setdefault("OMP_WAIT_POLICY", "PASSIVE")

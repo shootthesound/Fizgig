@@ -281,13 +281,22 @@ def sample(
     # Hooks around the decode (#123): a caller that keeps the DiT resident can park it for the
     # decode and put it back — on a 16 GB card the VAE joining a resident base at 1024 px is the
     # spike that makes WDDM demote live training tensors, and nothing re-promotes them after.
-    if before_decode is not None:
-        before_decode()
-    ae = ae.to(img.device)
-    pixels = ae.decode_to_pixels(img.to(torch.bfloat16))
-    ae = ae.to("cpu")
-    if after_decode is not None:
-        after_decode()
+    # A decode that fails (an OOM, most likely) must not leave the VAE on the GPU or the parked
+    # training DiT on CPU: the restore runs whenever the park started, however the decode exits
+    # (spotted by @Linkram in PR #152).
+    parked = False
+    try:
+        if before_decode is not None:
+            parked = True
+            before_decode()
+        ae = ae.to(img.device)
+        pixels = ae.decode_to_pixels(img.to(torch.bfloat16))
+    finally:
+        try:
+            ae = ae.to("cpu")
+        finally:
+            if parked and after_decode is not None:
+                after_decode()
     pixels = rearrange(pixels * 255.0, "b c h w -> b h w c").cpu().byte().numpy()
     gc.collect()
     if torch.cuda.is_available():

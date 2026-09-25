@@ -169,9 +169,23 @@ def load_dit_for_training(
         loading_device = "cpu"
     else:
         loading_device = "cpu" if blocks_to_swap > 0 else device
-    dit = load_krea2_dit(raw_path, device=device, dtype=dtype, fp8_scaled=fp8_scaled,
-                         loading_device=loading_device, fp8_fast=fp8_fast)
+    # The standard NF4 loader first stages the entire ~26 GB BF16 model in RAM.
+    # Hardware detection enables streaming on RDNA2 through every entry point.
+    from fizgig.modules.rdna2_linear import stream_nf4_enabled
+    _stream_nf4 = quant_4bit and stream_nf4_enabled(device)
+    if _stream_nf4:
+        from fizgig.krea2.nf4_loader import load_nf4_streamed
+        dit = load_nf4_streamed(raw_path, device=device, dtype=dtype)
+    else:
+        dit = load_krea2_dit(raw_path, device=device, dtype=dtype, fp8_scaled=fp8_scaled,
+                             loading_device=loading_device, fp8_fast=fp8_fast)
     dit.requires_grad_(False)  # frozen base (QLoRA-style)
+    if quant_4bit:
+        from fizgig.modules.rdna2_linear import enabled as _rdna2_enabled
+        if _rdna2_enabled(torch.empty(0, device=device, dtype=dtype)):
+            logger.info("[rdna2] NF4 frozen GEMMs: %s; BF16 activations/adapters preserved; "
+                        "set FIZGIG_RDNA2_LINEAR=0 for the original math path",
+                        os.environ.get("FIZGIG_RDNA2_LINEAR", "fp32 (hardware auto)"))
     if quant_int8:
         from fizgig.krea2.utils import KREA2_FP8_OPTIMIZATION_TARGET_KEYS, KREA2_FP8_OPTIMIZATION_EXCLUDE_KEYS
         from fizgig.modules.int8_train import apply_int8_training
@@ -184,7 +198,7 @@ def load_dit_for_training(
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         logger.info(f"INT8 W8A8 base active: {n_q} Linears; grad_mode={quant_int8}; resident on {device}.")
-    if quant_4bit:
+    if quant_4bit and not _stream_nf4:
         from fizgig.krea2.utils import KREA2_FP8_OPTIMIZATION_TARGET_KEYS, KREA2_FP8_OPTIMIZATION_EXCLUDE_KEYS
         from fizgig.modules.nf4 import apply_nf4_quantization
         n_q = apply_nf4_quantization(

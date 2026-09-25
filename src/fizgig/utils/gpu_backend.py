@@ -16,8 +16,8 @@ def is_rocm() -> bool:
         import torch
     except Exception:
         return False
-    if not torch.cuda.is_available():
-        return False
+    # Identify the installed backend from build metadata. Checking device
+    # availability here needlessly enters the driver during imports/startup.
     # torch 2.10+: torch.version.rocm; older builds only had .hip
     rocm = getattr(torch.version, "rocm", None)
     if rocm:

@@ -144,6 +144,7 @@ class AttentionParams:
 # Klein's DiT, and both VAEs. See that module for the measurements behind it.
 from fizgig.modules.sdpa import note_shape as _note_shape  # noqa: E402
 from fizgig.modules.sdpa import sdpa_backend_ctx as _sdpa_backend_ctx
+from fizgig.modules.rdna2_attention import attention as _torch_attention
 
 logger = logging.getLogger(__name__)
 
@@ -252,7 +253,7 @@ def attention(
                     ki = ki.repeat_interleave(g, dim=1)
                     vi = vi.repeat_interleave(g, dim=1)
                 with _sdpa_backend_ctx():
-                    x_i = torch.nn.functional.scaled_dot_product_attention(qi, ki, vi, dropout_p=drop_rate)
+                    x_i = _torch_attention(qi, ki, vi, dropout_p=drop_rate)
                 q[i] = None
                 k[i] = None
                 v[i] = None
@@ -266,7 +267,7 @@ def attention(
                 k = k.repeat_interleave(g, dim=1)
                 v = v.repeat_interleave(g, dim=1)
             with _sdpa_backend_ctx():
-                x = torch.nn.functional.scaled_dot_product_attention(
+                x = _torch_attention(
                     q, k, v, attn_mask=attn_params.attention_mask, dropout_p=drop_rate)
             q, k, v = None, None, None
 

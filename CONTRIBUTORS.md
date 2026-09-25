@@ -2,6 +2,12 @@
 
 Fizgig is written by [Peter Neill (shootthesound)](https://github.com/shootthesound).
 
+## Linkram
+
+[@Linkram](https://github.com/Linkram) reported and tested Krea 2 ROCm stability and
+performance on an RX 6800. Their measurements guided the RDNA2 attention and NF4 paths,
+and their training logs helped identify startup GPU probes that stalled the Windows GUI.
+
 ## scryptio
 
 [scryptio](https://github.com/scryptio) built the **AMD ROCm support** that headlines v4.3.0

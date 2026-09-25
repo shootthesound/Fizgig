@@ -27,6 +27,26 @@ logger = logging.getLogger(__name__)
 _NF4_TARGET_DEFAULT = ("double_blocks", "single_blocks")
 
 
+class _RDNA2NF4Linear(torch.autograd.Function):
+    """Rebuild the frozen weight in backward instead of retaining its BF16 copy."""
+    @staticmethod
+    def forward(ctx, x, packed, state):
+        from bitsandbytes.functional import dequantize_nf4
+        from fizgig.modules.rdna2_linear import matmul
+        ctx.packed, ctx.state, ctx.shape = packed, state, x.shape
+        weight = dequantize_nf4(packed, state).to(x.dtype)
+        return matmul(x.reshape(-1, x.shape[-1]), weight.t()).reshape(*x.shape[:-1], weight.shape[0])
+
+    @staticmethod
+    @torch.autograd.function.once_differentiable
+    def backward(ctx, grad):
+        from bitsandbytes.functional import dequantize_nf4
+        from fizgig.modules.rdna2_linear import matmul
+        weight = dequantize_nf4(ctx.packed, ctx.state).to(grad.dtype)
+        dx = matmul(grad.reshape(-1, grad.shape[-1]), weight)
+        return dx.reshape(ctx.shape), None, None
+
+
 def nf4_linear_forward_patch(self: nn.Linear, x: torch.Tensor) -> torch.Tensor:
     """Patched forward for an NF4-quantized frozen Linear.
 
@@ -36,6 +56,10 @@ def nf4_linear_forward_patch(self: nn.Linear, x: torch.Tensor) -> torch.Tensor:
     dequant fp8 path, but from 4-bit storage.
     """
     from bitsandbytes.functional import dequantize_nf4
+    from fizgig.modules.rdna2_linear import enabled
+    if enabled(x):
+        out = _RDNA2NF4Linear.apply(x, self._nf4_packed, self._nf4_state)
+        return out if self.bias is None else out + self.bias
     w = dequantize_nf4(self._nf4_packed, self._nf4_state).to(x.dtype)
     return F.linear(x, w, self.bias)
 

@@ -6,4 +6,4 @@ REM without breaking the running update (#157). The run line below is a single l
 REM whole, so a rewritten .bat is never read mid-run.
 cd /d "%~dp0"
 if not exist "venv\Scripts\python.exe" (echo WARNING: venv not found - run install_fizgig_rocm.bat to set it up. & pause & exit /b 1)
-"venv\Scripts\python.exe" "update_fizgig.py" --rocm & pause & exit /b
+"venv\Scripts\python.exe" "update_fizgig.py" --rocm & pause & call exit /b %%errorlevel%%

@@ -15,17 +15,28 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 PY = sys.executable
 
-# A torch that reports a ROCm/HIP build -> exit 1. Run in a child so this process never imports torch.
-_IS_ROCM = ("import torch; v=getattr(torch,'__version__','') or ''; r=getattr(getattr(torch,'version',None),'rocm',None); "
-            "h=getattr(getattr(torch,'version',None),'hip',None); raise SystemExit(1 if (r or h or '+rocm' in v.lower()) else 0)")
+# Which torch the venv has, probed in a child so this process never imports torch: exit 10 = a ROCm/HIP build,
+# 11 = anything else (CUDA/CPU), 12 = torch missing or broken. Distinct codes so a failed import is never mistaken
+# for either vendor (the old .bat read "exit 1" as ROCm, so a broken torch sent people to the wrong updater).
+TORCH_ROCM, TORCH_OTHER, TORCH_BROKEN = 10, 11, 12
+_TORCH_KIND = ("import sys\ntry:\n    import torch\nexcept Exception:\n    sys.exit(12)\n"
+               "v=getattr(torch,'__version__','') or ''; r=getattr(getattr(torch,'version',None),'rocm',None); "
+               "h=getattr(getattr(torch,'version',None),'hip',None); sys.exit(10 if (r or h or '+rocm' in v.lower()) else 11)")
 
 
 def run(cmd, **kw):
-    return subprocess.call(cmd, cwd=HERE, **kw)
+    try:
+        return subprocess.call(cmd, cwd=HERE, **kw)
+    except OSError as e:            # e.g. git not on PATH: say so and carry on, as the old .bat did
+        print(f"'{cmd[0]}' could not be run: {e}")
+        return 127
 
 
 def quiet(cmd):
-    return subprocess.call(cmd, cwd=HERE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        return subprocess.call(cmd, cwd=HERE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        return 127
 
 
 def fail(msg):
@@ -41,14 +52,25 @@ def ensure_uv():
             fail("Failed to install the uv package.")
 
 
+def torch_kind():
+    rc = quiet([PY, "-c", _TORCH_KIND])
+    return rc if rc in (TORCH_ROCM, TORCH_OTHER) else TORCH_BROKEN
+
+
 def wrong_updater(this_is_rocm_updater):
-    """True when the venv's torch belongs to the other GPU vendor (that updater would break it)."""
-    venv_is_rocm = quiet([PY, "-c", _IS_ROCM]) == 1
-    return venv_is_rocm != this_is_rocm_updater
+    """True when the venv's torch belongs to the other GPU vendor (that updater would break it).
+    A missing/broken torch is not "the other vendor": see cuda_deps / rocm_deps."""
+    kind = torch_kind()
+    if kind == TORCH_BROKEN:
+        return False
+    return (kind == TORCH_ROCM) != this_is_rocm_updater
 
 
 def cuda_deps():
-    if wrong_updater(False):
+    if torch_kind() == TORCH_BROKEN:
+        # Nothing to protect: the CUDA requirements install below puts a working CUDA torch back.
+        print("NOTE: PyTorch could not be imported in this venv - reinstalling it from requirements.txt.")
+    elif wrong_updater(False):
         print()
         print("ERROR: This looks like an AMD ROCm install.")
         print()
@@ -63,6 +85,14 @@ def cuda_deps():
 
 
 def rocm_deps():
+    if torch_kind() == TORCH_BROKEN:
+        print()
+        print("ERROR: PyTorch could not be imported in this venv.")
+        print()
+        print("  The ROCm updater only refreshes the shared packages and keeps your ROCm PyTorch,")
+        print("  so it cannot repair a missing or broken one. Re-run install_fizgig_rocm.bat.")
+        print("  (On an NVIDIA card, use update_fizgig.bat instead.)")
+        sys.exit(1)
     if wrong_updater(True):
         print()
         print("ERROR: This looks like an NVIDIA / CUDA install.")
@@ -149,11 +179,26 @@ def msvc_check():
         print("------------------------------------------------------------------------")
 
 
+def clear_old_stage2():
+    """The old updaters left a copy of themselves in %TEMP% (the file antivirus flagged); remove it."""
+    for name in ("fizgig_update_stage2.bat", "fizgig_update_rocm_stage2.bat"):
+        try:
+            os.remove(os.path.join(tempfile.gettempdir(), name))
+        except OSError:
+            pass
+
+
 def main():
+    try:
+        sys.stdout.reconfigure(line_buffering=True)     # keep our lines in order with the child processes' output in a log
+    except (AttributeError, ValueError):
+        pass
     rocm = "--rocm" in sys.argv[1:]
     print("Updating Fizgig (AMD ROCm)..." if rocm else "Updating Fizgig...")
-    # Older installers overwrote the tracked launcher; restore it so it never blocks the pull.
-    quiet(["git", "checkout", "--", "run_fizgig_rocm.bat" if rocm else "run_fizgig.bat"])
+    clear_old_stage2()
+    # Older installers overwrote the tracked launchers; restore them so they never block the pull.
+    for launcher in (("run_fizgig_rocm.bat", "run_fizgig.bat") if rocm else ("run_fizgig.bat",)):
+        quiet(["git", "checkout", "--", launcher])
     run(["git", "pull"])
     print()
     print("Installing/updating dependencies...")

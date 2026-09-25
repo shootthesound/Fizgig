@@ -57,20 +57,21 @@ def torch_kind():
     return rc if rc in (TORCH_ROCM, TORCH_OTHER) else TORCH_BROKEN
 
 
-def wrong_updater(this_is_rocm_updater):
+def wrong_updater(this_is_rocm_updater, kind=None):
     """True when the venv's torch belongs to the other GPU vendor (that updater would break it).
     A missing/broken torch is not "the other vendor": see cuda_deps / rocm_deps."""
-    kind = torch_kind()
+    kind = torch_kind() if kind is None else kind
     if kind == TORCH_BROKEN:
         return False
     return (kind == TORCH_ROCM) != this_is_rocm_updater
 
 
 def cuda_deps():
-    if torch_kind() == TORCH_BROKEN:
+    kind = torch_kind()      # one torch import per update
+    if kind == TORCH_BROKEN:
         # Nothing to protect: the CUDA requirements install below puts a working CUDA torch back.
         print("NOTE: PyTorch could not be imported in this venv - reinstalling it from requirements.txt.")
-    elif wrong_updater(False):
+    elif wrong_updater(False, kind):
         print()
         print("ERROR: This looks like an AMD ROCm install.")
         print()
@@ -85,7 +86,8 @@ def cuda_deps():
 
 
 def rocm_deps():
-    if torch_kind() == TORCH_BROKEN:
+    kind = torch_kind()
+    if kind == TORCH_BROKEN:
         print()
         print("ERROR: PyTorch could not be imported in this venv.")
         print()
@@ -93,7 +95,7 @@ def rocm_deps():
         print("  so it cannot repair a missing or broken one. Re-run install_fizgig_rocm.bat.")
         print("  (On an NVIDIA card, use update_fizgig.bat instead.)")
         sys.exit(1)
-    if wrong_updater(True):
+    if wrong_updater(True, kind):
         print()
         print("ERROR: This looks like an NVIDIA / CUDA install.")
         print()

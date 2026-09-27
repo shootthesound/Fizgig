@@ -30,6 +30,7 @@ from multiprocessing import Value
 import torch
 import torch.nn.functional as F
 
+from fizgig.training.immiscible import assignment_noise, knn_noise
 from fizgig.training.metadata import ARCHITECTURE_MINIMAX
 
 logger = logging.getLogger(__name__)
@@ -1061,12 +1062,20 @@ def compute_loss(model, latent: torch.Tensor, text_embeds: torch.Tensor, *,
                  sigma: torch.Tensor = None, shift: float = None, generator=None,
                  noise: torch.Tensor = None, audio_latent: torch.Tensor = None,
                  audio_weight: float = 1.0, video_weight: float = 1.0,
-                 parts_out: dict = None, ref_latents=None):
+                 parts_out: dict = None, ref_latents=None,
+                 immiscible: str = "off", immiscible_k: int = 4,
+                 audio_noise: torch.Tensor = None):
     """One training step's loss.
 
     latent      : [1, 24, T, H, W] clean VAE latent (x0). T=1 is a still.
     text_embeds : [1, L, text_dim] Qwen3-VL states.
     noise       : optional fixed noise (reproducible steps / tests); else sampled.
+                  ``immiscible="knn"`` draws ``immiscible_k`` candidates and keeps the
+                  nearest to this latent. The caption is not touched. A voice item
+                  (``video_weight`` 0) keeps an ordinary video draw: its video latent
+                  is a zeros placeholder, and matching noise to it would bias the
+                  frozen base's input. ``audio_noise`` is the same option for the
+                  audio stream.
     audio_latent: optional [A*2, 32] clean audio rows (channel-major, as cached). Given, the
                   audio stream gets a REAL target instead of silence and its error joins the
                   loss. Absent — a still, or a clip the user muted — nothing changes: the rows
@@ -1099,7 +1108,12 @@ def compute_loss(model, latent: torch.Tensor, text_embeds: torch.Tensor, *,
     if (_Hc, _Wc) != (_H, _W):
         x0 = x0[..., :_Hc, :_Wc].contiguous()
     if noise is None:
-        noise = torch.randn(x0.shape, device=device, generator=generator, dtype=torch.float32)
+        # KNN is per sample, so batch size 1 is enough. Assignment noise is
+        # pre-paired across a group and passed in; a missing one is an ordinary draw.
+        if immiscible == "knn" and video_weight != 0.0:
+            noise = knn_noise(x0, immiscible_k, generator=generator)
+        else:
+            noise = torch.randn(x0.shape, device=device, generator=generator, dtype=torch.float32)
     else:
         noise = noise.to(device=device, dtype=torch.float32)[..., :x0.shape[-2], :x0.shape[-1]]
     if sigma is None:
@@ -1132,7 +1146,17 @@ def compute_loss(model, latent: torch.Tensor, text_embeds: torch.Tensor, *,
     sigma_a = float(remap_sigma(torch.tensor(sigma_v)))
 
     a0 = audio_latent.to(device=device, dtype=torch.float32)
-    a_noise = torch.randn(a0.shape, device=device, generator=generator, dtype=torch.float32)
+    if audio_noise is None:
+        if immiscible == "knn":
+            a_noise = knn_noise(a0.unsqueeze(0), immiscible_k, generator=generator).squeeze(0)
+        else:
+            a_noise = torch.randn(a0.shape, device=device, generator=generator, dtype=torch.float32)
+    else:
+        a_noise = audio_noise.to(device=device, dtype=torch.float32)
+        if tuple(a_noise.shape) != tuple(a0.shape):
+            raise ValueError(
+                f"immiscible audio noise {tuple(a_noise.shape)} does not match the "
+                f"audio latent {tuple(a0.shape)}")
     a_noised = (1.0 - sigma_a) * a0 + sigma_a * a_noise
 
     pred, pred_a = model(noised.to(latent.dtype), t, text_embeds,
@@ -1528,7 +1552,8 @@ def lora_disabled(network):
 
 def compute_distill_loss(model, network, latent, text_plain, *, text_ref, ref_latents,
                          text_token_tags=None, distill_weight=0.8, shift=None, generator=None,
-                         noise=None, seed=0, parts_out=None):
+                         noise=None, seed=0, parts_out=None,
+                         immiscible: str = "off", immiscible_k: int = 4):
     """Reference distillation: teach the LoRA to behave, from text alone, as if it had been
     shown the reference photo.
 
@@ -1557,7 +1582,10 @@ def compute_distill_loss(model, network, latent, text_plain, *, text_ref, ref_la
     if (_Hc, _Wc) != (_H, _W):
         x0 = x0[..., :_Hc, :_Wc].contiguous()
     if noise is None:
-        noise = torch.randn(x0.shape, device=device, generator=generator, dtype=torch.float32)
+        if immiscible == "knn":
+            noise = knn_noise(x0, immiscible_k, generator=generator)
+        else:
+            noise = torch.randn(x0.shape, device=device, generator=generator, dtype=torch.float32)
     else:
         noise = noise.to(device=device, dtype=torch.float32)[..., :x0.shape[-2], :x0.shape[-1]]
 
@@ -1595,6 +1623,94 @@ def compute_distill_loss(model, network, latent, text_plain, *, text_ref, ref_la
         parts_out["teacher"] = float(teacher_mse.detach())
         parts_out["photo"] = float(photo_mse.detach()) if photo_mse is not None else 0.0
     return loss, float(sigma.reshape(-1)[0])
+
+
+def _crop_spatial(x: torch.Tensor, patch) -> torch.Tensor:
+    """Match compute_loss: drop a trailing latent row/col so H and W divide the patch."""
+    _, ph, pw = patch
+    h, w = x.shape[-2], x.shape[-1]
+    hc, wc = (h // ph) * ph, (w // pw) * pw
+    if (hc, wc) != (h, w):
+        return x[..., :hc, :wc].contiguous()
+    return x
+
+
+def _batch_is_voice(batch) -> bool:
+    flag = batch.get("audio_only")
+    if flag is None:
+        return False
+    if torch.is_tensor(flag):
+        return bool(flag.detach().any())
+    return bool(flag)
+
+
+def _fill_assigned(batches, items, key, stats, keep_batch: bool):
+    """Pair same-shaped targets. ``items`` is (batch index, tensor).
+
+    ``keep_batch`` keeps a leading size-1 dim on the stamped noise (video
+    latents arrive as [1, C, T, H, W]). Audio rows are unbatched [A, 32].
+    ``stats`` counts video targets only: [paired, solo].
+    """
+    groups: dict[tuple, list] = {}
+    for i, t in items:
+        groups.setdefault(tuple(t.shape), []).append((i, t))
+    for members in groups.values():
+        if len(members) < 2:
+            noises = [torch.randn(t.shape, dtype=torch.float32) for _, t in members]
+            if stats is not None:
+                stats[1] += len(members)
+        else:
+            stacked = (torch.cat([t for _, t in members], dim=0) if keep_batch
+                       else torch.stack([t for _, t in members], dim=0))
+            paired = assignment_noise(stacked)
+            noises = [paired[n:n + 1] if keep_batch else paired[n] for n in range(len(members))]
+            if stats is not None:
+                stats[0] += len(members)
+        for (i, _), n in zip(members, noises):
+            batches[i][key] = n
+
+
+def assign_training_window(batches, patch, stats) -> None:
+    """Stamp paired noise onto one assignment group of H3 batches.
+
+    Video noise is not stamped on a voice item: its video latent is a zeros
+    placeholder, and pairing noise toward zero would change the layout the
+    frozen base sees. Audio, when the batch has any, is paired on its own.
+    """
+    videos = []
+    audios = []
+    for i, batch in enumerate(batches):
+        if not _batch_is_voice(batch):
+            z = batch.get("latents")
+            if torch.is_tensor(z):
+                if z.dim() == 4:
+                    z = z.unsqueeze(2)
+                videos.append((i, _crop_spatial(z.detach().float(), patch).cpu()))
+        a = batch.get("audio_latent")
+        if torch.is_tensor(a) and a.numel():
+            if a.dim() >= 3 and a.shape[0] == 1:
+                a = a[0]
+            audios.append((i, a.detach().float().cpu().contiguous()))
+    _fill_assigned(batches, videos, "_immiscible_noise", stats, keep_batch=True)
+    _fill_assigned(batches, audios, "_immiscible_audio_noise", None, keep_batch=False)
+
+
+def iter_assigned_batches(loader, group: int, patch, stats):
+    """Yield the loader's batches in order, after pairing each group of ``group``.
+
+    The tail of an epoch is its own group, so a short epoch still pairs.
+    """
+    group = max(2, int(group))
+    buf = []
+    for batch in loader:
+        buf.append(batch)
+        if len(buf) >= group:
+            assign_training_window(buf, patch, stats)
+            yield from buf
+            buf = []
+    if buf:
+        assign_training_window(buf, patch, stats)
+        yield from buf
 
 
 # ---------------------------------------------------------------------------
@@ -2600,6 +2716,14 @@ def train_minimax(
     finetune_master: str = "auto",          # "auto" | "ram" | "disk" — see the mode select
     finetune_scratch_dir: str = None,       # disk mode's spill dir; default: beside the caches
     reg_lr_multiplier: float = 0.2,         # FT only: LR nudge for `is_reg` dataset blocks
+    # Conditional Immiscible Diffusion. "off" is the ordinary Gaussian draw.
+    # "knn" picks the nearest of immiscible_k noises for each sample (works at
+    # batch size 1). "assignment" pairs immiscible_group consecutive samples by
+    # minimum total distance; only samples that share a latent shape pair.
+    # The caption stays with its sample either way.
+    immiscible: str = "off",
+    immiscible_k: int = 4,
+    immiscible_group: int = 8,
     device: str = "cuda",
     dtype: torch.dtype = torch.bfloat16,
 ):
@@ -2618,6 +2742,25 @@ def train_minimax(
     import math
 
     torch.manual_seed(seed)
+    immiscible = (immiscible or "off").strip().lower()
+    if immiscible not in ("off", "knn", "assignment"):
+        raise ValueError(
+            f"immiscible must be 'off', 'knn', or 'assignment' (got {immiscible!r})")
+    immiscible_k = int(immiscible_k)
+    immiscible_group = int(immiscible_group)
+    if immiscible == "knn" and immiscible_k < 1:
+        raise ValueError("--immiscible_k must be >= 1")
+    if immiscible == "assignment" and immiscible_group < 2:
+        raise ValueError("--immiscible_group must be >= 2 (one sample has nothing to pair with)")
+    if immiscible == "knn":
+        logger.info("[immiscible] KNN noise, k=%d. The caption stays with its sample; "
+                    "only the noise target is chosen. k=4 is the flow-matching setting; "
+                    "k=64 is the conditional Stable Diffusion fine-tune.", immiscible_k)
+    elif immiscible == "assignment":
+        logger.info("[immiscible] linear assignment over groups of %d consecutive samples. "
+                    "Samples that share a latent shape are paired; a shape that appears once "
+                    "keeps an ordinary draw. Captions are not moved. Voice items do not pair "
+                    "their video placeholder.", immiscible_group)
     user_include_patterns = include_patterns   # None -> resolved per checkpoint below
     # Parse the block selection NOW, before the 21 GB base streams in: a typo surfacing after
     # the load costs minutes and reads like a crash rather than a correction. Bounds-checking
@@ -4445,6 +4588,9 @@ def train_minimax(
             "ss_learning_rate": f"{learning_rate:g}",
             "ss_optimizer": optimizer_label,
             "ss_timestep_density": _dens,
+            "ss_immiscible": immiscible,
+            "ss_immiscible_k": str(immiscible_k if immiscible == "knn" else 0),
+            "ss_immiscible_group": str(immiscible_group if immiscible == "assignment" else 0),
             "ss_highnoise_lr_scale": f"{float(highnoise_lr_scale):g}",
             "ss_train_blocks": _blocks_used,
             "ss_train_adaln": "1" if _adaln_on else "0",
@@ -5281,6 +5427,9 @@ def train_minimax(
             ema.update()                 # after the clip, so the shadow tracks clipped weights
         _pending[0] = 0
 
+    _imm_patch = tuple(getattr(dit, "patch_size", (1, 2, 2)))
+    _imm_stats = [0, 0]
+
     for epoch in range(start_epoch, max_train_epochs):
         shared_epoch.value = epoch + 1
         if network is not None:
@@ -5374,7 +5523,11 @@ def train_minimax(
                         f"— dropping the teacher; from here it trains on the photographs alone, "
                         f"at the full {learning_rate:.2e} (phase 1 ran at "
                         f"{learning_rate * _P1_LR_SCALE:.2e}).")
-        for i, batch in enumerate(loader):
+        _src = loader
+        if immiscible == "assignment":
+            _imm_stats[0] = _imm_stats[1] = 0
+            _src = iter_assigned_batches(loader, immiscible_group, _imm_patch, _imm_stats)
+        for i, batch in enumerate(_src):
             # A still arrives 4-D (1,24,H,W); clips and voice placeholders are 5-D — tested
             # BEFORE the unsqueeze below erases the difference. Feeds the likeness mask.
             _is_photo = batch["latents"].dim() == 4
@@ -5461,7 +5614,9 @@ def train_minimax(
                     text_token_tags=batch["ref_token_tags"][0],
                     # Phase 1 is teacher-ONLY (weight 1.0); the blended mode keeps the box value.
                     distill_weight=(1.0 if _teacher_phase else distill_weight),
-                    shift=shift, seed=seed, parts_out=_distill_parts)
+                    shift=shift, seed=seed, parts_out=_distill_parts,
+                    noise=batch.get("_immiscible_noise"),
+                    immiscible=immiscible, immiscible_k=immiscible_k)
                 _distill_acc[0] += _distill_parts["teacher"]
                 _distill_acc[1] += _distill_parts["photo"]
                 _distill_acc[2] += 1
@@ -5476,7 +5631,10 @@ def train_minimax(
                 loss, _step_sigma = compute_loss(dit, latents, text, shift=shift,
                                                  audio_latent=_a, audio_weight=audio_weight,
                                                  video_weight=0.0 if _is_voice else 1.0,
-                                                 parts_out=_audio_parts)
+                                                 parts_out=_audio_parts,
+                                                 noise=batch.get("_immiscible_noise"),
+                                                 audio_noise=batch.get("_immiscible_audio_noise"),
+                                                 immiscible=immiscible, immiscible_k=immiscible_k)
                 if _is_voice:
                     # Its own ledger. The clip ledger's "video err" is a real number about real
                     # footage; a voice item's video term is its error against the placeholder —
@@ -5544,6 +5702,10 @@ def train_minimax(
         # (field, 29 Aug). Offset is 0 on a fresh run, so nothing changes there.
         logger.info(f"epoch {epoch + 1 + ft_epoch_offset}/{max_train_epochs + ft_epoch_offset} "
                     f"done — avr_loss {loss_recorder.moving_average:.4f}")
+        if immiscible == "assignment":
+            logger.info("[immiscible] paired %d video sample(s); %d kept an ordinary draw "
+                        "(a latent shape needs 2+ copies inside a group of %d).",
+                        _imm_stats[0], _imm_stats[1], immiscible_group)
         if rotator is not None and torch.cuda.is_available():
             # Per-window peak, reset at each rotation — the measured record the window
             # planner's constants are calibrated from. GB (1e9), NOT GiB: this line used

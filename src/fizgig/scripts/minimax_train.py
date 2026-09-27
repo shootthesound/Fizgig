@@ -334,6 +334,22 @@ def setup_parser() -> argparse.ArgumentParser:
                         "a subject, so they train as a nudge (0.1-0.3). They follow the photo "
                         "routing and stop with the visual category. Ignored when no reg block "
                         "is present; ignored (with a warning) on LoRA runs.")
+    # Conditional Immiscible Diffusion (yhli123/Immiscible-Diffusion). Off by default.
+    # The caption stays with its sample; only the noise target is chosen.
+    p.add_argument("--immiscible", default="off", choices=["off", "knn", "assignment"],
+                   help="Conditional Immiscible Diffusion noise target. off = ordinary "
+                        "Gaussian (default). knn = nearest of --immiscible_k noises for this "
+                        "sample (works at H3's batch size of 1; k=4 is the flow-matching "
+                        "setting, k=64 is the conditional Stable Diffusion fine-tune). "
+                        "assignment = pair --immiscible_group consecutive samples by minimum "
+                        "total distance; only samples that share a latent shape are paired, "
+                        "and a shape that appears once keeps an ordinary draw. Voice items "
+                        "do not pair their video placeholder. The caption is never moved.")
+    p.add_argument("--immiscible_k", type=int, default=4,
+                   help="knn only: candidate noises per sample. 1 is an ordinary draw.")
+    p.add_argument("--immiscible_group", type=int, default=8,
+                   help="assignment only: consecutive samples per pairing group. The tail of "
+                        "an epoch is its own group. Must be >= 2.")
     return p
 
 
@@ -443,6 +459,9 @@ def main():
         finetune_master=args.finetune_master,
         finetune_scratch_dir=args.finetune_scratch_dir,
         reg_lr_multiplier=args.reg_lr_multiplier,
+        immiscible=args.immiscible,
+        immiscible_k=args.immiscible_k,
+        immiscible_group=args.immiscible_group,
     )
 
 

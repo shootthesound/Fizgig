@@ -328,6 +328,25 @@ def setup_parser() -> argparse.ArgumentParser:
     p.add_argument("--finetune_scratch_dir", default=None,
                    help="disk master's spill directory (wants a fast local drive). "
                         "Default: beside the dataset caches.")
+    # EMA Fréchet loss on pooled H3 latents (arXiv:2604.28190). Off by default.
+    p.add_argument("--fd_loss", action="store_true",
+                   help="Add an EMA Fréchet penalty between predicted clean latents and "
+                        "the cached training latents. The reference cloud is built once "
+                        "from the dataset. Gradients flow only through the current step. "
+                        "This is the paper's estimator on a pooled VAE latent, not on "
+                        "Inception pixels: a vision encoder does not fit beside the int8 base.")
+    p.add_argument("--fd_weight", type=float, default=1.0,
+                   help="Scale on the normalized Fréchet term. Ignored without --fd_loss.")
+    p.add_argument("--fd_flow_weight", type=float, default=1.0,
+                   help="Scale on the ordinary flow-matching loss while --fd_loss is on. "
+                        "0 trains on the cloud alone.")
+    p.add_argument("--fd_beta", type=float, default=0.999,
+                   help="EMA decay for the generated cloud. 0.999 is the paper's value. "
+                        "The effective memory is about 1/(1-beta) steps.")
+    p.add_argument("--fd_pool", type=int, default=4,
+                   help="Spatial pool of the 24-channel latent before the covariance. "
+                        "4 -> a 384-d descriptor. Larger pools need more cached stills "
+                        "than the descriptor width.")
     p.add_argument("--reg_lr_multiplier", type=float, default=0.2,
                    help="Fine-tune only: LR multiplier for images in a dataset block marked "
                         "`is_reg = true`. They anchor the model's prior rather than teaching "
@@ -443,6 +462,11 @@ def main():
         finetune_master=args.finetune_master,
         finetune_scratch_dir=args.finetune_scratch_dir,
         reg_lr_multiplier=args.reg_lr_multiplier,
+        fd_loss=args.fd_loss,
+        fd_weight=args.fd_weight,
+        fd_flow_weight=args.fd_flow_weight,
+        fd_beta=args.fd_beta,
+        fd_pool=args.fd_pool,
     )
 
 

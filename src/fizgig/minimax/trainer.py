@@ -1061,7 +1061,8 @@ def compute_loss(model, latent: torch.Tensor, text_embeds: torch.Tensor, *,
                  sigma: torch.Tensor = None, shift: float = None, generator=None,
                  noise: torch.Tensor = None, audio_latent: torch.Tensor = None,
                  audio_weight: float = 1.0, video_weight: float = 1.0,
-                 parts_out: dict = None, ref_latents=None):
+                 parts_out: dict = None, ref_latents=None,
+                 fd_tracker=None, fd_weight: float = 1.0, fd_flow_weight: float = 1.0):
     """One training step's loss.
 
     latent      : [1, 24, T, H, W] clean VAE latent (x0). T=1 is a still.
@@ -1114,6 +1115,19 @@ def compute_loss(model, latent: torch.Tensor, text_embeds: torch.Tensor, *,
     # ref_latents: RefMod mode — the mod rides as the reference block on every step (the LoRA
     # learns what the reference can't carry). None = the ordinary step.
     _ref_kw = {"ref_latents": ref_latents} if ref_latents else {}
+
+    def _with_fd(flow, pred):
+        # Voice placeholders are zeros. Putting them in the cloud would pull every
+        # still toward a black latent. The flow term for those items is unchanged.
+        if fd_tracker is None or video_weight == 0.0:
+            return flow
+        from fizgig.training.fd_loss import latent_descriptor
+        x0_hat = noised.detach() + s.detach() * pred.float()
+        fd = fd_tracker.step(latent_descriptor(x0_hat, fd_tracker.pool))
+        if parts_out is not None:
+            parts_out["fd"] = float(fd.detach())
+        return fd_flow_weight * flow + fd_weight * fd
+
     if audio_latent is None:
         pred = model(noised.to(latent.dtype), t, text_embeds, **_ref_kw)
         loss = F.mse_loss(pred.float(), (x0 - noise).to(pred.dtype).float())
@@ -1121,7 +1135,7 @@ def compute_loss(model, latent: torch.Tensor, text_embeds: torch.Tensor, *,
             parts_out.update(video=float(loss.detach()), audio=None)
         if video_weight != 1.0:              # degenerate (an audio item missing its rows) but honest
             loss = video_weight * loss
-        return loss, float(sigma.reshape(-1)[0])
+        return _with_fd(loss, pred), float(sigma.reshape(-1)[0])
 
     # The audio stream denoises on its OWN schedule — shift 3 against video's 12 — and
     # remap_sigma is the closed form that keeps the two at the same underlying point. Noising the
@@ -1141,7 +1155,7 @@ def compute_loss(model, latent: torch.Tensor, text_embeds: torch.Tensor, *,
     if pred_a is None:                      # pack_audio_rows off — nothing to train against
         if parts_out is not None:
             parts_out.update(video=float(v_loss.detach()), audio=None)
-        return video_weight * v_loss, sigma_v
+        return _with_fd(video_weight * v_loss, pred), sigma_v
     a_loss = F.mse_loss(pred_a.float(), (a0 - a_noise).float())
     if parts_out is not None:
         parts_out.update(video=float(v_loss.detach()), audio=float(a_loss.detach()),
@@ -1151,8 +1165,8 @@ def compute_loss(model, latent: torch.Tensor, text_embeds: torch.Tensor, *,
         # and autograd walks it for nothing. The audio term alone IS this item's loss.
         return audio_weight * a_loss, sigma_v
     if video_weight != 1.0:
-        return video_weight * v_loss + audio_weight * a_loss, sigma_v
-    return v_loss + audio_weight * a_loss, sigma_v
+        return _with_fd(video_weight * v_loss + audio_weight * a_loss, pred), sigma_v
+    return _with_fd(v_loss + audio_weight * a_loss, pred), sigma_v
 
 
 def _find_ffmpeg():
@@ -2600,6 +2614,13 @@ def train_minimax(
     finetune_master: str = "auto",          # "auto" | "ram" | "disk" — see the mode select
     finetune_scratch_dir: str = None,       # disk mode's spill dir; default: beside the caches
     reg_lr_multiplier: float = 0.2,         # FT only: LR nudge for `is_reg` dataset blocks
+    # EMA Fréchet loss (arXiv:2604.28190) on pooled clean-latent predictions.
+    # Off by default. The reference cloud is the cached training latents.
+    fd_loss: bool = False,
+    fd_weight: float = 1.0,
+    fd_flow_weight: float = 1.0,
+    fd_beta: float = 0.999,
+    fd_pool: int = 4,
     device: str = "cuda",
     dtype: torch.dtype = torch.bfloat16,
 ):
@@ -2618,6 +2639,17 @@ def train_minimax(
     import math
 
     torch.manual_seed(seed)
+    if fd_loss:
+        fd_weight = float(fd_weight)
+        fd_flow_weight = float(fd_flow_weight)
+        fd_beta = float(fd_beta)
+        fd_pool = int(fd_pool)
+        if fd_pool < 1:
+            raise ValueError("--fd_pool must be >= 1")
+        if not 0.0 <= fd_beta < 1.0:
+            raise ValueError("--fd_beta must be in [0, 1)")
+        if fd_weight < 0 or fd_flow_weight < 0:
+            raise ValueError("--fd_weight and --fd_flow_weight must be >= 0")
     user_include_patterns = include_patterns   # None -> resolved per checkpoint below
     # Parse the block selection NOW, before the 21 GB base streams in: a typo surfacing after
     # the load costs minutes and reads like a crash rather than a correction. Bounds-checking
@@ -2761,6 +2793,19 @@ def train_minimax(
     if group.num_train_items == 0:
         raise RuntimeError("No training items — run minimax_cache_latents then minimax_cache_text first.")
     logger.info(f"MiniMax H3 training: {group.num_train_items} items, {max_train_epochs} epochs")
+    fd_tracker = None
+    if fd_loss:
+        # Before the 21 GB base streams in: a missing cache should fail in seconds.
+        from fizgig.training.fd_loss import EMAFrechet, reference_from_dataset
+        _fd_ref = reference_from_dataset(group, pool=fd_pool)
+        fd_tracker = EMAFrechet(beta=fd_beta, pool=fd_pool)
+        fd_tracker.set_reference(_fd_ref)
+        logger.info("[fd-loss] reference cloud: %d latents, descriptor %d-d, pool %d, "
+                    "beta %g, weight %g, flow weight %g. EMA Fréchet on the predicted "
+                    "clean latent (arXiv:2604.28190). A pixel encoder is not loaded; "
+                    "it will not sit beside the int8 base.",
+                    _fd_ref.shape[0], _fd_ref.shape[1], fd_pool, fd_beta,
+                    fd_weight, fd_flow_weight)
 
 
     # FIZGIG_SAVED_TENSOR_AUDIT=1: account every tensor autograd saves for backward, with the
@@ -4445,6 +4490,11 @@ def train_minimax(
             "ss_learning_rate": f"{learning_rate:g}",
             "ss_optimizer": optimizer_label,
             "ss_timestep_density": _dens,
+            "ss_fd_loss": "1" if fd_loss else "0",
+            "ss_fd_weight": f"{float(fd_weight):g}" if fd_loss else "0",
+            "ss_fd_flow_weight": f"{float(fd_flow_weight):g}" if fd_loss else "0",
+            "ss_fd_beta": f"{float(fd_beta):g}" if fd_loss else "0",
+            "ss_fd_pool": str(int(fd_pool)) if fd_loss else "0",
             "ss_highnoise_lr_scale": f"{float(highnoise_lr_scale):g}",
             "ss_train_blocks": _blocks_used,
             "ss_train_adaln": "1" if _adaln_on else "0",
@@ -5476,7 +5526,9 @@ def train_minimax(
                 loss, _step_sigma = compute_loss(dit, latents, text, shift=shift,
                                                  audio_latent=_a, audio_weight=audio_weight,
                                                  video_weight=0.0 if _is_voice else 1.0,
-                                                 parts_out=_audio_parts)
+                                                 parts_out=_audio_parts,
+                                                 fd_tracker=fd_tracker, fd_weight=fd_weight,
+                                                 fd_flow_weight=fd_flow_weight)
                 if _is_voice:
                     # Its own ledger. The clip ledger's "video err" is a real number about real
                     # footage; a voice item's video term is its error against the placeholder —

@@ -484,6 +484,7 @@ Two things are on with no flag at all: under `--photo_blocks` / `--clip_blocks` 
 - `--train_token_refiner` — adds the text token refiner to the LoRA targets. Recommended off; does not affect the ability to use a trigger word.
 - `--likeness_full_backward` — the old full backward under the likeness masks, with the refiner training on every step. A/B only.
 - `--train_blocks SPEC` — train only these of the 50 blocks (`'20-49'`, `'3-12, 22, 31-33'`). `--slow_blocks SPEC --slow_block_lr_scale X` trains a range at a reduced LR. `--block_limit N` caps any block's single-step movement at N× the median block's.
+- `--fd_loss` — EMA Fréchet penalty (arXiv:2604.28190) between the predicted clean latent and the cloud of cached training latents. `--fd_weight`, `--fd_flow_weight` (0 drops the paired flow loss), `--fd_beta` (default 0.999), `--fd_pool` (default 4, a 384-d descriptor). Off by default. The paper's pixel encoders are not loaded. Recorded as `ss_fd_loss`.
 - `--distill --distill_weight W --distill_phase1_epochs N` — reference distillation, trained on the ref2va DiT; needs `--reference_count K` on the text cache.
 - `--context_lora_path FILE --context_lora_strength S` — train with an existing H3 LoRA frozen and active underneath, in training and previews.
 - `--metadata_title/author/description/license/tags/trigger_phrase` — recorded in the saved LoRA.

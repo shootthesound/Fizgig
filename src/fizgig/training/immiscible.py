@@ -9,6 +9,12 @@ permutes data and labels together.
   knn         — draw ``k`` noises for this sample and keep the nearest.
                 Improved Immiscible Diffusion (arXiv:2505.18521). Works at
                 batch size 1, which is how MiniMax H3 trains.
+  knn_coarse  — the same draw, scored on an average-pooled copy of the latent
+                (default 8×8). The tensor that enters the flow is still the
+                full-resolution candidate, so high-frequency detail stays a
+                normal Gaussian. An H3 still is ~55,000 values; full-latent
+                nearest-of-k either barely moves (k=4) or hugs the image
+                (k=64) and the training target collapses.
   assignment  — pair a group of samples with a group of noises by minimising
                 total L2 distance. Immiscible Diffusion (arXiv:2406.12303).
 
@@ -26,11 +32,16 @@ import torch
 
 
 def knn_noise(x: torch.Tensor, k: int, generator: torch.Generator | None = None,
-              chunk: int = 8) -> torch.Tensor:
+              chunk: int = 8, coarse: int = 0) -> torch.Tensor:
     """Nearest of ``k`` standard normals to each row of ``x`` ([B, ...]).
 
     Candidates are drawn in chunks so a long video latent is not materialised
     ``k`` times at once. ``k == 1`` is an ordinary draw.
+
+    ``coarse`` > 1 scores the match on an average-pool of the last two axes
+    (both must be larger than ``coarse``). The returned tensor is still the
+    full-resolution candidate. A tensor with no spatial pair of axes, such as
+    audio rows ``[1, A, 32]``, keeps the full-vector score.
     """
     if k < 1:
         raise ValueError(f"immiscible k must be >= 1 (got {k})")
@@ -39,7 +50,7 @@ def knn_noise(x: torch.Tensor, k: int, generator: torch.Generator | None = None,
     b = x.shape[0]
     if b == 0:
         return torch.randn(x.shape, device=x.device, dtype=torch.float32, generator=generator)
-    x_flat = x.detach().reshape(b, -1).float()
+    x_score = _score_flat(x, coarse)
     best = None
     best_dist = None
     left = int(k)
@@ -48,17 +59,46 @@ def knn_noise(x: torch.Tensor, k: int, generator: torch.Generator | None = None,
         left -= c
         cand = torch.randn((b, c) + tuple(x.shape[1:]), device=x.device,
                            dtype=torch.float32, generator=generator)
-        dist = _squared_rows(x_flat, cand.reshape(b, c, -1))
-        dmin, idx = dist.min(dim=1)
+        idx, dist = _knn_index(x_score, cand, coarse)
         chosen = cand[torch.arange(b, device=x.device), idx]
         if best is None:
-            best, best_dist = chosen, dmin
+            best, best_dist = chosen, dist
         else:
-            take = dmin < best_dist
+            take = dist < best_dist
             view = (b,) + (1,) * (best.ndim - 1)
             best = torch.where(take.view(view), chosen, best)
-            best_dist = torch.where(take, dmin, best_dist)
+            best_dist = torch.where(take, dist, best_dist)
     return best
+
+
+def _score_flat(x: torch.Tensor, coarse: int) -> torch.Tensor:
+    """``[N, ...]`` -> ``[N, D]`` used only to rank candidates.
+
+    The flow target is never this tensor. Pooling applies when ``coarse`` > 1
+    and the last two axes are both strictly larger than ``coarse``.
+    """
+    if coarse > 1 and x.ndim >= 4:
+        h, w = int(x.shape[-2]), int(x.shape[-1])
+        if h > coarse and w > coarse:
+            pooled = torch.nn.functional.adaptive_avg_pool2d(
+                x.detach().reshape(x.shape[0], -1, h, w).float(),
+                (int(coarse), int(coarse)),
+            )
+            return pooled.reshape(x.shape[0], -1)
+    return x.detach().reshape(x.shape[0], -1).float()
+
+
+def _knn_index(x_score: torch.Tensor, cand: torch.Tensor, coarse: int):
+    """Index and distance of the nearest candidate. ``cand`` is ``[B, K, ...]``."""
+    b, k = cand.shape[:2]
+    scored = _score_flat(cand.reshape(b * k, *cand.shape[2:]), coarse).reshape(b, k, -1)
+    if scored.shape[-1] != x_score.shape[-1]:
+        raise ValueError(
+            f"coarse score width {scored.shape[-1]} does not match the latent "
+            f"score {x_score.shape[-1]}")
+    dist = _squared_rows(x_score, scored)
+    dmin, idx = dist.min(dim=1)
+    return idx, dmin
 
 
 def assignment_noise(x: torch.Tensor, generator: torch.Generator | None = None) -> torch.Tensor:

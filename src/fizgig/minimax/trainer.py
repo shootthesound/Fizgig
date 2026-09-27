@@ -1064,6 +1064,7 @@ def compute_loss(model, latent: torch.Tensor, text_embeds: torch.Tensor, *,
                  audio_weight: float = 1.0, video_weight: float = 1.0,
                  parts_out: dict = None, ref_latents=None,
                  immiscible: str = "off", immiscible_k: int = 4,
+                 immiscible_coarse: int = 0,
                  audio_noise: torch.Tensor = None):
     """One training step's loss.
 
@@ -1071,7 +1072,9 @@ def compute_loss(model, latent: torch.Tensor, text_embeds: torch.Tensor, *,
     text_embeds : [1, L, text_dim] Qwen3-VL states.
     noise       : optional fixed noise (reproducible steps / tests); else sampled.
                   ``immiscible="knn"`` draws ``immiscible_k`` candidates and keeps the
-                  nearest to this latent. The caption is not touched. A voice item
+                  nearest to this latent. ``knn_coarse`` scores that choice on an
+                  ``immiscible_coarse`` average-pool and still returns the full
+                  candidate. The caption is not touched. A voice item
                   (``video_weight`` 0) keeps an ordinary video draw: its video latent
                   is a zeros placeholder, and matching noise to it would bias the
                   frozen base's input. ``audio_noise`` is the same option for the
@@ -1110,8 +1113,9 @@ def compute_loss(model, latent: torch.Tensor, text_embeds: torch.Tensor, *,
     if noise is None:
         # KNN is per sample, so batch size 1 is enough. Assignment noise is
         # pre-paired across a group and passed in; a missing one is an ordinary draw.
-        if immiscible == "knn" and video_weight != 0.0:
-            noise = knn_noise(x0, immiscible_k, generator=generator)
+        if immiscible in ("knn", "knn_coarse") and video_weight != 0.0:
+            noise = knn_noise(x0, immiscible_k, generator=generator,
+                              coarse=(immiscible_coarse if immiscible == "knn_coarse" else 0))
         else:
             noise = torch.randn(x0.shape, device=device, generator=generator, dtype=torch.float32)
     else:
@@ -1147,7 +1151,8 @@ def compute_loss(model, latent: torch.Tensor, text_embeds: torch.Tensor, *,
 
     a0 = audio_latent.to(device=device, dtype=torch.float32)
     if audio_noise is None:
-        if immiscible == "knn":
+        if immiscible in ("knn", "knn_coarse"):
+            # Audio rows are not a spatial map, so they keep the full-vector score.
             a_noise = knn_noise(a0.unsqueeze(0), immiscible_k, generator=generator).squeeze(0)
         else:
             a_noise = torch.randn(a0.shape, device=device, generator=generator, dtype=torch.float32)
@@ -1553,7 +1558,8 @@ def lora_disabled(network):
 def compute_distill_loss(model, network, latent, text_plain, *, text_ref, ref_latents,
                          text_token_tags=None, distill_weight=0.8, shift=None, generator=None,
                          noise=None, seed=0, parts_out=None,
-                         immiscible: str = "off", immiscible_k: int = 4):
+                         immiscible: str = "off", immiscible_k: int = 4,
+                         immiscible_coarse: int = 0):
     """Reference distillation: teach the LoRA to behave, from text alone, as if it had been
     shown the reference photo.
 
@@ -1582,8 +1588,9 @@ def compute_distill_loss(model, network, latent, text_plain, *, text_ref, ref_la
     if (_Hc, _Wc) != (_H, _W):
         x0 = x0[..., :_Hc, :_Wc].contiguous()
     if noise is None:
-        if immiscible == "knn":
-            noise = knn_noise(x0, immiscible_k, generator=generator)
+        if immiscible in ("knn", "knn_coarse"):
+            noise = knn_noise(x0, immiscible_k, generator=generator,
+                              coarse=(immiscible_coarse if immiscible == "knn_coarse" else 0))
         else:
             noise = torch.randn(x0.shape, device=device, generator=generator, dtype=torch.float32)
     else:
@@ -2718,12 +2725,15 @@ def train_minimax(
     reg_lr_multiplier: float = 0.2,         # FT only: LR nudge for `is_reg` dataset blocks
     # Conditional Immiscible Diffusion. "off" is the ordinary Gaussian draw.
     # "knn" picks the nearest of immiscible_k noises for each sample (works at
-    # batch size 1). "assignment" pairs immiscible_group consecutive samples by
-    # minimum total distance; only samples that share a latent shape pair.
+    # batch size 1). "knn_coarse" scores that pick on an immiscible_coarse
+    # average-pool and still uses the full candidate. "assignment" pairs
+    # immiscible_group consecutive samples by minimum total distance; only
+    # samples that share a latent shape pair.
     # The caption stays with its sample either way.
     immiscible: str = "off",
     immiscible_k: int = 4,
     immiscible_group: int = 8,
+    immiscible_coarse: int = 8,
     device: str = "cuda",
     dtype: torch.dtype = torch.bfloat16,
 ):
@@ -2743,19 +2753,29 @@ def train_minimax(
 
     torch.manual_seed(seed)
     immiscible = (immiscible or "off").strip().lower()
-    if immiscible not in ("off", "knn", "assignment"):
+    if immiscible not in ("off", "knn", "knn_coarse", "assignment"):
         raise ValueError(
-            f"immiscible must be 'off', 'knn', or 'assignment' (got {immiscible!r})")
+            f"immiscible must be 'off', 'knn', 'knn_coarse', or 'assignment' "
+            f"(got {immiscible!r})")
     immiscible_k = int(immiscible_k)
     immiscible_group = int(immiscible_group)
-    if immiscible == "knn" and immiscible_k < 1:
+    immiscible_coarse = int(immiscible_coarse)
+    if immiscible in ("knn", "knn_coarse") and immiscible_k < 1:
         raise ValueError("--immiscible_k must be >= 1")
+    if immiscible == "knn_coarse" and immiscible_coarse < 2:
+        raise ValueError("--immiscible_coarse must be >= 2")
     if immiscible == "assignment" and immiscible_group < 2:
         raise ValueError("--immiscible_group must be >= 2 (one sample has nothing to pair with)")
     if immiscible == "knn":
         logger.info("[immiscible] KNN noise, k=%d. The caption stays with its sample; "
                     "only the noise target is chosen. k=4 is the flow-matching setting; "
                     "k=64 is the conditional Stable Diffusion fine-tune.", immiscible_k)
+    elif immiscible == "knn_coarse":
+        logger.info("[immiscible] coarse KNN, k=%d, pool=%d. The nearest candidate is "
+                    "chosen on a %dx%d average of the latent. The noise in the loss is "
+                    "that full-resolution candidate, so the fine detail stays Gaussian. "
+                    "The caption stays with its sample.",
+                    immiscible_k, immiscible_coarse, immiscible_coarse, immiscible_coarse)
     elif immiscible == "assignment":
         logger.info("[immiscible] linear assignment over groups of %d consecutive samples. "
                     "Samples that share a latent shape are paired; a shape that appears once "
@@ -4589,7 +4609,8 @@ def train_minimax(
             "ss_optimizer": optimizer_label,
             "ss_timestep_density": _dens,
             "ss_immiscible": immiscible,
-            "ss_immiscible_k": str(immiscible_k if immiscible == "knn" else 0),
+            "ss_immiscible_k": str(immiscible_k if immiscible in ("knn", "knn_coarse") else 0),
+            "ss_immiscible_coarse": str(immiscible_coarse if immiscible == "knn_coarse" else 0),
             "ss_immiscible_group": str(immiscible_group if immiscible == "assignment" else 0),
             "ss_highnoise_lr_scale": f"{float(highnoise_lr_scale):g}",
             "ss_train_blocks": _blocks_used,
@@ -5616,7 +5637,8 @@ def train_minimax(
                     distill_weight=(1.0 if _teacher_phase else distill_weight),
                     shift=shift, seed=seed, parts_out=_distill_parts,
                     noise=batch.get("_immiscible_noise"),
-                    immiscible=immiscible, immiscible_k=immiscible_k)
+                    immiscible=immiscible, immiscible_k=immiscible_k,
+                    immiscible_coarse=immiscible_coarse)
                 _distill_acc[0] += _distill_parts["teacher"]
                 _distill_acc[1] += _distill_parts["photo"]
                 _distill_acc[2] += 1
@@ -5634,7 +5656,8 @@ def train_minimax(
                                                  parts_out=_audio_parts,
                                                  noise=batch.get("_immiscible_noise"),
                                                  audio_noise=batch.get("_immiscible_audio_noise"),
-                                                 immiscible=immiscible, immiscible_k=immiscible_k)
+                                                 immiscible=immiscible, immiscible_k=immiscible_k,
+                                                 immiscible_coarse=immiscible_coarse)
                 if _is_voice:
                     # Its own ledger. The clip ledger's "video err" is a real number about real
                     # footage; a voice item's video term is its error against the placeholder —

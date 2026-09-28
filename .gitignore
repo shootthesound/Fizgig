@@ -91,8 +91,19 @@ gpu_detect_debug.log
 python312/
 
 
-# Internal-only: debugging test harnesses + template setup notes (local, never public)
-tests/
+# Web UI artifacts
+ui/node_modules/
+ui/.next/
+ui/out/
+ui/build/
+ui/*.tsbuildinfo
+ui/.env*.local
+
+# Local training runtime snapshot & auth tokens
+.last_train.json
+.fizgig_token
+
+# Internal design notes (not for publication)
 docs/RUNPOD_TEMPLATE.md
 
 # Local-only deploy/sync helpers (never commit)
@@ -103,3 +114,4 @@ docs/DESIGN_component_ft_24gb.md
 docs/EVAL_full_model_h3_video.md
 docs/FINETUNE_ROTATION.md
 docs/DISTRIBUTED_FINETUNE.md
+

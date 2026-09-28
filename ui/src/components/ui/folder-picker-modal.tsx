@@ -8,9 +8,16 @@ interface FolderPickerModalProps {
   onSelect: (selectedPath: string) => void;
   onClose: () => void;
   title?: string;
+  mode?: 'folder' | 'file';
+  fileFilter?: string;
 }
 
 interface DirectoryEntry {
+  name: string;
+  path: string;
+}
+
+interface FileEntry {
   name: string;
   path: string;
 }
@@ -19,6 +26,7 @@ interface BrowseData {
   currentPath: string;
   parentPath: string | null;
   directories: DirectoryEntry[];
+  files?: FileEntry[];
   quickPaths: { label: string; path: string }[];
 }
 
@@ -28,9 +36,12 @@ export default function FolderPickerModal({
   onSelect,
   onClose,
   title = 'Select Training Image Folder',
+  mode = 'folder',
+  fileFilter,
 }: FolderPickerModalProps) {
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [inputPath, setInputPath] = useState(initialPath);
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [browseData, setBrowseData] = useState<BrowseData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,14 +51,16 @@ export default function FolderPickerModal({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/browse?path=${encodeURIComponent(targetPath || '')}`);
+      const extParam = fileFilter ? `&ext=${encodeURIComponent(fileFilter)}` : '';
+      const filesParam = mode === 'file' ? '&files=true' : '';
+      const res = await fetch(`/api/browse?path=${encodeURIComponent(targetPath || '')}${filesParam}${extParam}`);
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         setBrowseData(data);
         setCurrentPath(data.currentPath);
         setInputPath(data.currentPath);
       } else {
-        setError(data.error || 'Failed to browse directory');
+        setError(data.error || `HTTP ${res.status}: Failed to browse directory`);
       }
     } catch (err: any) {
       setError(err.message || 'Network error fetching directory');
@@ -69,16 +82,20 @@ export default function FolderPickerModal({
     onClose();
   };
 
-  const handleHtmlFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleHtmlFileOrFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      // In Chromium/WebKit, webkitRelativePath gives "foldername/subfile.jpg"
-      const relative = files[0].webkitRelativePath;
-      const folderName = relative.split('/')[0];
-      if (folderName) {
-        // If we are currently browsing a directory, join it, otherwise use folderName
-        const resolved = browseData ? `${browseData.currentPath}/${folderName}` : folderName;
+      if (mode === 'file') {
+        const file = files[0];
+        const resolved = browseData ? `${browseData.currentPath}/${file.name}` : file.name;
         handleSelect(resolved);
+      } else {
+        const relative = files[0].webkitRelativePath;
+        const folderName = relative ? relative.split('/')[0] : files[0].name;
+        if (folderName) {
+          const resolved = browseData ? `${browseData.currentPath}/${folderName}` : folderName;
+          handleSelect(resolved);
+        }
       }
     }
   };
@@ -89,7 +106,7 @@ export default function FolderPickerModal({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[#3a4555] bg-[#18212a] px-4 py-3">
           <div className="flex items-center gap-2">
-            <span className="text-lg">📁</span>
+            <span className="text-lg">{mode === 'file' ? '📄' : '📁'}</span>
             <h3 className="text-sm font-bold text-white">{title}</h3>
           </div>
           <button
@@ -101,53 +118,53 @@ export default function FolderPickerModal({
           </button>
         </div>
 
-        {/* Path Bar */}
-        <div className="p-3 border-b border-[#3a4555] bg-[#202b36] space-y-2">
-          <div className="flex gap-2">
+        {/* Quick paths banner */}
+        {browseData?.quickPaths && browseData.quickPaths.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 px-4 py-2 border-b border-[#2d3748] bg-[#161c24] text-xs">
+            <span className="text-[#8a9bae] font-medium mr-1">Quick:</span>
+            {browseData.quickPaths.map((qp) => (
+              <button
+                key={qp.path}
+                type="button"
+                onClick={() => fetchDirectory(qp.path)}
+                className="px-2 py-0.5 rounded bg-[#202936] hover:bg-[#2b3749] text-[#93c5fd] border border-[#3b4758] text-[11px] cursor-pointer transition-colors"
+              >
+                {qp.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Current Path Bar */}
+        <div className="p-3 border-b border-[#2d3748] bg-[#1b232c]">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              fetchDirectory(inputPath);
+            }}
+            className="flex items-center gap-2"
+          >
             <input
               type="text"
               value={inputPath}
               onChange={(e) => setInputPath(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  fetchDirectory(inputPath);
-                }
-              }}
-              placeholder="/path/to/folder..."
-              className="flex-1 min-h-[34px] px-3 py-1.5 text-xs font-mono rounded border border-[#647284] bg-[#18212b] text-[#f3f5f7] focus:outline-none focus:border-[#3b82f6]"
+              placeholder="Enter path (/path/to/...)"
+              className="flex-1 px-3 py-1.5 text-xs bg-[#10151c] text-[#f1f3f5] border border-[#3d4b5c] rounded focus:outline-none focus:border-[#3b82f6] font-mono"
             />
             <button
-              type="button"
-              onClick={() => fetchDirectory(inputPath)}
-              className="px-3 py-1.5 text-xs font-semibold rounded bg-[#303d4c] hover:bg-[#3d4d60] border border-[#647284] text-white cursor-pointer"
+              type="submit"
+              className="px-3 py-1.5 text-xs font-semibold rounded bg-[#2b3749] hover:bg-[#37465d] text-white border border-[#48576b] cursor-pointer"
             >
               Go
             </button>
-          </div>
-
-          {/* Quick Paths */}
-          {browseData?.quickPaths && browseData.quickPaths.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 text-xs text-[#8a9bae]">
-              <span className="text-[11px] font-medium text-[#718092]">Quick:</span>
-              {browseData.quickPaths.map((qp, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => fetchDirectory(qp.path)}
-                  className="px-2 py-0.5 rounded bg-[#18212b] hover:bg-[#2c3947] border border-[#3a4555] text-[11px] text-[#93c5fd] cursor-pointer"
-                >
-                  {qp.label}
-                </button>
-              ))}
-            </div>
-          )}
+          </form>
         </div>
 
-        {/* Directory Listing Body */}
-        <div className="flex-1 overflow-y-auto p-2 min-h-[220px] max-h-[380px] bg-[#1d252f] divide-y divide-[#2a3644]">
+        {/* Directory & File Listing Container */}
+        <div className="flex-1 overflow-y-auto p-2 space-y-0.5 min-h-[220px]">
           {loading && (
-            <div className="flex items-center justify-center p-8 text-xs text-[#8a9bae]">
-              <span className="animate-spin mr-2">⏳</span> Loading directories...
+            <div className="p-8 text-center text-xs text-[#8a9bae]">
+              <span className="animate-spin mr-2">⏳</span> Loading...
             </div>
           )}
 
@@ -172,24 +189,20 @@ export default function FolderPickerModal({
               )}
 
               {/* Subdirectories */}
-              {browseData.directories.length === 0 ? (
-                <div className="p-6 text-center text-xs text-[#718092] italic">
-                  No subdirectories found in this folder
-                </div>
-              ) : (
-                browseData.directories.map((dir) => (
-                  <div
-                    key={dir.path}
-                    className="flex items-center justify-between px-3 py-1.5 hover:bg-[#253241] rounded group"
+              {browseData.directories.map((dir) => (
+                <div
+                  key={dir.path}
+                  className="flex items-center justify-between px-3 py-1.5 hover:bg-[#253241] rounded group"
+                >
+                  <button
+                    type="button"
+                    onClick={() => fetchDirectory(dir.path)}
+                    className="flex-1 flex items-center gap-2 text-xs text-left text-[#e0e5eb] hover:text-[#93c5fd] font-mono cursor-pointer truncate"
                   >
-                    <button
-                      type="button"
-                      onClick={() => fetchDirectory(dir.path)}
-                      className="flex-1 flex items-center gap-2 text-xs text-left text-[#e0e5eb] hover:text-[#93c5fd] font-mono cursor-pointer truncate"
-                    >
-                      <span className="text-sm">📁</span>
-                      <span className="truncate">{dir.name}</span>
-                    </button>
+                    <span className="text-sm">📁</span>
+                    <span className="truncate">{dir.name}</span>
+                  </button>
+                  {mode === 'folder' && (
                     <button
                       type="button"
                       onClick={() => handleSelect(dir.path)}
@@ -197,22 +210,67 @@ export default function FolderPickerModal({
                     >
                       Choose
                     </button>
+                  )}
+                </div>
+              ))}
+
+              {/* Files if mode === 'file' */}
+              {mode === 'file' && browseData.files && browseData.files.length > 0 && (
+                <div className="pt-2 border-t border-[#2d3748] mt-2">
+                  <div className="px-3 py-1 text-[11px] font-semibold text-[#8a9bae] uppercase tracking-wider">
+                    Files ({browseData.files.length})
                   </div>
-                ))
+                  {browseData.files.map((file) => (
+                    <div
+                      key={file.path}
+                      onClick={() => setSelectedFile(file.path)}
+                      className={`flex items-center justify-between px-3 py-1.5 rounded cursor-pointer ${
+                        selectedFile === file.path ? 'bg-[#1e3a5f] border border-[#3b82f6]' : 'hover:bg-[#253241]'
+                      }`}
+                    >
+                      <div className="flex-1 flex items-center gap-2 text-xs text-left text-[#f0f4f8] font-mono truncate">
+                        <span className="text-sm">📄</span>
+                        <span className="truncate">{file.name}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSelect(file.path);
+                        }}
+                        className="ml-2 px-2 py-0.5 text-[11px] font-semibold rounded bg-[#202b36] hover:bg-[#3b82f6] text-[#8a9bae] hover:text-white border border-[#3a4555] cursor-pointer"
+                      >
+                        Select
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {browseData.directories.length === 0 && (!browseData.files || browseData.files.length === 0) && (
+                <div className="p-6 text-center text-xs text-[#718092] italic">
+                  No items found in this folder
+                </div>
               )}
             </>
           )}
         </div>
 
-        {/* Hidden browser file input fallback */}
+        {/* Hidden browser file/folder input fallback */}
         <input
           type="file"
           ref={fileInputRef}
-          // @ts-ignore
-          webkitdirectory="true"
-          directory="true"
+          {...(mode === 'folder'
+            ? {
+                // @ts-ignore
+                webkitdirectory: 'true',
+                directory: 'true',
+              }
+            : {
+                accept: fileFilter || undefined,
+              })}
           className="hidden"
-          onChange={handleHtmlFolderSelect}
+          onChange={handleHtmlFileOrFolderSelect}
         />
 
         {/* Footer */}
@@ -232,14 +290,25 @@ export default function FolderPickerModal({
             >
               Cancel
             </button>
-            <button
-              type="button"
-              disabled={!currentPath}
-              onClick={() => handleSelect(currentPath)}
-              className="px-4 py-1.5 text-xs font-bold rounded bg-[#3b82f6] hover:bg-[#2563eb] text-white shadow-xs cursor-pointer disabled:opacity-50"
-            >
-              Select Current Folder
-            </button>
+            {mode === 'file' ? (
+              <button
+                type="button"
+                disabled={!selectedFile}
+                onClick={() => selectedFile && handleSelect(selectedFile)}
+                className="px-4 py-1.5 text-xs font-bold rounded bg-[#3b82f6] hover:bg-[#2563eb] text-white shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                Select File
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={!currentPath}
+                onClick={() => handleSelect(currentPath)}
+                className="px-4 py-1.5 text-xs font-bold rounded bg-[#3b82f6] hover:bg-[#2563eb] text-white shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                Select Current Folder
+              </button>
+            )}
           </div>
         </div>
       </div>

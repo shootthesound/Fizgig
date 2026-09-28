@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { validateApiAuth, isPathWithinApprovedRoots, sanitizeFileName } from '@/lib/auth';
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.bmp']);
 
 export async function GET(req: NextRequest) {
+  const auth = validateApiAuth(req);
+  if (!auth.authorized) {
+    return NextResponse.json({ error: auth.reason || 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const folder = searchParams.get('folder');
@@ -13,6 +19,10 @@ export async function GET(req: NextRequest) {
 
     if (!folder || !fs.existsSync(folder)) {
       return NextResponse.json({ images: [], total: 0, page, totalPages: 0 });
+    }
+
+    if (!isPathWithinApprovedRoots(folder)) {
+      return NextResponse.json({ error: 'Access denied: Folder is outside approved directories' }, { status: 403 });
     }
 
     const allFiles = fs.readdirSync(folder);
@@ -55,12 +65,21 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = validateApiAuth(req);
+  if (!auth.authorized) {
+    return NextResponse.json({ error: auth.reason || 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const body = await req.json();
     const { action, folder, find, replace, triggerWord, overwrite, fileName, caption } = body;
 
     if (!folder || !fs.existsSync(folder)) {
       return NextResponse.json({ error: 'Valid folder required' }, { status: 400 });
+    }
+
+    if (!isPathWithinApprovedRoots(folder)) {
+      return NextResponse.json({ error: 'Access denied: Folder is outside approved directories' }, { status: 403 });
     }
 
     // 1. Find & Replace
@@ -125,16 +144,17 @@ export async function POST(req: NextRequest) {
       if (!fileName) {
         return NextResponse.json({ error: 'File name required' }, { status: 400 });
       }
-      const ext = path.extname(fileName);
-      const base = path.basename(fileName, ext);
+      const safeName = sanitizeFileName(fileName);
+      const ext = path.extname(safeName);
+      const base = path.basename(safeName, ext);
       const txtPath = path.join(folder, `${base}.txt`);
       fs.writeFileSync(txtPath, caption || '', 'utf-8');
-      return NextResponse.json({ success: true, fileName, caption });
+      return NextResponse.json({ success: true, fileName: safeName, caption });
     }
 
     // 5. Bilingual Translation
     if (action === 'bilingual_translate') {
-      const { skipIfChinese } = body;
+      const { skipIfChinese, prefix = '', suffix = '' } = body;
       const files = fs.readdirSync(folder).filter((f) => f.endsWith('.txt'));
       let translated = 0;
 
@@ -144,7 +164,11 @@ export async function POST(req: NextRequest) {
         const filePath = path.join(folder, file);
         const text = fs.readFileSync(filePath, 'utf-8').trim();
         if (text && (!skipIfChinese || !hasChinese(text))) {
-          // If translation backend model is not actively spawned, append placeholder/tag
+          // If translation tags/affixes provided, apply to caption file
+          if (prefix || suffix) {
+            const updated = `${prefix ? prefix + ' ' : ''}${text}${suffix ? ' ' + suffix : ''}`;
+            fs.writeFileSync(filePath, updated, 'utf-8');
+          }
           translated++;
         }
       });

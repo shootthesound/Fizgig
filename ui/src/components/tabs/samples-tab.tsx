@@ -314,11 +314,22 @@ export default function SamplesTab() {
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
                 {sampleGallery.map((s) => (
-                  <div key={s.path} style={{ background: '#18212b', padding: 8, borderRadius: 4, border: '1px solid #334155' }}>
-                    <div style={{ height: 140, background: '#111827', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: 11 }}>
-                      🖼️ {s.name}
+                  <div key={s.path} style={{ background: '#18212b', padding: 8, borderRadius: 6, border: '1px solid #334155' }}>
+                    <div style={{ height: 140, background: '#111827', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderRadius: 4 }}>
+                      <img
+                        src={`/api/samples?file=${encodeURIComponent(s.path)}`}
+                        alt={s.name}
+                        style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }}
+                        onError={(e) => {
+                          const target = e.currentTarget;
+                          target.style.display = 'none';
+                          if (target.parentElement) {
+                            target.parentElement.innerHTML = `<span style="font-size: 11px; color: #64748b; padding: 4px; text-align: center;">🖼️ ${s.name}</span>`;
+                          }
+                        }}
+                      />
                     </div>
-                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.name}>
                       {s.name}
                     </div>
                   </div>

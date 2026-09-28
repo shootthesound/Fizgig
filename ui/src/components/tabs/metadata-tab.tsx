@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import FolderPickerModal from '@/components/ui/folder-picker-modal';
 
 interface CustomField {
   key: string;
@@ -11,6 +12,7 @@ export default function MetadataTab() {
   const [filePath, setFilePath] = useState('');
   const [statusText, setStatusText] = useState('No file loaded.');
   const [isLoaded, setIsLoaded] = useState(false);
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
 
   // Standard fields
   const [title, setTitle] = useState('');
@@ -36,27 +38,56 @@ export default function MetadataTab() {
   // Save status
   const [saveStatus, setSaveStatus] = useState('');
 
-  // Mock file load
-  const handleLoadFile = (path: string) => {
+  // Real file load
+  const handleLoadFile = async (path: string) => {
+    if (!path.trim()) return;
     setFilePath(path);
-    setIsLoaded(true);
-    setTitle('Character LoRA v1.0');
-    setAuthor('Fizgig Artist');
-    setLicense('creativeml-openrail-m');
-    setTags('character, anime, cyberpunk, 4k');
-    setTriggerPhrase('ohwx character');
-    setUsageHint('Use at weight 0.8 to 1.0 with Euler / simple schedule');
-    setDescription('Trained on 42 high-resolution portrait renders with Florence-2 captions.');
-    setCustomFields([
-      { key: 'fizgig.base_model', value: 'FLUX.2-klein-base-9b-fp8' },
-      { key: 'fizgig.train_resolution', value: '1024x1024' },
-      { key: 'fizgig.epochs', value: '16' },
-      { key: 'fizgig.learning_rate', value: '0.0001' },
-      { key: 'fizgig.network_dim', value: '16' },
-      { key: 'fizgig.network_alpha', value: '16' },
-    ]);
-    setStatusText('Loaded — 13 metadata keys found.');
-    setSaveStatus('');
+    setStatusText('Loading metadata...');
+    try {
+      const res = await fetch(`/api/metadata?file=${encodeURIComponent(path)}`);
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setIsLoaded(true);
+        const meta = data.metadata || {};
+        setTitle(meta['modelspec.title'] || meta.title || '');
+        setAuthor(meta['modelspec.author'] || meta.author || '');
+        setLicense(meta['modelspec.license'] || meta.license || '');
+        setTags(meta['modelspec.tags'] || meta.tags || '');
+        setTriggerPhrase(meta['modelspec.trigger_phrase'] || meta.trigger_phrase || '');
+        setUsageHint(meta['modelspec.usage_hint'] || meta.usage_hint || '');
+        setDescription(meta['modelspec.description'] || meta.description || '');
+
+        if (meta['modelspec.thumbnail']) {
+          setThumbnailUri(meta['modelspec.thumbnail']);
+        }
+
+        const standardKeys = new Set([
+          'modelspec.title', 'title',
+          'modelspec.author', 'author',
+          'modelspec.license', 'license',
+          'modelspec.tags', 'tags',
+          'modelspec.trigger_phrase', 'trigger_phrase',
+          'modelspec.usage_hint', 'usage_hint',
+          'modelspec.description', 'description',
+          'modelspec.thumbnail', 'thumbnail',
+          '__metadata__'
+        ]);
+
+        const custom: CustomField[] = [];
+        for (const [k, v] of Object.entries(meta)) {
+          if (!standardKeys.has(k)) {
+            custom.push({ key: k, value: typeof v === 'string' ? v : JSON.stringify(v) });
+          }
+        }
+        setCustomFields(custom);
+        setStatusText(`Loaded — ${Object.keys(meta).length} metadata keys found.`);
+        setSaveStatus('');
+      } else {
+        setStatusText(`Error: ${data.error || 'Failed to load metadata'}`);
+      }
+    } catch (err: any) {
+      setStatusText(`Error: ${err.message || 'Failed to connect to metadata service'}`);
+    }
   };
 
   const handleClearThumbnail = () => {
@@ -64,8 +95,20 @@ export default function MetadataTab() {
   };
 
   const handleReplaceThumbnail = () => {
-    // Mock image selection
-    setThumbnailUri('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><rect width="256" height="256" fill="%231a2332"/><circle cx="128" cy="128" r="64" fill="%23e85d04"/><text x="128" y="136" fill="%23ffffff" font-size="14" text-anchor="middle" font-family="sans-serif">Sample Preview</text></svg>');
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = (e: any) => {
+      const file = e.target.files?.[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          setThumbnailUri(reader.result as string);
+        };
+        reader.readAsDataURL(file);
+      }
+    };
+    input.click();
   };
 
   const handleAddCustomField = () => {
@@ -85,15 +128,61 @@ export default function MetadataTab() {
     setSelectedKey(null);
   };
 
-  const handleSave = (saveAs: boolean) => {
+  const handleSave = async (saveAs: boolean) => {
     if (!filePath.trim()) {
       alert('Load a .safetensors file first.');
       return;
     }
-    const parts = filePath.replace(/\\/g, '/').split('/');
-    const name = parts[parts.length - 1] || 'file.safetensors';
-    const targetName = saveAs ? `copy_${name}` : name;
-    setSaveStatus(`Saved ${targetName}`);
+    setSaveStatus('Saving metadata...');
+    try {
+      const metadataPayload: Record<string, string> = {
+        'modelspec.title': title,
+        'modelspec.author': author,
+        'modelspec.license': license,
+        'modelspec.tags': tags,
+        'modelspec.trigger_phrase': triggerPhrase,
+        'modelspec.usage_hint': usageHint,
+        'modelspec.description': description,
+      };
+      if (thumbnailUri) {
+        metadataPayload['modelspec.thumbnail'] = thumbnailUri;
+      }
+      for (const field of customFields) {
+        if (field.key.trim()) {
+          metadataPayload[field.key.trim()] = field.value;
+        }
+      }
+
+      let targetPath = filePath;
+      if (saveAs) {
+        const parts = filePath.replace(/\\/g, '/').split('/');
+        const dir = parts.slice(0, -1).join('/');
+        const name = parts[parts.length - 1];
+        targetPath = dir ? `${dir}/copy_${name}` : `copy_${name}`;
+      }
+
+      const res = await fetch('/api/metadata', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filePath,
+          saveAsPath: saveAs ? targetPath : undefined,
+          metadata: metadataPayload,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSaveStatus(`Saved successfully (${targetPath})`);
+        if (saveAs) {
+          setFilePath(targetPath);
+        }
+      } else {
+        setSaveStatus(`Save failed: ${data.error || 'Unknown error'}`);
+      }
+    } catch (err: any) {
+      setSaveStatus(`Save error: ${err.message || 'Network error'}`);
+    }
   };
 
   return (
@@ -119,15 +208,26 @@ export default function MetadataTab() {
               type="text"
               value={filePath}
               onChange={(e) => setFilePath(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleLoadFile(filePath);
+              }}
               placeholder="/workspace/output_loras/my_model.safetensors"
             />
           </div>
           <button
             type="button"
             className="secondary"
-            onClick={() => handleLoadFile('/workspace/output_loras/character_v1.safetensors')}
+            onClick={() => handleLoadFile(filePath)}
+            disabled={!filePath.trim()}
           >
-            Browse
+            Load
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => setIsPickerOpen(true)}
+          >
+            Browse…
           </button>
         </div>
         <small className="inline-note" style={{ marginLeft: 0, marginTop: 4, display: 'block' }}>
@@ -368,6 +468,17 @@ export default function MetadataTab() {
           </div>
         </div>
       )}
+
+      {/* SafeTensors File Picker Modal */}
+      <FolderPickerModal
+        isOpen={isPickerOpen}
+        mode="file"
+        fileFilter=".safetensors"
+        title="Select SafeTensors Model File"
+        initialPath={filePath || ''}
+        onSelect={(p) => handleLoadFile(p)}
+        onClose={() => setIsPickerOpen(false)}
+      />
     </div>
   );
 }

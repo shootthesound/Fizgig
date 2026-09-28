@@ -1,10 +1,16 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { execSync } from 'child_process';
 import os from 'os';
+import { validateApiAuth } from '@/lib/auth';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const auth = validateApiAuth(req);
+  if (!auth.authorized) {
+    return NextResponse.json({ error: auth.reason || 'Unauthorized' }, { status: 401 });
+  }
+
   let vram = { used: 0, total: 0 };
-  let gpus: Array<{ id: number; name: string; total_gb: number }> = [];
+  const gpus: Array<{ id: number; name: string; total_gb: number }> = [];
 
   try {
     const smiOutput = execSync(
@@ -36,8 +42,8 @@ export async function GET() {
       }
     });
   } catch {
-    // If nvidia-smi is not available, default to placeholder
-    vram = { used: 0, total: 24 * 1024 * 1024 * 1024 };
+    // If nvidia-smi is not available, report 0 instead of fabricating 24GB
+    vram = { used: 0, total: 0 };
   }
 
   const totalRam = os.totalmem();
@@ -51,5 +57,6 @@ export async function GET() {
     vram,
     ram,
     gpus,
+    hasGpu: gpus.length > 0,
   });
 }

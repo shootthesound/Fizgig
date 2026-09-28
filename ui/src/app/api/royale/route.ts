@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { validateApiAuth, isPathWithinApprovedRoots, sanitizeFileName } from '@/lib/auth';
 
 export async function POST(req: NextRequest) {
+  const auth = validateApiAuth(req);
+  if (!auth.authorized) {
+    return NextResponse.json({ error: auth.reason || 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const body = await req.json();
     const { action, folder, loraPath, targetPath, epoch } = body;
@@ -13,14 +19,19 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Folder not found' }, { status: 404 });
       }
 
-      const files = fs.readdirSync(folder);
+      const resolvedFolder = path.resolve(folder);
+      if (!isPathWithinApprovedRoots(resolvedFolder)) {
+        return NextResponse.json({ error: 'Access denied: folder path outside approved roots' }, { status: 403 });
+      }
+
+      const files = fs.readdirSync(resolvedFolder);
       const checkpoints: { fileName: string; filePath: string; epoch: number; sizeBytes: number }[] = [];
 
       files.forEach((file) => {
         if (file.endsWith('.safetensors')) {
           const match = file.match(/-(\d+)\.safetensors$/);
           const epochNum = match ? parseInt(match[1], 10) : 0;
-          const full = path.join(folder, file);
+          const full = path.join(resolvedFolder, file);
           const stat = fs.statSync(full);
           checkpoints.push({
             fileName: file,
@@ -65,10 +76,26 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Valid source and target paths required' }, { status: 400 });
       }
 
-      fs.copyFileSync(loraPath, targetPath);
+      const resolvedSource = path.resolve(loraPath);
+      const resolvedTarget = path.resolve(targetPath);
+
+      if (!isPathWithinApprovedRoots(resolvedSource) || !isPathWithinApprovedRoots(resolvedTarget)) {
+        return NextResponse.json({ error: 'Access denied: paths must be within approved roots' }, { status: 403 });
+      }
+
+      if (!resolvedSource.toLowerCase().endsWith('.safetensors') || !resolvedTarget.toLowerCase().endsWith('.safetensors')) {
+        return NextResponse.json({ error: 'Only .safetensors files can be promoted' }, { status: 400 });
+      }
+
+      const targetDir = path.dirname(resolvedTarget);
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+
+      fs.copyFileSync(resolvedSource, resolvedTarget);
       return NextResponse.json({
         success: true,
-        message: `Promoted ${path.basename(loraPath)} to ${path.basename(targetPath)}`,
+        message: `Promoted ${path.basename(resolvedSource)} to ${path.basename(resolvedTarget)}`,
       });
     }
 

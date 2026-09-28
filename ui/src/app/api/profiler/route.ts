@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { validateApiAuth, isPathWithinApprovedRoots } from '@/lib/auth';
 
 export async function POST(req: NextRequest) {
+  const auth = validateApiAuth(req);
+  if (!auth.authorized) {
+    return NextResponse.json({ error: auth.reason || 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const body = await req.json();
     const { action, loraPath, prompt, resolution, stages } = body;
@@ -12,14 +18,23 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'LoRA file not found' }, { status: 404 });
       }
 
-      const stat = fs.statSync(loraPath);
-      const dir = path.dirname(loraPath);
-      const base = path.basename(loraPath, path.extname(loraPath));
+      const resolved = path.resolve(loraPath);
+      if (!isPathWithinApprovedRoots(resolved)) {
+        return NextResponse.json({ error: 'Access denied: File outside approved roots' }, { status: 403 });
+      }
+
+      if (!resolved.toLowerCase().endsWith('.safetensors')) {
+        return NextResponse.json({ error: 'Target file must be a .safetensors file' }, { status: 400 });
+      }
+
+      const stat = fs.statSync(resolved);
+      const dir = path.dirname(resolved);
+      const base = path.basename(resolved, path.extname(resolved));
       const sidecarPath = path.join(dir, `${base}.profile.json`);
 
       const profileReport = {
         modelFamily: 'Klein 9B',
-        file: path.basename(loraPath),
+        file: path.basename(resolved),
         sizeMb: (stat.size / (1024 * 1024)).toFixed(2),
         resolution: resolution || '1024',
         stages: stages || '5',
@@ -37,10 +52,12 @@ export async function POST(req: NextRequest) {
         ],
       };
 
-      // Write sidecar
+      // Write companion sidecar
       try {
         fs.writeFileSync(sidecarPath, JSON.stringify(profileReport, null, 2), 'utf-8');
-      } catch (e) {}
+      } catch (e) {
+        console.error('Failed to write profile sidecar:', e);
+      }
 
       return NextResponse.json({
         success: true,

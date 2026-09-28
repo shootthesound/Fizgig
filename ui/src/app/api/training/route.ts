@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import { validateApiAuth, isPathWithinApprovedRoots, sanitizeFileName } from '@/lib/auth';
 
 // Process state tracking
 let trainingProcess: ChildProcess | null = null;
@@ -138,6 +139,11 @@ function buildCommand(arch: string, settings: any, prefs: any) {
 }
 
 export async function GET(req: NextRequest) {
+  const auth = validateApiAuth(req);
+  if (!auth.authorized) {
+    return NextResponse.json({ error: auth.reason || 'Unauthorized' }, { status: 401 });
+  }
+
   const { searchParams } = new URL(req.url);
   const stream = searchParams.get('stream');
 
@@ -196,6 +202,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = validateApiAuth(req);
+  if (!auth.authorized) {
+    return NextResponse.json({ error: auth.reason || 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const body = await req.json();
     const { action, settings, prefs, presetName, presetData, enableCache } = body;
@@ -204,6 +215,21 @@ export async function POST(req: NextRequest) {
     if (action === 'start') {
       if (trainingProcess && trainingProcess.exitCode === null) {
         return NextResponse.json({ error: 'Training is already running' }, { status: 400 });
+      }
+
+      // Validate output dir and dataset config within approved roots
+      const outputDir = settings?.LORA_OUTPUT_DIR || prefs?.lora_output_dir || 'output_loras';
+      const resolvedOutputDir = path.isAbsolute(outputDir) ? outputDir : path.resolve(BASE_DIR, outputDir);
+      if (!isPathWithinApprovedRoots(resolvedOutputDir)) {
+        return NextResponse.json({ error: 'Output directory outside approved roots' }, { status: 403 });
+      }
+
+      if (settings?.DATASET_CONFIG) {
+        const datasetConfig = settings.DATASET_CONFIG;
+        const resolvedDatasetConfig = path.isAbsolute(datasetConfig) ? datasetConfig : path.resolve(BASE_DIR, datasetConfig);
+        if (!isPathWithinApprovedRoots(resolvedDatasetConfig)) {
+          return NextResponse.json({ error: 'Dataset config outside approved roots' }, { status: 403 });
+        }
       }
 
       // Remove stale pause sentinel
@@ -222,7 +248,7 @@ export async function POST(req: NextRequest) {
       appendLog(`[fizgig] Launching training pipeline: ${currentLoraName}\n`);
       appendLog(`[fizgig] Model family: ${arch}\n`);
       appendLog(`[fizgig] Epochs: ${settings?.MAX_TRAIN_EPOCHS} | Rank: ${settings?.NETWORK_DIM} | LR: ${settings?.LEARNING_RATE}\n`);
-      appendLog(`[fizgig] Output destination: ${settings?.LORA_OUTPUT_DIR || prefs?.lora_output_dir || 'output_loras'}\n`);
+      appendLog(`[fizgig] Output destination: ${outputDir}\n`);
       appendLog(`[fizgig] ========================================================\n`);
 
       // Snapshot last train settings
@@ -319,10 +345,12 @@ export async function POST(req: NextRequest) {
     // --- Action: stop ---
     if (action === 'stop') {
       if (trainingProcess) {
-        killProcessGroup(trainingProcess, 'SIGTERM');
+        const procToKill = trainingProcess;
+        trainingProcess = null;
+        killProcessGroup(procToKill, 'SIGTERM');
         setTimeout(() => {
-          if (trainingProcess && trainingProcess.exitCode === null) {
-            killProcessGroup(trainingProcess, 'SIGKILL');
+          if (procToKill && procToKill.exitCode === null) {
+            killProcessGroup(procToKill, 'SIGKILL');
           }
         }, 2000);
       }
@@ -361,8 +389,11 @@ export async function POST(req: NextRequest) {
       if (!presetName) {
         return NextResponse.json({ error: 'Preset name is required' }, { status: 400 });
       }
-      const safeName = presetName.replace(/[^a-zA-Z0-9_\-]/g, '_');
+      const safeName = sanitizeFileName(presetName).replace(/\.json$/i, '');
       const presetFilePath = path.join(PRESETS_DIR, `${safeName}.json`);
+      if (!isPathWithinApprovedRoots(presetFilePath, [PRESETS_DIR])) {
+        return NextResponse.json({ error: 'Invalid preset name or path traversal' }, { status: 403 });
+      }
       fs.writeFileSync(presetFilePath, JSON.stringify(presetData || settings || {}, null, 2), 'utf-8');
       return NextResponse.json({ success: true, name: safeName });
     }
@@ -383,7 +414,11 @@ export async function POST(req: NextRequest) {
       if (!presetName) {
         return NextResponse.json({ error: 'Preset name is required' }, { status: 400 });
       }
-      const presetFilePath = path.join(PRESETS_DIR, `${presetName}.json`);
+      const safeName = sanitizeFileName(presetName).replace(/\.json$/i, '');
+      const presetFilePath = path.join(PRESETS_DIR, `${safeName}.json`);
+      if (!isPathWithinApprovedRoots(presetFilePath, [PRESETS_DIR])) {
+        return NextResponse.json({ error: 'Invalid preset name or path traversal' }, { status: 403 });
+      }
       if (!fs.existsSync(presetFilePath)) {
         return NextResponse.json({ error: 'Preset file not found' }, { status: 404 });
       }

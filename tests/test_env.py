@@ -58,10 +58,9 @@ except Exception as e:
     errors.append("fizgig.repair_studio")
 
 if errors:
-    print(f"\n[TEST 1] Environment report: {len(errors)} heavy ML dependencies offloaded to Modal Cloud GPU: {errors}")
-    print("  ✓ Local Next.js host serves as the high-speed orchestration layer.")
-    print("  ✓ Cloud Modal GPU provider containerizes PyTorch, CUDA, Diffusers, and Accelerate.")
-    print("[TEST 1] Environment diagnostic completed successfully!")
+    print(f"\n[TEST 1] Environment diagnostic report: {len(errors)} missing packages: {errors}")
+    print("  Note: Full training dependencies (CUDA, PyTorch, Accelerate) are only required when running actual GPU training.")
+    print("[TEST 1] Environment diagnostic completed!")
 else:
     print("\n[TEST 1] All environment checks PASSED successfully!")
 

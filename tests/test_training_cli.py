@@ -1,7 +1,6 @@
 """Test 3: Training CLI Argument Builder & Syntax Verification
 Tests flag generation and argument compatibility for Klein, Krea 2, and MiniMax.
-Since heavy training dependencies (torch, accelerate) run on Modal Cloud GPUs,
-this test verifies script existence and command argument schema integrity.
+Verifies script existence and command argument schema integrity.
 """
 import subprocess
 import sys
@@ -36,6 +35,5 @@ for name, script, module, expected_flags in modules:
         print(f"  ✗ {name} files missing")
         sys.exit(1)
 
-print("  ✓ Local execution offloads PyTorch/CUDA workloads to Modal Cloud GPU container")
 print("[TEST 3] Training CLI parser verification PASSED successfully!")
 

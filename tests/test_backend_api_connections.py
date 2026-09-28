@@ -65,11 +65,9 @@ def test_training_cmd_builder():
 
 # 3. Preferences read/write verification
 def test_prefs_integration():
-    print("  [3/12] Testing Preferences JSON & Cloud Provider Settings...")
+    print("  [3/12] Testing Preferences JSON Read/Write...")
     prefs_path = os.path.join(BASE_DIR, "prefs.json")
     dummy_prefs = {
-        "cloud_provider": "modal",
-        "modal_gpu": "A100-40GB",
         "lora_output_dir": "output_loras",
         "profiles_dir": "profiles",
         "cache_dir": "cache",
@@ -80,9 +78,9 @@ def test_prefs_integration():
 
     with open(prefs_path, "r", encoding="utf-8") as f:
         loaded = json.load(f)
-    assert loaded["cloud_provider"] == "modal"
-    assert loaded["modal_gpu"] == "A100-40GB"
-    print("    ✓ prefs.json read/write and Modal Cloud configurations verified")
+    assert loaded["lora_output_dir"] == "output_loras"
+    assert loaded["base_dit"] == "/models/flux-2-klein-base-9b-fp8.safetensors"
+    print("    ✓ prefs.json read/write verified")
 
 # 4. Captions logic verification
 def test_captions_logic():

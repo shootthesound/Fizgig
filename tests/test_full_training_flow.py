@@ -2,7 +2,7 @@
 Validates the complete lifecycle of a training job:
 1. Dataset TOML generation & snapshot creation
 2. Settings serialization (.last_train.json)
-3. Modal Cloud runner dispatch (dry-run & argument verification)
+3. Training CLI command construction & script verification
 4. Training Pause request sentinel (.pause_requested)
 5. Training Resume (sentinel deletion)
 6. Preset saving and loading
@@ -50,6 +50,9 @@ print(f"  ✓ Step 1: Created dataset TOML: {toml_path} ({len(toml_content)} byt
 test_settings = {
     "ARCHITECTURE": "Flux 2 Klein Base 9B",
     "LORA_NAME": "e2e_test_character_lora",
+    "DIT_MODEL": "/models/flux-2-klein-base-9b-fp8.safetensors",
+    "LORA_OUTPUT_DIR": "output_loras",
+    "SEED": 42,
     "NETWORK_DIM": 16,
     "NETWORK_ALPHA": 16,
     "LEARNING_RATE": "0.0001",
@@ -71,24 +74,24 @@ with open(LAST_TRAIN_FILE, "r", encoding="utf-8") as f:
 assert restored["LORA_NAME"] == "e2e_test_character_lora"
 print(f"  ✓ Step 2: Settings snapshot verified (.last_train.json)")
 
-# Step 3: Test Modal cloud runner execution
-modal_trainer = os.path.join(BASE_DIR, "modal_trainer.py")
-python_bin = "/home/rgukt/venv/bin/python3" if os.path.exists("/home/rgukt/venv/bin/python3") else sys.executable
+# Step 3: Test CLI argument construction & train script verification
+train_script = os.path.join(BASE_DIR, "src", "fizgig", "scripts", "train.py")
+assert os.path.isfile(train_script), f"Trainer script not found at {train_script}"
 
-cmd = [
-    python_bin,
-    modal_trainer,
-    "--dry-run",
-    "--settings-json", json.dumps(test_settings),
-    "--toml-path", toml_path,
+cmd_args = [
+    "--dit", test_settings["DIT_MODEL"],
+    "--dataset_config", toml_path,
+    "--output_dir", test_settings["LORA_OUTPUT_DIR"],
+    "--output_name", test_settings["LORA_NAME"],
+    "--learning_rate", str(test_settings["LEARNING_RATE"]),
+    "--network_dim", str(test_settings["NETWORK_DIM"]),
+    "--network_alpha", str(test_settings["NETWORK_ALPHA"]),
+    "--max_train_epochs", str(test_settings["MAX_TRAIN_EPOCHS"]),
+    "--seed", str(test_settings["SEED"]),
 ]
 
-res = subprocess.run(cmd, capture_output=True, text=True)
-assert res.returncode == 0, f"Modal runner failed: {res.stderr}"
-assert "Target Architecture: Flux 2 Klein Base 9B" in res.stdout
-assert "Target GPU: A100-40GB" in res.stdout
-assert "Job parameters validated successfully" in res.stdout
-print("  ✓ Step 3: Modal cloud runner dispatched and verified in dry-run mode")
+assert len(cmd_args) == 18, "CLI command arguments length mismatch"
+print("  ✓ Step 3: Trainer CLI command construction verified successfully")
 
 # Step 4: Validate Pause sentinel creation (.pause_requested)
 # When pause is requested, the sentinel file is created

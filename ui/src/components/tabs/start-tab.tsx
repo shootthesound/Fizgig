@@ -2,10 +2,16 @@
 
 import React, { useState } from 'react';
 import { useSettingsStore } from '@/store/settings-store';
+import FolderPickerModal from '@/components/ui/folder-picker-modal';
 
-export default function StartTab() {
+interface StartTabProps {
+  onNavigateTab?: (tabId: string) => void;
+}
+
+export default function StartTab({ onNavigateTab }: StartTabProps) {
   const { state, dispatch } = useSettingsStore();
   const [setupPromptDismissed, setSetupPromptDismissed] = useState(false);
+  const [folderModalOpen, setFolderModalOpen] = useState(false);
 
   // Check if at least one model family is configured (Klein 4 paths or Krea 3 paths)
   const kleinOk = Boolean(
@@ -45,19 +51,19 @@ export default function StartTab() {
   };
 
   const steps = [
-    { num: '1', tab_name: 'Start', desc: 'Choose your training image folder below.', is_optional: false },
-    { num: '2', tab_name: 'Image Prep', desc: 'Resize, convert to PNG, or face-crop. (Video Prep for MiniMax)', is_optional: true },
-    { num: '3', tab_name: 'Captions', desc: 'Write trigger-word captions or generate them with AI.', is_optional: false },
-    { num: '4', tab_name: 'Samples', desc: 'Configure in-training preview prompts.', is_optional: false },
-    { num: '5', tab_name: 'Training', desc: 'Pick a preset, tune settings, click Start Training.', is_optional: false },
+    { num: '1', id: 'start', tab_name: 'Start', desc: 'Choose your training image folder below.', is_optional: false },
+    { num: '2', id: 'image_prep', tab_name: 'Image Prep', desc: 'Resize, convert to PNG, or face-crop. (Video Prep for MiniMax)', is_optional: true },
+    { num: '3', id: 'captions', tab_name: 'Captions', desc: 'Write trigger-word captions or generate them with AI.', is_optional: false },
+    { num: '4', id: 'samples', tab_name: 'Samples', desc: 'Configure in-training preview prompts.', is_optional: false },
+    { num: '5', id: 'training', tab_name: 'Training', desc: 'Pick a preset, tune settings, click Start Training.', is_optional: false },
   ];
 
   const tools = [
-    { name: 'Profiler', desc: "Analyze a LoRA's per-block activation profile and produce an HTML report." },
-    { name: 'Repair Studio', desc: 'Live per-block sliders with side-by-side preview. Blend in a donor LoRA and bake the result to a new .safetensors.' },
-    { name: 'LoRA the Explorer', desc: 'Evolutionary discovery — the computer proposes random mutations, you pick favourites, and the LoRA evolves. Seamlessly connected to Repair Studio.' },
-    { name: 'LoRA Royale', desc: 'Compare epochs (or any LoRAs) on one seed, then export share-ready clips — seed, prompt, and LoRA-strength travels, deflickered and ready for social.' },
-    { name: 'Extract', desc: 'Distill a LoRA to a lower rank with optional block- and timestep-targeted presets. Supports LyCORIS (LoKR / LoHa) sources.' },
+    { id: 'profiler', name: 'Profiler', desc: "Analyze a LoRA's per-block activation profile and produce an HTML report." },
+    { id: 'repair_studio', name: 'Repair Studio', desc: 'Live per-block sliders with side-by-side preview. Blend in a donor LoRA and bake the result to a new .safetensors.' },
+    { id: 'explorer', name: 'LoRA the Explorer', desc: 'Evolutionary discovery — the computer proposes random mutations, you pick favourites, and the LoRA evolves. Seamlessly connected to Repair Studio.' },
+    { id: 'lora_royale', name: 'LoRA Royale', desc: 'Compare epochs (or any LoRAs) on one seed, then export share-ready clips — seed, prompt, and LoRA-strength travels, deflickered and ready for social.' },
+    { id: 'extract', name: 'Extract', desc: 'Distill a LoRA to a lower rank with optional block- and timestep-targeted presets. Supports LyCORIS (LoKR / LoHa) sources.' },
   ];
 
   return (
@@ -72,16 +78,29 @@ export default function StartTab() {
       <div className="start-workflow">
         <div className="workflow-copy">
           <h2>Training Workflow</h2>
-          {steps.map((step, i) => (
-            <div key={i} className="workflow-row">
+          {steps.map((step) => (
+            <div
+              key={step.num}
+              className="workflow-row group cursor-pointer hover:bg-[#202b36] p-1.5 rounded transition-colors"
+              onClick={() => onNavigateTab && onNavigateTab(step.id)}
+            >
               <b>{step.num}</b>
-              <strong>{step.tab_name}</strong>
+              <strong className="group-hover:text-[#60a5fa] transition-colors">{step.tab_name}</strong>
               {step.is_optional && <em>OPTIONAL</em>}
               <span>{step.desc}</span>
             </div>
           ))}
         </div>
-        <div className="start-logo" />
+        <div className="start-logo flex items-center justify-center overflow-hidden bg-[#202833]">
+          <img
+            src="/logo.jpg"
+            alt="Fizgig LoRA Studio"
+            className="w-full h-full object-cover block"
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).style.display = 'none';
+            }}
+          />
+        </div>
       </div>
 
       {/* Folder picker card */}
@@ -94,17 +113,28 @@ export default function StartTab() {
               type="text"
               value={state.image_folder}
               onChange={(e) => handleFolderChange(e.target.value)}
-              placeholder="Select a folder..."
+              placeholder="e.g. /home/user/my_dataset or click Browse..."
             />
           </div>
           <button
             type="button"
-            className="secondary"
-            onClick={() => handleFolderChange('/home/rgukt/Videos/textstesting/dataset')}
+            className="secondary flex items-center gap-1.5"
+            onClick={() => setFolderModalOpen(true)}
           >
-            Browse…
+            <span>📁</span>
+            <span>Browse…</span>
           </button>
         </div>
+        {state.image_folder ? (
+          <div className="mt-2.5 flex items-center gap-2 text-xs text-[#34d399]">
+            <span>✓</span>
+            <span className="font-mono text-[11px] truncate">Current dataset: {state.image_folder}</span>
+          </div>
+        ) : (
+          <div className="mt-2.5 text-xs text-[#9caaba] italic">
+            Tip: Click Browse to select any directory on this machine or type an absolute path above.
+          </div>
+        )}
       </div>
 
       {/* Setup prompt */}
@@ -116,9 +146,7 @@ export default function StartTab() {
             <button
               type="button"
               className="secondary"
-              onClick={() => {
-                // Navigate to Preferences tab if needed
-              }}
+              onClick={() => onNavigateTab && onNavigateTab('preferences')}
             >
               Open Preferences
             </button>
@@ -137,8 +165,13 @@ export default function StartTab() {
       <div className="panel" style={{ marginTop: 20 }}>
         <h2 style={{ margin: '0 0 10px', fontSize: 14 }}>Post-Training Tools</h2>
         <p className="muted" style={{ margin: '0 0 14px' }}>Fizgig is more than a trainer — these tabs let you understand and tune any Klein LoRA you&apos;ve made (or downloaded).</p>
-        {tools.map((tool, i) => (
-          <button key={i} type="button" className="tool-row">
+        {tools.map((tool) => (
+          <button
+            key={tool.id}
+            type="button"
+            className="tool-row"
+            onClick={() => onNavigateTab && onNavigateTab(tool.id)}
+          >
             <strong>{tool.name}</strong>
             <span>{tool.desc}</span>
           </button>
@@ -181,6 +214,15 @@ export default function StartTab() {
           About
         </button>
       </div>
+
+      {/* Directory Browser Modal */}
+      <FolderPickerModal
+        isOpen={folderModalOpen}
+        initialPath={state.image_folder || ''}
+        onSelect={(chosenPath) => handleFolderChange(chosenPath)}
+        onClose={() => setFolderModalOpen(false)}
+        title="Select Training Image Folder"
+      />
     </div>
   );
 }

@@ -6,8 +6,8 @@
 
 :root { color-scheme: dark; font-family: "Segoe UI", system-ui, sans-serif; background: #1d252f; color: #f1f3f5; }
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 1100px; background: #1d252f; }
-.fizgig-window { min-height:100vh; display:flex; flex-direction:column; background:#1d252f; }
+body { margin: 0; min-width: 0; width: 100%; background: #1d252f; overflow-x: hidden; }
+.fizgig-window { min-height: 100vh; display: flex; flex-direction: column; background: #1d252f; width: 100%; max-width: 100vw; overflow-x: hidden; }
 .migration-shell { min-height: 100vh; }
 .window-chrome { height: 31px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; background: #77008d; font-size: 13px; font-weight: 600; }
 .migration-content { max-width: 1180px; margin: 0 auto; padding: 34px 32px 60px; }
@@ -23,15 +23,17 @@ body { margin: 0; min-width: 1100px; background: #1d252f; }
 .runtime-dot { color:#70d4a5; font-size:12px; margin-top:10px; }
 .runtime-state { color:#71dda9; font-size:11px; letter-spacing:.04em; }
 .runtime-state i,.connection-state i { display:inline-block; width:8px; height:8px; margin-right:6px; border-radius:50%; background:#36c98a; box-shadow:0 0 7px #36c98a; }
-.tab-strip { display:flex; flex-wrap:wrap; padding:4px 8px 0; border-bottom:1px solid #687381; background:#18212a; }
-.tab { border:1px solid #647080; border-bottom:0; border-radius:2px 2px 0 0; margin-right:2px; padding:8px 13px 7px; background:#202b36; color:#e0e5eb; cursor:pointer; font:600 12px "Segoe UI",sans-serif; }
-.tab:hover { background:#2a3847; }
-.tab.active { background:#347bd8; border-color:#76a9e8; color:#fff; }
-.workbench-viewport { flex:1; overflow:auto; padding:28px 32px 58px; }
+.tab-strip { display:flex; overflow-x:auto; overflow-y:hidden; white-space:nowrap; scrollbar-width:thin; scrollbar-color:#3b82f6 #18212a; padding:6px 10px 0; border-bottom:1px solid #3a4555; background:#18212a; -webkit-overflow-scrolling:touch; }
+.tab-strip::-webkit-scrollbar { height:4px; }
+.tab-strip::-webkit-scrollbar-thumb { background:#3b82f6; border-radius:2px; }
+.tab { flex-shrink:0; border:1px solid #647080; border-bottom:0; border-radius:3px 3px 0 0; margin-right:3px; padding:8px 14px 7px; background:#202b36; color:#e0e5eb; cursor:pointer; font:600 12px "Segoe UI",sans-serif; transition:background-color .15s, color .15s, border-color .15s; user-select:none; }
+.tab:hover { background:#2a3847; color:#fff; }
+.tab.active { background:#347bd8; border-color:#76a9e8; color:#fff; font-weight:700; box-shadow:0 -2px 0 #60a5fa inset; }
+.workbench-viewport { flex:1; overflow-y:auto; overflow-x:hidden; padding:24px 28px 64px; width:100%; max-width:100%; }
 .workbench-heading { display:flex; align-items:flex-start; justify-content:space-between; max-width:1180px; margin:0 auto 14px; }
 .workbench-heading h1 { margin:4px 0 0; font-size:22px; }
 .connection-state { margin-top:8px; color:#82d5aa; font-size:11px; }
-.status-bar { position:fixed; bottom:0; left:0; right:0; min-height:30px; display:flex; align-items:center; gap:18px; padding:4px 12px; border-top:1px solid #6c7784; background:#101820; color:#9caaba; font-size:11px; z-index:3; }
+.status-bar { position:fixed; bottom:0; left:0; right:0; min-height:32px; display:flex; align-items:center; gap:14px; padding:4px 14px; border-top:1px solid #3a4555; background:#101820; color:#9caaba; font-size:11px; z-index:40; flex-wrap:wrap; }
 .status-memory b { color:#64d58e; margin-right:5px; }
 .status-hint { margin-left:auto; color:#718092; }
 .status-meter { display:flex; align-items:center; gap:5px; min-width:205px; }
@@ -49,15 +51,16 @@ body { margin: 0; min-width: 1100px; background: #1d252f; }
 .start-intro { margin:4px 0 24px; }
 .start-intro h1 { margin:0 0 10px; font-size:30px; }
 .start-intro p { max-width:830px; margin:0; color:#8a9bae; font-size:15px; line-height:1.45; }
-.start-workflow { display:grid; grid-template-columns:minmax(0,1fr) 410px; min-height:265px; border:1px solid #3a4555; background:#252d38; margin-bottom:20px; overflow:hidden; }
-.workflow-copy { padding:25px 22px 20px; }
+.start-workflow { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(280px,1fr); min-height:265px; border:1px solid #3a4555; background:#252d38; margin-bottom:20px; overflow:hidden; border-radius:4px; }
+.workflow-copy { padding:22px 20px; }
 .workflow-copy h2,.start-folder-card h2,.start-tools h2 { margin:0 0 16px; font-size:16px; }
 .workflow-row { display:grid; grid-template-columns:26px 115px 1fr; align-items:center; gap:8px; margin:11px 0; color:#8a9bae; font-size:13px; }
 .workflow-row b { color:#3b82f6; font-size:15px; }
 .workflow-row strong { color:#f0f4f8; }
 .workflow-row em { color:#f59e0b; font-size:10px; font-style:normal; font-weight:700; grid-column:2; margin-top:-5px; }
 .workflow-row em + span { grid-column:3; }
-.start-logo { width:100%; height:100%; min-height:265px; object-fit:cover; object-position:center; background:#202833; }
+.start-logo { width:100%; height:100%; min-height:265px; background:#202833; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+.start-logo img { width:100%; height:100%; object-fit:cover; object-position:center; display:block; }
 .start-folder-card { border-color:#3b82f6; margin-bottom:24px; padding:20px; }
 .start-folder-card .muted { margin:0 0 16px; }
 .start-folder-card .start-controls { align-items:center; }
@@ -212,8 +215,16 @@ button.primary:disabled { cursor:wait; opacity:.65; }
 .preferences-details { margin-top:20px; }
 .preferences-details summary { cursor:pointer; color:#8db8f2; font-size:14px; padding:12px 0; }
 .preferences-details .panel { margin-top:10px; }
-@media (max-width: 800px) { .start-controls { display:block; } .start-controls > * { margin-top:12px; width:100%; display:block; } }
-@media (max-width: 800px) { body { min-width:0; } .tab-strip { overflow-x:auto; flex-wrap:nowrap; } .tab { white-space:nowrap; } .field-grid { grid-template-columns:1fr; } .workspace-heading { display:block; } .status-hint { display:none; } }
+@media (max-width: 800px) {
+  body { min-width: 0; }
+  .tab-strip { overflow-x: auto; flex-wrap: nowrap; }
+  .tab { white-space: nowrap; }
+  .field-grid { grid-template-columns: 1fr; }
+  .workspace-heading { display: block; }
+  .status-hint { display: none; }
+  .collapsible-section .collapsible-content .field-row,
+  .field-row-wide { grid-template-columns: 1fr !important; gap: 4px !important; }
+}
 
 /* CollapsibleFrame — matches the Python CollapsibleFrame widget */
 .collapsible-section { margin:0 0 16px; border:1px solid #3a4555; }

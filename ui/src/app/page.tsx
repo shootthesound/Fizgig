@@ -78,6 +78,22 @@ function FizgigAppContent() {
 
   return (
     <div className="fizgig-window">
+      {/* Mobile Tab Selector (shown on small screens) */}
+      <div className="sm:hidden px-3 pt-2 pb-1 bg-[#18212a] border-b border-[#3a4555]">
+        <select
+          value={activeTab}
+          onChange={(e) => handleTabChange(e.target.value)}
+          aria-label="Select Active Tab"
+          className="w-full py-1.5 px-2 text-xs font-semibold rounded bg-[#202b36] text-white border border-[#647080] focus:outline-none focus:border-[#3b82f6]"
+        >
+          {TABS.map((tab) => (
+            <option key={tab.id} value={tab.id}>
+              {tab.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {/* Tab strip */}
       <div className="tab-strip">
         {TABS.map((tab) => (
@@ -93,7 +109,8 @@ function FizgigAppContent() {
 
       {/* Tab content */}
       <div className="workbench-viewport">
-        <ActiveComponent />
+        {/* @ts-ignore */}
+        <ActiveComponent onNavigateTab={handleTabChange} />
       </div>
 
       {/* Status bar */}

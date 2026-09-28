@@ -182,6 +182,7 @@ export default function TrainingTab() {
           action: 'start',
           settings,
           prefs: state.prefs,
+          enableCache,
         }),
       });
       const data = await res.json();

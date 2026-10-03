@@ -101,6 +101,7 @@ def load_base(driver, path, device, precision="bf16", blocks_to_swap=0, supports
         logger.info(f"[block swap] {swap} blocks stream between CPU and GPU")
     elif precision != "bf16":
         move(dit, device)
+    driver.on_base_loaded(dit, precision, device)
     return dit, swap
 
 

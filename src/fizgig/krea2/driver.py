@@ -68,6 +68,27 @@ class Krea2Driver(FamilyDriver):
         dit = load_krea2_dit(path, device=device, dtype=DTYPE, fp8_scaled=False, loading_device=device)
         return dit.eval().requires_grad_(False)
 
+    def on_base_loaded(self, dit, precision, device):
+        """RDNA2 (gfx103*) only: bind the grouped attention and FP32 NF4 GEMMs to this model instance. Every other
+        card returns at the ROCm build check, before any device query; the shared attention, NF4 and SDPA code is
+        untouched."""
+        from fizgig.modules.rdna2_linear import is_rdna2_device
+        if not is_rdna2_device(device):
+            return
+        import contextlib
+        import logging
+        import os
+        log = logging.getLogger(__name__)
+        if precision == "nf4" and os.environ.get("FIZGIG_RDNA2_LINEAR", "1") != "0":
+            from fizgig.modules.rdna2_linear import install_nf4_forward
+            log.info("[rdna2] installed FP32 frozen NF4 GEMMs on %d Linears", install_nf4_forward(dit))
+        if os.environ.get("FIZGIG_RDNA2_ATTENTION", "1") != "0":
+            from fizgig.modules.rdna2_attention import install_attention
+            log.info("[rdna2] installed grouped attention on %d Krea 2 modules", install_attention(dit))
+        # This RDNA2 process uses the math SDPA backend. Priming it here avoids the NVIDIA-only cuDNN probe later.
+        from fizgig.modules import sdpa as _sdpa
+        _sdpa._SDPA_CTX = contextlib.nullcontext
+
     def max_blocks_to_swap(self, dit=None):
         return (len(dit.blocks) if dit is not None else self.description.n_blocks) - 2
 

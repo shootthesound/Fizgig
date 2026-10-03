@@ -32532,7 +32532,13 @@ class LoRATrainerGUI:
         errors.extend(checks.context_lora(v))
 
         try:
-            blocks_swap = self._parse_blocks_swap()
+            # ROCm Krea 2 Auto is resolved by the trainer (it plans swap from free VRAM).
+            # Validation on Tk must not initialize HIP to resolve it here.
+            _swap_raw = self.entries["BLOCKS_SWAP"].get().strip().lower()
+            if _swap_raw.startswith("auto") and self._is_windows_rocm_krea2():
+                blocks_swap = 0
+            else:
+                blocks_swap = self._parse_blocks_swap()
         except ValueError:
             blocks_swap = None
         _name, _name_error = self._tidy_lora_name()
@@ -32722,6 +32728,72 @@ class LoRATrainerGUI:
         self._start_training_launch()
 
     def _start_training_launch(self):
+        """Keep Windows ROCm driver discovery off Tk and out of the GUI process."""
+        if not self._is_windows_rocm_krea2():
+            self._start_training_launch_ready()
+            return
+        if getattr(self, "_gpu_preflight_running", False):
+            return
+        self._gpu_preflight_running = True
+        self._gpu_preflight_cancelled = False
+        self._training_start_pending = True
+        self._training_gpu_caps = None
+        self._start_training_btn.configure(state=tk.DISABLED)
+        self.update_console("[startup] Reading GPU metadata in a helper process; "
+                            "kernel probes disabled...\n")
+        _python = self._venv_python()
+        _env = self._cuda_env_for_subprocess(os.environ.copy())
+        _script = os.path.join(FIZGIG_DIR, "src", "fizgig", "scripts", "gpu_snapshot.py")
+        _command = [_python, _script]
+        _result = []
+
+        def _worker():
+            try:
+                done = subprocess.run(_command, cwd=FIZGIG_DIR, env=_env,
+                                      capture_output=True, text=True, timeout=45,
+                                      creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                if done.returncode:
+                    raise RuntimeError((done.stderr or done.stdout)[-1500:])
+                _result.append((json.loads(done.stdout.strip().splitlines()[-1]), None))
+            except Exception as exc:
+                _result.append((None, str(exc)))
+
+        def _poll():
+            if not _result:
+                self.master.after(100, _poll)
+                return
+            self._gpu_preflight_running = False
+            self._training_start_pending = False
+            self._start_training_btn.configure(state=tk.NORMAL)
+            if getattr(self, "_gpu_preflight_cancelled", False):
+                self.update_console("[startup] Training launch cancelled.\n")
+                return
+            data, error = _result[0]
+            if error:
+                self.update_console(f"[startup] GPU metadata check failed: {error}\n")
+                return
+            from fizgig.utils.capabilities import Capabilities
+            self._training_gpu_caps = Capabilities(**data)
+            if not self._training_gpu_caps.has_cuda:
+                self.update_console("[startup] No usable GPU was found; training was not launched.\n")
+                return
+            try:
+                self._start_training_launch_ready()
+            finally:
+                self._training_gpu_caps = None
+
+        threading.Thread(target=_worker, daemon=True).start()
+        self.master.after(100, _poll)
+
+    def _is_windows_rocm_krea2(self):
+        """Use the launcher's architecture metadata without importing torch or touching HIP."""
+        desc = self._family_desc()
+        if os.name != "nt" or desc is None or desc.key != "krea2":
+            return False
+        return (os.environ.get("FIZGIG_GPU_BACKEND", "").lower() == "rocm"
+                and os.environ.get("GPU_ARCH", "").lower().startswith("gfx103"))
+
+    def _start_training_launch_ready(self):
         """Launch training after validations and any caption-worker VRAM release."""
         self._training_start_pending = False
         try:
@@ -32777,6 +32849,8 @@ class LoRATrainerGUI:
                 blocks_swap = "auto"
                 self.update_console("Block Swap: Auto — the trainer plans swap + checkpointing "
                                     "from free VRAM at launch\n")
+            elif is_auto and self._is_windows_rocm_krea2():
+                blocks_swap = 0     # the trainer plans Krea 2's swap; resolving it here would bring HIP up on Tk
             else:
                 blocks_swap = self._parse_blocks_swap()
                 if is_auto:
@@ -34675,6 +34749,8 @@ class LoRATrainerGUI:
 
     def stop_training(self):
         """Stop the current running process"""
+        if getattr(self, "_gpu_preflight_running", False):
+            self._gpu_preflight_cancelled = True
         # Stop samples watcher
         self.stop_samples_watcher()
         # A user Stop invalidates any armed queue-advance/retry timer immediately — the

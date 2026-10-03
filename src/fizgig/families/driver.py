@@ -227,6 +227,10 @@ class FamilyDriver:
         return d.compile_boundary, (f"{total_steps} steps on the {precision.upper()} path — compile pays back within "
                                     f"~{pay} steps and this run is longer")
 
+    def on_base_loaded(self, dit, precision: str, device) -> None:
+        """Called once after the base is loaded and quantised (families/quant.load_base): a driver can bind
+        hardware-specific forwards to this model instance here. Default: nothing."""
+
     def quant_target_names(self, dit) -> list:
         """The Linears an INT8 / NF4 base quantises (families/quant.py). Default: the LoRA targets. A family whose
         LoRA reaches layers that must stay bf16 (Krea 2's text fusion and I/O layers) narrows it."""

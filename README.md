@@ -9,6 +9,7 @@
   <a href="#install"><img src="https://img.shields.io/badge/⬇%20Install%20Fizgig-2EA043?style=for-the-badge&logoColor=white" alt="Jump to the install instructions"></a>
   <a href="https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=faoq8ed6um&ref=vkb387ep"><img src="https://img.shields.io/badge/⚡%20Deploy%20on%20RunPod-673AB7?style=for-the-badge&logoColor=white" alt="Deploy Fizgig on RunPod"></a>
   <a href="https://buymeacoffee.com/lorasandlenses"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee"></a>
+  <a href="https://github.com/sponsors/shootthesound"><img src="https://img.shields.io/badge/Sponsor-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Sponsor on GitHub"></a>
 </p>
 <p align="center">
   <sub>No GPU, or want a bigger one? Fizgig runs on rented hardware — one click, nothing to install.<br>
@@ -129,9 +130,9 @@ The unnumbered tabs are the workbench (Profiler, Repair Studio, LoRA the Explore
 
 ## Support the project
 
-Fizgig is free. If it saves you time or makes your LoRAs better, a coffee keeps it going:
+Fizgig is free. If it saves you time or makes your LoRAs better, a coffee or a GitHub sponsorship keeps it going:
 
-<a href="https://buymeacoffee.com/lorasandlenses"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee"></a>
+<a href="https://buymeacoffee.com/lorasandlenses"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee"></a> <a href="https://github.com/sponsors/shootthesound"><img src="https://img.shields.io/badge/Sponsor-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Sponsor on GitHub"></a>
 
 Renting through the [RunPod link](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=faoq8ed6um&ref=vkb387ep) supports development too, at no extra cost to you.
 

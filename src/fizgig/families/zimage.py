@@ -44,11 +44,14 @@ ZIMAGE = FamilyDescription(
         ModelFile("zimage_text_encoder", "Qwen3-4B text encoder", True, _COMFY,
                   "split_files/text_encoders/qwen_3_4b.safetensors", 8.04, role="text_encoder",
                   hint="Used for caching only, then unloaded before training."),
-        # placeholder until Fizgig's own adapter is measured against it (the A/B in progress)
-        ModelFile("zimage_training_adapter", "Training adapter", False, _OSTRIS,
-                  "zimage_turbo_training_adapter_v2.safetensors", 0.34, role="training_adapter",
-                  hint="Frozen during training, off in previews and saved LoRAs: keeps Turbo's 8-step distillation "
-                       "intact while the LoRA learns."),
+        ModelFile("zimage_training_adapter", "Fizgig training adapter", False,
+                  "ShootTheSound/Fizgig-Z-Image-Turbo-Training-Adapter",
+                  "fizgig_z_image_turbo_training_adapter.safetensors", 0.07, role="training_adapter",
+                  hint="Frozen during training, off in previews and saved LoRAs: keeps Turbo's 8-step look intact "
+                       "while the LoRA learns. Likeness 78 with it vs 55 without in Fizgig's A/B, and cleaner skin "
+                       "than AI-Toolkit's adapter.",
+                  alt_repo=_OSTRIS, alt_path="zimage_turbo_training_adapter_v2.safetensors",
+                  alt_label="AI-Toolkit's adapter (v2)"),
     ),
     prefs_title="Model Paths (Z-Image Turbo)",
     text_encoder_label="Qwen3-4B",
@@ -82,8 +85,14 @@ ZIMAGE = FamilyDescription(
     modelspec_arch="Z-Image-Turbo",
     implementation="https://github.com/Tongyi-MAI/Z-Image",
     training_adapter="zimage_training_adapter",
-    training_adapter_note=("Keeps Z-Image Turbo's 8-step distillation intact: frozen at 1.0 for every training step, "
-                           "off for previews and never in your saved file."),
+    # Fizgig lab A/B 6 Oct 2026 (170-photo character set, rank 16, 1e-4, 3000 steps, Turbo 8-step renders with the
+    # adapter off, ArcFace vs the set): likeness at step 3000 none 54.8, AI-Toolkit v2 72.3, Fizgig 78.1 (ahead from
+    # step 1500 on); Fizgig's keeps Turbo's own texture (detail vs the base render 0.97-1.07 on a no-trigger prompt,
+    # AI-Toolkit's 1.3-1.45: oversaturated, glossy skin). Recipe as Qwen's adapter: rank 16 on attention + MLP of the
+    # 30 layers, 7.6k real photos + 1k of Turbo's own renders (1 step in 3), 2000 steps, EMA.
+    training_adapter_note=("Keeps Z-Image Turbo's 8-step look intact: frozen at 1.0 for every training step, off for "
+                           "previews and never in your saved file. Without it Turbo LoRAs go soft and painterly "
+                           "(likeness 78 with it vs 55 without in Fizgig's A/B)."),
     ema_default="0.98",
     precisions=("bf16", "int8", "nf4"),
     # Measured 6 Oct 2026 (RTX PRO 6000, rank 16, fused AdamW, gradient checkpointing, training adapter on, a 1024^2

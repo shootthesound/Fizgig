@@ -134,6 +134,9 @@ class SDXLDriver(FamilyDriver):
         half precision."""
         from diffusers import AutoencoderKL
         vae = AutoencoderKL.from_single_file(path, config=CONFIG_REPO, subfolder="vae", torch_dtype=torch.float32)
+        from fizgig.modules.wide_attention import ROCM, rocm_vae_processor
+        if ROCM:                                      # its one 512-wide head, computed directly on ROCm (#179)
+            vae.set_attn_processor(rocm_vae_processor())
         return vae.to(device).eval().requires_grad_(False)
 
     def load_text_encoder(self, path, device):

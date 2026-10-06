@@ -140,7 +140,8 @@ class AttnBlock(nn.Module):
         q = rearrange(q, "b c h w -> b 1 (h w) c").contiguous()
         k = rearrange(k, "b c h w -> b 1 (h w) c").contiguous()
         v = rearrange(v, "b c h w -> b 1 (h w) c").contiguous()
-        h_ = nn.functional.scaled_dot_product_attention(q, k, v)
+        from fizgig.modules.wide_attention import wide_head_attention
+        h_ = wide_head_attention(q, k, v)            # one 512-wide head: computed directly on ROCm (#179)
 
         return rearrange(h_, "b 1 (h w) c -> b c h w", h=h, w=w, c=c, b=b)
 

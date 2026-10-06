@@ -95,6 +95,21 @@ ZIMAGE = FamilyDescription(
     optimizers=("adamw", "adamw8bit"),
     network_types=("lora", "lokr"),
     slider_training=True,
+    # torch.compile (6 Oct 2026, RTX PRO 6000, 1 MP, rank 16, 20 photos, steady from epoch 3): checkpoint outside the
+    # compiled layers - INT8 1.03 -> 0.69 s/step (1.49x, +0.3 GB), bf16 0.92 -> 0.78 (1.18x, +0.1 GB). Inside was a
+    # little faster (0.62 / 0.75) but INT8 peaked +10 GB, so outside. Epoch 1 ~1.85 s/step while it compiles, plus a
+    # recompile per new bucket shape; payback rounded up from ~50 (INT8) / ~130 (bf16) steps on one bucket.
+    compiles=True,
+    compile_boundary="outside",
+    compile_fullgraph=False,
+    compile_payback_steps={"int8": 300, "bf16": 600},
+    compile_hint=("Auto (recommended) turns torch.compile on only when this run is long enough to repay it. On Z-Image "
+                  "Turbo it is measured 1.49x per step on the INT8 base (1.03 -> 0.69 s/step at 1 MP) and 1.18x on "
+                  "bf16 (0.92 -> 0.78), with almost no extra memory: the gradient checkpoint stays outside the compiled "
+                  "layers. The first epoch runs slower while the layers compile, so Auto waits for runs longer than "
+                  "about 300 steps on INT8 and 600 on bf16; NF4 is not compiled by Auto (On still compiles). Requires "
+                  "Triton and, on Windows, a C++ compiler (VS Build Tools) - both located automatically. Never used "
+                  "with Blocks Swap, since swapping moves weights and compiled graphs assume they stay put."),
     int8_attention=True,              # workbench renders through attend(); speed-up to be measured
     activation_cache=True,            # Turbo Preview: the 30 layers sit in one ModuleList, on_step every step
     helper_files=(("Tongyi-MAI/Z-Image-Turbo", ("tokenizer/*", "vae/config.json")),),

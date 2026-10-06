@@ -79,6 +79,11 @@ def apply_rotary_emb(x_in, freqs_cis):
         return torch.view_as_real(x * freqs_cis.unsqueeze(2)).flatten(3).type_as(x_in)
 
 
+def _mask_or_none(mask):
+    """None when every token is real (one item, or equal lengths): the attention then needs no mask."""
+    return None if bool(mask.all()) else mask
+
+
 class ZImageAttention(nn.Module):
     def __init__(self, dim, n_heads, n_kv_heads, qk_norm=True, eps=1e-5):
         super().__init__()
@@ -102,9 +107,9 @@ class ZImageAttention(nn.Module):
         if freqs_cis is not None:
             q, k = apply_rotary_emb(q, freqs_cis), apply_rotary_emb(k, freqs_cis)
         dtype = q.dtype
-        mask = None
-        if attention_mask is not None and not bool(attention_mask.all()):
-            mask = attention_mask[:, None, None, :]           # (B, S) True = attend -> SDPA's boolean mask
+        # (B, S) True = attend -> SDPA's boolean mask; None when nothing is padded (decided in the model's forward,
+        # outside the compiled layers)
+        mask = attention_mask[:, None, None, :] if attention_mask is not None else None
         q, k, v = q.transpose(1, 2), k.to(dtype).transpose(1, 2), v.transpose(1, 2)
         out = attend(q, k, v) if mask is None else None       # workbench renders: INT8 attention when switched on
         if out is None:
@@ -306,6 +311,7 @@ class ZImageTransformer2DModel(nn.Module):
         x_mask = torch.zeros((bsz, max(x_lens)), dtype=torch.bool, device=device)
         for i, n in enumerate(x_lens):
             x_mask[i, :n] = True
+        x_mask = _mask_or_none(x_mask)
         for layer in self.noise_refiner:
             x = self._run(layer, x, x_mask, x_freqs, adaln)
 
@@ -319,6 +325,7 @@ class ZImageTransformer2DModel(nn.Module):
         c_mask = torch.zeros((bsz, max(cap_lens)), dtype=torch.bool, device=device)
         for i, n in enumerate(cap_lens):
             c_mask[i, :n] = True
+        c_mask = _mask_or_none(c_mask)
         for layer in self.context_refiner:
             c = self._run(layer, c, c_mask, c_freqs)
 
@@ -330,6 +337,7 @@ class ZImageTransformer2DModel(nn.Module):
         u_mask = torch.zeros((bsz, max(u_lens)), dtype=torch.bool, device=device)
         for i, n in enumerate(u_lens):
             u_mask[i, :n] = True
+        u_mask = _mask_or_none(u_mask)
         layers = list(self.layers) if self.blocks_to_swap else None
         for index, layer in enumerate(self.layers):
             if self.blocks_to_swap:

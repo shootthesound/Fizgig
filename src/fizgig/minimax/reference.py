@@ -1,3 +1,6 @@
+# This file is derived from ComfyUI (https://github.com/comfyanonymous/ComfyUI), Copyright (C) comfyanonymous and
+# the ComfyUI contributors, which is licensed under the GNU General Public License v3.0. This file therefore stays
+# under GPL-3.0 and is not covered by Fizgig's Apache-2.0 licence. See THIRD_PARTY_NOTICES.md (ComfyUI).
 """MiniMax H3 r2v reference images: sizing and encoding.
 
 Transcribed from comfy_extras/nodes_minimax_h3.py::MiniMaxH3ReferenceToVideo.execute, which is

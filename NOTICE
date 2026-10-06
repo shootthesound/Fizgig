@@ -12,3 +12,5 @@ full list of components and their licenses:
   - musubi-tuner (kohya-ss/musubi-tuner) — Apache-2.0
   - ai-toolkit (Ostris, LLC) — MIT
   - Diffusers / Qwen-Image VAE (HuggingFace) — Apache-2.0
+  - ComfyUI (MiniMax H3 model, VAE and sampler code) — GPL-3.0
+  - comfyui-rocm (detect_gpu.py) — GPL-3.0

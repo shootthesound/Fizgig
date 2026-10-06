@@ -1,3 +1,6 @@
+# This file is derived from ComfyUI (https://github.com/comfyanonymous/ComfyUI), Copyright (C) comfyanonymous and
+# the ComfyUI contributors, which is licensed under the GNU General Public License v3.0. This file therefore stays
+# under GPL-3.0 and is not covered by Fizgig's Apache-2.0 licence. See THIRD_PARTY_NOTICES.md (ComfyUI).
 """MiniMax H3 audio VAE — encoder (waveform -> 32-ch latents at 40 Hz) AND decoder (back).
 
 H3 denoises audio and video jointly, and Fizgig's DiT side has always packed the audio rows —

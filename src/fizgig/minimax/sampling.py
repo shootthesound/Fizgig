@@ -107,6 +107,9 @@ def latent_to_rgb(latent: torch.Tensor):
     return np.transpose(rgb, (1, 2, 0))                   # HWC
 
 
+# _res_multistep_coeffs below is derived from ComfyUI (comfy/k_diffusion/sampling.py, Copyright (C) comfyanonymous and
+# the ComfyUI contributors, GNU General Public License v3.0): this function stays under GPL-3.0 and is not covered by
+# Fizgig's Apache-2.0 licence. The rest of this file is Fizgig's own. See THIRD_PARTY_NOTICES.md (ComfyUI).
 def _res_multistep_coeffs(sig_cur, sig_next, sig_prev):
     """(sigma_fn(h), h*b1, h*b2) for ComfyUI's res_multistep second-order step (eta = 0).
 

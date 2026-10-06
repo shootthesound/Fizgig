@@ -7,7 +7,7 @@ component remains under its upstream license. Permissive components (Apache-2.0,
 MIT) are compatible with Fizgig's Apache-2.0 license; where those files were
 modified, Fizgig's changes are released under Apache-2.0. Copyleft components
 (GPL-3.0) are marked separately and stay under GPL-3.0 — see the comfyui-rocm
-section below.
+and ComfyUI sections below.
 
 ---
 
@@ -141,6 +141,38 @@ https://www.gnu.org/licenses/gpl-3.0.html and in comfyui-rocm's `LICENSE` file.
 
 To receive source for `detect_gpu.py`, use this repository or the upstream
 comfyui-rocm repository linked above.
+
+---
+
+## ComfyUI — GNU General Public License v3.0
+
+Upstream: https://github.com/comfyanonymous/ComfyUI
+Copyright (C) comfyanonymous and the ComfyUI contributors.
+
+Fizgig's MiniMax H3 support includes code derived from ComfyUI's MiniMax H3
+implementation. These files are **GPL-3.0**; they are not relicensed under
+Apache-2.0, and each carries a header saying so:
+
+- `src/fizgig/minimax/model.py` — the H3 DiT, ported from
+  `comfy/ldm/minimax/model.py` (ComfyUI's plumbing replaced by plain PyTorch).
+- `src/fizgig/minimax/vae.py` — the H3 video VAE, ported from
+  `comfy/ldm/minimax/vae.py`.
+- `src/fizgig/minimax/audio_vae.py` — the H3 audio VAE, ported from
+  `comfy/ldm/minimax/audio_vae.py`.
+- `src/fizgig/minimax/reference.py` — the reference-to-video conditioning,
+  transcribed from `comfy_extras/nodes_minimax_h3.py`
+  (`MiniMaxH3ReferenceToVideo`).
+- `src/fizgig/minimax/sampling.py` — the `_res_multistep_coeffs` function only,
+  ported from `comfy/k_diffusion/sampling.py` (`res_multistep`). The rest of
+  that file is Fizgig's own and Apache-2.0.
+
+These files are free software: you may redistribute and/or modify them under
+the terms of the GNU General Public License v3.0. A copy of the GPL-3.0 text is
+available at https://www.gnu.org/licenses/gpl-3.0.html and in ComfyUI's
+`LICENSE` file. Their source is this repository.
+
+The MiniMax H3 model weights are not part of this code; MiniMax's own licence
+applies to them (see the note on model weights below).
 
 ---
 

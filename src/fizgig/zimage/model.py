@@ -17,6 +17,8 @@ import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.checkpoint import checkpoint
 
+from fizgig.modules.int8_attention import attend
+
 ADALN_EMBED_DIM = 256
 SEQ_MULTI_OF = 32
 ROPE_THETA = 256.0
@@ -103,8 +105,10 @@ class ZImageAttention(nn.Module):
         mask = None
         if attention_mask is not None and not bool(attention_mask.all()):
             mask = attention_mask[:, None, None, :]           # (B, S) True = attend -> SDPA's boolean mask
-        out = F.scaled_dot_product_attention(q.transpose(1, 2), k.to(dtype).transpose(1, 2), v.transpose(1, 2),
-                                             attn_mask=mask)
+        q, k, v = q.transpose(1, 2), k.to(dtype).transpose(1, 2), v.transpose(1, 2)
+        out = attend(q, k, v) if mask is None else None       # workbench renders: INT8 attention when switched on
+        if out is None:
+            out = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
         return self.to_out[0](out.transpose(1, 2).flatten(2, 3).to(dtype))
 
 
@@ -194,11 +198,51 @@ class ZImageTransformer2DModel(nn.Module):
         assert dim // n_heads == sum(axes_dims)
         self.rope_embedder = RopeEmbedder(theta=rope_theta, axes_dims=axes_dims, axes_lens=axes_lens)
         self.gradient_checkpointing = False
+        self.blocks_to_swap = 0
+        self.offloader = None
 
     def _run(self, layer, *args):
+        if getattr(layer, "_handles_checkpointing", False):     # compiled: the wrapper checkpoints itself
+            return layer(*args)
         if self.gradient_checkpointing and torch.is_grad_enabled():
             return checkpoint(layer, *args, use_reentrant=False)
         return layer(*args)
+
+    # ---- block swap over the 30 main layers (Fizgig's shared offloader, as Qwen 2.1 uses it) ---------------------
+    def enable_block_swap(self, num_blocks, device, supports_backward=True):
+        from fizgig.modules.offloading import ModelOffloader
+        if self.offloader is not None:
+            self.offloader.remove_hooks()       # stale backward hooks double-swap blocks ("mat2 is on cpu")
+        n = len(self.layers)
+        if not 0 < num_blocks <= n - 2:
+            raise ValueError(f"block swap: 1..{n - 2} blocks, got {num_blocks}")
+        self.blocks_to_swap = num_blocks
+        self.offloader = ModelOffloader("zimage", list(self.layers), n, num_blocks, supports_backward,
+                                        torch.device(device))
+
+    def move_to_device_except_swap_blocks(self, device):
+        """Everything to `device` except the swapped layers' weights (the model is assumed to be on CPU)."""
+        layers = self.layers
+        self.layers = nn.ModuleList()
+        try:
+            self.to(device)
+        finally:
+            self.layers = layers
+        self.prepare_block_swap_before_forward()
+
+    def prepare_block_swap_before_forward(self):
+        if self.blocks_to_swap:
+            self.offloader.prepare_block_devices_before_forward(list(self.layers))
+
+    def switch_block_swap_for_inference(self):
+        if self.blocks_to_swap:
+            self.offloader.set_forward_only(True)
+            self.prepare_block_swap_before_forward()
+
+    def switch_block_swap_for_training(self):
+        if self.blocks_to_swap:
+            self.offloader.set_forward_only(False)
+            self.prepare_block_swap_before_forward()
 
     @staticmethod
     def create_coordinate_grid(size, start=None, device=None):
@@ -286,8 +330,13 @@ class ZImageTransformer2DModel(nn.Module):
         u_mask = torch.zeros((bsz, max(u_lens)), dtype=torch.bool, device=device)
         for i, n in enumerate(u_lens):
             u_mask[i, :n] = True
-        for layer in self.layers:
+        layers = list(self.layers) if self.blocks_to_swap else None
+        for index, layer in enumerate(self.layers):
+            if self.blocks_to_swap:
+                self.offloader.wait_for_block(index)
             u = self._run(layer, u, u_mask, u_freqs, adaln)
+            if self.blocks_to_swap:
+                self.offloader.submit_move_blocks_forward(layers, index)
         u = self.all_final_layer[f"{patch_size}-{f_patch_size}"](u, adaln)
         return self.unpatchify(list(u.unbind(0)), x_size, patch_size, f_patch_size)
 

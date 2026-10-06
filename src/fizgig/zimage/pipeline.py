@@ -16,6 +16,7 @@ import torch
 HELPER = "Tongyi-MAI/Z-Image-Turbo"               # tokenizer (helper_files)
 MAX_TOKENS = 512
 SCALING, SHIFT_FACTOR = 0.3611, 0.1159
+DEFAULT_SHIFT = 3.0                              # scheduler_config.json shift 3.0, use_dynamic_shifting false
 QWEN3_4B = dict(vocab_size=151936, hidden_size=2560, intermediate_size=9728, num_hidden_layers=36,
                 num_attention_heads=32, num_key_value_heads=8, head_dim=128, hidden_act="silu",
                 max_position_embeddings=40960, rms_norm_eps=1e-6, rope_theta=1000000.0, attention_bias=False,
@@ -78,7 +79,7 @@ def decode_latents(vae, latents):
     return vae.decode((latents.to(vae.device, vae.dtype) / SCALING) + SHIFT_FACTOR).sample.float().clamp(-1, 1)
 
 
-def sigmas(steps, shift=3.0):
+def sigmas(steps, shift=DEFAULT_SHIFT):
     s = torch.linspace(1.0, 0.0, int(steps) + 1)
     return shift * s / (1 + (shift - 1) * s)
 

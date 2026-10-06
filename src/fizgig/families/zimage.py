@@ -85,7 +85,13 @@ ZIMAGE = FamilyDescription(
     training_adapter_note=("Keeps Z-Image Turbo's 8-step distillation intact: frozen at 1.0 for every training step, "
                            "off for previews and never in your saved file."),
     ema_default="0.98",
-    precisions=("bf16", "int8", "nf4"),   # train_memory: to be measured
+    precisions=("bf16", "int8", "nf4"),
+    # Measured 6 Oct 2026 (RTX PRO 6000, rank 16, fused AdamW, gradient checkpointing, training adapter on, a 1024^2
+    # preview each epoch), peak GB including the preview, which sets it - training alone 13.7 / 15.0 (bf16), 8.8 / 10.0
+    # (INT8), 7.0 / 8.1 (NF4) at 0.5 / 1 MP; s/step bf16 0.50 / 0.92, INT8 0.53 / 1.04, NF4 0.51 / 0.94. Per swapped
+    # layer: its weights (~181M params: 0.36 GB bf16, 0.18 INT8).
+    train_memory={"bf16": (((0.5, 17.1), (1.0, 17.2)), 0.36), "int8": (((0.5, 12.3), (1.0, 12.3)), 0.18),
+                  "nf4": (((0.5, 10.0), (1.0, 10.1)), 0.0)},
     optimizers=("adamw", "adamw8bit"),
     network_types=("lora", "lokr"),
     slider_training=True,

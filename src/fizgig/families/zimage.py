@@ -12,16 +12,22 @@ _CARD = "https://huggingface.co/Tongyi-MAI/Z-Image-Turbo"
 _OSTRIS = "ostris/zimage_turbo_training_adapter"
 
 
-def _preset(rank, lr, epochs=30, mp="1.0", slider=False):
+def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="0.5", slider=False):
+    # Qwen Image 2.1's preset set (Peter, 7 Oct 2026: "Qwen is a good model for the presets across the various modes"):
+    # 0.5 MP, 30 epochs saved every epoch; adaptive=(min, max) turns Adaptive LR on (the run starts at the geometric
+    # midpoint and the LR box is ignored), None trains flat at lr. Fused AdamW, as the driver guide asks of LoRA presets.
+    lo, hi = adaptive or ("2e-4", "4e-4")
     return {
         "NETWORK_DIM": rank, "NETWORK_ALPHA": rank, "NETWORK_TYPE": "LoRA (standard)", "LEARNING_RATE": lr,
-        "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 42, "ADAPTIVE_LR": False,
+        "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 42,
+        "ADAPTIVE_LR": adaptive is not None, "ADAPTIVE_LR_MIN": lo, "ADAPTIVE_LR_MAX": hi,
         "OPTIMIZER_TYPE": "adamw", "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
         "DATASET_MEGAPIXELS": mp, "BLOCKS_SWAP": "Auto (detect from GPU)",
         "FAMILY_PRECISION": "Auto (fits your free VRAM)", "FAMILY_TRAINING_ADAPTER": True,
         "FAMILY_EMA": "0.98 (recommended)",
         "KREA2_LOSS_WATCH": True, "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False,
-        "KREA2_WARMUP_LOOK": False, "FAMILY_FT": False, "FAMILY_SLIDER": slider,
+        "KREA2_WARMUP_LOOK": False, "FAMILY_FT": False, "FAMILY_SLIDER": slider, "FAMILY_FAST_ID": False,
+        "FAMILY_SLIDER_GUIDANCE": "2",
     }
 
 
@@ -140,12 +146,16 @@ ZIMAGE = FamilyDescription(
     repair_size=1024,
 
     presets=(
-        # placeholder (rank 16, 1e-4, the A/B's recipe) until the adapter A/B and real runs settle the presets
-        ("✨ Z-Image Turbo Character (rank 16, 1e-4)", _preset(16, 1e-4)),
-        # Slider: the recipe the other families' sliders run on (rank 4, 2e-4, a few hundred steps)
-        ("✨ Z-Image Turbo Slider (rank 4, 2e-4)", _preset(4, 2e-4, slider=True)),
-        # full fine-tune at the shared fine-tune rate
-        ("✨ Z-Image Turbo Fine-tune (1e-5)", {**_preset(16, 1e-5), "FAMILY_FT": True, "FAMILY_FT_ROTATIONS": "10"}),
+        # Qwen Image 2.1's modes, Qwen's values (its notes give the measurements behind each). The adapter A/B trained
+        # rank 16 at a flat 1e-4, 1 MP, to likeness 78 by ~3000 steps on 170 photos.
+        ("✨ Z-Image Turbo Fast (rank 8, adaptive LR)", _preset(8, adaptive=("2e-4", "4e-4"))),
+        ("✨ Z-Image Turbo Standard (rank 16, adaptive LR)", _preset(16, adaptive=("1e-4", "2e-4"))),
+        # Style: flat, because style loss descends steadily and Adaptive LR climbs toward its ceiling there
+        ("✨ Z-Image Turbo Style (rank 16, 1.5e-4)", _preset(16, lr=1.5e-4)),
+        # Slider: sliders run hot and short (rank 4, 2e-4)
+        ("✨ Z-Image Turbo Slider (rank 4, 2e-4)", _preset(4, lr=2e-4, slider=True)),
+        # full fine-tune at the shared fine-tune rate, the training adapter on
+        ("✨ Z-Image Turbo Fine-tune (1e-5)", {**_preset(16, lr=1e-5), "FAMILY_FT": True, "FAMILY_FT_ROTATIONS": "10"}),
     ),
 
     notes=(

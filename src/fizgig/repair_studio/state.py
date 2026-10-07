@@ -40,7 +40,7 @@ class BlockState:
     primary_enabled: bool = True
     primary_strength: float = 1.0
     donor_enabled: bool = True
-    donor_strength: float = 0.0
+    donor_strength: float = 1.0
 
 
 @dataclass

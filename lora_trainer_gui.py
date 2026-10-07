@@ -19636,7 +19636,7 @@ class LoRATrainerGUI:
         primary_enabled = tk.BooleanVar(value=True)
         primary_strength = tk.DoubleVar(value=1.0)
         donor_enabled = tk.BooleanVar(value=True)
-        donor_strength = tk.DoubleVar(value=0.0)
+        donor_strength = tk.DoubleVar(value=1.0)
 
         chk_p = ttk.Checkbutton(rowf, variable=primary_enabled,
                                 command=lambda b=block_id: self._on_block_changed(b))

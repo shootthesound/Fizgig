@@ -294,7 +294,7 @@ def save_repaired_lora(
         has_p = mod_name in modules_p
         has_d = mod_name in modules_d
         # A zero-strength side contributes nothing — treat it as off. donor_enabled
-        # defaults True with donor_strength 0.0, so merely LOADING a donor used to
+        # once defaulted True with donor_strength 0.0, so merely LOADING a donor used to
         # rank-concatenate every shared block with an all-zero donor half (~2x the file
         # in dead weights) and write all-zero donor-only modules, before the user
         # touched a single slider.

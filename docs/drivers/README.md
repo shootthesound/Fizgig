@@ -1,6 +1,6 @@
 # Adding a model to Fizgig: the driver system
 
-Every model Fizgig trains — Klein 9B, MiniMax H3, Krea 2, Qwen Image 2.1, SDXL and Anima — runs through one shared layer in `src/fizgig/families/`. A model is added as a **family**, and a family is three pieces:
+Every model Fizgig trains — Klein 9B, MiniMax H3, Krea 2, Qwen Image 2.1, Z-Image Turbo, SDXL and Anima — runs through one shared layer in `src/fizgig/families/`. A model is added as a **family**, and a family is three pieces:
 
 | Piece | Where | What it holds |
 |---|---|---|

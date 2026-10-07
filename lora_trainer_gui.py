@@ -10474,13 +10474,29 @@ class LoRATrainerGUI:
         self.sample_prompt_text.bind("<KeyRelease>", lambda e: self._save_last_used_paths())
         # Issue #49: "Multi-line prompt" read as ONE prompt that may contain line breaks — two
         # users only discovered multiple prompts by accident. Say what a line actually does.
-        _prompt_hint = tk.Label(
-            prompt_card,
+        _prompt_hint = tk.Frame(prompt_card, bg=COLORS["bg_surface"])     # hint + tip, hidden together in Edit mode
+        _prompt_hint.grid(row=1, column=1, columnspan=2, sticky=tk.EW, pady=(0, 6))
+        tk.Label(
+            _prompt_hint,
             text="Each line is a SEPARATE prompt — press Enter to add another sample per "
                  "epoch. Keep a single prompt on one line (long ones wrap by themselves).",
             font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"],
-            bg=COLORS["bg_surface"], wraplength=520, justify=tk.LEFT)
-        _prompt_hint.grid(row=1, column=1, columnspan=2, sticky=tk.W, pady=(0, 6))
+            bg=COLORS["bg_surface"], wraplength=520, justify=tk.LEFT).pack(anchor=tk.W)
+        # Overtraining tip (Peter, 7 Oct): a prompt the dataset can't answer is the first thing to fail
+        _tip = tk.Frame(_prompt_hint, bg=COLORS["accent"])                  # 3 px accent bar down the left
+        _tip.pack(fill=tk.X, pady=(10, 0))
+        _tip_body = tk.Frame(_tip, bg=COLORS["accent_subtle"])
+        _tip_body.pack(fill=tk.X, padx=(3, 0))
+        tk.Label(_tip_body, text="💡  Tip: catch overtraining early", font=(FONT_FAMILY, 10, "bold"),
+                 fg=COLORS["text_primary"], bg=COLORS["accent_subtle"]).pack(anchor=tk.W, padx=12, pady=(8, 2))
+        tk.Label(
+            _tip_body,
+            text="Give one prompt something your dataset doesn't have: a pose, angle or setting none of your "
+                 "photos show. Early epochs follow it. When the LoRA starts to overtrain, that's the first thing "
+                 "to fail, as the previews drift back to your photos. The last epoch that still follows it is a "
+                 "good one to keep.",
+            font=(FONT_FAMILY, 9), fg=COLORS["text_explain"], bg=COLORS["accent_subtle"],
+            wraplength=900, justify=tk.LEFT).pack(anchor=tk.W, padx=12, pady=(0, 9))
         # Edit LoRA (Training tab): previews apply the edit instruction to the test photo, so no prompts here
         self._sample_edit_note = tk.Label(
             prompt_card,

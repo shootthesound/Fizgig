@@ -88,7 +88,7 @@ In our tests, 40 pairs of a colour grade at 0.59 MP with rank 16 learned the gra
 
 A slider LoRA is a dial between two looks: strength +1 moves a picture toward one look (happy, warm), -1 toward the opposite (sad, cool), and anything in between gives a bit of either. Sliders are trained at +1 and -1, but most will also go further, so try 1.5 or 2 (or -1.5, -2) for a stronger effect; how far a slider goes before the picture breaks down varies from one to the next.
 
-On the Training tab, pick **Kind of LoRA: Slider** under Training Parameters, or load **✨ Qwen 2.1 Slider (rank 4, 2e-4)**, which selects it (rank 4, learning rate 2e-4, 30 epochs). Then choose where the two ends come from.
+On the Training tab, pick **Kind of LoRA: Slider** under Training Parameters, or load **✨ Qwen 2.1 Slider (rank 8, 2e-4)**, which selects it (rank 8, learning rate 2e-4, 30 epochs). Then choose where the two ends come from.
 
 **From photo pairs:** two folders of the same shots, one for each end of the dial. 4 to 10 pairs is enough.
 

@@ -150,8 +150,8 @@ ZIMAGE = FamilyDescription(
         ("✨ Z-Image Turbo Standard (rank 16, adaptive LR)", _preset(16, adaptive=("1e-4", "2e-4"))),
         # Style: flat, because style loss descends steadily and Adaptive LR climbs toward its ceiling there
         ("✨ Z-Image Turbo Style (rank 16, 1.5e-4)", _preset(16, lr=1.5e-4)),
-        # Slider: sliders run hot and short (rank 4, 2e-4)
-        ("✨ Z-Image Turbo Slider (rank 4, 2e-4)", _preset(4, lr=2e-4, slider=True)),
+        # Slider: sliders run hot and short (rank 8, 2e-4)
+        ("✨ Z-Image Turbo Slider (rank 8, 2e-4)", _preset(8, lr=2e-4, slider=True)),
         # full fine-tune, the training adapter on. Not the shared 1e-5: Z-Image's weights are ~3x larger (median |w| 0.082
         # vs Qwen 2.1 0.024 / Krea 2 0.029) and Adam moves each weight by ~the rate, so 1e-5 is a third of the relative
         # change - measured 7 Oct 2026 (Arcane, 341 frames, 0.5 MP, 10 rotations): 1e-5 left the picture unchanged,

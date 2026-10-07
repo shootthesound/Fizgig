@@ -19,6 +19,7 @@ A family is ready when it trains, previews and saves correctly, and every abilit
 - [ ] **The LoRA loads in ComfyUI with every module.** ComfyUI's console lists any key it can't map ("lora key not loaded"); there must be none. The LoRA then changes ComfyUI's output the way the previews show.
 - [ ] Every built-in preset trains one epoch through the GUI (Load Preset, Start Training) and saves a LoRA.
 - [ ] `train_memory` figures are measured, at two resolutions per precision, from the trainer's logged peaks.
+- [ ] **Override next sample**: tick it mid-run with a new prompt, seed and size; the next preview renders that, and unticking it brings back the Samples tab's prompts. A slider run ignores it.
 - [ ] Pause and Resume: a run paused mid-way and resumed continues from the same epoch, and its loss carries on from where it was.
 
 ## Small cards

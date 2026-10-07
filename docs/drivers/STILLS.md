@@ -203,6 +203,7 @@ Then run the plans on small cards: `FIZGIG_SIM_VRAM_GB=12` (or 16, 24) makes the
 - **`presets`**: built-in Training-tab presets, `((name, {setting key: value}), ...)`. The first is applied on a user's first visit to the family. Copy Qwen's `_preset()` helper to start, then tune it on real runs. Ship only presets you've trained.
 - **`preview_steps`, `preview_cfg`, `preview_width`, `preview_height`**: the Samples tab's defaults for in-training previews.
 - **`preview_negative`**: the Samples tab's default negative prompt for the family. Each family keeps the user's own edit. Leave it `None` if the family's previews take no negative (CFG-free or distilled); the box then greys out.
+- **Override next sample** (the status bar's seed / size / prompt panel) comes free: the shared trainer reads it before each preview round, encodes the prompt with your `encode_text` and renders it with your `generate`, so a family needs no code for it. It never applies to slider runs, whose previews always show the slider's own prompt across strengths.
 - **`speed_loras` + `preview_speed_lora`**: a Turbo / Lightning / DMD LoRA with the settings it wants (steps, CFG, sigmas). Previews and the workbench use it when its file is set in Preferences, which makes the workbench fast on a slow model. See [ABILITIES.md](ABILITIES.md#fast-previews).
 
 ## 6. Run it from the command line

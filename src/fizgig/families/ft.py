@@ -76,6 +76,11 @@ class FTSpec:
     # driver has measured nothing - cautious)
     calib_mp: float = 0.25
     act_gb_per_mp: float = 4.0
+    # what a window costs per GB of its bf16 weights: 1.0 = the weights alone (the calibrated overhead absorbs the
+    # rest - every family before Z-Image); 2.0 = weights plus a gradient held for every trained weight at once, for a
+    # model whose measured peaks grow by twice the window's weights (Z-Image Turbo: one window of all four parts peaked
+    # 23.7 GB vs 10.5 for attention alone - base 3.4 + 2 x weights fits both, no single base under 1.0 does)
+    window_factor: float = 1.0
 
 
 _PREFIX = "diffusion_model."
@@ -466,6 +471,8 @@ class Rotator:
 
 
 def _plan(comp_gb, n_blocks, trunk, spec: FTSpec, usable, allow_stream=True, mp=None, spans=None, max_parts=0):
+    if spec.window_factor != 1.0:      # a family whose windows cost more than their weights (FTSpec.window_factor)
+        comp_gb = {p: g * spec.window_factor for p, g in comp_gb.items()}
     overhead = spec.overhead_gb if spec.overhead_gb is not None else trunk * n_blocks + 3.5
     extra = spec.act_gb_per_mp * max(0.0, float(mp or spec.calib_mp) - spec.calib_mp)
     overhead += extra                  # a bigger bucket's activations, resident and streaming alike

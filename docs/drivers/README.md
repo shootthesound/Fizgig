@@ -29,6 +29,7 @@ Adding a model (or fine-tuning for a model Fizgig already has) starts with a pos
 4. **[Abilities](ABILITIES.md)**: the optional features a description switches on, and what each one asks of the driver.
 5. **[Fine-tuning](FINETUNE.md)**: optional. Full fine-tuning of the base model, which you, the maintainer or anyone else can add after the family ships.
 6. **[Before you ship](CHECKLIST.md)**: the checks a new family must pass, and what a finished family includes (research, parity, fast presets, compile, INT8 attention, default negative and more).
+7. **[Driver excerpts](EXCERPTS.md)**: real code from Qwen Image 2.1 (stills) and MiniMax H3 (clips and sound) at the places new drivers most often go wrong, kept identical to the source by `src/fizgig/families/doc_excerpts.py --check`.
 
 The existing families are the best reference. Read them side by side:
 

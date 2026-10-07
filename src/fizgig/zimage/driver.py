@@ -215,7 +215,11 @@ class ZImageDriver(FamilyDriver):
                       file_layout=(("attention.to_q.weight", "attention.qkv.weight", 0, 3),
                                    ("attention.to_k.weight", "attention.qkv.weight", 1, 3),
                                    ("attention.to_v.weight", "attention.qkv.weight", 2, 3),
-                                   ("attention.to_out.0.weight", "attention.out.weight", 0, 1)))
+                                   ("attention.to_out.0.weight", "attention.out.weight", 0, 1)),
+                      # measured 7 Oct 2026 on a 5090 (6 photos, 0.5 / 1 MP, 1024 preview, adapter on): one window of
+                      # all four parts 23.7 / 24.3 GB, attention alone (3 windows under a simulated 16 GB card) 10.5 GB
+                      # -> base 3.4 GB + 2 x the window's bf16 weights fits both; +0.6 GB from 0.5 to 1 MP
+                      window_factor=2.0, overhead_gb=3.4, calib_mp=0.5, act_gb_per_mp=1.25)
 
     @torch.no_grad()
     def decode(self, vae, latents, width, height):

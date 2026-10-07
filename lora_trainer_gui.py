@@ -18167,23 +18167,26 @@ class LoRATrainerGUI:
             "Range ±3.0. Greyed-out rows are blocks the LoRA doesn't touch. "
             "Colour bands match the Profiler's 5-bucket scheme: blue Style+Comp, teal Style/ID, green Identity, olive ID/Detail, orange Details.",
         )
-        # Bulk row above the sliders (H3 only — shown / hidden with the family): reset, all
-        # off, all on, invert — the primary rows; the donor stays as it is.
+        # Bulk row above the sliders, every family (Peter, 7 Oct): reset, all off, all on, invert on the primary rows;
+        # H3 adds Alternate + Toggle detail blocks (its block numbers) and, while a donor is loaded, every family gets
+        # Donor: all on / all off at the end of the row.
         self._repair_bulk_row = tk.Frame(sliders_card, bg=COLORS["bg_surface"])
-        for _txt, _cmd, _tip in (
-                ("Reset all", self._reset_repair_sliders, "Every slider back to its default."),
-                ("All off", lambda: self._repair_bulk_primary("off"),
+        self._repair_bulk_row.pack(side=tk.TOP, fill=tk.X, pady=(0, 6))
+        self._repair_bulk_h3 = tk.Frame(self._repair_bulk_row, bg=COLORS["bg_surface"])   # packed by the family switch
+        for _parent, _txt, _cmd, _tip in (
+                (self._repair_bulk_row, "Reset all", self._reset_repair_sliders, "Every slider back to its default."),
+                (self._repair_bulk_row, "All off", lambda: self._repair_bulk_primary("off"),
                  "Untick every block's primary enable (strengths kept)."),
-                ("All on", lambda: self._repair_bulk_primary("on"),
+                (self._repair_bulk_row, "All on", lambda: self._repair_bulk_primary("on"),
                  "Tick every block's primary enable (strengths kept)."),
-                ("Invert", lambda: self._repair_bulk_primary("invert"),
+                (self._repair_bulk_row, "Invert", lambda: self._repair_bulk_primary("invert"),
                  "Flip every block's primary enable: on becomes off, off becomes on."),
-                ("Alternate", lambda: self._repair_bulk_primary("alternate"),
+                (self._repair_bulk_h3, "Alternate", lambda: self._repair_bulk_primary("alternate"),
                  "Block 0 on, 1 off, 2 on ... through 49 (even blocks on, odd off); "
                  "refiners untouched. Invert for the other half."),
-                ("Toggle detail blocks", lambda: self._repair_bulk_primary("detail"),
+                (self._repair_bulk_h3, "Toggle detail blocks", lambda: self._repair_bulk_primary("detail"),
                  "Blocks 46-49 — the detail end of the model — all on or all off together.")):
-            _b = ttk.Button(self._repair_bulk_row, text=_txt, command=_cmd, width=max(9, len(_txt) + 1))
+            _b = ttk.Button(_parent, text=_txt, command=_cmd, width=max(9, len(_txt) + 1))
             _b.pack(side=tk.LEFT, padx=(0, 6))
             ToolTip(_b, _tip + " Primary rows only; one render for the lot.")
         # The block library's bank chips (H3 only, shown with the bulk row): one per bank of
@@ -18193,9 +18196,9 @@ class LoRATrainerGUI:
         self._repair_bank_chips = {}
         tk.Label(self._repair_bank_strip, text="Library:", bg=COLORS["bg_surface"],
                  fg=COLORS["text_secondary"], font=(FONT_FAMILY, 8)).pack(side=tk.LEFT, padx=(0, 6))
-        # Donor all on / all off (every family, shown while a donor is loaded): every donor slider to 1 (ticked) or 0,
-        # one render
-        self._repair_donor_bulk_row = tk.Frame(sliders_card, bg=COLORS["bg_surface"])
+        # Donor all on / all off (every family, at the end of the bulk row while a donor is loaded): every donor
+        # slider to 1 (ticked) or 0, one render
+        self._repair_donor_bulk_row = tk.Frame(self._repair_bulk_row, bg=COLORS["bg_surface"])
         for _txt, _on, _tip in (("Donor: all on", True, "Every donor slider to 1 (and ticked)."),
                                 ("Donor: all off", False, "Every donor slider to 0.")):
             _b = ttk.Button(self._repair_donor_bulk_row, text=_txt, command=lambda o=_on: self._repair_bulk_donor(o),
@@ -18398,12 +18401,13 @@ class LoRATrainerGUI:
                 if _kf:
                     self._repair_kf_relabel()
                 if not _banks:
-                    self._repair_bulk_row.pack_forget()
+                    self._repair_bulk_h3.pack_forget()
                     self._repair_bank_strip.pack_forget()
                 else:
-                    if not self._repair_bulk_row.winfo_manager():
-                        self._repair_bulk_row.pack(side=tk.TOP, fill=tk.X, pady=(0, 6),
-                                                   before=self._repair_sliders_host)
+                    if not self._repair_bulk_h3.winfo_manager():
+                        _after = ({"before": self._repair_donor_bulk_row}
+                                  if self._repair_donor_bulk_row.winfo_manager() else {})
+                        self._repair_bulk_h3.pack(side=tk.LEFT, **_after)
                     if not self._repair_bank_strip.winfo_manager():
                         self._repair_bank_strip.pack(side=tk.TOP, fill=tk.X, pady=(0, 6),
                                                      before=self._repair_sliders_host)
@@ -18416,7 +18420,7 @@ class LoRATrainerGUI:
                 self._repair_h3_model_combo.grid_remove()
                 self._repair_h3_base_label.grid_remove()
                 self._repair_h3_base_combo.grid_remove()
-                self._repair_bulk_row.pack_forget()
+                self._repair_bulk_h3.pack_forget()
                 self._repair_bank_strip.pack_forget()
                 if not self._repair_res_label.winfo_manager():
                     # Keep the Res pair ahead of the Turbo tick when that is showing (Klein);
@@ -23067,7 +23071,7 @@ class LoRATrainerGUI:
             for vars_ in self.repair_block_vars.values():
                 vars_["donor_rowf"].grid()
             if not self._repair_donor_bulk_row.winfo_manager():
-                self._repair_donor_bulk_row.pack(side=tk.TOP, anchor=tk.W, pady=(0, 6), before=self._repair_sliders_host)
+                self._repair_donor_bulk_row.pack(side=tk.LEFT, padx=(18, 0))
             self._repair_master_donor_radio.state(["!disabled"])
             for cat in self.repair_donor_category_vars:
                 self.repair_donor_category_vars[cat].set(False)

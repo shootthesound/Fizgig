@@ -122,6 +122,8 @@ Work left to right through the numbered tabs:
 4. **Samples** — the preview prompts that render during training.
 5. **Training** — pick a model and a preset, click **Start Training**.
 
+**Tip: give one sample prompt something your dataset doesn't have,** such as a specific pose, angle or setting that none of your photos show (for example "looking over her shoulder from a low angle" when your photos are all straight-on portraits). Early epochs follow it. When a LoRA starts to overtrain, that is the first thing to fail: the previews drift back to your dataset's framing even though the prompt asks for something else. The last epoch that still follows it is a good one to keep.
+
 The unnumbered tabs are the workbench (Profiler, Repair Studio, LoRA the Explorer, LoRA Royale, Extract) and Preferences. The [video tutorial](https://www.youtube.com/watch?v=yrz0l6URGGk) walks through all of it.
 
 **Community translation:** [Korean (한국어)](https://github.com/ssain3d-lgtm/Fizgig-Korean-Translated-Ver) by @ssain3d-lgtm, an unofficial add-on that translates the UI at runtime without touching Fizgig's files and uninstalls with one script. If you hit a bug with it installed, uninstall and reproduce before reporting here; translation issues go to its repo.

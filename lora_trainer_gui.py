@@ -3890,6 +3890,20 @@ class LoRATrainerGUI:
                        "stability events).",
                   foreground=COLORS["text_explain"], font=HINT_FONT, justify=tk.LEFT, wraplength=720)
         self._adaptive_desc_label.grid(row=4, column=0, columnspan=2, sticky=tk.W, padx=(20, 5), pady=(0, 6))
+        # Large-dataset hint (Peter, 8 Oct): a hot rate on many steps an epoch can step past the best point between
+        # two saves. Sits in the blank space right of Min / Max; shown by _refresh_lr_hint only when it applies.
+        self._lr_hint = tk.Frame(training_content, bg=COLORS["accent"])                 # 3 px accent bar
+        _lh_body = tk.Frame(self._lr_hint, bg=COLORS["accent_subtle"])
+        _lh_body.pack(fill=tk.BOTH, expand=True, padx=(3, 0))
+        tk.Label(_lh_body, text="💡  Hint: a large dataset", font=(FONT_FAMILY, 10, "bold"),
+                 fg=COLORS["text_primary"], bg=COLORS["accent_subtle"]).pack(anchor=tk.W, padx=12, pady=(8, 2))
+        self._lr_hint_text = tk.Label(_lh_body, text="", font=(FONT_FAMILY, 9), fg=COLORS["text_explain"],
+                                      bg=COLORS["accent_subtle"], wraplength=480, justify=tk.LEFT)
+        self._lr_hint_text.pack(anchor=tk.W, padx=12)
+        self._lr_hint_btn = ttk.Button(_lh_body, text="", command=self._apply_lr_hint)
+        self._lr_hint_btn.pack(anchor=tk.W, padx=12, pady=(6, 9))
+        self._lr_hint_count_cache = (None, None, 0)       # (folder, folder mtime, image count)
+        self.master.after(1500, self._lr_hint_tick)
         self._on_adaptive_lr_toggle()  # sync initial enabled/disabled state
 
         # LoRA LR Ratio — hidden, always 1 (LoRA+ default). Widget exists for preset/save compat.
@@ -7845,6 +7859,93 @@ class LoRATrainerGUI:
                     fg=COLORS["text_muted"] if on else COLORS["text_secondary"])
         except Exception:
             pass
+        self._refresh_lr_hint()
+
+    def _lr_hint_image_count(self, folder):
+        """Training images in the Start folder (top level, as the dataset reads it), recounted only when the folder
+        or its modification time changes."""
+        try:
+            mt = os.stat(folder).st_mtime
+        except OSError:
+            return 0
+        f, m, n = self._lr_hint_count_cache
+        if f == folder and m == mt:
+            return n
+        from fizgig.dataset.image_dataset import IMAGE_EXTENSIONS
+        exts = {e.lower() for e in IMAGE_EXTENSIONS}
+        try:
+            n = sum(1 for e in os.scandir(folder) if e.is_file() and os.path.splitext(e.name)[1].lower() in exts)
+        except OSError:
+            n = 0
+        self._lr_hint_count_cache = (folder, mt, n)
+        return n
+
+    def _lr_hint_state(self):
+        """(adaptive, steps per epoch) when the large-dataset hint applies, else None: a standard LoRA on a family
+        with lr_hint, whose learning rate (adaptive: Min LR) is at or above the hint's rate, on more than its steps
+        an epoch (images / batch size)."""
+        desc = self._family_desc()
+        hint = getattr(desc, "lr_hint", (2e-4, 125)) if desc is not None else (2e-4, 125)
+        if not hint or getattr(self, "_family_kind_var", None) is None or self._family_kind_var.get() != "standard":
+            return None
+        rate, steps = hint
+        adaptive = bool(self.adaptive_lr_var.get())
+        try:
+            raw = (self.entries["ADAPTIVE_LR_MIN"].get() if adaptive else self.entries["LEARNING_RATE"].get()).split(" ")[0]
+            lr = float(raw)
+            batch = max(1, int(float(self.dataset_batch_size_var.get() or 1)))
+        except (ValueError, KeyError, tk.TclError):
+            return None
+        if lr < rate * 0.999:
+            return None
+        n = self._lr_hint_image_count(self.image_folder_var.get().strip())
+        per_epoch = -(-n // batch)
+        return (adaptive, per_epoch, n, raw.strip()) if per_epoch > steps else None
+
+    def _refresh_lr_hint(self):
+        card = getattr(self, "_lr_hint", None)
+        if card is None:
+            return
+        st = self._lr_hint_state()
+        if st == getattr(self, "_lr_hint_shown", "unset"):
+            return
+        self._lr_hint_shown = st
+        if st is None:
+            card.grid_remove()
+            return
+        adaptive, per_epoch, n, lr = st
+        steps = (f"{n} images" if per_epoch == n else f"{n} images ({per_epoch} steps an epoch)")
+        if adaptive:
+            self._lr_hint_text.configure(text=(
+                f"With {steps}, a Min LR of {lr} moves the LoRA a long way each epoch, so the best point can "
+                "fall between two saves. A Min LR of 1e-4 and a Max LR of 2e-4 suit a dataset this size."))
+            self._lr_hint_btn.configure(text="Use 1e-4 / 2e-4")
+        else:
+            self._lr_hint_text.configure(text=(
+                f"With {steps}, a learning rate of {lr} moves the LoRA a long way each epoch, so the best point "
+                "can fall between two saves. 1e-4 suits a dataset this size."))
+            self._lr_hint_btn.configure(text="Use 1e-4")
+        card.grid(row=2, column=1, rowspan=3, sticky=tk.NE, padx=(12, 8), pady=(4, 6))
+
+    def _apply_lr_hint(self):
+        """The hint's one-click change: adaptive Min 1e-4 / Max 2e-4, or a learning rate of 1e-4."""
+        if self.adaptive_lr_var.get():
+            self.entries["ADAPTIVE_LR_MIN"].set("1e-4")
+            self.entries["ADAPTIVE_LR_MAX"].set("2e-4")
+        else:
+            e = self.entries["LEARNING_RATE"]
+            e.delete(0, tk.END)
+            e.insert(0, "1e-4")
+        self._refresh_lr_hint()
+
+    def _lr_hint_tick(self):
+        """Presets, the Start folder, batch size and kind all change the hint, many of them programmatically (a
+        Combobox.set fires no event), so it re-checks itself every second; the image count is cached."""
+        try:
+            self._refresh_lr_hint()
+        except Exception:
+            pass
+        self.master.after(1000, self._lr_hint_tick)
 
     def _parse_blocks_swap(self) -> int:
         """Extract integer from the BLOCKS_SWAP combobox value.

@@ -32,6 +32,7 @@ The full field list, with comments, is `FamilyDescription` in `src/fizgig/famili
 | `edit_training` | Edit LoRAs from before/after photo pairs, with edit previews. | `supports_references = True`, `load_reference_text_encoder`, `encode_text_with_references`, and `refs=` in `training_loss` / `generate`. |
 | `slider_training`, `slider_guidance`, `slider_ultra_blocks` | Slider LoRAs (a strength dial between two looks), from image pairs or prompts. | `training_loss(diff_ref=, diff_weight=)` for pairs; `noise_latents` and `predict` for prompt sliders. |
 | `finetune`, `ft_learning_rate` | Full fine-tuning of the base model on an NF4 trunk: the whole model at once when the card holds it, otherwise the fewest windows that fit. Optional, and can be added after the family ships. | `ft_spec(dit)` returning an `FTSpec`, plus measured memory figures. [FINETUNE.md](FINETUNE.md) covers it step by step. |
+| `lr_hint` | The Training tab's large-dataset hint: a standard LoRA at or above the rate (adaptive: its Min LR), on more steps an epoch than the threshold, gets a tip with a one-click cooler setting (Min 1e-4 / Max 2e-4, or 1e-4). Defaults to `(2e-4, 125)`, inherited by every family. | Nothing. Set your own `(rate, steps)` once measured, or `None` to turn it off. |
 
 ## Training aids
 

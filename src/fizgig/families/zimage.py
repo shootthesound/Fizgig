@@ -12,7 +12,7 @@ _CARD = "https://huggingface.co/Tongyi-MAI/Z-Image-Turbo"
 _OSTRIS = "ostris/zimage_turbo_training_adapter"
 
 
-def _preset(rank, lr, epochs=30, mp="1.0"):
+def _preset(rank, lr, epochs=30, mp="1.0", slider=False):
     return {
         "NETWORK_DIM": rank, "NETWORK_ALPHA": rank, "NETWORK_TYPE": "LoRA (standard)", "LEARNING_RATE": lr,
         "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 42, "ADAPTIVE_LR": False,
@@ -21,7 +21,7 @@ def _preset(rank, lr, epochs=30, mp="1.0"):
         "FAMILY_PRECISION": "Auto (fits your free VRAM)", "FAMILY_TRAINING_ADAPTER": True,
         "FAMILY_EMA": "0.98 (recommended)",
         "KREA2_LOSS_WATCH": True, "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False,
-        "KREA2_WARMUP_LOOK": False,
+        "KREA2_WARMUP_LOOK": False, "FAMILY_FT": False, "FAMILY_SLIDER": slider,
     }
 
 
@@ -103,7 +103,10 @@ ZIMAGE = FamilyDescription(
                   "nf4": (((0.5, 10.0), (1.0, 10.1)), 0.0)},
     optimizers=("adamw", "adamw8bit"),
     network_types=("lora", "lokr"),
-    slider_training=True,
+    slider_training=True,             # photo pairs (training_loss diff weighting) or prompts (noise_latents / predict)
+    # full fine-tune (families/ft.py, the driver's ft_spec): attention and MLP of the 30 layers on an NF4 trunk, the
+    # training adapter frozen on top as for a LoRA; checkpoints keep ComfyUI's fused-qkv file layout
+    finetune=True,
     # torch.compile (6 Oct 2026, RTX PRO 6000, 1 MP, rank 16, 20 photos, steady from epoch 3): checkpoint outside the
     # compiled layers - INT8 1.03 -> 0.69 s/step (1.49x, +0.3 GB), bf16 0.92 -> 0.78 (1.18x, +0.1 GB). Inside was a
     # little faster (0.62 / 0.75) but INT8 peaked +10 GB, so outside. Epoch 1 ~1.85 s/step while it compiles, plus a
@@ -131,6 +134,7 @@ ZIMAGE = FamilyDescription(
     preview_steps=8,
     preview_cfg=1.0,
     preview_negative=None,            # CFG-free
+    samples_cfg_free=True,            # Turbo samples at CFG 1 on a fixed schedule: CFG and the negative grey out
     preview_width=1024,
     preview_height=1024,
     repair_size=1024,
@@ -138,6 +142,10 @@ ZIMAGE = FamilyDescription(
     presets=(
         # placeholder (rank 16, 1e-4, the A/B's recipe) until the adapter A/B and real runs settle the presets
         ("✨ Z-Image Turbo Character (rank 16, 1e-4)", _preset(16, 1e-4)),
+        # Slider: the recipe the other families' sliders run on (rank 4, 2e-4, a few hundred steps)
+        ("✨ Z-Image Turbo Slider (rank 4, 2e-4)", _preset(4, 2e-4, slider=True)),
+        # full fine-tune at the shared fine-tune rate
+        ("✨ Z-Image Turbo Fine-tune (1e-5)", {**_preset(16, 1e-5), "FAMILY_FT": True, "FAMILY_FT_ROTATIONS": "10"}),
     ),
 
     notes=(

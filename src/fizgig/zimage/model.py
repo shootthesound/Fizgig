@@ -84,6 +84,29 @@ def _mask_or_none(mask):
     return None if bool(mask.all()) else mask
 
 
+def _pad_len(n):
+    return n + (-n) % SEQ_MULTI_OF
+
+
+def _travel_layout(weights):
+    """A prompt-travel caption's weights (L,) - 1 on the tokens both waypoints have, the blend weight b on the tail only
+    the longer one has, 0 after - laid out as the reference lays out a caption: real tokens, then cap_pad_token to the
+    next multiple of 32. Each row is part real token, part pad token (`mix`, the pad share) at a key weight (`key`),
+    and the image starts `shift` positions after the shorter prompt's padded end. At b = 1 or 0 (the waypoints
+    themselves) this is exactly that prompt's own layout."""
+    w = weights.float().cpu()
+    n_lo, n_hi = int((w > 1 - 1e-6).sum()), int((w > 1e-6).sum())
+    b = float(w[n_lo]) if n_hi > n_lo else 1.0
+    p_lo, p_hi = _pad_len(n_lo), _pad_len(n_hi)
+    rows = max(p_lo, p_hi)
+    i = torch.arange(rows, dtype=torch.float32)
+    real = torch.where(i < n_lo, torch.ones_like(i), torch.where(i < n_hi, torch.full_like(i, b), torch.zeros_like(i)))
+    pad = torch.where(i < n_lo, torch.zeros_like(i),
+                      b * ((i >= n_hi) & (i < p_hi)).float() + (1 - b) * (i < p_lo).float())
+    key = real + pad
+    return n_hi, rows, pad / key.clamp_min(1e-12), key, p_lo, b * (p_hi - p_lo)
+
+
 class ZImageAttention(nn.Module):
     def __init__(self, dim, n_heads, n_kv_heads, qk_norm=True, eps=1e-5):
         super().__init__()
@@ -109,7 +132,10 @@ class ZImageAttention(nn.Module):
         dtype = q.dtype
         # (B, S) True = attend -> SDPA's boolean mask; None when nothing is padded (decided in the model's forward,
         # outside the compiled layers)
+        # a float mask is an additive key bias (log weight): prompt travel's fractional caption tokens
         mask = attention_mask[:, None, None, :] if attention_mask is not None else None
+        if mask is not None and mask.dtype != torch.bool:
+            mask = mask.to(q.dtype)
         q, k, v = q.transpose(1, 2), k.to(dtype).transpose(1, 2), v.transpose(1, 2)
         out = attend(q, k, v) if mask is None else None       # workbench renders: INT8 attention when switched on
         if out is None:
@@ -213,6 +239,29 @@ class ZImageTransformer2DModel(nn.Module):
             return checkpoint(layer, *args, use_reentrant=False)
         return layer(*args)
 
+    @staticmethod
+    def _key_bias(travel, offsets, cap_lens, mask, length):
+        """(B, S) additive key bias: the log of each caption token's travel weight (at `offset` in the sequence),
+        -inf on padding; None when every weight is 1 and nothing is padded (the plain path)."""
+        dev = next(tr[1].device for tr in travel if tr is not None)
+        bias = torch.zeros(len(travel), length, device=dev)
+        if mask is not None:
+            bias = bias.masked_fill(~mask, float("-inf"))
+        for i, (tr, off, n) in enumerate(zip(travel, offsets, cap_lens)):
+            if tr is not None:
+                bias[i, off:off + n] = bias[i, off:off + n] + tr[1].log()
+        return bias if bool(bias.ne(0).any()) else None
+
+    def _shift_frame(self, freqs, shift, n_real):
+        """Turn the first n_real tokens' frame-axis rotation `shift` positions further (fractional allowed)."""
+        d0 = self.rope_embedder.axes_dims[0] // 2
+        inv = 1.0 / (self.rope_embedder.theta ** (torch.arange(0, 2 * d0, 2, dtype=torch.float64,
+                                                               device=freqs.device) / (2 * d0)))
+        rot = torch.polar(torch.ones_like(inv), inv * float(shift)).to(freqs.dtype)
+        out = freqs.clone()
+        out[:n_real, :d0] = out[:n_real, :d0] * rot
+        return out
+
     # ---- block swap over the 30 main layers (Fizgig's shared offloader, as Qwen 2.1 uses it) ---------------------
     def enable_block_swap(self, num_blocks, device, supports_backward=True):
         from fizgig.modules.offloading import ModelOffloader
@@ -265,17 +314,27 @@ class ZImageTransformer2DModel(nn.Module):
                     .permute(6, 0, 3, 1, 4, 2, 5).reshape(self.out_channels, Fr, H, W))
         return x
 
-    def patchify_and_embed(self, all_image, all_cap_feats, patch_size, f_patch_size):
+    def patchify_and_embed(self, all_image, all_cap_feats, patch_size, f_patch_size, all_cap_weights=None):
         pH = pW = patch_size
         pF = f_patch_size
         device = all_image[0].device
         img_out, img_size, img_pos, img_pad, cap_pos, cap_pad, cap_out = [], [], [], [], [], [], []
-        for image, cap_feat in zip(all_image, all_cap_feats):
-            cl = len(cap_feat)
-            cp = (-cl) % SEQ_MULTI_OF
+        travel = []                                       # per item: None, or (pad share, key weight, shift, start)
+        for k, (image, cap_feat) in enumerate(zip(all_image, all_cap_feats)):
+            w = all_cap_weights[k] if all_cap_weights is not None else None
+            if w is None:
+                cl = len(cap_feat)
+                cp = (-cl) % SEQ_MULTI_OF
+                cap_pad.append(torch.cat([torch.zeros(cl, dtype=torch.bool, device=device),
+                                          torch.ones(cp, dtype=torch.bool, device=device)]))
+                travel.append(None)
+            else:
+                n_hi, rows, mix, key, p_lo, shift = _travel_layout(w)
+                cap_feat = cap_feat[:max(n_hi, 1)]
+                cl, cp = len(cap_feat), rows - len(cap_feat)
+                cap_pad.append(torch.zeros(rows, dtype=torch.bool, device=device))
+                travel.append((mix.to(device), key.to(device), shift, p_lo))
             cap_pos.append(self.create_coordinate_grid((cl + cp, 1, 1), (1, 0, 0), device).flatten(0, 2))
-            cap_pad.append(torch.cat([torch.zeros(cl, dtype=torch.bool, device=device),
-                                      torch.ones(cp, dtype=torch.bool, device=device)]))
             cap_out.append(torch.cat([cap_feat, cap_feat[-1:].repeat(cp, 1)]) if cp else cap_feat)
             C, Fr, H, W = image.size()
             img_size.append((Fr, H, W))
@@ -283,29 +342,35 @@ class ZImageTransformer2DModel(nn.Module):
             image = image.view(C, Ft, pF, Ht, pH, Wt, pW).permute(1, 3, 5, 2, 4, 6, 0).reshape(Ft * Ht * Wt, pF * pH * pW * C)
             il = len(image)
             ip = (-il) % SEQ_MULTI_OF
-            pos = self.create_coordinate_grid((Ft, Ht, Wt), (cl + cp + 1, 0, 0), device).flatten(0, 2)
+            start = cl + cp if travel[-1] is None else travel[-1][3]
+            pos = self.create_coordinate_grid((Ft, Ht, Wt), (start + 1, 0, 0), device).flatten(0, 2)
             if ip:
                 pos = torch.cat([pos, self.create_coordinate_grid((1, 1, 1), (0, 0, 0), device).flatten(0, 2).repeat(ip, 1)])
             img_pos.append(pos)
             img_pad.append(torch.cat([torch.zeros(il, dtype=torch.bool, device=device),
                                       torch.ones(ip, dtype=torch.bool, device=device)]))
             img_out.append(torch.cat([image, image[-1:].repeat(ip, 1)]) if ip else image)
-        return img_out, cap_out, img_size, img_pos, cap_pos, img_pad, cap_pad
+        return img_out, cap_out, img_size, img_pos, cap_pos, img_pad, cap_pad, travel
 
-    def forward(self, x, t, cap_feats, patch_size=2, f_patch_size=1):
-        """x: list of latents (C, F, H, W); t: (B,) at 1 - sigma; cap_feats: list of (L, 2560). -> list of
-        (C, F, H, W), the model's x0 - noise."""
+    def forward(self, x, t, cap_feats, patch_size=2, f_patch_size=1, cap_weights=None):
+        """x: list of latents (C, F, H, W); t: (B,) at 1 - sigma; cap_feats: list of (L, 2560); cap_weights: None, or
+        per item None / (L,) prompt-travel token weights (see _travel_layout). -> list of (C, F, H, W), the model's
+        x0 - noise."""
         bsz = len(x)
         device = x[0].device
         adaln = self.t_embedder(t * self.t_scale)
-        x, cap_feats, x_size, x_pos, cap_pos, x_pad, cap_pad = self.patchify_and_embed(x, cap_feats, patch_size,
-                                                                                         f_patch_size)
+        x, cap_feats, x_size, x_pos, cap_pos, x_pad, cap_pad, travel = self.patchify_and_embed(
+            x, cap_feats, patch_size, f_patch_size, cap_weights)
+        travelling = any(tr is not None for tr in travel)
         x_lens = [len(a) for a in x]
         x = self.all_x_embedder[f"{patch_size}-{f_patch_size}"](torch.cat(x))
         adaln = adaln.type_as(x)
         x = torch.where(torch.cat(x_pad)[:, None], self.x_pad_token.to(x), x)
         x = list(x.split(x_lens))
         x_freqs = list(self.rope_embedder(torch.cat(x_pos)).split([len(a) for a in x_pos]))
+        for i, tr in enumerate(travel):                   # a blend's image sits a fraction further along the frame axis
+            if tr is not None and tr[2]:
+                x_freqs[i] = self._shift_frame(x_freqs[i], tr[2], len(x_freqs[i]) - int(x_pad[i].sum()))
         x = pad_sequence(x, batch_first=True)
         x_freqs = pad_sequence(x_freqs, batch_first=True)[:, :x.shape[1]]
         x_mask = torch.zeros((bsz, max(x_lens)), dtype=torch.bool, device=device)
@@ -318,6 +383,10 @@ class ZImageTransformer2DModel(nn.Module):
         cap_lens = [len(a) for a in cap_feats]
         c = self.cap_embedder(torch.cat(cap_feats))
         c = torch.where(torch.cat(cap_pad)[:, None], self.cap_pad_token.to(c), c)
+        if travelling:
+            mix = torch.cat([tr[0] if tr is not None else torch.zeros(n, device=device)
+                             for tr, n in zip(travel, cap_lens)])[:, None].to(c.dtype)
+            c = c * (1 - mix) + self.cap_pad_token.to(c) * mix
         c = list(c.split(cap_lens))
         c_freqs = list(self.rope_embedder(torch.cat(cap_pos)).split([len(a) for a in cap_pos]))
         c = pad_sequence(c, batch_first=True)
@@ -326,6 +395,8 @@ class ZImageTransformer2DModel(nn.Module):
         for i, n in enumerate(cap_lens):
             c_mask[i, :n] = True
         c_mask = _mask_or_none(c_mask)
+        if travelling:
+            c_mask = self._key_bias(travel, [0] * bsz, cap_lens, c_mask, c.shape[1])
         for layer in self.context_refiner:
             c = self._run(layer, c, c_mask, c_freqs)
 
@@ -338,6 +409,8 @@ class ZImageTransformer2DModel(nn.Module):
         for i, n in enumerate(u_lens):
             u_mask[i, :n] = True
         u_mask = _mask_or_none(u_mask)
+        if travelling:
+            u_mask = self._key_bias(travel, x_lens, cap_lens, u_mask, u.shape[1])
         layers = list(self.layers) if self.blocks_to_swap else None
         for index, layer in enumerate(self.layers):
             if self.blocks_to_swap:

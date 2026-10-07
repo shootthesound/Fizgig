@@ -22,8 +22,21 @@ DTYPE = torch.bfloat16
 
 
 def _cap(cond, i=0):
+    """-> (caption (L, 2560), travel weights (L,) or None). A prompt-travel caption (pad_conditioning, then Royale's
+    blend) carries a mask: True / 1 on its real tokens, the blend weight on the tail only one waypoint has. The blend
+    scaled that tail toward the other waypoint's zero padding, so it is divided back out here and the model weights
+    the token instead (exact for lerp and norm blends)."""
     h = cond["cap"]
-    return h[i] if h.dim() == 3 else h
+    h = h[i] if h.dim() == 3 else h
+    m = cond.get("mask")
+    if m is None:
+        return h, None
+    m = m[i] if m.dim() == 2 else m
+    w = m.float().to(h.device)
+    part = (w > 1e-6) & (w < 1 - 1e-6)
+    if bool(part.any()):
+        h = torch.where(part[:, None], h.float() / w.clamp_min(1e-6)[:, None], h.float()).to(h.dtype)
+    return h, w
 
 
 class ZImageDriver(FamilyDriver):
@@ -75,9 +88,11 @@ class ZImageDriver(FamilyDriver):
     # ---- the model call -------------------------------------------------------------------------
     @staticmethod
     def _velocity(dit, x, sigma, caps):
-        """x (B, 16, h, w) at noise level sigma (B,), caps: list of (L, 2560) -> velocity noise - x0, (B, 16, h, w)."""
+        """x (B, 16, h, w) at noise level sigma (B,), caps: list of _cap() pairs -> velocity noise - x0, (B, 16, h, w)."""
         t = (1.0 - sigma).to(x.device, torch.float32)
-        out = dit([xi.unsqueeze(1).to(DTYPE) for xi in x], t, [c.to(x.device, DTYPE) for c in caps])
+        weights = [w for _c, w in caps]
+        out = dit([xi.unsqueeze(1).to(DTYPE) for xi in x], t, [c.to(x.device, DTYPE) for c, _w in caps],
+                  cap_weights=weights if any(w is not None for w in weights) else None)
         return -torch.stack([o.float() for o in out]).squeeze(2)
 
     @staticmethod
@@ -146,6 +161,61 @@ class ZImageDriver(FamilyDriver):
                 v = u + cfg * (v - u)
             x = x + (float(sig[i + 1]) - float(sig[i])) * v
         return x
+
+    def pad_conditioning(self, conds):
+        """Prompt travel (LoRA Royale): captions zero-padded to one length with a mask of their real tokens. The model
+        lays a padded caption out as the reference does (real tokens, then its pad token to the next multiple of 32),
+        so each waypoint renders exactly as its own prompt, and a blend weights the tokens only one side has."""
+        L = max(c["cap"].shape[-2] for c in conds)
+        out = []
+        for c in conds:
+            h = c["cap"][0] if c["cap"].dim() == 3 else c["cap"]
+            pad = L - h.shape[0]
+            out.append({"cap": torch.cat([h, h.new_zeros(pad, h.shape[1])]) if pad else h,
+                        "mask": torch.cat([torch.ones(h.shape[0], dtype=torch.bool),
+                                           torch.zeros(pad, dtype=torch.bool)])})
+        return out
+
+    # ---- other trainers' LoRAs ------------------------------------------------------------------
+    def convert_lora_state_dict(self, sd):
+        """LoRAs keyed by ComfyUI's own Z-Image names (fused attention.qkv, attention.out - e.g. extracted from a
+        fine-tune, or trained in ComfyUI): the qkv pair becomes to_q / to_k / to_v, each with the shared down weight
+        and its third of the up rows (exact: ComfyUI applies the fused pair the same way), out becomes to_out.0."""
+        if not any(".attention.qkv." in k or ".attention.out." in k for k in sd):
+            return sd
+        out = {}
+        for k, v in sd.items():
+            if ".attention.qkv." in k:
+                stem, tail = k.split(".attention.qkv.", 1)
+                for part, name in enumerate(("to_q", "to_k", "to_v")):
+                    nk = f"{stem}.attention.{name}.{tail}"
+                    up = any(u in tail for u in ("lora_B", "lora_up", "lora.up"))
+                    out[nk] = v.chunk(3, dim=0)[part].contiguous() if up else v
+            elif ".attention.out." in k:
+                out[k.replace(".attention.out.", ".attention.to_out.0.")] = v
+            else:
+                out[k] = v
+        return out
+
+    def alias_flat(self, flat):
+        """kohya-flattened ComfyUI names: layers_N_attention_out -> layers_N_attention_to_out_0 (the fused qkv is split
+        by convert_lora_state_dict)."""
+        if flat.endswith("_attention_out"):
+            return flat[:-len("_out")] + "_to_out_0"
+        return None
+
+    # ---- full fine-tune -------------------------------------------------------------------------
+    def ft_spec(self, dit):
+        """Fine-tuning: the 30 layers' attention and MLP Linears on the NF4 trunk, in four windows of similar size per
+        layer (attention ~59M parameters, each MLP matrix ~39M). The refiners, embedders, AdaLN modulation and final
+        layer stay frozen (as the LoRA). ComfyUI's single file fuses q / k / v into attention.qkv and names the output
+        attention.out; the checkpoint is written back in that layout, so ComfyUI loads it as it loads the base."""
+        from fizgig.families.ft import FTSpec
+        return FTSpec(blocks="layers", components=("attention", "feed_forward.w1", "feed_forward.w2", "feed_forward.w3"),
+                      file_layout=(("attention.to_q.weight", "attention.qkv.weight", 0, 3),
+                                   ("attention.to_k.weight", "attention.qkv.weight", 1, 3),
+                                   ("attention.to_v.weight", "attention.qkv.weight", 2, 3),
+                                   ("attention.to_out.0.weight", "attention.out.weight", 0, 1)))
 
     @torch.no_grad()
     def decode(self, vae, latents, width, height):

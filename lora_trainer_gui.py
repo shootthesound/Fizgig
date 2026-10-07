@@ -16116,7 +16116,7 @@ class LoRATrainerGUI:
         filepath = filedialog.askopenfilename(
             title="Select source LoRA",
             filetypes=[("SafeTensors", "*.safetensors"), ("All files", "*.*")],
-            initialdir=self._lora_initialdir(),
+            initialdir=self._lora_initialdir(self.extract_source_var.get()),
         )
         if filepath:
             self.extract_source_var.set(filepath)
@@ -16456,7 +16456,7 @@ class LoRATrainerGUI:
         filepath = filedialog.askopenfilename(
             title="Select a .safetensors file",
             filetypes=[("SafeTensors", "*.safetensors"), ("All files", "*.*")],
-            initialdir=self._lora_initialdir(),
+            initialdir=self._lora_initialdir(self.metadata_file_var.get()),
         )
         if filepath:
             self.metadata_file_var.set(filepath)
@@ -17806,7 +17806,7 @@ class LoRATrainerGUI:
         filepath = filedialog.askopenfilename(
             title="Select LoRA file",
             filetypes=[("SafeTensors", "*.safetensors"), ("All files", "*.*")],
-            initialdir=self._lora_initialdir(),
+            initialdir=self._lora_initialdir(self.profiler_lora_var.get()),
         )
         if filepath:
             self.profiler_lora_var.set(filepath)
@@ -19776,12 +19776,18 @@ class LoRATrainerGUI:
         except Exception:
             pass
 
-    def _lora_initialdir(self) -> str:
-        """Start folder for every LoRA-loading Browse dialog: the folder the last LoRA was
-        picked from (remembered across restarts), else the input_lora_dir pref, else wherever
-        trained LoRAs are written. Without the fallback a fresh session's dialog opens in the
+    def _lora_initialdir(self, current: str = "") -> str:
+        """Start folder for every LoRA-loading Browse dialog: the folder of the LoRA already in
+        that box (`current`, Peter 7 Oct), else the folder the last LoRA was picked from
+        (remembered across restarts), else the input_lora_dir pref, else wherever trained LoRAs
+        are written. Without the fallback a fresh session's dialog opens in the
         process cwd — on a pod that's the git clone, which contains no .safetensors and made
         the picker look broken (found on RunPod)."""
+        current = (current or "").strip()
+        if current:
+            d = current if os.path.isdir(current) else os.path.dirname(current)
+            if d and os.path.isdir(d):
+                return os.path.normpath(d)     # backslashes: the Windows dialog can ignore a forward-slash folder
         d = self._remembered_dir("lora_browse_dir")
         if d:
             return d
@@ -19899,10 +19905,12 @@ class LoRATrainerGUI:
         self._on_preview_param_changed()
 
     def _browse_repair_lora(self, var):
+        # An empty donor box opens where the primary is
+        cur = var.get() or (self.repair_primary_var.get() if var is getattr(self, "repair_donor_var", None) else "")
         filepath = filedialog.askopenfilename(
             title="Select LoRA file",
             filetypes=[("SafeTensors", "*.safetensors"), ("All files", "*.*")],
-            initialdir=self._lora_initialdir(),
+            initialdir=self._lora_initialdir(cur),
         )
         if filepath:
             var.set(filepath)
@@ -29111,7 +29119,7 @@ class LoRATrainerGUI:
         path = filedialog.askopenfilename(
             title="Select Context LoRA",
             filetypes=[("SafeTensors", "*.safetensors"), ("All files", "*.*")],
-            initialdir=self._lora_initialdir(),
+            initialdir=self._lora_initialdir(self.entries["CONTEXT_LORA_PATH"].get()),
         )
         if path:
             self.entries["CONTEXT_LORA_PATH"].delete(0, tk.END)

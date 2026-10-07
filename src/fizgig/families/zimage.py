@@ -53,10 +53,8 @@ ZIMAGE = FamilyDescription(
                   "ShootTheSound/Fizgig-Z-Image-Turbo-Training-Adapter",
                   "fizgig_z_image_turbo_training_adapter.safetensors", 0.07, role="training_adapter",
                   hint="Frozen during training, off in previews and saved LoRAs: keeps Turbo's 8-step look intact "
-                       "while the LoRA learns. Likeness 78 with it vs 55 without in Fizgig's A/B, and cleaner skin "
-                       "than AI-Toolkit's adapter.",
-                  alt_repo=_OSTRIS, alt_path="zimage_turbo_training_adapter_v2.safetensors",
-                  alt_label="AI-Toolkit's adapter (v2)"),
+                       "while the LoRA learns. Likeness 78 with it vs 72 with the adapter most people use and 55 "
+                       "without, in Fizgig's A/B, with cleaner skin."),
     ),
     prefs_title="Model Paths (Z-Image Turbo)",
     text_encoder_label="Qwen3-4B",

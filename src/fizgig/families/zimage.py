@@ -146,7 +146,7 @@ ZIMAGE = FamilyDescription(
     presets=(
         # Qwen Image 2.1's modes, Qwen's values (its notes give the measurements behind each). The adapter A/B trained
         # rank 16 at a flat 1e-4, 1 MP, to likeness 78 by ~3000 steps on 170 photos.
-        ("✨ Z-Image Turbo Fast (rank 8, adaptive LR)", _preset(8, adaptive=("2e-4", "4e-4"))),
+        ("✨ Z-Image Turbo Fast (rank 8, adaptive LR)", _preset(8, adaptive=("2e-4", "4e-4"), mp="0.25")),
         ("✨ Z-Image Turbo Standard (rank 16, adaptive LR)", _preset(16, adaptive=("1e-4", "2e-4"))),
         # Style: flat, because style loss descends steadily and Adaptive LR climbs toward its ceiling there
         ("✨ Z-Image Turbo Style (rank 16, 1.5e-4)", _preset(16, lr=1.5e-4)),

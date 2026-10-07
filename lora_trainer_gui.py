@@ -7953,6 +7953,8 @@ class LoRATrainerGUI:
                 e.delete(0, tk.END)
                 e.insert(0, d)
             self.settings["LORA_OUTPUT_DIR"] = d
+            if hasattr(self, "sample_output_label"):
+                self.update_sample_output_label()    # the Samples tab's line follows the family's folder
         except Exception:
             pass
 

@@ -1,5 +1,5 @@
 """Z-Image Turbo (Tongyi-MAI) through the standard layer: a 6B single-stream DiT (S3-DiT), Qwen3-4B text encoder, the
-FLUX.1 VAE. Driver: zimage/driver.py. Experimental and hidden until the checklist passes.
+FLUX.1 VAE. Driver: zimage/driver.py. Experimental.
 
 LoRAs train on Turbo itself with a frozen training adapter (off for previews and never in the saved file): Turbo is
 distilled to 8 steps, and a plain LoRA on it undoes the distillation (blurry, washed-out renders at 8 steps).
@@ -39,7 +39,6 @@ ZIMAGE = FamilyDescription(
     lora_name_suffix="zit",
     aliases=("z-image", "z-image-turbo", "zimage"),
     experimental=True,
-    hidden=True,                      # not in the GUI until the checklist passes
 
     model_files=(
         ModelFile("zimage_dit", "Z-Image Turbo DiT", True, _COMFY,
@@ -140,6 +139,7 @@ ZIMAGE = FamilyDescription(
     preview_steps=8,
     preview_cfg=1.0,
     preview_negative=None,            # CFG-free
+    workbench_follows_samples=True,   # the workbench previews as the Samples tab says (as Qwen 2.1)
     samples_cfg_free=True,            # Turbo samples at CFG 1 on a fixed schedule: CFG and the negative grey out
     preview_width=1024,
     preview_height=1024,

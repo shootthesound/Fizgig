@@ -12,6 +12,7 @@ Three rules make it fit the layer:
 
 - **Plain `nn.Linear` layers** for everything a LoRA should reach. The LoRA wraps Linears by dotted name, and INT8 / NF4 quantise the same ones.
 - **The text encoder only encodes.** Captioning is shared (Krea 2's Qwen3-VL-4B for every family), so leave out an LM head or vision tower if encoding doesn't need it. It fits smaller cards that way.
+- **Files loaded by name must work offline.** A tokenizer, processor or config fetched from a Hugging Face repo by name goes in the description's `helper_files` (the model downloader fetches those up front) and is loaded with the driver's `self.from_pretrained(cls, repo, ...)`, or `self.helper_dir(repo)` for loaders that want a folder (diffusers' `from_single_file(config=...)`). Plain `from_pretrained` asks the Hub on every call, so a fully cached setup still fails offline, or when the Hub rate-limits the machine. `families/offline_check.py --family <key>` proves it (see the [checklist](CHECKLIST.md)).
 - **Block swap is optional.** If your blocks sit in an `nn.ModuleList` and your forward can call the shared offloader around each block (`wait_for_block` / `submit_move_blocks_forward`, as Qwen's model does), you get block swap and fine-tune streaming on small cards. Without it the family trains without swap.
 
 ## 2. The description

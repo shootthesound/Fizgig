@@ -68,6 +68,23 @@ class FamilyDriver:
         """Free the encoder's VRAM (caching and preview-prompt encoding load it, then drop it)."""
         raise NotImplementedError
 
+    # ---- files loaded by name (tokenizers, processors, configs): cache first, so a cached setup runs offline -----
+    @staticmethod
+    def from_pretrained(cls, repo_id: str, **kwargs):
+        """`cls.from_pretrained(repo_id, **kwargs)` from the local cache, the Hub only when nothing is cached. Plain
+        from_pretrained asks the Hub on every call, so a fully cached tokenizer still fails offline or when the Hub
+        rate-limits the machine. List the repo and files in the description's `helper_files` so the model
+        downloader fetches them up front."""
+        from fizgig.utils.hf_cache import from_pretrained_cache_first
+        return from_pretrained_cache_first(cls, repo_id, **kwargs)
+
+    @staticmethod
+    def helper_dir(repo_id: str) -> str:
+        """The cached folder of a `helper_files` repo, for loaders that take a path or config repo (diffusers'
+        from_single_file config=), else the repo id itself (the first run then fetches it)."""
+        from fizgig.utils.hf_cache import cached_snapshot_dir
+        return cached_snapshot_dir(repo_id) or repo_id
+
     def enable_gradient_checkpointing(self, dit, on: bool = True) -> None:
         raise NotImplementedError
 

@@ -9,6 +9,7 @@ A family is ready when it trains, previews and saves correctly, and every abilit
 - [ ] `description.validate()` returns `[]` (the registry refuses to import a family that fails it).
 - [ ] Every value from outside Fizgig has a `source=` or a comment naming it.
 - [ ] `driver.block_map()` works with no model loaded (the Profiler and Extract call it that way).
+- [ ] **It runs offline once its files are on disk:** `python src/fizgig/families/offline_check.py --family <key>` passes. It confirms every `helper_files` repo is cached, then loads the text encoder (encoding a prompt) and the VAE with the Hub switched off. A tokenizer or config loaded with plain `from_pretrained` fails here; use the driver's `from_pretrained` / `helper_dir` instead.
 - [ ] A family sampled with CFG sets `workbench_follows_samples=True`, so the workbench encodes the Samples tab's negative; without it the driver gets no negative and must supply its own.
 
 ## Training

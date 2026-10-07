@@ -27,7 +27,11 @@ class TextEncoder:
     def __init__(self, path, device, dtype=torch.bfloat16, tokenizer=None):
         from safetensors.torch import load_file
         from transformers import AutoTokenizer, Qwen3Config, Qwen3Model
-        self.tok = AutoTokenizer.from_pretrained(tokenizer or HELPER, subfolder=None if tokenizer else "tokenizer")
+        from fizgig.utils.hf_cache import from_pretrained_cache_first
+        # cache first: from_pretrained asks the Hub on every call, so a cached tokenizer would still fail offline or
+        # when the Hub rate-limits the machine
+        self.tok = (from_pretrained_cache_first(AutoTokenizer, tokenizer) if tokenizer
+                    else from_pretrained_cache_first(AutoTokenizer, HELPER, subfolder="tokenizer"))
         model = Qwen3Model(Qwen3Config(**QWEN3_4B))
         sd = {k[len("model."):] if k.startswith("model.") else k: v for k, v in load_file(path).items()}
         missing, unexpected = model.load_state_dict(sd, strict=False)
@@ -62,6 +66,15 @@ class TextEncoder:
 def load_vae(path, device, dtype=torch.float32, config=HELPER):
     """The FLUX.1 autoencoder from its single file (LDM key layout), with the reference VAE config."""
     from diffusers import AutoencoderKL
+    from fizgig.utils.hf_cache import cached_snapshot_dir
+    local = cached_snapshot_dir(config)            # the cached config folder: no Hub call once it has been fetched
+    if local is not None:
+        try:
+            vae = AutoencoderKL.from_single_file(path, config=local, subfolder="vae", torch_dtype=dtype,
+                                                 local_files_only=True)
+            return vae.to(device).eval().requires_grad_(False)
+        except Exception:
+            pass
     vae = AutoencoderKL.from_single_file(path, config=config, subfolder="vae", torch_dtype=dtype)
     return vae.to(device).eval().requires_grad_(False)
 

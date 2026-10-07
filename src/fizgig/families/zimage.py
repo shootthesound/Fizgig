@@ -112,6 +112,7 @@ ZIMAGE = FamilyDescription(
     # full fine-tune (families/ft.py, the driver's ft_spec): attention and MLP of the 30 layers on an NF4 trunk, the
     # training adapter frozen on top as for a LoRA; checkpoints keep ComfyUI's fused-qkv file layout
     finetune=True,
+    ft_learning_rate=5e-5,            # the rate ticking Fine-tune sets (see the Fine-tune preset: weights ~3x Qwen's)
     # torch.compile (6 Oct 2026, RTX PRO 6000, 1 MP, rank 16, 20 photos, steady from epoch 3): checkpoint outside the
     # compiled layers - INT8 1.03 -> 0.69 s/step (1.49x, +0.3 GB), bf16 0.92 -> 0.78 (1.18x, +0.1 GB). Inside was a
     # little faster (0.62 / 0.75) but INT8 peaked +10 GB, so outside. Epoch 1 ~1.85 s/step while it compiles, plus a
@@ -154,8 +155,13 @@ ZIMAGE = FamilyDescription(
         ("✨ Z-Image Turbo Style (rank 16, 1.5e-4)", _preset(16, lr=1.5e-4)),
         # Slider: sliders run hot and short (rank 4, 2e-4)
         ("✨ Z-Image Turbo Slider (rank 4, 2e-4)", _preset(4, lr=2e-4, slider=True)),
-        # full fine-tune at the shared fine-tune rate, the training adapter on
-        ("✨ Z-Image Turbo Fine-tune (1e-5)", {**_preset(16, lr=1e-5), "FAMILY_FT": True, "FAMILY_FT_ROTATIONS": "10"}),
+        # full fine-tune, the training adapter on. Not the shared 1e-5: Z-Image's weights are ~3x larger (median |w| 0.082
+        # vs Qwen 2.1 0.024 / Krea 2 0.029) and Adam moves each weight by ~the rate, so 1e-5 is a third of the relative
+        # change - measured 7 Oct 2026 (Arcane, 341 frames, 0.5 MP, 10 rotations): 1e-5 left the picture unchanged,
+        # 5e-5 learned the style, 1e-4 learned it fully and still clean.
+        ("✨ Z-Image Turbo Fine-tune (5e-5)", {**_preset(16, lr=5e-5), "FAMILY_FT": True, "FAMILY_FT_ROTATIONS": "10"}),
+        ("✨ Z-Image Turbo Fine-tune Strong (1e-4)", {**_preset(16, lr=1e-4), "FAMILY_FT": True,
+                                                       "FAMILY_FT_ROTATIONS": "10"}),
     ),
 
     notes=(

@@ -20,6 +20,17 @@ A family is ready when it trains, previews and saves correctly, and every abilit
 - [ ] `train_memory` figures are measured, at two resolutions per precision, from the trainer's logged peaks.
 - [ ] Pause and Resume: a run paused mid-way and resumed continues from the same epoch, and its loss carries on from where it was.
 
+## Small cards
+
+Most people train on 12–24 GB cards, so a family isn't finished until it has been run on them. Nothing here is optional when the family offers the feature; `FIZGIG_SIM_VRAM_GB=N` makes the planner and the allocator behave as an N GB card, so a large card can run every tier.
+
+- [ ] `train_memory` is measured (above), so Auto has real figures to plan from.
+- [ ] **Auto plans fit:** a LoRA run with Auto precision and Auto block swap finishes, previews included, under `FIZGIG_SIM_VRAM_GB=12` and `=16`. Note the plan it logs (`[precision] Auto plan: ...`) and the peak.
+- [ ] **Block swap runs**, if the family has it: one run with swap forced on (e.g. bf16 with 10 blocks swapped under a simulated 16 GB card) trains, previews and saves. Built is not the same as working.
+- [ ] **Fine-tune plans fit**, if the family fine-tunes: `ft_spec`'s memory figures (`overhead_gb`, `stream_base_gb`, `calib_mp`, `act_gb_per_mp`) come from measured window peaks at two resolutions, and a fine-tune finishes under `FIZGIG_SIM_VRAM_GB=16` and `=24` with the fewest windows that fit.
+- [ ] **The workbench renders on a small card:** a Repair Studio render with Auto precision and swap under `FIZGIG_SIM_VRAM_GB=12`.
+- [ ] The text encoder fits the smallest card you support on its own (it runs alone while caching); if it doesn't, give it a quantised fallback as Qwen 2.1's does.
+
 ## Workbench
 
 - [ ] Each tab named in `workbench` loads the family and renders: Repair Studio, the Explorer (four variants, pick one), the Profiler (a quick profile writes its report), Extract (a rank-reduced file), LoRA Royale (two checkpoints).

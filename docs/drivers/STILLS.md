@@ -195,6 +195,8 @@ train_memory={
 
 Measure them with short training runs at two resolutions. The trainer logs the peak each epoch. With `train_memory` empty, Auto takes the first precision and doesn't swap.
 
+Then run the plans on small cards: `FIZGIG_SIM_VRAM_GB=12` (or 16, 24) makes the planner and the allocator behave as that card. The [checklist](CHECKLIST.md#small-cards) lists the runs every family needs: Auto LoRA plans at 12 and 16 GB, block swap forced on, fine-tune plans at 16 and 24 GB, and a workbench render at 12 GB.
+
 ## 5. Presets and samples
 
 - **`presets`**: built-in Training-tab presets, `((name, {setting key: value}), ...)`. The first is applied on a user's first visit to the family. Copy Qwen's `_preset()` helper to start, then tune it on real runs. Ship only presets you've trained.

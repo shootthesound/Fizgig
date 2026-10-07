@@ -111,6 +111,18 @@ All rights reserved. Licensed under the Apache License, Version 2.0.
 
 ---
 
+## Z-Image (Tongyi-MAI / Alibaba) — Apache License 2.0
+
+Upstream: https://github.com/Tongyi-MAI/Z-Image
+
+`src/fizgig/zimage/model.py` (the S3-DiT transformer) and `src/fizgig/zimage/pipeline.py` (text encoding and
+sampling) are adapted from the Z-Image reference implementation (`src/zimage/transformer.py`,
+`src/zimage/pipeline.py`). Copyright 2025 Alibaba Z-Image Team. Licensed under the Apache License, Version 2.0.
+Fizgig's changes are described in each file's header. (Model weights are distributed separately under their own
+license — see "Note on model weights" below.)
+
+---
+
 ## comfyui-rocm — GNU General Public License v3.0
 
 Upstream: https://github.com/patientx/comfyui-rocm

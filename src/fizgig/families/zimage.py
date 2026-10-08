@@ -141,7 +141,6 @@ ZIMAGE = FamilyDescription(
     samples_cfg_free=True,            # Turbo samples at CFG 1 on a fixed schedule: CFG and the negative grey out
     preview_width=1024,
     preview_height=1024,
-    repair_size=1024,
 
     presets=(
         # Qwen Image 2.1's modes, Qwen's values (its notes give the measurements behind each). The adapter A/B trained

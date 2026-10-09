@@ -48,11 +48,12 @@ KREA2 = FamilyDescription(
                   "bf16, virtually identical output.", role="text_encoder"),
         ModelFile("krea2_turbo_lora", "Turbo LoRA (previews)", False, _COMFY,
                   "loras/krea2_turbo_lora_rank_64_bf16.safetensors", 0.47,
-                  "Optional: 8-step previews on the training model.", role="speed_lora"),
+                  "8-step previews on the training model.", role="speed_lora", fetch_optional=False),
         ModelFile("krea2_turbo_dit", "Turbo DiT (fp8, workbench previews)", False, _COMFY,
                   "diffusion_models/krea2_turbo_fp8_scaled.safetensors", 13.1,
-                  "Optional: Repair Studio, LoRA the Explorer and LoRA Royale preview on it by default (8-step, "
-                  "CFG-free); without it they use the Turbo LoRA on the RAW model.", role="preview_dit"),
+                  "Repair Studio, LoRA the Explorer and LoRA Royale preview on it by default (8-step, "
+                  "CFG-free); without it they use the Turbo LoRA on the RAW model.", role="preview_dit",
+                  fetch_optional=False),
     ),
     prefs_note=("💡 Already have these files for ComfyUI? Filling the paths in by hand works perfectly — the download "
                 "button is a convenience, not a requirement. The first time you caption or train while online, Fizgig "

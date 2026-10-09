@@ -183,7 +183,8 @@ class QwenImage21Driver(FamilyDriver):
         if sigmas is not None and len(sigmas) != steps:
             sigmas = None                   # an explicit schedule only applies at its own step count
         return S.sample(dit, cond["hidden_states"], height, width, steps=steps, seed=seed, cfg=cfg, neg_emb=neg,
-                        device=device, sigmas=sigmas, shift_terminal=shift_terminal, noise=noise, on_step=on_step,
+                        device=device, sigmas=sigmas, shift_terminal=shift_terminal,
+                        dynamic_shift=bool(opts.get("dynamic_shift", True)), noise=noise, on_step=on_step,
                         text_mask=cond.get("mask"), neg_mask=neg_mask, ref_latents=refs or None,
                         ref_mask=cond.get("ref_mask"), neg_ref_mask=neg_cond.get("ref_mask") if neg is not None else None)
 

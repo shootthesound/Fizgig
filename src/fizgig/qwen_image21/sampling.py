@@ -19,11 +19,14 @@ def calculate_mu(image_seq_len, base_seq=BASE_SEQ, max_seq=MAX_SEQ, base_shift=B
     return image_seq_len * m + (base_shift - m * base_seq)
 
 
-def sigma_schedule(steps: int, image_seq_len: int, sigmas=None, shift_terminal=SHIFT_TERMINAL) -> torch.Tensor:
-    """Shifted sigmas for `steps` steps, with the terminal 0 appended (length steps + 1)."""
+def sigma_schedule(steps: int, image_seq_len: int, sigmas=None, shift_terminal=SHIFT_TERMINAL,
+                   dynamic_shift=True) -> torch.Tensor:
+    """Shifted sigmas for `steps` steps, with the terminal 0 appended (length steps + 1). dynamic_shift False: the
+    sigmas as given (Qwen-Image-2.1-Turbo's scheduler_config: use_dynamic_shifting false, shift 1.0)."""
     s = np.linspace(1.0, 1.0 / steps, steps) if sigmas is None else np.asarray(sigmas, dtype=np.float64)
-    mu = calculate_mu(image_seq_len)
-    s = math.exp(mu) / (math.exp(mu) + (1.0 / s - 1.0))              # exponential time shift, sigma exponent 1
+    if dynamic_shift:
+        mu = calculate_mu(image_seq_len)
+        s = math.exp(mu) / (math.exp(mu) + (1.0 / s - 1.0))          # exponential time shift, sigma exponent 1
     if shift_terminal:
         one_minus = 1.0 - s
         s = 1.0 - one_minus / (one_minus[-1] / (1.0 - shift_terminal))
@@ -63,7 +66,7 @@ def model_inputs(text_emb: torch.Tensor, n_tokens: int, device, text_mask=None, 
 
 @torch.no_grad()
 def sample(dit, text_emb, height, width, steps=25, seed=0, sigmas=None, shift_terminal=SHIFT_TERMINAL,
-           cfg=1.0, neg_emb=None, device="cuda", dtype=torch.bfloat16, generator_device="cpu", noise=None,
+           dynamic_shift=True, cfg=1.0, neg_emb=None, device="cuda", dtype=torch.bfloat16, generator_device="cpu", noise=None,
            on_step=None, text_mask=None, neg_mask=None, ref_latents=None, ref_mask=None, neg_ref_mask=None):
     """Denoise one image; returns packed latents [1, N, 64] in float32. noise: a [1, 64, h, w] start (seed travel)
     instead of the seed's; on_step(done, total) is called before each step and may raise to abort."""
@@ -72,7 +75,7 @@ def sample(dit, text_emb, height, width, steps=25, seed=0, sigmas=None, shift_te
     if noise is None:
         noise = initial_noise(seed, height, width, generator_device)
     x = noise.float().to(device).reshape(1, 64, n).transpose(1, 2).contiguous()   # reference pack
-    sched = sigma_schedule(steps, n, sigmas, shift_terminal).to(device)
+    sched = sigma_schedule(steps, n, sigmas, shift_terminal, dynamic_shift).to(device)
     enc, img_mask, enc_mask = model_inputs(text_emb, n, device, text_mask, ref_mask)
     if cfg > 1.0 and neg_emb is not None:
         nenc, nmask, nenc_mask = model_inputs(neg_emb, n, device, neg_mask, neg_ref_mask)

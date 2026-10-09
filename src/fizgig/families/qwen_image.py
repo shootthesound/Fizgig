@@ -11,6 +11,10 @@ from fizgig.families.description import (
 _CARD = "https://huggingface.co/Qwen/Qwen-Image-2.1"
 _COMFY = "Comfy-Org/Qwen-Image-2.1"
 _VIGGLE = "https://huggingface.co/Viggle/Qwen-Image-2.1-viggle-turbo"
+_TURBO = "Qwen/Qwen-Image-2.1-Turbo"
+# the Turbo checkpoint's own schedule (model_index.json sample_sigmas), used as given: its scheduler_config turns the
+# dynamic shift off (use_dynamic_shifting false, shift 1.0, shift_terminal null)
+_TURBO_SIGMAS = (1.0, 0.978453, 0.95418, 0.926626, 0.89508, 0.845148, 0.704534, 0.414568)
 _TEMPLATE = "Comfy-Org workflow_templates templates/image_qwen_image_2_1_t2i.json"
 _REDDIT = "r/StableDiffusion 'Qwen Image 2.1 4 Steps Turbo Lora is here by Viggle' (community, Sep 2026)"
 
@@ -65,6 +69,11 @@ QWEN_IMAGE_21 = FamilyDescription(
                   "Viggle/Qwen-Image-2.1-viggle-turbo",
                   "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors", 0.68,
                   "Optional: fast in-training previews. Applied unmerged.", role="speed_lora"),
+        ModelFile("qwen21_turbo_dit", "Qwen 2.1 Turbo DiT (workbench previews)", False, _TURBO,
+                  "transformer/diffusion_pytorch_model.safetensors.index.json", 14.23,
+                  "Optional: Repair Studio, LoRA the Explorer and LoRA Royale preview on it (8 steps, no CFG); "
+                  "training previews can use it too (Samples tab).",
+                  local_name="qwen_image_2.1_turbo_bf16.safetensors", role="preview_dit"),
     ),
     text_encoder_label="Qwen3-VL-8B",
     vae_label="Qwen Image 2.1 VAE",
@@ -150,8 +159,15 @@ QWEN_IMAGE_21 = FamilyDescription(
     workbench_follows_samples=True,   # Peter, 1 Oct 2026: the workbench previews as the Samples tab says
     # the reference default is CFG 1 (none); community reports find a little CFG helps 2.1 (1.5-3), higher
     # oversaturates (Comfy-Org/Qwen-Image-2.1 discussions, comfyui-wiki, Oct 2026)
-    preview_cfg_note="1 = no CFG (the reference default). A little CFG, about 1.5 to 3, gives better previews for "
-                     "many people; higher tends to oversaturate. Above 1 the negative prompt applies.",
+    preview_cfg_note="3 = Fizgig's default for Qwen 2.1 previews (25 steps). 1 = no CFG (the reference default, "
+                     "twice as fast, flatter); much higher tends to oversaturate. Above 1 the negative prompt applies.",
+    # Qwen's own accelerated checkpoint (9 Oct 2026): same architecture as the base, 8 steps, CFG 1, its fixed
+    # schedule. Base-trained LoRAs keep their likeness on it (Desktop "Fizgig Qwen 2.1 Turbo likeness")
+    preview_checkpoint_sampling=SamplingSettings(
+        "Turbo checkpoint", steps=8, cfg=1.0, sampler="euler", scheduler="simple", sigmas=_TURBO_SIGMAS,
+        options=(("shift_terminal", None), ("dynamic_shift", False)),
+        note="Qwen-Image-2.1-Turbo: 8 steps, CFG 1, its own sigmas with no shift.",
+        source=f"https://huggingface.co/{_TURBO} (model_index.json, scheduler_config.json)"),
     int8_attention=True,              # workbench renders: comfy-kitchen's INT8 attention
     activation_cache=True,            # Turbo Preview: step-1 replay, identical to a full render
     finetune=True,                  # the driver's ft_spec (families/ft.py)
@@ -210,7 +226,7 @@ QWEN_IMAGE_21 = FamilyDescription(
     preview_speed_steps=25,
     preview_speed_strength=0.0,
     preview_steps=25,
-    preview_cfg=1.0,
+    preview_cfg=3.0,                  # Peter: base Qwen 2.1 previews are 25 steps at CFG 3
     preview_negative=GENERAL_NEGATIVE,
     preview_width=1024,
     preview_height=1024,

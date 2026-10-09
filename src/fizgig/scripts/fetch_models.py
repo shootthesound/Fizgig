@@ -310,6 +310,8 @@ def fetch_weight(w, models_dir, prefs, token=None, log=print, dry_run=False):
         return True
 
     log(f"  [get]  {w.filename} (~{w.gb:g} GB) — {w.note}")
+    if w.path_in_repo.endswith(".safetensors.index.json"):
+        return _fetch_shards(w, dest, min_bytes, models_dir, prefs, token, log)
     try:
         if EMIT_PROGRESS:
             got = _download_with_progress(w, models_dir, token, log)
@@ -344,6 +346,60 @@ def fetch_weight(w, models_dir, prefs, token=None, log=print, dry_run=False):
         log(f"  [fail] {w.filename} downloaded but failed verification — leaving it for a re-run")
         return False
 
+    prefs[w.pref_key] = dest
+    log(f"  [done] {w.filename}")
+    return True
+
+
+def _fetch_shards(w, dest, min_bytes, models_dir, prefs, token, log):
+    """A diffusers model sharded over several files (path_in_repo: its .safetensors.index.json): each shard is
+    downloaded, then all of them are streamed into the one file at dest - one tensor in RAM at a time - and the
+    shards are deleted, so Preferences points at a single file like every other model row."""
+    from huggingface_hub import hf_hub_download
+    from safetensors import safe_open
+    from fizgig.krea2.safetensors_utils import stream_save_file
+    tok = token or os.environ.get("HF_TOKEN") or None
+    folder = os.path.dirname(w.path_in_repo)
+    try:
+        index = hf_hub_download(repo_id=w.repo, filename=w.path_in_repo, local_dir=models_dir, token=tok)
+        with open(index, encoding="utf-8") as f:
+            names = sorted(set(json.load(f)["weight_map"].values()))
+        shards = []
+        for n in names:
+            part = Weight(w.pref_key, w.repo, f"{folder}/{n}" if folder else n, w.gb / len(names), w.note)
+            shards.append(os.path.abspath(_download_with_progress(part, models_dir, token, log) if EMIT_PROGRESS
+                                          else hf_hub_download(repo_id=w.repo, filename=part.path_in_repo,
+                                                               local_dir=models_dir, token=tok)))
+    except Exception as e:
+        log(f"  [fail] {w.filename}: {type(e).__name__}: {e}")
+        return False
+    import torch
+    _dt = {"BF16": torch.bfloat16, "F16": torch.float16, "F32": torch.float32}
+    specs = {}
+    for sh in shards:
+        with safe_open(sh, framework="pt") as f:
+            for k in f.keys():
+                sl = f.get_slice(k)
+                specs[k] = (_dt[sl.get_dtype()], tuple(sl.get_shape()),
+                            lambda sh=sh, k=k: safe_open(sh, framework="pt").get_tensor(k))
+    log(f"  [merge] {len(shards)} shards -> {w.filename}")
+    stream_save_file(specs, dest + ".tmp")
+    os.replace(dest + ".tmp", dest)
+    for f in shards + [os.path.abspath(index)]:
+        try:
+            os.remove(f)
+        except OSError:
+            pass
+    d = os.path.join(models_dir, *folder.split("/")) if folder else ""
+    while d and os.path.normpath(d) != os.path.normpath(models_dir):
+        try:
+            os.rmdir(d)
+        except OSError:
+            break
+        d = os.path.dirname(d)
+    if not _valid_safetensors(dest, min_bytes):
+        log(f"  [fail] {w.filename} merged but failed verification — leaving it for a re-run")
+        return False
     prefs[w.pref_key] = dest
     log(f"  [done] {w.filename}")
     return True

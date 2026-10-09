@@ -264,7 +264,7 @@ MINIMAX = FamilyDescription(
                   download_note="~155MB — ostris/minimax_h3_training_adapter → "
                                 "minimax_h3_ref2va_training_adapter_v1.safetensors"),
     ),
-    prefs_title="Model Paths (MiniMax H3 — experimental)",
+    prefs_title="Model Paths (MiniMax H3)",
     prefs_intro="Image-only LoRA training for MiniMax's ~33B H3 omni DiT. Train on the pruned int8 DiT — the same file "
                 "ComfyUI runs — quantized to NF4 at load, so the resident base is ~11 GB. The Qwen3-VL-32B text "
                 "encoder and the video VAE are only needed for the one-time caching pass; the compact nvfp4 TE is "

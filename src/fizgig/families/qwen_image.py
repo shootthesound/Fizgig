@@ -43,6 +43,7 @@ QWEN_IMAGE_21 = FamilyDescription(
     arch_id="qwenimage21",
     display_name="Qwen Image 2.1",
     gui_label="Qwen Image 2.1 (experimental)",
+    prefs_title="Qwen Image 2.1 model paths",   # Preferences without "(experimental)"; the picker label stays
     lora_name_suffix="qwen21",
     aliases=("qwen-image-2.1", "qwen21"),
     experimental=True,

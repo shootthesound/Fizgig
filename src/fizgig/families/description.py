@@ -55,7 +55,12 @@ class ModelFile:
 
     @property
     def fetch_is_optional(self) -> bool:
-        return (not self.required) if self.fetch_optional is None else bool(self.fetch_optional)
+        """Whether the download button leaves this file to the optional tick. A training adapter is never optional
+        by default: it isn't required to start a run, but training without it is the wrong run (Peter, 9 Oct 2026 -
+        Qwen's and Z-Image's adapters had slipped into optional through `required=False`)."""
+        if self.fetch_optional is not None:
+            return bool(self.fetch_optional)
+        return not self.required and self.role != "training_adapter"
 
 
 @dataclass(frozen=True)

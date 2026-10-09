@@ -168,5 +168,22 @@ def ensure_all(repo_dir: str = REPO_DIR, log=print):
     return {e[0]: ensure_lora(*e, repo_dir=repo_dir, log=log) for e in LORAS}
 
 
+def qwen_turbo_dit_hint(repo_dir: str = REPO_DIR, log=print):
+    """A Qwen Image 2.1 install without the Turbo DiT gets told how to fetch it (7.3 GB - too big for the
+    updater to pull unasked). Runs after the update's git pull, so it reaches this update, not the next."""
+    try:
+        prefs = _load_prefs(os.path.join(repo_dir, "prefs.json"))
+        qwen = str(prefs.get("qwen21_dit") or "").strip()
+        turbo = str(prefs.get("qwen21_turbo_dit") or "").strip()
+        if qwen and os.path.isfile(qwen) and not (turbo and os.path.isfile(turbo)):
+            log("")
+            log("Qwen Image 2.1: the new Turbo model (7.3 GB) for fast workbench previews isn't downloaded yet.")
+            log("  Open Fizgig, go to the Preferences tab, and in the Qwen Image 2.1 section press")
+            log("  'Download models for me'. Until then, previews work as before.")
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
     ensure_all()
+    qwen_turbo_dit_hint()

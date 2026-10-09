@@ -10810,7 +10810,7 @@ class LoRATrainerGUI:
         self.use_distilled_check = ttk.Checkbutton(
             freq_card, text="Use Distilled model for samples (4-step, matches ComfyUI)",
             variable=self.use_distilled_samples_var,
-            command=self._on_distilled_samples_toggled,
+            command=self._sample_checkpoint_clicked,
         )
         self.use_distilled_check.grid(row=3, column=0, columnspan=3, sticky=tk.W, pady=(4, 0))
 
@@ -10968,6 +10968,15 @@ class LoRATrainerGUI:
                 self._on_distilled_samples_toggled()
             except Exception:
                 pass
+
+    def _sample_checkpoint_clicked(self):
+        """The preview-checkpoint tick clicked: the choice is the on-screen family's (one shared tick - Klein starts on,
+        Qwen off), kept across restarts in last_used["sample_checkpoint"]."""
+        desc = self._family_desc()
+        if desc is not None and desc.train_preview_checkpoint:
+            self._sample_checkpoint_family = desc.key
+            self.last_used.setdefault("sample_checkpoint", {})[desc.key] = bool(self.use_distilled_samples_var.get())
+        self._on_distilled_samples_toggled()
 
     def _on_distilled_samples_toggled(self):
         """Grey out fields that Distilled overrides when the checkbox is ticked. Klein only: a described family
@@ -11419,9 +11428,12 @@ class LoRATrainerGUI:
         the family's settings, so Klein's sample-model choices don't apply."""
         muted = COLORS["text_muted"]
         if hasattr(self, "use_distilled_check"):
-            if desc.train_preview_checkpoint:       # Klein: its Distilled previews
-                self.use_distilled_check.configure(state=tk.NORMAL,
-                                                   text="Use Distilled model for samples (4-step, matches ComfyUI)")
+            if desc.train_preview_checkpoint:       # Klein's Distilled, Qwen's Turbo: the family's own tick
+                self.use_distilled_check.configure(state=tk.NORMAL, text=desc.preview_checkpoint_tick)
+                if getattr(self, "_sample_checkpoint_family", None) != desc.key:
+                    self.use_distilled_samples_var.set(bool(self.last_used.get("sample_checkpoint", {}).get(
+                        desc.key, desc.preview_checkpoint_on)))
+                    self._sample_checkpoint_family = desc.key
             else:
                 self.use_distilled_check.configure(
                     state=tk.DISABLED, text=f"Use Distilled model for samples — Klein only ({desc.display_name} "
@@ -11463,8 +11475,8 @@ class LoRATrainerGUI:
                        f"standard one") if speed_on else
                       f"{desc.display_name}: {desc.preview_steps} steps at CFG {desc.preview_cfg:g}"
                       + (f" - set the {sp.name} in Preferences for {sp_steps}-step previews" if sp else "")))
-        if desc.train_preview_checkpoint and hasattr(self, "sample_steps_note"):     # Klein's own line
-            self.sample_steps_note.configure(text="Base samples only — Distilled is locked at 4 steps")
+        if desc.train_preview_checkpoint and hasattr(self, "sample_steps_note"):     # the checkpoint family's own line
+            self.sample_steps_note.configure(text=desc.preview_checkpoint_steps_note)
         _sampler = dict(desc.samples_text).get("sampler")
         if _sampler and hasattr(self, "sample_steps_note"):      # a family that names its sampler (SDXL)
             self.sample_steps_note.configure(text=f"{self.sample_steps_note.cget('text')} · {_sampler}")
@@ -18424,7 +18436,7 @@ class LoRATrainerGUI:
             if desc.workbench_follows_samples:
                 # one line in place of the choice: the Samples tab sets these previews
                 self.repair_dit_choice_var.set("distilled")
-                self._repair_dit_radio_a.configure(text=self._WORKBENCH_SAMPLES_NOTE, state="disabled")
+                self._repair_dit_radio_a.configure(text=self._workbench_samples_note(desc), state="disabled")
                 self._repair_dit_radio_b.pack_forget()
             else:
                 self._repair_dit_radio_a.configure(
@@ -20138,10 +20150,21 @@ class LoRATrainerGUI:
             ps["negative"] = self.repair_negative_var.get().strip()
         return ps
 
+    def _workbench_samples_note(self, desc):
+        """What a follows-the-Samples-tab workbench renders with: the family's preview checkpoint at its own recipe when
+        it is set in Preferences (Qwen's Turbo), else the Samples tab's settings."""
+        ck = desc.preview_checkpoint() if desc is not None else None
+        p = self.prefs_vars.get(ck[0].pref_key, tk.StringVar()).get().strip() if ck else ""
+        if ck and p and os.path.exists(p):
+            return (f"Previews on the {ck[0].label.split(' (')[0]} - {ck[1].steps} steps, CFG {ck[1].cfg:g}. Clear it in "
+                    f"Preferences to preview with the Samples tab's settings instead.")
+        return self._WORKBENCH_SAMPLES_NOTE
+
     def _show_samples_note(self, label, desc):
         if label is None:
             return
         if desc is not None and desc.workbench_follows_samples:
+            label.configure(text=self._workbench_samples_note(desc))
             if not label.winfo_manager():
                 label.pack(anchor=tk.W, pady=(6, 0))
         else:

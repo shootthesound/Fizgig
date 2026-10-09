@@ -351,6 +351,10 @@ class FamilyDescription:
     # preview_checkpoint_sampling) instead of the training model - Klein's Distilled previews. The driver brings the
     # memory handoff (park_for_preview / load_preview_checkpoint / unpark_after_preview)
     train_preview_checkpoint: bool = False
+    # its Samples tab tick: the label, whether it starts ticked (each family's choice is then kept), and the Steps note
+    preview_checkpoint_tick: str = "Use Distilled model for samples (4-step, matches ComfyUI)"
+    preview_checkpoint_on: bool = True
+    preview_checkpoint_steps_note: str = "Base samples only — Distilled is locked at 4 steps"
     # measured training memory for the Auto plan: {precision: (peak GB with no block swap, GB saved per swapped
     # block)}; the peak may instead be ((megapixels, GB), ...) points, interpolated for the run's resolution.
     # {} = Auto just takes the first precision

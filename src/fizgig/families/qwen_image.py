@@ -69,11 +69,12 @@ QWEN_IMAGE_21 = FamilyDescription(
                   "Viggle/Qwen-Image-2.1-viggle-turbo",
                   "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors", 0.68,
                   "Optional: fast in-training previews. Applied unmerged.", role="speed_lora"),
-        ModelFile("qwen21_turbo_dit", "Qwen 2.1 Turbo DiT (workbench previews)", False, _TURBO,
-                  "transformer/diffusion_pytorch_model.safetensors.index.json", 14.23,
-                  "Optional: Repair Studio, LoRA the Explorer and LoRA Royale preview on it (8 steps, no CFG); "
-                  "training previews can use it too (Samples tab).",
-                  local_name="qwen_image_2.1_turbo_bf16.safetensors", role="preview_dit"),
+        ModelFile("qwen21_turbo_dit", "Qwen 2.1 Turbo DiT (workbench previews)", False, _COMFY,
+                  "diffusion_models/qwen_image_2.1_turbo_bf16.safetensors", 14.23,
+                  "Repair Studio, LoRA the Explorer and LoRA Royale preview on it (8 steps, CFG 1); training "
+                  "previews can use it too (a tick on the Samples tab).",
+                  role="preview_dit",
+                  fetch_optional=False),   # the workbench default: fetched with the family (Peter, 9 Oct 2026)
     ),
     text_encoder_label="Qwen3-VL-8B",
     vae_label="Qwen Image 2.1 VAE",
@@ -163,6 +164,19 @@ QWEN_IMAGE_21 = FamilyDescription(
                      "twice as fast, flatter); much higher tends to oversaturate. Above 1 the negative prompt applies.",
     # Qwen's own accelerated checkpoint (9 Oct 2026): same architecture as the base, 8 steps, CFG 1, its fixed
     # schedule. Base-trained LoRAs keep their likeness on it (Desktop "Fizgig Qwen 2.1 Turbo likeness")
+    train_preview_checkpoint=True,    # an option on the Samples tab, off by default (Peter, 9 Oct 2026)
+    preview_checkpoint_tick="Use the Turbo model for samples (8-step, CFG 1 - set it in Preferences)",
+    preview_checkpoint_on=False,
+    preview_checkpoint_steps_note="Plain-model samples - the Turbo samples use their own 8 steps",
+    # the Samples tab's wording (Klein's Distilled text would otherwise show)
+    samples_text=(("banner", "Preview prompts rendered periodically during training, on the Qwen Image 2.1 model being "
+                             "trained (or the Turbo model when ticked below). Samples land in <output_dir>/sample/ and "
+                             "the Gallery button below opens the viewer."),
+                  ("advanced", "Qwen Image 2.1's sampling settings: the negative prompt and CFG Scale."),
+                  ("flow", "Not used for Qwen Image 2.1 previews"),
+                  ("neg", "Used when CFG Scale is above 1 - the Turbo samples don't use it"),
+                  ("cfg", "3 = Fizgig's default for plain-model previews (25 steps); 1 = no CFG, twice as fast. The "
+                          "Turbo samples always use CFG 1.")),
     preview_checkpoint_sampling=SamplingSettings(
         "Turbo checkpoint", steps=8, cfg=1.0, sampler="euler", scheduler="simple", sigmas=_TURBO_SIGMAS,
         options=(("shift_terminal", None), ("dynamic_shift", False)),

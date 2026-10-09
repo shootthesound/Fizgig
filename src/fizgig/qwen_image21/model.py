@@ -346,6 +346,14 @@ class QwenImage21DiT(nn.Module):
         if self.blocks_to_swap:
             self.offloader.prepare_block_devices_before_forward(list(self.transformer_blocks))
 
+    def disable_block_swap(self):
+        """Tear block swap down (the offloader's backward hooks would otherwise fire on the next training backward):
+        a run without swap gets its model back after the Turbo previews parked it."""
+        if self.offloader is not None:
+            self.offloader.remove_hooks()
+        self.offloader = None
+        self.blocks_to_swap = 0
+
     def switch_block_swap_for_inference(self):
         if self.blocks_to_swap:
             self.offloader.set_forward_only(True)

@@ -536,7 +536,8 @@ class WorkbenchEngine:
         neg = None
         ps = self.preview_settings
         try:
-            if ps is not None and float(ps.get("cfg") or 1.0) > 1.0:
+            if ps is not None and float(self.sampling()[1] or 1.0) > 1.0:     # the CFG this render uses (a preview
+                #                                                          checkpoint has its own: Qwen's Turbo, CFG 1)
                 # the Samples tab's negative, seen the same way as the prompt (an edit's reference included)
                 neg = self.encode([str(ps.get("negative") or "")], ref=("" if override_ctx is not None else ref),
                                   ref_mp=ref_mp, size=(width, height))[0]

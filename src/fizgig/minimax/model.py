@@ -392,10 +392,78 @@ def int8_kernel_available() -> bool:
     return _i8a.kernel_available()
 
 
+# ---- pre-sm_80 bf16 attention fallback -----------------------------------------------
+# PyTorch picks the SDPA kernel from (dtype, arch). Cards without a fast bf16 kernel
+# (sm < 80, e.g. V100 sm_70) silently fall back to the *math* backend, which materializes
+# the full [1, H, S, S] table (bf16 scores, fp32 softmax, kept for backward) —
+# ~16-17 bytes in flight per (H·S²) element (measured: 13.9 GiB fwd+bwd peak at
+# S=4000 on the V100). Measured in run E (V100-16, H=56): a 27-frame clip
+# (S≈6.2k, text + audio + video rows) died on the 8.10 GiB fp32 table alone, and the
+# full math path in flight would have been ~29 GiB — twice the card. The fp16
+# mem-efficient kernel keeps no such table (tiling + online softmax, O(H·S·D)
+# workspace) and is the only fast path those cards have.
+#
+# So on pre-sm_80 CUDA, items whose sequence does not fit under the math backend are
+# routed through the fp16 kernel (cast q/k/v, cast the output back); everything else keeps
+# the original bf16 call verbatim — a dataset of short clips / stills trains exactly as on
+# a fast card. The fit boundary is derived once, from the live free VRAM at the first
+# attention call (by then the model + optimizer state are resident, so that free is the
+# steady-state free of the run). fp16's 11-bit mantissa is finer than bf16's 8-bit one;
+# q and k are RMS-normalized right before this call, so nothing large reaches the fp16
+# path.
+
+_BF16_SDPA = {"state": "unknown", "max_s": 0, "logged": set()}
+_BF16_SDPA_MATH_BYTES_PER_ELEM = 16          # fwd+bwd in flight, measured on the V100
+_BF16_SDPA_FREE_FRACTION = 0.8               # margin: fragmentation lowers the effective
+                                             # OOM point (S=4300 OOM'd on the V100 where
+                                             # the totals still fit) — hold back 20%
+
+
+def _resolve_bf16_sdpa_fit(q):
+    """'disabled' on sm_80+ (bf16 has a fast kernel there); otherwise 'active' with the
+    longest S the math backend can still fit in the live free VRAM."""
+    st = _BF16_SDPA
+    cap = torch.cuda.get_device_capability(q.device.index)
+    if cap[0] >= 8:
+        st["state"] = "disabled"
+        return
+    free, _ = torch.cuda.mem_get_info(q.device.index)
+    st["max_s"] = int(math.sqrt(
+        _BF16_SDPA_FREE_FRACTION * free
+        / (_BF16_SDPA_MATH_BYTES_PER_ELEM * q.shape[1])))
+    st["state"] = "active"
+    logger.info("[h3] pre-sm_80 card (sm_%d%d): attention stays bf16 up to S=%s — longer "
+                "items use the fp16 mem-efficient kernel (the bf16 math backend would need "
+                "a [H,S,S] table of ~%d B/element; %s GiB free at first call)",
+                cap[0], cap[1], f"{st['max_s']:,}",
+                _BF16_SDPA_MATH_BYTES_PER_ELEM, f"{free / 2**30:.2f}")
+
+
 def h3_attention(q, k, v):
-    """[1, H, S, D] SDPA - the int8 kernel when asked for and available, else PyTorch's."""
+    """[1, H, S, D] SDPA - the int8 kernel when asked for and available, else PyTorch's (on a pre-sm_80 card, the
+    fp16 kernel for a sequence the bf16 math backend cannot fit)."""
     out = _i8a.attend(q, k, v)
-    return out if out is not None else F.scaled_dot_product_attention(q, k, v)
+    if out is not None:
+        return out
+    if (q.is_cuda and q.dtype == torch.bfloat16
+            and _BF16_SDPA["state"] != "disabled"):
+        if _BF16_SDPA["state"] == "unknown":
+            _resolve_bf16_sdpa_fit(q)
+        if _BF16_SDPA["state"] == "active":
+            s = q.shape[2]
+            if s not in _BF16_SDPA["logged"] and len(_BF16_SDPA["logged"]) < 32:
+                _BF16_SDPA["logged"].add(s)
+                if s > _BF16_SDPA["max_s"]:
+                    logger.info("[h3] S=%s exceeds the bf16 fit boundary (S<=%s) — "
+                                "this item's attention runs in fp16",
+                                f"{s:,}", f"{_BF16_SDPA['max_s']:,}")
+                else:
+                    logger.info("[h3] S=%s fits the bf16 boundary (S<=%s) — original path",
+                                f"{s:,}", f"{_BF16_SDPA['max_s']:,}")
+            if s > _BF16_SDPA["max_s"]:
+                return F.scaled_dot_product_attention(
+                    q.half(), k.half(), v.half()).to(q.dtype)
+    return F.scaled_dot_product_attention(q, k, v)
 
 
 class MLP(nn.Module):

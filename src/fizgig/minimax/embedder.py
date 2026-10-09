@@ -14,6 +14,7 @@ tokens — the H3 convention. The tokenizer is the Qwen3-VL one Fizgig already b
 Output: [1, L, 5120] bf16, exactly what the DiT's condition_proj expects.
 """
 
+import logging
 import os
 
 import torch
@@ -25,6 +26,8 @@ import torch.nn as nn
 # MemoryEfficientSafeOpen reads each tensor with a plain np.fromfile (no torch mmap-view), which
 # is exactly why every large-model loader (krea2 / klein) uses it. Use it here too.
 from fizgig.krea2.safetensors_utils import MemoryEfficientSafeOpen
+
+logger = logging.getLogger(__name__)
 
 # Derived from the checkpoint tensor shapes (U8 weights are 4-bit-packed: real in-dim = 2x).
 _QWEN3_32B_TRUNC50 = dict(
@@ -426,6 +429,16 @@ def qwen3vl_key_map(key: str) -> str:
     return "language_model." + key[len("model."):] if key.startswith("model.") else key
 
 
+def _cfg_attr(cfg, name, default):
+    """A config attribute that lives at the top level (Qwen3Model) or under text_config
+    (Qwen3VLModel — the vision build still runs the text path)."""
+    for cand in (cfg, getattr(cfg, "text_config", None)):
+        v = getattr(cand, name, None)
+        if isinstance(v, int) and v > 0:
+            return v
+    return default
+
+
 class MiniMaxH3TextEncoder:
     """Loads the bf16 TE, NF4 on GPU, and encodes captions to [1, L, 5120] bf16."""
 
@@ -450,11 +463,93 @@ class MiniMaxH3TextEncoder:
         tensor either way; a gather is memory-bound and trivial at caption lengths.
 
         Text-only path. The vision build scatters image embeddings into the `<|image_pad|>` slots
-        from input_ids, so it never takes the cpu_embed branch (see load_minimax_h3_te)."""
-        if not self.cpu_embed:
-            return self.model(input_ids=ids.to(self.device)).last_hidden_state
-        emb = self.model.embed_tokens(ids.to("cpu")).to(self.device)
-        return self.model(inputs_embeds=emb).last_hidden_state
+        from input_ids, so it never takes the cpu_embed branch (see load_minimax_h3_te).
+
+        Long sequences on pre-sm_80 GPUs are forwarded in L-chunks (see _plan_chunk): SDPA
+        there falls back to the math backend, which materializes the [B, H, L, L] score tensor
+        per layer — ~800 MiB at L~2400 — and a 12.8 GB nvfp4 TE leaves only ~2.5 GB free on a
+        16 GB card. Chunk k passes the past_key_values from chunk k-1; causal attention makes
+        this EXACT (each query attends to the identical key set of the full forward, in the
+        same single softmax), and right padding from encode_batch() stays safe (a real token
+        only looks left)."""
+        chunk = self._plan_chunk(ids)
+        if chunk is None or chunk >= ids.shape[1]:            # fast path: the original call
+            if not self.cpu_embed:
+                return self.model(input_ids=ids.to(self.device)).last_hidden_state
+            emb = self.model.embed_tokens(ids.to("cpu")).to(self.device)
+            return self.model(inputs_embeds=emb).last_hidden_state
+
+        outs, past = [], None
+        for s in range(0, ids.shape[1], chunk):
+            e = min(s + chunk, ids.shape[1])
+            if self.cpu_embed:
+                kw = dict(inputs_embeds=self.model.embed_tokens(ids[:, s:e].to("cpu")).to(self.device))
+            else:
+                kw = dict(input_ids=ids[:, s:e].to(self.device))
+            kw["use_cache"] = True
+            if past is not None:
+                kw["past_key_values"] = past
+            r = self.model(**kw)
+            past = r.past_key_values
+            outs.append(r.last_hidden_state)
+        return torch.cat(outs, dim=1)                         # [B, L, 5120], as in the full pass
+
+    def _plan_chunk(self, ids):
+        """Prefill chunk size for this forward, or None for the single pass.
+
+        None when: the device is not a CUDA card, the card is sm_80+ (flash / mem-efficient
+        SDPA never materializes the score table — the original single call stands), or the
+        batch is small: B*L^2 <= 1024^2. The per-layer math-SDPA peak is H*(B*L^2) at
+        (2*itemsize + 4) bytes/element — the bf16 score matrix, its mask-add temporary and
+        the fp32 softmax all live at once — so the threshold is a ~1 GB table at H=64,
+        cheap anywhere the encoder itself fits. B*L^2, not L: a batch of short captions is
+        as heavy as one long one (the original `L <= 1024` bail-out skipped the former).
+
+        A chunk size otherwise — the single pass genuinely does NOT fit, measured on the
+        dying card (B=11 L=560, 2.67 GB free): in-flight reached ~1.9 GB before the first
+        fp32 softmax (bf16 scores + mask temporary + dense causal mask + projections +
+        hidden copies), and the 844.00 MiB softmax then OOM'd at 722 MiB free. A plain
+        forward in transformers 4.57 builds no KV cache at all — the working set is the
+        attention temporaries themselves, so there is nothing to drop, only to bound.
+        Chunking bounds the per-layer slice to [B, H, C, L]; C is computed live from the
+        free VRAM (mem_get_info at call time) and the model config: the largest C keeping
+        the slice, priced at (2*itemsize + 4) bytes/element, under
+        (free - KV - MLP - hidden/q overhead - 10% margin). The KV is NOT optional in
+        the chunked path —
+        chunk k attends through past_key_values, that is the exactness mechanism — so it
+        is priced in full. Clamped to [128, 2048]; C >= L collapses to the single pass
+        in _text_forward."""
+        B, L = ids.shape
+        dev = torch.device(self.device)
+        if dev.type != "cuda":
+            return None                                        # non-CUDA: fits anywhere
+        if torch.cuda.get_device_capability(dev.index)[0] >= 8:
+            return None                                        # flash SDPA: original call stands
+        if B * L * L <= 1024 * 1024:
+            return None                                        # small table: single pass is cheap
+        free_b, _ = torch.cuda.mem_get_info(dev.index)
+        cfg = self.model.config
+        heads = _cfg_attr(cfg, "num_attention_heads", 64)
+        itemsize = self.compute_dtype.itemsize                  # bf16 -> 2 bytes
+        kv_heads = _cfg_attr(cfg, "num_key_value_heads", heads)
+        head_dim = _cfg_attr(cfg, "head_dim", _cfg_attr(cfg, "hidden_size", 5120) // heads)
+        layers = _cfg_attr(cfg, "num_hidden_layers", 50)
+        kv = B * kv_heads * L * head_dim * 2 * itemsize * layers          # k+v, bf16, all layers
+        mlp = B * L * _cfg_attr(cfg, "intermediate_size", 0) * itemsize
+        extra = B * L * _cfg_attr(cfg, "hidden_size", 5120) * itemsize * 4       # hidden copies + q proj
+        margin = int(0.10 * free_b)
+        budget = free_b - kv - mlp - extra - margin
+        if budget <= 0:
+            budget = int(0.25 * free_b)                        # pathological: keep some chunk
+        c = max(128, min(2048, budget // max(1, B * heads * L * (2 * itemsize + 4))))
+        if not getattr(self, "_chunk_logged", False):           # one line per process, no spam
+            self._chunk_logged = True
+            logger.info("TE forward: B=%d L=%d single-pass peak ~%.2f GB > %.2f GB free "
+                        "(KV ~%.2f GB) — chunked prefill (C=%d, exact: causal attention "
+                        "over past_key_values)",
+                        B, L, (B * heads * L * L * (2 * itemsize + 4) + kv + mlp) / 2 ** 30,
+                        free_b / 2 ** 30, kv / 2 ** 30, min(c, L))
+        return min(c, L)
 
     def _pad_id(self) -> int:
         """The tokenizer's pad id, or Qwen's default. NOT `pad_token_id or <default>` — a pad id

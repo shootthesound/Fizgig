@@ -4537,9 +4537,22 @@ class LoRATrainerGUI:
         ttk.Label(scheduler_content, text="Batch Size:").grid(row=4, column=0, sticky=tk.W, padx=(12, 8), pady=4)
         bs_frame = tk.Frame(scheduler_content, bg=COLORS["bg_surface"])
         bs_frame.grid(row=4, column=1, columnspan=2, sticky=tk.W, padx=5, pady=4)
-        ttk.Entry(bs_frame, textvariable=self.dataset_batch_size_var, width=6).pack(side=tk.LEFT, padx=(0, 10))
-        tk.Label(bs_frame, text="(recommended: 1 — higher values need more VRAM)",
-                 font=(FONT_FAMILY, 9), fg=COLORS["text_muted"], bg=COLORS["bg_surface"]).pack(side=tk.LEFT)
+        # Every family trains one image at a time (the shared trainer, families/train.py), so the box is fixed at 1 -
+        # it used to accept any value and the run then refused it after caching (#181). Gradient Accumulation gives
+        # the same averaged gradient as a larger batch, at batch-1 memory.
+        self.dataset_batch_size_var.set("1")
+        ttk.Entry(bs_frame, textvariable=self.dataset_batch_size_var, width=6,
+                  state="disabled").pack(side=tk.LEFT, padx=(0, 10))
+        tk.Label(bs_frame, text="Every model trains one image at a time. For a larger effective batch, raise "
+                                "Gradient Accumulation (Optimizer section): the same averaged gradient, at the memory "
+                                "of batch 1.",
+                 font=(FONT_FAMILY, 9), fg=COLORS["text_muted"], bg=COLORS["bg_surface"], wraplength=560,
+                 justify=tk.LEFT).pack(side=tk.LEFT)
+
+        def _batch_stays_one(*_):
+            if self.dataset_batch_size_var.get() != "1":       # a preset or saved setting from before
+                self.dataset_batch_size_var.set("1")
+        self.dataset_batch_size_var.trace_add("write", _batch_stays_one)
 
         ttk.Label(scheduler_content, text="Bucket Options:").grid(row=5, column=0, sticky=tk.W, padx=(12, 8), pady=4)
         bucket_frame = tk.Frame(scheduler_content, bg=COLORS["bg_surface"])

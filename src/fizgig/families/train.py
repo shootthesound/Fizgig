@@ -824,8 +824,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         driver.slider_setup(group)           # e.g. H3: still previews unless the pairs are clips
     for ds in group.datasets:
         if getattr(ds, "batch_size", 1) != 1:
-            raise RuntimeError(f"{desc.display_name} trains at batch size 1 here (conditioning lengths differ per "
-                               f"image). Set Batch Size to 1.")
+            raise RuntimeError("Fizgig trains one image at a time: set batch_size = 1 in the dataset config. For a "
+                               "larger effective batch use --gradient_accumulation_steps (the same averaged "
+                               "gradient, at the memory of batch 1).")
     loader = DataLoader(group, batch_size=1, shuffle=True, num_workers=0,
                         collate_fn=(lambda b: b[0]) if slider_prompts else _Collator(shared_epoch, group))
     steps_per_epoch = len(loader)

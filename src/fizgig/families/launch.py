@@ -713,12 +713,12 @@ def cache_dir_for(cache_root, image_dir):
 def dataset_toml(desc, inputs):
     """The dataset TOML for the run: the training folder at Target Megapixels (a square of that area on the
     16-pixel grid), an edit's originals or a slider's -1 end as its control folder, and its own cache folder.
-    Raises ValueError on a Target Megapixels or Batch Size that is not a number."""
+    Raises ValueError on a Target Megapixels that is not a number. Batch size is always 1 (one image a step)."""
     mp = float(inputs.get("megapixels"))
     if mp <= 0:
         raise ValueError(f"Target Megapixels {mp}")
     side = int((mp * 1_000_000) ** 0.5) // 16 * 16
-    batch = int(inputs.get("batch_size"))
+    batch = 1           # every family trains one image at a time (families/train.py); Gradient Accumulation for more
     folder = _s(inputs.get("image_folder"))
     extra = [_s(f) for f in (inputs.get("extra_folders") or []) if _s(f)] if desc.multi_concept else []
     lines = ["[general]", f"resolution = [{side}, {side}]",

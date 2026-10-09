@@ -54,11 +54,12 @@ class Krea2Driver(FamilyDriver):
         figures place the checkpoint inside the graph where it fits and outside where it does not."""
         from fizgig.utils.capabilities import compile_boundary, should_compile
         q4, q8 = precision == "nf4", ("int8" if precision == "int8" else "")
+        caps = self.compile_capabilities("cuda") if torch.cuda.is_available() else None   # RDNA2: no probes
         if mode == "auto":
-            return should_compile(total_steps, q4, q8, blocks_to_swap, mp=mp)
+            return should_compile(total_steps, q4, q8, blocks_to_swap, mp=mp, caps=caps)
         if mode == "outside":
             return "outside", ""
-        b = compile_boundary(q4, q8, mp=mp)
+        b = compile_boundary(q4, q8, mp=mp, caps=caps)
         return b, ("on: inside-the-graph won't fit at this token load - compiling with the checkpoint OUTSIDE the "
                    "region instead." if b == "outside" else "")
 
@@ -67,6 +68,54 @@ class Krea2Driver(FamilyDriver):
         from fizgig.krea2.utils import load_krea2_dit
         dit = load_krea2_dit(path, device=device, dtype=DTYPE, fp8_scaled=False, loading_device=device)
         return dit.eval().requires_grad_(False)
+
+    def load_quantized_dit(self, path, precision, device):
+        """Stream NF4 on gfx103* only; all other cards retain the original loader."""
+        import os
+        if precision != "nf4" or os.environ.get("FIZGIG_STREAM_NF4", "1") == "0":
+            return None
+        from fizgig.modules.rdna2_linear import is_rdna2_device
+        if not is_rdna2_device(device):
+            return None
+        from fizgig.krea2.nf4_loader import load_nf4_streamed
+        return load_nf4_streamed(path, device=device, dtype=DTYPE).eval().requires_grad_(False)
+
+    def compile_capabilities(self, device):
+        """Avoid RDNA2 matrix probes before the model's load-time hook runs."""
+        from fizgig.modules.rdna2_linear import is_rdna2_device
+        if not is_rdna2_device(device):
+            return None
+        from fizgig.utils.capabilities import Capabilities
+        caps = Capabilities(has_cuda=True, is_rocm=True)
+        props = torch.cuda.get_device_properties(torch.device(device).index)
+        caps.device_name = props.name
+        caps.vram_gb = props.total_memory / (1024 ** 3)
+        try:
+            caps.vram_free_gb = torch.cuda.mem_get_info(torch.device(device).index)[0] / (1024 ** 3)
+        except Exception:
+            caps.vram_free_gb = caps.vram_gb
+        return caps
+
+    def on_base_loaded(self, dit, precision, device):
+        """RDNA2 (gfx103*) only: bind the grouped attention and FP32 NF4 GEMMs to this model instance. Every other
+        card returns at the ROCm build check, before any device query; the shared attention, NF4 and SDPA code is
+        untouched."""
+        from fizgig.modules.rdna2_linear import is_rdna2_device
+        if not is_rdna2_device(device):
+            return
+        import contextlib
+        import logging
+        import os
+        log = logging.getLogger(__name__)
+        if precision == "nf4" and os.environ.get("FIZGIG_RDNA2_LINEAR", "1") != "0":
+            from fizgig.modules.rdna2_linear import install_nf4_forward
+            log.info("[rdna2] installed FP32 frozen NF4 GEMMs on %d Linears", install_nf4_forward(dit))
+        if os.environ.get("FIZGIG_RDNA2_ATTENTION", "1") != "0":
+            from fizgig.modules.rdna2_attention import install_attention
+            log.info("[rdna2] installed grouped attention on %d Krea 2 modules", install_attention(dit))
+        # This RDNA2 process uses the math SDPA backend. Priming it here avoids the NVIDIA-only cuDNN probe later.
+        from fizgig.modules import sdpa as _sdpa
+        _sdpa._SDPA_CTX = contextlib.nullcontext
 
     def max_blocks_to_swap(self, dit=None):
         return (len(dit.blocks) if dit is not None else self.description.n_blocks) - 2

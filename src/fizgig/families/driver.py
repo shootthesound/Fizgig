@@ -44,6 +44,10 @@ class FamilyDriver:
         INT8 / NF4 are applied afterwards by families/quant.py to the block map's Linears; the driver only loads."""
         raise NotImplementedError
 
+    def load_quantized_dit(self, path: str, precision: str, device):
+        """Optional streamed base loader. None keeps the existing load-then-quantise path."""
+        return None
+
     # ---- block swap (optional) --------------------------------------------------------------------
     def max_blocks_to_swap(self, dit=None) -> int:
         """How many blocks may stream between CPU and GPU; 0 = the family has no block swap."""
@@ -442,6 +446,10 @@ class FamilyDriver:
         need = min(_peak((v, 0.0), mp) for v in mem.values())
         return False, (f"compiled it needs ~{need:.1f} GB at {mp:.2f} MP and {budget + 1.5:.1f} GB is free - running "
                        f"uncompiled")
+
+    def on_base_loaded(self, dit, precision: str, device) -> None:
+        """Called once after the base is loaded and quantised (families/quant.load_base): a driver can bind
+        hardware-specific forwards to this model instance here. Default: nothing."""
 
     def quant_target_names(self, dit) -> list:
         """The Linears an INT8 / NF4 base quantises (families/quant.py). Default: the LoRA targets. A family whose

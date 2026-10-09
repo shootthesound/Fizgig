@@ -11444,6 +11444,7 @@ class LoRATrainerGUI:
             return
         if getattr(self, "_turbo_box_family", None) == desc.key:
             self._turbo_box_typed()
+            self._generic_samples_ui(desc)      # turbo on/off: Steps and CFG follow (only boxes still on a default)
         else:
             self._show_turbo_strength(desc)
 
@@ -11480,18 +11481,34 @@ class LoRATrainerGUI:
         # The Turbo strength box shows the family on screen's own value, refilled whenever it may hold another's
         if "FAMILY_TURBO_STRENGTH" in self.entries and getattr(self, "_turbo_box_family", None) != desc.key:
             self._show_turbo_strength(desc)
-        want = sp_steps if speed_on else desc.preview_steps
-        other = desc.preview_steps if speed_on else sp_steps
-        if hasattr(self, "sample_steps_var") and self.sample_steps_var.get().strip() in ("", str(other)):
-            self.sample_steps_var.set(str(want))       # only switch between the two defaults, never a user value
+        # Steps and CFG follow the turbo: its own (Qwen's Turbo LoRA: 8 steps, CFG 1) while it renders - file set AND
+        # strength above 0 - else the family's (Qwen: 25, CFG 3). They switch only on a first visit or when the turbo
+        # turns on or off since the family was last shown (last_used["samples_turbo_live"]), and only a box still on
+        # the other default - so a value restored from the family's saved settings is never replaced (a typed CFG 3 at
+        # turbo strength 0 used to flip to 1 on every switch back; reported by @mabseyuk)
+        try:
+            _strength = float(self._turbo_strength_for(desc) or 0) if speed_on else 0.0
+        except ValueError:
+            _strength = 0.0
+        turbo_live = bool(speed_on and _strength > 0)
+        _seen = self.last_used.setdefault("samples_turbo_live", {})
+        _prev = _seen.get(desc.key)
+        _first = _prev is None and desc.gui_label not in self.last_used.get("sample_settings", {})
+        _flip = _first or (_prev is not None and _prev != turbo_live)
+        _seen[desc.key] = turbo_live
+        want = sp_steps if turbo_live else desc.preview_steps
+        other = desc.preview_steps if turbo_live else sp_steps
+        if hasattr(self, "sample_steps_var"):
+            _cur = self.sample_steps_var.get().strip()
+            if not _cur or (_flip and _cur == str(other)):
+                self.sample_steps_var.set(str(want))
         if sp is not None and hasattr(self, "sample_cfg_scale_var"):
-            # CFG the same way: the speed LoRA's own (Qwen's Turbo LoRA: 1) with it, the family's (Qwen: 3) without
-            want_cfg, other_cfg = ((sp.settings.cfg, desc.preview_cfg) if speed_on else (desc.preview_cfg, sp.settings.cfg))
+            want_cfg, other_cfg = ((sp.settings.cfg, desc.preview_cfg) if turbo_live else (desc.preview_cfg, sp.settings.cfg))
             try:
                 cur = float(self.sample_cfg_scale_var.get().strip() or "nan")
             except ValueError:
                 cur = None
-            if cur is not None and (cur != cur or abs(cur - other_cfg) < 1e-9) and want_cfg != other_cfg:
+            if cur is not None and (cur != cur or (_flip and abs(cur - other_cfg) < 1e-9)) and want_cfg != other_cfg:
                 self.sample_cfg_scale_var.set(f"{want_cfg:g}")
         if hasattr(self, "_family_turbo_label"):
             for _w, _kw in ((self._family_turbo_label, {"padx": (14, 4)}), (self.entries["FAMILY_TURBO_STRENGTH"], {})):
@@ -27741,8 +27758,10 @@ class LoRATrainerGUI:
         if not (self._rms_clips.get("baseline") and self._rms_clips.get("tweaked")):
             return
         self._repair_clip_player_open(clips=self._rms_clips, sides=["tweaked", "baseline"],   # With mods LEFT, like the tab
-                                      labels={"baseline": "No mod (base, same seed)", "tweaked": "With mods"},
-                                      title="RefMod Studio — Clip player (With mods vs No mod)",
+                                      labels={"baseline": self._rms_baseline_title.cget("text"),
+                                              "tweaked": self._rms_tweaked_title.cget("text").split(" — ")[0]},
+                                      title=f"RefMod Studio — Clip player ({self._rms_tweaked_title.cget('text').split(' — ')[0]} "
+                                            f"vs {self._rms_baseline_title.cget('text').split(' (')[0]})",
                                       metrics=False, nolora=False, stem="refmod", status_var=self.rms_status_var)
 
     def _rms_popout(self, pil, title):
@@ -27853,6 +27872,7 @@ class LoRATrainerGUI:
         self.rms_status_var.set(f"Sweep: {kind} — {len(jobs)} clips of {self._RMS_SWEEP_FRAMES} frames…")
 
         def _work():
+            self._rms_sync_lora(eng, jobs[0]["lora"] if jobs else None)   # the LoRA on the tab, as Render does
             for i, job in enumerate(jobs):
                 clip = eng.render_refmod(seed=job["seed"], prompt=job["prompt"], width=job["width"], height=job["height"],
                                          frames=self._RMS_SWEEP_FRAMES, regime="custom", ref_latents=job["latents"],
@@ -27896,7 +27916,7 @@ class LoRATrainerGUI:
             clips["baseline"] = base
             sides.append("baseline")
         self._repair_clip_player_open(clips=clips, sides=sides,
-                                      labels={"tweaked": job["label"], "baseline": "No mod (base, same seed)"},
+                                      labels={"tweaked": job["label"], "baseline": self._rms_baseline_title.cget("text")},
                                       title=f"RefMod Studio — sweep: {job['label']}",
                                       metrics=False, nolora=False, stem="rms_sweep", status_var=self.rms_status_var)
 

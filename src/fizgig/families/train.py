@@ -415,6 +415,12 @@ def _render_previews(driver, dit, net, vae, encoded, out_dir, epoch, *, output_n
         ref_kw = {"refs": [r.to(device) for r in refs]} if refs else {}
         lats = []
         mults = SLIDER_PREVIEW_MULTIPLIERS if slider else (None,)
+        # previews run the blocks uncompiled (Compile Blocks): eval mode, the preview size and the speed LoRA are each a
+        # new graph, and building them took ~5 minutes of Triton/MSVC work on the first preview after every start or
+        # resume - a handful of eager steps costs seconds. Training keeps its compiled graphs
+        _eager = torch.compiler.set_stance("force_eager")
+        _eager.__enter__()
+        done.add("eager")
         for i, cond in enumerate(encoded):
             for m in mults:
                 if m is not None:
@@ -449,6 +455,8 @@ def _render_previews(driver, dit, net, vae, encoded, out_dir, epoch, *, output_n
             else:
                 paths += driver.save_preview(frames[0], p)
     finally:
+        if "eager" in done:
+            _eager.__exit__(None, None, None)
         if slider:
             net.set_trainable_multiplier(1.0)  # a preview that failed mid-dial must not leave the LoRA scaled
         if "decode_park" in done:

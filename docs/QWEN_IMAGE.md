@@ -6,7 +6,7 @@ Qwen Image 2.1 trains LoRAs and LoKRs in Fizgig, including edit LoRAs learned fr
 
 ## Getting set up
 
-1. On the **Preferences** tab, press **Download models for me** in the Qwen Image 2.1 section. It fetches the DiT, VAE, text encoder, the Fizgig training adapter and Viggle's turbo LoRA (about 34 GB), plus Krea 2's Qwen3-VL-4B captioner (about 5 GB) if you don't have it, and the tokenizer files so training works offline.
+1. On the **Preferences** tab, press **Download models for me** in the Qwen Image 2.1 section. It fetches the DiT, VAE, text encoder, the Fizgig training adapter, the Turbo LoRA and the Turbo DiT (about 41 GB), plus Krea 2's Qwen3-VL-4B captioner (about 5 GB) if you don't have it, and the tokenizer files so training works offline.
 2. On the **Training** tab, pick **Qwen Image 2.1** as the Base Model. The Fast preset loads on your first visit.
 
 ## The Fizgig training adapter
@@ -56,9 +56,11 @@ If a later epoch looks softer than you'd like, an earlier one is often the bette
 
 The text encoder only encodes, and loads in 8-bit below about 20 GB free (about 8 GB in all), which is what sets the 10 GB floor. On an RTX 5090 limited to 12 GB, the Fast preset trained on INT8 with a 9.9 GB peak, previews included; limited to 10 GB, on NF4 with a 7.3 GB peak.
 
-## Previews and the turbo LoRA
+## Previews and Turbo
 
-Training previews render on the plain model at **25 steps** by default, with the Samples tab's **Turbo strength** at 0. For faster previews, set Turbo strength to **1.0** and steps to **6**: that renders them with Viggle's turbo LoRA (set in Preferences). The training adapter is off for previews; a Context LoRA stays on.
+Training previews render with the **Turbo LoRA** at strength 1, **8 steps, CFG 1** (both set in Preferences; the download button fetches them). Ticking **Use the Turbo model for samples** on the Samples tab renders them on the Turbo DiT instead, with the model being trained parked beside it. Without the Turbo LoRA they render on the plain model at **25 steps, CFG 3**. The training adapter is off for previews; a Context LoRA stays on.
+
+Repair Studio, LoRA the Explorer and LoRA Royale preview on the Turbo DiT (8 steps, CFG 1) when it's set; without it they follow the Samples tab.
 
 ## Edit LoRAs
 

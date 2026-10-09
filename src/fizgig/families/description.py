@@ -415,12 +415,6 @@ class FamilyDescription:
     preview_speed_steps: int = 0      # preview steps with it (0 = the SpeedLoRA's own)
     preview_speed_strength: Optional[float] = None   # preview strength for it (None = the SpeedLoRA's own; 0 = off
     # by default: previews render without it until the Samples tab's Turbo strength is raised)
-    # (steps, strength) preview defaults an older release shipped; the Samples tab replaces them with the current
-    # ones, so a setting saved under the old default moves on instead of sticking
-    retired_preview_defaults: tuple = ()
-    # a one-time reset: when this tag is new to a user, the Samples tab replaces their saved preview steps and turbo
-    # strength with the current defaults once (the tag is remembered, so later choices stick). Change it to reset again.
-    preview_reset: str = ""
 
     # built-in Training-tab presets: ((name, {GUI setting key: value}), ...); the first is applied on a first visit
     presets: tuple = ()

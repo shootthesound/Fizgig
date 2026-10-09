@@ -206,11 +206,9 @@ QWEN_IMAGE_21 = FamilyDescription(
     # 1.0 / 6 steps (Peter, 28 Sep).
     preview_speed_lora="Viggle turbo v0.2.1 (6-step)",
     # Previews default to the plain model (25 steps, turbo strength 0 = not loaded); strength 1 at 6 steps is the
-    # fast option. v6.5.0 shipped 0.7 for 10 steps; the reset moves everyone off v6.5.1-6.5.2's 1.0 for 6 once.
+    # fast option.
     preview_speed_steps=25,
     preview_speed_strength=0.0,
-    retired_preview_defaults=((10, 0.7),),
-    preview_reset="turbo-off-25-steps",
     preview_steps=25,
     preview_cfg=1.0,
     preview_negative=GENERAL_NEGATIVE,

@@ -6107,7 +6107,8 @@ class LoRATrainerGUI:
         d = dict(self.settings)
         # the family card as Start stores it (start_training): the switches only where the family offers them
         _fr = self._ft_resume_active() if self._family_ft_on(desc) else None
-        d.update(FAMILY_EDIT=self._family_edit_on(desc), FAMILY_SLIDER=self._family_slider_on(desc),
+        d.update(FAMILY_TURBO_STRENGTH=self._turbo_strength_for(desc),      # its own, never the shared box
+                 FAMILY_EDIT=self._family_edit_on(desc), FAMILY_SLIDER=self._family_slider_on(desc),
                  FAMILY_FT=self._family_ft_on(desc), FAMILY_FT_FUSED=bool(self.entries["FAMILY_FT_FUSED"].get()),
                  FAMILY_SLIDER_ULTRA=bool(self.entries["FAMILY_SLIDER_ULTRA"].get()),
                  FAMILY_FAST_ID=bool(self.entries["FAMILY_FAST_ID"].get()),
@@ -10639,8 +10640,11 @@ class LoRATrainerGUI:
         # Turbo LoRA strength for standard-layer families' previews (shown only when the family has one set).
         self._family_turbo_label = tk.Label(_steps_frame, text="Turbo strength:", font=(FONT_FAMILY, 10),
                                             fg=COLORS["text_secondary"], bg=COLORS["bg_surface"])
+        # Each family has its own value (last_used["turbo_strengths"], read by _turbo_strength_for); the box only shows
+        # and edits the family on screen, so it starts empty and is filled by _generic_samples_ui
         self.entries["FAMILY_TURBO_STRENGTH"] = ttk.Entry(_steps_frame, width=6)
-        self.entries["FAMILY_TURBO_STRENGTH"].insert(0, str(self.settings.get("FAMILY_TURBO_STRENGTH", "")))
+        self.entries["FAMILY_TURBO_STRENGTH"].bind("<KeyRelease>", self._turbo_box_typed, add="+")
+        self.entries["FAMILY_TURBO_STRENGTH"].bind("<FocusOut>", self._turbo_box_left, add="+")
         ToolTip(self.entries["FAMILY_TURBO_STRENGTH"],
                 "How strongly the turbo LoRA loads for previews. Below 1.0 (around 0.7) with more steps often gives "
                 "cleaner, more detailed previews; 1.0 with the turbo's own step count is the fastest.")
@@ -11342,6 +11346,46 @@ class LoRATrainerGUI:
             except tk.TclError:
                 pass          # packed, not gridded — leave it alone
 
+    # ---- the Samples tab's Turbo strength: one value per family ------------------------------------------------
+    # last_used["turbo_strengths"][family key] is the only value: launches and the workbench read it through
+    # _turbo_strength_for, never the box. The box is one widget shared by every family, so it only shows and edits
+    # the family on screen (_turbo_box_family = whose value it holds) - a value it shows can never be filed under,
+    # or launched for, another family (Qwen's 0 kept turning up on Krea 2).
+    def _turbo_strength_for(self, desc):
+        """The family's own Turbo strength as typed, else its description default ("" when it has no speed LoRA)."""
+        v = str(self.last_used.get("turbo_strengths", {}).get(desc.key) or "").strip()
+        if v:
+            return v
+        sp = desc.preview_speed_defaults()
+        return f"{sp[1]:g}" if sp and sp[1] is not None else ""
+
+    def _show_turbo_strength(self, desc):
+        e = self.entries.get("FAMILY_TURBO_STRENGTH")
+        if e is None:
+            return
+        e.delete(0, tk.END)
+        e.insert(0, self._turbo_strength_for(desc))
+        self._turbo_box_family = desc.key
+
+    def _turbo_box_typed(self, _ev=None):
+        """A keystroke in the box: the value is for the family on screen."""
+        desc = self._family_desc()
+        if desc is None:
+            return
+        self._turbo_box_family = desc.key
+        self.last_used.setdefault("turbo_strengths", {})[desc.key] = self.entries["FAMILY_TURBO_STRENGTH"].get().strip()
+        self._save_last_used_paths()
+
+    def _turbo_box_left(self, _ev=None):
+        """Focus left the box: store it only if it holds the on-screen family's value, else show that family's."""
+        desc = self._family_desc()
+        if desc is None:
+            return
+        if getattr(self, "_turbo_box_family", None) == desc.key:
+            self._turbo_box_typed()
+        else:
+            self._show_turbo_strength(desc)
+
     def _generic_samples_ui(self, desc):
         """Standard layer: the Samples tab for a described family. Previews render on the live training model at
         the family's settings, so Klein's sample-model choices don't apply."""
@@ -11366,59 +11410,13 @@ class LoRATrainerGUI:
             if hasattr(self, "sample_steps_var") and self.sample_steps_var.get().strip() in ("", str(sp_steps)):
                 self.sample_steps_var.set(str(desc.preview_steps))
             sp = speed_on = None
-        # The Turbo strength box is one widget: each family keeps its own value (last_used["turbo_strengths"]) -
-        # switching stores the box for the family left and shows the one entered, or its default (Qwen's 0 must not
-        # become Krea 2's).
-        if "FAMILY_TURBO_STRENGTH" in self.entries:
-            _e = self.entries["FAMILY_TURBO_STRENGTH"]
-            _map = self.last_used.setdefault("turbo_strengths", {})
-            _prev = getattr(self, "_turbo_strength_family", None)
-            if _prev != desc.key:
-                if _prev:
-                    _map[_prev] = _e.get().strip()
-                _e.delete(0, tk.END)
-                _e.insert(0, _map.get(desc.key) or (f"{sp_strength:g}" if sp_strength is not None else ""))
-                self._turbo_strength_family = desc.key
-                if not getattr(self, "_turbo_strength_bound", False):
-                    def _keep(_ev=None):
-                        _f = getattr(self, "_turbo_strength_family", None)
-                        if _f:
-                            self.last_used.setdefault("turbo_strengths", {})[_f] = _e.get().strip()
-                            self._save_last_used_paths()
-                    _e.bind("<FocusOut>", _keep, add="+")
-                    _e.bind("<KeyRelease>", _keep, add="+")
-                    self._turbo_strength_bound = True
+        # The Turbo strength box shows the family on screen's own value, refilled whenever it may hold another's
+        if "FAMILY_TURBO_STRENGTH" in self.entries and getattr(self, "_turbo_box_family", None) != desc.key:
+            self._show_turbo_strength(desc)
         want = sp_steps if speed_on else desc.preview_steps
         other = desc.preview_steps if speed_on else sp_steps
-        # A family's retired turbo defaults (desc.retired_preview_defaults) are replaced too, so settings saved by an
-        # older release move to the current default instead of sticking.
-        _old_steps = {str(s) for s, _ in getattr(desc, "retired_preview_defaults", ())}
-        _old_strengths = {f"{float(v):g}" for _, v in getattr(desc, "retired_preview_defaults", ())}
-        if speed_on and self.sample_steps_var.get().strip() in _old_steps:
-            self.sample_steps_var.set(str(want))
-        if speed_on and hasattr(self, "_family_turbo_label"):
-            _e = self.entries["FAMILY_TURBO_STRENGTH"]
-            try:
-                _cur = f"{float(_e.get().strip()):g}"
-            except ValueError:
-                _cur = ""
-            if _cur in _old_strengths:
-                _e.delete(0, tk.END)
-                _e.insert(0, f"{sp_strength:g}")
         if hasattr(self, "sample_steps_var") and self.sample_steps_var.get().strip() in ("", str(other)):
             self.sample_steps_var.set(str(want))       # only switch between the two defaults, never a user value
-        _tag = getattr(desc, "preview_reset", "")
-        _done = self.last_used.setdefault("preview_resets", {})
-        if _tag and _done.get(desc.key) != _tag and hasattr(self, "sample_steps_var"):
-            # the family's one-time reset: saved steps / turbo strength go to the current defaults, once
-            self.sample_steps_var.set(str(want))
-            if "FAMILY_TURBO_STRENGTH" in self.entries and sp_strength is not None:
-                self.entries["FAMILY_TURBO_STRENGTH"].delete(0, tk.END)
-                self.entries["FAMILY_TURBO_STRENGTH"].insert(0, f"{sp_strength:g}")
-            _done[desc.key] = _tag
-            self._save_last_used_paths()
-            self.update_console(f"[samples] {desc.display_name} previews reset to the new default: {want} steps"
-                                + (f", turbo strength {sp_strength:g}" if sp_strength is not None else "") + "\n")
         if hasattr(self, "_family_turbo_label"):
             for _w, _kw in ((self._family_turbo_label, {"padx": (14, 4)}), (self.entries["FAMILY_TURBO_STRENGTH"], {})):
                 if speed_on and not _w.winfo_manager():
@@ -11426,7 +11424,7 @@ class LoRATrainerGUI:
                 elif not speed_on:
                     _w.pack_forget()
             if speed_on and not self.entries["FAMILY_TURBO_STRENGTH"].get().strip():
-                self.entries["FAMILY_TURBO_STRENGTH"].insert(0, f"{sp_strength:g}")
+                self._show_turbo_strength(desc)        # empty = the family's default
         if hasattr(self, "sample_steps_note"):
             self.sample_steps_note.configure(
                 text=((f"{desc.display_name}: {sp_steps} steps on the plain model by default. For fast previews set "
@@ -20065,17 +20063,12 @@ class LoRATrainerGUI:
         workbench_follows_samples): the live boxes when the Training tab is on that family, else what the tab last
         held for it (its per-family stash), else the family's defaults."""
         cur = self._family_desc()
-        sp_def = desc.preview_speed_defaults() or (None, None)
         if cur is not None and cur.key == desc.key:
             steps, cfg = self.sample_steps_var.get().strip(), self.sample_cfg_scale_var.get().strip()
-            turbo = self.entries["FAMILY_TURBO_STRENGTH"].get().strip() if "FAMILY_TURBO_STRENGTH" in self.entries \
-                else ""
         else:
             stash = getattr(self, "_arch_sample_stash", {}).get(desc.gui_label) or {}
             steps, cfg = stash.get("steps") or str(desc.preview_steps), stash.get("cfg") or f"{desc.preview_cfg:g}"
-            turbo = self.last_used.get("turbo_strengths", {}).get(desc.key) or ""
-        if not turbo and sp_def[1] is not None:
-            turbo = f"{sp_def[1]:g}"
+        turbo = self._turbo_strength_for(desc)          # the family's own value, whichever family is on screen
         return {"steps": steps, "cfg": cfg, "turbo": turbo or "0",
                 "negative": self.sample_negative_var.get().strip() if getattr(self, "sample_negative_var", None)
                 else ""}
@@ -29662,7 +29655,7 @@ class LoRATrainerGUI:
             **({"FAMILY_TRAINING_ADAPTER": bool(self.entries["FAMILY_TRAINING_ADAPTER"].get()),
                 "FAMILY_EMA": self.entries["FAMILY_EMA"].get(),
                 "FAMILY_PRECISION": self.entries["FAMILY_PRECISION"].get(),
-                "FAMILY_TURBO_STRENGTH": self.entries["FAMILY_TURBO_STRENGTH"].get(),
+                "FAMILY_TURBO_STRENGTH": self._turbo_strength_for(self._family_desc()),
                 **({"FAMILY_TURBO_STEPS": self.entries["FAMILY_TURBO_STEPS"].get(),       # H3's Turbo preview row
                     "FAMILY_TURBO_PACE": self.entries["FAMILY_TURBO_PACE"].get()}
                    if self._family_desc().samples_turbo_pace else {}),
@@ -30032,8 +30025,7 @@ class LoRATrainerGUI:
             # would otherwise be missed (swaps only between the two defaults, never a typed value).
             try:
                 self._generic_samples_ui(desc)
-                if "FAMILY_TURBO_STRENGTH" in self.entries:     # it may just have run the family's one-time reset
-                    self.settings["FAMILY_TURBO_STRENGTH"] = self.entries["FAMILY_TURBO_STRENGTH"].get()
+                self.settings["FAMILY_TURBO_STRENGTH"] = self._turbo_strength_for(desc)
             except Exception:
                 pass
         plan = launch.LaunchPlan()

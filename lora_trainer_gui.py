@@ -5008,6 +5008,8 @@ class LoRATrainerGUI:
 
     def _apply_preset_values_inner(self, preset):
         for key, value in preset.items():
+            if key in self._NON_TRAINING_ENTRY_KEYS and key != "RESUME_TRAINING":
+                continue            # the Samples tab's values are the model's own, never a preset's
             if key in self.entries:
                 entry = self.entries[key]
                 if isinstance(entry, ttk.Combobox):
@@ -5339,7 +5341,9 @@ class LoRATrainerGUI:
         if isinstance(arch, str) and arch and arch in ARCHITECTURES and self.architecture_var.get() != arch:
             self.architecture_var.set(arch)
             try:
-                self.update_ui_for_architecture()
+                # the picker's own switch: the Samples boxes, output folder and settings follow the model, so the
+                # queued values below are kept for this model, never the one that was on screen
+                self._on_architecture_selected()
             except Exception as e:
                 self.update_console(f"[queue] arch switch to {arch!r} failed: {e}\n")
         self._apply_preset_values(item.get("preset", {}))
@@ -5362,6 +5366,8 @@ class LoRATrainerGUI:
                     entry.set(v)
                 elif isinstance(entry, ttk.Combobox):
                     entry.set(str(v))
+                elif str(entry.cget("textvariable") or ""):
+                    entry.setvar(str(entry.cget("textvariable")), str(v))   # reaches a greyed box too
                 else:
                     entry.delete(0, tk.END)
                     entry.insert(0, str(v))
@@ -11436,6 +11442,16 @@ class LoRATrainerGUI:
         self._turbo_box_family = desc.key
         self.last_used.setdefault("turbo_strengths", {})[desc.key] = self.entries["FAMILY_TURBO_STRENGTH"].get().strip()
         self._save_last_used_paths()
+        # Steps / CFG follow a turbo turned on or off once typing pauses - also when Start is clicked without leaving
+        # the box first
+        _job = getattr(self, "_turbo_follow_job", None)
+        if _job is not None:
+            try:
+                self.master.after_cancel(_job)
+            except Exception:
+                pass
+        self._turbo_follow_job = self.master.after(
+            500, lambda d=desc: self._generic_samples_ui(d) if getattr(self._family_desc(), "key", None) == d.key else None)
 
     def _turbo_box_left(self, _ev=None):
         """Focus left the box: store it only if it holds the on-screen family's value, else show that family's."""
@@ -11475,8 +11491,6 @@ class LoRATrainerGUI:
             for _w in (getattr(self, "_family_turbo_label", None), self.entries.get("FAMILY_TURBO_STRENGTH")):
                 if _w is not None and _w.winfo_manager():
                     _w.pack_forget()
-            if hasattr(self, "sample_steps_var") and self.sample_steps_var.get().strip() in ("", str(sp_steps)):
-                self.sample_steps_var.set(str(desc.preview_steps))
             sp = speed_on = None
         # The Turbo strength box shows the family on screen's own value, refilled whenever it may hold another's
         if "FAMILY_TURBO_STRENGTH" in self.entries and getattr(self, "_turbo_box_family", None) != desc.key:
@@ -11493,7 +11507,7 @@ class LoRATrainerGUI:
         turbo_live = bool(speed_on and _strength > 0)
         _seen = self.last_used.setdefault("samples_turbo_live", {})
         _prev = _seen.get(desc.key)
-        _first = _prev is None and desc.gui_label not in self.last_used.get("sample_settings", {})
+        _first = desc.gui_label not in self.last_used.get("sample_settings", {})    # nothing kept: only defaults showing
         _flip = _first or (_prev is not None and _prev != turbo_live)
         _seen[desc.key] = turbo_live
         want = sp_steps if turbo_live else desc.preview_steps
@@ -29303,7 +29317,11 @@ class LoRATrainerGUI:
         if "[preview] resolution settled:" in line:
             import re as _re_res
             _m = _re_res.search(r"resolution settled: (\d+)x(\d+)", line)
-            if _m and hasattr(self, "sample_width_var"):
+            _run = getattr(self, "_run_arch_label", None)
+            if _m and hasattr(self, "sample_width_var") and _run and _run != self.architecture_var.get():
+                _rec = self.last_used.setdefault("sample_settings", {}).setdefault(_run, {})
+                _rec["w"], _rec["h"] = _m.group(1), _m.group(2)     # another model on screen: file it as the run's
+            elif _m and hasattr(self, "sample_width_var"):
                 self.sample_width_var.set(_m.group(1))
                 self.sample_height_var.set(_m.group(2))
                 self.update_console(f"[samples] preview resolution saved as the new "
@@ -29670,6 +29688,7 @@ class LoRATrainerGUI:
 
         # Snapshot current settings for the "Load Last Train" button
         self._save_last_train_settings()
+        self._run_arch_label = self.architecture_var.get()      # the run's model (the settled preview size is its)
         # ...and as the queue window's pinned "training now" card: editing a queued job loads
         # its settings into this tab, so the window needs a way back to the run in progress.
         self._active_run_item = self._queue_snapshot()

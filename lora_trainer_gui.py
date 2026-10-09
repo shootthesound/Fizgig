@@ -30216,6 +30216,11 @@ class LoRATrainerGUI:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to write pause flag:\n{e}")
             return
+        # BEFORE the confirmation: the dialog is modal but Tk keeps running check_process under it, so a run that
+        # reached its pause while the dialog was still open exited as "running" - read as a FINISHED run (the
+        # training ended, the queue advanced, a pod auto-stopped). Peter, 9 Oct.
+        self.training_state = "pausing"
+        self._refresh_training_buttons()
         if self._family_desc() is not None and self._family_ft_on():
             # a family fine-tune only ever saves a whole rotation, so the pause waits for the rotation to end
             self.update_console("\n=== PAUSE REQUESTED - the fine-tune finishes the rotation it is in, saves that "
@@ -30235,8 +30240,6 @@ class LoRATrainerGUI:
                 "and exit cleanly to free GPU memory.\n\n"
                 "Click Resume Training afterwards to continue.",
             )
-        self.training_state = "pausing"
-        self._refresh_training_buttons()
 
     def _detect_latest_state_dir(self):
         """Find the highest-numbered <output_name>-NNNNNN-state/ directory in the output dir."""

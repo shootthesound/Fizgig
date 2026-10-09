@@ -11467,6 +11467,15 @@ class LoRATrainerGUI:
         other = desc.preview_steps if speed_on else sp_steps
         if hasattr(self, "sample_steps_var") and self.sample_steps_var.get().strip() in ("", str(other)):
             self.sample_steps_var.set(str(want))       # only switch between the two defaults, never a user value
+        if sp is not None and hasattr(self, "sample_cfg_scale_var"):
+            # CFG the same way: the speed LoRA's own (Qwen's Turbo LoRA: 1) with it, the family's (Qwen: 3) without
+            want_cfg, other_cfg = ((sp.settings.cfg, desc.preview_cfg) if speed_on else (desc.preview_cfg, sp.settings.cfg))
+            try:
+                cur = float(self.sample_cfg_scale_var.get().strip() or "nan")
+            except ValueError:
+                cur = None
+            if cur is not None and (cur != cur or abs(cur - other_cfg) < 1e-9) and want_cfg != other_cfg:
+                self.sample_cfg_scale_var.set(f"{want_cfg:g}")
         if hasattr(self, "_family_turbo_label"):
             for _w, _kw in ((self._family_turbo_label, {"padx": (14, 4)}), (self.entries["FAMILY_TURBO_STRENGTH"], {})):
                 if speed_on and not _w.winfo_manager():

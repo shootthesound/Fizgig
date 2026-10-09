@@ -10,7 +10,6 @@ from fizgig.families.description import (
 
 _CARD = "https://huggingface.co/Qwen/Qwen-Image-2.1"
 _COMFY = "Comfy-Org/Qwen-Image-2.1"
-_VIGGLE = "https://huggingface.co/Viggle/Qwen-Image-2.1-viggle-turbo"
 _TURBO = "Qwen/Qwen-Image-2.1-Turbo"
 # the Turbo checkpoint's own schedule (model_index.json sample_sigmas), used as given: its scheduler_config turns the
 # dynamic shift off (use_dynamic_shifting false, shift 1.0, shift_terminal null)
@@ -65,10 +64,10 @@ QWEN_IMAGE_21 = FamilyDescription(
               "fizgig_qwen_image_2.1_training_adapter.safetensors", 0.08,
               "Frozen during training, off in previews and saved LoRAs. Without it Qwen 2.1 LoRAs collapse or "
               "wobble; with it likeness was 77 vs 56 in Fizgig's A/B.", role="training_adapter"),
-    ModelFile("qwen21_turbo_lora", "Viggle turbo LoRA (previews)", False,
-                  "Viggle/Qwen-Image-2.1-viggle-turbo",
-                  "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors", 0.68,
-                  "Optional: fast in-training previews. Applied unmerged.", role="speed_lora"),
+    ModelFile("qwen21_turbo_lora", "Turbo LoRA (previews)", False, _COMFY,
+                  "loras/qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors", 0.91,
+                  "Fast in-training previews on the model being trained (8 steps, CFG 1). Applied unmerged.",
+                  role="speed_lora", fetch_optional=False),
         ModelFile("qwen21_turbo_dit", "Qwen 2.1 Turbo DiT (int8, previews)", False, _COMFY,
                   "diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors", 7.26,
                   "Repair Studio, LoRA the Explorer and LoRA Royale preview on it (8 steps, CFG 1); training "
@@ -207,38 +206,25 @@ QWEN_IMAGE_21 = FamilyDescription(
     ),
     speed_loras=(
         SpeedLoRA(
-            name="Viggle turbo v0.2.1 (6-step)",
-            repo="Viggle/Qwen-Image-2.1-viggle-turbo",
-            file="Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
+            name="Turbo LoRA (8-step)",
+            repo=_COMFY,
+            file="loras/qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors",
             pairs_with="Qwen Image 2.1 base transformer",
             strength=1.0,
-            settings=SamplingSettings("Viggle 6-step", steps=6, cfg=1.0, sampler="euler", scheduler="simple",
-                                      sigmas=(1.0, 0.9375, 0.875, 0.75, 0.5, 0.25),
-                                      note="shift_terminal must be null; 8 steps for small text. "
-                                           "Add or remove steps only at the high-noise end.",
-                                      options=(("shift_terminal", None),),
-                                      source=_VIGGLE),
+            settings=SamplingSettings("Turbo LoRA 8-step", steps=8, cfg=1.0, sampler="euler", scheduler="simple",
+                                      sigmas=_TURBO_SIGMAS, options=(("shift_terminal", None), ("dynamic_shift", False)),
+                                      note="The Turbo checkpoint's own 8-step schedule, CFG 1.",
+                                      source=f"https://huggingface.co/{_COMFY}"),
             load_unmerged=True,
             pref_key="qwen21_turbo_lora",
-            community_settings=(
-                ("8-20 steps at strength 0.3-0.8 as a clean-up rather than a speed-up; CFG 1-2 works "
-                 "when the strength is lowered", _REDDIT),
-                ("strength ~0.3 removes the grid pattern almost completely", _REDDIT),
-            ),
-            caveats=("Grid pattern at 4 steps and full strength (community).",
-                     "Weaker for editing than for text-to-image (community).",
-                     "Merged loading keeps only part of it (LPIPS 0.093 merged vs 0.052 unmerged)."),
-            source=_VIGGLE,
+            source=f"https://huggingface.co/{_COMFY}",
         ),
     ),
-    # Previews on the live training DiT: with the Viggle turbo LoRA when its file is set, else the template's 25
-    # steps (Krea 2 pattern: live training model, family turbo LoRA, no model swap). The turbo runs at its own
-    # 1.0 / 6 steps (Peter, 28 Sep).
-    preview_speed_lora="Viggle turbo v0.2.1 (6-step)",
-    # Previews default to the plain model (25 steps, turbo strength 0 = not loaded); strength 1 at 6 steps is the
-    # fast option.
-    preview_speed_steps=25,
-    preview_speed_strength=0.0,
+    # Previews on the live training DiT: with the Turbo LoRA when its file is set (strength 1, 8 steps, CFG 1 - the
+    # default, Peter 9 Oct 2026), else the plain model at 25 steps, CFG 3.
+    preview_speed_lora="Turbo LoRA (8-step)",
+    preview_speed_steps=8,
+    preview_speed_strength=1.0,
     preview_steps=25,
     preview_cfg=3.0,                  # base Qwen 2.1 previews are 25 steps at CFG 3
     preview_negative=GENERAL_NEGATIVE,

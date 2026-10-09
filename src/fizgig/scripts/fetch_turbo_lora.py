@@ -9,8 +9,8 @@ For each entry:
   - file already in <repo>/models/ ........... just populates the pref
   - neither ................................... downloads with progress, verifies, populates
 
-Entries: the Krea 2 Turbo LoRA (previews render on RAW + Turbo LoRA, no model swapping) and
-the MiniMax H3 training adapters — Circlestone's (the default, one file for both bases) and
+Entries: the Krea 2 Turbo LoRA (previews render on RAW + Turbo LoRA, no model swapping), the
+Qwen Image 2.1 Turbo LoRA, and the MiniMax H3 training adapters — Circlestone's (the default, one file for both bases) and
 Ostris's two (per base) — which the Training tab's adapter dropdown chooses between. Always fetched when missing,
 whatever family is configured (Peter, 2 Sep 2026: no "not a Krea 2 install" gate, ever).
 The GUI calls ensure_turbo_lora() again at Krea 2 training start as a fallback.
@@ -45,6 +45,13 @@ LORAS = [
      "minimax_h3_ref2va_training_adapter_v1.safetensors",
      "diffusion_model.blocks.0.attn.out_proj.lora_A.weight", 140 * 1024 * 1024,
      "MiniMax H3 training adapter, ref2va (~155 MB, Ostris)"),
+    # Qwen Image 2.1's Turbo LoRA (Comfy-Org) replaced Viggle's in the same pref: an install still pointing at
+    # another file gets this one (the old file stays on disk)
+    ("qwen21_turbo_lora", "qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors",
+     "https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/loras/"
+     "qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors",
+     "diffusion_model.transformer_blocks.0.attn.to_q.lora_down.weight", 850 * 1024 * 1024,
+     "Qwen Image 2.1 Turbo LoRA (~910 MB)", True),
 ]
 
 # Kept for callers that import the Krea 2 constants by name.
@@ -120,14 +127,15 @@ def _save_pref(prefs_file, key, value):
     os.replace(tmp, prefs_file)
 
 
-def ensure_lora(pref_key, filename, url, probe_key, min_size, label,
+def ensure_lora(pref_key, filename, url, probe_key, min_size, label, replaces=False,
                 repo_dir: str = REPO_DIR, log=print):
     """Make sure one LoRA exists locally and prefs.json points at it. Returns the path on
-    success, None otherwise. Never raises."""
+    success, None otherwise. Never raises. replaces: the pref must point at THIS file (it
+    took over a pref that held another one)."""
     try:
         prefs_file = os.path.join(repo_dir, "prefs.json")
         current = str(_load_prefs(prefs_file).get(pref_key) or "").strip()
-        if current and os.path.isfile(current):
+        if current and os.path.isfile(current) and (not replaces or os.path.basename(current) == filename):
             log(f"{label}: already present ({current})")
             return current
         models_dir = os.path.join(repo_dir, "models")

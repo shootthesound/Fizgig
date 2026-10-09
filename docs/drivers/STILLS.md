@@ -27,7 +27,7 @@ MYMODEL = FamilyDescription(
     key="mymodel",                    # used by the workbench, presets and the CLI's --family
     arch_id="mymodel10",              # cache file names and LoRA metadata: change it and old caches are ignored
     display_name="My Model 1.0",
-    gui_label="My Model 1.0 (experimental)",
+    gui_label="My Model 1.0",          # the Base Model picker's name - never "experimental"; it keys saved settings
     lora_name_suffix="mym10",
     hidden=True,                      # not in the GUI yet
 

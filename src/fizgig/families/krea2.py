@@ -35,7 +35,7 @@ KREA2 = FamilyDescription(
     display_name="Krea 2",
     gui_label="Krea 2",
     lora_name_suffix="krea2",
-    experimental=True,
+    experimental=False,
 
     model_files=(
         ModelFile("krea2_raw_dit", "Krea 2 RAW DiT", True, _COMFY, "diffusion_models/krea2_raw_bf16.safetensors",
@@ -114,7 +114,7 @@ KREA2 = FamilyDescription(
     # the text-fusion boosts (15 Sep 2026, #137): the four text-fusion blocks at x2 / x3, everything else untouched.
     # Measured across several LoRAs, x3 lifted the detail metric ~72 -> ~77 and likeness 2-7 points on every LoRA but
     # an overtrained one, composition unchanged
-    repair_presets=tuple((f"✨Text fusion ×{m} (experimental)",
+    repair_presets=tuple((f"✨Text fusion ×{m}",
                           tuple((f"txt_{s}_{i}", float(m)) for s in ("lw", "rf") for i in range(2)))
                          for m in (2, 3)),
     # The original's measured 0.25 MP peaks (utils/capabilities.py: 5090, batch 1, rank 32; 0.42 GB saved per swapped

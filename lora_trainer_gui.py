@@ -436,7 +436,12 @@ for _label, _desc in DESCRIBED_FAMILIES.items():
 _ARCH_ALIASES = {"MiniMax H3 (experimental)": "MiniMax H3",
                  "Krea 2 (experimental)": "Krea 2",       # pre-rename saves (2026-07-28)
                  "MiniMax H3 (driver)": "MiniMax H3",     # saves made while the drivers sat beside the originals
-                 "Klein (driver)": "Flux 2 Klein Base 9B"}
+                 "Klein (driver)": "Flux 2 Klein Base 9B",
+                 # 9 Oct 2026: no picker says "experimental" (Peter); settings saved under these carry over
+                 "Qwen Image 2.1 (experimental)": "Qwen Image 2.1",
+                 "SDXL (any checkpoint, experimental)": "SDXL (any checkpoint)",
+                 "Anima (experimental)": "Anima",
+                 "Z-Image Turbo (experimental)": "Z-Image Turbo"}
 for _old, _new in _ARCH_ALIASES.items():
     if _new in ARCHITECTURES:           # "Krea 2" is a described family: absent if the families failed to load
         ARCHITECTURES[_old] = ARCHITECTURES[_new]
@@ -738,6 +743,16 @@ def load_last_used():
                 defaults.update(saved)
         except Exception:
             pass
+    # Settings kept per model under a label that has since been renamed (_ARCH_ALIASES) move to the current label:
+    # output folders, Samples values, negatives... - the current label's own entry wins if both exist
+    for _v in defaults.values():
+        if isinstance(_v, dict):
+            for _old, _new in _ARCH_ALIASES.items():
+                if _old in _v:
+                    _moved = _v.pop(_old)
+                    _v.setdefault(_new, _moved)
+    if isinstance(defaults.get("architecture"), str):
+        defaults["architecture"] = _ARCH_ALIASES.get(defaults["architecture"], defaults["architecture"])
     # Migrate pre-Start-tab last_used files: if image_folder isn't set but one
     # of the legacy keys (caption_folder / dataset_image_dir / image_prep_source)
     # has a value, seed image_folder from the best candidate.
@@ -4889,15 +4904,17 @@ class LoRATrainerGUI:
     def get_preset_dir_for_architecture(self, arch):
         """Get the preset directory for an architecture, creating if needed"""
         preset_dir = os.path.join(PRESETS_DIR, arch)
-        # One-shot folder rename from the pre-2026-07-28 arch name, or user-saved Krea 2
-        # presets would silently vanish from the dropdown.
-        if arch == "Krea 2" and not os.path.isdir(preset_dir):
-            _legacy = os.path.join(PRESETS_DIR, "Krea 2 (experimental)")
-            if os.path.isdir(_legacy):
-                try:
-                    os.rename(_legacy, preset_dir)
-                except OSError:
-                    pass
+        # One-shot folder rename from a model's old label (_ARCH_ALIASES), or user-saved presets would
+        # silently vanish from the dropdown
+        if not os.path.isdir(preset_dir):
+            for _old, _new in _ARCH_ALIASES.items():
+                _legacy = os.path.join(PRESETS_DIR, _old)
+                if _new == arch and os.path.isdir(_legacy):
+                    try:
+                        os.rename(_legacy, preset_dir)
+                        break
+                    except OSError:
+                        pass
         os.makedirs(preset_dir, exist_ok=True)
         return preset_dir
 

@@ -30,6 +30,7 @@
 </p>
 
 > ### 📰 Latest news
+> - **Fizgig 7.2 — Qwen Image 2.1 Turbo.** Repair Studio, LoRA the Explorer and LoRA Royale preview on Qwen's new Turbo model, and training previews use Comfy-Org's new Turbo LoRA: 8 steps, CFG 1, about four times faster, and LoRAs trained on the base keep their likeness on it. Plus MiniMax H3 long captions on V100-class cards by @Hell-Bent-Fox. [Release notes](docs/RELEASE_NOTES_v7.2.0.md)
 > - **Fizgig 7.1 — Z-Image Turbo, with its own training adapter.** LoRA and LoKR training, sliders, full fine-tuning and every workbench tab. Fizgig's training adapter keeps Turbo's 8-step look while your LoRA learns: better likeness, image quality and detail than the adapter most people use. LoRAs from 12 GB cards, fine-tunes from 16 GB. [Release notes](docs/RELEASE_NOTES_v7.1.0.md)
 > - **Fizgig 7.0 — Anima and SDXL arrive, fine-tuning for every model, and the driver system is complete - meaning the community can now add models to Fizgig (Docs included).** Anima and SDXL join with LoRA and LoKR training, sliders, fine-tuning and the full workbench. Every model fine-tunes on a 16 GB card (Anima and SDXL from 8 GB), and bigger cards train the whole model at once. [Release notes](docs/RELEASE_NOTES_v7.0.0.md) · [Add your own model](docs/drivers/README.md)
 > - **Fizgig 6.8 — Krea 2 sliders, Ultra mode and Qwen fine-tuning.** Slider LoRAs on Krea 2, with an Ultra mode that holds up at much higher strengths; full fine-tuning for Qwen Image 2.1 (a single character in as little as 30 minutes on a 5090); Repair Studio with nudge buttons, no strength limit and donor saves that look exactly as previewed; and Krea 2 on Fizgig's new driver system, with Klein and MiniMax H3 next. [Release notes](docs/RELEASE_NOTES_v6.8.1.md)
@@ -64,7 +65,7 @@ Memory plans itself: precision, block swap and previews size to your free VRAM, 
 | **SDXL** (any checkpoint), experimental | photos | ✅ | ✅ | ✅ slider | ✅ experimental | 8 GB | [7.0 notes](docs/RELEASE_NOTES_v7.0.0.md) |
 | **Anima** (2B), experimental | photos | ✅ | ✅ | ✅ slider | ✅ experimental | 8 GB | [7.0 notes](docs/RELEASE_NOTES_v7.0.0.md) |
 
-Every model gets all five workbench tools. MiniMax H3 also makes **RefMods**, tuned against H3 itself rather than a plain encode ([how do I…?](docs/REFMOD_HOWDOI.md)). Fizgig's training adapters for [Qwen Image 2.1](https://huggingface.co/ShootTheSound/Fizgig-Qwen-Image-2.1-Training-Adapter) and [Z-Image Turbo](https://huggingface.co/ShootTheSound/Fizgig-Z-Image-Turbo-Training-Adapter) are free on Hugging Face for any trainer. Full fine-tuning has [its own guide](docs/FINETUNE.md).
+Every model gets all five workbench tools. Qwen Image 2.1 trains on the base model and previews on Qwen's own Turbo (8 steps, CFG 1); your LoRAs work on both. MiniMax H3 also makes **RefMods**, tuned against H3 itself rather than a plain encode ([how do I…?](docs/REFMOD_HOWDOI.md)). Fizgig's training adapters for [Qwen Image 2.1](https://huggingface.co/ShootTheSound/Fizgig-Qwen-Image-2.1-Training-Adapter) and [Z-Image Turbo](https://huggingface.co/ShootTheSound/Fizgig-Z-Image-Turbo-Training-Adapter) are free on Hugging Face for any trainer. Full fine-tuning has [its own guide](docs/FINETUNE.md).
 
 ## The workbench
 
@@ -86,6 +87,7 @@ Each tool works on your own runs **or any LoRA you've downloaded**, and they han
 - **Context LoRA**: train on top of a frozen, active LoRA so the two coexist (a face on a style, an outfit on a character). No other trainer does this.
 - **Pause and resume** with full state, plus a **training queue** for back-to-back runs.
 - **The trainer curates your dataset while it trains** (every model except MiniMax H3). Every image starts as useful training data; the watch follows each one's loss, and only when an image stops teaching the model does it step in: throttle it, recaption it, and as a last resort set it aside. It also tells you when the whole run has plateaued. No other trainer does this.
+- **Fast previews** in a few steps on a turbo or distilled model where one exists: Klein's Distilled, the Turbo LoRAs for Krea 2, MiniMax H3, Qwen Image 2.1 and Anima, and Qwen Image 2.1's Turbo model.
 - **A sample gallery that scores likeness** live, and a run visualiser to scrub epochs.
 - **Dataset prep**: AI captions with Qwen3-VL or Florence-2, bilingual captions, face crops, and a Look Consistency Filter.
 - **Gizmo** (MiniMax H3): cut clips with scene detection, crop to the subject, and record or segment a voice dataset with Whisper transcription.

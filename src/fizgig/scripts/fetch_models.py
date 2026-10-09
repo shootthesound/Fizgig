@@ -94,7 +94,8 @@ FAMILIES = {
                "minimax_h3_ref2va_training_adapter_v1.safetensors", 0.16,
                "Training adapter (ref2va) — the same, for runs on the reference base (Ostris)"),
         # ref2va is a DIFFERENT fine-tune, needed only for reference distillation — 21 GB most
-        # users don't want on a first setup, so it rides behind --include-optional.
+        # users don't want on a first setup, so it rides behind --include-optional like the
+        # Krea 2 Turbo DiT does.
         Weight("minimax_ref_dit", "Comfy-Org/MiniMax-H3",
                "diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors", 21.0,
                "Reference DiT (ref2va) — reference distillation only", optional=True),
@@ -461,8 +462,8 @@ def main():
                    help="Repeatable. Krea 2 needs no HF account; Klein is gated.")
     p.add_argument("--all", action="store_true", help="Every family, including the helper models.")
     p.add_argument("--include-optional", action="store_true",
-                   help="Also fetch the optional files (MiniMax ref2va DiT ~21 GB, SDXL's separate VAE, "
-                        "Anima's Turbo LoRA).")
+                   help="Also fetch the optional files (Krea 2 Turbo DiT ~13 GB, MiniMax ref2va DiT ~21 GB, "
+                        "SDXL's separate VAE, Anima's Turbo LoRA).")
     p.add_argument("--models-dir", default=None, help="Default: <repo>/models")
     p.add_argument("--token", default=None, help="HuggingFace token for gated repos (or HF_TOKEN).")
     p.add_argument("--dry-run", action="store_true", help="Show what would be fetched.")

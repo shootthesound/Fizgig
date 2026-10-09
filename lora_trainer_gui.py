@@ -1522,8 +1522,10 @@ class LoRATrainerGUI:
         _od = self.last_used.get("lora_output_dirs")
         self._output_dir_memory = dict(_od) if isinstance(_od, dict) else {}
         _start_arch = str(self.last_used.get("architecture") or "")
+        self._output_dir_family = None          # whose folder the Output Directory field holds (None = not known)
         if self._output_dir_memory.get(_start_arch):
             self.settings["LORA_OUTPUT_DIR"] = self._output_dir_memory[_start_arch]
+            self._output_dir_family = _start_arch
         elif self.last_used.get("lora_output_dir"):
             self.settings["LORA_OUTPUT_DIR"] = self.last_used["lora_output_dir"]
 
@@ -2074,8 +2076,21 @@ class LoRATrainerGUI:
                 except Exception:
                     pass
 
+    def _remember_output_dir(self) -> None:
+        """File the Output Directory field under its family in the per-family memory - only while the field holds
+        THAT family's folder: mid-switch the selector has moved on but the field still shows the old family's, and
+        filing it then gave families each other's folders (Peter, 9 Oct: Krea 2 had Z-Image's)."""
+        try:
+            e = self.entries.get("LORA_OUTPUT_DIR") if hasattr(self, "entries") else None
+            fam = str(self.architecture_var.get()) if hasattr(self, "architecture_var") else ""
+            if e is not None and fam and e.get().strip() and getattr(self, "_output_dir_family", None) == fam:
+                self._output_dir_memory[fam] = e.get().strip()
+        except Exception:
+            pass
+
     def _save_last_used_paths(self, *args):
         """Save last-used folder paths and settings to config file"""
+        self._remember_output_dir()          # in memory first: it applies even when nothing is written to disk
         if _persist_disabled():
             return
         # Seed from what's already remembered, THEN overwrite with live widget values. Keys that
@@ -2132,10 +2147,7 @@ class LoRATrainerGUI:
         if "LORA_OUTPUT_DIR" in self.entries:
             data["lora_output_dir"] = self.entries["LORA_OUTPUT_DIR"].get()
             try:
-                _fam = str(self.architecture_var.get()) if hasattr(self, "architecture_var") else ""
-                if _fam and data["lora_output_dir"].strip():
-                    self._output_dir_memory[_fam] = data["lora_output_dir"].strip()
-                data["lora_output_dirs"] = dict(self._output_dir_memory)
+                data["lora_output_dirs"] = dict(self._output_dir_memory)      # filed by _remember_output_dir
             except Exception:
                 pass
         # Remember the last LoRA Royale checkpoint folder + render inputs
@@ -3831,8 +3843,9 @@ class LoRATrainerGUI:
         self._add_field_to_section(output_content, "LORA_NAME", "LoRA Name", "text", 1)
 
         # Save LoRA output directory when it changes
+        self.entries["LORA_OUTPUT_DIR"].bind("<KeyRelease>", lambda e: self._output_dir_edited(save=False), add="+")
         self.entries["LORA_OUTPUT_DIR"].bind("<FocusOut>", lambda e: self._save_last_used_paths())
-        self.entries["LORA_OUTPUT_DIR"].bind("<Return>", lambda e: self._save_last_used_paths())
+        self.entries["LORA_OUTPUT_DIR"].bind("<Return>", lambda e: self._output_dir_edited())
         self._output_dir_hint = ttk.Label(
             output_content,
             text="Remembered per model family — Klein, Krea 2, MiniMax H3 and Qwen Image 2.1 each keep their "
@@ -8068,10 +8081,18 @@ class LoRATrainerGUI:
                 e.delete(0, tk.END)
                 e.insert(0, d)
             self.settings["LORA_OUTPUT_DIR"] = d
+            self._output_dir_family = str(arch)      # whose folder the field now holds
             if hasattr(self, "sample_output_label"):
                 self.update_sample_output_label()    # the Samples tab's line follows the family's folder
         except Exception:
             pass
+
+    def _output_dir_edited(self, save=True) -> None:
+        """The user typed or browsed an Output Directory: it is the folder of the family on screen."""
+        if hasattr(self, "architecture_var"):
+            self._output_dir_family = str(self.architecture_var.get())
+        if save:
+            self._save_last_used_paths()
 
     def _get_path(self, key: str) -> str:
         """Resolve a model/path setting from the current source of truth.
@@ -11048,7 +11069,8 @@ class LoRATrainerGUI:
         if _arch_changed and _arch_old:
             try:
                 _od_e = self.entries.get("LORA_OUTPUT_DIR") if hasattr(self, "entries") else None
-                if _od_e is not None and _od_e.get().strip():
+                if (_od_e is not None and _od_e.get().strip()
+                        and getattr(self, "_output_dir_family", None) == _arch_old):
                     self._output_dir_memory[_arch_old] = _od_e.get().strip()
             except Exception:
                 pass
@@ -11113,6 +11135,9 @@ class LoRATrainerGUI:
                 self._restore_output_dir_for_family(_arch_new)
         except Exception:
             pass
+        if _arch_changed and getattr(self, "_output_dir_family", None) != _arch_new:
+            # the restore above sits in a try with the presets: an error there must not leave the old family's folder
+            self._restore_output_dir_for_family(_arch_new)
         # Retag the LoRA name LAST — _apply_preset_values above rewrites every field including
         # LORA_NAME, so doing this earlier would just be clobbered. On a return visit the
         # restored name already carries the right suffix and this is a no-op; on a first visit
@@ -29233,18 +29258,33 @@ class LoRATrainerGUI:
             self.entries["CONTEXT_LORA_PATH"].insert(0, path)
             self._remember_browse_dir("lora_browse_dir", path)
 
+    @staticmethod
+    def _existing_dir(path):
+        """The folder a Browse should open in for `path`: the folder itself, a file's folder, or the nearest parent
+        that exists ("" when nothing does)."""
+        p = os.path.normpath(str(path or "").strip()) if str(path or "").strip() else ""
+        while p and not os.path.isdir(p):
+            parent = os.path.dirname(p)
+            if parent == p:
+                return ""
+            p = parent
+        return p
+
     def browse_file(self, setting_name, input_type):
-        # Resume Training points at a saved state dir, which lives under the LoRA
-        # output folder — open the Browse there so users don't hunt for it.
-        initial = self._current_output_dir() if setting_name == "RESUME_TRAINING" else ""
+        # Open where the field already points (Peter, 9 Oct: the Output Directory's Browse started somewhere else).
+        # Resume Training points at a saved state dir, which lives under the LoRA output folder.
+        cur = self.entries[setting_name].get() if setting_name in self.entries else ""
+        initial = self._existing_dir(cur) or (self._current_output_dir() if setting_name == "RESUME_TRAINING" else "")
         if input_type == "directory":
-            path = filedialog.askdirectory(initialdir=initial)
+            path = filedialog.askdirectory(initialdir=initial or None)
         else:
-            path = filedialog.askopenfilename(initialdir=initial)
+            path = filedialog.askopenfilename(initialdir=initial or None)
         if path:
             self.settings[setting_name] = path
             self.entries[setting_name].delete(0, tk.END)
             self.entries[setting_name].insert(0, self.settings[setting_name])
+            if setting_name == "LORA_OUTPUT_DIR":
+                self._output_dir_edited()
 
     def _tidy_lora_name(self):
         """Clean the LoRA Name field in place. Returns (name, error or None).

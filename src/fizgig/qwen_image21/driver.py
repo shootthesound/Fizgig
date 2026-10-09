@@ -30,6 +30,24 @@ class QwenImage21Driver(FamilyDriver):
         from fizgig.qwen_image21.model import load_qwen21_dit
         return load_qwen21_dit(path, device=device).eval().requires_grad_(False)
 
+    def load_planned(self, path, device, precision, blocks_to_swap):
+        """A ComfyUI int8 ConvRot file (the Turbo's): its own int8 weights, as stored - the precision is the file's.
+        Streaming needs a weight the shared offloader can move, so a swapped load decodes it and takes Fizgig's INT8.
+        Any other file: the shared load."""
+        from fizgig.qwen_image21.model import is_convrot, load_qwen21_dit
+        if not is_convrot(path):
+            return None
+        swap = min(int(blocks_to_swap or 0), self.max_blocks_to_swap())
+        if swap <= 0:
+            logger.info(f"[precision] {os.path.basename(path)}: int8 ConvRot, as stored")
+            return load_qwen21_dit(path, device=device).eval().requires_grad_(False), 0
+        from fizgig.families import quant
+        dit = load_qwen21_dit(path, device="cpu", keep_convrot=False).eval().requires_grad_(False)
+        quant.quantize(dit, self, "int8", device, store_device="cpu")
+        self.enable_block_swap(dit, swap, device, False)
+        logger.info(f"[precision] {os.path.basename(path)}: decoded to INT8 with {swap} blocks streamed")
+        return dit, swap
+
     def max_blocks_to_swap(self, dit=None):
         return len(dit.transformer_blocks) - 2 if dit is not None else self.description.n_blocks - 2
 
@@ -59,11 +77,15 @@ class QwenImage21Driver(FamilyDriver):
         fits with room for the render, else INT8, else INT8 with blocks streamed (forward-only)."""
         from fizgig.families import quant
         torch.cuda.empty_cache()
+        from fizgig.qwen_image21.model import is_convrot
         free = quant.free_vram_gb()       # FIZGIG_SIM_VRAM_GB: the simulated card's
         size = os.path.getsize(path) / 1024 ** 3
         room = 4.0                          # 1024 px render + VAE decode
-        precision = "int8" if int8 or free < size + room else "bf16"
-        need = (size / 2 if precision == "int8" else size) + room
+        if is_convrot(path):                # already int8 (Comfy-Org's Turbo): it costs its size
+            precision, need = "int8", size + room
+        else:
+            precision = "int8" if int8 or free < size + room else "bf16"
+            need = (size / 2 if precision == "int8" else size) + room
         swap = 0
         if free < need:
             per_block = (size / 2) / max(1, self.description.n_blocks)       # INT8 GB per block

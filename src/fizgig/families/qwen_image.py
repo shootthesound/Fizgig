@@ -69,8 +69,8 @@ QWEN_IMAGE_21 = FamilyDescription(
                   "Viggle/Qwen-Image-2.1-viggle-turbo",
                   "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors", 0.68,
                   "Optional: fast in-training previews. Applied unmerged.", role="speed_lora"),
-        ModelFile("qwen21_turbo_dit", "Qwen 2.1 Turbo DiT (workbench previews)", False, _COMFY,
-                  "diffusion_models/qwen_image_2.1_turbo_bf16.safetensors", 14.23,
+        ModelFile("qwen21_turbo_dit", "Qwen 2.1 Turbo DiT (int8, previews)", False, _COMFY,
+                  "diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors", 7.26,
                   "Repair Studio, LoRA the Explorer and LoRA Royale preview on it (8 steps, CFG 1); training "
                   "previews can use it too (a tick on the Samples tab).",
                   role="preview_dit",

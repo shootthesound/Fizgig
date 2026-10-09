@@ -86,6 +86,12 @@ class LoRALinear(nn.Module):
         self.adapters = nn.ModuleDict()
         self.scales = {}
 
+    def _base_device(self):
+        """Where the base weight lives, read off its storage: a ConvRot int8 Linear's .weight decodes the whole
+        matrix."""
+        q = getattr(self.base, "qdata", None)
+        return q.device if q is not None else self.base.weight.device
+
     def add(self, name, rank, alpha, trainable, A=None, B=None, strength=1.0, trainable_dtype=torch.float32):
         a = LoRAFactor(self.base.in_features, rank, bias=False)
         b = LoRAFactor(rank, self.base.out_features, bias=False)
@@ -95,7 +101,7 @@ class LoRALinear(nn.Module):
         else:
             nn.init.kaiming_uniform_(a.weight, a=math.sqrt(5))
             nn.init.zeros_(b.weight)
-        dev = getattr(self, "home", None) or self.base.weight.device   # a swapped block's base may sit on CPU
+        dev = getattr(self, "home", None) or self._base_device()   # a swapped block's base may sit on CPU
         dt = trainable_dtype if trainable else torch.bfloat16
         a.to(dev, dt).requires_grad_(trainable)
         b.to(dev, dt).requires_grad_(trainable)
@@ -104,14 +110,14 @@ class LoRALinear(nn.Module):
 
     def add_lokr(self, name, trainable, factor=8, w1=None, w2=None, scale=1.0, trainable_dtype=torch.float32):
         ad = LoKR(self.base.in_features, self.base.out_features, factor, w1, w2)
-        dev = getattr(self, "home", None) or self.base.weight.device
+        dev = getattr(self, "home", None) or self._base_device()
         ad.to(dev, trainable_dtype if trainable else torch.bfloat16).requires_grad_(trainable)
         self.adapters[name] = ad
         self.scales[name] = scale
 
     def add_loha(self, name, w1a, w1b, w2a, w2b):
         ad = LoHa(w1a, w1b, w2a, w2b)
-        dev = getattr(self, "home", None) or self.base.weight.device
+        dev = getattr(self, "home", None) or self._base_device()
         ad.to(dev, torch.bfloat16).requires_grad_(False)
         self.adapters[name] = ad
         self.scales[name] = 1.0

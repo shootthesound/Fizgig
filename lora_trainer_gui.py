@@ -10969,6 +10969,12 @@ class LoRATrainerGUI:
             except Exception:
                 pass
 
+    def _sample_checkpoint_file(self, desc):
+        """The family's preview checkpoint file when it is set in Preferences and exists, else ""."""
+        ck = desc.preview_checkpoint() if desc is not None else None
+        p = self.prefs_vars.get(ck[0].pref_key, tk.StringVar()).get().strip() if ck else ""
+        return p if p and os.path.exists(p) else ""
+
     def _sample_checkpoint_clicked(self):
         """The preview-checkpoint tick clicked: the choice is the on-screen family's (one shared tick - Klein starts on,
         Qwen off), kept across restarts in last_used["sample_checkpoint"]."""
@@ -10985,7 +10991,8 @@ class LoRATrainerGUI:
         _d = self._family_desc()
         if (_d is not None and not _d.train_preview_checkpoint) or self._is_refmod_arch():
             return
-        use_distilled = self.use_distilled_samples_var.get()
+        # the tick only counts with its file set: without it samples render on the training model at these settings
+        use_distilled = self.use_distilled_samples_var.get() and (_d is None or bool(self._sample_checkpoint_file(_d)))
         state = "disabled" if use_distilled else "normal"
         grey = COLORS["text_muted"] if use_distilled else COLORS["text_primary"]
 
@@ -11429,7 +11436,10 @@ class LoRATrainerGUI:
         muted = COLORS["text_muted"]
         if hasattr(self, "use_distilled_check"):
             if desc.train_preview_checkpoint:       # Klein's Distilled, Qwen's Turbo: the family's own tick
-                self.use_distilled_check.configure(state=tk.NORMAL, text=desc.preview_checkpoint_tick)
+                # live only when its file is set: without it (an update before the download) samples stay as they were
+                self.use_distilled_check.configure(
+                    state=tk.NORMAL if self._sample_checkpoint_file(desc) else tk.DISABLED,
+                    text=desc.preview_checkpoint_tick)
                 if getattr(self, "_sample_checkpoint_family", None) != desc.key:
                     self.use_distilled_samples_var.set(bool(self.last_used.get("sample_checkpoint", {}).get(
                         desc.key, desc.preview_checkpoint_on)))
@@ -20154,8 +20164,7 @@ class LoRATrainerGUI:
         """What a follows-the-Samples-tab workbench renders with: the family's preview checkpoint at its own recipe when
         it is set in Preferences (Qwen's Turbo), else the Samples tab's settings."""
         ck = desc.preview_checkpoint() if desc is not None else None
-        p = self.prefs_vars.get(ck[0].pref_key, tk.StringVar()).get().strip() if ck else ""
-        if ck and p and os.path.exists(p):
+        if ck and self._sample_checkpoint_file(desc):
             return (f"Previews on the {ck[0].label.split(' (')[0]} - {ck[1].steps} steps, CFG {ck[1].cfg:g}. Clear it in "
                     f"Preferences to preview with the Samples tab's settings instead.")
         return self._WORKBENCH_SAMPLES_NOTE

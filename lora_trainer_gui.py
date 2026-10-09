@@ -11187,38 +11187,28 @@ class LoRATrainerGUI:
             # changed. This method fires on every Base Model combobox event — including
             # re-picking the same family — and unconditionally overwriting CFG/flow-shift/
             # steps/width/height silently reverted the user's preview config (e.g. a
-            # 1024x1024 preview back to 768x768). On a real switch, the outgoing family's
-            # values are stashed and restored when the user switches back.
+            # 1024x1024 preview back to 768x768). Each family's values are kept across restarts
+            # (last_used["sample_settings"], written as they are edited) and restored on a switch.
             _prev = getattr(self, "_sample_defaults_arch", None)
             if _prev != arch:
-                if not hasattr(self, "_arch_sample_stash"):
-                    self._arch_sample_stash = {}
+                _store = self.last_used.setdefault("sample_settings", {})
                 if _prev is not None:
-                    self._arch_sample_stash[_prev] = {
-                        "cfg": self.sample_cfg_scale_var.get(),
-                        "shift": self.sample_flow_shift_var.get(),
-                        "steps": self.sample_steps_var.get(),
-                        "w": self.sample_width_var.get(),
-                        "h": self.sample_height_var.get(),
-                    }
-                stash = self._arch_sample_stash.get(arch)
-                if stash is not None:
-                    self.sample_cfg_scale_var.set(stash["cfg"])
-                    self.sample_flow_shift_var.set(stash["shift"])
-                    self.sample_steps_var.set(stash["steps"])
-                    self.sample_width_var.set(stash["w"])
-                    self.sample_height_var.set(stash["h"])
-                else:
-                    if config.get("sample_cfg_default") is not None:
-                        self.sample_cfg_scale_var.set(str(config["sample_cfg_default"]))
-                    if config.get("sample_flow_shift_default") is not None:
-                        self.sample_flow_shift_var.set(str(config["sample_flow_shift_default"]))
-                    if config.get("sample_steps_default") is not None:
-                        self.sample_steps_var.set(str(config["sample_steps_default"]))
-                    if config.get("sample_width_default") is not None:
-                        self.sample_width_var.set(str(config["sample_width_default"]))
-                    if config.get("sample_height_default") is not None:
-                        self.sample_height_var.set(str(config["sample_height_default"]))
+                    _store[_prev] = self._sample_box_values()
+                stash = _store.get(arch)
+                self._sample_settings_loading = True        # a load, not an edit: nothing to remember
+                try:
+                    self._apply_sample_defaults(arch, config, stash)
+                finally:
+                    self._sample_settings_loading = False
+                if not getattr(self, "_sample_settings_traced", False):
+                    def _keep_settings(*_):
+                        _a = getattr(self, "_sample_defaults_arch", None)
+                        if _a and not getattr(self, "_sample_settings_loading", False):
+                            self.last_used.setdefault("sample_settings", {})[_a] = self._sample_box_values()
+                    for _v in (self.sample_cfg_scale_var, self.sample_flow_shift_var, self.sample_steps_var,
+                               self.sample_width_var, self.sample_height_var):
+                        _v.trace_add("write", _keep_settings)
+                    self._sample_settings_traced = True
                 self._sample_defaults_arch = arch
                 # the negative prompt is kept per family across restarts (last_used["sample_negatives"]): the user's
                 # own text for this family, else its description's default (preview_negative)
@@ -11503,6 +11493,25 @@ class LoRATrainerGUI:
             self.cache_sample_model_label.configure(
                 text="Cache sample model in RAM:" if _ck else "Cache sample model in RAM (Klein only):",
                 foreground=COLORS["text_secondary"] if _ck else muted)
+
+    def _sample_box_values(self):
+        """The Samples tab's per-family boxes (CFG, flow shift, steps, size) as last_used["sample_settings"] keeps them."""
+        return {"cfg": self.sample_cfg_scale_var.get(), "shift": self.sample_flow_shift_var.get(),
+                "steps": self.sample_steps_var.get(), "w": self.sample_width_var.get(),
+                "h": self.sample_height_var.get()}
+
+    def _apply_sample_defaults(self, arch, config, stash):
+        """Fill the per-family boxes: the family's kept values (stash), else its defaults."""
+        for var, key, dkey in ((self.sample_cfg_scale_var, "cfg", "sample_cfg_default"),
+                               (self.sample_flow_shift_var, "shift", "sample_flow_shift_default"),
+                               (self.sample_steps_var, "steps", "sample_steps_default"),
+                               (self.sample_width_var, "w", "sample_width_default"),
+                               (self.sample_height_var, "h", "sample_height_default")):
+            v = (stash or {}).get(key)
+            if v in (None, "") and config.get(dkey) is not None:
+                v = str(config[dkey])
+            if v not in (None, ""):
+                var.set(v)
 
     def update_sample_output_label(self):
         """Update the sample output path label to show actual path"""
@@ -20104,7 +20113,7 @@ class LoRATrainerGUI:
         if cur is not None and cur.key == desc.key:
             steps, cfg = self.sample_steps_var.get().strip(), self.sample_cfg_scale_var.get().strip()
         else:
-            stash = getattr(self, "_arch_sample_stash", {}).get(desc.gui_label) or {}
+            stash = self.last_used.get("sample_settings", {}).get(desc.gui_label) or {}
             steps, cfg = stash.get("steps") or str(desc.preview_steps), stash.get("cfg") or f"{desc.preview_cfg:g}"
         turbo = self._turbo_strength_for(desc)          # the family's own value, whichever family is on screen
         return {"steps": steps, "cfg": cfg, "turbo": turbo or "0",

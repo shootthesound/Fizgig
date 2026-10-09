@@ -150,8 +150,8 @@ QWEN_IMAGE_21 = FamilyDescription(
     workbench_follows_samples=True,   # Peter, 1 Oct 2026: the workbench previews as the Samples tab says
     # the reference default is CFG 1 (none); community reports find a little CFG helps 2.1 (1.5-3), higher
     # oversaturates (Comfy-Org/Qwen-Image-2.1 discussions, comfyui-wiki, Oct 2026)
-    preview_cfg_note="1 = no CFG (the reference default). A little CFG, about 1.5 to 3, gives better previews for "
-                     "many people; higher tends to oversaturate. Above 1 the negative prompt applies.",
+    preview_cfg_note="3 = Fizgig's default for Qwen 2.1 previews (25 steps). 1 = no CFG (the reference default, "
+                     "twice as fast, flatter); much higher tends to oversaturate. Above 1 the negative prompt applies.",
     int8_attention=True,              # workbench renders: comfy-kitchen's INT8 attention
     activation_cache=True,            # Turbo Preview: step-1 replay, identical to a full render
     finetune=True,                  # the driver's ft_spec (families/ft.py)
@@ -210,7 +210,7 @@ QWEN_IMAGE_21 = FamilyDescription(
     preview_speed_steps=25,
     preview_speed_strength=0.0,
     preview_steps=25,
-    preview_cfg=1.0,
+    preview_cfg=3.0,                  # base Qwen 2.1 previews are 25 steps at CFG 3
     preview_negative=GENERAL_NEGATIVE,
     preview_width=1024,
     preview_height=1024,

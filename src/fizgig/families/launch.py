@@ -514,7 +514,10 @@ def start_problems(desc, inputs):
     swap = 0 if raw_swap.lower().startswith("auto") or not m else int(m.group())   # Auto always fits
     out += checks.run(v, blocks_swap=swap, swap_max=max(0, desc.n_blocks - 2), arch_label=desc.gui_label,
                       name_error=checks.tidy_name(v.get("LORA_NAME"))[1])
-    from fizgig.dataset.image_dataset import IMAGE_EXTENSIONS
+    try:
+        from fizgig.dataset.image_dataset import IMAGE_EXTENSIONS
+    except Exception:
+        IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".bmp"]
     out += checks.training_folder(_s(v.get("image_folder")), _s(v.get("caption_ext", ".txt")),
                                   check_captions=not slider_on(desc, inputs, "prompts"),
                                   media_exts={e.lower() for e in IMAGE_EXTENSIONS})

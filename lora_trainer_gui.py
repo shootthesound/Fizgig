@@ -35449,6 +35449,13 @@ def main(root=None, splash=None):
     launcher) both are created here, so the splash still covers the tab build. Either
     way the main window stays hidden until every tab exists, then appears fully drawn and
     the splash closes — no blank window while the tabs fill in."""
+    if "--web" in sys.argv:
+        _src = os.path.join(os.path.dirname(__file__), "src")
+        if _src not in sys.path:
+            sys.path.insert(0, _src)
+        from fizgig.web.server import main as web_main
+        sys.exit(web_main())
+
     # Set unique app ID so Windows taskbar shows our icon, not Python's
     try:
         import ctypes

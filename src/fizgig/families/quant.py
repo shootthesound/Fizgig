@@ -100,13 +100,16 @@ def load_base(driver, path, device, precision="bf16", blocks_to_swap=0, supports
     if getattr(driver, "loads_quantized", False):     # the file is already the base precision
         dit = driver.load_dit(path, device)
         return dit, 0
-    dit = driver.load_dit(path, "cpu" if (swap or precision != "bf16") else device)
-    quantize(dit, driver, precision, device, store_device="cpu" if swap else None)
+    dit = driver.load_quantized_dit(path, precision, device) if not swap else None
+    if dit is None:
+        dit = driver.load_dit(path, "cpu" if (swap or precision != "bf16") else device)
+        quantize(dit, driver, precision, device, store_device="cpu" if swap else None)
     if swap:
         driver.enable_block_swap(dit, swap, device, supports_backward)
         logger.info(f"[block swap] {swap} blocks stream between CPU and GPU")
     elif precision != "bf16":
         move(dit, device)
+    driver.on_base_loaded(dit, precision, device)
     return dit, swap
 
 

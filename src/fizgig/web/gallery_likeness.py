@@ -1,7 +1,9 @@
 """The Samples gallery's likeness scoring (the desktop gallery's): every sample picture's largest face against three
-photos of the subject from the dataset (ArcFace, on the CPU - training keeps the GPU), the mean of the three
-similarities. Scores go to <samples>/likeness.json in the desktop's format, so either app shows the other's scores and
-picks up its baselines; the gallery.owner file keeps two sessions from scoring one folder against each other."""
+photos of the subject from the dataset (on the CPU - training keeps the GPU), the mean of the three similarities. The
+face embedder is Image Prep's look match; with Auto it is decided from the three photos (ArcFace for a person, DINOv2
+for a furry / anime character), and likeness.json records which one made the scores, so a change rescores. Scores go to
+<samples>/likeness.json in the desktop's format, so either app shows the other's scores and picks up its baselines;
+the gallery.owner file keeps two sessions from scoring one folder against each other."""
 
 import json
 import os
@@ -29,11 +31,11 @@ def read(samples_dir):
         return {}
 
 
-def _write(samples_dir, names, status, scores):
+def _write(samples_dir, names, status, scores, meta=None):
     try:
         tmp = _path(samples_dir) + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({"baselines": names, "status": status, "scores": scores}, f)
+            json.dump({"baselines": names, "status": status, "scores": scores, **(meta or {})}, f)
         os.replace(tmp, _path(samples_dir))       # atomic: the galleries poll it
     except OSError:
         pass
@@ -71,8 +73,10 @@ def state(samples_dir, dataset_dir):
             start(samples_dir, dataset_dir, names)    # opening the gallery claims it (the desktop's rule)
         except ValueError as e:
             d["status"] = f"error: {e}"
+    thr = d.get("thresholds") if isinstance(d.get("thresholds"), dict) else None
     return {"baselines": names, "status": d.get("status", ""), "scores": d.get("scores") or {},
-            "available": prep_jobs.faces_available()}
+            "available": prep_jobs.faces_available(), "embedder": d.get("embedder_label") or "",
+            "thresholds": thr or {"match": 0.45, "borderline": 0.30}}
 
 
 def start(samples_dir, dataset_dir, names):
@@ -116,15 +120,20 @@ def _worker(samples_dir, gen, baselines):
     written in the last 5 s waits (a half-written file reads as no face), and a no-face rescores if its file changes.
     Scores for the same three photos survive a restart."""
     import numpy as np
+    from fizgig.face_utils import same_embedder
     names = [os.path.basename(b) for b in baselines]
+    _write(samples_dir, names, "loading the face model…", read(samples_dir).get("scores") or {})
+    emb, msg = prep_jobs.session_embedder(baselines, log=lambda m: print(m.replace("[faces]", "[likeness]"), flush=True))
+    meta = {"embedder": emb.cache_id, "embedder_label": emb.label, "thresholds": dict(emb.thresholds)}
     old = read(samples_dir)
+    # the same three photos AND the same embedder keep their scores (a file without one was ArcFace)
     scores = old["scores"] if sorted(old.get("baselines") or []) == sorted(names) and isinstance(old.get("scores"), dict) \
-        else {}
-    _write(samples_dir, names, "loading the face model…", scores)
-    base = [prep_jobs._embed(b) for b in baselines]
+        and same_embedder(old.get("embedder"), emb.cache_id) else {}
+    _write(samples_dir, names, "loading the face model…", scores, meta)
+    base = [prep_jobs._embed(b, emb) for b in baselines]
     missing = [n for n, e in zip(names, base) if e is None]
     if missing:
-        _write(samples_dir, names, "error: no face found in " + ", ".join(missing), scores)
+        _write(samples_dir, names, "error: no face found in " + ", ".join(missing), scores, meta)
         with _lock:
             if _runs.get(samples_dir, {}).get("gen") == gen:
                 _runs.pop(samples_dir, None)
@@ -158,13 +167,13 @@ def _worker(samples_dir, gen, baselines):
             if not _live(samples_dir, gen):
                 return
             seen[f] = mtime(f)
-            emb = prep_jobs._embed(os.path.join(samples_dir, f))
-            scores[f] = None if emb is None else round(float(np.mean([float(np.dot(b, emb)) for b in base])), 4)
+            e = prep_jobs._embed(os.path.join(samples_dir, f), emb)
+            scores[f] = None if e is None else round(float(np.mean([float(np.dot(b, e)) for b in base])), 4)
             if i % 2 == 0 or i == len(todo):
-                _write(samples_dir, names, f"scoring… {len(scores)}/{len(files)}", scores)
-        status = f"live - {len(scores)} sample(s) scored"
+                _write(samples_dir, names, f"scoring… {len(scores)}/{len(files)}", scores, meta)
+        status = f"live - {len(scores)} sample(s) scored ({emb.label})"
         if todo or status != last:
-            _write(samples_dir, names, status, scores)
+            _write(samples_dir, names, status, scores, meta)
             last = status
         for _ in range(16):
             if not _live(samples_dir, gen):

@@ -248,6 +248,16 @@
                   <input type="text" id="prepPadding" class="w-num" value="20">
                   <span class="field-hint">% around the face</span>
                 </div>
+                <div class="field-row prep-opts">
+                  <span class="field-label">Face finder:</span><select id="prepDetector" class="w-combo"></select>
+                  <span class="field-label">Look match:</span><select id="prepIdentity" class="w-combo"></select>
+                </div>
+                <div class="field-row prep-opts" id="prepYoloRow">
+                  <span class="field-label">YOLO model:</span>
+                  <input type="text" id="prepYolo" class="w-path" placeholder="blank = the default (see below)">
+                  <button class="btn btn-sm" id="prepYoloSave">Use</button>
+                </div>
+                <div class="field-hint" id="prepFaceHint"></div>
                 <div class="field-hint" id="prepNoFaces" style="display:none">Face detection isn't installed on the
                   Fizgig computer: run install_fizgig.py there to add it. Resize only still works.</div>
                 <div class="field-hint">Sizing is by target area (megapixels), not longest side: this matches how
@@ -289,7 +299,8 @@
             <div class="card-title">Final step: Look Consistency Filter (faces)</div>
             <div class="card-desc">Run this last, after every other prep stage: it scores the finished training
               folder. Pick three baseline pictures that nail the look you want; every picture's face is scored against
-              all three and averaged (ArcFace similarity), so no one photo's angle, expression or light sets the bar.
+              all three and averaged (face similarity: ArcFace for people, DINOv2 for furry / anime faces - see Look match
+              above), so no one photo's angle, expression or light sets the bar.
               It finds pictures that drifted off-look, the near-misses a loss curve can't see. Click pictures to mark
               them, or let Auto-Suggest flag the outliers, then move the marked ones out in one go (to an
               excluded_by_look subfolder; nothing is deleted). The scores are saved with the dataset, so low scorers
@@ -300,9 +311,10 @@
                 <span class="look-bases" id="lookBases"></span>
                 <button class="btn btn-primary" id="lookScan" disabled>Scan folder</button>
               </div>
-              <div class="field-hint" id="lookStatus">Each score is the average similarity to your 3 baselines. The
-                same person typically lands at 30–70%, the baselines included (each is scored against the other two
-                as well as itself).</div>
+              <div class="field-hint" id="lookStatus">Each score is the average similarity to your 3 baselines. With
+                ArcFace the same person typically lands at 30–70% (DINOv2 runs higher: 60–90%), the baselines included
+                (each is scored against the other two as well as itself).</div>
+              <div class="field-hint" id="lookDecision"></div>
               <div id="lookPicker" class="look-grid" style="display:none"></div>
               <div class="field-row" id="lookTools" style="display:none">
                 <button class="btn" id="lookSuggest">Auto-Suggest drift</button>

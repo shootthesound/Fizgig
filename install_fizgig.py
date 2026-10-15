@@ -446,6 +446,7 @@ def print_summary():
     print("  - InsightFace models will download on first use (~300MB)")
     print("  - Uses CPU for detection (works on any GPU)")
     print("  - Supports gender classification for face filtering")
+    print("  - Furry / anime: pick a YOLO face model on the Image Prep tab (docs/FACE_BACKENDS.md)")
 
     print("\nAI Captioning (Florence-2):")
     print("  - Florence models auto-download from Hugging Face on first use")

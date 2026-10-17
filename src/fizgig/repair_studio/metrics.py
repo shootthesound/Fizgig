@@ -3,8 +3,8 @@
 The pop-out compares two renders of the SAME seed and prompt, differing only in the LoRA
 blocks — the one setting where no-reference image metrics are honest: absolute quality scores
 on a single image are noise, but the DELTA across a controlled pair is signal. Everything here
-is cheap CPU work (<100 ms for a 768 pair); ArcFace likeness stays in the GUI beside the
-shared embedder.
+is cheap CPU work (<100 ms for a 768 pair); face likeness stays with the caller beside the
+shared face embedder (face_utils.FaceEmbedder).
 
 The metrics target overbake's known signatures:
   * patch grid       — what reads as "JPEG blockiness" in a fried render is usually the
@@ -86,7 +86,7 @@ def clip_and_saturation(rgb: np.ndarray) -> Tuple[float, float]:
 def compare(baseline_rgb: np.ndarray, tweaked_rgb: np.ndarray, pitch: int,
             baseline_bbox=None, tweaked_bbox=None) -> Dict[str, float]:
     """Metrics 2-4 for both renders plus deltas. Likeness (metric 1) is computed by the
-    caller, which owns the shared ArcFace embedder."""
+    caller, which owns the shared face embedder."""
     out: Dict[str, float] = {}
     out["grid_base"] = patch_grid_score(baseline_rgb, pitch)
     out["grid_tweak"] = patch_grid_score(tweaked_rgb, pitch)

@@ -1,106 +1,63 @@
 """Face-likeness scoring for LoRA Royale.
 
-Given a reference (training) image and a set of rendered epoch images, score
-how closely each render's face matches the reference using InsightFace ArcFace
-embeddings (the buffalo_l recognition model — already a Fizgig dependency via
-face_utils). Higher cosine similarity = more alike.
+Given a reference (training) image and a set of rendered epoch images, score how closely each render's face matches
+the reference. The identity embedder is face_utils.FaceEmbedder - ArcFace for human faces, DINOv2 (or CLIP) on the
+face crop for furry / anime faces - picked in Image Prep's face settings (prefs.json face_detector /
+face_identity). Higher cosine similarity = more alike; scores are only comparable within one embedder.
 
-CPU-only (ctx_id=-1) so it never fights the DiT for VRAM. The recognition
-module is loaded separately from face_utils' detector, which only enables
-detection + genderage — here we need 'recognition' to get `normed_embedding`.
+CPU-only, so it never fights the DiT for VRAM.
 """
 
 import os
+import threading
 from typing import List, Optional, Tuple
 
 import numpy as np
 
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 
-_app = None
-_available = None
+_embedder = None
+_lock = threading.Lock()
+last_embedder_label = ""      # the embedder the last score_renders() session used (shown beside the scores)
 
 
-def available() -> bool:
-    """True if InsightFace + OpenCV are importable."""
-    global _available
-    if _available is None:
-        try:
-            import insightface  # noqa: F401
-            import cv2  # noqa: F401
-            _available = True
-        except ImportError:
-            _available = False
-    return _available
+def get_embedder(settings: Optional[dict] = None):
+    """The process-wide FaceEmbedder for the given face settings (default: prefs.json); rebuilt when they change."""
+    global _embedder
+    from fizgig.face_utils import FaceEmbedder, load_face_settings
+    with _lock:
+        fresh = FaceEmbedder(settings=load_face_settings(settings))
+        if _embedder is None or _embedder.settings_key != fresh.settings_key:
+            _embedder = fresh
+        return _embedder
 
 
-def _ensure_app():
-    global _app
-    if _app is not None:
-        return _app
-    from insightface.app import FaceAnalysis
-    app = FaceAnalysis(
-        name="buffalo_l",
-        allowed_modules=["detection", "recognition"],
-        providers=["CPUExecutionProvider"],
-    )
-    app.prepare(ctx_id=-1)
-    _app = app
-    return _app
+def available(settings: Optional[dict] = None) -> bool:
+    """True if the configured identity embedder can run (InsightFace for ArcFace; a face detector + transformers for
+    DINOv2 / CLIP)."""
+    try:
+        return get_embedder(settings).available
+    except Exception:
+        return False
 
 
-def _detect_faces(bgr):
-    """Detect faces, retrying with a padded border if none are found.
-
-    RetinaFace (buffalo_l) fails on faces that FILL the frame — a close-up
-    headshot is too large for its anchor scales, so it returns nothing. Padding
-    a border around the image shrinks the face's fraction of the frame, bringing
-    it back into the detector's working range. The padding shifts coordinates but
-    not the face content, so the alignment/embedding is unchanged — it only helps
-    detection. We only pad when the unpadded pass fails (no regression for normal
-    framing, and small faces aren't shrunk needlessly)."""
-    import cv2
-    app = _ensure_app()
-    faces = app.get(bgr)
-    if faces:
-        return faces
-    for pad in (0.25, 0.5):
-        h, w = bgr.shape[:2]
-        py, px = int(h * pad), int(w * pad)
-        padded = cv2.copyMakeBorder(bgr, py, py, px, px, cv2.BORDER_REPLICATE)
-        faces = app.get(padded)
-        if faces:
-            return faces
-    return []
-
-
-def _largest_embedding(pil_image) -> Optional[np.ndarray]:
-    """ArcFace embedding (L2-normalized, 512-d) of the largest face, or None."""
-    import cv2
-    arr = np.array(pil_image.convert("RGB"))
-    bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
-    faces = _detect_faces(bgr)
-    if not faces:
-        return None
-    face = max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
-    emb = getattr(face, "normed_embedding", None)
-    if emb is None:
-        return None
-    return np.asarray(emb, dtype=np.float32)
+def embedder_name(settings: Optional[dict] = None) -> str:
+    try:
+        return get_embedder(settings).label
+    except Exception:
+        return "face embedder"
 
 
 def embedding_for_path(path: str) -> Optional[np.ndarray]:
-    from PIL import Image
     try:
-        with Image.open(path) as im:
-            return _largest_embedding(im)
+        return get_embedder().embed(path)
     except Exception:
         return None
 
 
 def embedding_for_image(pil_image) -> Optional[np.ndarray]:
     try:
-        return _largest_embedding(pil_image)
+        return get_embedder().embed_image(pil_image)
     except Exception:
         return None
 
@@ -113,12 +70,21 @@ def cosine(a: Optional[np.ndarray], b: Optional[np.ndarray]) -> float:
     return float(np.dot(a, b))
 
 
-def score_renders(ref_path: str, renders: List[Tuple]) -> List[Tuple[object, float]]:
+def score_renders(ref_path: str, renders: List[Tuple], settings: Optional[dict] = None) -> List[Tuple[object, float]]:
     """`renders`: list of (label, PIL.Image). Returns [(label, score)] with
     score in [-1, 1] (NaN where the reference or a render has no detectable
-    face). Reference is embedded once."""
-    ref = embedding_for_path(ref_path)
-    out = []
-    for label, img in renders:
-        out.append((label, cosine(ref, embedding_for_image(img))))
-    return out
+    face). Reference is embedded once; one embedder for all of them - with Auto look match, decided from the
+    reference photo (ArcFace for a human face, DINOv2 otherwise)."""
+    global last_embedder_label
+    from fizgig.face_utils import decide_look_match
+    dec = decide_look_match([ref_path], settings)
+    emb = get_embedder(dec.settings)
+    last_embedder_label = emb.label
+
+    def _e(fn, x):
+        try:
+            return fn(x)
+        except Exception:
+            return None
+    ref = _e(emb.embed, ref_path)
+    return [(label, cosine(ref, _e(emb.embed_image, img))) for label, img in renders]

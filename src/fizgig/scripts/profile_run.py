@@ -31,23 +31,13 @@ def _auto_swap():
     return 0
 
 
-def _embedder():
-    """(embed_path, embed_pil) on one face model: the largest face's ArcFace embedding (the desktop's
-    _ff_embed_cached / _repair_embed_pil)."""
-    from fizgig.face_utils import FaceEmbedder
-    fe = FaceEmbedder()
-
-    def embed_pil(pil):
-        import cv2
-        import numpy as np
-        bgr = cv2.cvtColor(np.array(pil.convert("RGB")), cv2.COLOR_RGB2BGR)
-        fe._ensure_loaded()
-        faces = fe._app.get(bgr) or fe._detect_with_pad_retry(bgr)
-        if not faces:
-            return None
-        f = max(faces, key=lambda x: (x.bbox[2] - x.bbox[0]) * (x.bbox[3] - x.bbox[1]))
-        return np.asarray(f.normed_embedding, dtype=np.float32)
-    return fe.embed, embed_pil
+def _embedder(baselines):
+    """(embed_path, embed_pil, label) on one face model: the largest face's embedding (the desktop's
+    _ff_embed_cached / _repair_embed_pil). The look match is Image Prep's; with Auto it is decided from the subject
+    photos (ArcFace for a person, DINOv2 for a furry / anime character), the same for every render."""
+    from fizgig.face_utils import decide_look_match
+    fe = decide_look_match(baselines).embedder()
+    return fe.embed, fe.embed_image, fe.label
 
 
 def main(job_path):
@@ -87,7 +77,7 @@ def main(job_path):
             eng.load_primary(lora)
             embed, base_embs = None, []
             if job.get("baselines"):
-                embed_path, embed_pil = _embedder()
+                embed_path, embed_pil, embed_label = _embedder(job["baselines"])
                 base_embs = [embed_path(p) for p in job["baselines"]]
                 if any(e is None for e in base_embs):
                     log.append("No face found in one of the subject photos - likeness and bleed scores are off for "
@@ -110,6 +100,8 @@ def main(job_path):
             out("P", text=log[-1])
             abl = run_ablation(eng, prompt=prompt, class_prompt=class_prompt, seeds=seeds, width=size, height=size,
                                embed=embed, baselines=base_embs, per_block=per_block, on_progress=prog)
+            if embed is not None and isinstance(abl, dict):
+                abl["embedder"] = embed_label          # the report names the embedder its likeness comes from
         html, sidecar = write_report(desc, lora, stats, abl, report, labels)
     finally:
         if eng is not None:

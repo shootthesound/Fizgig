@@ -347,12 +347,13 @@ def render(state, extra=None):
 
 
 def metrics(ref=""):
-    """The desktop's metrics strip for the pair on screen: likeness to a reference photo (ArcFace, the Look Filter's
-    embedder) and repair_studio.metrics' paired numbers - patch grid, face detail, clipping, saturation. CPU only."""
+    """The desktop's metrics strip for the pair on screen: likeness to a reference photo (the Look Filter's face
+    embedder; with Auto look match decided from the reference - ArcFace for a person, DINOv2 for a furry / anime
+    face) and repair_studio.metrics' paired numbers - patch grid, face detail, clipping, saturation. CPU only."""
     import numpy as np
     from PIL import Image
     from fizgig.repair_studio.metrics import PATCH_PITCH, compare
-    from fizgig.web.prep_jobs import _embed, embed_face_box
+    from fizgig.web.prep_jobs import _embed, embed_face_box, session_embedder
     with _lock:
         base_p, tweak_p, fam = _S.get("baseline") or "", _S.get("tweaked") or "", _S.get("family") or ""
     if not (base_p and tweak_p and os.path.isfile(base_p) and os.path.isfile(tweak_p)):
@@ -361,12 +362,15 @@ def metrics(ref=""):
     d = get_family(fam)
     pitch = PATCH_PITCH.get((d.shares_prefs_with or d.key) if d is not None else fam, 16)
     try:
-        b_emb, b_box = embed_face_box(base_p)
-        t_emb, t_box = embed_face_box(tweak_p)
-        ref_emb = _embed(ref) if ref and os.path.isfile(ref) else None
+        has_ref = bool(ref and os.path.isfile(ref))
+        emb, _ = session_embedder([ref] if has_ref else [base_p], log=None)    # one embedder for all three
+        b_emb, b_box = embed_face_box(base_p, emb)
+        t_emb, t_box = embed_face_box(tweak_p, emb)
+        ref_emb = _embed(ref, emb) if has_ref else None
         m = compare(np.array(Image.open(base_p).convert("RGB")), np.array(Image.open(tweak_p).convert("RGB")),
                     pitch, b_box, t_box)
         m["ref_set"], m["ref_face"] = bool(ref), ref_emb is not None
+        m["embedder"], m["like_match"] = emb.label, emb.thresholds["match"]
         m["like_base"] = float(np.dot(ref_emb, b_emb)) if ref_emb is not None and b_emb is not None else None
         m["like_tweak"] = float(np.dot(ref_emb, t_emb)) if ref_emb is not None and t_emb is not None else None
         return {k: (float(v) if isinstance(v, (np.floating, np.integer)) else v) for k, v in m.items()}

@@ -107,6 +107,10 @@ class Watch:
             logger.warning(f"[look-warmup] could not load look scores ({e}) - warm-up off this run")
             return
         cut = look.get("cutoff")
+        # Scores carry the embedder that made them (ArcFace / DINOv2 / CLIP - different scales); the cutoff was
+        # computed on that same scale when the scan ran, so it is used as is. Files from before the face backends
+        # have no "embedder" and are ArcFace.
+        emb = look.get("embedder_label") or look.get("embedder") or "ArcFace"
         if cut is None:
             logger.warning("[look-warmup] no cutoff in fizgig_look_scores.json (too few scored faces) - warm-up off")
             return
@@ -117,7 +121,8 @@ class Watch:
                         f"Filter) - skipped")
         if use:
             self.watch.set_warmup_keys(use)
-            logger.info(f"[look-warmup] {len(use)} look-outlier image(s) on LR warm-up x0.4 -> x1.0")
+            logger.info(f"[look-warmup] {len(use)} look-outlier image(s) on LR warm-up x0.4 -> x1.0 "
+                        f"({emb} scores, cutoff {float(cut):.2f})")
 
     def _resume(self, start_epoch):
         resets = {}

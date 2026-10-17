@@ -10,7 +10,7 @@ Two instruments, written into one report:
 * Rendering (the workbench engine, a few minutes): the LoRA on fixed seeds whole, off, with each group of
   neighbouring blocks ALONE and with each group LEFT OUT (and, in the thorough pass, each single block left out).
   Measured per condition as a share of what the whole LoRA does: how far the picture moves, and - given photos of the
-  subject - how much likeness the trigger prompt gets (ArcFace) and how much a plain class prompt drifts toward the
+  subject - how much likeness the trigger prompt gets (face embedder) and how much a plain class prompt drifts toward the
   subject (bleed). Groups, because likeness is spread over many blocks: switch one off and its neighbours cover for
   it (measured on a Krea 2 character LoRA: no single block's removal cost more than a few % of its likeness).
 
@@ -479,7 +479,8 @@ def write_report(desc, lora_path, stats, abl, output_html, labels):
                          f'group switched on).</p><div class="grid">{"".join(cc)}</div></div>')
         parts.append(f'<div class="note" style="margin:-6px 0 18px 4px">Prompt: {_html.escape(abl["prompt"])} · '
                      f'{len(abl["seeds"])} seed(s) · {abl["size"][0]}×{abl["size"][1]}. Likeness and bleed are measured by '
-                     "face recognition (ArcFace) against your subject photos. Groups overlap in what they do, so "
+                     f"face recognition ({_html.escape(str(abl.get('embedder') or 'ArcFace'))}) against your subject "
+                     "photos. Groups overlap in what they do, so "
                      "the percentages don't add up to 100%; anything under 10% either way is within "
                      "seed-to-seed noise.</div>")
 

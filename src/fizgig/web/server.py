@@ -2451,7 +2451,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/prep/options":            # Image Prep: its choices, and whether face tools are here
             from fizgig.dataset import prep as _prep
             return self.json({"modes": list(_prep.MODES), "megapixels": _prep.MEGAPIXELS,
-                              "faces": _prep.FACE_TARGETS, "face_tools": prep_jobs.faces_available()})
+                              "faces": _prep.FACE_TARGETS, "face_tools": prep_jobs.faces_available(),
+                              "face_settings": prep_jobs.face_settings()})
         if path == "/api/prep/summary":            # the What will happen card
             from fizgig.dataset import prep as _prep
             g = lambda k, d="": (qs.get(k) or [d])[0]
@@ -3273,6 +3274,12 @@ class Handler(BaseHTTPRequestHandler):
                         return self.json(prep_jobs.look_scan(folder, b.get("baselines") or []))
                     return self.json(prep_jobs.look_move(folder, b.get("paths") or [],
                                                          captions.caption_ext(b.get("ext"))))
+                except ValueError as e:
+                    return self.json({"error": str(e)}, 400)
+            if path == "/api/prep/face_settings":     # the face finder / YOLO model / look match (prefs.json face_*)
+                try:
+                    update_prefs(prep_jobs.save_face_settings(b))
+                    return self.json(prep_jobs.face_settings())
                 except ValueError as e:
                     return self.json({"error": str(e)}, 400)
             if path == "/api/prep/test":              # Test face detection on one photo (writes nothing)

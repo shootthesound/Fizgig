@@ -1393,7 +1393,8 @@ async function likenessShow(dir, items, run, view) {
     const it = pics.find((p) => p.name === fig.title);
     if (!on || !it) continue;
     const s = d.scores[it.name];
-    const cls = s === undefined || s === null ? "na" : s >= 0.45 ? "good" : s >= 0.30 ? "mid" : "bad";
+    const t = d.thresholds || {match: 0.45, borderline: 0.30};     // the embedder's own bands (ArcFace / DINOv2 / CLIP)
+    const cls = s === undefined || s === null ? "na" : s >= t.match ? "good" : s >= t.borderline ? "mid" : "bad";
     fig.append(el("span", {class: `lik-badge ${cls}${it.epoch === bestEpoch && bestEpoch != null ? " best" : ""}`,
       text: s === undefined ? "…" : s === null ? "no face" : `${Math.round(s * 100)}%`}));
   }
@@ -1405,11 +1406,12 @@ async function likenessShow(dir, items, run, view) {
   if (cv.width !== w) cv.width = w;
   const g = cv.getContext("2d"), W = cv.width, H = cv.height, L = 42, R = 12, T = 12, B = 22;
   g.clearRect(0, 0, W, H);
-  const ymax = Math.max(0.7, Math.max(...avgs) + 0.05);
+  const ymax = Math.min(1, Math.max(0.7, (d.thresholds || {}).match + 0.15 || 0, Math.max(...avgs) + 0.05));
   const x = (i) => epochs.length === 1 ? L + (W - L - R) / 2 : L + (W - L - R) * i / (epochs.length - 1);
   const y = (v) => T + (H - T - B) * (1 - v / ymax);
   g.font = "11px sans-serif"; g.lineWidth = 1;
-  for (const band of [0.30, 0.45]) {         // the badge colour bands, for orientation
+  const bands = d.thresholds || {match: 0.45, borderline: 0.30};
+  for (const band of [bands.borderline, bands.match]) {         // the badge colour bands, for orientation
     g.strokeStyle = "#34495E"; g.fillStyle = "#7F8C8D";
     g.beginPath(); g.moveTo(L, y(band)); g.lineTo(W - R, y(band)); g.stroke();
     g.fillText(Math.round(band * 100) + "%", 8, y(band) + 4);
@@ -2274,7 +2276,7 @@ async function royaleScore() {
     if (r.best == null) { $("ryLikeStatus").textContent = "No faces detected in the renders or subject image."; $("ryBest").disabled = true; return; }
     $("ryBest").disabled = false;
     $("ryLikeStatus").textContent = `Best: ${ryLabel(r.best).toLowerCase()} (${r.scores[r.best].toFixed(3)})` +
-      (r.no_face ? `  (${r.no_face} no-face)` : "");
+      (r.no_face ? `  (${r.no_face} no-face)` : "") + (r.embedder ? `  · ${r.embedder}` : "");
     royaleBest();
   } catch (e) { $("ryLikeStatus").textContent = e.message; }
 }
@@ -3051,6 +3053,7 @@ async function loadPrep() {
     document.querySelectorAll('input[name="prepMode"]').forEach((r) => { r.checked = r.value === mode; });
     document.querySelectorAll('input[name="prepReplace"]').forEach((r) => { r.checked = r.value === (saved.replace ? "1" : "0"); });
     $("prepNoFaces").style.display = o.face_tools ? "none" : "";
+    faceSettingsShow(o.face_settings);
   }
   $("prepFolder").textContent = S.imageFolder ? `Folder: ${S.imageFolder}  (set on the Start tab)` :
     "Choose the training folder on the Start tab first.";
@@ -3103,6 +3106,33 @@ async function prepRun() {
   } catch (e) { $("prepState").textContent = e.message; }
 }
 
+// the face finder / look match (fizgig/face_utils.py, prefs.json face_*): saved as soon as they change
+function faceSettingsShow(f) {
+  if (!f) return;
+  S.prep.face = f;
+  for (const [id, list, v] of [["prepDetector", f.detectors, f.detector], ["prepIdentity", f.identities, f.identity]]) {
+    $(id).innerHTML = "";
+    for (const [k, label] of list) $(id).append(el("option", {value: k, text: label}));
+    $(id).value = v;
+  }
+  $("prepYolo").value = f.yolo_model;
+  $("prepYoloRow").style.display = f.detector === "insightface" ? "none" : "";
+  const hints = {
+    auto: "Both finders on every picture, boxes merged: InsightFace for people (and their gender), the YOLO model for " +
+      "furry, anime and drawn faces. About 0.3 s a picture on the CPU.",
+    insightface: "People only: furry, anime and drawn faces aren't found.",
+    yolo: "Furry, anime and drawn faces (and fursuits). No gender: Largest Male / Female Face use the largest face."};
+  $("prepFaceHint").textContent = `${hints[f.detector] || ""} Now: ${f.finder}. ` +
+    (f.detector !== "insightface" && !f.yolo_model ? `Blank YOLO model = ${f.local_model} if it's there (Fdetailer, ` +
+      "converted with convert_yolo_to_onnx.py - see docs/FACE_BACKENDS.md), else deepghs' anime head detector, " +
+      "downloaded on first use. " : "") +
+    "Look match Auto: ArcFace for a set of people, DINOv2 for a furry, anime or mixed one - decided per dataset.";
+}
+async function faceSettingsSave(changes) {
+  try { faceSettingsShow(await api("/api/prep/face_settings", changes)); }
+  catch (e) { $("prepFaceHint").textContent = e.message; }
+}
+
 function prepTest() {
   pick(S.imageFolder, false, async (path) => {
     const host = $("prepTestResult");
@@ -3111,7 +3141,7 @@ function prepTest() {
       const r = await api("/api/prep/test", {path, face: $("prepFace").value});
       if (!r.faces.length) { host.replaceChildren(el("div", {class: "field-hint", text: "No faces found in that photo."})); return; }
       host.replaceChildren(
-        el("div", {class: "field-hint", text: `${r.faces.length} face${r.faces.length === 1 ? "" : "s"} found: ` +
+        el("div", {class: "field-hint", text: `${r.faces.length} face${r.faces.length === 1 ? "" : "s"} found (${r.finder}): ` +
           r.faces.map((f, i) => `face ${i + 1}, ${f.gender === "unknown" ? "?" : f.gender}, ${f.area.toLocaleString()} px` +
             (f.selected ? " (chosen for the crop)" : "")).join("; ") + ". Green = chosen, yellow = the others."}),
         el("img", {class: "prep-test-img", src: r.image, alt: "faces found"}));
@@ -3161,9 +3191,10 @@ async function lookPoll() {
   const r = await api("/api/look/status").catch(() => null);
   if (!r) return;
   S.prep.look = r;
+  $("lookDecision").textContent = r.decision ? r.decision.replace("[faces] ", "") : "";
   if (r.state === "running") {
     $("lookStatus").textContent = r.progress[0] ? `Scoring faces… ${r.progress[0]}/${r.progress[1]}` :
-      "Loading the face model (the first time downloads about 300 MB)…";
+      "Loading the face model and choosing the look match (the first time downloads about 300 MB)…";
     S.prep.lookTimer = setTimeout(lookPoll, 1000);
   } else if (r.state === "failed") $("lookStatus").textContent = r.error;
   else if (r.state === "done" && r.rows.length) {
@@ -3269,6 +3300,9 @@ function wirePrep() {
   for (const id of ["prepMp", "prepFace", "prepPadding"]) $(id).addEventListener("change", () => { prepSummary(); savePrepSoon(); });
   $("prepRun").addEventListener("click", prepRun);
   $("prepTest").addEventListener("click", prepTest);
+  $("prepDetector").addEventListener("change", () => faceSettingsSave({detector: $("prepDetector").value}));
+  $("prepIdentity").addEventListener("change", () => faceSettingsSave({identity: $("prepIdentity").value}));
+  $("prepYoloSave").addEventListener("click", () => faceSettingsSave({yolo_model: $("prepYolo").value}));
   $("lookPick").addEventListener("click", lookPickOpen);
   $("lookScan").addEventListener("click", lookScan);
   $("lookSuggest").addEventListener("click", lookSuggest);
@@ -4172,6 +4206,7 @@ async function studioMetrics() {
     const lb = m.like_base * 100, lt = m.like_tweak * 100, d = lt - lb;
     put("like", `Likeness ${lb.toFixed(0)}% ${d > 0.5 ? "▲" : d < -0.5 ? "▼" : "→"} ${lt.toFixed(0)}%`, d > 0.5 ? "good" : d < -0.5 ? "bad" : "");
   }
+  $(chips.like).title = m.embedder ? `Look match: ${m.embedder} (scores are on its own scale)` : "";
   put("grid", `Grid ${m.grid_base.toFixed(2)} → ${m.grid_tweak.toFixed(2)}`, m.grid_delta > 0.05 ? "bad" : m.grid_delta < -0.05 ? "good" : "");
   const td = (m.texture_tweak - m.texture_base) / Math.max(m.texture_base, 1e-6);
   put("tex", `Detail ${m.texture_base.toFixed(0)} → ${m.texture_tweak.toFixed(0)}`, Math.abs(td) > 0.10 ? "warm" : "");

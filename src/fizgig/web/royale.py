@@ -72,10 +72,12 @@ def _images(rendered):
 
 
 def score(gen, rendered, ref):
-    """Each render's face against the subject photo (ArcFace, CPU): {label: cosine or None (no face)}, and the best."""
+    """Each render's face against the subject photo (Image Prep's look match - with Auto, ArcFace for a person and
+    DINOv2 for a furry / anime face - on the CPU): {label: cosine or None (no face)}, and the best."""
     from fizgig.lora_royale import likeness
     if not likeness.available():
-        raise ValueError("Likeness scoring needs InsightFace / OpenCV - run install_fizgig.py to enable it.")
+        raise ValueError("Likeness scoring needs the face tools (InsightFace, or onnxruntime + transformers for "
+                         "DINOv2) - run install_fizgig.py to enable it.")
     if not ref or not os.path.isfile(ref):
         raise ValueError("Pick a subject image to score likeness against.")
     scored = likeness.score_renders(ref, _images(rendered))
@@ -84,7 +86,7 @@ def score(gen, rendered, ref):
     best = max(valid, key=lambda t: t[1])[0] if valid else None
     with _lock:
         _like.update(gen=gen, scores=scores, ref=ref, best=best)
-    return {"scores": scores, "best": best, "no_face": len(scores) - len(valid)}
+    return {"scores": scores, "best": best, "no_face": len(scores) - len(valid), "embedder": likeness.last_embedder_label}
 
 
 def export(rendered, out_dir, run, fmt="MP4", speed="Normal", pingpong=True, show_epoch=True, brand=True,

@@ -186,6 +186,13 @@ TOOLS = [
     ("MiaoshouAI/Florence-2-base-PromptGen", 1.0, "Florence-2 captioner"),
     ("Helsinki-NLP/opus-mt-en-zh", 0.3, "EN->ZH translator (bilingual captions)"),
     ("insightface:buffalo_l", 0.3, "Face model — Look Filter + likeness scoring"),
+    # Face backends for furry / anime datasets (face_utils.py, docs/FACE_BACKENDS.md). "@<commit>" pins the
+    # revision face_utils loads, so its cache-first lookup finds exactly these files offline.
+    ("hf-files:deepghs/anime_head_detection@06604feee81983792a57c21081e539c0ae229833|"
+     "head_detect_v2.0_s/model.onnx,head_detect_v2.0_s/*.json", 0.04,
+     "Anime / furry head detector (YOLO ONNX, MIT) — face finder fallback"),
+    ("hf-model:facebook/dinov2-base@f9e44c814b77203eaa57a6bdbbd535f21ede1415", 0.35,
+     "DINOv2 — furry / anime look matching"),
     # hf-model: config + tokenizer + safetensors only. The repo also carries .bin/.msgpack/.h5
     # duplicates of the same weights — an unfiltered snapshot would pull 1.16 GB for a 0.3 GB
     # model. Gizmo checks this cache before loading (gizmo.py local_whisper_dir) and stays
@@ -414,13 +421,15 @@ def fetch_tool(spec, log=print, dry_run=False):
             # A repo's small named files only (e.g. a processor/ folder), never its weights.
             from huggingface_hub import snapshot_download
             repo, _, pats = model_id[len("hf-files:"):].partition("|")
-            snapshot_download(repo_id=repo, allow_patterns=pats.split(","))
+            repo, _, rev = repo.partition("@")
+            snapshot_download(repo_id=repo, revision=rev or None, allow_patterns=pats.split(","))
         elif model_id.startswith("hf-model:"):
             # Configs + tokenizer + the safetensors weights — skipping the .bin/.msgpack/.h5
             # duplicates these repos also carry. Keep in lockstep with the runtime's
             # local-cache check (gizmo.py _WHISPER_PATTERNS).
             from huggingface_hub import snapshot_download
-            snapshot_download(repo_id=model_id.split(":", 1)[1],
+            repo, _, rev = model_id.split(":", 1)[1].partition("@")
+            snapshot_download(repo_id=repo, revision=rev or None,
                               allow_patterns=["*.json", "*.txt", "*.model", "*.safetensors"])
         else:
             from huggingface_hub import snapshot_download

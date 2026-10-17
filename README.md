@@ -102,6 +102,7 @@ Each tool works on your own runs **or any LoRA you've downloaded**, and they han
 - **Fast previews** in a few steps on a turbo or distilled model where one exists: Klein's and Flux 3 Image Klein's distilled models, the Turbo LoRAs for Krea 2, MiniMax H3, Qwen Image 2.1 and Anima, and Qwen Image 2.1's Turbo model.
 - **A sample gallery that scores likeness** live, and a run visualiser to scrub epochs.
 - **Dataset prep**: AI captions with Qwen3-VL or Florence-2, bilingual captions, face crops, and a Look Consistency Filter.
+- **Face backends for every kind of character**: face crops, the Look Filter and likeness scores work on furry, anime and fursuit characters as well as people (see the section below).
 - **Gizmo** (MiniMax H3): cut clips with scene detection, crop to the subject, and record or segment a voice dataset with Whisper transcription.
 
 Full list: [docs/TRAINING.md](docs/TRAINING.md). Everything also runs headless: [docs/CLI.md](docs/CLI.md).
@@ -121,6 +122,24 @@ Full list: [docs/TRAINING.md](docs/TRAINING.md). Everything also runs headless: 
 </p>
 
 More: [docs/WEB_UI.md](docs/WEB_UI.md).
+
+## Face backends
+
+Face crops, the Look Consistency Filter and every likeness score use two choices, both in the Image Prep tab's face settings:
+
+- **Face finder**:
+  - **InsightFace** for human photos (it knows gender).
+  - **a YOLO face model** run with onnxruntime for drawn, anime and furry characters and fursuits. No ultralytics needed.
+  - **Auto** (default): both detectors on every image, boxes merged (~0.3 s per image on CPU).
+- **Look match**:
+  - **ArcFace** for people.
+  - **DINOv2** for furry / anime faces.
+  - optionally **CLIP**.
+  - **Auto** (default) decides once per dataset or scoring session: ArcFace for a mostly-human set, DINOv2 for a furry, anime or mixed one, so scores never mix embedding spaces.
+
+  Each has its own calibrated thresholds, and cached scores record which embedder made them.
+
+For furry datasets we recommend [Fdetailer v1.1](https://civitai.com/models/1228695), converted once to `.onnx` with `src/fizgig/scripts/convert_yolo_to_onnx.py`. The MIT-licensed deepghs anime head model is the built-in fallback and downloads by itself. Details, numbers and limitations: [docs/FACE_BACKENDS.md](docs/FACE_BACKENDS.md).
 
 ## Install
 
@@ -195,6 +214,7 @@ Renting through the [RunPod link](https://console.runpod.io/deploy?type=GPU&gpu=
 | [Install and requirements](docs/INSTALL.md) | Hardware, system RAM, AMD ROCm, model downloads, VRAM tables |
 | [Klein 9B](docs/KLEIN.md) · [Flux 3 Image Klein](docs/FLUX3.md) · [Krea 2](docs/KREA2.md) · [MiniMax H3](docs/MINIMAX_H3.md) · [Qwen Image 2.1](docs/QWEN_IMAGE.md) | Each model: presets, features, memory |
 | [Training and the workbench](docs/TRAINING.md) | The shared features and tools in detail |
+| [Face backends](docs/FACE_BACKENDS.md) | Face finder (InsightFace / YOLO) and look match (ArcFace / DINOv2 / CLIP) for people, furry and anime |
 | [Full fine-tuning](docs/FINETUNE.md) · [How do I…?](docs/FINETUNE_HOWDOI.md) | Training the base model itself |
 | [RefMods](docs/REFMOD_HOWDOI.md) | RefMods for MiniMax H3 |
 | [Command line](docs/CLI.md) | Every trainer, headless |

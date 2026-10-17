@@ -64,13 +64,36 @@ DEFAULTS = {
     "FAMILY_SLIDER_BASE": "", "FAMILY_SLIDER_POS": "", "FAMILY_SLIDER_NEG": "", "FAMILY_SLIDER_ULTRA": False,
     "FAMILY_FT_ROTATIONS": "10", "FAMILY_FT_SAVE_EVERY": "1", "FAMILY_FT_ROTATE_EVERY": "1",
     "FAMILY_FT_FUSED": True, "FAMILY_FT_REG_DIR": "", "FAMILY_FT_REG_MULT": "0.2",
-    "DATASET_MEGAPIXELS": "0.25", "DATASET_CAPTION_EXT": ".txt", "ENABLE_BUCKET": True, "BUCKET_NO_UPSCALE": True,
+    "DATASET_MEGAPIXELS": "0.25", "DATASET_BATCH_SIZE": "1", "DATASET_CAPTION_EXT": ".txt", "ENABLE_BUCKET": True, "BUCKET_NO_UPSCALE": True,
     "ENABLE_CACHE": True,
     "METADATA_TITLE": "", "METADATA_AUTHOR": "", "METADATA_DESCRIPTION": "", "METADATA_LICENSE": "",
     "METADATA_TAGS": "", "METADATA_TRIGGER_PHRASE": "", "METADATA_THUMBNAIL": "",
     "SAMPLE_ENABLED": True, "SAMPLE_PROMPT": "A high quality photo", "SAMPLE_SEED": "1234",
     "SAMPLE_EVERY_N_EPOCHS": "1", "SAMPLE_AT_FIRST": True, "SAMPLE_CHECKPOINT": True, "CACHE_SAMPLE_MODEL": "auto",
 }
+
+
+BATCH_HINT = ("Images trained together in one step (1 = one at a time, the default). Bigger batches need more VRAM - "
+              "roughly one more image's activations each - so a 12 GB card should stay at 1 (use Gradient "
+              "Accumulation instead). Above 1, Detect problem images, Per-image LR, Look warm-up and Auto-recaption "
+              "are off for the run. Sliders and fine-tunes always train at 1.")
+
+
+def batch_box(desc):
+    """Whether the Training tab shows the Batch Size box: the family trains batches (description.max_batch_size)."""
+    return bool({"photo", "clip"} & set(desc.media)) and int(getattr(desc, "max_batch_size", 1) or 1) > 1
+
+
+def batch_size(desc, values, kind="standard"):
+    """The dataset's batch size from the form: the Batch Size box within 1..max_batch_size for a family that has it,
+    else 1; a slider or a fine-tune always 1 (the trainer refuses more)."""
+    if not batch_box(desc) or kind in ("slider", "finetune"):
+        return 1
+    try:
+        n = int(float(str(values.get("DATASET_BATCH_SIZE") or 1).strip() or 1))
+    except ValueError:
+        return 1
+    return max(1, min(n, int(desc.max_batch_size)))
 
 
 def _row(key, label, kind="entry", hint="", choices=(), default=None, **extra):
@@ -267,6 +290,8 @@ def form(desc):
         None if not pictures else _row("DATASET_MEGAPIXELS", "Target Megapixels", "combo",
              "Images are resized to this area, any aspect ratio: 0.25 = about 512 x 512, 1.0 = 1024 x 1024, 2.4 = 1536 x "
              "1536, 4.2 = 2048 x 2048. 4.2 MP wants 24-32 GB.", MEGAPIXELS),
+        _row("DATASET_BATCH_SIZE", "Batch Size", "choice", BATCH_HINT,
+             [str(i) for i in range(1, int(desc.max_batch_size) + 1)], "1") if batch_box(desc) else None,
         _row("CLIP_MEGAPIXELS", "Clip Target Megapixels", "combo",
              "The size your video clips are cached and trained at; photos keep the Target Megapixels. A clip takes "
              "far more memory and time than a photo of the same size, so e.g. photos at 1.0 with clips at 0.25 "
@@ -504,9 +529,11 @@ def form(desc):
     add("optimizer", "Optimizer", "training", [
         _row("OPTIMIZER_TYPE", "Optimizer Type", "choice", choices=_optimizers()),
         _row("OPTIMIZER_ARGS", "Optimizer Args"),
-        _row("GRADIENT_ACCUMULATION", "Gradient Accumulation", hint="Every model trains one image at a time. For a "
-             "larger effective batch, raise this: the same averaged gradient as a bigger batch, at the memory of "
-             "batch 1."),
+        _row("GRADIENT_ACCUMULATION", "Gradient Accumulation", hint=(
+            "For a larger effective batch without the memory of Batch Size, raise this: the same averaged gradient, "
+            "at the memory of batch 1." if batch_box(desc) else
+            "Every model trains one image at a time. For a larger effective batch, raise this: the same averaged "
+            "gradient as a bigger batch, at the memory of batch 1.")),
         _row("MAX_GRAD_NORM", "Max Grad Norm"),
     ], collapsed=True)
     add("other", "Other Options", "training", [
@@ -1020,7 +1047,8 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
         FAMILY_TURBO_STRENGTH=s("FAMILY_TURBO_STRENGTH"), FAMILY_TURBO_STEPS=s("FAMILY_TURBO_STEPS"),
         FAMILY_TURBO_PACE=s("FAMILY_TURBO_PACE"),
         python=python, repo_dir=repo_dir, models=models, image_folder=image_folder,
-        caption_ext=s("DATASET_CAPTION_EXT") or ".txt", batch_size=1, megapixels=s("DATASET_MEGAPIXELS"),
+        caption_ext=s("DATASET_CAPTION_EXT") or ".txt", batch_size=batch_size(desc, v, kind),
+        megapixels=s("DATASET_MEGAPIXELS"),
         clip_megapixels=s("CLIP_MEGAPIXELS") if "clip" in desc.media else "",
         enable_bucket=b("ENABLE_BUCKET"), no_upscale=b("BUCKET_NO_UPSCALE"), cache_root=cache_root,
         blocks_swap=s("BLOCKS_SWAP"), enable_cache=b("ENABLE_CACHE"), resuming=bool(s("RESUME_TRAINING")),

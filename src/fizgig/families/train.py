@@ -969,11 +969,18 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             logger.info("[slider] previews use the pairs' caption: '%s'", shared)
     if slider:
         driver.slider_setup(group)           # e.g. H3: still previews unless the pairs are clips
-    for ds in group.datasets:
-        if getattr(ds, "batch_size", 1) != 1:
-            raise RuntimeError("Fizgig trains one image at a time: set batch_size = 1 in the dataset config. For a "
-                               "larger effective batch use --gradient_accumulation_steps (the same averaged "
-                               "gradient, at the memory of batch 1).")
+    batch_size = max([int(getattr(ds, "batch_size", 1) or 1) for ds in group.datasets] or [1])
+    if batch_size != 1 and (not driver.supports_batch or slider or finetune):
+        raise RuntimeError("Fizgig trains one image at a time" + (
+            f" for {'a slider' if slider else 'a fine-tune'}" if driver.supports_batch else "") +
+            ": set batch_size = 1 in the dataset config. For a larger effective batch use "
+            "--gradient_accumulation_steps (the same averaged gradient, at the memory of batch 1).")
+    if batch_size > 1:
+        logger.info(f"[batch] batch size {batch_size}: per-sample noise and timesteps, captions padded with a mask")
+        if log_per_image_loss or per_image_lr or auto_recaption or warmup_look_outliers:
+            logger.warning("[loss-watch] batch size > 1: a step's loss is the batch mean, not one image's - the "
+                           "per-image loss watch, per-image LR, auto-recaption and look warm-up are off")
+        log_per_image_loss = per_image_lr = auto_recaption = warmup_look_outliers = False
     loader = DataLoader(group, batch_size=1, shuffle=True, num_workers=0,
                         collate_fn=(lambda b: b[0]) if slider_prompts else _Collator(shared_epoch, group))
     steps_per_epoch = len(loader)
@@ -1003,7 +1010,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     if precision == "auto" or blocks_to_swap < 0:
         req = (precision, blocks_to_swap)
         res = user_config.get("general", {}).get("resolution") or [1024, 1024]
-        mp = (res[0] * res[1] if isinstance(res, (list, tuple)) else res * res) / 1e6
+        mp = (res[0] * res[1] if isinstance(res, (list, tuple)) else res * res) / 1e6 * batch_size  # activations
         own = driver.plan_run(precision, blocks_to_swap, group=group, run=dict(
             dit_path=dit_path, network_type=network_type, network_dim=network_dim, lokr_factor=lokr_factor,
             optimizer_type=optimizer_type, training_adapter=training_adapter, context_lora_path=context_lora_path,
@@ -1012,7 +1019,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             precision, blocks_to_swap, why = own
         else:
             precision, blocks_to_swap, why = quant.plan(desc, driver, precision, blocks_to_swap, megapixels=mp)
-            why += f" at {mp:.2f} MP"
+            why += f" at {mp:.2f} MP" + (" (resolution x batch)" if batch_size > 1 else "")
         logger.info(f"[precision] Auto plan: {precision}, block swap {blocks_to_swap} ({why}); asked {req}")
 
     # ---- torch.compile (Krea 2's rule), decided here on the empty card as the original does - the free VRAM its
@@ -1526,7 +1533,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             ckpt_previews.render(dit, net, ema, lambda m, fl, swp: _render_previews(
                 driver, m, fl, vae, conds, sample_dir, epoch, output_name=output_name,
                 steps=asked_steps or ck.steps, cfg=ck.cfg if asked_cfg is None else asked_cfg,
-                neg=neg if asked_cfg is not None and asked_cfg > 1.0 else None, width=w, height=h, seed=sd, speed=ck, swapped=bool(swp), refs=ref_latents))
+                neg=neg if (ck.cfg if asked_cfg is None else asked_cfg) > 1.0 else None, width=w, height=h, seed=sd, speed=ck, swapped=bool(swp), refs=ref_latents))
             last_prompt[0] = prompts[-1] if prompts else None
             return
         _render_previews(driver, dit, net, vae, conds, sample_dir, epoch, output_name=output_name,

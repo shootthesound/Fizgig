@@ -158,6 +158,11 @@ class FamilyDriver:
         10%), averaged over an accumulation window. Default: (False, 1.0)."""
         return False, 1.0
 
+    # batch size > 1 (the dataset's batch_size): False = the trainer refuses it ("set Batch Size to 1"). A family that
+    # sets True takes latents (B, C, h, w) and a cond whose ragged `cond__` entries the dataset right-padded to the
+    # longest with `<key>_mask` (bool [B, L]) beside them, and draws its noise / timestep per sample
+    supports_batch = False
+
     def batch_cond(self, batch: dict, device) -> dict:
         """The conditioning dict training_loss gets for one loaded item: the cached `cond__` entries, batched. A
         family that keeps its own cache layout (H3's hidden_states + audio rows) maps its keys here."""

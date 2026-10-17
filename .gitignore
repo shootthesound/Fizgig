@@ -121,3 +121,6 @@ uploads/
 .fizgig_web_queue.json*
 .fizgig_app_profile/
 .fizgig_web_studio/
+
+# MOSS-Image text-encoder side venv (src/fizgig/moss_image/te_env.py)
+envs/

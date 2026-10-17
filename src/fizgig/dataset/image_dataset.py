@@ -583,6 +583,14 @@ class BucketBatchManager:
         # Stack tensors per key
         stacked: dict[str, Any] = {}
         for key, tensors in batch_tensor_data.items():
+            if key.startswith("cond__") and len({tuple(t.shape) for t in tensors}) > 1:
+                # a batch of captions of different lengths (families whose driver supports_batch): right-padded with
+                # zeros to the longest along dim 0, and `<key>_mask` (bool [B, L]) marks each row's own tokens
+                n = max(t.shape[0] for t in tensors)
+                stacked[key] = torch.stack([torch.cat([t, t.new_zeros((n - t.shape[0],) + tuple(t.shape[1:]))])
+                                            for t in tensors])
+                stacked[key + "_mask"] = torch.stack([torch.arange(n) < t.shape[0] for t in tensors])
+                continue
             stacked[key] = torch.stack(tensors)
 
         if self.timestep_pool is not None:

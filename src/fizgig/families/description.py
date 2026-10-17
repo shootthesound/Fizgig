@@ -392,6 +392,9 @@ class FamilyDescription:
     # a full fine-tune of the base model is offered (the driver's ft_spec returns its FTSpec, families/ft.py): the
     # Training tab shows the fine-tune card and the launch sends --finetune. Optional - most families never need it
     finetune: bool = False
+    # batch size > 1 (the driver's supports_batch): the Training tab's Batch Size box offers 1..max_batch_size and
+    # the dataset TOML gets it; 1 = no box, the TOML always says 1 (every family before MOSS-Image)
+    max_batch_size: int = 1
     ft_learning_rate: float = 1e-5    # the learning rate choosing Fine-tune sets (H3's tested rate is 3e-5)
     ft_regularisation: bool = True    # the fine-tune card offers a regularisation set (photos of the broad class)
     # the Training tab's large-dataset hint: (rate, steps per epoch) - a standard LoRA whose learning rate (or

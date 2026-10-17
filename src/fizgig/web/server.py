@@ -99,8 +99,32 @@ _NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" e
 
 
 # ---- hardware meters (as the desktop status bar) ---------------------------------------------------------------
+def _rocm_launch() -> bool:
+    """True only on the AMD launcher path. NVIDIA Launch Fizgig.bat must never enter the AMD VRAM reader."""
+    return os.environ.get("FIZGIG_GPU_BACKEND", "").lower() == "rocm"
+
+
+def _amd_gpu_row():
+    """One synthetic GPU row from the ROCm VRAM reader (#188). Never imports torch / HIP."""
+    if not _rocm_launch():
+        return None
+    try:
+        from fizgig.utils.vram_monitor import amd_gpu_name, read_amd_gpu_vram
+        hit = read_amd_gpu_vram()
+        if not hit:
+            return None
+        used_b, total_b = hit
+        if total_b <= 0:
+            return None
+        return {"index": 0, "name": amd_gpu_name() or "AMD GPU",
+                "total_gb": total_b / 2 ** 30, "used_gb": max(0, used_b) / 2 ** 30,
+                "uuid": "", "util": None, "temp": None, "power": None, "power_limit": None}
+    except Exception:
+        return None
+
+
 def list_gpus():
-    """[{index, name, total_gb, used_gb, uuid}] from nvidia-smi (every card, whatever CUDA_VISIBLE_DEVICES says)."""
+    """[{index, name, total_gb, used_gb, uuid}] from nvidia-smi (unchanged). On ROCm launch only, AMD fallback (#188)."""
     try:
         out = subprocess.run(["nvidia-smi", "--query-gpu=index,name,memory.total,memory.used,uuid,utilization.gpu,"
                               "temperature.gpu,power.draw,power.limit", "--format=csv,noheader,nounits"],
@@ -117,9 +141,12 @@ def list_gpus():
             util, temp, pw, pl = (more + [""] * 4)[:4]
             rows.append({"index": int(i), "name": n, "total_gb": int(t) / 1024, "used_gb": int(u) / 1024,
                          "uuid": uid, "util": num(util), "temp": num(temp), "power": num(pw), "power_limit": num(pl)})
-        return rows
+        if rows:
+            return rows
     except (OSError, ValueError, subprocess.SubprocessError):
-        return []
+        pass
+    row = _amd_gpu_row()
+    return [row] if row else []
 
 
 def _chosen_gpu(rows, want):
@@ -163,7 +190,17 @@ def _poll_stats_loop():
             r = _chosen_gpu(list_gpus(), want)
             if r:
                 name, vu, vt = r["name"], int(r["used_gb"] * 2 ** 30), int(r["total_gb"] * 2 ** 30)
-                extra = {k: r.get(k) for k in ("util", "temp", "power", "power_limit")}
+                extra = {k: r.get(k) for k in ("util", "temp", "power", "power_limit") if r.get(k) is not None}
+        # ROCm launch only - never typeperf/amd-smi on the NVIDIA path even if nvidia-smi is missing (#188).
+        if not vt and _rocm_launch():
+            try:
+                from fizgig.utils.vram_monitor import amd_gpu_name, read_amd_gpu_vram
+                hit = read_amd_gpu_vram()
+                if hit:
+                    vu, vt = int(hit[0]), int(hit[1])
+                    name = amd_gpu_name() or name
+            except Exception:
+                pass
         ru = rt = 0
         if psutil is not None:
             vm = psutil.virtual_memory()
@@ -2028,7 +2065,31 @@ def _caption_gpu_check(need_gb):
     if not mine:
         return
     g = _chosen_gpu(list_gpus(), os.environ.get("CUDA_VISIBLE_DEVICES") or load_prefs().get("cuda_device"))
-    free = (g["total_gb"] - g["used_gb"]) if g else 0.0
+    if g is None:
+        free = 0.0
+        # ROCm launch only (#188). NVIDIA path keeps free=0 when list_gpus is empty (same as before).
+        if _rocm_launch():
+            try:
+                from fizgig.utils.vram_monitor import read_amd_gpu_vram
+                hit = read_amd_gpu_vram()
+                if hit and hit[1] > 0:
+                    free = (hit[1] - hit[0]) / 2 ** 30
+            except Exception:
+                pass
+    else:
+        free = g["total_gb"] - g["used_gb"]
+        # ROCm synthetic row (uuid ""): typeperf may still report used=0 before its first sample - refuse
+        # captioning beside a run until a real used reading exists.
+        if _rocm_launch() and g.get("uuid") == "" and g["used_gb"] <= 0 and free >= need_gb + 3.0:
+            try:
+                from fizgig.utils.vram_monitor import read_amd_gpu_vram
+                hit = read_amd_gpu_vram()
+                if hit is None or hit[0] <= 0:
+                    free = 0.0
+                else:
+                    free = (hit[1] - hit[0]) / 2 ** 30
+            except Exception:
+                free = 0.0
     if free < need_gb + 3.0:
         raise ValueError(f"A run is training and the card has {free:.0f} GB free; this needs about {need_gb + 3:.0f} GB "
                          f"beside it. Wait for the run to finish, or pause it.")

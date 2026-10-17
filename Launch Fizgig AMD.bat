@@ -1,8 +1,33 @@
 @echo off
 REM Fizgig launcher for AMD ROCm on Windows.
-REM Sets ROCm/HIP tuning env vars (legacy RDNA1/2 vs newer), then starts the consoleless GUI.
+REM Sets ROCm/HIP tuning env vars (legacy RDNA1/2 vs newer), then starts the app window
+REM (default) or the web UI in a browser:  Launch Fizgig AMD.bat browser
+REM Thin wrapper: Launch Fizgig AMD in browser.bat
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
+title Fizgig AMD
+
+REM %* ignores shift - strip a leading "browser" and keep any further args for --web.
+set "AMD_MODE=app"
+set "AMD_ARGS="
+if /I "%~1"=="browser" (
+    set "AMD_MODE=browser"
+    shift
+)
+:amd_collect_args
+if "%~1"=="" goto amd_args_done
+set "AMD_ARGS=!AMD_ARGS! %1"
+shift
+goto amd_collect_args
+:amd_args_done
+
+if not exist "%~dp0venv\Scripts\python.exe" (
+    echo Fizgig's Python environment is missing.
+    echo.
+    echo Run install_fizgig_rocm.bat first, then try again.
+    pause
+    exit /b 1
+)
 
 echo [AMD-ROCm] Setting environment variables...
 set "MIOPEN_FIND_MODE=2"
@@ -16,7 +41,7 @@ REM install_fizgig_rocm.bat / write_rocm_env.py (not on every launch; re-run wri
 REM after a pull if rocm_env.bat is stale).
 if exist "%~dp0user_data\rocm_env.bat" (
     call "%~dp0user_data\rocm_env.bat"
-) else if exist "%~dp0venv\Scripts\python.exe" (
+) else (
     "%~dp0venv\Scripts\python.exe" "%~dp0write_rocm_env.py" >nul 2>&1
     if exist "%~dp0user_data\rocm_env.bat" call "%~dp0user_data\rocm_env.bat"
 )
@@ -31,8 +56,10 @@ if exist "%~dp0venv\Lib\site-packages\_rocm_sdk_devel\bin" set "PATH=%~dp0venv\L
 if exist "%~dp0venv\Scripts" set "PATH=%~dp0venv\Scripts;%PATH%"
 
 REM Detect gfx for legacy RDNA1/2 overrides and MIOpen/rocBLAS DB paths.
+REM Prefer install-time FIZGIG_AMD_GFX from rocm_env.bat (detect_gpu often fails in for /f).
 set "GPU_ARCH="
-if exist "%~dp0venv\Scripts\python.exe" if exist "%~dp0src\install\detect_gpu.py" (
+if defined FIZGIG_AMD_GFX set "GPU_ARCH=!FIZGIG_AMD_GFX!"
+if not defined GPU_ARCH if exist "%~dp0src\install\detect_gpu.py" (
     for /f "delims=" %%A in ('"%~dp0venv\Scripts\python.exe" "%~dp0src\install\detect_gpu.py" 2^>nul') do set "GPU_ARCH=%%A"
 )
 set "IS_LEGACY_GPU=0"
@@ -79,4 +106,9 @@ if not defined HIP_VISIBLE_DEVICES if exist "%~dp0venv\Scripts\python.exe" (
 )
 if defined HIP_VISIBLE_DEVICES echo [AMD-ROCm] HIP_VISIBLE_DEVICES=!HIP_VISIBLE_DEVICES!
 
-start "" "%~dp0venv\Scripts\pythonw.exe" "%~dp0fizgig.py"
+if /I "!AMD_MODE!"=="browser" (
+    "%~dp0venv\Scripts\python.exe" "%~dp0fizgig.py" --web --open !AMD_ARGS!
+    pause
+) else (
+    start "" "%~dp0venv\Scripts\pythonw.exe" "%~dp0fizgig.py"
+)

@@ -1,5 +1,6 @@
 # Internal dev docs
 CLAUDE.md
+.cursor/
 
 # Virtual environment
 venv/

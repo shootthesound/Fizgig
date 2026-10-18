@@ -635,12 +635,26 @@ def main():
         window.events.loaded += loaded
 
         def keep():
+            # window.width & get_current_url deadlock here: the GTK backend answers such asks through the main loop,
+            # and this handler runs inside it (the delete-event); the native objects allow the same asks, so ask them
+            inst = None
             try:
-                _remember({"width": window.width, "height": window.height, "x": window.x, "y": window.y})
+                from webview.platforms import gtk as _g
+                inst = _g.BrowserView.instances.get(window.uid)
+            except Exception:
+                inst = None
+            try:
+                if inst is not None:
+                    w, h = inst.window.get_size()
+                    x, y = inst.window.get_position()
+                    _remember({"width": w, "height": h, "x": x, "y": y})
+                else:
+                    _remember({"width": window.width, "height": window.height, "x": window.x, "y": window.y})
             except Exception:
                 pass
             try:
-                cur = window.get_current_url() or ""
+                cur = inst.get_current_url() if inst is not None else window.get_current_url()
+                cur = cur or ""
                 _remember_last("" if _is_local(cur, port) else cur.split("#")[0])
             except Exception:
                 pass

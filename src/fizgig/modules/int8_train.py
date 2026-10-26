@@ -136,7 +136,8 @@ class _Int8FrozenLinear(torch.autograd.Function):
 
 
 def int8_train_forward(self: nn.Linear, x: torch.Tensor) -> torch.Tensor:
-    return _Int8FrozenLinear.apply(x, self.weight.data, self._int8_wscale, self.bias,
+    # The bytes come from `_int8_w`, never from `.weight` - see apply_int8_training for why.
+    return _Int8FrozenLinear.apply(x, self._int8_w, self._int8_wscale, self.bias,
                                    getattr(self, "_int8_grad_mode", "bf16"))
 
 
@@ -145,8 +146,12 @@ def apply_int8_training(model: nn.Module, target_keys=("blocks.",), exclude_keys
                         grad_mode: str = "bf16") -> int:
     """Quantise target Linears to int8 and patch them onto the differentiable path.
 
-    The int8 weight lives in `.weight.data` in the natural (N,K) orientation, so block swap
-    streams it exactly as before and `.weight.shape` stays meaningful.
+    The int8 bytes live in a non-persistent buffer (`_int8_w`), NOT in `.weight.data`: a Parameter
+    whose dtype disagrees with the module's compute dtype cannot be reconciled by FakeTensor, so a
+    weight in the Parameter kills every compiled INT8 run at step 1. `.weight` stays a real (empty)
+    bf16 Parameter, so `parameters()`, LoRA wrapping and state_dict keys are unchanged; the buffer
+    moves with `module.to(device)`, so block swap streams as before. `.weight.shape` is no longer
+    meaningful - the buffer's shape is, and it is the same (N,K).
     """
     from fizgig.modules.nf4 import _dequantize_source_weight
 
@@ -165,14 +170,15 @@ def apply_int8_training(model: nn.Module, target_keys=("blocks.",), exclude_keys
         w_scale = w.abs().amax(dim=-1, keepdim=True).clamp_min(1e-8) / 127.0        # (N,1)
         w_i8 = (w / w_scale).round_().clamp_(-127, 127).to(torch.int8)              # (N,K)
 
-        module.weight.requires_grad_(False)     # must clear before .data can hold int8
         # Store (N,K) CONTIGUOUS — the natural nn.Linear orientation — and pass .t() to
         # _int_mm. That transpose is a free view, and the resulting column-major layout is
         # what the int8 tensor cores want: 0.131 ms vs 0.452 ms for a (K,N)-contiguous
         # weight at 6144x6144. Storing "pre-transposed to avoid a transpose" is 3.4x SLOWER.
-        module.weight.data = w_i8.contiguous()                                      # (N,K)
+        module.register_buffer("_int8_w", w_i8.contiguous(), persistent=False)       # (N,K)
         module.register_buffer("_int8_wscale", w_scale.reshape(1, -1).to(torch.float32),
                                persistent=False)
+        module.weight.requires_grad_(False)     # must clear before .data can shrink
+        module.weight.data = torch.empty(0, device=w_i8.device, dtype=torch.bfloat16)  # bf16 stub
         module._is_int8 = True
         module._int8_grad_mode = grad_mode
         module.forward = int8_train_forward.__get__(module, type(module))

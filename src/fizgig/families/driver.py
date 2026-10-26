@@ -344,6 +344,12 @@ class FamilyDriver:
         Default: as is."""
         return sd
 
+    def export_lora_state_dict(self, sd: dict) -> dict:
+        """The LoRA file's tensors as written for export - the inverse of convert_lora_state_dict. Fibo 2.0's ComfyUI
+        driver fuses the separate q/k/v (and w1/w3) projections back together here so the exported keys match the
+        ComfyUI checkpoint; default: as is."""
+        return sd
+
     def lora_target_names(self, dit) -> list:
         """Dotted module names (relative to dit) of the Linears a LoRA wraps: every module in the block map."""
         return [m for g in self.block_map(dit) for b in g.blocks for m in b.modules]

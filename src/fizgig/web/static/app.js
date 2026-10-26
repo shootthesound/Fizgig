@@ -3514,9 +3514,12 @@ function lossGraph(data) {
         const t = mk("text", {x: W - R + 4, y: yy, class: "lg-axis lg-lr-axis"}); t.textContent = v.toExponential(1); svg.append(t);
       }
     }
-    // the lowest smoothed point
-    let bi = 0;
-    sm.forEach((v, i) => { if (v < sm[bi]) bi = i; });
+    // the lowest smoothed point, ignoring the first 3 epochs
+    let bi = -1;
+    for (let i = 0; i < sm.length; i++) {
+      if (pts[i][1] < 3) continue;
+      if (bi < 0 || sm[i] < sm[bi]) bi = i;
+    }
     const best = mk("circle", {cx: X(pts[bi][0]), cy: Y(sm[bi]), r: 4, class: "lg-best"});
     const bt = mk("title", {}); bt.textContent = `Lowest smoothed loss: ${sm[bi].toFixed(4)} at step ${pts[bi][0]}`;
     best.append(bt);

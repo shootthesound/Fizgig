@@ -2729,8 +2729,10 @@ function starButton(it, fig) {
 }
 function previewFigure(it, prompts, eager, byEpoch) {
   // its own epoch's prompt (recorded by the trainer, so a mid-run change shows), else the run's
+  // the prompt its round recorded as it started (the server's it.prompt) comes first: a Sample now shares its epoch
   const own = byEpoch && it.epoch != null && byEpoch[String(it.epoch)];
-  const prompt = it.idx == null ? "" : (own && own[it.idx]) || (prompts ? prompts[it.idx] : "");
+  const prompt = it.idx == null ? "" : it.prompt != null ? it.prompt :
+    (own && own[it.idx]) || (prompts ? prompts[it.idx] : "");
   const fig = withMode(el("figure", {class: "gallery-item", title: it.name}, mediaFor(it, eager && eager.has(it)),
     el("figcaption", {}, el("b", {text: previewLabel(it)}), prompt ? el("span", {class: "preview-prompt", text: prompt, title: prompt}) : null,
       el("span", {class: "preview-file", text: it.name}), it.lora ? studioButton(it.lora, it.family) : null)), it);
@@ -2831,7 +2833,9 @@ async function loadGallery() {
   document.querySelectorAll("#galleryView button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
   // redrawn only when something changed (a new preview, another run or view), and never under a clip or song that
   // is playing - the 15 s refresh used to rebuild the gallery and stop it
-  const sig = [run, view, training(), ...g.items.map((it) => it.name + "@" + it.time)].join("|");
+  // (with each picture's prompt and the epochs' records: one written after its pictures appear still redraws)
+  const sig = [run, view, training(), ...g.items.map((it) => it.name + "@" + it.time + "@" + (it.prompt || "")),
+    JSON.stringify(g.epoch_prompts || {})].join("|");
   const playing = [...host.querySelectorAll("video, audio")].some((m) => !m.paused);
   if (S.gal && S.gal.sig === sig || (playing && S.gal && S.gal.run === run)) {
     likenessShow(dir, g.items, run, view); styleShow(dir, g.items, run); return; }

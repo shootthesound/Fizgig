@@ -2632,6 +2632,35 @@ def run_prompts(out_dir, name) -> list:
     return []
 
 
+_SAMPLE_STAMP = re.compile(r"_e\d{6}_\d{2}_(\d{14})_\d+(?:_s\d{3})?\.\w+$")
+
+
+def round_prompts(sample_dir, name) -> list:
+    """The preview rounds the trainer recorded as they started ([[epoch, "YYYYmmddHHMMSS", [prompt, ...]], ...],
+    oldest first); [] for runs from before it did."""
+    try:
+        with open(os.path.join(sample_dir, f".prompts_{name}.json"), encoding="utf-8") as f:
+            data = json.load(f)
+        rounds = data.get("rounds") if isinstance(data, dict) else None
+        return [r for r in rounds if isinstance(r, list) and len(r) == 3 and isinstance(r[2], list)] \
+            if isinstance(rounds, list) else []
+    except (OSError, ValueError):
+        return []
+
+
+def picture_prompt(rounds, name, epoch, idx):
+    """The prompt a preview was made with: its epoch's round that started last at or before the picture's own time
+    stamp (in its name), or None (an older run, or a picture from before rounds were recorded)."""
+    m = _SAMPLE_STAMP.search(name or "")
+    if not m or epoch is None or idx is None:
+        return None
+    best = None
+    for e, ts, prompts in rounds:
+        if e == epoch and str(ts) <= m.group(1) and (best is None or str(ts) >= str(best[1])):
+            best = (e, ts, prompts)
+    return str(best[2][idx]) if best and 0 <= idx < len(best[2]) else None
+
+
 def epoch_prompts(sample_dir, name) -> dict:
     """The prompts each epoch's previews used, as the trainer recorded them ({"4": [prompt, ...]}); {} for runs from
     before it recorded them, which show the run's settings instead."""
@@ -4304,6 +4333,11 @@ class Handler(BaseHTTPRequestHandler):
         for it in out:
             it["starred"] = it["name"] in starred
         by_epoch = epoch_prompts(folder, run) if run else {}
+        rounds = round_prompts(folder, run) if run else []
+        for it in out:                       # each picture's own prompt, as its round recorded it before rendering
+            p = picture_prompt(rounds, it.get("name"), it.get("epoch"), it.get("idx")) if rounds else None
+            if p is not None:
+                it["prompt"] = p
         try:
             with open(os.path.join(folder, f".previews_{run}.json"), encoding="utf-8") as f:
                 mode = json.load(f) if run else None

@@ -272,6 +272,31 @@ def _record_prompts(sample_dir, output_name, epoch, prompts):
         logger.warning(f"[sample] could not record the preview prompts ({e})")
 
 
+def _record_round(sample_dir, output_name, epoch, prompts):
+    """A preview round's prompts, written BEFORE it renders (the same .prompts_<name>.json, under "rounds":
+    [[epoch, start "YYYYmmddHHMMSS", [prompt, ...]], ...]): each picture's name carries its round's start time, so the
+    gallery shows the prompts that picture was made with - a Sample now and the epoch's own previews share an epoch
+    number, and the per-epoch record is only written after the pictures appear."""
+    path = os.path.join(sample_dir, f".prompts_{output_name}.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            data = {}
+    except (OSError, ValueError):
+        data = {}
+    rounds = data.get("rounds") if isinstance(data.get("rounds"), list) else []
+    rounds.append([int(epoch), datetime.datetime.now().strftime("%Y%m%d%H%M%S"), [str(p) for p in prompts]])
+    data["rounds"] = rounds[-500:]
+    try:
+        os.makedirs(sample_dir, exist_ok=True)
+        with open(path + ".tmp", "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        os.replace(path + ".tmp", path)
+    except OSError as e:
+        logger.warning(f"[sample] could not record the preview prompts ({e})")
+
+
 def _read_sample_override(output_dir):
     """The live sample override (<output_dir>/.sample_override.json, written by the desktop's status-bar panel or the
     web UI's Samples tab): {prompts, prompt (the first), seed, width, height, steps, cfg, turbo, every, until, after}
@@ -2393,6 +2418,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             logger.warning(f"[sample] CFG {cfg_now:g} needs a negative prompt this run did not encode - this preview "
                            "renders at CFG 1")
             cfg_now = 1.0
+        _record_round(sample_dir, output_name, epoch, prompts)   # before any picture of this round appears
         nonlocal ckpt_previews
         on_ck = ckpt_previews is not None
         if ov and ov.get("checkpoint") is not None and not slider and encoded is not None:

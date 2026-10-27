@@ -3313,3 +3313,7 @@ label[title]:has(.tip-mark) { cursor: help; }
 @media(prefers-reduced-motion:reduce){
   .tab-bar-scroller .side-section-chevron{transition:none}
 }
+
+/* the logs resize by dragging; app.js remembers the height */
+.console-terminal { resize: vertical; overflow: auto; min-height: 120px; max-height: none; flex-shrink: 0; }
+.console-terminal:empty { height: 0 !important; min-height: 0; resize: none; }

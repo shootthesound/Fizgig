@@ -18,6 +18,7 @@ _SPECS = {
     "qwen_image21": ("auto", "Qwen/Qwen-Image-2.1", "processor"),
     "klein": ("qwen2", "Qwen/Qwen3-8B", None),
     "zimage": ("auto", "Tongyi-MAI/Z-Image-Turbo", "tokenizer"),
+    "zimage_base": ("auto", "Tongyi-MAI/Z-Image", "tokenizer"),
     "anima": ("auto", "circlestone-labs/Anima-Base-v1.0-Diffusers", "tokenizer"),
     "sdxl": ("clip", "stabilityai/stable-diffusion-xl-base-1.0", "tokenizer"),
     "moss_image": ("auto", "OpenMOSS-Team/MOSS-Image-Base", "tokenizer"),

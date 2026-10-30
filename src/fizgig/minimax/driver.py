@@ -424,7 +424,10 @@ class MiniMaxDriver(FamilyDriver):
             # student = the LoRA from text alone (a voice has no face to distill - it takes the plain path)
             rz = cond["ref_latent"].to(latents.device, DTYPE)
             rz = rz.unsqueeze(2) if rz.dim() == 4 else rz
-            loss, s = compute_distill_loss(dit, _TrainableOff(self._net), latents, cond["hidden_states"].to(DTYPE),
+            # a picture's latent is (1, 24, H, W): without its frame axis the 5-D sigma broadcast read the 24
+            # channels as frames (mat1 and mat2 shapes cannot be multiplied (22200x4 and 96x5376), #264)
+            lat = latents if latents.dim() == 5 else latents.unsqueeze(2)
+            loss, s = compute_distill_loss(dit, _TrainableOff(self._net), lat, cond["hidden_states"].to(DTYPE),
                                            text_ref=cond["ref_hidden_states"].to(DTYPE), ref_latents=[rz],
                                            text_token_tags=cond["ref_token_tags"],
                                            distill_weight=1.0 if teacher else self._dw, shift=self._shift())

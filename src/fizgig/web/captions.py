@@ -47,7 +47,34 @@ FLORENCE_REVISIONS = {
 }
 FLORENCE_CODE_REVISIONS = {"MiaoshouAI/Florence-2-base-PromptGen": "f6c1a25888ffc1d945ee8a1a77ac833c7303d46e"}
 FLORENCE_TASKS = ["<CAPTION>", "<DETAILED_CAPTION>", "<MORE_DETAILED_CAPTION>"]
-QWEN_MODEL = "Qwen3-VL 4B (Krea 2 text encoder)"
+QWEN_MODEL = "Qwen3-VL (Krea 2 text encoder, or the secondary captioning model)"
+# the secondary captioning model (#270): Preferences' optional row. Set, it captions everything (the Captions tab and
+# auto-recaption); empty, the Krea 2 text encoder (Qwen3-VL-4B) does. Comfy-Org's Qwen3-VL-8B builds the loader reads
+SECONDARY_PREF = "captioner_secondary"
+SECONDARY_LINKS = (("fp8 (10.6 GB, about 10.5 GB of VRAM)", "Comfy-Org/Qwen3-VL", "text_encoders/qwen3vl_8b_fp8_scaled.safetensors"),
+                   ("bf16 (17.5 GB, about 17 GB of VRAM)", "Comfy-Org/Qwen3-VL", "text_encoders/qwen3vl_8b_bf16.safetensors"))
+
+
+def captioner_problem(path) -> str:
+    """Why a file can't be the captioner, from its safetensors header alone ("" = it can): a Qwen3-VL 4B or 8B in a
+    build the loader reads (bf16 or fp8 scaled). ComfyUI's int8 ConvRot / w4a8 builds (int8 / uint8 weights) don't load."""
+    import struct
+    try:
+        with open(path, "rb") as f:
+            n = struct.unpack("<Q", f.read(8))[0]
+            head = json.loads(f.read(n))
+    except (OSError, ValueError, struct.error):
+        return "the file can't be read"
+    if not any(k.startswith(("visual.", "model.visual.")) for k in head):
+        return "it isn't a Qwen3-VL file (no vision tower)"
+    if not any(k.endswith("embed_tokens.weight") and isinstance(v, dict) and v.get("shape", [0])[-1] in (2560, 4096)
+               for k, v in head.items()):
+        return "it isn't a Qwen3-VL 4B or 8B"
+    if any(isinstance(v, dict) and k.endswith(".weight") and v.get("dtype") in ("I8", "U8") for k, v in head.items()):
+        return "this build (int8 / w4a8) can't be read - use the bf16 or fp8 file"
+    return ""
+
+
 CUSTOM_TASK = "Custom…"
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
 
@@ -99,9 +126,10 @@ def _overrides(prefs):
     return out
 
 
-def options(prefs, captioner):
+def options(prefs, captioner, secondary=""):
     """Models (Qwen3-VL first when its file is set), each model's tasks, and each Qwen task's instruction (the edited
-    one if there is one), its shipped text and its suggested length."""
+    one if there is one), its shipped text and its suggested length. secondary: the secondary captioning model's file
+    when it is the one captioning."""
     tasks, default = _tasks()
     ovr = _overrides(prefs)
     qwen = []
@@ -115,7 +143,7 @@ def options(prefs, captioner):
     return {"models": models, "default_model": QWEN_MODEL if captioner else models[0], "qwen_model": QWEN_MODEL,
             "qwen_tasks": qwen,
             "default_qwen_task": tasks[default][0], "florence_tasks": FLORENCE_TASKS,
-            "qwen_available": bool(captioner)}
+            "qwen_available": bool(captioner), "secondary": os.path.basename(secondary) if secondary else ""}
 
 
 def instruction_override(prefs, key, text):

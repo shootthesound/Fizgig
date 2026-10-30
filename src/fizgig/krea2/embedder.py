@@ -190,6 +190,43 @@ def _convert_comfyui_qwen3vl_state_dict(sd: dict[str, Tensor]) -> dict[str, Tens
     return converted
 
 
+def qwen3_vl_size(model_path: str) -> str:
+    """"8b" for a Qwen3-VL-8B file (Qwen Image 2.1's text encoder, the bigger captioner: hidden size 4096, its own LM
+    head), else "4b" - read from the file's header, nothing loaded."""
+    from safetensors import safe_open
+    try:
+        with safe_open(model_path, framework="pt") as f:
+            for k in f.keys():
+                if k.endswith("embed_tokens.weight"):
+                    return "8b" if f.get_slice(k).get_shape()[-1] == 4096 else "4b"
+    except Exception:
+        pass
+    return "4b"
+
+
+def _qwen3_vl_config(model_path: str) -> dict:
+    if qwen3_vl_size(model_path) == "8b":
+        import json
+        with open(os.path.join(os.path.dirname(__file__), "..", "qwen_image21", "qwen3vl_8b_config.json"),
+                  encoding="utf-8") as f:
+            return json.load(f)
+    return QWEN3_VL_4B_INSTRUCT_CONFIG
+
+
+def _gpu_room_gb(device) -> float:
+    try:
+        d = torch.device(device)
+        if d.type != "cuda" or not torch.cuda.is_available():
+            return float("inf")
+        return torch.cuda.mem_get_info(d)[0] / 2 ** 30
+    except Exception:
+        return float("inf")
+
+
+# what a caption needs on the card beside the weights: a 1 MP picture's vision tokens, the KV cache, the logits
+_CAPTION_WORK_GB = 2.5
+
+
 def _load_qwen3_vl_model(
     model_path: str,
     *,
@@ -197,10 +234,18 @@ def _load_qwen3_vl_model(
     device: torch.device | str,
     disable_mmap: bool = True,
 ) -> Qwen3VLForConditionalGeneration:
-    """Build Qwen3-VL-4B from the vendored config and load weights from a local safetensors."""
-    config = Qwen3VLConfig.from_dict(QWEN3_VL_4B_INSTRUCT_CONFIG)
+    """Build Qwen3-VL (4B, or the 8B Qwen Image 2.1 ships) from its vendored config and load weights from a local
+    safetensors. A model bigger than the card's free memory keeps what fits on the card and streams the rest of its
+    language layers from system RAM for each step (slower, but it runs)."""
+    config = Qwen3VLConfig.from_dict(_qwen3_vl_config(model_path))
     with init_empty_weights():
         model = Qwen3VLForConditionalGeneration._from_config(config)
+    weights_gb = os.path.getsize(model_path) / 2 ** 30
+    room = _gpu_room_gb(device)
+    stream = weights_gb + _CAPTION_WORK_GB > room
+    if stream:
+        logger.info(f"Qwen3-VL text encoder: {weights_gb:.1f} GB of weights, {room:.1f} GB free on the card - loading "
+                    "to system RAM and streaming the layers that don't fit")
 
     logger.info(f"Loading Krea 2 text encoder (Qwen3-VL) weights from {model_path}")
     # ComfyUI's fp8_scaled variant quantises ONLY the language Linears — its 315 vision-tower
@@ -215,7 +260,7 @@ def _load_qwen3_vl_model(
 
     # dtype=None on the fp8 path: passing a dtype converts the fp8 weights on load and there is
     # nothing left to be resident about.
-    sd = load_split_weights(model_path, device=str(device), disable_mmap=disable_mmap,
+    sd = load_split_weights(model_path, device="cpu" if stream else str(device), disable_mmap=disable_mmap,
                             dtype=(None if prequant else dtype))
     sd = _convert_comfyui_qwen3vl_state_dict(sd)
 
@@ -253,13 +298,38 @@ def _load_qwen3_vl_model(
             f"Qwen3-VL text encoder checkpoint did not match the model: missing={missing[:10]}, unexpected={unexpected[:10]}"
         )
 
-    model.to(device)
     # Never cast an fp8 model to dtype — that would convert the weights straight back to bf16 and
     # throw away the whole point. The unquantised parts (vision tower, norms, embeddings) are
-    # already stored in the target dtype anyway.
+    # already stored in the target dtype anyway. Cast before placing: a streamed model can't be
+    # moved or cast once its layers are offloaded.
     if dtype is not None and not prequant:
         model.to(dtype)
+    if stream:
+        _stream_layers(model, device, room)
+    else:
+        model.to(device)
     return model.eval().requires_grad_(False)
+
+
+def _stream_layers(model, device, room_gb):
+    """Everything but the language layers on the card (the vision tower, embeddings, final norm, LM head), then as
+    many language layers as fit beside a caption's working memory; the rest stay in system RAM and are moved to the
+    card for their forward only (accelerate's offload hooks), so a card smaller than the model still captions."""
+    from accelerate import dispatch_model
+    lm = model.model.language_model
+    nbytes = lambda m: sum(t.numel() * t.element_size() for t in list(m.parameters()) + list(m.buffers()))
+    layers = list(lm.layers)
+    fixed = (nbytes(model) - sum(nbytes(l) for l in layers)) / 2 ** 30
+    per = (sum(nbytes(l) for l in layers) / len(layers)) / 2 ** 30
+    fit = max(0, min(len(layers), int((room_gb - _CAPTION_WORK_GB - fixed) // per)))
+    dev = str(torch.device(device))
+    device_map = {"model.visual": dev, "model.language_model.embed_tokens": dev, "model.language_model.norm": dev,
+                  "model.language_model.rotary_emb": dev, "lm_head": dev}
+    for i in range(len(layers)):
+        device_map[f"model.language_model.layers.{i}"] = dev if i < fit else "cpu"
+    logger.info(f"Qwen3-VL text encoder: {fit} of {len(layers)} language layers on the card, {len(layers) - fit} "
+                f"streamed from system RAM ({per:.2f} GB each)")
+    dispatch_model(model, device_map=device_map, main_device=dev)
 
 
 def load_qwen3_vl_conditioner(

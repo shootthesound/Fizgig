@@ -71,20 +71,25 @@ def _images(rendered):
     return out
 
 
-def score(gen, rendered, ref):
-    """Each render's face against the subject photo (Image Prep's look match - with Auto, ArcFace for a person and
-    DINOv2 for a furry / anime face - on the CPU): {label: cosine or None (no face)}, and the best."""
+def score(gen, rendered, refs):
+    """Each render's face against up to 3 photos of the subject, the mean of its similarities (Image Prep's look
+    match - with Auto, ArcFace for a person and DINOv2 for a furry / anime face - on the CPU, as the Samples gallery
+    scores against its 3 baselines): {label: score or None (no face)}, and the best."""
     from fizgig.lora_royale import likeness
     if not likeness.available():
         raise ValueError("Likeness scoring needs the face tools - run install_fizgig.py to enable it.")
-    if not ref or not os.path.isfile(ref):
-        raise ValueError("Pick a subject image to score likeness against.")
-    scored = likeness.score_renders(ref, _images(rendered))
+    refs = [str(r).strip() for r in ([refs] if isinstance(refs, str) else refs or []) if str(r).strip()][:3]
+    if not refs:
+        raise ValueError("Choose up to 3 photos of your subject to score likeness against.")
+    gone = [os.path.basename(r) for r in refs if not os.path.isfile(r)]
+    if gone:
+        raise ValueError(f"{', '.join(gone)} isn't there any more - choose the photos again.")
+    scored = likeness.score_renders(refs, _images(rendered))
     scores = {str(label): (None if sc != sc else float(sc)) for label, sc in scored}
     valid = [(lbl, sc) for lbl, sc in scores.items() if sc is not None]
     best = max(valid, key=lambda t: t[1])[0] if valid else None
     with _lock:
-        _like.update(gen=gen, scores=scores, ref=ref, best=best)
+        _like.update(gen=gen, scores=scores, ref=refs[0], best=best)     # the clip shows the first photo
     return {"scores": scores, "best": best, "no_face": len(scores) - len(valid), "embedder": likeness.last_embedder_label}
 
 

@@ -64,7 +64,7 @@ QWEN_IMAGE_21 = FamilyDescription(
               "ShootTheSound/Fizgig-Qwen-Image-2.1-Training-Adapter",
               "fizgig_qwen_image_2.1_training_adapter_v2.safetensors", 0.08,
               "Frozen during training, off in previews and saved LoRAs. Without it Qwen 2.1 LoRAs collapse or "
-              "wobble; with it likeness was 77 vs 56 in Fizgig's A/B.", role="training_adapter",
+              "wobble; in Fizgig's A/B on a person LoRA, likeness was 77 with it vs 56 without.", role="training_adapter",
               replaces=("fizgig_qwen_image_2.1_training_adapter.safetensors",)),
     ModelFile("qwen21_turbo_lora", "Turbo LoRA (previews)", False, _COMFY,
                   "loras/qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors", 0.91,
@@ -143,7 +143,7 @@ QWEN_IMAGE_21 = FamilyDescription(
     ema_default="0.98",               # same default as Krea 2 and MiniMax H3 (measured there, 9 Sep 2026)
     training_adapter_note=("Keeps Qwen 2.1 LoRA training stable: frozen at 1.0 for every training step, off for "
                            "previews and never in your saved file. Without it Qwen 2.1 LoRAs collapse or wobble "
-                           "(likeness 77 with it vs 56 without in Fizgig's A/B)."),
+                           "(in Fizgig's A/B on a person LoRA, likeness 77 with it vs 56 without)."),
     implementation="https://github.com/QwenLM/Qwen-Image",
     precisions=("bf16", "int8", "nf4"),
     # Measured 27 Sep 2026 on a 5090, gradient checkpointing, VAE resident for previews, 1 epoch of 52 steps:

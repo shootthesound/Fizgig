@@ -155,8 +155,8 @@ def strangers():
     got = _local_strangers(d)
     if got:
         return got
-    from huggingface_hub import snapshot_download
-    d = snapshot_download(REPO, repo_type="dataset", revision=REVISION, local_dir=d)
+    from fizgig.utils import hf_public
+    d = hf_public.snapshot(repo_id=REPO, repo_type="dataset", revision=REVISION, local_dir=d)
     with open(os.path.join(d, REVISION_FILE), "w", encoding="utf-8") as f:
         f.write(REVISION + "\n")
     got = _local_strangers(d)

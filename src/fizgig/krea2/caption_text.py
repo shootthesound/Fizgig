@@ -77,6 +77,69 @@ DETAILED_DESCRIPTION_INSTRUCTION = (
     "State only what is visible — no speculation, no names, no style commentary."
 )
 
+# --- object / product captioning -------------------------------------------------------------
+# The identity instructions above are written for a person (viewpoint, face visible, pose, clothing).
+# A product or object set has none of those, and the person wording made the captioner look
+# for them (#244). Rather than branch the person instruction - which would move every person caption
+# and both auto-recaption tries - objects get their own task. No SUBJECT_RULE: its woman/man examples
+# would pull a small captioner back toward people.
+OBJECT_CAPTION_INSTRUCTION = (
+    "Write one factual training caption for this image as a single sentence, covering these in "
+    "order: the main subject by its specific plain name, with its shape, colors, materials and any "
+    "text on it; how it is placed or what it is doing; the camera viewpoint and framing (e.g. "
+    "'close-up', 'from above', 'partly cropped'); the setting; the lighting. Use the same order and "
+    "the same plain phrasing every time. " + NO_PREAMBLE_RULE +
+    "Name anything prominent a viewer would notice. State only what is visible — no speculation, no "
+    "proper names, no style or quality commentary."
+)
+
+# The object versions of Short, Detailed and Exhaustive: the person ones' lengths and coverage, with the
+# person fields (face visible, pose, clothing, hair) swapped for what a thing has. Exhaustive is auto-recaption's
+# second try, so an object set escalates the way a person set does.
+OBJECT_SHORT_CAPTION_INSTRUCTION = (
+    "Write one short factual caption for this image — a single clause naming the main subject by "
+    "its specific plain name, how it is placed or what it is doing, and the setting. " + NO_PREAMBLE_RULE +
+    "State only what is visible. No speculation, no proper names, no style commentary."
+)
+
+OBJECT_DETAILED_DESCRIPTION_INSTRUCTION = (
+    "Describe this image in 2-3 factual sentences, starting with the main subject by its specific "
+    "plain name: its shape, colors and materials, how it is placed, the camera viewpoint, the "
+    "lighting, and the setting. " + NO_PREAMBLE_RULE +
+    "State only what is visible — no speculation, no proper names, no style commentary."
+)
+
+OBJECT_EXHAUSTIVE_CAPTION_INSTRUCTION = (
+    "Write a detailed factual training caption for this image, 2-4 sentences. Cover: the main "
+    "subject by its specific plain name and exactly how much of it is visible (state the camera "
+    "viewpoint and whether any part is cropped or hidden), its shape and proportions, every visible "
+    "color, material and surface finish, any text, logos or markings on it, how it is placed or "
+    "held, anything touching or blocking it, the lighting and any reflections, and the "
+    "background/setting with its main objects. " + NO_PREAMBLE_RULE +
+    "State only what is visible — no speculation, no style commentary."
+)
+
+# --- concept captioning ----------------------------------------------------------------------
+# A concept (a pose, an action, an effect, a kind of composition) recurs across pictures that otherwise differ,
+# and nothing in one picture says which part of it is the concept - so the user names it once (the Captions tab's
+# "The concept is" box) and it goes into the instruction at {concept}. Named in the same words in every caption
+# (after the trigger) it binds; worded differently each time, it doesn't. Everything else is described, so what
+# varies stays steerable rather than baking into the concept - the person and Style doctrine both.
+CONCEPT_CAPTION_INSTRUCTION = (
+    "Every image in this set shows {concept}. Write one factual training caption for this image as a "
+    "single sentence. Begin with '{concept}', in exactly those words, and never describe it any other "
+    "way; then describe everything else in order: the subject and what it looks like, the setting, the "
+    "camera viewpoint and framing, the lighting. Use the same order and the same plain phrasing every "
+    "time. Never open with 'This image shows', 'The image depicts' or any similar preamble. "
+    "State only what is visible — no speculation, no proper names, no style or quality commentary."
+)
+
+
+def with_concept(text, concept):
+    """An instruction with the concept's words in place of {concept} (any instruction: an edited one may use it)."""
+    return str(text).replace("{concept}", str(concept or "").strip() or "the same concept")
+
+
 # --- style captioning ------------------------------------------------------------------------
 # The identity instructions above are written for a dataset where the subject is a person and the
 # lighting, viewpoint and clothing all VARY — you name them so they stay steerable. A style dataset
@@ -114,12 +177,18 @@ STYLE_CAPTION_INSTRUCTION = (
 # (name the viewpoint, say whether the face is visible), which is what makes a caption safe to
 # train on rather than merely accurate.
 CAPTION_TASKS = {
-    "training":   ("Training caption (viewpoint-aware)", CAPTION_INSTRUCTION, 120),
-    "short":      ("Short caption", SHORT_CAPTION_INSTRUCTION, 60),
-    "detailed":   ("Detailed description", DETAILED_DESCRIPTION_INSTRUCTION, 160),
-    "exhaustive": ("Exhaustive detail", DETAILED_CAPTION_INSTRUCTION, 240),
-    # Style last: the four above are the identity path, which is the common case and the one
-    # auto-recaption uses.
+    # Each length in a pair: the person version (the identity path, the common case and auto-recaption's
+    # defaults), then the object one.
+    "training":   ("Training caption (person or character)", CAPTION_INSTRUCTION, 120),
+    "object":     ("Training caption (object or product)", OBJECT_CAPTION_INSTRUCTION, 120),
+    "short":      ("Short caption (person or character)", SHORT_CAPTION_INSTRUCTION, 60),
+    "object_short": ("Short caption (object or product)", OBJECT_SHORT_CAPTION_INSTRUCTION, 60),
+    "detailed":   ("Detailed description (person or character)", DETAILED_DESCRIPTION_INSTRUCTION, 160),
+    "object_detailed": ("Detailed description (object or product)", OBJECT_DETAILED_DESCRIPTION_INSTRUCTION, 160),
+    "exhaustive": ("Exhaustive detail (person or character)", DETAILED_CAPTION_INSTRUCTION, 240),
+    "object_exhaustive": ("Exhaustive detail (object or product)", OBJECT_EXHAUSTIVE_CAPTION_INSTRUCTION, 240),
+    "concept":    ("Training caption (concept: a pose, action or effect)", CONCEPT_CAPTION_INSTRUCTION, 120),
+    # Style last.
     "style":      ("Style — contents only (trigger word names the style)",
                    STYLE_CAPTION_INSTRUCTION, 160),
 }
@@ -131,10 +200,11 @@ RECAPTION_CHOICES = [(key, label) for key, (label, _text, _tokens) in CAPTION_TA
 RECAPTION_DEFAULTS = ("training", "exhaustive")
 
 
-def recaption_instruction(key, overrides=None):
-    """(label, instruction, edited) of a recaption choice: the Captions tab's edited text when there is one."""
+def recaption_instruction(key, overrides=None, concept=""):
+    """(label, instruction, edited) of a recaption choice: the Captions tab's edited text when there is one, with the
+    Captions tab's concept in place of {concept}."""
     labels = dict(RECAPTION_CHOICES)
     key = key if key in labels else DEFAULT_CAPTION_TASK
     shipped = CAPTION_TASKS.get(key, CAPTION_TASKS[DEFAULT_CAPTION_TASK])[1]
     edited = str((overrides or {}).get(key, "") or "").strip()
-    return labels[key], edited or shipped, bool(edited)
+    return labels[key], with_concept(edited or shipped, concept), bool(edited)

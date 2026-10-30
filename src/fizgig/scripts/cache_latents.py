@@ -86,8 +86,11 @@ def encode_datasets(datasets, encode_fn, args):
     for i, dataset in enumerate(datasets):
         logger.info(f"Encoding dataset [{i}]")
         all_cache_paths = []
+        from fizgig.training.progress import CacheProgress, dataset_items
+        shown = CacheProgress("pictures", dataset_items(dataset))
 
         for _, batch in tqdm(dataset.retrieve_latent_cache_batches(num_workers)):
+            shown.add(len(batch))
             # Ensure RGB (strip alpha)
             for item in batch:
                 if isinstance(item.content, np.ndarray) and item.content.shape[-1] == 4:

@@ -4,6 +4,20 @@
 
 const TOKEN = document.querySelector('meta[name="fizgig-token"]').content;
 const $ = (id) => document.getElementById(id);
+// a colour of the theme (style.css :root), for what CSS can't colour itself: a canvas. themeColor("--accent", 0.5)
+// is it half see-through. A hidden probe works it out, so a derived token (a color-mix) comes back as a colour too.
+let themeProbe = null;
+function themeColor(name, alpha = 1) {
+  if (!themeProbe) {
+    themeProbe = document.createElement("i");
+    themeProbe.style.display = "none";
+    document.documentElement.append(themeProbe);
+  }
+  themeProbe.style.color = alpha >= 1 ? `var(${name})` : `color-mix(in srgb, var(${name}) ${alpha * 100}%, transparent)`;
+  const c = getComputedStyle(themeProbe).color;
+  const m = /^color\(srgb ([\d.e-]+) ([\d.e-]+) ([\d.e-]+)(?: \/ ([\d.e-]+))?\)$/.exec(c);
+  return m ? `rgba(${[m[1], m[2], m[3]].map((v) => Math.round(v * 255)).join(", ")}, ${m[4] ?? 1})` : c;
+}
 const el = (tag, attrs = {}, ...kids) => {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -51,13 +65,14 @@ document.addEventListener("error", (e) => {
 
 // ---- start-up ----------------------------------------------------------------------------------------------
 async function boot() {
-  try { S.schema = await api("/api/schema"); } catch (e) { return; }
+  try { S.schema = await api("/api/schema"); } catch (e) { if (e.message === "login") return; throw e; }
   // Fizgig was updated while this web UI kept running the old server: some new parts won't work until it restarts
   $("outdatedBanner").style.display = S.schema.outdated ? "" : "none";
   const st = await api("/api/state");
   S.uploadRoot = await api("/api/upload/root").catch(() => null);   // before the forms: where Choose… starts
   const pr = await api("/api/prefs");
   S.prefs = pr.models || {};
+  S.captioner = pr.captioner;              // the secondary captioning model's row
   S.webPort = pr.web_port;
   S.portNow = pr.port_now;
   S.onPod = pr.on_pod;
@@ -83,6 +98,12 @@ async function boot() {
   }
   await chooseFamily(st.family && S.schema.order.includes(st.family) ? st.family : S.schema.order[0]);
   showTab("start");                // Fizgig always opens on Start (its News card), never the last tab used
+  // the forms are there: the page is usable. The cover stays at least 3.5 s from the page opening, so its tip can be
+  // read - once a window: switching it between this computer and a pod (window.name stays across the switch, whatever
+  // the address) shows the cover only while the page loads
+  const switched = window.name === "fizgig-window";
+  window.name = "fizgig-window";
+  setTimeout(() => $("bootCover").classList.add("done"), switched ? 0 : Math.max(0, 3500 - performance.now()));
   newsCard();
   wire();
   $("podsTabBtn").style.display = S.onPod ? "none" : "";      // on a pod there's nothing to connect to
@@ -211,10 +232,9 @@ function triggerCheckBlock() {
   const d = el("details", {class: "tc-box"},
     el("summary", {text: "Check a trigger word (optional)"}),
     el("div", {class: "field-hint", text:
-      `Fizgig LoRA Isolation joins each subject's trigger word to what the subject is: "zwxem, a woman" trains as one ` +
-      `word, zwxemwoman. Some words join badly: the text encoder splits them so the subject word is no longer whole ` +
-      `(fyxo + woman reads as f | yx | ow | oman), and the LoRA learns that subject less cleanly. This checks a word ` +
-      `with ${name}'s text encoder, the one this LoRA trains with, before you caption.`}),
+      `Checks how a trigger word reads to ${name}'s text encoder, the one this LoRA trains with, before you ` +
+      `caption. Fizgig LoRA Isolation joins it to what the subject is ("zwxem, a woman" trains as zwxemwoman), and ` +
+      `some words join badly: fyxo + woman reads as f | yx | ow | oman, and the LoRA learns that subject less cleanly.`}),
     el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Trigger word to check:"}), word),
     el("div", {class: "field-row"}, el("span", {class: "field-label", text: "The subject is:"}), cls),
     el("div", {class: "field-hint", text: "The word Fizgig joins on: the same trigger can join cleanly with one " +
@@ -463,7 +483,7 @@ function splitRow(r, wrap) {
     else if (m === "Slide") {          // the refresh tick adds its "every N" as a fifth number
       mem.slide = [sFirst, sHold, sRest, sBy].map((i) => i.value.trim());
       mem.every = sEvery.value.trim() || mem.every || "3";
-      sFirstEcho.textContent = sFirst.value;     // "one epoch at 75%" follows the first box
+      refreshEcho();
       sEvery.disabled = !sTick.checked;
       onValue(r, [...mem.slide, ...(sTick.checked ? [mem.every] : [])].join(":"));
     }
@@ -473,7 +493,14 @@ function splitRow(r, wrap) {
   const one = box(), first = box(), until = box(), rest = box();
   const sFirst = box(), sHold = box(), sRest = box(), sBy = box(), sEvery = box();
   const sTick = el("input", {type: "checkbox", onchange: write});
-  const sFirstEcho = el("span");                   // "one epoch at 75%": the first share, as typed
+  const sFirstEcho = el("span");                   // "epoch at 30%": the lower of the two shares, as typed
+  const sNth = el("span");                         // "every 2nd epoch": the box's ordinal ending
+  const refreshEcho = () => {
+    const n = parseInt(sEvery.value, 10);
+    sNth.textContent = isNaN(n) ? "th" : n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th";
+    const a = parseFloat(sFirst.value), b = parseFloat(sRest.value);
+    sFirstEcho.textContent = `${isNaN(a) || isNaN(b) ? sRest.value : a <= b ? sFirst.value : sRest.value}${unit}`;
+  };
   const pills = el("div", {class: "radio-row"});
   for (const c of ["Single", ...(r.split ? ["Split"] : []), ...(r.slide ? ["Slide"] : [])]) {
     pills.append(el("label", {class: "checkbox-label"}, el("input", {type: "radio", name: "split_" + r.key, value: c,
@@ -488,12 +515,12 @@ function splitRow(r, wrap) {
     el("span", {class: "cad-pair"}, rest, el("span", {text: unit})));
   const lineSlide = el("div", {class: "cad-line"},
     el("span", {class: "cad-pair"}, sFirst, el("span", {text: unit + " until epoch"})),
-    el("span", {class: "cad-pair"}, sHold, el("span", {text: "then down to"})),
+    el("span", {class: "cad-pair"}, sHold, el("span", {text: "then slides to"})),
     el("span", {class: "cad-pair"}, sRest, el("span", {text: unit + " by epoch"})),
     el("span", {class: "cad-pair"}, sBy));
   const lineRefresh = (r.slide || []).length > 4 ? el("div", {class: "cad-line"},
     el("label", {class: "cad-tick"}, sTick, el("span", {text: "then every"})),
-    el("span", {class: "cad-pair"}, sEvery, el("span", {}, "epochs, one epoch at ", sFirstEcho, unit))) : null;
+    el("span", {class: "cad-pair"}, sEvery, el("span", {}, sNth, " epoch at ", sFirstEcho))) : null;
   const hintOne = el("div", {class: "field-hint", text: r.hint});
   const hintSplit = el("div", {class: "field-hint", text: r.split_hint || r.hint});
   const hintSlide = el("div", {class: "field-hint", text: r.slide_hint || r.hint});
@@ -508,7 +535,7 @@ function splitRow(r, wrap) {
       if (p.length === 5) mem.every = p[4];
       sEvery.value = mem.every || (r.slide || [])[4] || "3";
       sEvery.disabled = !sTick.checked;
-      sFirstEcho.textContent = sFirst.value;
+      refreshEcho();
     }
     else { one.value = S.values[r.key] ?? ""; mem.single = one.value; }
     for (const [node, on] of [[lineOne, m === "Single"], [hintOne, m === "Single"], [lineSplit, m === "Split"],
@@ -598,10 +625,69 @@ function promptLines(r, wrap) {
     line("", last).focus(); renumber(); save();
   }});
   wrap.append(el("span", {class: "field-label", text: r.label + ":"}), list, add, sync);
+  if (r.key === "SAMPLE_PROMPT") wrap.append(promptSetsBar(r, draw));
   if (r.hint) wrap.append(el("div", {class: "field-hint", text: r.hint}));
   wrap.append(el("div", {class: "field-hint row-note", id: "note_" + r.key}));
   draw();
   return wrap;
+}
+
+// the Samples tab's prompt sets (#267): saved prompts, shared by every model, loaded in place of the ones here (a
+// change goes to the run going now as any edit does, while Change the previews of the run going now is ticked)
+function promptSetsBar(r, draw) {
+  const pick = el("select", {"aria-label": "Prompt set"});
+  const ask = el("div"), msg = el("span", {class: "field-hint"});
+  const load = el("button", {class: "btn btn-sm", text: "Load", onclick: async () => {
+    try {
+      const d = await api("/api/prompt_set", {name: pick.value});
+      onValue(r, d.prompts); draw();
+      msg.textContent = `Loaded ${pick.value}: ${d.prompts.split("\n").length} prompt(s).`;
+    } catch (e) { msg.textContent = e.message; }
+  }});
+  const del = el("button", {class: "btn btn-sm", text: "Delete", onclick: () => {
+    const name = pick.value;
+    ask.replaceChildren(el("div", {class: "field-row"}, el("span", {class: "field-hint", text: `Delete the set ${name}?`}),
+      el("button", {class: "btn btn-sm btn-danger", text: "Delete", onclick: async () => {
+        try { fill((await api("/api/prompt_set/delete", {name})).sets); msg.textContent = `Deleted ${name}.`; }
+        catch (e) { msg.textContent = e.message; }
+        ask.replaceChildren();
+      }}),
+      el("button", {class: "btn btn-sm", text: "Cancel", onclick: () => ask.replaceChildren()})));
+  }});
+  const fill = (sets, chosen) => {
+    pick.replaceChildren(el("option", {value: "", text: sets.length ? "Choose a set…" : "No saved sets yet"}),
+      ...sets.map((n) => el("option", {value: n, text: n})));
+    pick.value = sets.includes(chosen) ? chosen : "";
+    load.disabled = del.disabled = !pick.value;
+  };
+  pick.addEventListener("change", () => { load.disabled = del.disabled = !pick.value; ask.replaceChildren(); });
+  const saveAs = el("button", {class: "btn btn-sm", text: "Save as set…", onclick: () => {
+    if (ask.childNodes.length) { ask.replaceChildren(); return; }
+    const name = el("input", {type: "text", class: "w-path", placeholder: "A name for these prompts", value: pick.value});
+    const note = el("span", {class: "field-hint"});
+    const save = async (overwrite) => {
+      const n = name.value.trim();
+      if (!n) { note.textContent = "Type a name first."; return; }
+      try {
+        const d = await api("/api/prompt_set/save", {name: n, prompts: S.values[r.key] || "", overwrite: !!overwrite});
+        if (d.exists) {
+          note.replaceChildren(document.createTextNode(`There's a set called ${n} already. `),
+            el("button", {class: "btn btn-sm btn-danger", text: "Replace it", onclick: () => save(true)}));
+          return;
+        }
+        fill(d.sets, n); ask.replaceChildren();
+        msg.textContent = `Saved ${n}: every model's Samples tab can load it.`;
+      } catch (e) { note.textContent = e.message; }
+    };
+    name.addEventListener("keydown", (e) => { if (e.key === "Enter") save(false); });
+    ask.replaceChildren(el("div", {class: "field-row"}, name,
+      el("button", {class: "btn btn-sm btn-primary", text: "Save", onclick: () => save(false)}),
+      el("button", {class: "btn btn-sm", text: "Cancel", onclick: () => ask.replaceChildren()}), note));
+    name.focus();
+  }});
+  api("/api/prompt_sets").then((d) => fill(d.sets)).catch(() => fill([]));
+  return el("div", {}, el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Prompt sets:"}), pick,
+    load, saveAs, del, msg), ask);
 }
 
 // Model Area to Train > Custom: the model's blocks as ticks (All / None / an area's blocks), as the desktop's
@@ -836,6 +922,7 @@ function renderPrefs() {
   host.append(outputFolderCard());
   host.append(foldersCard());
   host.append(inferenceCard());
+  host.append(captionerCard());
   const gpuCard = gpuPickCard();
   if (gpuCard) host.append(gpuCard);
   S.fetchRows = {};
@@ -897,6 +984,36 @@ function renderPrefs() {
       el("div", {class: "field-hint", text: "Puts the folders and inference settings above back to Fizgig's defaults. " +
         "Model files, the web password and the RunPod key are kept."}))));
   paintFetch();
+}
+
+// the secondary captioning model (#270): set, it captions everything (the Captions tab and auto-recaption);
+// empty, the Krea 2 text encoder does. Plain Hugging Face links to the builds Fizgig reads - nothing downloads itself
+function captionerCard() {
+  const c = S.captioner || {path: "", note: "", links: []};
+  const input = el("input", {type: "text", class: "w-path", value: c.path || "", placeholder: "Empty = the Krea 2 text encoder"});
+  const note = el("div", {class: "field-hint", text: c.note || ""});
+  const save = async () => {
+    try {
+      await api("/api/prefs", {changes: {captioner_secondary: input.value.trim()}});
+      S.captioner = (await api("/api/prefs")).captioner || c;
+      note.textContent = S.captioner.note || "";
+      captionModelsChanged();
+    } catch (e) { note.textContent = e.message; }
+  };
+  input.addEventListener("change", save);
+  const row = el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Secondary captioning model:"}),
+    input, el("button", {class: "btn", text: "Choose…", title: "Pick from what is on the machine running Fizgig",
+      onclick: () => pick(input.value, false, (p) => { input.value = p; save(); })}),
+    ...(c.links || []).map((l) => el("a", {class: "btn", target: "_blank", rel: "noopener", href: l.href,
+      text: l.label.split(" (")[0], title: l.label})));
+  return el("div", {class: "section-card"}, el("div", {class: "card-title"}, el("span", {text: "Captioning model"})),
+    el("div", {class: "card-content"}, el("div", {class: "pref-file"}, row,
+      el("div", {class: "field-hint", text: "Optional. Qwen3-VL 8B, the bigger model of the family the Krea 2 text " +
+        "encoder belongs to (it's Qwen Image 2.1's text encoder): more detailed captions. Download a build from the " +
+        "links and choose it here; from then on it does all captioning - the Captions tab and auto-recaption. Empty " +
+        "the box to go back to the Krea 2 text encoder. " + (c.links || []).map((l) => l.label).join(" · ") +
+        ". On a card with less VRAM than it needs, it keeps what fits and streams the rest from system RAM (slower)."}),
+      note)));
 }
 
 // a folder setting the two apps share (prefs.json): a box, Choose…, saved when it changes
@@ -1465,6 +1582,10 @@ const RUN_LABELS = {idle: "Idle", starting: "Starting", running: "Running", paus
 
 async function pollRun() {
   try { S.run = await api("/api/run"); } catch (e) { return; }
+  if (training() !== S.wasTraining) {             // the LoRA lists' Studio buttons show only between runs
+    if (S.wasTraining !== undefined && $("tab-training").classList.contains("active")) loadCheckpoints();
+    S.wasTraining = training();
+  }
   const ps = S.run.pod_stop || {};
   $("podStopBar").style.display = ps.counting || ps.note ? "" : "none";
   $("podStopKeep").textContent = ps.counting ? "Keep the pod running" : "OK";      // a result note: dismissed
@@ -1582,13 +1703,22 @@ function moveDraw(mv) {
         `Training on ${mv.to}` + (rm.epoch ? `: epoch ${rm.epoch} of ${rm.epochs}` : rm.stage ? `: ${rm.stage}` : "") +
         (rm.eta ? ` · ${rm.eta} left` : "") : `On ${mv.to}.`;
     if (mv.error) say += ` (${mv.error})`;
+    if (mv.home_text) say += ` Coming home as they're saved: ${mv.home_text}.`;
+    if (S.moveDelete === undefined) S.moveDelete = true;
+    const del = () => !!(mv.pod && S.moveDelete);
     kids.push(el("button", {class: "btn btn-sm btn-primary", text: rm.state === "completed" ? "Bring its LoRAs here" : "Bring it back",
       title: "Paused there at the end of its epoch, its new checkpoints, previews and saved state brought here, and it carries on here",
-      onclick: go("/api/helpers/move_back", {now: false})}));
+      onclick: () => go("/api/helpers/move_back", {now: false, delete: del()})()}));
     if (rm.state === "running") kids.push(el("button", {class: "btn btn-sm", text: "Bring it back now",
       title: "Stopped there now and brought back from its last save (the epochs since it are trained again here)",
-      onclick: go("/api/helpers/move_back", {now: true})}));
-    if (mv.url) kids.push(el("a", {class: "btn btn-sm", href: mv.url, target: "_blank", rel: "noopener", text: `Open ${mv.to}`}));
+      onclick: () => go("/api/helpers/move_back", {now: true, delete: del()})()}));
+    if (mv.pod) kids.push(el("label", {class: "checkbox-label", title: "Once the run and everything it made are here, the " +
+      "pod is deleted on RunPod, so it stops billing. Untick it to keep the pod (its files stay on it)."},
+      el("input", {type: "checkbox", ...(S.moveDelete ? {checked: true} : {}),
+        onchange: (e) => { S.moveDelete = e.target.checked; }}), ` Delete the pod once it's all here`));
+    // as the Pods tab's Open: in the app window it switches over there (a pod logs you in); in a browser, a new tab
+    if (mv.url) kids.push(el("button", {class: "btn btn-sm", text: inApp() ? `Open ${mv.to}` : `Open ${mv.to} ↗`,
+      onclick: () => podOpen({url: mv.url, name: mv.to})}));
     if (["away", "login", "gone", "failed", "stopped"].includes(rm.state) || mv.error)
       kids.push(el("button", {class: "btn btn-sm", text: "Carry on here",
         title: `For a ${mv.to} that won't come back (a pod deleted): carries on here from this computer's last save - ` +
@@ -1620,9 +1750,10 @@ async function moveOpen() {
   }
   const pick = el("select", {class: "w-combo"}, ...ready.map((h) => el("option", {value: h.id,
     text: `${h.name}${h.gpu ? ` (${h.gpu}${h.vram ? `, ${h.vram} GB` : ""})` : ""}`})));
+  const home = el("input", {type: "checkbox", checked: true});
   const send = (now) => async () => {
     try {
-      await api("/api/helpers/move", {id: pick.value, now});
+      await api("/api/helpers/move", {id: pick.value, now, home: home.checked});
       S.moveOpen = false;
     } catch (e) { showProblems([e.message]); }
     pollRun();
@@ -1638,17 +1769,20 @@ async function moveOpen() {
       ...(running ? [el("button", {class: "btn btn-sm", text: "Now",
         title: "Stopped now and moved from its last save (the epochs since it are trained again there)",
         onclick: send(true)})] : []),
-      el("button", {class: "btn btn-sm", text: "Cancel", onclick: close})));
+      el("button", {class: "btn btn-sm", text: "Cancel", onclick: close})),
+    el("label", {class: "checkbox-label", title: "Each checkpoint and preview comes back to this run's folder here as " +
+      "it's saved there, one after another (a slow link just queues them), so bringing the run back only has the " +
+      "last few to fetch."}, home, " Bring its checkpoints and previews back here as they're saved"));
 }
 
 // ---- a prompt slider's live prompts: edited here while it trains, taken by the trainer at its next epoch boundary
-const SL_FIELDS = {base: "slBase", pos: "slPos", neg: "slNeg", guidance: "slGuidance"};
+const SL_FIELDS = {base: "slBase", pos: "slPos", neg: "slNeg", guidance: "slGuidance", anchors: "slAnchors"};
 S.sl = {shown: null, edited: false};
 function sliderLiveDraw(sl) {
   const box = $("sliderLive");
   box.style.display = sl ? "" : "none";
   if (!sl) { S.sl = {shown: null, edited: false}; return; }
-  const now = JSON.stringify([sl.base, sl.pos, sl.neg, sl.guidance]);
+  const now = JSON.stringify([sl.base, sl.pos, sl.neg, sl.guidance, sl.anchors]);
   if (!S.sl.edited && S.sl.shown !== now) {           // the run's prompts, unless you're part-way through an edit
     for (const [k, id] of Object.entries(SL_FIELDS)) $(id).value = sl[k];
     S.sl.shown = now;
@@ -1669,6 +1803,16 @@ function wireSliderLive() {
       pollRun();
     } catch (e) { $("slSay").textContent = e.message; }
   });
+}
+
+// A button whose job lasts as long as its request (a score, an export, a save): greyed from the press until it
+// answers, so a second press can't start it again (#249). Jobs the page polls grey their buttons from the status.
+function held(btn, fn) {
+  return async (...a) => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    try { return await fn(...a); } finally { btn.disabled = false; }
+  };
 }
 
 // Per-image loss, on the run card and Runs & outputs: what it shows, and (greyed) how to turn it on
@@ -1854,7 +1998,7 @@ function previewFigure(it, prompts, eager, byEpoch) {
   const prompt = it.idx == null ? "" : (own && own[it.idx]) || (prompts ? prompts[it.idx] : "");
   return withMode(el("figure", {class: "gallery-item", title: it.name}, mediaFor(it, eager && eager.has(it)),
     el("figcaption", {}, el("b", {text: previewLabel(it)}), prompt ? el("span", {class: "preview-prompt", text: prompt, title: prompt}) : null,
-      el("span", {class: "preview-file", text: it.name}))), it);
+      el("span", {class: "preview-file", text: it.name}), it.lora ? studioButton(it.lora, it.family) : null)), it);
 }
 // the family's line on how this preview was made (the run's record), shown over it in the lightbox
 function withMode(fig, it) {
@@ -1922,7 +2066,7 @@ async function loadGallery() {
   document.querySelectorAll("#galleryView button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
   // redrawn only when something changed (a new preview, another run or view), and never under a clip or song that
   // is playing - the 15 s refresh used to rebuild the gallery and stop it
-  const sig = [run, view, ...g.items.map((it) => it.name + "@" + it.time)].join("|");
+  const sig = [run, view, training(), ...g.items.map((it) => it.name + "@" + it.time)].join("|");
   const playing = [...host.querySelectorAll("video, audio")].some((m) => !m.paused);
   if (S.gal && S.gal.sig === sig || (playing && S.gal && S.gal.run === run)) { likenessShow(dir, g.items, run, view); return; }
   host.innerHTML = "";
@@ -1932,7 +2076,8 @@ async function loadGallery() {
   const top = epochs.length ? Math.max(...epochs) : null;
   const eager = new Set((top != null ? g.items.filter((it) => it.epoch === top) : g.items.slice(0, 3)).slice(0, 8));
   if (view === "grid" && g.items.length) host.append(previewGrid(g.items, g.prompts || [], eager));
-  else for (const it of g.items.slice(0, 120)) host.append(previewFigure(it, g.prompts || [], eager, g.epoch_prompts));
+  else for (const it of g.items.slice(0, 120))
+    host.append(previewFigure(withLora(it, g.loras, S.fam && S.fam.key), g.prompts || [], eager, g.epoch_prompts));
   S.gal = {items: g.items, run, sig};
   likenessShow(dir, g.items, run, view);
   const others = g.runs.filter((r) => r !== run).length;
@@ -1997,30 +2142,42 @@ async function likenessShow(dir, items, run, view) {
   g.font = "11px sans-serif"; g.lineWidth = 1;
   const bands = d.thresholds || {match: 0.45, borderline: 0.30};
   for (const band of [bands.borderline, bands.match]) {         // the badge colour bands, for orientation
-    g.strokeStyle = "#34495E"; g.fillStyle = "#7F8C8D";
+    g.strokeStyle = themeColor("--border"); g.fillStyle = themeColor("--text-muted");
     g.beginPath(); g.moveTo(L, y(band)); g.lineTo(W - R, y(band)); g.stroke();
     g.fillText(Math.round(band * 100) + "%", 8, y(band) + 4);
   }
-  g.strokeStyle = "#3498DB"; g.lineWidth = 2; g.beginPath();
+  g.strokeStyle = themeColor("--accent"); g.lineWidth = 2; g.beginPath();
   avgs.forEach((v, i) => (i ? g.lineTo(x(i), y(v)) : g.moveTo(x(i), y(v))));
   g.stroke();
   const every = Math.max(1, Math.ceil(epochs.length / 40));
   avgs.forEach((v, i) => {
-    g.fillStyle = i === best ? "#27AE60" : "#3498DB";
+    g.fillStyle = themeColor(i === best ? "--success" : "--accent");
     g.beginPath(); g.arc(x(i), y(v), i === best ? 5 : 3.5, 0, Math.PI * 2); g.fill();
-    if (i % every === 0 || i === best) { g.fillStyle = "#95A5A6"; g.fillText(epochs[i], x(i) - 6, H - 6); }
+    if (i % every === 0 || i === best) { g.fillStyle = themeColor("--text-secondary"); g.fillText(epochs[i], x(i) - 6, H - 6); }
   });
 }
 async function likenessPicker() {
-  const folder = S.imageFolder || "";
+  S.lik.mode = "gallery";
+  await likGridShow(S.imageFolder || "", (S.lik.data && S.lik.data.baselines) || []);
+}
+// the 3-photo picker, for the Samples gallery (exactly 3, from the training images) or LoRA Royale (1-3, any folder)
+async function likGridShow(folder, picked) {
+  const royale = S.lik.mode === "royale";
+  S.lik.folder = folder; S.lik.paths = {};
+  $("likTitle").textContent = `Likeness: pick ${royale ? "up to " : ""}3 photos of your subject`;
+  $("likFrom").textContent = royale ? "this folder" : "the training images";
   $("likFolder").textContent = folder || "no training image folder set on the Start tab";
-  S.lik.picked = [...((S.lik.data && S.lik.data.baselines) || [])];
+  $("likFolderPick").style.display = royale ? "" : "none";
+  $("likClear").style.display = royale ? "none" : "";
+  $("likStart").textContent = royale ? "Use these" : "Start scoring";
+  S.lik.picked = [...picked];
   const grid = $("likGrid");
   grid.innerHTML = "";
   $("likModal").classList.add("active");
   if (!folder) return;
   const r = await api(`/api/captions?folder=${encodeURIComponent(folder)}&ext=${encodeURIComponent(capExt())}&family=${encodeURIComponent(S.family || "")}`).catch(() => ({items: []}));
   for (const it of r.items.filter((x) => LIK_PICS.test(x.name))) {
+    S.lik.paths[it.name] = it.path;
     const fig = el("figure", {title: it.name, onclick: () => {
       const i = S.lik.picked.indexOf(it.name);
       if (i >= 0) S.lik.picked.splice(i, 1);
@@ -2030,7 +2187,7 @@ async function likenessPicker() {
     fig.dataset.name = it.name;
     grid.append(fig);
   }
-  if (!grid.children.length) grid.append(el("div", {class: "field-hint", text: "No pictures in the training image folder."}));
+  if (!grid.children.length) grid.append(el("div", {class: "field-hint", text: `No pictures in ${royale ? "this" : "the training image"} folder.`}));
   likenessMarks();
 }
 function likenessMarks() {
@@ -2040,7 +2197,7 @@ function likenessMarks() {
     f.querySelector(".lik-num")?.remove();
     if (i >= 0) f.append(el("span", {class: "lik-num", text: String(i + 1)}));
   }
-  $("likStart").disabled = S.lik.picked.length !== 3;
+  $("likStart").disabled = S.lik.mode === "royale" ? !S.lik.picked.length : S.lik.picked.length !== 3;
   $("likPickStatus").textContent = `${S.lik.picked.length}/3 selected`;
 }
 async function likenessSet(names) {
@@ -2106,6 +2263,7 @@ function rvPlay() {
   S.rv.timer = setTimeout(tick, Number($("rvSpeed").value));
 }
 function rvDraw(g, im, fr, W, H) {
+  // the video's own frames (shown here and exported): fixed colours, not the theme's
   g.fillStyle = "#000"; g.fillRect(0, 0, W, H);
   const sc = Math.min(W / im.naturalWidth, H / im.naturalHeight), dw = im.naturalWidth * sc, dh = im.naturalHeight * sc;
   g.drawImage(im, (W - dw) / 2, (H - dh) / 2, dw, dh);
@@ -2183,6 +2341,7 @@ async function loadCheckpoints() {
       el("span", {class: "checkpoint-name", text: it.name}),
       el("span", {class: "field-hint", text: `${it.kind === "finetune" ? "Fine-tune (whole model)" : "LoRA"} · ` +
         `${size(it.size)} · ${new Date(it.time * 1000).toLocaleString()}`}),
+      it.kind === "finetune" ? null : studioButton(it.path, S.fam && S.fam.key),
       el("a", {class: "btn btn-sm btn-primary", href, download: it.name, text: "Download"})));
   }
   const others = r.items.length - mine.length;
@@ -2361,13 +2520,17 @@ async function loadRuns() {
     // trained all it was set to asks how far to train first
     const contBox = el("div", {class: "field-row", style: "display:none"});
     const cp = run.continue;
+    let contGoing = false;
     const contGo = async (more) => {
+      if (contGoing) return;
+      contGoing = true;
       alertRow.textContent = "";
       try {
         const x = await api("/api/runs/continue", {id: run.id, more: more || ""});
         if (x.need) { contAsk(x.error); return; }
         if (x.problems) { alertRow.textContent = x.problems.join(" "); return; }
         contBox.style.display = "none";
+        if (x.form) await loadIntoForm(x.form);   // the tab shows the run going on, not the settings before it
         alertRow.textContent = x.queued ? "A run is training now: this one is on the queue, and continues when its " +
           "turn comes." : `Continuing ${run.lora || "the run"}: it's on the Training tab.`;
         pollRun();
@@ -2375,7 +2538,7 @@ async function loadRuns() {
           showTab("training");
           setTimeout(() => document.querySelector(".run-card").scrollIntoView({behavior: "smooth", block: "start"}), 50);
         } else loadRuns();
-      } catch (e) { alertRow.textContent = e.message; }
+      } catch (e) { alertRow.textContent = e.message; } finally { contGoing = false; }
     };
     const contAsk = (why) => {
       const box = el("input", {type: "number", min: String(cp.done + 1), step: "1", class: "w-num",
@@ -2488,15 +2651,15 @@ async function loadRuns() {
 // ---- per-image loss: each image's residual by epoch (its loss minus the dataset's mean at the same noise level, the
 // loss watch's own measure) with the watch's verdict - the desktop's Problem Images colours and words
 const IL_VERDICTS = {
-  excluded: ["#7F8C8D", "Excluded from training - two AI captions couldn't fix it. Edit the caption to re-admit it, or remove it from the dataset."],
-  stuck: ["#E74C3C", "Stuck - persistently hard, not improving. Review this image and its caption."],
-  suspect: ["#D35400", "Suspect - extremely hard from the start; slowed while the trend confirms. Worth a caption check now."],
-  watch: ["#E67E22", "Watching - looked stuck this epoch; needs more epochs to confirm."],
-  warmup: ["#8E7CC3", "Look-filter outlier easing in on an LR ramp; releases early once it starts improving."],
-  exhausted: ["#16A085", "Fully mined - improved a lot, then plateaued. Caption is fine; LR eased to prevent overbake."],
-  learning: ["#5B9BD5", "Learning - hard but improving. Leave it alone."],
-  mid: ["#95A5A6", "Normal."],
-  easy: ["#70AD47", "Learned - consistently easy. Gets a gentle x1.1 boost."]};
+  excluded: ["var(--text-muted)", "Excluded from training - two AI captions couldn't fix it. Edit the caption to re-admit it, or remove it from the dataset."],
+  stuck: ["var(--danger)", "Stuck - persistently hard, not improving. Review this image and its caption."],
+  suspect: ["var(--warning-strong)", "Suspect - extremely hard from the start; slowed while the trend confirms. Worth a caption check now."],
+  watch: ["var(--warning)", "Watching - looked stuck this epoch; needs more epochs to confirm."],
+  warmup: ["var(--special)", "Look-filter outlier easing in on an LR ramp; releases early once it starts improving."],
+  exhausted: ["var(--data-teal)", "Fully mined - improved a lot, then plateaued. Caption is fine; LR eased to prevent overbake."],
+  learning: ["var(--data-blue)", "Learning - hard but improving. Leave it alone."],
+  mid: ["var(--text-secondary)", "Normal."],
+  easy: ["var(--success)", "Learned - consistently easy. Gets a gentle x1.1 boost."]};
 const IL_ORDER = ["excluded", "stuck", "suspect", "watch", "warmup", "exhausted", "learning", "mid", "easy"];
 const IL_PROBLEMS = new Set(["excluded", "stuck", "suspect", "watch"]);
 const IL_PAGE = 48;
@@ -2559,7 +2722,7 @@ function imageLossTile(im, ymax, run, live) {
   zero.setAttribute("class", "il-zero");
   const line = document.createElementNS(ns, "polyline");
   line.setAttribute("points", pts.map((p) => `${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(" "));
-  line.setAttribute("stroke", col);
+  line.style.stroke = col;
   const t = document.createElementNS(ns, "title");
   t.textContent = pts.map((p) => `epoch ${p[0]}: ${p[1] >= 0 ? "+" : ""}${p[1].toFixed(4)}`).join("\n");
   svg.append(zero, line, t);
@@ -2589,7 +2752,7 @@ function imageLossCaption(im, run, live) {
     catch (e) { box.replaceChildren(el("div", {class: "problems", text: e.message})); return; }
     const ta = el("textarea", {rows: 5, class: "il-cap-text"});
     ta.value = r.caption;
-    const say = el("div", {class: "field-hint", text: "Caption what the picture actually shows - viewpoint (from behind, side profile), pose, what's in the way."});
+    const say = el("div", {class: "field-hint", text: "Caption what the picture actually shows - viewpoint (from behind, side profile), pose, lighting, what's in the way."});
     const save = el("button", {class: "btn btn-sm btn-primary", text: live ? "Save and queue for re-encode" : "Save caption", onclick: async () => {
       try {
         const res = await api("/api/runs/caption", {id: run.id, key: im.key, caption: ta.value, ext: capExt()});
@@ -2622,7 +2785,7 @@ function ryRemember() {
     single: v("rySingle"), cmp: v("ryCPrompts"),
     family: v("ryFamily"), folder: v("ryFolder"), prompt: v("ryPrompt"),
     seed: v("rySeed"), ref: v("ryRef"), refStr: v("ryRefStr"), w: v("ryW"), h: v("ryH"), max: v("ryMax"),
-    like: v("ryLikeRef"), out: v("ryOut"), fmt: v("ryFmt"), speed: v("rySpeed")})); } catch (e) { /* private */ }
+    like: S.ry.likeRefs || [], out: v("ryOut"), fmt: v("ryFmt"), speed: v("rySpeed")})); } catch (e) { /* private */ }
 }
 const ryLabel = (l) => (String(l).match(/^\d+$/) ? `Epoch ${l}` : String(l));
 
@@ -2631,7 +2794,9 @@ async function royaleOpen() {
     S.ry.wired = true;
     const sv = rySaved();
     for (const [id, k] of [["ryFolder", "folder"], ["ryPrompt", "prompt"], ["rySeed", "seed"], ["ryRef", "ref"],
-      ["ryRefStr", "refStr"], ["ryLikeRef", "like"], ["ryOut", "out"]]) if (sv[k] != null) $(id).value = sv[k];
+      ["ryRefStr", "refStr"], ["ryOut", "out"]]) if (sv[k] != null) $(id).value = sv[k];
+    S.ry.likeRefs = Array.isArray(sv.like) ? sv.like.slice(0, 3) : sv.like ? [sv.like] : [];
+    ryLikeShow();
     for (const [id, k] of [["ryW", "w"], ["ryH", "h"], ["ryMax", "max"], ["ryFmt", "fmt"], ["rySpeed", "speed"]])
       if (sv[k]) $(id).value = sv[k]; else if (id === "ryW" || id === "ryH") $(id).value = "512";
     await royaleFamily(sv.family);
@@ -2954,10 +3119,10 @@ async function royaleScore() {
   $("ryLikeStatus").textContent = "Scoring… (the first run loads the face model)";
   $("ryLikePeak").textContent = "";
   try {
-    const r = await api("/api/royale/score", {ref: $("ryLikeRef").value.trim()});
+    const r = await api("/api/royale/score", {refs: S.ry.likeRefs || []});
     S.ry.scores = r.scores; S.ry.best = r.best;
     royaleGrid();
-    if (r.best == null) { $("ryLikeStatus").textContent = "No faces detected in the renders or subject image."; $("ryBest").disabled = true; return; }
+    if (r.best == null) { $("ryLikeStatus").textContent = "No faces detected in the renders or subject photos. Likeness needs a face: for a style or object LoRA, judge the epochs by eye."; $("ryBest").disabled = true; return; }
     $("ryBest").disabled = false;
     $("ryLikeStatus").textContent = `Best: ${ryLabel(r.best).toLowerCase()} (${r.scores[r.best].toFixed(3)})` +
       (r.no_face ? `  (${r.no_face} no-face)` : "") +
@@ -2965,6 +3130,14 @@ async function royaleScore() {
     $("ryLikePeak").textContent = arcPeak(r.embedder).replace("72%", "0.72 (72%)");
     royaleBest();
   } catch (e) { $("ryLikeStatus").textContent = e.message; }
+}
+
+// the Likeness score card's chosen photos, as thumbnails
+function ryLikeShow() {
+  const refs = S.ry.likeRefs || [];
+  $("ryLikeRefs").replaceChildren(...(refs.length ? refs.map((p) => el("img", {title: p, alt: "",
+    src: `/api/thumb?path=${encodeURIComponent(p)}&t=${encodeURIComponent(TOKEN)}`}))
+    : [el("span", {class: "field-hint", text: "None chosen"})]));
 }
 
 function royaleBest() {
@@ -2994,8 +3167,13 @@ function wireRoyale() {
     $("ryFolder").value = p; royaleScan(); remember(); }));
   $("ryRefPick").addEventListener("click", () => pick($("ryRef").value || refStart(), false, (p) => { $("ryRef").value = p; remember(); }));
   $("ryRefClear").addEventListener("click", () => { $("ryRef").value = ""; remember(); });
-  $("ryLikePick").addEventListener("click", () => pick($("ryLikeRef").value || refStart(), false, (p) => { $("ryLikeRef").value = p; remember(); }));
-  $("ryLikeClear").addEventListener("click", () => { $("ryLikeRef").value = ""; remember(); });
+  $("ryLikePick").addEventListener("click", () => {      // the Samples gallery's picker, from the photos' folder
+    const refs = S.ry.likeRefs || [], dir = (p) => p.replace(/[\\/][^\\/]*$/, "");
+    const folder = refs.length ? dir(refs[0]) : refStart() || "";
+    S.lik.mode = "royale";
+    likGridShow(folder, refs.filter((p) => dir(p) === folder).map((p) => p.split(/[\\/]/).pop()));
+  });
+  $("ryLikeClear").addEventListener("click", () => { S.ry.likeRefs = []; ryLikeShow(); remember(); });
   $("ryOutPick").addEventListener("click", () => pick($("ryOut").value, true, (p) => { $("ryOut").value = p; remember(); }));
   $("ryRender").addEventListener("click", royaleRender);
   $("ryStop").addEventListener("click", () => api("/api/royale/cancel", {}).then(royalePoll));
@@ -3005,22 +3183,22 @@ function wireRoyale() {
     $("ryStatus").textContent = "Model unloaded - the renders stay here until the next render.";
   });
   $("ryScrub").addEventListener("input", royaleScrub);
-  $("ryScore").addEventListener("click", royaleScore);
+  $("ryScore").addEventListener("click", held($("ryScore"), royaleScore));
   $("ryBest").addEventListener("click", royaleBest);
-  $("ryExport").addEventListener("click", () => royaleExport(false));
-  $("ryLikeExport").addEventListener("click", () => royaleExport(true));
-  $("ryStills").addEventListener("click", async () => {
+  $("ryExport").addEventListener("click", held($("ryExport"), () => royaleExport(false)));
+  $("ryLikeExport").addEventListener("click", held($("ryLikeExport"), () => royaleExport(true)));
+  $("ryStills").addEventListener("click", held($("ryStills"), async () => {
     $("ryExportStatus").textContent = "Saving stills…";
     try { const r = await api("/api/royale/stills", {out_dir: $("ryOut").value.trim()});
       $("ryExportStatus").textContent = `Saved ${r.saved.length} stills → ${$("ryOut").value.trim()}`; }
     catch (e) { $("ryExportStatus").textContent = e.message; }
-  });
-  $("ryPromote").addEventListener("click", async () => {
+  }));
+  $("ryPromote").addEventListener("click", held($("ryPromote"), async () => {
     try { const r = await api("/api/royale/promote", {i: royaleCurrent(), out_dir: $("ryOut").value.trim(),
       name: $("ryPromoteName").value.trim()});
       $("ryPromoteStatus").textContent = `Saved ${ryLabel(S.ry.items[royaleCurrent()].label).toLowerCase()} → ${r.path}`; }
     catch (e) { $("ryPromoteStatus").textContent = e.message; }
-  });
+  }));
 }
 
 // ---- Profiler: what a LoRA's blocks do (fizgig/web/tools.py runs scripts/profile_run.py, the desktop Profiler's job) ----
@@ -3640,12 +3818,13 @@ async function runFiles(run) {
       .catch(() => ({items: [], prompts: []})),
     api("/api/checkpoints?dir=" + encodeURIComponent(run.output_dir)).catch(() => ({items: []}))]);
   const shots = g.items.slice(0, 12);
-  if (shots.length) out.push(el("div", {class: "gallery run-gallery"}, shots.map((it) => previewFigure(it, g.prompts, null, g.epoch_prompts))));
+  if (shots.length) out.push(el("div", {class: "gallery run-gallery"}, shots.map((it) => previewFigure(withLora(it, g.loras, run.family), g.prompts, null, g.epoch_prompts))));
   const size = (b) => b >= 2 ** 30 ? (b / 2 ** 30).toFixed(1) + " GB" : (b / 2 ** 20).toFixed(0) + " MB";
   const ckpts = c.items.filter((it) => it.run === run.lora);
   if (ckpts.length) out.push(el("div", {class: "checkpoint-list"}, ckpts.map((it) => el("div", {class: "checkpoint-row"},
     el("span", {class: "checkpoint-name", text: it.name}),
     el("span", {class: "field-hint", text: `${it.kind === "finetune" ? "Fine-tune" : "LoRA"} · ${size(it.size)}`}),
+    it.kind === "finetune" ? null : studioButton(it.path, run.family),
     el("a", {class: "btn btn-sm btn-primary", download: it.name, text: "Download",
       href: `/api/download?path=${encodeURIComponent(it.path)}&t=${encodeURIComponent(TOKEN)}`})))));
   if (!out.length) out.push(el("div", {class: "field-hint", text: "Nothing saved by this run in " + run.output_dir + "."}));
@@ -3815,6 +3994,11 @@ async function maskInfo() {
   S.prep.maskOpts = r;
   maskShow(r);
 }
+// A model download's failure, for the hint beside its button: an expired Hugging Face login reads as itself.
+function downloadFailedText(err) {
+  return /^Your Hugging Face login/.test(err || "") ? ` ${err}` : ` The download failed: ${err}`;
+}
+
 // SAM 3.1 on the masks card: words instead of the person finder's choices; its file is downloaded from here
 function maskSamShow(r) {
   const on = $("maskSam").checked, sam = r.sam || {}, f = sam.fetch || {};
@@ -3823,7 +4007,7 @@ function maskSamShow(r) {
   $("maskMethod").querySelectorAll("button").forEach((b) => b.classList.toggle("active", (b.dataset.sam === "1") === on));
   $("maskMethodHint").textContent = on ? "Meta's Segment Anything: type what to mask (\"person\", \"hair\", " +
     "\"the dog\") and it finds it, with sharper edges. A 1.75 GB download, once; it runs on the GPU." :
-    "Google's person finder: pick a part of the person below. Small and quick, on the CPU.";
+    "Google's person finder: pick a part of the person below. Small and quick, on the CPU. For an object, an animal or anything else, use SAM 3.1.";
   $("maskRunHint").textContent = on ? "It runs on the GPU, a fraction of a second a picture once loaded (several " +
     "seconds a picture without a GPU). Make masks when nothing is training." :
     "It runs on the CPU, a fraction of a second a picture. The first time, it downloads Google's person finder (16 MB).";
@@ -3839,7 +4023,7 @@ function maskSamShow(r) {
     st.replaceChildren(el("button", {class: "btn btn-primary",
       text: f.state === "failed" ? "Try the download again" : `Download SAM 3.1 (${sam.gb || 1.75} GB)`, onclick: async () => {
         await api("/api/masks/sam_fetch", {}).catch((e) => { st.textContent = e.message; });
-        maskInfo(); }}), el("span", {class: "field-hint", text: f.state === "failed" ? ` The download failed: ${f.error}` :
+        maskInfo(); }}), el("span", {class: "field-hint", text: f.state === "failed" ? downloadFailedText(f.error) :
         " Needed once, before the first masks."}));
   }
   $("maskSamPreview").disabled = !on || !sam.path || !r.pictures || S.prep.running;
@@ -3980,18 +4164,19 @@ function meLayers() {
   }
   const t = m.tint.getContext("2d");
   t.globalCompositeOperation = "copy"; t.drawImage(m.mask, 0, 0);
-  t.globalCompositeOperation = "source-in"; t.fillStyle = "rgb(90,170,255)"; t.fillRect(0, 0, w, h);
+  t.globalCompositeOperation = "source-in"; t.fillStyle = themeColor("--pic-mask"); t.fillRect(0, 0, w, h);
   t.globalCompositeOperation = "source-over";
   const d = m.dim.getContext("2d");
-  d.globalCompositeOperation = "copy"; d.fillStyle = "#000"; d.fillRect(0, 0, w, h);
+  d.globalCompositeOperation = "copy"; d.fillStyle = themeColor("--pic-shade"); d.fillRect(0, 0, w, h);
   d.globalCompositeOperation = "destination-out"; d.drawImage(m.mask, 0, 0);
   d.globalCompositeOperation = "source-over";
   return [m.tint, m.dim];
 }
+// the mask's own pixels stay white (learned) and black (not): they are the mask, not the theme
 function meDraw() {
   const m = meState(), cv = $("meCanvas"), c = cv.getContext("2d");
   c.setTransform(1, 0, 0, 1, 0, 0);
-  c.fillStyle = "#0b0e12"; c.fillRect(0, 0, cv.width, cv.height);
+  c.fillStyle = themeColor("--bg-inset"); c.fillRect(0, 0, cv.width, cv.height);
   if (!m.pic || !m.mask) return;
   c.setTransform(m.zoom, 0, 0, m.zoom, m.ox, m.oy);
   c.imageSmoothingEnabled = m.zoom < 2;
@@ -4010,13 +4195,13 @@ function meDraw() {
   if (m.samAt) {                                       // SAM at work: a ring pulsing at the click
     const ph = (performance.now() % 1000) / 1000;
     c.setTransform(1, 0, 0, 1, 0, 0);
-    c.strokeStyle = `rgba(90,170,255,${1 - ph})`; c.lineWidth = 3;
+    c.strokeStyle = themeColor("--pic-mask", 1 - ph); c.lineWidth = 3;
     c.beginPath(); c.arc(m.samAt[0], m.samAt[1], 6 + ph * 22, 0, Math.PI * 2); c.stroke();
-    c.fillStyle = "rgb(90,170,255)"; c.beginPath(); c.arc(m.samAt[0], m.samAt[1], 4, 0, Math.PI * 2); c.fill();
+    c.fillStyle = themeColor("--pic-mask"); c.beginPath(); c.arc(m.samAt[0], m.samAt[1], 4, 0, Math.PI * 2); c.fill();
   }
   if (m.cursor && !m.panning && m.tool !== "sam") {    // the brush, its size on screen
     c.setTransform(1, 0, 0, 1, 0, 0);
-    c.strokeStyle = "rgba(255,255,255,.9)"; c.lineWidth = 1;
+    c.strokeStyle = themeColor("--pic-text", 0.9); c.lineWidth = 1;
     c.beginPath(); c.arc(m.cursor[0], m.cursor[1], Number($("meSize").value) / 2, 0, Math.PI * 2); c.stroke();
   }
 }
@@ -4364,7 +4549,7 @@ async function lookPickOpen() {
   host.replaceChildren(el("div", {class: "field-hint", text: "Loading the folder's pictures…"}));
   const r = await api(`/api/captions?folder=${encodeURIComponent(S.imageFolder)}&ext=${encodeURIComponent(capExt())}&family=${encodeURIComponent(S.family || "")}`).catch(() => ({items: []}));
   const pics = r.items.filter((it) => /\.(png|jpe?g|webp|bmp)$/i.test(it.name));
-  host.replaceChildren(el("div", {class: "field-hint look-pick-hint", text: "Click the 3 pictures that best nail the look you want."}),
+  host.replaceChildren(el("div", {class: "field-hint look-pick-hint", text: "Click the 3 pictures that best show the face you're training."}),
     ...pics.map((it) => el("button", {class: "look-tile pick" + (S.prep.bases.includes(it.path) ? " chosen" : ""),
       title: it.name, onclick: (e) => {
         const i = S.prep.bases.indexOf(it.path);
@@ -4379,16 +4564,17 @@ async function lookPickOpen() {
 function lookBasesShow() {
   $("lookBases").replaceChildren(...S.prep.bases.map((p) => el("img", {src: thumbOf(p), title: p, alt: ""})),
     el("span", {class: "field-hint", text: `${S.prep.bases.length} of 3 chosen`}));
-  $("lookScan").disabled = S.prep.bases.length !== 3;
+  $("lookScan").disabled = S.prep.bases.length !== 3 || !!S.prep.lookRunning;
 }
 
 async function lookScan() {
+  $("lookScan").disabled = true;                  // until the scan's status says it's over (#249)
   try {
     await api("/api/look/scan", {folder: S.imageFolder, baselines: S.prep.bases});
     S.prep.picking = false; $("lookPicker").style.display = "none";
     S.prep.marked = new Set(); S.prep.page = 0;
     lookPoll();
-  } catch (e) { $("lookStatus").textContent = e.message; }
+  } catch (e) { $("lookStatus").textContent = e.message; lookBasesShow(); }
 }
 
 async function lookPoll() {
@@ -4401,6 +4587,8 @@ async function lookPoll() {
   const wasRunning = S.prep.lookRunning;
   S.prep.lookRunning = r.state === "running";
   if (wasRunning && !S.prep.lookRunning) maskInfo();
+  $("lookScan").disabled = S.prep.lookRunning || S.prep.bases.length !== 3;
+  $("lookPick").disabled = S.prep.lookRunning;
   $("lookDecision").textContent = r.decision ? r.decision.replace("[faces] ", "") : "";
   $("lookPeak").textContent = r.state === "done" && r.rows && r.rows.length ? arcPeak(r.embedder) : "";
   const mine = r.folder === S.imageFolder;        // the last scan may be of another folder
@@ -4421,6 +4609,8 @@ async function lookPoll() {
 }
 
 const LOOK_PAGE = 200;
+// a Look Filter verdict's colour (the theme's)
+const LOOK_VERDICT = {"no face": "--text-muted", match: "--success", borderline: "--warning", drift: "--danger"};
 function lookRender() {
   const r = S.prep.look, host = $("lookRows");
   const rows = r && r.state === "done" && r.folder === S.imageFolder ? r.rows : [];
@@ -4435,7 +4625,7 @@ function lookRender() {
   $("lookMove").disabled = !S.prep.marked.size;
   for (const x of rows.slice(S.prep.page * LOOK_PAGE, (S.prep.page + 1) * LOOK_PAGE)) {
     const marked = S.prep.marked.has(x.path);
-    const tile = el("button", {class: "look-tile" + (marked ? " marked" : ""), style: `--verdict:${x.colour}`,
+    const tile = el("button", {class: "look-tile" + (marked ? " marked" : ""), style: `--verdict:var(${LOOK_VERDICT[x.verdict] || "--text-muted"})`,
       title: x.blurb, onclick: () => { S.prep.marked.has(x.path) ? S.prep.marked.delete(x.path) : S.prep.marked.add(x.path); lookRender(); }},
       el("img", {loading: "lazy", src: thumbOf(x.path), alt: ""}),
       el("span", {class: "look-name", text: x.name}),
@@ -4464,7 +4654,8 @@ function lookMoveAsk() {
     el("div", {class: "field-hint", text: `Move ${n} picture(s), with their captions, out of the dataset to ` +
       `${S.imageFolder}${sep}excluded_by_look? Nothing is deleted: move them back to put them in again.`}),
     el("div", {class: "field-row"},
-      el("button", {class: "btn btn-sm btn-danger", text: "Move", onclick: async () => {
+      el("button", {class: "btn btn-sm btn-danger", text: "Move", onclick: async (ev) => {
+        ev.currentTarget.disabled = true;           // the confirm goes when it's done; on an error it says why
         try {
           const r = await api("/api/look/move", {folder: S.imageFolder, paths: [...S.prep.marked], ext: capExt()});
           S.prep.marked = new Set();
@@ -4562,7 +4753,36 @@ async function studioOpen() {
     S.st.familiesLoaded = true;
     await studioFamily(sv.res, sv.w, sv.h);
   }
+  if (S.st.openWith) await studioTake();
   studioPoll();
+}
+
+// a LoRA row's Studio button: the LoRA as the primary, on the model its file is for (from its key names; the run's
+// model when the file can't tell), on the Studio tab. Nothing loads until Start.
+function studioButton(path, family) {
+  if (training()) return null;                    // Studio's model would share the card with the run
+  return el("button", {class: "btn btn-sm", text: "Studio", title: "Open this LoRA in Studio, on the model it was trained for",
+    onclick: () => { S.st.openWith = {path, family}; showTab("studio"); }});
+}
+
+function training() { return !!(S.run && (S.run.running || ["starting", "running", "pausing"].includes(S.run.state))); }
+// a preview with the LoRA its epoch saved (the server's loras map), for its Studio button
+function withLora(it, loras, family) {
+  return it.epoch != null && loras && loras[String(it.epoch)] ? {...it, lora: loras[String(it.epoch)], family} : it;
+}
+
+async function studioTake() {
+  const {path, family} = S.st.openWith;
+  S.st.openWith = null;
+  let key = "";
+  try { key = (await api("/api/studio/lorafamily?path=" + encodeURIComponent(path))).key; } catch (e) { /* the run's */ }
+  const has = (k) => k && [...$("stFamily").options].some((o) => o.value === k);
+  const fam = has(key) ? key : has(family) ? family : "";
+  if (!fam) { $("stStatus").textContent = "Studio doesn't work on this LoRA's model."; return; }
+  if (fam !== $("stFamily").value) { $("stFamily").value = fam; await studioFamily(); }
+  $("stPrimary").value = path;
+  stRemember();
+  $("stStatus").textContent = `${path.split(/[\\/]/).pop()} is the primary LoRA.`;
 }
 
 async function studioFamily(res, w, h) {
@@ -4663,7 +4883,7 @@ function studioSlots() {
   $("stFramesTitle").textContent = ref ? "Reference Images" : "First / Last Frame";
   $("stFramesDesc").textContent = ref ? "Optional: up to two photos the clip should look like (this checkpoint's " +
     "references), each cropped to the clip's shape - you place the crop when you pick one. Say <Picture 1> and " +
-    "<Picture 2> in the prompt for them, e.g. \"the woman in <Picture 1> walks along a beach\"." :
+    "<Picture 2> in the prompt for them, e.g. \"the woman in <Picture 1> walks along the beach in <Picture 2>\"." :
     "Optional: photos the clip starts and ends on (a still uses the first only), each cropped to the clip's shape - " +
     "you place the crop when you pick one.";
   const host = $("stFrameSlots");
@@ -4734,11 +4954,11 @@ function studioCrop(path, initial, ok, cancel) {
     const src = () => [box.x0, box.y0, box.x1, box.y1].map((v, i) => Math.min(i % 2 ? sh : sw, Math.max(0, Math.round(v / scale))));
     const draw = () => {
       ctx.clearRect(0, 0, dw, dh); ctx.drawImage(img, 0, 0, dw, dh);
-      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillStyle = themeColor("--shadow", 0.55);
       ctx.fillRect(0, 0, dw, box.y0); ctx.fillRect(0, box.y1, dw, dh - box.y1);
       ctx.fillRect(0, box.y0, box.x0, box.y1 - box.y0); ctx.fillRect(box.x1, box.y0, dw - box.x1, box.y1 - box.y0);
-      ctx.strokeStyle = "#3B9FD8"; ctx.lineWidth = 2; ctx.strokeRect(box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
-      ctx.fillStyle = "#3B9FD8";
+      ctx.strokeStyle = themeColor("--pic-highlight"); ctx.lineWidth = 2; ctx.strokeRect(box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
+      ctx.fillStyle = themeColor("--pic-highlight");
       for (const [hx, hy] of [[box.x0, box.y0], [box.x1, box.y0], [box.x0, box.y1], [box.x1, box.y1]])
         ctx.fillRect(hx - HANDLE, hy - HANDLE, HANDLE * 2, HANDLE * 2);
       const r = src();
@@ -4995,8 +5215,8 @@ function songDraw() {
   if (!cv || $("stSong").style.display === "none") return;
   const w = cv.clientWidth || 600, h = cv.height;
   if (cv.width !== w) cv.width = w;
-  const g = cv.getContext("2d"), css = getComputedStyle(document.documentElement);
-  const accent = (css.getPropertyValue("--accent") || "#3B9FD8").trim(), blue = "#4FA3E0", muted = "#6B7685";
+  const g = cv.getContext("2d");
+  const accent = themeColor("--accent"), blue = themeColor("--accent-hover"), muted = themeColor("--text-muted");
   g.clearRect(0, 0, w, h);
   const side = songStripSide(), pk = side && S.song.peaks[side], d = songDur();
   const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
@@ -5010,9 +5230,9 @@ function songDraw() {
     let p = 0, r = 0;
     for (let i = i0; i < i1; i++) { p = Math.max(p, pk.pk[i]); r = Math.max(r, pk.rms[i]); }
     const played = px < x;
-    g.fillStyle = played ? "rgb(70,110,170)" : "rgb(52,62,82)";
+    g.fillStyle = themeColor(played ? "--song-peak-played" : "--song-peak");
     g.fillRect(px, mid - p * mid * 0.92, 1, 2 * p * mid * 0.92);
-    g.fillStyle = played ? "rgb(140,190,250)" : "rgb(82,98,124)";
+    g.fillStyle = themeColor(played ? "--accent-text" : "--song-rms");
     g.fillRect(px, mid - r * mid * 0.92, 1, 2 * r * mid * 0.92);
   }
   const drag = S.song.drag;
@@ -5059,7 +5279,7 @@ function songGlowSet(id, level) {
   S.song.glow[id] = level;
   const box = document.querySelector(`#stBlocks .st-block[data-id="${CSS.escape(id)}"]`);
   const lab = box && box._rows && box._rows[0].querySelector(".st-label");
-  if (lab) lab.style.background = level ? `rgba(237, 125, 49, ${(0.85 * level / 8).toFixed(3)})` : "";
+  if (lab) lab.style.background = level ? themeColor("--data-orange", (0.85 * level / 8).toFixed(3)) : "";
 }
 
 function wireSong() {
@@ -5413,12 +5633,12 @@ async function studioMetrics() {
   try { m = await api(`/api/studio/metrics?ref=${encodeURIComponent(ref)}`); } catch (e) { m = {error: e.message}; }
   if (gen !== S.st.metGen) return;                    // a newer pair is on screen: these numbers aren't its
   if (m.error) { put("like", `metrics failed: ${String(m.error).slice(0, 60)}`, "bad"); for (const k of ["grid", "tex", "clip", "sat"]) put(k, ""); return; }
-  if (!m.ref_set) put("like", "Likeness: set a reference photo →");
-  else if (!m.ref_face) put("like", "Likeness: no face in reference", "bad");
-  else if (m.like_base == null || m.like_tweak == null) put("like", "Likeness: no face in render");
+  if (!m.ref_set) put("like", "Face likeness: set a reference photo →");
+  else if (!m.ref_face) put("like", "Face likeness: no face in reference", "bad");
+  else if (m.like_base == null || m.like_tweak == null) put("like", "Face likeness: no face in render");
   else {
     const lb = m.like_base * 100, lt = m.like_tweak * 100, d = lt - lb;
-    put("like", `Likeness ${lb.toFixed(0)}% ${d > 0.5 ? "▲" : d < -0.5 ? "▼" : "→"} ${lt.toFixed(0)}%`, d > 0.5 ? "good" : d < -0.5 ? "bad" : "");
+    put("like", `Face likeness ${lb.toFixed(0)}% ${d > 0.5 ? "▲" : d < -0.5 ? "▼" : "→"} ${lt.toFixed(0)}%`, d > 0.5 ? "good" : d < -0.5 ? "bad" : "");
   }
   $(chips.like).title = m.embedder ? `Look match: ${m.embedder} (scores are on its own scale)` : "";
   put("grid", `Grid ${m.grid_base.toFixed(2)} → ${m.grid_tweak.toFixed(2)}`, m.grid_delta > 0.05 ? "bad" : m.grid_delta < -0.05 ? "good" : "");
@@ -6031,9 +6251,11 @@ async function studioPoll() {
   $("stProfile").style.display = pr ? "" : "none";
   if (pr) {
     $("stProfileLine").textContent = `${pr.lora_name} · profiled ${pr.created} · most active blocks:`;
-    const col = {"Style+Comp": "#5B9BD5", "Style/ID": "#5BB3A6", Identity: "#70AD47", "ID/Detail": "#B8A547", Details: "#ED7D31"};
+    const col = {"Style+Comp": "blue", "Style/ID": "teal", Identity: "green", "ID/Detail": "olive", Details: "orange",
+      style_composition: "blue", style_ident_overlap: "teal", identity: "green", ident_details_overlap: "olive",
+      details: "orange"};
     $("stPills").replaceChildren(...pr.blocks.map((b) => el("span", {class: "st-pill",
-      style: `background:${({style_composition: "#5B9BD5", style_ident_overlap: "#5BB3A6", identity: "#70AD47", ident_details_overlap: "#B8A547", details: "#ED7D31"})[b.category] || col[b.category] || "#8A96A8"}`,
+      style: `background:var(${col[b.category] ? "--data-" + col[b.category] : "--text-secondary"})`,
       text: `${b.name}  ${Number(b.pct).toFixed(1)}%`})));
     $("stReport").style.display = pr.report ? "" : "none";
     $("stReport").href = `/api/studio/report?t=${encodeURIComponent(TOKEN)}`;
@@ -6294,7 +6516,7 @@ S.cap = {page: 0, items: [], opts: null, lastState: ""};
 function capSettings() {
   return {trigger: $("capTrigger").value, model: $("capModel").value, task: $("capTask").value,
     tokens: $("capTokens").value, overwrite: $("capOverwrite").checked, songWords: $("capSongWords").value,
-    skipCjk: $("capSkipCjk").checked, perPage: $("capPerPage").value};
+    skipCjk: $("capSkipCjk").checked, perPage: $("capPerPage").value, concept: $("capConcept").value.trim()};
 }
 const saveCapSoon = debounce(() => { S.capSaved = capSettings(); api("/api/state", {captions: S.capSaved}).catch(() => {}); }, 600);
 const qwenOn = () => !!S.cap.opts && S.cap.opts.qwen_available && $("capModel").value === S.cap.opts.qwen_model;
@@ -6307,7 +6529,10 @@ async function loadCaptionOptions() {
   model.innerHTML = "";
   for (const m of o.models) model.append(el("option", {value: m, text: m}));
   model.value = o.models.includes(saved.model) ? saved.model : o.default_model;
-  $("capModelHint").textContent = o.qwen_available ?
+  $("capModelHint").textContent = o.secondary ?
+    `Qwen3-VL captions with your secondary captioning model (${o.secondary}, set in Preferences), following an ` +
+    "instruction you can edit. Empty that row in Preferences to caption with the Krea 2 text encoder again. " +
+    "Florence-2 downloads itself the first time." : o.qwen_available ?
     "Qwen3-VL (the Krea 2 text encoder from Preferences) follows an instruction you can edit and writes the best " +
     "training captions. Florence-2 downloads itself the first time." :
     "Set the Krea 2 text encoder in Preferences to caption with Qwen3-VL, which writes better training captions. " +
@@ -6318,6 +6543,8 @@ async function loadCaptionOptions() {
   if (saved.perPage) { $("capPerPage").value = saved.perPage; CAP_PAGE = Number(saved.perPage) || 12; }
   fillTasks(saved.task);
   if (saved.tokens) $("capTokens").value = saved.tokens;
+  if (saved.concept !== undefined) $("capConcept").value = saved.concept;
+  capConceptShow();
   $("capSongCard").style.display = o.song_words ? "" : "none";
   // a model that trains on no pictures or clips (ACE-Step): the AI card has nothing to caption, the song card does
   const media = (S.fam && S.fam.media) || ["photo"];
@@ -6326,6 +6553,7 @@ async function loadCaptionOptions() {
   for (const id of ["capModel", "capTask", "capTokens"]) $(id).closest(".field-row").style.display = pictures ? "" : "none";
   $("capModelHint").style.display = pictures ? "" : "none";
   if (!pictures) $("capInstrBox").style.display = "none";
+  $("capTaskHint").style.display = pictures && qwenOn() ? "" : "none";       // fillTasks ran while the row was hidden
   if (o.song_words) { $("capSongWords").placeholder = "e.g. " + o.song_words; $("capSongWords").value = saved.songWords || ""; }
 }
 
@@ -6336,10 +6564,19 @@ function fillTasks(want) {
   for (const l of labels) task.append(el("option", {value: l, text: l}));
   task.value = labels.includes(want) ? want : (qwenOn() ? o.default_qwen_task : "<DETAILED_CAPTION>");
   $("capEditInstr").style.display = qwenOn() ? "" : "none";
+  $("capTaskHint").style.display = qwenOn() && $("capTask").closest(".field-row").style.display !== "none" ? "" : "none";
   $("capInstrBox").style.display = "none";
 }
 
+// the Concept task's box: shown with it (or with any instruction that uses {concept})
+function capConceptShow() {
+  const t = qwenOn() && qwenTask();
+  const on = !!t && t.instruction.includes("{concept}") && $("capTask").closest(".field-row").style.display !== "none";
+  for (const id of ["capConceptRow", "capConceptHint"]) $(id).style.display = on ? "" : "none";
+}
+
 function onCapTask() {
+  capConceptShow();
   const t = qwenOn() && qwenTask();
   if (t) $("capTokens").value = t.tokens;            // each Qwen task suggests its own length
   if ($("capInstrBox").style.display !== "none") openInstr();
@@ -6376,7 +6613,8 @@ const capExt = () => {                    // Training > Other Options > Caption 
 function capJobBody(extra = {}) {
   const t = qwenOn() && qwenTask();
   return {family: S.family, folder: S.imageFolder, model: $("capModel").value, task: $("capTask").value, ext: capExt(),
-    instruction: t ? t.instruction : "", max_tokens: Number($("capTokens").value) || 120,
+    instruction: t ? t.instruction.split("{concept}").join($("capConcept").value.trim() || "the same concept") : "",
+    max_tokens: Number($("capTokens").value) || 120,
     trigger: $("capTrigger").value, overwrite: $("capOverwrite").checked, ...extra};
 }
 
@@ -6591,6 +6829,7 @@ function wireCaptions() {
   $("capPerPage").addEventListener("change", () => {
     CAP_PAGE = Number($("capPerPage").value) || 12; S.cap.page = 0; renderCaptions(); saveCapSoon(); });
   $("capTask").addEventListener("change", onCapTask);
+  $("capConcept").addEventListener("input", saveCapSoon);
   for (const id of ["capTrigger", "capTokens", "capOverwrite", "capSongWords", "capSkipCjk"])
     $(id).addEventListener("change", saveCapSoon);
   // a trigger word typed here fills auto-recaption's on the Training tab (an empty one leaves it alone)
@@ -6619,7 +6858,7 @@ function wireCaptions() {
   $("capStop").addEventListener("click", () => capRun("/api/captions/stop", {}));
   $("capUnload").addEventListener("click", () => capRun("/api/captions/unload", {}));
   $("frPreview").addEventListener("click", () => findReplace(false));
-  $("frApply").addEventListener("click", () => findReplace(true));
+  $("frApply").addEventListener("click", held($("frApply"), () => findReplace(true)));
   $("capSearch").addEventListener("input", debounce(() => { S.cap.page = 0; renderCaptions(); }, 250));
   $("capSort").addEventListener("change", () => { S.cap.page = 0; renderCaptions(); });
   $("capPrev").addEventListener("click", () => { S.cap.page--; renderCaptions(); window.scrollTo(0, 0); });
@@ -6834,11 +7073,9 @@ function rmCurveAt([dir, shape, v], x) {
 }
 function rmDrawCurves() {
   const cv = $("rmCurves"), g = cv.getContext("2d");
-  const css = getComputedStyle(document.documentElement);
-  const col = (n, d) => (css.getPropertyValue(n) || d).trim() || d;
-  const W = cv.width, H = cv.height, x0 = 36, y0 = 12, x1 = W - 12, y1 = H - 26;
+    const W = cv.width, H = cv.height, x0 = 36, y0 = 12, x1 = W - 12, y1 = H - 26;
   g.clearRect(0, 0, W, H);
-  g.strokeStyle = col("--border", "#3a3a3a"); g.fillStyle = col("--text-secondary", "#999"); g.lineWidth = 1;
+  g.strokeStyle = themeColor("--border"); g.fillStyle = themeColor("--text-secondary"); g.lineWidth = 1;
   g.font = "9px sans-serif"; g.textAlign = "right"; g.textBaseline = "middle";
   for (let i = 0; i < 5; i++) {
     const y = y0 + (y1 - y0) * i / 4;
@@ -6857,16 +7094,16 @@ function rmDrawCurves() {
     }
     g.stroke(); g.setLineDash([]);
   };
-  const accent = col("--accent", "#3B9FD8");
+  const accent = themeColor("--accent");
   line(rmCurve("Fc"), accent);
   g.textBaseline = "top"; g.fillStyle = accent;
   g.textAlign = "left"; g.fillText("reference frame 1", x0 + 4, y1 + 6);
   g.textAlign = "right"; g.fillText("last frame", x1 - 4, y1 + 6);
   if ($("rmScOn").checked) {
-    line(rmCurve("Sc"), "#E0A030", [4, 3]);
-    g.fillStyle = "#E0A030"; g.textAlign = "center"; g.fillText("step curve: first step → last step", (x0 + x1) / 2, y1 + 6);
+    line(rmCurve("Sc"), themeColor("--warning"), [4, 3]);
+    g.fillStyle = themeColor("--warning"); g.textAlign = "center"; g.fillText("step curve: first step → last step", (x0 + x1) / 2, y1 + 6);
   }
-  g.fillStyle = col("--text-secondary", "#999"); g.textAlign = "right"; g.fillText("reference strength", x1 - 4, y0 + 2);
+  g.fillStyle = themeColor("--text-secondary"); g.textAlign = "right"; g.fillText("reference strength", x1 - 4, y0 + 2);
 }
 function rmFill(id, values, labels) {
   const sel = $(id);
@@ -7492,8 +7729,15 @@ async function helpLoad(quiet) {
 // one line for what a helper is doing now, and how far along it is (0-1, or null for no bar)
 function helpActivity(h) {
   const a = h.activity;
-  if (h.state === "login") return ["Its password changed or its login ran out: add it again with its password", "warn", null];
+  if (h.state === "login") return [/proxy\.runpod\.net/.test(h.url || "") ?
+    "Its login ran out and Fizgig couldn't find its password to log in again: Remove it, then add it again with " +
+    "the password from the pod's log on RunPod" :
+    "Its password changed or its login ran out: Remove it, then add it again with its password", "warn", null];
   if (h.state === "away") return ["Not answering: is it on, awake and running Fizgig?", "muted", null];
+  if (h.build && h.build !== "same" && h.match && h.state === "busy") return [`Training its own run (${h.training}). ` +
+    h.match, "muted", null];
+  if (h.build && h.build !== "same" && h.match) return [h.match.startsWith("Switching") ? h.match + "…" :
+    `Another Fizgig version there. ${h.match}`, h.match.startsWith("Switching") ? "muted" : "warn", null];
   if (h.build && h.build !== "same") return [{mine: "Newer Fizgig there: update this computer to use it",
     theirs: "Older Fizgig there: update it when it's free", other: "Different Fizgig versions: update both"}[h.build] ||
     "Different Fizgig version", "warn", null];
@@ -7507,8 +7751,11 @@ function helpActivity(h) {
     "round" : "preview round"}` : "Ready: it starts with this computer's next run", "", null];
   if (a.kind === "models") return [`Getting ${a.what ? a.what + " " : "models "}${a.for ? `for ${a.for} ` : ""}` +
     `(${a.got.toFixed(1)} of ${a.total.toFixed(1)} GB): the job starts when it has them`, "", a.got / a.total];
-  if (a.kind === "previews") return [`Rendering ${a.run ? a.run + "'s " : ""}previews for epoch ${a.epoch}` +
-    (a.queued ? ` · ${a.queued} more queued` : ""), "", a.progress];
+  // each step of a round says what it is (sending the LoRA, loading the model there the first time - minutes for a
+  // big model - waiting its turn), not "Rendering" all through
+  if (a.kind === "previews") return [(a.text ? `${a.text} · ` : "Rendering ") +
+    `${a.run ? a.run + "'s " : ""}previews for epoch ${a.epoch}` + (a.queued ? ` · ${a.queued} more queued` : ""),
+    "", a.progress];
   if (a.kind === "share") return [a.text || `Training its share of epoch ${a.epoch}` +
     (a.images ? ` (${a.images} images)` : ""), "", a.progress];
   if (a.kind === "check") return ["Rendering a check picture", "", a.progress];
@@ -7520,7 +7767,7 @@ function helpJob(h, kind) {
     (kind !== "share" || h.share_ready !== false);
   const title = kind === "previews" ? "Previews" : "Training share";
   const what = kind === "previews" ? "Renders this computer's previews, so training doesn't stop for them." :
-    "Trains its share of each epoch's images alongside this GPU, then the two combine.";
+    "Trains its share of each epoch's images alongside this GPU, then the two combine. Switched on while a run trains, it joins at the next epoch it's ready for.";
   const stat = kind === "previews" ? h.previews_stat : h.share_stat;
   const box = el("input", {type: "checkbox", class: "switch", ...(on ? {checked: true} : {}), ...(usable ? {} : {disabled: true})});
   const job = el("label", {class: `helper-job${on ? " on" : ""}${usable ? "" : " off-limits"}`},
@@ -7645,14 +7892,24 @@ async function helpCall(path, body) {
   helpLoad(true);
 }
 
+// the Help another Fizgig with this GPU card's buttons: what they say shows in that card, kept across redraws
+async function helpOutCall(body) {
+  try { const r = await api("/api/helpers/help", body); S.help.outSay = (r && r.say) || ""; }
+  catch (e) { S.help.outSay = e.message; }
+  helpLoad(true);
+}
+
 function helpDraw() {
   const d = S.help.data || {};
   const hs = d.helpers || [];
   $("helpList").replaceChildren(...hs.map(helpCard));
-  $("helpNote").textContent = hs.length ? "" : "No helpers yet. Add one below: another computer with Fizgig, or a pod.";
+  $("helpNote").textContent = hs.length ? "" : "No helpers yet. Add one in the next card: a pod, or another computer with Fizgig.";
   $("helpFound").replaceChildren(...(d.found || []).map((f) => {
     const [where] = HELP_WHERE[f.where] || [""];
-    const pw = el("input", {type: "password", class: "w-combo-md", placeholder: "its password", autocomplete: "off"});
+    const pod = /proxy\.runpod\.net/.test(f.url || "");
+    const pw = el("input", {type: "password", class: "w-combo-md", autocomplete: "off",
+      placeholder: pod ? "password: leave empty" : "its password",
+      title: pod ? "Fizgig finds a pod's password itself. Type it only if Fizgig says it couldn't." : ""});
     return el("div", {class: "pod-row"}, el("span", {class: "pod-dot ok"}),
       el("div", {class: "pod-main"}, el("div", {class: "pod-name", text: f.name}),
         el("div", {class: "field-hint", text: [where, f.gpu, f.vram ? `${f.vram} GB` : ""].filter(Boolean).join(" · ")})),
@@ -7677,7 +7934,10 @@ function helpDraw() {
   const out = d.out || [];
   $("helpOut").replaceChildren(...out.flatMap((o) => {
     const mine = d.helping && d.helping.url === o.url;
-    const pw = el("input", {type: "password", class: "w-combo-md", placeholder: "its password", autocomplete: "off"});
+    const isPod = /proxy\.runpod\.net/.test(o.url || "");
+    const pw = el("input", {type: "password", class: "w-combo-md", autocomplete: "off",
+      placeholder: isPod ? "password: leave empty" : "its password",
+      title: isPod ? "Fizgig finds a pod's password itself. Type it only if Fizgig says it couldn't." : ""});
     // its checkpoints list stays as it is across redraws (the ticks too); asked again only when it's opened
     const kept = S.help.remote === o.url && S.help.panel && S.help.panel.url === o.url;
     const panel = kept ? S.help.panel.box : el("div", {class: "helper-remote", style: S.help.remote === o.url ? "" : "display:none"});
@@ -7689,20 +7949,20 @@ function helpDraw() {
       el("div", {class: "pod-main"}, el("div", {class: "pod-name", text: o.name}),
         el("div", {class: "field-hint", text: mine ? d.helping.text : o.url.replace(/^https?:\/\/|\/$/g, "")})),
       el("div", {class: "pod-btns"}, ...(mine || o.logged_in ? [] : [pw]), mine ?
-        el("button", {class: "btn btn-sm", text: "Stop helping", onclick: () => helpCall("/api/helpers/help", {url: o.url, on: false})}) :
+        el("button", {class: "btn btn-sm", text: "Stop helping", onclick: () => helpOutCall({url: o.url, on: false})}) :
         el("button", {class: "btn btn-primary btn-sm", text: "Help it with previews",
-          ...(d.helping ? {disabled: true} : {}), onclick: () => helpCall("/api/helpers/help",
+          ...(d.helping ? {disabled: true} : {}), onclick: () => helpOutCall(
             {url: o.url, on: true, password: pw.value})}),
         el("button", {class: "btn btn-sm", text: "Help it train", title: "EXPERIMENTAL: train a share of each epoch's " +
           "images of its run on this GPU (its training folder comes here, and this computer makes the run's cache)", ...(d.helping ? {disabled: true} : {}),
-          onclick: () => helpCall("/api/helpers/help", {url: o.url, on: true, password: pw.value, mode: "share"})}),
+          onclick: () => helpOutCall({url: o.url, on: true, password: pw.value, mode: "share"})}),
         el("button", {class: "btn btn-sm", text: "Its checkpoints…", title: "Its run's checkpoints: fetch the ones you " +
           "pick and try your own prompts on them in LoRA Royale, on this GPU (type its password first if asked)",
           onclick: () => { S.help.remotePw = pw.value; S.help.remote = S.help.remote === o.url ? "" : o.url;
             S.help.panel = null; helpDraw(); }}))),
       ...linkRow, panel];
   }));
-  $("helpOutNote").textContent = [...(d.home_done || []),
+  $("helpOutNote").textContent = [S.help.outSay || "", ...(d.home_done || []),
     out.length ? "" : "Your pods show here (the Pods tab), once one is running Fizgig."].filter(Boolean).join(". ");
   helpStrips();
   // this Fizgig is a helper right now: say so at the top, whatever it's doing
@@ -7717,6 +7977,12 @@ function helpDraw() {
 // a pod's run brought home as it saves (its previews too), and the pod deleted once that's all here and checked
 function helpHome(o, pw) {
   const hm = o.home || {};
+  // this computer's own run, moved there: the move brings it home (the run card), not these
+  const mv = S.run && S.run.move;
+  if (mv && ["moved", "back"].includes(mv.state) && mv.url && mv.url.replace(/\/$/, "") === o.url.replace(/\/$/, ""))
+    return el("div", {class: "helper-link helper-home"}, el("span", {class: "field-hint", text:
+      `${mv.run} moved here from this computer, so its move handles it: on the run card, its checkpoints and ` +
+      "previews come back as they're saved, and Bring it back can delete the pod."}));
   const tick = (text, on, body, title) => {
     const box = el("input", {type: "checkbox", ...(on ? {checked: true} : {})});
     box.addEventListener("change", () => helpCall("/api/helpers/home", {url: o.url, password: pw.value,
@@ -7858,6 +8124,27 @@ function wirePods() {
 function showAbout(a) {
   $("aboutVersion").textContent = "Version " + a.version + (a.commit ? ` · build ${a.commit.slice(0, 7)}` : "");
   $("aboutUpdate").textContent = a.update;
+  const pv = a.pod_version;                // a pod kept on the version of the computer using it (pod_version.py)
+  if (pv && pv.pinned && pv.pinned === a.commit) {
+    const say = el("span", {class: "field-hint"});
+    $("aboutUpdate").replaceChildren(`This pod runs the same Fizgig as ${pv.by || "the computer that last used it"}, so ` +
+      "the two work together, and keeps it at every start. ", el("button", {class: "btn btn-sm", text: "Use the newest Fizgig",
+      title: "Start this pod's Fizgig again on the newest version (the computer switches it back when it next opens it)",
+      onclick: async () => {
+        try {
+          await api("/api/pod/newest", {});
+          say.textContent = " Starting again on the newest Fizgig: the page reloads when it's back.";
+          for (let i = 0; i < 200; i++) {
+            await new Promise((res) => setTimeout(res, 3000));
+            const r = await fetch("/api/about", {headers: {"X-Fizgig-Token": TOKEN}}).catch(() => null);
+            if (r && r.status === 403) return location.reload();     // started again: a new page token, a new page
+            const b = r && r.ok ? await r.json().catch(() => null) : null;
+            if (b && b.commit !== a.commit) return location.reload();
+            if (b && b.pod_version && b.pod_version.state === "failed") { say.textContent = " " + b.pod_version.error; return; }
+          }
+        } catch (e) { say.textContent = " " + e.message; }
+      }}), say);
+  }
   const r = a.release || {}, newer = r.status === "update_available";
   $("aboutRelease").replaceChildren(...(newer ? [el("div", {class: "about-banner"},
     el("strong", {text: `⬆ Fizgig ${r.tag} is available`}),
@@ -8528,7 +8815,13 @@ function wire() {
   });
   new MutationObserver(() => { if (!$("rvModal").classList.contains("active")) rvStop(); })
     .observe($("rvModal"), {attributes: true, attributeFilter: ["class"]});
-  $("likStart").addEventListener("click", () => likenessSet(S.lik.picked));
+  $("likStart").addEventListener("click", held($("likStart"), async () => {
+    if (S.lik.mode !== "royale") return likenessSet(S.lik.picked);
+    S.ry.likeRefs = S.lik.picked.map((n) => S.lik.paths[n]).filter(Boolean);
+    ryLikeShow(); ryRemember();
+    $("likModal").classList.remove("active");
+  }));
+  $("likFolderPick").addEventListener("click", () => pick(S.lik.folder || refStart(), true, (p) => likGridShow(p, [])));
   $("likClear").addEventListener("click", () => likenessSet([]));
   document.querySelectorAll("#galleryView button").forEach((b) => b.addEventListener("click", () => {
     S.galleryView = b.dataset.view; loadGallery(); }));
@@ -8605,4 +8898,40 @@ function wire() {
 // the login box works before anything else: a page that needs a login stops boot() at its first request, before wire()
 $("loginButton").addEventListener("click", login);
 $("loginPassword").addEventListener("keydown", (e) => { if (e.key === "Enter") login(); });
-boot();
+// ---- the theme: the Theme card at the top of Preferences. Each device keeps its own (a phone can differ from the desktop);
+// index.html sets it before the page paints. A theme is a :root[data-theme] block in style.css.
+const THEMES = [{key: "", swatch: "fizgig", name: "Fizgig", say: "dark, blue"},
+  {key: "light-orange", swatch: "light-orange", name: "Light n’ Orange", say: "white, orange"},
+  {key: "seventies", swatch: "seventies", name: "Seventies", say: "brown, orange"},
+  {key: "synthwave", swatch: "synthwave", name: "Synthwave", say: "purple, pink"},
+  {key: "graphite", swatch: "graphite", name: "Graphite", say: "grey, teal"},
+  {key: "colour-safe", swatch: "colour-safe", name: "Colour-blind safe", say: "red-green colour blindness: no red against green"},
+  {key: "high-contrast", swatch: "high-contrast", name: "High contrast", say: "low vision: black, white, yellow"},
+  {key: "dim", swatch: "dim", name: "Dim", say: "light sensitivity, migraine: low glare, soft warm greys"}];
+function applyTheme(key) {
+  if (key) document.documentElement.dataset.theme = key;
+  else delete document.documentElement.dataset.theme;
+  try { key ? localStorage.setItem("fizgig.theme", key) : localStorage.removeItem("fizgig.theme"); } catch (e) {}
+  // the phone's browser bar takes the page colour (the meta's own value covers the first paint)
+  document.querySelector('meta[name="theme-color"]').content = themeColor("--bg-deep");
+  window.dispatchEvent(new Event("resize"));      // the canvases draw again in the new colours
+}
+function wireTheme() {
+  const render = () => {
+    const now = document.documentElement.dataset.theme || "";
+    $("themePick").replaceChildren(...THEMES.map((t) => el("button", {class: t.key === now ? "on" : "",
+      "aria-pressed": String(t.key === now), onclick: () => { applyTheme(t.key); render(); }},
+      el("span", {class: "theme-swatch", style: `--sw-bg:var(--swatch-${t.swatch}-bg);--sw-accent:var(--swatch-${t.swatch}-accent)`}),
+      el("span", {class: "theme-name", text: t.name}), el("small", {text: t.say}))));
+  };
+  render();
+  document.querySelector('meta[name="theme-color"]').content = themeColor("--bg-deep");
+}
+wireTheme();
+
+boot().catch((e) => {             // a start that fails says so, rather than sitting on "Starting Fizgig…"
+  if (e && e.message === "login") return;
+  $("bootCoverText").textContent = "Fizgig didn't finish starting: " + (e && e.message || e) +
+    ". Reload the page; if it happens again, the console window says why.";
+  document.querySelector("#bootCover .boot-spin").style.display = "none";
+});

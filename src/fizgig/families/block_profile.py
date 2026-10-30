@@ -170,7 +170,7 @@ def run_ablation(engine, *, prompt, class_prompt="", seeds=(1,), width=768, heig
 
     res = {"blocks": ablation_order(engine), "windows": windows(engine), "conds": [(c, l) for c, l, _ in conds],
            "seeds": list(seeds), "size": [width, height], "prompt": prompt, "class_prompt": class_prompt,
-           "thumbs": {}, "pics": {}, "scores": {}}
+           "thumbs": {}, "pics": {}, "scores": {}, "photos": base is not None}
     state = engine.default_state(width, height)
     # exact attention for a measurement: comfy-kitchen's INT8 kernel (~1.6% per call) would ride on every score
     _i8a_was = getattr(engine, "int8_attention", False)
@@ -387,7 +387,7 @@ def write_report(desc, lora_path, stats, abl, output_html, labels):
         if abl["gain"].get("class") is not None and abl["gain"]["class"] > 0.15 and not bleeders:
             sug.append("This LoRA bleeds, and the bleed sits in the same blocks as the likeness, so no block "
                        "setting removes one without the other. Training changes are the fix (captions that name "
-                       "the person only by the trigger, or a regularisation set).")
+                       "the subject only by the trigger, or a regularisation set).")
         quiet = [w for w in wl if vd[w][0] == "quiet"]
         if quiet:
             sug.append(", ".join(f"<b>{_html.escape(wl[w])}</b>" for w in quiet) + " barely change the picture: "
@@ -416,12 +416,21 @@ def write_report(desc, lora_path, stats, abl, output_html, labels):
                          f'<b>Only {_html.escape(l)}</b>'
                          + _metric_rows(trig[w]["change"], trig[w]["score"], cls.get(w, {}).get("score"), "alone")
                          + f'<div class="note" style="margin-top:6px">{_html.escape(text)}</div></div>')
+        # likeness rows show only where a group has a face score (block_profile's faces test): the explanations follow
+        faced = any(trig.get(w, {}).get("score") is not None for w, _, _ in abl["windows"])
+        photos = bool(abl.get("photos"))                                # subject photos were given
+        why = ("No face was found in the renders" if abl["gain"].get("trigger") is None else    # faces, little gain
+               "The LoRA barely moves the faces toward your subject photos")
         parts.append('<div class="card"><h2>Each group of blocks on its own</h2><p class="lead">Each picture is '
-                     "the LoRA with <b>only this group switched on</b>. The percentages are shares of what the whole "
+                     "the LoRA with <b>only this group switched on</b>. " + (
+                     "The percentages are shares of what the whole "
                      "LoRA does: <i>Gives 43% of the likeness</i> means these blocks alone get the face 43% of the way "
                      "to the whole LoRA's likeness; <i>Gives 31% of the bleed</i> means they alone make a prompt "
                      "without the trigger 31% as like your subject as the whole LoRA does. This section shows where "
-                     "likeness and bleed come from.</p>"
+                     "likeness and bleed come from." if faced else
+                     "<i>Changes the picture by 40%</i> means these blocks alone move the picture 40% as far as the "
+                     "whole LoRA does." + (f" {why}, so likeness and bleed aren't shown."
+                     if photos else " Add subject photos (a person LoRA) to also see likeness and bleed.")) + "</p>"
                      f'<div class="grid">{"".join(head + cells)}</div></div>')
         cells = []
         for w, l, bs in abl["windows"]:
@@ -431,10 +440,12 @@ def write_report(desc, lora_path, stats, abl, output_html, labels):
                                         "lost")
                          + "</div>")
         parts.append('<div class="card"><h2>Each group left out</h2><p class="lead">Each picture is the whole LoRA '
-                     "with <b>this group switched off</b> and everything else on, compared with the whole LoRA. "
+                     "with <b>this group switched off</b> and everything else on, compared with the whole LoRA. " + (
                      "<i>Likeness drops by 19%</i> means the face loses 19% of what the LoRA added; <i>Bleed drops "
                      "by 24%</i> means a prompt without the trigger looks 24% less like your subject (the good "
-                     "direction); <i>about the same</i> means the other blocks make up for this group.</p>"
+                     "direction); <i>about the same</i> means the other blocks make up for this group." if faced else
+                     "<i>Picture changes by 19%</i> means leaving this group out moves the picture by 19% of the "
+                     "change the whole LoRA makes; a small change means the other blocks make up for it.") + "</p>"
                      f'<div class="grid">{"".join(cells)}</div></div>')
         offs = [c for c, _ in abl["conds"] if c.startswith("off:")]
         if offs:
@@ -447,8 +458,9 @@ def write_report(desc, lora_path, stats, abl, output_html, labels):
                              + _metric_rows(d.get("change"), d.get("score"), lc.get(c, {}).get("score"), "lost")
                              + "</div>")
             parts.append('<div class="card"><h2>Each block left out</h2><p class="lead">As above, one block at a '
-                         "time: the whole LoRA with just this block switched off. Likeness often barely moves here, "
-                         f'because the neighbouring blocks make up for any single one.</p><div class="grid">{"".join(cells)}'
+                         "time: the whole LoRA with just this block switched off. "
+                         + ("Likeness often barely moves here, " if faced else "The picture often barely changes here, ")
+                         + f'because the neighbouring blocks make up for any single one.</p><div class="grid">{"".join(cells)}'
                          "</div></div>")
         if has_cls:
             cc = [f'<div class="cell">{_img(th["class"]["none"])}<b>Base model</b></div>',
@@ -459,13 +471,17 @@ def write_report(desc, lora_path, stats, abl, output_html, labels):
                    f'{_metric_rows(None, None, cls[w]["score"], "alone")}</div>' for w in top]
             parts.append(f'<div class="card"><h2>Bleed check: “{_html.escape(abl["class_prompt"])}”</h2>'
                          '<p class="lead">This prompt has no trigger word, so with the LoRA loaded it should still '
-                         "look like the base model's picture. Any drift toward your subject is bleed. After the base "
+                         "look like the base model's picture. Any drift toward what the LoRA learned (your subject's "
+                         "face, its style) is bleed. After the base "
                          "model and the whole LoRA come the groups that cause the most bleed on their own (only that "
                          f'group switched on).</p><div class="grid">{"".join(cc)}</div></div>')
         parts.append(f'<div class="note" style="margin:-6px 0 18px 4px">Prompt: {_html.escape(abl["prompt"])} · '
-                     f'{len(abl["seeds"])} seed(s) · {abl["size"][0]}×{abl["size"][1]}. Likeness and bleed are measured by '
-                     f"face recognition ({_html.escape(str(abl.get('embedder') or 'ArcFace'))}) against your subject "
-                     "photos. Groups overlap in what they do, so "
+                     f'{len(abl["seeds"])} seed(s) · {abl["size"][0]}×{abl["size"][1]}. '
+                     + (f"Likeness and bleed are measured by face recognition "
+                        f"({_html.escape(str(abl.get('embedder') or 'ArcFace'))}) against your subject photos. "
+                        if faced else f"{why}, so only picture change is measured. "
+                        if photos else "No subject photos, so only picture change is measured. ")
+                     + "Groups overlap in what they do, so "
                      "the percentages don't add up to 100%; anything under 10% either way is within "
                      "seed-to-seed noise.</div>")
 

@@ -108,8 +108,9 @@ OPTIONS = (
                  mode="lora", setting="MINIMAX_TREAD", show_if_media="clip", section="after"),
     FamilyOption("H3_CLIP_STILL", "Also train each clip's sharpest face frame as a photo", kind="check",
                  tokens="clip_still_as_photo=1 aux:clip_still=1", default="1",
-                 hint="Each clip's sharpest face frame trains as a photo with the clip's caption. Picked at caching; "
-                      "clips cached with this off use frame 0 until re-cached.",
+                 hint="Each clip's sharpest face frame trains as a photo with the clip's caption; a clip with no face "
+                      "uses its first frame. For clips without people, untick it (the Style preset does). Picked at "
+                      "caching; clips cached with this off use frame 0 until re-cached.",
                  setting="MINIMAX_CLIP_STILL", show_if_media="clip", section="after"),
     FamilyOption("H3_ADAPTER_RAMP", "Adapter-relative LR", kind="choice", choices=(
         ("Off", ""), ("0.003 (slow build)", "adapter_ramp=0.003"), ("0.005 (recommended)", "adapter_ramp=0.005"),

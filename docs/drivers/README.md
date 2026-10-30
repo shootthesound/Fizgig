@@ -1,5 +1,7 @@
 # Adding a model to Fizgig: the driver system
 
+> **Scope of a model pull request.** It changes your family's description, driver and model package, and adds one line to `registry.py`. Nothing else. If your model needs something from the shared layer, add it as an optional description field or driver method whose default leaves every other family exactly as it was. A fix or improvement to shared code (quantisation, block swap, the trainer, the web UI, the tools) goes in its own pull request, measured on the families it touches, even when your model is what found it. Fizgig is maintained by one person across every model it trains; that's only possible if adding one model can't change the others.
+
 Every model Fizgig trains — Klein 9B, Flux 3 Image Klein, MiniMax H3, Krea 2, Qwen Image 2.1, Z-Image Turbo, SDXL and Anima — runs through one shared layer in `src/fizgig/families/`. A model is added as a **family**, and a family is three pieces:
 
 | Piece | Where | What it holds |
@@ -152,7 +154,8 @@ A model pull request adds the model: its description, driver and model package. 
   Even when they're off by default, they change shared code, the Training tab and the memory plans for every family. Open an issue so they can be designed once for all models. A family option (`FamilyOption`) is for something only that model has, like MiniMax H3's sound.
 - **Second environments, worker processes or dependency changes:** no side virtual environment, no subprocess running part of the model, and no change to Fizgig's pinned versions. Everything runs in the one install, so a model works offline, on pods and behind antivirus without anything new appearing on first use. If the reference needs a newer library than Fizgig pins, port the parts the model uses into its package, and check them against the library (MOSS-Image's Qwen3.5 text encoder is a text-only port, checked bit for bit against transformers 5.20).
 - **Changes to other families:** no new defaults, memory settings or presets for models other than yours.
-- **Tests:** `tests/` isn't tracked in the repo. Keep your checks locally, and describe what you measured in the pull request.
+- **Fixes to shared code**, even ones your model needed: quantisation storage (INT8, NF4, fp8), the block-swap offloader, the trainer loop and its logging, the web UI, the Profiler and the other tools. Each one changes every family, so it comes as its own issue and pull request, with what you measured on the families it touches. If your model can't work without it, say so in the model's Discussion and we'll sort out the order.
+- **Tests:** the public checks in `checks/` run on every pull request; run them before you open yours (`python -m pytest checks -q`), and add a check for anything new in the layer ([checks/README.md](../../checks/README.md)). Measurements that need a GPU or the model's files go in the pull request's description.
 
 Everything inside your own package is yours to shape: a loader for an unusual file, a memory-saving path for the text encoder, a preview checkpoint through the existing ability. If you're unsure which side something falls on, ask in the model's Discussion.
 

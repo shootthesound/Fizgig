@@ -38,8 +38,20 @@ def _prefs():
         return {}
 
 
+def _sane_geom(geom):
+    """Ignore minimized / off-screen coordinates (Windows reports -32000 / DPI when closed from the taskbar)."""
+    if not isinstance(geom, dict):
+        return {}
+    x, y = geom.get("x"), geom.get("y")
+    if (isinstance(x, (int, float)) and x < -10000) or (isinstance(y, (int, float)) and y < -10000):
+        return {}
+    return geom
+
+
 def _remember(geom):
     """The window's size and place, written into prefs.json beside what is there (the desktop app may have it open)."""
+    if not _sane_geom(geom):
+        return
     p = _prefs()
     p["app_window"] = geom
     tmp = PREFS_FILE + ".tmp"
@@ -100,15 +112,15 @@ _BAR_JS = r"""
   // the top middle: clear of the page's own top-right buttons (a full-screen picture's close)
   b.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:2147483647;display:flex;' +
     'align-items:center;gap:10px;' +
-    'max-width:60vw;padding:5px 6px 5px 14px;border-radius:999px;background:#5B21B6;color:#F0F4F8;' +
-    'font:13px Segoe UI,system-ui,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.45)';
+    'max-width:60vw;padding:5px 6px 5px 14px;border-radius:999px;background:var(--app-bar, #5B21B6);color:var(--text-primary, #F0F4F8);' +
+    'font:13px Segoe UI,system-ui,sans-serif;box-shadow:0 2px 10px color-mix(in srgb, var(--shadow, #000) 45%, transparent)';
   var t = document.createElement('span');
   t.textContent = text;
   t.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
   var h = document.createElement('button');
   h.textContent = button;
   h.title = title;
-  h.style.cssText = 'background:#F0F4F8;color:#1A2029;border:0;border-radius:999px;padding:4px 12px;cursor:pointer;' +
+  h.style.cssText = 'background:var(--text-primary, #F0F4F8);color:var(--bg-surface, #1A2029);border:0;border-radius:999px;padding:4px 12px;cursor:pointer;' +
     'font:600 13px Segoe UI,system-ui,sans-serif';
   h.onclick = function () { if (window.pywebview && window.pywebview.api) window.pywebview.api[call](); };
   b.appendChild(t); b.appendChild(h);
@@ -116,7 +128,7 @@ _BAR_JS = r"""
     var x = document.createElement('button');
     x.textContent = '✕';
     x.title = 'Hide this';
-    x.style.cssText = 'background:none;color:#F0F4F8;border:0;cursor:pointer;font:13px Segoe UI,system-ui,sans-serif;padding:2px 6px';
+    x.style.cssText = 'background:none;color:var(--text-primary, #F0F4F8);border:0;cursor:pointer;font:13px Segoe UI,system-ui,sans-serif;padding:2px 6px';
     x.onclick = function () { b.remove(); sp.remove(); if (window.pywebview && window.pywebview.api) window.pywebview.api.forget_pod(); };
     b.appendChild(x);
   }
@@ -191,25 +203,25 @@ _BLOCK_JS = r"""
   if (document.getElementById('fizgigBuildBlock')) return;
   var o = document.createElement('div');
   o.id = 'fizgigBuildBlock';
-  o.style.cssText = 'position:fixed;inset:0;z-index:2147483646;background:rgba(10,14,20,.92);display:flex;' +
-    'align-items:center;justify-content:center;padding:16px;font:14px Segoe UI,system-ui,sans-serif;color:#F0F4F8';
+  o.style.cssText = 'position:fixed;inset:0;z-index:2147483646;background:color-mix(in srgb, var(--overlay, #0A0E14) 92%, transparent);display:flex;' +
+    'align-items:center;justify-content:center;padding:16px;font:14px Segoe UI,system-ui,sans-serif;color:var(--text-primary, #F0F4F8)';
   var c = document.createElement('div');
-  c.style.cssText = 'max-width:560px;background:#1A2029;border:2px solid #F59E0B;border-radius:12px;padding:22px 24px';
+  c.style.cssText = 'max-width:560px;background:var(--bg-surface, #1A2029);border:2px solid var(--warning, #F59E0B);border-radius:12px;padding:22px 24px';
   var h = document.createElement('div');
   h.textContent = title;
-  h.style.cssText = 'font-size:18px;font-weight:700;color:#F59E0B;margin-bottom:10px';
+  h.style.cssText = 'font-size:18px;font-weight:700;color:var(--warning, #F59E0B);margin-bottom:10px';
   var p = document.createElement('div');
   p.textContent = message;
   p.style.cssText = 'line-height:1.5;margin-bottom:18px';
   var b = document.createElement('button');
   b.textContent = 'Switch to this computer';
-  b.style.cssText = 'background:#F0F4F8;color:#1A2029;border:0;border-radius:999px;padding:6px 16px;cursor:pointer;' +
+  b.style.cssText = 'background:var(--text-primary, #F0F4F8);color:var(--bg-surface, #1A2029);border:0;border-radius:999px;padding:6px 16px;cursor:pointer;' +
     'font:600 14px Segoe UI,system-ui,sans-serif';
   b.onclick = function () { if (window.pywebview && window.pywebview.api) window.pywebview.api.home(); };
   var a = document.createElement('button');
   a.textContent = 'Open anyway';
   a.title = "Use it as it is: most of it works, something newer than this computer's Fizgig may not";
-  a.style.cssText = 'margin-left:10px;background:none;color:#F0F4F8;border:1px solid #6B7280;border-radius:999px;' +
+  a.style.cssText = 'margin-left:10px;background:none;color:var(--text-primary, #F0F4F8);border:1px solid var(--text-muted, #6B7280);border-radius:999px;' +
     'padding:6px 16px;cursor:pointer;font:600 14px Segoe UI,system-ui,sans-serif';
   a.onclick = function () { o.remove(); };
   c.appendChild(h); c.appendChild(p); c.appendChild(b); c.appendChild(a); o.appendChild(c);
@@ -225,14 +237,14 @@ _NOTE_JS = r"""
   var n = document.createElement('div');
   n.id = 'fizgigBuildNote';
   n.style.cssText = 'position:fixed;top:52px;left:50%;transform:translateX(-50%);z-index:2147483646;display:flex;' +
-    'align-items:center;gap:8px;max-width:70vw;padding:6px 8px 6px 14px;border-radius:10px;background:#3A2A08;' +
-    'border:1px solid #F59E0B;color:#FCD34D;font:12.5px Segoe UI,system-ui,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.45)';
+    'align-items:center;gap:8px;max-width:70vw;padding:6px 8px 6px 14px;border-radius:10px;background:var(--app-note-bg, #3A2A08);' +
+    'border:1px solid var(--warning, #F59E0B);color:var(--warning-text, #FCD34D);font:12.5px Segoe UI,system-ui,sans-serif;box-shadow:0 2px 10px color-mix(in srgb, var(--shadow, #000) 45%, transparent)';
   var t = document.createElement('span');
   t.textContent = text;
   var x = document.createElement('button');
   x.textContent = '✕';
   x.title = 'Hide this';
-  x.style.cssText = 'background:none;color:#FCD34D;border:0;cursor:pointer;font:13px Segoe UI,system-ui,sans-serif';
+  x.style.cssText = 'background:none;color:var(--warning-text, #FCD34D);border:0;cursor:pointer;font:13px Segoe UI,system-ui,sans-serif';
   var sp = document.getElementById('fizgigAppBarSpace');
   x.onclick = function () { n.remove(); if (sp) sp.style.height = '54px'; };
   n.appendChild(t); n.appendChild(x);
@@ -280,11 +292,58 @@ _CHECK_JS = r"""
       if (!r.ok) throw new Error(r.status);
       return r.json();
     }).then(function (d) {
-      window.pywebview.api.build_check(d.commit || '');
+      window.pywebview.api.build_check(d.commit || '', d.pod_version || null);
     }).catch(function () { if (++tries < 400) setTimeout(ask, 3000); });   // the login page first, then it answers
   }
   ask();
 })();
+"""
+
+
+# a pod on another build that can switch (pod_version.py): asked to run this computer's, with a cover while it does
+# (its web UI starts again: a few seconds, a minute or two when the version needs other packages), then the page
+# again. A pod that can't now (busy, or the version isn't on GitHub) gets the usual build note or cover, with why.
+_MATCH_JS = r"""
+(function (mine, by) {
+  if (document.getElementById('fizgigMatch')) return;
+  var tok = function () { var t = document.querySelector('meta[name="fizgig-token"]'); return t ? t.content : ''; };
+  var o = document.createElement('div');
+  o.id = 'fizgigMatch';
+  o.style.cssText = 'position:fixed;inset:0;z-index:2147483646;background:color-mix(in srgb, var(--overlay, #0A0E14) 92%, transparent);display:flex;' +
+    'align-items:center;justify-content:center;padding:16px;font:14px Segoe UI,system-ui,sans-serif;color:var(--text-primary, #F0F4F8)';
+  var c = document.createElement('div');
+  c.style.cssText = 'max-width:520px;background:var(--bg-surface, #1A2029);border:1px solid var(--border, #2A3341);border-radius:12px;padding:22px 24px;text-align:center';
+  var h = document.createElement('div');
+  h.textContent = "Putting this pod on this computer's Fizgig";
+  h.style.cssText = 'font-size:17px;font-weight:700;margin-bottom:8px';
+  var p = document.createElement('div');
+  p.textContent = 'So the two work together (moving a run, helpers, this window). It takes a few seconds, a minute or two when the version needs other packages.';
+  p.style.cssText = 'line-height:1.5;color:var(--text-secondary, #93A3B5)';
+  c.appendChild(h); c.appendChild(p); o.appendChild(c);
+  var shown = false, t0 = Date.now();
+  var show = function () { if (!shown) { shown = true; document.body.appendChild(o); } };
+  var give = function (why) { o.remove(); window.pywebview.api.build_show(why || ''); };
+  var wait = function () {
+    if (Date.now() - t0 > 10 * 60 * 1000) return give("It didn't come back on this computer's Fizgig within 10 minutes.");
+    fetch('/api/about', {credentials: 'same-origin', headers: {'X-Fizgig-Token': tok()}}).then(function (r) {
+      if (r.status === 403) { location.reload(); return null; }   // started again: a new page token, a new page
+      if (!r.ok) throw new Error(r.status); return r.json();
+    }).then(function (d) {
+      if (!d) return;
+      if (d.commit === mine) return location.reload();
+      var v = d.pod_version || {};
+      if (v.state === 'failed') return give(v.error);
+      setTimeout(wait, 3000);
+    }).catch(function () { setTimeout(wait, 3000); });     // its web UI is starting again
+  };
+  fetch('/api/pod/match', {method: 'POST', credentials: 'same-origin',
+    headers: {'Content-Type': 'application/json', 'X-Fizgig-Token': tok()},
+    body: JSON.stringify({commit: mine, by: by})}).then(function (r) { return r.json(); }).then(function (d) {
+    if (d.same) return;
+    if (d.switching) { show(); setTimeout(wait, 4000); return; }
+    give(d.busy || d.error || '');
+  }).catch(function () { give(''); });
+})(__ARGS__);
 """
 
 
@@ -561,18 +620,33 @@ def main():
             def build(self):
                 return _build()
 
-            def build_check(self, pod_build):
+            def build_check(self, pod_build, pod_version=None):
                 try:
                     url = window.get_current_url() or ""
                 except Exception:
                     url = ""
-                pod = ".proxy.runpod.net" in url or not url
+                pv = pod_version if isinstance(pod_version, dict) else {}
+                pod = ".proxy.runpod.net" in url or not url or bool(pv)
                 v = build_verdict(pod_build, pod=pod, name="" if pod else _pod_name(url.split("#")[0]))
+                shown[0] = v
+                if (not v["ok"] or v.get("older")) and pv.get("allowed") and _build():
+                    import socket                 # a pod that can switch: to this computer's build
+                    window.evaluate_js(_MATCH_JS.replace("__ARGS__", json.dumps(_build()) + ", " +
+                                                         json.dumps(socket.gethostname())))
+                    return {**v, "matching": True}
+                return self.build_show("")
+
+            def build_show(self, why):
+                """The build note or cover for the page as it is (why: what stopped the pod switching)."""
+                v = shown[0] or {"ok": True}
+                why = str(why or "").strip()
                 if not v["ok"]:
                     window.evaluate_js(_BLOCK_JS.replace("__ARGS__", json.dumps(v["title"]) + ", " +
-                                                         json.dumps(v["message"])))
+                                                         json.dumps(v["message"] + (f" (It can't switch to this "
+                                                                    f"computer's: {why})" if why else ""))))
                 elif v.get("note"):
-                    window.evaluate_js(_NOTE_JS.replace("__ARGS__", json.dumps(v["note"])))
+                    window.evaluate_js(_NOTE_JS.replace("__ARGS__", json.dumps(v["note"] + (
+                        f" It can't switch to this computer's now: {why}" if why else ""))))
                 return v
 
             def local_datasets(self):
@@ -587,7 +661,7 @@ def main():
                 from fizgig.web import local_bridge
                 return local_bridge.read_local(folder, name, offset, n)
 
-        geom = _prefs().get("app_window") or {}
+        geom = _sane_geom(_prefs().get("app_window"))
         first = _last_pod(port) or url
         window = webview.create_window(
             "Fizgig", first, width=int(geom.get("width") or 1440), height=int(geom.get("height") or 920),
@@ -598,6 +672,7 @@ def main():
             home = url
 
         left = [""]                       # the pod this window was last on, for Switch to the pod
+        shown = [None]                    # the last page's build verdict (build_show tells it after a switch fails)
 
         zoom_keys_done = [False]
 

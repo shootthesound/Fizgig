@@ -14,6 +14,7 @@ from PIL import Image
 from fizgig.dataset.automask import pictures
 from fizgig.dataset.masks import MASK_SUFFIX, MIN_COVER, mask_for
 from fizgig.utils.upright import upright
+from fizgig.utils import hf_public
 
 REPO, FILE = "Comfy-Org/sam3.1", "checkpoints/sam3.1_multiplex_fp16.safetensors"
 NAME = os.path.basename(FILE)
@@ -46,8 +47,7 @@ def download(models_dir):
 
     def work():
         try:
-            from huggingface_hub import hf_hub_download
-            got = hf_hub_download(repo_id=REPO, filename=FILE, local_dir=models_dir)
+            got = hf_public.download(repo_id=REPO, filename=FILE, local_dir=models_dir)
             dest = os.path.join(models_dir, NAME)
             if os.path.normcase(os.path.abspath(got)) != os.path.normcase(os.path.abspath(dest)):
                 os.replace(got, dest)              # from the repo's checkpoints/ subfolder to the models folder
@@ -55,7 +55,7 @@ def download(models_dir):
                 _fetch.update(state="done", at=time.time())
         except Exception as e:
             with _lock:
-                _fetch.update(state="failed", error=f"{type(e).__name__}: {e}", at=time.time())
+                _fetch.update(state="failed", error=hf_public.friendly_error(e), at=time.time())
     threading.Thread(target=work, daemon=True).start()
 
 

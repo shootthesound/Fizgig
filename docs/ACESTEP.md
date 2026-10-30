@@ -55,10 +55,11 @@ A slider is a LoRA whose strength is a dial between two kinds of music: +1 one w
 1. **What the music is**, e.g. `instrumental, synth pop,`
 2. **The +1 end adds**, e.g. `energetic, fast tempo, loud drums`
 3. **The -1 end adds**, e.g. `calm, slow tempo, soft`
+4. **Leave these alone** (optional): captions of music the dial must not change, one a line, e.g. `instrumental, solo piano, classical` for a heavier-guitar dial meant for rock. The previews play the first one beside the dial, so you can hear it stay put. **How firmly** (default 1) sets how much that counts against the dial.
 
 No songs are needed: Fizgig teaches the dial from the model's own songs. Each checkpoint's preview plays -1, 0 and +1 one after another. Change one thing per slider: words that also change the genre or the instruments turn the dial into a genre switch.
 
-While it trains, the Training tab's **Slider prompts** panel lets you change the three lines and the push strength: they take over at the next epoch, from where it has got to.
+While it trains, the Training tab's **Slider prompts** panel lets you change the three lines, the push strength and the captions to leave alone: they take over at the next epoch, from where it has got to.
 
 ## Full fine-tuning
 

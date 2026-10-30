@@ -46,6 +46,58 @@ class ZImageDriver(FamilyDriver):
         from fizgig.zimage.model import load_zimage_dit
         return load_zimage_dit(path, device, DTYPE).eval().requires_grad_(False)
 
+    # ---- Z-Image Base: training previews on the Turbo checkpoint (train_preview_checkpoint), as MOSS-Image's SFT ------
+    def park_for_preview(self, dit, device):
+        """Stream all but two of the training model's layers so Turbo fits beside it; an NF4 base cannot stream and
+        is small - left as it is (token None)."""
+        if getattr(dit, "_nf4_quantized", False):
+            return None
+        orig = int(dit.blocks_to_swap or 0)
+        dit.enable_block_swap(len(dit.layers) - 2, torch.device(device), True)
+        dit.prepare_block_swap_before_forward()
+        return orig
+
+    def load_preview_checkpoint(self, path, device, int8=False):
+        """The Turbo DiT for this preview round, sized to the VRAM left beside the parked training model: bf16 when it
+        fits with room for the render, else INT8, with layers streamed (forward-only) when even that does not fit."""
+        import logging
+        import os
+        from fizgig.families import quant
+        cuda = torch.cuda.is_available() and torch.device(device).type == "cuda"
+        if cuda:
+            torch.cuda.empty_cache()
+        free = quant.free_vram_gb() if cuda else float("inf")
+        size = os.path.getsize(path) / 1024 ** 3
+        if "convrot" in os.path.basename(path).lower() or "int8" in os.path.basename(path).lower():
+            size *= 2                       # int8 on disk, bf16 once decoded
+        room = 4.0                          # a 1024 px render + the VAE decode
+        precision = "int8" if int8 or free < size + room else "bf16"
+        need = (size / 2 if precision == "int8" else size) + room
+        swap = 0
+        if free < need:
+            per_layer = (size / 2 if precision == "int8" else size) / self.description.n_blocks
+            swap = min(self.max_blocks_to_swap(), max(1, int((need - free) / max(per_layer, 1e-3)) + 2))
+        m, swapped = quant.load_base(self, path, device, precision, swap, supports_backward=False)
+        if swapped:
+            self.block_swap_mode(m, inference=True)
+        logging.getLogger(__name__).info(f"[sample] Turbo checkpoint: {precision}, {swapped} layers streamed"
+                                         + (f" ({free:.1f} GB free)" if cuda else ""))
+        return m.eval().requires_grad_(False), swapped
+
+    def unpark_after_preview(self, dit, device, token):
+        """The run's own swap back, or with none the preview-time offloader torn down and the model back on the GPU."""
+        if token is None:
+            return
+        device = torch.device(device)
+        if token > 0:
+            dit.enable_block_swap(token, device, True)
+            dit.move_to_device_except_swap_blocks(device)
+        else:
+            from fizgig.families import quant
+            dit.disable_block_swap()
+            quant.move(dit, device)
+        dit.switch_block_swap_for_training()
+
     def max_blocks_to_swap(self, dit=None):
         return (len(dit.layers) if dit is not None else self.description.n_blocks) - 2
 
@@ -155,7 +207,9 @@ class ZImageDriver(FamilyDriver):
                  noise=None, on_step=None, refs=None):
         device = next(dit.parameters()).device
         x = (noise if noise is not None else self.initial_noise(seed, width, height)).to(device, torch.float32)
-        shift = float(dict(options).get("shift", P.DEFAULT_SHIFT))
+        # the family's own schedule when the caller gives none (training previews): Turbo's shift 3, Base's 6
+        own = self.description.default_sampling() if getattr(self, "description", None) is not None else None
+        shift = float(dict(options).get("shift", dict(own.options if own else ()).get("shift", P.DEFAULT_SHIFT)))
         sig = (torch.tensor(list(sigmas) + [0.0]) if sigmas is not None and len(sigmas) == steps
                else P.sigmas(steps, shift))
         cap = [_cap(cond)]

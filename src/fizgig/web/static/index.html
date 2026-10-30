@@ -14,6 +14,10 @@
   <meta name="apple-mobile-web-app-title" content="Fizgig">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <script>
+    // the theme this device picked, before the page paints (sidebar palette button; app.js THEMES)
+    try { var t = localStorage.getItem("fizgig.theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+  <script>
     // a pod's proxy can fail one request just after the pod comes up: the page then arrived without its styles.
     // A stylesheet or script that fails is fetched again, a little later each time.
     function fizgigRetry(el) {
@@ -37,6 +41,30 @@
       <span class="window-title-text">Fizgig — LoRA &amp; Fine-tune Studio</span>
     </div>
   </header>
+  <!-- over the page until its forms are built: a slow start looks like a start, not a broken page (#249) -->
+  <div class="boot-cover" id="bootCover"><span class="me-spin boot-spin"></span>
+    <span id="bootCoverText">Starting Fizgig…</span>
+    <p class="boot-tip"><b>Tip</b><span id="bootTip"></span></p></div>
+  <script>
+    // a tip under the loading line, a random one each start
+    (function () {
+      var tips = [
+        "Preferences → Theme: eight looks for Fizgig.",
+        "Colour-blind safe, High contrast and Dim: Preferences → Theme.",
+        "Each device keeps its own theme.",
+        "Pause frees the GPU; Resume carries on.",
+        "Runs & outputs: Start again with these settings.",
+        "Judge a run by its previews, not its loss.",
+        "Studio fixes a finished LoRA block by block.",
+        "Image Prep's Look Filter finds faces that don't match.",
+        "Masked training learns your subject, not the room.",
+        "LoRA Royale: pick the best epoch by eye.",
+        "Context LoRA: train alongside another LoRA.",
+        "Watch a run from your phone: Preferences → Web UI."
+      ];
+      document.getElementById("bootTip").textContent = tips[Math.floor(Math.random() * tips.length)];
+    })();
+  </script>
 
   <div class="app-window-body">
     <main class="notebook-container">
@@ -337,8 +365,8 @@
                     <input type="text" id="maskSamInclude" class="w-path" placeholder="e.g. person" value="person"></div>
                   <div class="field-row"><span class="field-label">Leave these out:</span>
                     <input type="text" id="maskSamExclude" class="w-path" placeholder="optional, e.g. glasses, phone"></div>
-                  <div class="field-hint">A few words for each thing, separated by commas. Everything in Mask these is
-                    white, then anything in Leave these out is taken away.</div>
+                  <div class="field-hint">A few words for each thing, separated by commas (person, the handbag, the dog).
+                    Everything in Mask these is white, then anything in Leave these out is taken away.</div>
                   <div class="field-row"><button class="btn" id="maskSamPreview">Preview on 2 random pictures</button>
                     <span class="field-hint" id="maskSamPrevState"></span></div>
                   <div class="mask-sam-previews" id="maskSamPreviews"></div>
@@ -411,8 +439,9 @@
           </div>
           <div class="section-card" id="lookCard">
             <div class="card-title">Final step: Look Consistency Filter (faces)</div>
-            <div class="card-desc">Run this last, after every other prep stage: it scores the finished training
-              folder. Pick three baseline pictures that nail the look you want; every picture's face is scored against
+            <div class="card-desc">For a person or character LoRA: it scores faces, so skip it for a style, object or
+              place. Run it last, after every other prep stage: it scores the finished training folder. Pick three
+              baseline pictures that best show the face you're training; every picture's face is scored against
               all three and averaged (face similarity; for anime, furry or drawn characters see "Anime/furry/drawn
               characters" in step 1), so no one photo's angle, expression or light sets the bar.
               It finds pictures that drifted off-look, the near-misses a loss curve can't see. Click pictures to mark
@@ -466,6 +495,15 @@
               <div class="field-row"><span class="field-label">Task:</span>
                 <select id="capTask" class="w-combo-lg"></select>
                 <button class="btn" id="capEditInstr">Edit instructions…</button></div>
+              <div class="field-row" id="capConceptRow" style="display:none"><span class="field-label">The concept is:</span>
+                <input type="text" id="capConcept" class="w-path" placeholder='a few plain words, e.g. "a backflip" or "a double exposure"'></div>
+              <div class="field-hint" id="capConceptHint" style="display:none;margin-bottom:12px">Every caption names it in exactly these
+                words, after the trigger word, and describes everything else in the picture. Auto-recaption uses them
+                too when it picks this task.</div>
+              <div class="field-hint" id="capTaskHint">Each length comes in two versions: for a person or character
+                (viewpoint, face, pose, clothing), and for an object or product (shape, colours, materials). For a pose,
+                an action or an effect, pick the concept task and say what it is; for a style, pick Style - it leaves the look unnamed so the trigger word carries it; for anything else,
+                Edit instructions.</div>
               <div id="capInstrBox" style="display:none">
                 <div class="field-hint" id="capInstrHint"></div>
                 <textarea id="capInstr" rows="8"></textarea>
@@ -583,7 +621,7 @@
                 <span class="seg" id="galleryView">
                   <button class="btn btn-sm" data-view="list">Newest first</button>
                   <button class="btn btn-sm" data-view="grid">Prompt × epoch</button></span>
-                <button class="btn btn-sm" id="likBtn" title="Score every preview's face against three photos of your subject from the training images (ArcFace, on the CPU - training keeps the GPU). Identity likeness only: overbaking and skin still need your eyes.">🎯 Likeness…</button>
+                <button class="btn btn-sm" id="likBtn" title="For a person or character LoRA: scores the face in every preview against three photos of your subject from the training images (on the CPU - training keeps the GPU). Faces only: judge a style or object LoRA, and overbaking and skin on any LoRA, by eye.">🎯 Likeness…</button>
                 <button class="btn btn-sm" id="rvBtn" title="Scrub this run epoch by epoch, one prompt at a time; play it, save a frame or a clip">🎞 Visualiser</button>
                 <span class="field-hint" id="likStatus"></span>
               </div>
@@ -657,6 +695,8 @@
                   title="The base: each end's words are added after it with a space, as at the start"></label>
                 <label class="slider-live-row"><span>+1 end adds</span><input type="text" id="slPos"></label>
                 <label class="slider-live-row"><span>−1 end adds</span><input type="text" id="slNeg"></label>
+                <label class="slider-live-row"><span>Leave alone</span><textarea id="slAnchors" rows="2"
+                  spellcheck="false" title="Prompts the dial must not change, one a line (empty = none)"></textarea></label>
                 <div class="slider-live-row"><span>Push strength</span>
                   <div class="slider-live-actions"><input type="text" id="slGuidance" class="w-port">
                   <button class="btn btn-primary btn-sm" id="slApply">Apply at the next epoch</button>
@@ -842,7 +882,7 @@
                   <figcaption id="stTweakCap">Tweaked (current sliders)</figcaption></figure>
               </div>
               <div class="field-hint" id="stPreviewHint">Click either picture to see both full size (← → switches between them).</div>
-              <div class="st-metrics" id="stMetrics" style="display:none" title="Paired numbers for the two renders on screen (same seed and prompt, only the blocks differ - where such measures are honest). Likeness: ArcFace similarity to your reference photo. Grid: the model's patch lattice showing through (rising = overbake). Detail: face texture energy (down = plastic, up = fried). Clipped: blown pixels. Sat: saturation.">
+              <div class="st-metrics" id="stMetrics" style="display:none" title="Paired numbers for the two renders on screen (same seed and prompt, only the blocks differ - where such measures are honest). Likeness: face similarity to your reference photo (a person LoRA). Grid: the model's patch lattice showing through (rising = overbake). Detail: texture energy in the face, or the whole picture when there is none (down = plastic, up = fried). Clipped: blown pixels. Sat: saturation.">
                 <button class="btn btn-sm" id="stMetRefPick">📷 Reference…</button><span class="field-hint" id="stMetRefName">(none)</span>
                 <button class="btn btn-sm" id="stMetRefClear" title="No reference photo">✕</button>
                 <span class="st-chip" id="stMetLike"></span><span class="st-chip" id="stMetGrid"></span>
@@ -937,8 +977,8 @@
         <section id="tab-profiler" class="tab-panel">
           <div class="tab-banner">
             <h1>Profiler</h1>
-            <p>See what a LoRA actually does: which blocks carry the likeness, which cause bleed, and how much rank it
-              really uses. Studio shows every report inline when it loads the same LoRA.</p>
+            <p>See what a LoRA actually does: how much each block changes the picture, which carry the likeness (a person
+              LoRA) and which cause bleed, and how much rank it really uses. Studio shows every report inline when it loads the same LoRA.</p>
           </div>
           <div class="section-card">
             <div class="card-title">LoRA File</div>
@@ -953,8 +993,9 @@
           <div class="section-card">
             <div class="card-title">What to measure</div>
             <div class="card-desc">Find out what each block of the LoRA does: it renders the LoRA, then again with each block
-              group switched off, and reports how much each changes the picture, carries the likeness and causes bleed
-              (other people starting to look like your subject). Weights only is instant and shows how much rank the LoRA
+              group switched off, and reports how much each changes the picture and, with subject photos, carries the likeness
+              and causes bleed (the LoRA showing up without its trigger, e.g. other people taking your subject's
+              face). Weights only is instant and shows how much rank the LoRA
               really uses.</div>
             <div class="card-content">
               <div class="field-row"><span class="field-label">Mode:</span>
@@ -963,15 +1004,16 @@
                 <label class="radio-label"><input type="radio" name="pfMode" value="thorough"> Thorough (2 seeds, steadier)</label></div>
               <div id="pfRender">
                 <div class="field-row"><span class="field-label">Prompt:</span><input type="text" id="pfPrompt" class="w-path"
-                  placeholder='with the trigger word, e.g. "zwxem, a portrait photo of a woman"'></div>
+                  placeholder='with the trigger word, e.g. "zwxem, a portrait photo of a woman" or "zwxem, a harbour at dusk"'></div>
                 <div class="field-row"><span class="field-label">Bleed check:</span><input type="text" id="pfClass" class="w-path"
                   placeholder="optional: the same prompt WITHOUT the trigger"></div>
-                <div class="field-hint pf-hint">With the LoRA loaded the bleed check should still look like anyone; the report
-                  shows which blocks pull it toward your subject.</div>
+                <div class="field-hint pf-hint">With the LoRA loaded the bleed check should still look like the base model's
+                  picture; the report shows which blocks pull it toward your LoRA.</div>
                 <div class="field-row"><span class="field-label">Subject photos:</span><span id="pfPhotos"></span>
                   <span id="pfPhotoBtns"></span><button class="btn btn-sm" id="pfPhotosClear">Clear</button></div>
                 <div class="field-hint pf-hint">Optional, for a person LoRA: three photos of the subject turn on the likeness
-                  and bleed scores (face recognition). Taken from the run's sample gallery when it has them.</div>
+                  and bleed scores (face recognition). Taken from the run's sample gallery when it has them. For a style or
+                  object LoRA, leave it empty: the report measures picture change.</div>
                 <div class="field-row"><span class="field-label">Size:</span>
                   <select id="pfSize" class="w-combo st-small-select"><option>512</option><option selected>768</option><option>1024</option></select></div>
               </div>
@@ -1060,11 +1102,12 @@
           </div>
           <div data-ry="epochs" class="section-card ry-folder-only">
             <div class="card-title">Likeness score</div>
-            <div class="card-desc">Pick a training image of your subject - Fizgig scores each epoch's face against it
-              (ArcFace, on the CPU) and highlights the closest match in gold.</div>
+            <div class="card-desc">For a person or character LoRA: choose up to 3 photos of your subject - Fizgig scores
+              each epoch's face against each of them (face recognition, on the CPU), shows the mean, and highlights
+              the closest match in gold. No face to score: skip this card and judge the crossfade by eye.</div>
             <div class="card-content">
-              <div class="field-row"><span class="field-label">Subject image:</span>
-                <input type="text" id="ryLikeRef" class="w-path"><button class="btn" id="ryLikePick">Choose…</button>
+              <div class="field-row"><span class="field-label">Subject photos:</span>
+                <span class="ry-like-refs" id="ryLikeRefs"></span><button class="btn" id="ryLikePick">Choose…</button>
                 <button class="btn" id="ryLikeClear">Clear</button></div>
               <div class="field-row"><button class="btn btn-primary" id="ryScore">Score likeness</button>
                 <button class="btn" id="ryBest" disabled>Jump to best</button>
@@ -1075,7 +1118,7 @@
           </div>
           <div data-ry="epochs" class="section-card ry-folder-only">
             <div class="card-title">Export the morph</div>
-            <div class="card-desc">Save the crossfade as a looping clip - face resolving epoch by epoch, with a
+            <div class="card-desc">Save the crossfade as a looping clip - the LoRA resolving epoch by epoch, with a
               Fizgig · LoRA Royale tag. Made to share.</div>
             <div class="card-content">
               <div class="field-row"><span class="field-label">Format:</span>
@@ -1676,10 +1719,12 @@
         <section id="tab-helpers" class="tab-panel">
           <div class="tab-banner">
             <h1>Helpers</h1>
-            <p>Other Fizgigs that take work off this one's GPU: another computer on your network, a pod, or a computer on
-              Tailscale. A helper renders this computer's previews, so training never stops for them, or trains a share
-              of the images alongside it, or takes over a run while you need this computer (Move to… on the run card).
-              (The Pods tab is for using another computer instead of this one.)
+            <p>A helper is another Fizgig that takes work off this computer's GPU. It can be a pod, another computer
+              on your network or on Tailscale, or a second GPU in this computer.</p>
+            <p>A helper can make the previews, so training doesn't stop for them. It can train part of each epoch
+              alongside this computer. Or it can take over a run while you need this computer: use Move to… on the
+              run card.</p>
+            <p>To work on another computer instead of this one, use the Pods tab.
               <a href="https://github.com/shootthesound/Fizgig/blob/master/docs/HELPERS.md"
               target="_blank" rel="noopener">The helpers guide</a></p>
           </div>
@@ -1693,15 +1738,19 @@
           </div>
           <div class="section-card">
             <div class="card-title">Add a helper</div>
-            <div class="card-desc">Computers running Fizgig on your network, and your pods from the Pods tab, are
-              listed below; add any other by its address. A helper needs a web password (its Preferences &gt; Web UI)
-              and the same Fizgig version as this one.</div>
+            <div class="card-desc">Your pods and the computers on your network that run Fizgig are listed below.
+              Press <b>Add as a helper</b> beside one. For anything else, type its address in the last row.<br><br>
+              <b>Passwords.</b> For one of your pods, leave the password box empty: Fizgig finds the password itself,
+              using the RunPod API key saved on the Pods tab. For another computer, type the password set in its
+              Preferences &gt; Web UI.<br><br>
+              A helper must run the same Fizgig version as this computer.</div>
             <div class="card-content">
               <div id="helpLocal" class="pods-list"></div>
               <div id="helpFound" class="pods-list"></div>
               <div class="helper-add">
-                <input type="text" id="helpAddUrl" class="w-path" placeholder="or its address: 192.168.0.20, 100.101.12.7 on Tailscale, or a pod's (port 8081 unless you changed it)" spellcheck="false">
-                <input type="password" id="helpAddPw" class="w-combo-md" placeholder="its password" autocomplete="off">
+                <input type="text" id="helpAddUrl" class="w-path" placeholder="Or type its address: 192.168.0.20 on your network, 100.101.12.7 on Tailscale, or a pod's address (port 8081)" spellcheck="false">
+                <input type="password" id="helpAddPw" class="w-combo-md" placeholder="its password" autocomplete="off"
+                  title="Another computer: the password set in its Preferences > Web UI. One of your pods: leave it empty, Fizgig finds it.">
                 <button class="btn btn-primary" id="helpAdd">Add</button>
               </div>
               <div class="field-hint" id="helpAddNote"></div>
@@ -1712,11 +1761,13 @@
           </div>
           <div class="section-card">
             <div class="card-title">Help another Fizgig with this GPU</div>
-            <div class="card-desc">For a run training on a pod: your GPU renders its previews or trains a share of
-              each epoch, so the pod's time goes on training. A pod can't reach your computer, so this computer
-              connects to it. Starting a run here stops the helping. <b>Its checkpoints</b> brings the run's epochs
-              here to try your own prompts on them in LoRA Royale, and <b>Bring its checkpoints home</b> brings each
-              one here as it's saved (deleting the pod once they're all home, if you tick that).</div>
+            <div class="card-desc">The other way round: a run is training on a pod, and this computer's GPU helps
+              it. Your GPU makes the pod's previews or trains part of each epoch, so the pod's paid time goes on
+              training. This computer connects to the pod, because a pod can't reach your computer. Starting a run
+              here stops the helping.<br><br>
+              <b>Its checkpoints</b> copies the run's saved epochs here, to try your own prompts on them in LoRA
+              Royale. <b>Bring its checkpoints home</b> copies each one here as it's saved, and can delete the pod
+              once they're all here.</div>
             <div class="card-content">
               <div id="helpOut" class="pods-list"></div>
               <div class="field-hint" id="helpOutNote"></div>
@@ -1745,6 +1796,11 @@
           <div class="tab-banner">
             <h1>Preferences</h1>
             <p>Where each model's files are on this machine. A path saves when you leave its box.</p>
+          </div>
+          <div class="section-card">
+            <div class="card-title"><span>Theme</span></div>
+            <div class="card-desc">How Fizgig looks on this device: a phone or another computer keeps its own.</div>
+            <div class="card-content"><div class="theme-pick" id="themePick"></div></div>
           </div>
           <div id="prefsForm"></div>
         </section>
@@ -1776,11 +1832,12 @@
 
   <div class="modal-backdrop" id="likModal">
     <div class="modal-window" style="width: 860px;">
-      <div class="modal-header"><span>Likeness: pick 3 photos of your subject</span>
+      <div class="modal-header"><span id="likTitle">Likeness: pick 3 photos of your subject</span>
         <button class="btn" data-close="likModal">✕</button></div>
       <div class="modal-body">
-        <div class="field-hint">From the training images (<span id="likFolder"></span>). Pick clear, typical shots of the
-          face: each preview is scored against all three and the mean shown, so one odd photo can't skew it.</div>
+        <div class="field-hint">From <span id="likFrom">the training images</span> (<span id="likFolder"></span>).
+          <button class="btn btn-sm" id="likFolderPick">Another folder…</button> Faces only (a person, or an anime
+          or furry character). Pick clear, typical shots of the face: each render is scored against every photo you pick and the mean shown, so one odd photo can't skew it.</div>
         <div class="lik-grid" id="likGrid"></div>
         <div class="field-row"><button class="btn btn-primary" id="likStart" disabled>Start scoring</button>
           <button class="btn" id="likClear">Stop and clear scores</button>
@@ -1910,7 +1967,8 @@
       <div class="modal-header"><span>Log in</span></div>
       <div class="modal-body">
         <div class="card-desc">Fizgig's password. On a rented GPU (RunPod or Vast.ai) it's the FIZGIG_PASSWORD (or
-          VNC_PASSWORD) set in the template, or, if none was set, the one printed in its log. On your own computer
+          VNC_PASSWORD) set in the template, or, if none was set, the one printed in its log. Opened from Fizgig on
+          your own computer, with your RunPod API key on its Pods tab, a pod logs you in by itself. On your own computer
           it's the one in Preferences &gt; Web UI. No user name is needed.</div>
         <div class="field-row"><input type="password" id="loginPassword" class="w-path" autocomplete="current-password">
           <button class="btn btn-primary" id="loginButton">Log in</button></div>

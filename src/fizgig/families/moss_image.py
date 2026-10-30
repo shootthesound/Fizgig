@@ -22,6 +22,15 @@ _MODULES = ("proj.q", "proj.k", "proj.v", "proj.o", "proj.ffn_up_gate", "proj.ff
 _NEGATIVE = "worst quality, bad anatomy, watermark, jpeg artifact"
 
 
+# a LoRA's: 60 until epoch 7, 30 from epoch 8, then 60 with every 3rd epoch at 30 (half LR) - led 60:7:30:15:2 by about
+# 0.05 ArcFace from epoch 9 to 20 on a 53-photo dataset (Peter's test1 / test3, 28 Oct 2026)
+_LORA_SHARE = "60:7:30:8:3"
+# a fine-tune's Clean-end share starts on the model's own schedule (about 11%) so the body and the model's knowledge
+# hold, then slides to 30: at 60 a fine-tune's plain "a woman" turned into the subject from epoch 10, even with DOP
+# (Peter, 28 Oct 2026, #223)
+_FT_SHARE = "11:4:30:8:2"
+
+
 def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="1.0", slider=False, ft=False):
     # Not yet trained on MOSS-Image (the driver was built without a GPU): Flux 3's preset shape (Krea 2's values,
     # families/flux3.py), at 1 MP (the last pretraining stage's area), with fused AdamW as CHECKLIST.md asks for LoRA presets. EMA 0.98, the
@@ -37,9 +46,9 @@ def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="1.0", slider=False, ft=
         "KREA2_LOSS_WATCH": False, "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False,
         "KREA2_WARMUP_LOOK": False, "FAMILY_FT": ft, "FAMILY_EDIT": False, "FAMILY_SLIDER": slider,
         "FAMILY_FAST_ID": False, "FAMILY_SLIDER_GUIDANCE": "3",
-        # the Clean-end share: Slide, 60% until epoch 7, then down to 30% by epoch 15, every 2nd epoch after at 60%
-        # (Peter, 20 Oct 2026: the clear winner of eight runs on the dataset that struggled); every preset sets it
-        "MOSS_LOWNOISE_PCT": "60:7:30:15:2",
+        # the Clean-end share: Slide, 60% until epoch 7, 30% from epoch 8, then 60% with every 3rd at 30% (_LORA_SHARE);
+        # every preset sets it
+        "MOSS_LOWNOISE_PCT": _FT_SHARE if ft else _LORA_SHARE,
         **({"FAMILY_FT_ROTATIONS": "10"} if ft else {}),
     }
 
@@ -189,6 +198,8 @@ MOSS_IMAGE = FamilyDescription(
     # measured yet (ABILITIES.md: keep it where it measures faster)
     finetune=True,                    # driver.ft_spec: every block's six Linears on an NF4 trunk
     ft_learning_rate=1e-5,            # FINETUNE.md's default; the report's pretraining LR was 5e-5 (Muon + AdamW)
+    kind_values=(("finetune", (("MOSS_LOWNOISE_PCT", _FT_SHARE),)), ("standard", (("MOSS_LOWNOISE_PCT", _LORA_SHARE),)),
+                 ("slider", (("MOSS_LOWNOISE_PCT", _LORA_SHARE),))),
     slider_training=True,             # photo pairs (training_loss diff weighting) or prompts (noise_latents / predict)
     # edit_training stays off: the released checkpoints don't condition on reference images (report section 8: "does
     # not directly condition on reference images or support image editing"; pipeline docstring: defaults are "not
@@ -303,8 +314,9 @@ MOSS_IMAGE = FamilyDescription(
         # improving at 1,590 steps (epoch 30), so a 25-image set needs ~65 epochs to get there (Peter, 18 Oct 2026)
         # a fixed learning rate: Adaptive LR walks to its floor on MOSS-Image's flat loss (@Murf-Code's runs, PR
         # #195; Peter's runs agree that 1e-4 suits it). Adaptive LR stays on the Training tab, off by default
-        ("✨ MOSS-Image Standard (rank 32, 1e-4)", _preset(32, epochs=70)),
+        # Fast first, so a first visit applies it (Peter, 27 Oct 2026)
         ("✨ MOSS-Image Fast (rank 16, 0.25 MP)", _preset(16, epochs=70, mp="0.25")),
+        ("✨ MOSS-Image Standard (rank 32, 1e-4)", _preset(32, epochs=70)),
         ("✨ MOSS-Image Style (rank 16, 5e-5)", {**_preset(16, lr=5e-5, epochs=50), "FAMILY_EMA": "Off"}),   # no EMA: a style at 5e-5 is slow enough
         ("✨ MOSS-Image Slider (rank 8, 2e-4)", _preset(8, lr=2e-4, epochs=20, slider=True)),
         ("✨ MOSS-Image Fine-tune (1e-5)", _preset(16, lr=1e-5, ft=True)),
@@ -316,21 +328,23 @@ MOSS_IMAGE = FamilyDescription(
                           "layers breaks anatomy. Uses less VRAM, so a fine-tune fits a smaller card, but on Base "
                           "it may cost quality or slow convergence.",
                      section="after", summary="attention only"),
-        FamilyOption("MOSS_LOWNOISE_PCT", "Clean-end share", kind="entry", tokens="lownoise_pct={}", default="60:7:30:15:2",
+        FamilyOption("MOSS_LOWNOISE_PCT", "Clean-end share", kind="entry", tokens="lownoise_pct={}", default=_LORA_SHARE,
                      width=8, suffix="% of steps",
                      hint="The share of training steps on nearly-clean images (noise below half), where faces and "
-                          "fine detail are refined. Empty = the model's own schedule, about 11%.",
+                          "fine detail are refined. Empty = the model's own schedule, about 11%. In a fine-tune, "
+                          "the epochs in a Split or Slide are rotations.",
                      # Slide, not a sudden drop: on a hard dataset likeness dipped two epochs after a drop from 75
                      # to 40. Of eight Slide runs there, 60 until epoch 7 easing to 30 by epoch 15, with every 2nd
                      # epoch after back at 60 (the tick, on by default), led from epoch 12 and still held 71% at
-                     # epoch 60 (Peter, 20 Oct 2026)
-                     slide=("60", "7", "30", "15", "2"),
+                     # epoch 60 (Peter, 20 Oct 2026); 60:7:30:8:3 then led it from epoch 9 (28 Oct 2026)
+                     slide=tuple(_LORA_SHARE.split(":")),
                      single="40",             # one value for the whole run: 40 beat 30 (Peter, 20 Oct 2026)
-                     slide_hint="Slide: a high share until an epoch, then easing down to a lower one, a few points "
-                                "an epoch. 60 until epoch 7, down to 30 by epoch 15, works well with datasets of up "
-                                "to about 55 images; with many more, start dropping below 60 earlier. Ticked: after "
-                                "the slide, every few epochs one epoch goes back to the first share, which keeps "
-                                "likeness from fading on a small dataset at the lower share.",
+                     slide_hint="Slide: one share until an epoch, then sliding a few points an epoch to another by a "
+                                "later epoch. 60 until epoch 7, then 30 from epoch 8, works well with datasets of up to "
+                                "about 55 images; with many more, drop from 60 earlier. Ticked: after "
+                                "the slide, training runs at the higher of the two shares, which keeps likeness from "
+                                "fading on a small dataset, and every Nth epoch at the lower share, at half the "
+                                "learning rate.",
                      warn="Experimental figure.",
                      warn_link="https://www.reddit.com/r/StableDiffusion/comments/1x9khtm/a_potential_fix_for_moss_training_issues/", summary="clean-end {}%", featured=True),
     ),
@@ -339,7 +353,7 @@ MOSS_IMAGE = FamilyDescription(
     notes=(
         ("Training timesteps follow the released weights' last pretraining interval: sigma = 1 - sigmoid(Z), "
          "Z ~ N(-1.09, 0.95^2), truncated at 0.95 and rescaled onto the 1000-step grid, mixed with 1% uniform (Fizgig's "
-         "Clean-end share moves the curve's centre: by default 60% of steps below sigma 0.5 until epoch 7, then down to 30% by epoch 15, and every 2nd epoch after that at 60%; the reference is about 11%); the "
+         "Clean-end share moves the curve's centre: by default 60% of steps below sigma 0.5 until epoch 7, 30% at epoch 8, then 60% with every 3rd epoch at 30%; the reference is about 11%); the "
          "DiT is told 1000 * sigma; loss is the unweighted per-token MSE on noise - x0.",
          f"{_REPORT} Appendix A.2, eq. 3-4, Table 6"),
         ("Text conditioning: Qwen3.5-9B's final hidden state through the chat template with an open <think> block, "

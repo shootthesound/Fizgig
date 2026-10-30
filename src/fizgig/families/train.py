@@ -400,16 +400,24 @@ SLIDER_LIVE_APPLIED = ".slider_prompts_applied.json"   # what the trainer took, 
 
 
 def _read_slider_live(output_dir):
-    """A prompt slider's new prompts, set while it trains: {base, pos, neg, guidance} or None - the form's own three
-    (what the picture is, what each end adds), all needed, as at launch."""
+    """A prompt slider's new prompts, set while it trains: {base, pos, neg, guidance, anchors} or None - the form's own
+    three (what the picture is, what each end adds), all needed, as at launch; anchors may be empty."""
     try:
         with open(os.path.join(output_dir, SLIDER_LIVE), encoding="utf-8") as f:
             d = json.load(f)
         out = {"base": str(d.get("base") or "").strip(), "pos": str(d.get("pos") or "").strip(),
-               "neg": str(d.get("neg") or "").strip(), "guidance": float(d.get("guidance"))}
+               "neg": str(d.get("neg") or "").strip(), "guidance": float(d.get("guidance")),
+               "anchors": _anchor_lines(d.get("anchors"))}
         return out if out["base"] and out["pos"] and out["neg"] and out["guidance"] > 0 else None
     except (OSError, ValueError, TypeError):
         return None
+
+
+def _anchor_lines(raw):
+    """A prompt slider's anchor prompts from a list or one prompt per line, blanks dropped."""
+    if isinstance(raw, str):
+        raw = raw.splitlines()
+    return [str(x).strip() for x in (raw or []) if str(x).strip()]
 
 
 def _encode_override(driver, te_path, prompts, dit, device, parkable=True, references=None):
@@ -537,27 +545,39 @@ def _pair_slider_caption(user_config):
     return counts.most_common(1)[0][0] if counts else None
 
 
-def _prompt_slider_step(driver, dit, net, latents, enc, gen, *, guidance, min_t, max_t):
+def _prompt_slider_step(driver, dit, net, latents, enc, gen, *, guidance, min_t, max_t, anchor=None,
+                        anchor_weight=1.0):
     """Concept Sliders, textual form, on flow matching. With the adapter at 0 the frozen model predicts the
     neutral, positive and negative prompts at one noised practice latent; the adapter then trains at +1 toward
     v_neutral + guidance * (v_pos - v_neg) and at -1 toward the mirror. Each pole is backpropagated before the
-    flip (checkpointed blocks recompute at the strength of the moment). Returns the detached mean loss."""
+    flip (checkpointed blocks recompute at the strength of the moment).
+
+    An anchor (#252, a prompt the slider must leave alone, e.g. "a photo of a man" for a hair-length dial meant for
+    women): the frozen model's prediction for it at the same latent is a target at +1 and -1 too, weighted by
+    anchor_weight, so the dial learns its change without carrying it onto the anchor. Returns (the detached mean
+    slider loss, t, the anchor's mean loss or None)."""
     state = driver.noise_latents(latents, gen, min_t=min_t, max_t=max_t)
     n_c, p_c, g_c = enc
+    a_total = None
     try:
         net.set_trainable_multiplier(0.0)
         with torch.no_grad():
             v_n = driver.predict(dit, state, n_c).float()
             delta = float(guidance) * (driver.predict(dit, state, p_c).float() - driver.predict(dit, state, g_c).float())
+            v_a = driver.predict(dit, state, anchor).float() if anchor is not None else None
         total = 0.0
         for m in (1.0, -1.0):
             net.set_trainable_multiplier(m)
             loss = F.mse_loss(driver.predict(dit, state, n_c).float(), v_n + m * delta)
             (0.5 * loss).backward()
             total += 0.5 * loss.item()
+            if v_a is not None:          # its own forward and backward, so the peak is one prediction's, as before
+                a_loss = F.mse_loss(driver.predict(dit, state, anchor).float(), v_a)
+                (0.5 * float(anchor_weight) * a_loss).backward()
+                a_total = (a_total or 0.0) + 0.5 * a_loss.item()
     finally:
         net.set_trainable_multiplier(1.0)
-    return total, state["t"]
+    return total, state["t"], a_total
 
 
 def _dop_pairs(triggers, classes):
@@ -1016,6 +1036,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  sample_height=None, sample_steps=None, sample_cfg_scale=None, sample_negative=None,
                  sample_at_first=False, sample_seed=42, sample_reference=None, sample_image=None,
                  sample_strengths=(), slider_pairs=False, slider_diff_weight=1.0, slider_prompts=None, slider_guidance=3.0,
+                 slider_anchors=(), slider_anchor_weight=1.0,
                  train_blocks=None,
                  slider_bank=16, slider_bank_res=768,
                  metadata_title=None, metadata_author=None, metadata_description=None, metadata_license=None,
@@ -1094,10 +1115,18 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         else:
             logger.info("[slider] PROMPT-PAIR SLIDER: base '%s' | +1 -> '%s' | -1 -> '%s' (guidance %g)",
                         *slider_prompts, float(slider_guidance))
+            slider_anchors = _anchor_lines(slider_anchors)
+            if slider_anchors:
+                logger.info("[slider] %d anchor prompt(s), one a step in turn, weight %g - the dial leaves them "
+                            "as the model has them: %s", len(slider_anchors), float(slider_anchor_weight),
+                            " | ".join(slider_anchors))
             if not (te_path and vae_path):
                 raise RuntimeError("[slider] prompt pairs need the text encoder and VAE paths")
             if str(slider_prompts[0]).strip():     # the dial is shown on the picture it was trained on
-                sample_prompts = [str(slider_prompts[0]).strip()]
+                # and on the first anchor, whose strip should barely move
+                sample_prompts = [str(slider_prompts[0]).strip()] + slider_anchors[:1]
+    else:
+        slider_anchors = []
 
     # ---- full fine-tune (families/ft.py): the base model itself trains, a component window at a time -------------
     if finetune:
@@ -1311,10 +1340,12 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     # ---- previews: encode prompts once, keep the VAE ---------------------------------------------
     encoded = neg = vae = ref_imgs = ref_latents = None
     slider_enc = slider_neg = None
+    anchor_enc = []
     if slider_prompts:
         te = driver.load_text_encoder(te_path, device)
-        slider_enc = [{k: v[None] for k, v in c.items()}
-                      for c in driver.encode_text(te, [str(x) for x in slider_prompts])]
+        _all = [{k: v[None] for k, v in c.items()}
+                for c in driver.encode_text(te, [str(x) for x in slider_prompts] + list(slider_anchors))]
+        slider_enc, anchor_enc = _all[:3], _all[3:]
         if sample_cfg_scale > 1.0 and desc.preview_negative is not None:
             # the practice pictures render as previews do: the Samples tab's negative (else the family's default)
             text = sample_negative if sample_negative is not None else desc.preview_negative
@@ -1549,7 +1580,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 else:
                     lat = driver.generate(dit, n_c, slider_bank_res, slider_bank_res, steps=desc.preview_steps,
                                           seed=seed + 1000 + i, cfg=sample_cfg_scale,
-                                          **({"neg_cond": slider_neg} if slider_neg is not None else {}))
+                                          # on the GPU with the prompt: SDXL joins the two before moving them
+                                          **({"neg_cond": {k: v[0].to(device) for k, v in slider_neg.items()}}
+                                             if slider_neg is not None else {}))
                 bank.append(driver.practice_latent(vae, lat, slider_bank_res))
         if use_speed:
             net.set_enabled(SPEED, False)
@@ -1688,26 +1721,30 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
 
     last_prompt = [None]
     slider_history = []                     # [{epoch, prompts, guidance}] - each live change, for the saved metadata
+    anchor_losses = []                      # this epoch's anchor losses (a prompt slider with anchors)
 
     def slider_live(done):
         """A prompt slider's new prompts (the web UI's Slider prompts panel), taken at an epoch boundary: the poles
         encoded again, and a new base renders a new practice bank and becomes the previews' prompt. Training goes on
         from where it is, toward the new ends."""
-        nonlocal slider_prompts, slider_guidance, slider_enc, encoded, sample_prompts
+        nonlocal slider_prompts, slider_guidance, slider_enc, encoded, sample_prompts, slider_anchors, anchor_enc
         new = _read_slider_live(output_dir) if slider_prompts else None
         if new is None:
             return
         # each end is the base and its own words, as the launch builds them (families/launch.py)
         prompts = [new["base"], f"{new['base']} {new['pos']}", f"{new['base']} {new['neg']}"]
-        if prompts == [str(x) for x in slider_prompts] and new["guidance"] == float(slider_guidance):
+        if (prompts == [str(x) for x in slider_prompts] and new["guidance"] == float(slider_guidance)
+                and new["anchors"] == list(slider_anchors)):
             return
         base_changed = prompts[0] != str(slider_prompts[0])
-        logger.info("[slider] new prompts from epoch %d: base '%s' | +1 -> '%s' | -1 -> '%s' (guidance %g)",
-                    done + 1, *prompts, new["guidance"])
+        logger.info("[slider] new prompts from epoch %d: base '%s' | +1 -> '%s' | -1 -> '%s' (guidance %g)%s",
+                    done + 1, *prompts, new["guidance"],
+                    f" | anchors: {' | '.join(new['anchors'])}" if new["anchors"] else " | no anchors")
         parked = []
         try:
-            enc = _encode_override(driver, te_path, prompts, dit, device, parkable=not swapped)
-            slider_enc = [{k: v[None] for k, v in c.items()} for c in enc]
+            enc = _encode_override(driver, te_path, prompts + new["anchors"], dit, device, parkable=not swapped)
+            _all = [{k: v[None] for k, v in c.items()} for c in enc]
+            slider_enc, anchor_enc = _all[:3], _all[3:]
             if base_changed:
                 if desc.preview_park_optimizer and optimizer is not None:     # room for the renders, as previews do
                     for st in optimizer.state.values():
@@ -1717,10 +1754,11 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                                 parked.append((st, k))
                     torch.cuda.empty_cache()
                 render_bank()
-                if prompts[0] and sample_prompts == [str(slider_prompts[0])]:   # the previews followed the old base
-                    sample_prompts = [prompts[0]]
-                    if encoded is not None and not sample_reference and not (sample_image and desc.preview_image):
-                        encoded = [enc[0]]                  # text-only previews: the new base's own encoding
+            # the previews followed the old base (and its first anchor): they follow the new ones
+            if prompts[0] and sample_prompts == [str(slider_prompts[0])] + list(slider_anchors[:1]):
+                sample_prompts = [prompts[0]] + new["anchors"][:1]
+                if encoded is not None and not sample_reference and not (sample_image and desc.preview_image):
+                    encoded = [enc[0]] + enc[3:4]           # text-only previews: the new prompts' own encodings
         except Exception as exc:
             logger.warning(f"[slider] could not take the new prompts ({type(exc).__name__}: {str(exc)[:200]}) - "
                            "training goes on with the ones it had", exc_info=True)
@@ -1728,12 +1766,14 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         finally:
             for st, k in parked:
                 st[k] = st[k].to(device)
-        slider_prompts, slider_guidance = prompts, new["guidance"]
-        slider_history.append({"epoch": done, "prompts": prompts, "guidance": new["guidance"]})
+        slider_prompts, slider_guidance, slider_anchors = prompts, new["guidance"], new["anchors"]
+        slider_history.append({"epoch": done, "prompts": prompts, "guidance": new["guidance"],
+                               "anchors": new["anchors"]})
         try:
             with open(os.path.join(output_dir, SLIDER_LIVE_APPLIED), "w", encoding="utf-8") as f:
                 json.dump({"epoch": done, "base": new["base"], "pos": new["pos"], "neg": new["neg"],
-                           "guidance": new["guidance"], "practice_rerendered": base_changed, "at": time.time()}, f)
+                           "guidance": new["guidance"], "anchors": new["anchors"],
+                           "practice_rerendered": base_changed, "at": time.time()}, f)
         except OSError:
             pass
 
@@ -1763,6 +1803,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             if slider_prompts:
                 md.update({"ss_slider_prompts": json.dumps([str(x) for x in slider_prompts]),
                            "ss_slider_guidance": f"{float(slider_guidance):g}"})
+                if slider_anchors:
+                    md.update({"ss_slider_anchors": json.dumps(list(slider_anchors)),
+                               "ss_slider_anchor_weight": f"{float(slider_anchor_weight):g}"})
                 if slider_history:          # the prompts it was steered through, from which epoch
                     md.update({"ss_slider_prompt_history": json.dumps(slider_history)})
             else:
@@ -2458,8 +2501,12 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 optimizer.zero_grad(set_to_none=True)
                 _frozen_sl = _step_freeze(driver.step_frozen_blocks(batch))
                 if slider_prompts:
-                    _l, _t = _prompt_slider_step(driver, dit, net, latents, slider_enc, gen,
-                                                 guidance=slider_guidance, min_t=min_timestep, max_t=max_timestep)
+                    _l, _t, _al = _prompt_slider_step(
+                        driver, dit, net, latents, slider_enc, gen, guidance=slider_guidance, min_t=min_timestep,
+                        max_t=max_timestep, anchor=anchor_enc[global_step % len(anchor_enc)] if anchor_enc else None,
+                        anchor_weight=slider_anchor_weight)
+                    if _al is not None:
+                        anchor_losses.append(_al)
                 else:
                     cond = driver.batch_cond(batch, device)
                     _neg = batch.get("latents_control_0")
@@ -2516,6 +2563,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     dop_sum[0] += _dl.item()
                     dop_sum[1] += 1
                     _dc = None
+                if ftr is not None and ftr.fused is not None:
+                    ftr.fused.scale = lr_acc[-1] if lr_acc else 1.0   # each weight steps in this backward's hooks
                 (_scaled / accum if accum > 1 else _scaled).backward()
                 if _dc is not None and ftr is None:
                     dop_sum[0] += _dop_step(driver, dit, net, latents, _dc, gen, weight=dop_weight,
@@ -2634,6 +2683,10 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 state(done, required=True)
             progress.close()
             sys.exit(0)
+        if anchor_losses:                # how far the dial moved its anchors this epoch (0 = not at all)
+            logger.info(f"[slider] anchor loss, epoch {done}: {sum(anchor_losses) / len(anchor_losses):.5f} "
+                        f"over {len(anchor_losses)} steps")
+            anchor_losses.clear()
         if slider_prompts and done < max_train_epochs:
             _tp = time.time()
             slider_live(done)
@@ -2759,6 +2812,10 @@ def setup_parser():
     p.add_argument("--slider_prompts", nargs=3, default=None, metavar=("NEUTRAL", "POSITIVE", "NEGATIVE"),
                    help="Slider from three prompts, no images (needs --text_encoder and --vae)")
     p.add_argument("--slider_guidance", type=float, default=3.0, help="Prompt-pair slider: how hard to push")
+    p.add_argument("--slider_anchors", nargs="+", default=None, metavar="PROMPT",
+                   help="Prompt-pair slider: prompts the dial must leave as they are (one a step, in turn)")
+    p.add_argument("--slider_anchor_weight", type=float, default=1.0,
+                   help="Prompt-pair slider: how much the anchors count against the dial's own loss")
     p.add_argument("--slider_bank", type=int, default=16, help="Prompt-pair slider: practice images to render")
     p.add_argument("--train_blocks", default="",
                    help="Comma-separated block ids (the driver's block map) to train; empty = every block")
@@ -2868,7 +2925,8 @@ def main():
         sample_strengths=tuple(float(x) for x in a.sample_strengths.split(",") if x.strip()),
         sample_reference=list(a.sample_reference) if a.sample_reference else None, sample_image=a.sample_image,
         slider_pairs=a.slider_pairs, slider_diff_weight=a.slider_diff_weight, slider_prompts=a.slider_prompts,
-        slider_guidance=a.slider_guidance, slider_bank=a.slider_bank, slider_bank_res=a.slider_bank_res,
+        slider_guidance=a.slider_guidance, slider_anchors=a.slider_anchors or (),
+        slider_anchor_weight=a.slider_anchor_weight, slider_bank=a.slider_bank, slider_bank_res=a.slider_bank_res,
         train_blocks=[b.strip() for b in a.train_blocks.split(",") if b.strip()] or None,
         metadata_title=a.metadata_title, metadata_author=a.metadata_author,
         metadata_description=a.metadata_description, metadata_license=a.metadata_license,

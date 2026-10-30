@@ -110,6 +110,7 @@ ACESTEP15 = FamilyDescription(
                    "can start copying them: the same song on every seed. Try the final LoRA at a lower strength, "
                    "around 0.5 - you keep the learned detail without the copying."),               # music sets are small: 10 clips x accumulation 4 is ~3 steps an epoch
     song_captions="chiptune, 8-bit, instrumental, square wave lead, arpeggios",
+    sample_prompt="chiptune, 8-bit, instrumental, square wave lead, arpeggios",   # a song, not "A high quality photo"
     finetune=True,                    # the whole DiT trains, a window at a time on a 4-bit trunk (families/ft.py)
     ft_learning_rate=1e-5,
     ft_regularisation=False,          # no "broad class" photos for a song set
@@ -134,6 +135,15 @@ ACESTEP15 = FamilyDescription(
         ("FAMILY_SLIDER_NEG", "3. The -1 end adds",
          "e.g. \"calm, slow tempo, soft\". Change one thing: words that also change the genre or the instruments "
          "turn the dial into a genre switch."),
+        ("FAMILY_SLIDER_ANCHORS", "5. Leave these alone (optional)",
+         "Captions of music the dial must not change, one a line. For a heavier-guitar dial meant for rock, "
+         "\"instrumental, solo piano, classical\" keeps piano pieces as they are; for an energy dial, \"ambient, "
+         "soft pads, no drums\" keeps ambient tracks calm. Each step checks one of them in turn, and the previews "
+         "play the first one beside the dial, so you can hear it stay put. Each one makes a step about half as long "
+         "again. Empty = none."),
+        ("FAMILY_SLIDER_ANCHOR_WEIGHT", "6. How firmly",
+         "How much keeping them as they are counts against the dial itself. 1 is equal weight; higher holds them "
+         "tighter but can weaken the dial; lower lets a little of the change through."),
     ),
     ema_hint="Saves and previews the running average of the LoRA instead of its latest step. A song set gives few "
              "steps an epoch (10 songs at accumulation 4 is about 3), so on a short run 0.98 averages over most of "

@@ -22,17 +22,27 @@ You don't need Fizgig on your own computer for this. You need a RunPod account a
 
 Close the tab whenever you like: the run carries on, and you can come back from any browser, your phone included. **Stop** the pod between sessions to keep everything on its disk; terminating it deletes the disk ([Storage](#storage)). The rest of this page has the detail on each step.
 
-**Keep a pod on one version:** a pod updates to the newest Fizgig each time it starts. To keep it on one version in the middle of a job, set `FIZGIG_REF` ([how](#keep-a-pod-on-one-version)).
+**Which Fizgig the pod runs:** opened from your own Fizgig, the pod runs your computer's version and keeps it; on its own it takes the newest at every start ([more](#which-fizgig-a-pod-runs)).
 
 **Need the old pod?** The previous template, with the classic app in a remote desktop, stays available as **[Fizgig Classic v7.x](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=faoq8ed6um&ref=vkb387ep)**: see [the classic template](#the-classic-template-remote-desktop) below. Pods you already have keep running as they are.
 
 ---
 
-## Keep a pod on one version
+## Which Fizgig a pod runs
 
-**A pod runs the newest Fizgig each time it starts.** That is how it gets updates: stop and start it, or restart it, and it's up to date. In the middle of a job you may want it to stay exactly as it is. Set the environment variable `FIZGIG_REF` to a release's version, and the pod runs that version at every start until you change it:
+- **On its own** (used only in a browser), a pod takes the newest Fizgig each time it starts: stop and start it, or restart it, and it's up to date.
+- **Opened from your own Fizgig** (8.9.93 or later), it runs your computer's version and keeps it, at every start ([below](#the-same-fizgig-as-your-computer)). This is all most people need: nothing changes under a job, and updating your computer brings the pod along.
+- **Set to one release** with `FIZGIG_REF`, it runs that release whatever opens it ([below](#keep-a-pod-on-one-version)).
 
-- **On RunPod, before you deploy:** on the deploy screen expand **Edit Template → Environment Variables**, add `FIZGIG_REF` with a version, for example `v8.9.92`, then **Deploy Pod**.
+### The same Fizgig as your computer
+
+When your own Fizgig opens a pod (in its app window, or a pod on its Pods tab), it puts the pod on the same version as your computer, so the two always work together: moving a run, helpers and the app window need that. The pod switches in a few seconds (a minute or two when that version needs other packages) and keeps the version at every start after that. It never switches while it's busy (a run, a download, captions, a move); it does once it's free. The pod's **About** box says which computer's version it runs, and **Use the newest Fizgig** there puts it back on the newest (the next time your Fizgig opens it, it's put back on yours).
+
+### Keep a pod on one version
+
+For a pod you use only in a browser, or to stay on one release whatever your computer runs: set the environment variable `FIZGIG_REF` to a release's version, and the pod runs that version at every start until you change it. A pod set this way doesn't follow your computer: when you update your computer, Fizgig says the two run different builds until you change `FIZGIG_REF` too.
+
+- **On RunPod, before you deploy:** on the deploy screen expand **Edit Template → Environment Variables**, add `FIZGIG_REF` with a version, for example `v8.9.93`, then **Deploy Pod**.
 - **On a pod you already have:** in the pod's menu choose **Edit Pod**, add `FIZGIG_REF` under **Environment Variables**, and save. RunPod restarts the pod, which starts on that version. Your volume and everything on it stay.
 - **On Vast.ai:** add `FIZGIG_REF` with the version to the template's environment before you rent.
 
@@ -122,9 +132,9 @@ In the pod's **Connect** menu, open **HTTP port 8081** and log in with that pass
 
 \* The file manager refuses very common passwords (`abc123`, `password1234`). For one of those it gets zeros added to the end, up to 12 characters, **for port 8080 only** (`abc123` becomes `abc123000000`); if it refuses that too, its login isn't set up. Fizgig's sidebar and the pod's log say which. Pick a less common password and both logins are identical.
 
-**Choosing the password.** On the deploy screen expand **Edit Template → Environment Variables** and add `FIZGIG_PASSWORD` (12+ characters). If you don't, the pod generates one on its first start, prints it in the log, and keeps it on your volume, so it stays the same every time you stop and start the pod. If the log seems to stop short of the banner, switch to another tab and back; RunPod's log view sometimes needs a nudge.
+**Choosing the password.** On the deploy screen expand **Edit Template → Environment Variables** and add `FIZGIG_PASSWORD` (12+ characters). If you don't, the pod generates one on its first start, prints it in the log, and keeps it on your volume, so it stays the same every time you stop and start the pod. Either way, Fizgig on your own computer finds it for you (with your RunPod API key saved there): see below. If the log seems to stop short of the banner, switch to another tab and back; RunPod's log view sometimes needs a nudge.
 
-**Opening it from Fizgig on your own computer.** With your RunPod API key saved in Fizgig's **Pods** tab, the Fizgig window opens your pod already logged in: it reads `FIZGIG_PASSWORD` from the pod's settings on RunPod each time, never saving it. That's one more reason to set `FIZGIG_PASSWORD` on the deploy screen as a plain value: a password kept as a RunPod secret, or one the pod made up, you type yourself.
+**Opening it from Fizgig on your own computer.** With your RunPod API key saved in Fizgig's **Pods** tab, the Fizgig window opens your pod already logged in, and **Helpers** adds the pod with no password typed. Fizgig reads the password each time and never saves it: from the pod's settings on RunPod (`FIZGIG_PASSWORD`), or, when the pod made up its own or keeps it as a RunPod secret, from the log the pod printed when it started.
 
 <p align="center"><img src="../docs/assets/screenshots/pods.png" alt="The Pods tab: your pods and your other computers" width="800"></p>
 
@@ -204,7 +214,7 @@ Environment variables, set on the deploy screen under **Edit Template**:
 | `FIZGIG_PASSWORD` | your choice (not a very common one) | Fizgig *and* the file manager. Generated on the first start if unset, then kept. (`VNC_PASSWORD`, the classic template's name, works too.) |
 | `HF_TOKEN` | `hf_…` | Only needed for Klein and Flux 3 Image Klein, which are gated. Krea 2 needs nothing. |
 | `FETCH_MODELS` | `krea2`, `klein`, `flux3`, `minimax`, `tools` — comma-separated | Download at boot instead of clicking the button in Preferences. `minimax` includes the Circlestone and both Ostris training adapters. `tools` is the Florence-2 captioner, the EN→ZH translator for bilingual captions, and the face model the Look Filter uses. |
-| `FIZGIG_REF` | branch or tag | Which Fizgig to run. Defaults to `master`, so the app updates itself at every pod start; a release's tag (`v8.9.92`) keeps the pod on that version ([Keep a pod on one version](#keep-a-pod-on-one-version)). |
+| `FIZGIG_REF` | branch or tag | Which Fizgig to run. Defaults to `master`: the newest at every start, or your computer's version once your Fizgig has opened the pod. A release's tag (`v8.9.92`) keeps the pod on that version whatever opens it ([Which Fizgig a pod runs](#which-fizgig-a-pod-runs)). |
 
 Nothing is compulsory — the defaults are the intended setup, and everything here can be done from
 inside the app instead.

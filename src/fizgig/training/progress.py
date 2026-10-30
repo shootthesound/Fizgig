@@ -17,6 +17,8 @@ _TQDM_PROGRESS_RE = re.compile(
     r"(?P<speed>[0-9]+(?:\.[0-9]+)?)(?P<unit>it/s|s/it)"
     r"(?:,\s*avr_loss=(?P<loss>[-+0-9.eE]+))?"
 )
+# The cache stages' own count (cache_progress below), for the run card:  [cache] captions 40/120
+_CACHE_RE = re.compile(r"\[cache\]\s+(?P<what>[a-z ]+?)\s+(?P<n>\d+)/(?P<total>\d+)")
 _EPOCH_RE = re.compile(r"\bepoch\s+(?P<epoch>\d+)\s*/\s*(?P<total>\d+)", re.I)
 # The RefMod maker (minimax_refmod.py) prints its own step line, not a tqdm bar:
 #   [refmod] step 50/200  loss 0.4312  drift 0.012
@@ -143,6 +145,9 @@ class TrainingProgressTracker:
 
     def consume(self, line: str):
         """Return an update dictionary for a relevant line, otherwise ``None``."""
+        m = _CACHE_RE.search(line)
+        if m:
+            return {"kind": "cache", "what": m["what"], "n": int(m["n"]), "total": int(m["total"])}
         refmod = parse_refmod_progress_line(line)
         if refmod is not None:
             return {"kind": "refmod", **refmod}
@@ -176,3 +181,28 @@ class TrainingProgressTracker:
             "total_epochs": self.total_epochs,
             **displayed,
         }
+
+
+def dataset_items(dataset) -> int:
+    """How many items a dataset caches (0 when it can't say: then no count is shown)."""
+    try:
+        return len(dataset.datasource)
+    except Exception:
+        return 0
+
+
+class CacheProgress:
+    """A cache stage's count as a plain line the run card reads ("[cache] captions 40/120"): the stages' tqdm bars
+    walk a stream with no length, so they only count batches, and a long encode looked stuck (#249). At most one
+    line a second, and always the last."""
+
+    def __init__(self, what: str, total: int):
+        self.what, self.total, self.n, self._at = what, max(0, int(total)), 0, 0.0
+
+    def add(self, k: int) -> None:
+        import time
+        self.n += k
+        now = time.time()
+        if self.total and (now - self._at >= 1.0 or self.n >= self.total):
+            self._at = now
+            print(f"[cache] {self.what} {min(self.n, self.total)}/{self.total}", flush=True)

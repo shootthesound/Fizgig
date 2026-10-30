@@ -129,8 +129,8 @@ def apg(cond, uncond, scale, momentum, norm_threshold=2.5):
 
 
 def _helper_file(name):
-    from huggingface_hub import hf_hub_download
-    return hf_hub_download(HELPER, name)
+    from fizgig.utils import hf_public
+    return hf_public.download(repo_id=HELPER, filename=name)
 
 
 def silence_latent():

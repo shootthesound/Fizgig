@@ -438,6 +438,25 @@ def user_presets(desc) -> list:
         return []
 
 
+PROMPT_SETS_DIR = os.path.join(PRESETS_DIR, "sample_prompts")
+
+
+def prompt_sets() -> list:
+    """The Samples tab's saved prompt sets, shared by every model (presets/sample_prompts/<name>.txt, one prompt a
+    line), by name (#267)."""
+    try:
+        return sorted((f[:-4] for f in os.listdir(PROMPT_SETS_DIR) if f.endswith(".txt")), key=str.lower)
+    except OSError:
+        return []
+
+
+def prompt_set_path(name) -> str:
+    name = str(name or "").strip()
+    if not name or any(c in name for c in '<>:"/\\|?*') or name.startswith("."):
+        raise ValueError('A set\'s name can\'t be empty or hold < > : " / \\ | ? *')
+    return os.path.join(PROMPT_SETS_DIR, name + ".txt")
+
+
 def _code_stamp():
     """The newest change to the web UI's server code (and the shared modules it runs): a page served after an update
     while this server still runs the old code is told to restart it."""
@@ -927,7 +946,7 @@ def _plan(family_key, values, image_folder, resume="", ft_continue=None, models=
     name = str(values.get("LORA_NAME") or "").strip() or "my_lora"
     out_dir = str(values.get("LORA_OUTPUT_DIR") or "").strip() or default_output_dir()
     values.update(LORA_OUTPUT_DIR=out_dir, DATASET_CONFIG=os.path.join(DATASET_DIR, f"{_safe(name)}_web.toml"))
-    captioner = pref_path(prefs, "krea2_text_encoder")
+    captioner = captioner_for(prefs)
     raw_ovr = prefs.get("caption_qwen_instructions")
     inputs = form.inputs(
         desc, values, models={**{k: pref_path(prefs, k) for k in form.model_keys(desc)}, **(models or {})},
@@ -936,7 +955,8 @@ def _plan(family_key, values, image_folder, resume="", ft_continue=None, models=
         cache_root=pref_path(prefs, "cache_dir"), samples_dir=os.path.join(out_dir, "sample"),
         inference_int8=str(prefs.get("inference_int8", "")).strip() in ("1", "True", "true"),
         captioner=captioner if captioner and os.path.isfile(captioner) else "",
-        caption_overrides=dict(raw_ovr) if isinstance(raw_ovr, dict) else {})
+        caption_overrides=dict(raw_ovr) if isinstance(raw_ovr, dict) else {},
+        caption_concept=str((load_state().get("captions") or {}).get("concept") or ""))
     # auto-recaption's trigger word per folder: a sub-folder's or another subject's own (the Captions tab's for it, else
     # the word its captions open with), never the training folder's
     trig = {f"{rel}/": subject_trigger(f, ext) for rel, f in launch.run_subfolders(desc, inputs)}
@@ -970,7 +990,7 @@ _RESUME_SAMPLE_KEYS = ("SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_H
 # SLIDER_LIVE / SLIDER_LIVE_APPLIED - named here so the server never imports torch)
 SLIDER_LIVE, SLIDER_LIVE_APPLIED = ".slider_prompts.json", ".slider_prompts_applied.json"
 _SLIDER_LIVE_KEYS = {"base": "FAMILY_SLIDER_BASE", "pos": "FAMILY_SLIDER_POS", "neg": "FAMILY_SLIDER_NEG",
-                     "guidance": "FAMILY_SLIDER_GUIDANCE"}
+                     "guidance": "FAMILY_SLIDER_GUIDANCE", "anchors": "FAMILY_SLIDER_ANCHORS"}
 
 
 def _prompt_slider_run(run) -> bool:
@@ -991,7 +1011,9 @@ def _slider_live_status(run):
     v, out = run.get("values") or {}, run.get("output_dir") or ""
     want = _read_json(os.path.join(out, SLIDER_LIVE)) if out else {}
     got = _read_json(os.path.join(out, SLIDER_LIVE_APPLIED)) if out else {}
-    same = lambda a, b: all(str(a.get(k) or "") == str(b.get(k) or "") for k in ("base", "pos", "neg")) and         float(a.get("guidance") or 0) == float(b.get("guidance") or 0)
+    lines = lambda x: [s.strip() for s in (x.splitlines() if isinstance(x, str) else (x or [])) if str(s).strip()]
+    same = lambda a, b: all(str(a.get(k) or "") == str(b.get(k) or "") for k in ("base", "pos", "neg")) and \
+        lines(a.get("anchors")) == lines(b.get("anchors")) and         float(a.get("guidance") or 0) == float(b.get("guidance") or 0)
     return {**{k: str(v.get(key) or "") for k, key in _SLIDER_LIVE_KEYS.items()}, "epoch": got.get("epoch"),
             "waiting": bool(want) and not (got and same(want, got))}
 
@@ -1386,6 +1408,35 @@ def _continue_point(rec):
             "unit": "epoch"}
 
 
+def _oom_note(run_id):
+    """What to do after a run ran out of GPU memory: Continue from its newest save (fresh memory - memory that
+    fragments over hours is the usual cause late in a run), or, with nothing saved yet, a lighter setup."""
+    pt = _continue_point(history.get(run_id))
+    if pt:
+        return (f"\nThe GPU ran out of memory. The run is saved at {pt['unit']} {pt['done']}: press Continue on its "
+                f"card in Runs & outputs to carry on from there, with fresh memory. Closing other programs that use "
+                f"the GPU (a browser, a game) helps too.\n")
+    return ("\nThe GPU ran out of memory before the run saved anything. Try a smaller picture size or more block "
+            "swap (Memory & Precision, on the Training tab), and close other programs that use the GPU.\n")
+
+
+def _run_form(rec, values=None):
+    """A run's model, training folder and settings as the Training tab loads them (Start again; a Continue that
+    started, with the settings it carries on with, so the tab shows the run training and not the one before)."""
+    if rec and rec.get("family") in (refmod.KEY, refmod.LABEL):
+        return {"family": refmod.KEY, "values": {k: v for k, v in (values or rec.get("values") or {}).items()
+                                                 if not str(k).startswith("__")},
+                "image_folder": rec.get("image_folder") or ""}
+    desc = get_family(rec.get("family", "")) if rec else None
+    if desc is None:
+        return {"error": "That run's model isn't available here."}
+    vals = values or rec.get("values") or {}
+    if rec.get("source") == "desktop":       # the desktop's settings, as a preset applies them, with the
+        mk = {o.key for o in desc.options if o.tab == "model"}   # Base Model card's options beside them
+        vals = {**form.apply_preset(desc, {}, vals, whole=True), **{k: v for k, v in vals.items() if k in mk}}
+    return {"family": desc.key, "values": vals, "image_folder": rec.get("image_folder") or ""}
+
+
 def _continue_run(run_id, more="", queue_ok=True, values=None):
     """Continue on Runs & outputs: the run trains on from its newest save, with its own settings and into its own
     record. more: the epochs (a fine-tune: rotations) to train to, for a run that already trained all it was set to.
@@ -1422,10 +1473,16 @@ def _continue_run(run_id, more="", queue_ok=True, values=None):
         return {"ok": True, "queued": True}
     note = f"=== Continuing {rec.get('lora')} from {os.path.basename(pt['path'])}: to {target} {unit} ==="
     if pt["kind"] == "ft":
-        return _resumed(_start(rec["family"], values, rec.get("image_folder") or "", ft_continue={
+        r = _resumed(_start(rec["family"], values, rec.get("image_folder") or "", ft_continue={
             "continue": cont, "rotations": left}, note=note, carry=run_id))
-    return _resumed(_start(rec["family"], values, rec.get("image_folder") or "", resume=pt["path"], note=note,
-                           carry=run_id))
+    else:
+        r = _resumed(_start(rec["family"], values, rec.get("image_folder") or "", resume=pt["path"], note=note,
+                            carry=run_id))
+    if isinstance(r, dict) and not r.get("error") and not r.get("problems"):
+        f = _run_form(rec, values)            # the Training tab then shows this run's settings (it kept the last ones)
+        if not f.get("error"):
+            r = {**r, "form": f}
+    return r
 
 
 LOG_CLEAR = "\x00clear\n"      # in the log where a run starts: the page's console begins again from there
@@ -1472,6 +1529,9 @@ def _start_one(family_key, values, image_folder, resume, ft_continue, note, mode
         studio.stop_worker()
     if captions.status()["state"] in ("loading", "running", "translating"):
         return {"error": "Captions are being made (Captions tab). Stop that first, then start the run."}
+    from fizgig.web import tools
+    if tools.holding_gpu():                     # a profile part-way: refused like captions, not thrown away
+        return {"error": "The Profiler is rendering on the GPU. Wait for it, or Stop it, then start the run."}
     captions.unload()                                     # the run gets the GPU memory the caption model held
     from fizgig.web import helpers
     helpers.share_stop_all()       # this computer's own run comes first: a share it trains for another stops there
@@ -1617,6 +1677,8 @@ def _run_stages(stages, out_dir):
                 webqueue.on_run_ended("stopped", _run.get("lora"), _queue_starter)
                 return
             _run["stage"] = stage.name
+            if str((_run.get("progress") or {}).get("note") or "").startswith("Caching"):
+                _run["progress"] = None          # the last stage's cache count isn't this stage's
         append_log(f"\n▶ {stage.name}\n")
         try:
             proc = _popen(stage.cmd)
@@ -1629,15 +1691,21 @@ def _run_stages(stages, out_dir):
             return
         with _lock:
             _run["proc"] = proc
+        oom = False
         for line in proc.stdout:
             append_log(line)
+            oom = oom or "out of memory" in line.lower()
             try:
                 upd = tracker.consume(line)
             except Exception:
                 upd = None
             if upd:
                 with _lock:
-                    if upd.get("kind") == "preview":
+                    if upd.get("kind") == "cache":      # a cache stage's count: its own bar and line
+                        n, total = upd["n"], upd["total"]
+                        _run["progress"] = {**_progress_dict({}), "percent": 100.0 * n / total if total else 0.0,
+                                            "note": f"Caching {upd['what']}: {n} of {total}"}
+                    elif upd.get("kind") == "preview":
                         p = dict(_run.get("progress") or _progress_dict({}))
                         p["note"] = {"start": "Making previews…", "complete": ""}.get(upd.get("phase"), "")
                         _run["progress"] = p
@@ -1660,6 +1728,8 @@ def _run_stages(stages, out_dir):
             with _lock:
                 _run.update(state="failed", proc=None, ended_at=time.time())
             history.end(_run.get("history_id"), "failed", _run.get("progress"))
+            if oom:
+                append_log(_oom_note(_run.get("history_id")))
             webqueue.on_run_ended("failed", _run.get("lora"), _queue_starter)
             return
     paused = ((os.path.exists(os.path.join(out_dir, ".pause_requested")) or _run["pause"])
@@ -2084,14 +2154,18 @@ def remember_folder(path):
     key = os.path.normcase(os.path.abspath(path))
     old = [p for p in (d.get("recent_folders") or []) if isinstance(p, str)
            and os.path.normcase(os.path.abspath(p)) != key]
-    update_last_used({"recent_folders": [path] + old[:RECENT_KEEP - 1]})
+    update_last_used({"recent_folders": [path] + old[:RECENT_KEEP - 1],      # picked again: on the list again
+                      "hidden_folders": [h for h in (d.get("hidden_folders") or []) if h != key]})
 
 
 def forget_folder(path):
+    """The tile's x: off Your training data (its files stay). Hidden, not only dropped from the recent ones - a past
+    run's training folder came straight back from the run history (#266) - until it's picked again."""
     key = os.path.normcase(os.path.abspath(str(path or "")))
     d = load_last_used()
     update_last_used({"recent_folders": [p for p in (d.get("recent_folders") or []) if isinstance(p, str)
-                                         and os.path.normcase(os.path.abspath(p)) != key]})
+                                         and os.path.normcase(os.path.abspath(p)) != key],
+                      "hidden_folders": [h for h in (d.get("hidden_folders") or []) if h != key] + [key]})
 
 
 def _elsewhere_folders(root) -> list:
@@ -2104,7 +2178,7 @@ def _elsewhere_folders(root) -> list:
     except Exception:
         pass
     inside = os.path.normcase(os.path.abspath(root)) + os.sep
-    seen, out = set(), []
+    seen, out = set(d.get("hidden_folders") or []), []          # the ones taken off the list (forget_folder)
     for p in cand:
         if not isinstance(p, str) or not p.strip():
             continue
@@ -2368,8 +2442,8 @@ def _fetch_on_use(f):
 
     def work():
         try:
-            from huggingface_hub import hf_hub_download
-            got = hf_hub_download(repo_id=f.repo, filename=f.path, local_dir=user_data.MODELS_DIR)
+            from fizgig.utils import hf_public
+            got = hf_public.download(repo_id=f.repo, filename=f.path, local_dir=user_data.MODELS_DIR)
             dest = os.path.join(user_data.MODELS_DIR, f.local_name or os.path.basename(f.path))
             if os.path.normcase(os.path.abspath(got)) != os.path.normcase(os.path.abspath(dest)):
                 os.replace(got, dest)             # a file in a repo subfolder: to the models folder itself
@@ -2429,6 +2503,27 @@ def _fetch_watch(proc):
     with _lock:
         if _fetch["state"] == "running":
             _fetch["state"] = "done" if code == 0 else "failed"
+
+
+def captioner_for(prefs) -> str:
+    """The captioner (the Captions tab's Qwen3-VL and auto-recaption): the secondary captioning model when that row is
+    set to a file it can read (#270), else the Krea 2 text encoder."""
+    sec = pref_path(prefs, captions.SECONDARY_PREF)
+    if sec and os.path.isfile(sec) and not captions.captioner_problem(sec):
+        return sec
+    return pref_path(prefs, "krea2_text_encoder")
+
+
+def secondary_captioner_note(prefs) -> str:
+    """The secondary captioning row's line for Preferences: what captions, or why the file set there can't."""
+    sec = pref_path(prefs, captions.SECONDARY_PREF)
+    if not sec:
+        return ""
+    if not os.path.isfile(sec):
+        return "That file isn't there: captioning uses the Krea 2 text encoder."
+    why = captions.captioner_problem(sec)
+    return (f"Not used - {why}. Captioning uses the Krea 2 text encoder." if why
+            else f"Captioning (the Captions tab and auto-recaption) uses {os.path.basename(sec)}.")
 
 
 def _caption_gpu_check(need_gb):
@@ -2659,6 +2754,10 @@ class Handler(BaseHTTPRequestHandler):
                                          for k in form.model_keys(d)},
                               "cache_dir": str(p.get("cache_dir") or ""),
                               "settings": {k: str(p.get(k) or "") for k in SETTING_PREFS},
+                              "captioner": {"path": str(p.get(captions.SECONDARY_PREF) or ""),
+                                            "note": secondary_captioner_note(p),
+                                            "links": [{"label": lab, "href": f"https://huggingface.co/{r}/blob/main/{f}"}
+                                                      for lab, r, f in captions.SECONDARY_LINKS]},
                               "abs": {k: pref_path(p, k) for k in ("profiles_dir", "cache_dir")},
                               "lora_output_dir": str(p.get("lora_output_dir") or ""), "output_default": default_output_dir(),
                               "web_port": saved_port(p), "port_now": self.server.server_address[1], "on_pod": on_pod(), "file_manager": pod_stop.file_manager(), "host_name": socket.gethostname(), "port_fixed": getattr(self, "port_fixed", False),
@@ -2729,9 +2828,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"error": str(e)}, 400)
         if path == "/api/captions/options":
             p = load_prefs()
-            cap = pref_path(p, "krea2_text_encoder")
+            cap = captioner_for(p)
+            sec = pref_path(p, captions.SECONDARY_PREF)
             desc = get_family((qs.get("family") or [""])[0])
-            return self.json({**captions.options(p, cap if cap and os.path.isfile(cap) else ""),
+            return self.json({**captions.options(p, cap if cap and os.path.isfile(cap) else "",
+                                                 cap if cap and cap == sec else ""),
                               "song_words": getattr(desc, "song_captions", "") if desc is not None else ""})
         if path == "/api/presets":               # a model's presets: the built-in ones, then the ones you saved
             desc = _preset_family((qs.get("family") or [""])[0])
@@ -2739,6 +2840,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"error": "unknown family"}, 400)
             built = [n for n, _ in (desc.presets or ())]
             return self.json({"builtin": built, "user": [n for n in user_presets(desc) if n not in built]})
+        if path == "/api/prompt_sets":           # the Samples tab's saved prompt sets
+            return self.json({"sets": prompt_sets()})
         if path == "/api/studio/families":
             return self.json({"families": [{"key": d.key, "name": d.display_name} for d in studio.families()]})
         if path == "/api/studio/layout":
@@ -3020,7 +3123,9 @@ class Handler(BaseHTTPRequestHandler):
             from fizgig.web import update_check
             if (qs.get("check") or [""])[0] == "1":
                 update_check.start()
-            return self.json({**about_info(), "release": update_check.status()})
+            from fizgig.web import pod_version
+            return self.json({**about_info(), "release": update_check.status(),
+                              "pod_version": pod_version.status() if on_pod() else None})
         if path == "/api/datasets":
             return self.json(list_datasets())
         if path == "/api/upload/status":
@@ -3232,9 +3337,28 @@ class Handler(BaseHTTPRequestHandler):
             mode = None
         newest = by_epoch[max(by_epoch, key=int)] if by_epoch else None
         return self.json({"items": out[:1000] if run else out[:300], "runs": runs, "epoch_prompts": by_epoch,
+                          "loras": self._epoch_loras(os.path.dirname(folder.rstrip("\\/")), run, infos) if run else {},
                           "preview_mode": mode if isinstance(mode, dict) else None,
                           "preview_labels": preview_labels(mode),
                           "prompts": newest or (run_prompts(os.path.dirname(folder.rstrip("\\/")), run) if run else [])})
+
+    @staticmethod
+    def _epoch_loras(out_dir, run, infos):
+        """{epoch: the LoRA file saved at it} for a run's previews: <run>-NNNNNN.safetensors, and the run's final
+        <run>.safetensors for its last previewed epoch when that one has no numbered file (fine-tunes left out)."""
+        found = {}
+        try:
+            for e in os.scandir(out_dir):
+                m = _CKPT.match(e.name[:-len(".safetensors")]) if e.name.lower().endswith(".safetensors") else None
+                if m and m.group(1) == run and m.group(2):
+                    found[int(m.group(2))] = e.path
+        except OSError:
+            return {}
+        epochs = [i["epoch"] for i in infos.values() if i and i.get("run") == run and i.get("epoch") is not None]
+        final = os.path.join(out_dir, run + ".safetensors")
+        if epochs and max(epochs) not in found and os.path.isfile(final):
+            found[max(epochs)] = final
+        return {str(k): p for k, p in found.items() if _checkpoint_kind(p) != "finetune"}
 
     def _checkpoints(self, folder):
         """The run's saved LoRAs / checkpoints in its output folder, newest first."""
@@ -3242,13 +3366,18 @@ class Handler(BaseHTTPRequestHandler):
             items = [e for e in os.scandir(folder) if e.is_file() and e.name.lower().endswith(".safetensors")]
         except OSError:
             return self.json({"items": []})
-        now = time.time()
-        items = [e for e in items if now - e.stat().st_mtime > 5]       # not one still being written
-        items.sort(key=lambda e: e.stat().st_mtime, reverse=True)
+        now, stats = time.time(), []
+        for e in items:
+            try:                                 # one deleted while this reads (a run moved away clears its files)
+                st = e.stat()
+            except OSError:
+                continue
+            if now - st.st_mtime > 5:            # not one still being written
+                stats.append((e, st))
+        stats.sort(key=lambda x: x[1].st_mtime, reverse=True)
         base = lambda n: (lambda m: m.group(1) if m else n)(_CKPT.match(n[:-len(".safetensors")]))
-        return self.json({"items": [{"name": e.name, "path": e.path, "size": e.stat().st_size,
-                                     "time": e.stat().st_mtime, "kind": _checkpoint_kind(e.path),
-                                     "run": base(e.name)} for e in items]})
+        return self.json({"items": [{"name": e.name, "path": e.path, "size": st.st_size, "time": st.st_mtime,
+                                     "kind": _checkpoint_kind(e.path), "run": base(e.name)} for e, st in stats]})
 
     def _captions(self, folder, ext, family=""):
         out = []
@@ -3429,9 +3558,9 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/helper/share_start":
                     return self.json(helpers.share_start(b))
                 if path == "/api/helpers/move":           # this computer's run: carry on training on a helper
-                    return self.json(helpers.move_start(str(b.get("id") or ""), bool(b.get("now"))))
+                    return self.json(helpers.move_start(str(b.get("id") or ""), bool(b.get("now")), b.get("home", True) is not False))
                 if path == "/api/helpers/move_back":      # a run moved to a helper: back here, to carry on training
-                    return self.json(helpers.move_back(bool(b.get("now"))))
+                    return self.json(helpers.move_back(bool(b.get("now")), bool(b.get("delete"))))
                 if path == "/api/helpers/move_clear":
                     return self.json(helpers.move_clear(bool(b.get("here"))))
                 if path == "/api/helper/move_in":         # a run moving here from another computer
@@ -3482,7 +3611,7 @@ class Handler(BaseHTTPRequestHandler):
                 if desc is None:
                     return self.json({"error": "unknown family"}, 400)
                 prefs = load_prefs()
-                cap = pref_path(prefs, "krea2_text_encoder")
+                cap = captioner_for(prefs)
                 sp = desc.preview_speed()
                 spf = pref_path(prefs, sp.pref_key) if sp is not None and sp.pref_key else ""
                 ck = desc.preview_checkpoint()
@@ -3532,6 +3661,31 @@ class Handler(BaseHTTPRequestHandler):
                               {k: v for k, v in vals.items() if not str(k).startswith("__") and k != "H3_TRAIN_BASE"},
                               f, indent=4)
                 return self.json({"ok": True, "user": user_presets(desc)})
+            if path in ("/api/prompt_set", "/api/prompt_set/save", "/api/prompt_set/delete"):
+                try:
+                    p = prompt_set_path(b.get("name"))
+                except ValueError as e:
+                    return self.json({"error": str(e)}, 400)
+                if path == "/api/prompt_set/save":
+                    lines = [ln.rstrip() for ln in str(b.get("prompts") or "").splitlines()]
+                    if not any(lines):
+                        return self.json({"error": "Type a prompt first."}, 400)
+                    if os.path.exists(p) and not b.get("overwrite"):
+                        return self.json({"exists": True})
+                    os.makedirs(PROMPT_SETS_DIR, exist_ok=True)
+                    with open(p, "w", encoding="utf-8") as f:
+                        f.write("\n".join(ln for ln in lines if ln.strip()) + "\n")
+                elif path == "/api/prompt_set/delete":
+                    if os.path.isfile(p):
+                        os.remove(p)
+                else:
+                    try:
+                        with open(p, encoding="utf-8") as f:
+                            return self.json({"prompts": "\n".join(ln.rstrip() for ln in f.read().splitlines()
+                                                                   if ln.strip())})
+                    except OSError:
+                        return self.json({"error": "That set's file can't be read."}, 400)
+                return self.json({"ok": True, "sets": prompt_sets()})
             if path == "/api/preset":
                 desc = _preset_family(b.get("family", ""))
                 preset = dict(desc.presets or ()).get(b.get("name")) if desc else None
@@ -3645,20 +3799,8 @@ class Handler(BaseHTTPRequestHandler):
                 r = _continue_run(str(b.get("id") or ""), str(b.get("more") or ""))
                 return self.json(r, 400 if r.get("error") and not r.get("need") else 200)
             if path == "/api/runs/settings":            # Start again with these settings
-                rec = history.get(str(b.get("id") or ""))
-                if rec and rec.get("family") in (refmod.KEY, refmod.LABEL):
-                    return self.json({"family": refmod.KEY, "values": {k: v for k, v in (rec.get("values") or {}).items()
-                                                                        if not str(k).startswith("__")},
-                                      "image_folder": rec.get("image_folder") or ""})
-                desc = get_family(rec.get("family", "")) if rec else None
-                if desc is None:
-                    return self.json({"error": "That run's model isn't available here."}, 400)
-                vals = rec.get("values") or {}
-                if rec.get("source") == "desktop":       # the desktop's settings, as a preset applies them, with the
-                    mk = {o.key for o in desc.options if o.tab == "model"}   # Base Model card's options beside them
-                    vals = {**form.apply_preset(desc, {}, vals, whole=True),
-                            **{k: v for k, v in vals.items() if k in mk}}
-                return self.json({"family": desc.key, "values": vals, "image_folder": rec.get("image_folder") or ""})
+                r = _run_form(history.get(str(b.get("id") or "")))
+                return self.json(r, 400 if r.get("error") else 200)
             if path == "/api/plan":
                 _, _, plan = _plan(b.get("family", ""), b.get("values") or {}, b.get("image_folder") or "")
                 return self.json({"problems": plan.problems, "stages": [{"name": s.name, "cmd": s.cmd}
@@ -3716,8 +3858,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": "Fill in all three: what the picture is, and what each end adds."}, 400)
                 if g <= 0:
                     return self.json({"error": "Push strength must be a number above 0."}, 400)
-                _write_json(os.path.join(run["output_dir"], SLIDER_LIVE), {**new, "guidance": g})
-                changes = {_SLIDER_LIVE_KEYS[k]: v for k, v in {**new, "guidance": f"{g:g}"}.items()}
+                anchors = [a.strip() for a in str(b.get("anchors") or "").splitlines() if a.strip()]
+                _write_json(os.path.join(run["output_dir"], SLIDER_LIVE), {**new, "guidance": g, "anchors": anchors})
+                changes = {_SLIDER_LIVE_KEYS[k]: v for k, v in {**new, "guidance": f"{g:g}",
+                                                                 "anchors": "\n".join(anchors)}.items()}
                 with _lock:                              # a Pause and Resume, or Start again, keeps them
                     if isinstance(_run.get("values"), dict):
                         _run["values"].update(changes)
@@ -3808,7 +3952,7 @@ class Handler(BaseHTTPRequestHandler):
                 render_keys = {f"workbench_render_{d.key}" for d in training_families()
                                if getattr(d, "workbench_render_choice", False)}
                 allowed = {k for d in training_families() for k in form.model_keys(d)} | set(SETTING_PREFS) | {
-                    "input_dataset_dir", "welcome_v8_hidden"} | render_keys
+                    "input_dataset_dir", "welcome_v8_hidden", captions.SECONDARY_PREF} | render_keys
                 ch = b.get("changes") or {}
                 ch = {k: v for k, v in ch.items() if k not in render_keys or v in ("checkpoint", "samples")}
                 if b.get("reset"):                      # Reset to defaults: the settings, never the model files
@@ -3861,7 +4005,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"ok": True})
             if path == "/api/captions/ai":
                 prefs, folder, clips, photos, _ = _caption_args(b)
-                cap = pref_path(prefs, "krea2_text_encoder")
+                cap = captioner_for(prefs)
                 model = str(b.get("model") or "")
                 _caption_gpu_check(8.0 if model == captions.QWEN_MODEL else 2.5)
                 only = [p for p in (b.get("only") or []) if os.path.dirname(os.path.abspath(p)) ==
@@ -3899,6 +4043,12 @@ class Handler(BaseHTTPRequestHandler):
                 if not base:
                     return self.json({"error": "This computer has no address on a network for a phone to open."}, 400)
                 return self.json({"url": base + "?phone=" + _phone_pass_new(), "seconds": 30})
+            if path == "/api/pod/match":            # a pod: run this computer's Fizgig (pod_version.py)
+                from fizgig.web import pod_version
+                return self.json(pod_version.match(b.get("commit"), str(b.get("by") or "")[:80], bool(b.get("auto"))))
+            if path == "/api/pod/newest":           # a pod: back on the newest Fizgig
+                from fizgig.web import pod_version
+                return self.json(pod_version.newest())
             if path == "/api/restart":              # Restart now: a new password (or none) takes effect
                 if on_pod():
                     return self.json({"error": "A pod's password comes from its template: restart the pod."}, 400)
@@ -4280,7 +4430,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not rendered:
                     raise ValueError("Render some epochs first.")
                 if path == "/api/royale/score":
-                    return self.json(royale.score(st["gen"], rendered, str(b.get("ref") or "")))
+                    return self.json(royale.score(st["gen"], rendered, [str(r) for r in b.get("refs") or []]))
                 folder = str(b.get("out_dir") or "").strip() or default_output_dir()
                 if path == "/api/royale/export":
                     return self.json(royale.export(rendered, folder, run, b.get("format") or "MP4",
@@ -4484,6 +4634,7 @@ def run_server(host, port=None, password=None, password_arg=False, open_browser=
             logger.info(f"Port {want} is in use; the web UI takes {port} and keeps it (Preferences > Web UI)")
         if str(load_prefs().get("web_port") or "") != str(port):
             update_prefs({"web_port": str(port)})
+    _SRV[0] = srv
     if history.close_orphans():                        # a run left "running" by a stopped or crashed server
         logger.info("A run from before was still recorded as running: it is recorded as stopped now")
     webqueue.load()                                    # held if it holds anything: a restart never launches a run
@@ -4495,6 +4646,14 @@ def run_server(host, port=None, password=None, password_arg=False, open_browser=
     if str(load_prefs().get("update_check", "1")) != "0":     # Preferences > Network: Check for new releases
         __import__("fizgig.web.update_check", fromlist=["x"]).start()   # a newer release? (the About button says)
     threading.Thread(target=_poll_stats_loop, daemon=True).start()
+    # the page's first ask is the schema, and its first build imports torch (block maps, the optimizer list): seconds,
+    # more on a slow disk. Built now, while the window or browser opens, the page has it sooner (#249)
+    def _warm():
+        try:
+            get_schema(ref_dit_set=False)
+        except Exception:                      # the page's own ask says what's wrong
+            pass
+    threading.Thread(target=_warm, daemon=True).start()
     if password and not on_pod() and host not in ("127.0.0.1", "localhost", "::1"):
         _LAN_PORT[0] = port                    # Preferences > Network can switch the answering on and off
         if __import__("fizgig.web.lan", fromlist=["x"]).enabled(load_prefs()):
@@ -4520,9 +4679,23 @@ def run_server(host, port=None, password=None, password_arg=False, open_browser=
         srv.server_close()
         if _RESTART[0]:
             _respawn()
+        if _SWITCH[0]:                         # a pod on another version: its start-up script starts it again
+            logging.shutdown()
+            os._exit(0)
 
 
 _RESTART = [False]
+_SWITCH = [False]
+_SRV = [None]
+
+
+def shutdown_for_switch():
+    """A pod switching version (pod_version.py): its helpers' workers go, then the server, then the process."""
+    from fizgig.web import helpers
+    helpers.shutdown()
+    _SWITCH[0] = True
+    if _SRV[0] is not None:
+        _SRV[0].shutdown()
 _held = [0.0]
 
 
@@ -4596,6 +4769,9 @@ def main(argv=None):
                                                      "FIZGIG_PASSWORD, then on a pod VNC_PASSWORD, then the one in "
                                                      "Preferences)")
     a = ap.parse_args(argv)
+    if on_pod():                              # a pod kept on the version of the computer using it: that one first
+        from fizgig.web import pod_version
+        pod_version.boot()
     user_data.migrate()                       # Fizgig 7's loose files into user_data, before anything reads them
     # a pod: its VNC_PASSWORD, the remote desktop's, so one password opens both. Elsewhere VNC_PASSWORD is ignored (a
     # stray one would open the web UI to the network while Preferences says no password).

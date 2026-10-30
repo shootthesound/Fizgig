@@ -273,6 +273,9 @@ SUBJECTS = [
     ("Robot", "a robot", "its", "pose"),
     ("Car", "a car", "its", "pose"),
     ("Motorcycle", "a motorcycle", "its", "pose"),
+    # a thing that doesn't pose: an object or product LoRA's subject
+    ("Object", "an object", "its", "composition"),
+    ("Product", "a product", "its", "composition"),
     ("Building", "a building", "its", "composition"),
     # — Landscapes / scenery (all "its" / "composition") —
     ("Landscape", "a landscape", "its", "composition"),
@@ -309,6 +312,7 @@ _SUBJECT_CATEGORY = {
     "Dog": "animal", "Cat": "animal", "Horse": "animal", "Animal": "animal",
     "Creature": "animal",
     "Robot": "machine", "Car": "machine", "Motorcycle": "machine",
+    "Object": "machine", "Product": "machine",          # Age: brand new ... vintage, not baby ... elderly
     "Building": "structure", "City skyline": "structure",
     "Landscape": "scene", "Vista": "scene", "Mountains": "scene", "Cliffs": "scene",
     "Coastline": "scene", "Beach": "scene", "Valley": "scene", "Forest": "scene",

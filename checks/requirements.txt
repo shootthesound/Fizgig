@@ -2,5 +2,13 @@ pytest>=8
 numpy
 pillow
 safetensors
+# families/train.py and what it loads (the slider anchor checks import it): the app's own pins
+tqdm==4.67.1
+toml==0.10.2
+voluptuous==0.15.2
+einops==0.7.0
+accelerate==1.6.0
+transformers==4.57.6
+opencv-python-headless==4.10.0.84
 # torch: CPU is enough. If it isn't installed yet:
 #   pip install torch --index-url https://download.pytorch.org/whl/cpu

@@ -12,7 +12,7 @@ Vast.ai rents GPUs from a marketplace of hosts, often for less than RunPod. Fizg
 
 1. Sign up (through the link above, if you're new) and add credit under **Billing**: Vast is prepaid, so it won't rent until you have some.
 2. Open [Fizgig's template](https://cloud.vast.ai/?ref_id=757773&creator_id=757773&name=Fizgig%20LoRa%20Training%20and%20Fine-tuning). Pick **On-demand**, not Interruptible (an interruptible instance can be taken back mid-run), and press **Rent** on a card with 24 GB or more (32 GB trains Krea 2 with no block swap).
-3. To choose your own password, add **FIZGIG_PASSWORD** to the template's environment before you rent: 8 characters or more, and one you don't use anywhere else. Otherwise the instance makes one up at its first start and keeps it. The instance runs the newest Fizgig each time it starts; to keep it on one version, add **FIZGIG_REF** with a release's tag, for example `v8.9.92` ([more](../docker/README.md#keep-a-pod-on-one-version)).
+3. To choose your own password, add **FIZGIG_PASSWORD** to the template's environment before you rent: 8 characters or more, and one you don't use anywhere else. Otherwise the instance makes one up at its first start and keeps it. Opened from your own Fizgig, the instance runs the same version as your computer; on its own it takes the newest at each start. To keep it on one release instead, add **FIZGIG_REF** with the release's tag, for example `v8.9.93` ([more](../docker/README.md#which-fizgig-a-pod-runs)).
 4. Wait until the instance is running (the first start downloads the image, a few minutes). Its password, if it made one up, is in its log: the instance card's log icon, the line `password: …`.
 
 ### …open it?

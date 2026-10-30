@@ -397,7 +397,8 @@ class YoloOnnxBackend:
         try:
             return hf_hub_download(local_files_only=True, **kw)
         except Exception:
-            return hf_hub_download(**kw)
+            from fizgig.utils import hf_public
+            return hf_public.download(**kw)
 
     def load(self):
         if self._sess is not None:

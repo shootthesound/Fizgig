@@ -636,10 +636,12 @@ def make_optimizer(params, lr):
 
 class FusedSteps:
     """Optimizer in backward: one optimizer per parameter, stepped from its grad hook and the grad freed at once,
-    so only one parameter's gradient is ever live (~5 GB saved on Krea 2). No clipping, no accumulation."""
+    so only one parameter's gradient is ever live (~5 GB saved on Krea 2). No clipping, no accumulation. `scale` is
+    the step's LR multiplier (the driver's step_policy), set before each backward."""
 
     def __init__(self, lr):
         self.lr = lr
+        self.scale = 1.0
         self.opts = {}
         self.handles = []
 
@@ -651,6 +653,8 @@ class FusedSteps:
         def _hook(param):
             opt = self.opts.get(param)
             if opt is not None:
+                for g in opt.param_groups:
+                    g["lr"] = self.lr * self.scale
                 opt.step()
                 opt.zero_grad(set_to_none=True)
         for p in params:

@@ -80,6 +80,16 @@ A slider is a dial between two looks: strength +1 moves toward one, -1 toward th
 
 Load the LoRA with the standard LoRA loader on Z-Image Turbo and generate at 8 steps, CFG 1. Fizgig saves it under the names AI-Toolkit writes for Z-Image, which ComfyUI reads directly; the training adapter is never in the file, so nothing else is needed.
 
+## Z-Image Base
+
+**Z-Image Base** is Tongyi's undistilled Z-Image, the model Turbo was made from. Pick it as the Base Model on the Training tab to train on Base instead of Turbo. It trains without the training adapter, since Base isn't distilled, and offers the same kinds of training as Turbo: LoRAs, LoKR, sliders from prompts or photo pairs, masked training, and full fine-tunes. Memory use, block swap and the big-card settings are the same as Turbo's.
+
+**Download models for me** in its Preferences section fetches Base, the FLUX.1 VAE, the Qwen3-4B text encoder and Z-Image Turbo for the previews (about 33 GB), from [Comfy-Org/z_image](https://huggingface.co/Comfy-Org/z_image) and [Comfy-Org/z_image_turbo](https://huggingface.co/Comfy-Org/z_image_turbo).
+
+**Previews on Turbo.** Most people generate with Z-Image Turbo, so training samples, Studio and LoRA Royale render your Base LoRA on Turbo by default (8 steps, no CFG). Untick **Use Z-Image Turbo for samples** on the Samples tab to preview on Base itself, at ComfyUI's Base settings: 25 steps, CFG 4, with a negative prompt. Sliders and fine-tunes always preview on Base, since there is no LoRA to carry over to Turbo.
+
+In ComfyUI, load a Base LoRA with the standard LoRA loader, on Turbo at 8 steps and CFG 1, or on Base at 25 steps and CFG 4.
+
 ## Not charted yet
 
 Z-Image's block map (which of its 30 layers carry identity, style and detail) isn't measured yet, so **Model Area to Train**, Extract's block presets and Studio's colour-coded categories aren't offered. Every layer's slider works in Studio, and Extract's All Blocks and Custom work.
@@ -90,4 +100,4 @@ Z-Image Turbo is released under the Apache 2.0 licence, as is Fizgig's training 
 
 ## Command line
 
-Z-Image trains headless through `src/fizgig/families/cache.py` and `src/fizgig/families/train.py` with `--family zimage`, with the training adapter passed as `--training_adapter`. See [the three-step pipeline](CLI.md#the-three-step-pipeline).
+Z-Image trains headless through `src/fizgig/families/cache.py` and `src/fizgig/families/train.py` with `--family zimage`, with the training adapter passed as `--training_adapter`. Z-Image Base is `--family zimage_base`, with no training adapter; `--preview_checkpoint` with the Turbo DiT previews on Turbo. See [the three-step pipeline](CLI.md#the-three-step-pipeline).

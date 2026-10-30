@@ -176,10 +176,54 @@ def login_password(key, url) -> str:
     if not key or not pod_id:
         return ""
     try:
-        pods = ((_gql(key, "query { myself { pods { id env } } }", timeout=10).get("myself") or {}).get("pods")) or []
+        pods = ((_gql(key, "query { myself { pods { id env runtime { uptimeInSeconds } } } }", timeout=10)
+                 .get("myself") or {}).get("pods")) or []
     except ValueError:
         return ""
-    return next((_env_password(p) for p in pods if p.get("id") == pod_id), "")
+    pod = next((p for p in pods if p.get("id") == pod_id), None)
+    if pod is None:
+        return ""
+    # none in its settings (deployed from the template link: the pod made one up; or a RunPod secret): the one its
+    # start-up banner printed, from its log
+    return _env_password(pod) or _log_password(key, pod_id, (pod.get("runtime") or {}).get("uptimeInSeconds"))
+
+
+_BANNER_PW = re.compile(r"^\[fizgig\]\s+password:\s*(\S+)\s*$")
+
+
+def _log_password(key, pod_id, uptime=None, wait=4.0) -> str:
+    """The password in the "Ready" banner the pod printed when it started, read from its container log (RunPod's v2
+    log stream), or "". Read from the start of this run of the pod, so a long training log can't push the banner out
+    of reach; the stream then goes quiet and is closed."""
+    if uptime:
+        since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - float(uptime) - 120))
+        q = "since=" + urllib.parse.quote(since)
+    else:
+        q = "tail=5000"
+    req = urllib.request.Request(f"https://api.runpod.io/v2/pods/{urllib.parse.quote(pod_id)}/logs?source=container"
+                                 f"&{q}", headers={"Authorization": f"Bearer {key}", "User-Agent": UA,
+                                                   "Accept": "text/event-stream"})
+    found, end = "", time.time() + wait
+    try:
+        with urllib.request.urlopen(req, timeout=wait) as r:
+            while time.time() < end:
+                raw = r.readline()
+                if not raw:
+                    break
+                line = raw.decode("utf-8", "replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                try:
+                    m = _BANNER_PW.match(str(json.loads(line[5:]).get("line") or "").strip())
+                except ValueError:
+                    continue
+                if m:
+                    found = m.group(1)
+                    if uptime:                       # this start's own banner: done
+                        break
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        pass
+    return found
 
 
 def _env_password(pod) -> str:

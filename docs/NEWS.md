@@ -14,7 +14,7 @@ Download it once from the card (1.75 GB), press **Preview on 2 random pictures**
 
 **Make masks in one click** on the Image Prep tab: the person, the person without their clothes, just the face and hair, the body and clothes without the face, the body's skin only, just the clothes, everything but the faces, or just the background (for a place or scene LoRA). With several people in a picture, it can keep just your subject. Or paint your own, or bring masks from another trainer that uses the same naming.
 
-**Prior preservation outside the mask** came in 8.9.7: with **Outside the mask, keep the model's own picture** on, outside the mask the LoRA learns to draw what the model itself would there, so backgrounds and the model's look stay the model's own. [Fizgig v8.9.7 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v8.9.7)
+**Prior preservation outside the mask** came in 8.9.7: with **Outside the mask, keep the model's own picture (prior preservation)** on, outside the mask the LoRA learns to draw what the model itself would there, so backgrounds and the model's look stay the model's own. [Fizgig v8.9.7 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v8.9.7)
 
 Tick **Train on the parts your masks show** on the Training tab. Update Fizgig on your computers, and restart your pods. [Masked training guide](https://github.com/shootthesound/Fizgig/blob/master/docs/MASKED_TRAINING.md) · [Fizgig v8.9.6 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v8.9.6)
 

@@ -341,8 +341,10 @@ def write_report(desc, lora_path, stats, abl, output_html, labels):
     parts = []
 
     rf = stats["rank_for"]
-    kpis = [("Rank in the file", str(stats["max_rank"])), ("Rank holding 95%", str(rf[0.95])),
-            ("Rank holding 99%", str(rf[0.99]))]
+    kpis = [("Max down-rank (fused: 3x/2x)", str(stats["max_rank"])), ("Truncation rank for 95%", str(rf[0.95])),
+            ("Truncation rank for 99%", str(rf[0.99]))]
+    fused = ("Fused qkv/w13 modules carry 3x/2x the LoRA rank: the down-rank above, and the truncation ranks below, "
+             "must climb past the LoRA's rank to hold their energy.")
     vd = {}
     if abl is not None:
         vd = verdicts(abl)
@@ -354,7 +356,7 @@ def write_report(desc, lora_path, stats, abl, output_html, labels):
             kpis.append(("Bleed into the plain prompt", f"+{100 * gb:.0f} pts" if gb > 0.03 else "none measurable"))
     parts.append('<div class="card"><div class="kpis">' + "".join(
         f'<div class="kpi"><div class="lab">{_html.escape(k)}</div><div class="big">{_html.escape(v)}</div></div>'
-        for k, v in kpis) + "</div></div>")
+        for k, v in kpis) + '</div>' + f'<div class="note">{_html.escape(fused)}</div></div>')
     cats = dict(desc.block_categories)
     if cats:
         chips = "".join(f'<span title="{_html.escape(lab(b))}" style="display:inline-block;min-width:26px;padding:4px 0;'

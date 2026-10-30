@@ -24,10 +24,13 @@ class CheckpointedBlock(torch.nn.Module):
         self.block = block
         self.checkpointing = checkpointing
 
-    def forward(self, *args):
+    def forward(self, *args, **kwargs):
+        # **kwargs: the DiT that calls its blocks with keywords (Fibo 2.0's adaln_noisy/adaln_clean, noise_mask)
+        # must reach the block unchanged - torch.compile traces the wrapper, so the block's own call signature
+        # must survive the wrap.
         if self.checkpointing and self.training and torch.is_grad_enabled():
-            return torch.utils.checkpoint.checkpoint(self.block, *args, use_reentrant=False)
-        return self.block(*args)
+            return torch.utils.checkpoint.checkpoint(self.block, *args, **kwargs, use_reentrant=False)
+        return self.block(*args, **kwargs)
 
 
 def find_host_compiler() -> bool:

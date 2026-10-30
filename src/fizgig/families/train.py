@@ -1827,7 +1827,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         if ema is not None:
             ema.swap_in()
         try:
-            net.save(path, metadata(epoch))
+            # the family's own format: split by default, the fused checkpoint layout only when the description says so
+            net.save(path, metadata(epoch), fuse=desc.lora.save_fused)
+            # a ComfyUI-fused export is a separate transform (driver.export_lora_state_dict), offered explicitly
         finally:
             if ema is not None:
                 ema.swap_out()
@@ -2159,6 +2161,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     progress = tqdm(total=steps_per_epoch * max_train_epochs, initial=global_step, desc="steps", smoothing=0)
     dit.train()
     pending = 0                            # micro-batches backpropagated since the last optimizer step
+    last_grad_norm = None                  # pre-clip total norm of the most recent optimizer step (None = clipping off)
     lr_acc = []                            # this window's per-step LR multipliers (driver.step_policy)
 
     _block_params = {}
@@ -2239,13 +2242,14 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     pass
 
     def _update():
-        nonlocal pending
+        nonlocal pending, last_grad_norm
         if ftr is not None and ftr.fused is not None:
             pending = 0                    # every parameter already stepped from its own gradient hook
             lr_acc.clear()
             return
         if max_grad_norm:
             pre = torch.nn.utils.clip_grad_norm_(params, max_grad_norm)
+            last_grad_norm = pre.item()          # surface the pre-clip norm for logging
             if adaptive is not None and adaptive.clip_signal:
                 adaptive.record_clip(pre, max_grad_norm)
         m = sum(lr_acc) / len(lr_acc) if lr_acc else 1.0
@@ -2570,13 +2574,16 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 for _p in _frozen_now:
                     _p.requires_grad_(True)
             pending += 1
+            stepped = False
             if pending >= accum:
                 _update()
+                stepped = True
             global_step += 1
             recorder.add(epoch=epoch, step=i, loss=loss.item())
             steplog.add(step_off + global_step, epoch + 1 + (ftr.epochs_done if ftr is not None else 0), loss.item(),
                         None if global_step % 20 else      # the rate now and then (Automagic's averages it)
-                        learning_rate if optimizer is None else optimizer_lr(optimizer))
+                        learning_rate if optimizer is None else optimizer_lr(optimizer),
+                        last_grad_norm if stepped else None)
             if pending == 0 and ftr is None:   # the web UI's Sample now / Save now, between optimizer steps
                 if take_request(output_dir, "save"):
                     save_lora(os.path.join(output_dir, f"{output_name}-step{global_step:07d}.safetensors"), epoch + 1)
@@ -2597,6 +2604,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     f"step={global_step}  {(time.time() - t0) / max(1, steps_per_epoch):.2f}s/step  "
                     f"lr={learning_rate if optimizer is None else optimizer_lr(optimizer):.3e}  "
                     + (f"({group_rates(optimizer)})  " if optimizer is not None and group_rates(optimizer) else "") +
+                    (f"  grad_norm {last_grad_norm:.4g}" if last_grad_norm is not None else "") +
                     f"peak VRAM {torch.cuda.max_memory_reserved() / 1024 ** 3:.1f} GB")
         steplog.flush()
         if share_worker and epoch + 1 < int((share_now[0].get("epochs") or [share_now[0]["epoch"]])[-1]):

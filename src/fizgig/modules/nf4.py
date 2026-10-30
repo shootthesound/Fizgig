@@ -8,9 +8,17 @@ this is QLoRA's recipe applied to a diffusion DiT.
 
 Design mirrors modules/fp8.py: we keep each `nn.Linear` (so LoRA targeting by
 module path is unchanged) and monkey-patch its `forward` to dequantize NF4 → bf16
-per matmul. Unlike the fp8 `_scaled_mm` path, the forward here is plain
-`dequantize_nf4` + `F.linear` — standard autograd, no custom Function — so it
-composes cleanly with gradient checkpointing (no saved-tensor fragility).
+per matmul, through the custom autograd Function `_NF4DequantLinear`: the packed
+4-bit weight and quant state ride on the context and the bf16 weight is rebuilt
+inside the backward, so the unpacked copy never enters autograd's saved-tensor machinery.
+
+That replaces the first shape of this file, which did plain `dequantize_nf4` + `F.linear` with no Function: standard
+autograd SAVED the bf16 weight of every quantised Linear for grad_x, so with checkpointing OFF they were all resident
+at once and 4-bit storage billed like 16-bit (measured: nf4 uncheckpointed 33.8 GB against int8's 22.8 GB, which pays
+no such gap because its matmul is 8-bit and no bf16 copy is ever made). The Function is bit-identical to the plain
+path and reclaims the residency IN EAGER MODE only - a compiled run keeps the dequantised weights alive across the
+step however the Python forward is written, so 33.8 GB is not fixable at this layer (that needs bnb's C++
+`matmul_4bit`, opaque to dynamo).
 
 Source-agnostic: quantizes from whatever the loaded base is. An fp8 base is
 dequantized fp8 → bf16 first, then NF4 (fp8→NF4 is slightly lossier — double
@@ -27,17 +35,44 @@ logger = logging.getLogger(__name__)
 _NF4_TARGET_DEFAULT = ("double_blocks", "single_blocks")
 
 
-def nf4_linear_forward_patch(self: nn.Linear, x: torch.Tensor) -> torch.Tensor:
-    """Patched forward for an NF4-quantized frozen Linear.
+class _NF4DequantLinear(torch.autograd.Function):
+    """Memory-frugal dequant matmul for a FROZEN NF4 base Linear — the fp8 `_FP8DequantLinear` pattern.
 
-    Dequantizes the packed 4-bit weight back to the input dtype and runs a normal
-    F.linear. The dequantized weight carries no gradient (the base is frozen), so
-    grad flows only to `x` (and thus to any LoRA upstream) — exactly like the
-    dequant fp8 path, but from 4-bit storage.
+    The packed weight and quant state ride on the context as plain attributes rather than save_for_backward, so
+    the bf16 dequant exists only inside each call and never across the step; backward rebuilds it from the packed
+    weight (weight and state are frozen → None).
+
+    The bias is handled HERE rather than added by the caller, because F.linear fuses the bias into the GEMM
+    epilogue: adding it afterwards reorders the rounding by one bf16 ulp (measured 0.0078 at O(1) values), which
+    this path is meant not to have. With the bias inside, the result is bit-identical to the plain dequant path
+    by construction.
     """
-    from bitsandbytes.functional import dequantize_nf4
-    w = dequantize_nf4(self._nf4_packed, self._nf4_state).to(x.dtype)
-    return F.linear(x, w, self.bias)
+
+    @staticmethod
+    def forward(ctx, x, packed, state, bias):
+        from bitsandbytes.functional import dequantize_nf4
+        w = dequantize_nf4(packed, state).to(x.dtype)
+        ctx.packed = packed
+        ctx.state = state
+        return F.linear(x, w, bias)
+
+    @staticmethod
+    def backward(ctx, grad_out):
+        from bitsandbytes.functional import dequantize_nf4
+        w = dequantize_nf4(ctx.packed, ctx.state).to(grad_out.dtype)
+        grad_bias = None
+        if ctx.needs_input_grad[3]:
+            grad_bias = grad_out.reshape(-1, grad_out.shape[-1]).sum(0)
+        return grad_out @ w, None, None, grad_bias
+
+
+def nf4_linear_forward_patch(self: nn.Linear, x: torch.Tensor) -> torch.Tensor:
+    """Patched forward for an NF4-quantized frozen Linear: the matmul runs through `_NF4DequantLinear`, so the
+    bf16 weight is rebuilt in the backward instead of saved by autograd. The dequantized weight carries no
+    gradient (the base is frozen), so grad flows only to `x` (and any LoRA upstream) and to the bias - the fp8
+    dequant path's shape, from 4-bit storage.
+    """
+    return _NF4DequantLinear.apply(x, self._nf4_packed, self._nf4_state, self.bias)
 
 
 def _dequantize_source_weight(module: nn.Linear) -> torch.Tensor:

@@ -60,10 +60,14 @@ def _quantize_one(m, driver, precision, compute_device, store_device=None):
         # a driver may keep its original trainer's bf16 scales
         w = w.float() if getattr(driver, "int8_fp32_scales", True) else w.contiguous()
         scale = w.abs().amax(dim=-1, keepdim=True).clamp_min(1e-8) / 127.0
-        m.weight.requires_grad_(False)
         q = (w / scale).round_().clamp_(-127, 127).to(torch.int8).contiguous()
-        m.weight.data = q if store_device is None else q.to(store_device)
+        # Bytes in a non-persistent buffer, `.weight` a bf16 stub - the NF4 shape, and the only
+        # one that survives torch.compile (see modules/int8_train.py's apply_int8_training).
+        m.register_buffer("_int8_w", q if store_device is None else q.to(store_device),
+                          persistent=False)
         m.register_buffer("_int8_wscale", scale.reshape(1, -1).to(torch.float32), persistent=False)
+        m.weight.requires_grad_(False)
+        m.weight.data = torch.empty(0, device=q.device, dtype=torch.bfloat16)
         m._is_int8 = True
         m._int8_grad_mode = "bf16"
         m.forward = int8_train_forward.__get__(m, type(m))

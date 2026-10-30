@@ -117,6 +117,19 @@ class LoRALinear(nn.Module):
         self.scales = {}
         self._meter_block = None         # set by the workbench for block activity (BlockMeter)
 
+    def __getattr__(self, name):
+        """Attribute lookup falls through to the wrapped Linear. A diffusers forward reads the base module's own
+        attributes off it (TimestepEmbedder.forward does self.mlp[0].weight.dtype), so a wrapped Linear must still
+        answer for .weight / .bias / .in_features / .out_features exactly as the base would - without this, a LoRA
+        on the timestep or modulation Linears breaks the model's own forward instead of just adding a delta."""
+        base = self.__dict__.get("_modules", {}).get("base")
+        if base is None:
+            return super().__getattr__(name)
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(base, name)
+
     def _base_device(self):
         """Where the base weight lives, read off its storage: a ConvRot int8 Linear's .weight decodes the whole
         matrix."""
@@ -271,13 +284,9 @@ class FamilyLoRA:
         return f"{stem}.{f.down}.weight", f"{stem}.{f.up}.weight", f.alpha_key.format(prefix=stem)
 
     def _stem(self, full, lokr=False):
-        """A module's key stem in the family's format: '<file_prefix><dotted path>', or for a kohya family
-        'lora_unet_<path with dots as underscores>' (a LoKR there uses the LyCORIS standard 'diffusion_model.<path>',
-        as Fizgig's Krea 2 always saved it)."""
-        f = self.desc.lora
-        if f.kohya:
-            return f"diffusion_model.{full}" if lokr and not f.lokr_kohya_stems else f"lora_unet_{full.replace('.', '_')}"
-        return f"{f.file_prefix}{full}"
+        """A module's key stem in the family's format - the rule lives on the declared format (LoRAFormat.stem),
+        so the layer, the file readers and a driver's export cannot drift apart."""
+        return self.desc.lora.stem(full, lokr=lokr)
 
     def _wrap(self, full):
         """Wrap one Linear by dotted name (targets at init; frozen files may reach beyond them, e.g. a speed LoRA
@@ -627,15 +636,20 @@ class FamilyLoRA:
                 sd[kal] = torch.tensor(float(self.alpha))
         return sd
 
-    def save(self, path, metadata=None, dtype=torch.bfloat16):
+    def save(self, path, metadata=None, dtype=torch.bfloat16, *, fuse=False):
         from safetensors.torch import save_file
-        save_file(self.state_dict(dtype), path, metadata={k: str(v) for k, v in (metadata or {}).items()})
+        sd = self.state_dict(dtype)
+        if fuse:                       # the final export only - the resume checkpoint and previews stay separate
+            sd = self.driver.export_lora_state_dict(sd)
+        save_file(sd, path, metadata={k: str(v) for k, v in (metadata or {}).items()})
 
     @torch.no_grad()
     def load_trainable(self, path):
         """Restore the trainable adapter from a file saved by save(). Returns modules matched."""
         from safetensors.torch import load_file
-        sd = load_file(path)
+        # the family's own save may already be in the export layout (Fibo 2.0's fused single output): the
+        # read-side inverse puts it back onto the live split Linears first, exactly as read_file does
+        sd = self.driver.convert_lora_state_dict(load_file(path))
         n = 0
         for full, w in self.wrapped.items():
             if TRAINABLE not in w.adapters:

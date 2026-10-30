@@ -146,6 +146,17 @@ class LoRAFormat:
     lokr_kohya_stems: bool = False
     note: str = ""
     source: str = ""
+    save_fused: bool = False        # the family's LoRA is saved in the split layout by default; True means the
+                                    # framework's export fuses it to the checkpoint's on-disk layout
+
+    def stem(self, full: str, lokr: bool = False) -> str:
+        """A module path in this family's key form: '<file_prefix><dotted path>', or for a kohya family
+        'lora_unet_<path with dots as underscores>' (a LoKR there uses the LyCORIS standard
+        'diffusion_model.<path>', as Fizgig's Krea 2 always saved it). This is the one place the form is
+        decided: the LoRA layer, the file readers and a driver's export all ask it instead of rebuilding it."""
+        if self.kohya:
+            return f"diffusion_model.{full}" if lokr and not self.lokr_kohya_stems else f"lora_unet_{full.replace('.', '_')}"
+        return f"{self.file_prefix}{full}"
 
     def module_of(self, key: str) -> Optional[str]:
         """Dotted module path of a down-weight key ('transformer.modulation.1.lora_A.weight' -> 'modulation.1'),
@@ -641,6 +652,11 @@ class FamilyDescription:
     # (0-1, 0 = clean) fills the Timestep Range. The first entry is the default; the Training tab adds "Custom" (pick
     # blocks) and shows the Timestep Range (0-1000) for a family that has areas. () = neither control
     train_areas: tuple = ()
+    # False drops "Custom" from the area dropdown and hides the per-block picker with it: a family whose areas
+    # already cover the whole model gains nothing from a tick list over the same blocks. A saved run that still
+    # names "Custom" keeps resolving through families/launch.py's area_blocks, so turning this off never strands
+    # an existing preset - it only stops offering the control.
+    train_area_custom: bool = True
 
     # things a user or a later session must know, with sources
     notes: tuple = ()

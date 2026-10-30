@@ -134,6 +134,5 @@ def block_of(desc):
 def family_keys(desc, module):
     """(down, up, alpha) keys of a module in the family's own file format."""
     f = desc.lora
-    # a kohya family flattens the path (lora_unet_blocks_0_attn_wq), as FamilyLoRA saves it
-    stem = f"lora_unet_{module.replace('.', '_')}" if f.kohya else f"{f.file_prefix}{module}"
+    stem = f.stem(module)                # the declared form, from the same rule the layer saves with
     return f"{stem}.{f.down}.weight", f"{stem}.{f.up}.weight", f.alpha_key.format(prefix=stem)

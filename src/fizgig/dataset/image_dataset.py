@@ -128,7 +128,10 @@ BUCKET_RESO_STEPS = {ARCHITECTURE_MINIMAX: 32}
 # cache: a 448x544 bucket stores `latent_28x34`). Missing here, latent_cache_matches_reso could
 # only ever return None for H3 — so --skip_existing re-encoded every image anyway, which is
 # exactly the "it re-caches everything" symptom.
-LATENT_SPATIAL_FACTOR = {"klein9b": 16, "krea2": 8, ARCHITECTURE_MINIMAX: 16}
+LATENT_SPATIAL_FACTOR = {"klein9b": 16, "krea2": 8, ARCHITECTURE_MINIMAX: 16, "fibo2": 8}
+# Fibo 2.0: the pipeline's prepare_image_latents unpatchifies back to 32 channels before returning, so the cached
+# latent's h/w is the raw VAE output (image/8); the DiT's x_embedder patchifies it internally. (The DiT's effective
+# stride is 16 = patch 2 x VAE 2x2, but that packing is applied on top of the stored latent, not to its shape.)
 
 
 def _described_family(architecture):

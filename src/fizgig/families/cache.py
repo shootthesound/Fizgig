@@ -72,7 +72,8 @@ def save_cond(desc, item, cond, refs=""):
     md = {"architecture": desc.arch_id, "caption1": item.caption, "format_version": FORMAT_VERSION}
     if refs:
         md["reference_sizes"] = refs
-    save_file({f"cond__{k}": _clean(v, k, item.item_key) for k, v in cond.items()},
+    # a None mask (e.g. Fibo 2.0's encode_prompt) is dropped, matching the reference trainer's pack()
+    save_file({f"cond__{k}": _clean(v, k, item.item_key) for k, v in cond.items() if v is not None},
               item.text_encoder_output_cache_path, metadata=md)
 
 

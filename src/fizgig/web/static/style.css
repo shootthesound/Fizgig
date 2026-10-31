@@ -1517,7 +1517,8 @@ body { font-size: 13.5px; background: var(--bg-deep); }
   border-radius: var(--radius); font-size: 11.5px; color: var(--text-secondary); }
 .gpu-name { font-weight: 600; color: var(--text-primary); font-size: 12px; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; }
-.meter-head { display: flex; justify-content: space-between; margin-bottom: 3px; }
+.meter-head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px; white-space: nowrap; }
+.meter-head span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .meter-bar { height: 5px; border-radius: 999px; background: var(--bg-inset); overflow: hidden; }
 .meter-bar > span { display: block; height: 100%; background: var(--accent); border-radius: 999px; transition: width .6s; }
 .meter.warn .meter-bar > span { background: var(--warning); }

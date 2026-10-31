@@ -232,7 +232,11 @@ def _side_extras() -> dict:
             up = os.path.dirname(d)
             d = "" if up == d else up
         u = shutil.disk_usage(d or BASE_DIR)
-        disk = {"used": u.used, "total": u.total, "free": u.free, "where": os.path.splitdrive(d)[0] or d}
+        mount = os.path.abspath(d or BASE_DIR)     # off Windows: the mount point (/workspace), not the whole path
+        while not os.path.ismount(mount) and os.path.dirname(mount) != mount:
+            mount = os.path.dirname(mount)
+        disk = {"used": u.used, "total": u.total, "free": u.free, "where": os.path.splitdrive(d)[0] or mount,
+                "path": d}
     except OSError:
         pass
     jobs, loaded = [], []

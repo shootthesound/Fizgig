@@ -2005,8 +2005,13 @@ async function pollStats() {
     s.ram[1] && s.ram[0] / s.ram[1] > 0.95));
   // the drive LoRAs go to: checkpoints and saved states fill it fast (red under 5% or 20 GB free)
   const d = s.disk;
-  if (d && d.total) host.append(meter("Disk" + (d.where ? ` ${d.where}` : ""), `${gb(d.free)} GB free`,
-    d.used / d.total, d.free < Math.max(20 * 2 ** 30, d.total * 0.05)));
+  if (d && d.total) {
+    const free = d.free >= 2 ** 40 ? `${(d.free / 2 ** 40).toFixed(1)} TB free` : `${gb(d.free)} GB free`;
+    const m = meter("Disk" + (d.where && d.where !== "/" ? ` ${d.where}` : ""), free,
+      d.used / d.total, d.free < Math.max(20 * 2 ** 30, d.total * 0.05));
+    if (d.path) m.title = `LoRAs save to ${d.path}`;
+    host.append(m);
+  }
   // what's loaded on the GPU now, each a click to its tab
   for (const m of s.loaded || []) host.append(el("div", {class: "side-loaded", title: `Open the ${m.tab} tab`,
     onclick: () => showTab(m.tab)}, el("span", {class: "side-loaded-dot"}),

@@ -189,7 +189,7 @@ def _worker(samples_dir, dataset_dir, gen):
                 scores[f] = None
             if i % 4 == 0 or i == len(todo):
                 _write(samples_dir, scores=scores, status=f"scoring… {len(scores)}/{len(files)}")
-        status = f"live - {len(scores)} preview(s) scored"
+        status = f"live - {len(scores)} preview(s) scored: the style % on each, bottom left"
         if todo or status != last:
             _write(samples_dir, scores=scores, status=status)
             last = status

@@ -2377,7 +2377,7 @@ async function likGridShow(folder, picked) {
   $("likModal").classList.add("active");
   if (!folder) return;
   const r = await api(`/api/captions?folder=${encodeURIComponent(folder)}&ext=${encodeURIComponent(capExt())}&family=${encodeURIComponent(S.family || "")}`).catch(() => ({items: []}));
-  for (const it of r.items.filter((x) => LIK_PICS.test(x.name))) {
+  for (const it of r.items.filter((x) => !x.crop && LIK_PICS.test(x.name))) {   // not its Detail crops (same names)
     S.lik.paths[it.name] = it.path;
     const fig = el("figure", {title: it.name, onclick: () => {
       const i = S.lik.picked.indexOf(it.name);

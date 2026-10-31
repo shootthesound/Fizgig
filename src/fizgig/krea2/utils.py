@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Optional, Union
 
@@ -43,18 +44,28 @@ def _reshape_prequant_fp8_scale(scale: "torch.Tensor") -> "torch.Tensor":
     return scale
 
 
-def _make_krea2_comfy_fp8_split_hook(compute_dtype: "torch.dtype"):
+def _make_krea2_comfy_fp8_split_hook(compute_dtype: "torch.dtype", expected=None):
     """Split hook: `.weight_scale` -> `.scale_weight` (reshaped, cast to compute dtype);
-    drop `.comfy_quant` markers; pass everything else through."""
+    drop `.comfy_quant` markers; pass everything else through. With `expected` (the model's own
+    keys), a "model.diffusion_model." prefix is stripped and tensors the model doesn't have are dropped."""
     def split_hook(key, value):
         if key.endswith(_COMFY_FP8_MARKER_SUFFIX):
             return [], None
+        name = _strip_prefix(key)
         if key.endswith(_FP8_SCALE_SUFFIX):
-            new_key = key[: -len(_FP8_SCALE_SUFFIX)] + ".scale_weight"
+            new_key = name[: -len(_FP8_SCALE_SUFFIX)] + ".scale_weight"
+            if expected is not None and new_key[: -len(".scale_weight")] + ".weight" not in expected:
+                return [], None
             if value is None:
                 return [new_key], None
             return [new_key], [_reshape_prequant_fp8_scale(value).to(compute_dtype)]
-        return None, None
+        if expected is None:
+            return None, None
+        if name not in expected:
+            return [], None
+        if name == key:
+            return None, None
+        return [name], (None if value is None else [value])
     return split_hook
 
 
@@ -63,6 +74,100 @@ def is_prequantized_fp8(path: str) -> bool:
     from fizgig.krea2.safetensors_utils import MemoryEfficientSafeOpen
     with MemoryEfficientSafeOpen(path) as f:
         return any(k.endswith(_FP8_SCALE_SUFFIX) for k in f.keys())
+
+
+# --- Other ComfyUI builds (#273) ---------------------------------------------
+# Community Krea 2 checkpoints come as int8_tensorwise (often with ConvRot: each weight stored times a block
+# Hadamard rotation), as fp8 with more layers quantised than ours, as the older scaled_fp8 layout
+# (`.scale_weight` + a `scaled_fp8` marker), and sometimes with a "model.diffusion_model." prefix or tensors
+# Krea 2 doesn't have (ComfyUI ignores them). fp8 in the current layout stays fp8; the rest is decoded to bf16
+# as it loads, and Fizgig's own precision (INT8 / NF4) then applies, as for the RAW file.
+_PREFIXES = ("model.diffusion_model.", "diffusion_model.")
+_SIDE_SUFFIXES = (_FP8_SCALE_SUFFIX, _COMFY_FP8_MARKER_SUFFIX, ".scale_weight", ".input_scale", ".scale_input")
+
+
+def _strip_prefix(key: str) -> str:
+    for p in _PREFIXES:
+        if key.startswith(p):
+            return key[len(p):]
+    return key
+
+
+def dit_layout(path: str) -> str:
+    """How a Krea 2 DiT file stores its weights: "fp8" (ComfyUI fp8_scaled: fp8 weights + `.weight_scale`, run
+    as stored), "decode" (int8, with or without ConvRot, or the older `.scale_weight` fp8: decoded to bf16 at
+    load) or "" (plain weights)."""
+    from fizgig.krea2.safetensors_utils import MemoryEfficientSafeOpen
+    with MemoryEfficientSafeOpen(path) as f:
+        h = {k: v for k, v in f.header.items() if k != "__metadata__"}
+    if any(v["dtype"] == "I8" for v in h.values()) or \
+            any(k.endswith(".scale_weight") or _strip_prefix(k) == "scaled_fp8" for k in h):
+        return "decode"
+    return "fp8" if any(k.endswith(_FP8_SCALE_SUFFIX) for k in h) else ""
+
+
+class ComfyDecodeReader:
+    """A "decode" file (dit_layout) read as plain weights, under the model's own names: each quantised Linear
+    comes back dense (int8 codes x per-row scale with ConvRot's rotation undone, fp8 x its scale); markers,
+    scales and tensors the model doesn't have are left out. keys() / get_tensor() as MemoryEfficientSafeOpen.
+    The decode runs on `calc_device` (the rotation is a matmul per weight: slow on a CPU)."""
+
+    def __init__(self, path: str, expected, calc_device=None):
+        from fizgig.krea2.safetensors_utils import MemoryEfficientSafeOpen
+        self.f = MemoryEfficientSafeOpen(path)
+        self.src = {_strip_prefix(k): k for k in self.f.keys()}
+        expected = set(expected)
+        self._keys = [k for k in self.src if k in expected]
+        extra = sorted(k for k in self.src if k not in expected and not k.endswith(_SIDE_SUFFIXES)
+                       and k != "scaled_fp8")
+        if extra:
+            logger.info(f"Krea 2 DiT: skipping {len(extra)} tensors this model doesn't have "
+                        f"({', '.join(extra[:4])}{', ...' if len(extra) > 4 else ''})")
+        meta = self.f.metadata().get("_quantization_metadata")
+        try:
+            self.layers = json.loads(meta).get("layers", {}) if meta else {}
+        except ValueError:
+            self.layers = {}
+        self.calc = torch.device(calc_device if calc_device is not None else
+                                 ("cuda" if torch.cuda.is_available() else "cpu"))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.f.file.close()
+
+    def keys(self):
+        return list(self._keys)
+
+    def _side(self, base: str, suffix: str):
+        k = self.src.get(base + suffix)
+        return None if k is None else self.f.get_tensor(k)
+
+    def get_tensor(self, key: str, device=None, dtype=None):
+        src = self.src[key]
+        stored = self.f.header[src]["dtype"]
+        base = key[: -len(".weight")] if key.endswith(".weight") else None
+        if base is None or stored not in ("I8", "F8_E4M3", "F8_E5M2"):
+            return self.f.get_tensor(src, device=device, dtype=dtype)
+        scale = self._side(base, _FP8_SCALE_SUFFIX)
+        if scale is None:
+            scale = self._side(base, ".scale_weight")
+        if scale is None:
+            raise ValueError(f"{key}: a {stored} weight with no scale beside it")
+        w = self.f.get_tensor(src, device=self.calc)
+        scale = scale.to(self.calc, torch.float32)
+        scale = scale.reshape(-1, 1) if scale.numel() > 1 else scale.reshape(1, 1)
+        if stored == "I8":
+            from fizgig.minimax.convrot import dequantize_int8_convrot, parse_comfy_quant
+            marker = self._side(base, _COMFY_FP8_MARKER_SUFFIX)
+            conf = parse_comfy_quant(marker) if marker is not None else dict(self.layers.get(base, {}))
+            conf.setdefault("format", "int8_tensorwise")      # older INT8-Fast exports leave it out
+            out = dequantize_int8_convrot(w, scale, conf, out_dtype=torch.float32)
+        else:
+            out = w.to(torch.float32) * scale
+        return out.to(device=device if device is not None else "cpu",
+                      dtype=dtype if dtype is not None else torch.bfloat16)
 
 
 # The single config shipped with the OSS checkpoints (single_mmdit_large_wide).
@@ -126,7 +231,18 @@ def load_krea2_dit(
     with torch.device("meta"):
         dit = SingleStreamDiT(config, attn_mode=attn_mode, split_attn=split_attn)
 
-    if (not has_lora) and is_prequantized_fp8(dit_path):
+    layout = dit_layout(dit_path)
+    if layout == "decode":
+        if fp8_scaled or has_lora:
+            raise ValueError(f"{dit_path}: an int8 / older fp8 ComfyUI build loads as plain weights only")
+        logger.info(f"Loading Krea 2 DiT from a ComfyUI quantised build, decoded to {dtype}: {dit_path}")
+        with ComfyDecodeReader(dit_path, dit.state_dict().keys(),
+                               calc_device=device if device.type == "cuda" else None) as f:
+            sd = {k: f.get_tensor(k, device=loading_device, dtype=dtype) for k in f.keys()}
+        dit.load_state_dict(sd, strict=True, assign=True)
+        return dit
+
+    if (not has_lora) and layout == "fp8":
         # Pre-quantized ComfyUI fp8 (e.g. krea2_turbo_fp8_scaled): keep the weights fp8, normalize
         # the Comfy scale layout via the split hook, and monkey-patch each Linear to dequantize on
         # the fly. No re-quantization, so it loads fast — ideal for the per-epoch sample swap.
@@ -135,7 +251,8 @@ def load_krea2_dit(
         from fizgig.krea2.safetensors_utils import WeightTransformHooks
 
         logger.info(f"Loading Krea 2 DiT from pre-quantized fp8 {dit_path}")
-        hooks = WeightTransformHooks(split_hook=_make_krea2_comfy_fp8_split_hook(dtype))
+        hooks = WeightTransformHooks(split_hook=_make_krea2_comfy_fp8_split_hook(
+            dtype, expected=set(dit.state_dict().keys())))
         sd = load_safetensors_with_lora_and_fp8(
             model_files=dit_path,
             lora_weights_list=None,
@@ -189,6 +306,13 @@ def load_krea2_dit(
         # RAM (mmap page cache + materialized tensor), file locking, and lazy disk reads. Load
         # directly to the target device+dtype (assign=True) so the loaded tensors become the params.
         sd = load_safetensors(dit_path, device=loading_device, disable_mmap=True, dtype=dtype)
+        expected = set(dit.state_dict().keys())
+        if not set(sd) <= expected:                # a "model.diffusion_model." prefix, or extras ComfyUI ignores
+            sd = {_strip_prefix(k): v for k, v in sd.items()}
+            extra = sorted(set(sd) - expected)
+            if extra:
+                logger.info(f"Krea 2 DiT: skipping {len(extra)} tensors this model doesn't have ({', '.join(extra[:4])})")
+            sd = {k: v for k, v in sd.items() if k in expected}
         dit.load_state_dict(sd, strict=True, assign=True)
 
     return dit

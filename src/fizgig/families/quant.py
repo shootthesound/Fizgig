@@ -81,12 +81,12 @@ def _quantize_one(m, driver, precision, compute_device, store_device=None):
 STREAM_HEADROOM_GB = 6.0     # what the rest of the run takes in RAM beside the model file while it loads
 
 
-def _ram_short(path):
+def _ram_short(driver, path):
     """The bf16 model file would not fit in the RAM that's free (on a pod, its own limit, via container_ram): the
     one case the base is streamed. With RAM to spare the whole-file load runs as it always has."""
     try:
         import psutil
-        return os.path.getsize(path) / 1e9 + STREAM_HEADROOM_GB > psutil.virtual_memory().available / 1e9
+        return driver.dit_gb(path) + STREAM_HEADROOM_GB > psutil.virtual_memory().available / 1e9
     except Exception:
         return False
 
@@ -123,7 +123,7 @@ def _stream_fill(dit, driver, f, dtype, path, device, precision, swap):
         if mod in targets:
             owned.setdefault(mod, []).append(k)
     rest = [k for k in keys if k.rpartition(".")[0] not in targets]
-    logger.info(f"[precision] RAM is short for the whole {os.path.getsize(path) / 1e9:.0f} GB file: "
+    logger.info(f"[precision] RAM is short for the whole {driver.dit_gb(path):.0f} GB model: "
                 f"loading it a Linear at a time and quantising each to {precision} as it arrives")
     dit.load_state_dict({k: read(k) for k in rest}, strict=False, assign=True)
     compute_device, store_device = torch.device(device), ("cpu" if swap else None)
@@ -166,7 +166,7 @@ def load_base(driver, path, device, precision="bf16", blocks_to_swap=0, supports
         dit = driver.load_dit(path, device)
         return dit, 0
     dit = None
-    if precision != "bf16" and hasattr(driver, "stream_dit") and _ram_short(path):
+    if precision != "bf16" and hasattr(driver, "stream_dit") and _ram_short(driver, path):
         dit = _stream_load(driver, path, device, precision, swap)
     if dit is None:
         dit = driver.load_dit(path, "cpu" if (swap or precision != "bf16") else device)

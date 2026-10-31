@@ -209,7 +209,7 @@ class WorkbenchEngine:
         from fizgig.families import quant
         if precision == "auto":
             try:
-                need = os.path.getsize(dit_path) / 1e9 + 6.0
+                need = self.driver.dit_gb(dit_path) + 6.0
             except OSError:
                 need = 20.0
             free = _free_vram_gb()

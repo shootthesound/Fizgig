@@ -2009,7 +2009,9 @@ async function pollStats() {
     const free = d.free >= 2 ** 40 ? `${(d.free / 2 ** 40).toFixed(1)} TB free` : `${gb(d.free)} GB free`;
     const m = meter("Disk" + (d.where && d.where !== "/" ? ` ${d.where}` : ""), free,
       d.used / d.total, d.free < Math.max(20 * 2 ** 30, d.total * 0.05));
-    if (d.path) m.title = `LoRAs save to ${d.path}`;
+    if (d.path) m.title = `LoRAs save to ${d.path}` + (S.onPod ? ". On a pod this is what the drive reports: a " +
+      "network volume reports the whole shared storage, so the free space shown may be far more than your " +
+      "volume's own size" : "");
     host.append(m);
   }
   // what's loaded on the GPU now, each a click to its tab

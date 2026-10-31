@@ -2329,6 +2329,18 @@ def list_datasets() -> dict:
         # its sub-folders' pictures: trained on only with the Training tab's Also train on its sub-folders
         subs = launch.subfolders(path) if any(e.is_dir() and not e.name.startswith(".") for e in entries) else []
         sub_items = sum(launch._media_count(f) for _r, f in subs)
+        if not thumbs and not waves and subs:   # every picture in sub-folders: the tile shows theirs, one per folder first
+            per = []
+            for _r, f in subs[:8]:
+                try:
+                    es = list(os.scandir(f))
+                except OSError:
+                    continue
+                ns = {e.name for e in es}
+                per.append([e.path for e in es if e.is_file() and os.path.splitext(e.name)[1].lower() in _PIC
+                            and not is_mask_file(e.name) and _settled(e, ns)][:4])
+            for i in range(4):
+                thumbs += [ps[i] for ps in per if len(ps) > i][:4 - len(thumbs)]
         if pics + clips + songs + sub_items:
             out.append({"name": name, "path": path, "pictures": pics, "clips": clips, "songs": songs,
                         "captioned": captioned, "time": newest, "thumbs": thumbs or waves, "elsewhere": elsewhere,

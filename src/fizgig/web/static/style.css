@@ -2245,6 +2245,11 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .pod-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pod-main .field-hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pod-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.pod-confirm { display: grid; gap: 6px; margin-top: 8px; padding: 8px 10px; border-radius: var(--radius);
+  border: 1px solid var(--danger); background: color-mix(in srgb, var(--danger) 8%, var(--bg-surface));
+  font-size: 12px; color: var(--text-secondary); white-space: normal; }
+.pod-confirm b { color: var(--text-primary); }
+.pod-confirm .pod-btns { justify-content: flex-start; }
 .pods-deploy { display: inline-flex; margin-top: 0; }
 .phone-row { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
 .phone-qr { width: 176px; height: 176px; flex: 0 0 176px; background: var(--pic-text); border-radius: 12px; padding: 8px;

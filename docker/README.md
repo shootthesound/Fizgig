@@ -153,7 +153,7 @@ In the pod's **Connect** menu, open **HTTP port 8081** and log in with that pass
 3. **Start tab → Upload a training folder**, or drag a folder into `/workspace/datasets` on **port 8080**.
 4. **Training → Start.**
 
-**Using Fizgig on your own computer too?** Its **Pods** tab opens this pod in the Fizgig window: paste the pod's ID, or add your RunPod API key and your pods appear by themselves, with Start and Stop. See [Pods](../docs/WEB_UI.md#pods-a-rented-gpu-from-your-own-fizgig).
+**Using Fizgig on your own computer too?** Its **Pods** tab opens this pod in the Fizgig window: paste the pod's ID, or add your RunPod API key and your pods appear by themselves, with Start, Stop and Delete pod. See [Pods](../docs/WEB_UI.md#pods-a-rented-gpu-from-your-own-fizgig).
 
 Closing the browser tab does **not** stop training. Fizgig runs on the pod, so close the tab, come back later (from your phone if you like) and the run is still going. Finished LoRAs download from the Training tab and the gallery. More in [the web UI guide](../docs/WEB_UI.md).
 

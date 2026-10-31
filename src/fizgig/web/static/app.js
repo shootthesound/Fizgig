@@ -7833,20 +7833,21 @@ const POD_HOLD_MS = 90000;
 function podPending(p) {
   const k = p.id || p.url, h = S.pods.pending[k];
   if (!h) return "";
-  const done = h.kind === "start" ? p.running || p.state === "ready" : !p.running && p.state !== "ready";
+  const done = h.kind === "start" ? p.running || p.state === "ready" : h.kind === "delete" ? !p.account
+    : !p.running && p.state !== "ready";
   if (done) { delete S.pods.pending[k]; return ""; }
-  if (Date.now() - h.t < POD_HOLD_MS) return h.kind === "start" ? "starting" : "stopping";
+  if (Date.now() - h.t < POD_HOLD_MS) return {start: "starting", stop: "stopping", delete: "deleting"}[h.kind];
   delete S.pods.pending[k];
   $("podsNote").textContent = h.kind === "start"
     ? `${p.name || p.id} didn't start: RunPod still has it stopped. Often no GPU is free on its machine now; its page on RunPod says why.`
-    : `${p.name || p.id} hasn't stopped yet: check it on RunPod.`;
+    : `${p.name || p.id} hasn't ${h.kind === "delete" ? "gone" : "stopped"} yet: check it on RunPod.`;
   if (h.kind === "start" && S.pods.waitFor === p.url) S.pods.waitFor = "";
   return "";
 }
 const inApp = () => !!window.pywebview;
 const POD_STATE = {ready: ["Ready", "ok"], waiting: ["Starting - a pod can take a few minutes. If it isn't ready after that, check it on RunPod", "warn"],
   stopped: ["Stopped", "muted"], off: ["Not answering", "muted"], starting: ["Starting...", "warn"],
-  stopping: ["Stopping...", "muted"],
+  stopping: ["Stopping...", "muted"], deleting: ["Deleting...", "muted"],
   gone: ["Not on your RunPod account (another account's pod, or deleted there). Forget takes it off this list", "muted"],
   away: ["Not on your network now: is it on, awake and running Fizgig?", "muted"],
   blocked: ["Found, but it doesn't let this computer in yet: on it, Preferences > Web UI > Allow on my network", "warn"]};
@@ -7856,6 +7857,8 @@ async function podsLoad(quiet) {
   let r;
   try { r = await api("/api/pods"); } catch (e) { $("podsNote").textContent = e.message; return; }
   S.pods.list = r.pods || [];
+  for (const k of Object.keys(S.pods.pending))     // a deleted pod off the list altogether: its hold is done
+    if (!S.pods.list.some((p) => (p.id || p.url) === k)) delete S.pods.pending[k];
   S.pods.key = r.key_saved;
   $("podKeyNote").textContent = r.key_saved ? "Key saved: your Fizgig pods are listed above." : "";
   podsDraw();
@@ -7888,7 +7891,7 @@ function podsDraw() {
       p.cost ? `$${p.cost.toFixed(2)}/hr` : "", p.id && p.id !== title ? p.id : "",
       !p.id && p.url !== title ? p.url.replace(/^https?:\/\/|\/$/g, "") : "", build].filter(Boolean).join(" · ");
     const btns = [];
-    if (hold === "stopping") { /* nothing to press while it goes */ }
+    if (hold === "stopping" || hold === "deleting") { /* nothing to press while it goes */ }
     else if (p.state === "ready") btns.push(el("button", {class: "btn btn-primary btn-sm", text: inApp() ? "Open" : "Open ↗",
       onclick: () => podOpen(p)}));
     else if (p.state === "waiting" || hold === "starting") btns.push(el("button", {class: "btn btn-sm",
@@ -7898,6 +7901,9 @@ function podsDraw() {
       text: "Start and open", onclick: () => podStart(p)}));
     if (p.account && p.running && !hold && S.pods.key) btns.push(el("button", {class: "btn btn-sm", text: "Stop",
       title: "Stop the pod (it stops billing for the GPU; its files stay on its volume)", onclick: () => podStop(p)}));
+    if (p.account && S.pods.key && hold !== "deleting") btns.push(el("button", {class: "btn btn-sm btn-danger",
+      text: "Delete pod", title: "Delete the pod on RunPod: it and its volume disk go for good",
+      onclick: () => { S.pods.confirmDel = S.pods.confirmDel === p.id ? "" : p.id; podsDraw(); }}));
     if (p.saved) btns.push(el("button", {class: "btn btn-sm", text: "Forget", title: "Take it off this list (the pod itself is untouched)",
       onclick: async () => { await api("/api/pods/forget", {url: p.url}).catch(() => {}); podsLoad(true); }}));
     return el("div", {class: "pod-row"},
@@ -7907,7 +7913,8 @@ function podsDraw() {
         // a stopped pod still pays for its volume disk; RunPod's own page has the price (its API reads 0)
         st === "stopped" && p.account ? el("div", {class: "field-hint"}, "Its cost while stopped (its disk) is on ",
           el("a", {class: "inline-link", href: "https://console.runpod.io/pods", target: "_blank", rel: "noopener",
-            text: "your RunPod account"}), ".") : null),
+            text: "your RunPod account"}), ".") : null,
+        S.pods.confirmDel === p.id && hold !== "deleting" ? podDeleteConfirm(p) : null),
       el("div", {class: "pod-btns"}, ...btns));
   }));
 }
@@ -7926,6 +7933,31 @@ async function podStart(p) {
       "ready after that, check it on RunPod (its Logs show what it's doing).";
     setTimeout(() => podsLoad(true), 4000);
   } catch (e) { $("podsNote").textContent = e.message; }
+}
+
+// Delete pod's confirm, in the row: what goes with it, then a second press
+function podDeleteConfirm(p) {
+  const name = p.name || p.id;
+  return el("div", {class: "pod-confirm"},
+    el("div", {}, el("b", {text: `Delete ${name}? `}), "The pod and everything on its volume disk (/workspace: LoRAs, " +
+      "checkpoints, datasets, outputs) go for good. A network volume is kept."),
+    p.busy ? el("div", {class: "tc-warn", text: `It's training ${p.busy}. To keep its checkpoints, use Bring back on ` +
+      "its run card first."}) : null,
+    el("div", {class: "pod-btns"},
+      el("button", {class: "btn btn-sm btn-danger", text: "Delete it", onclick: () => podDelete(p)}),
+      el("button", {class: "btn btn-sm", text: "Cancel", onclick: () => { S.pods.confirmDel = ""; podsDraw(); }})));
+}
+
+async function podDelete(p) {
+  S.pods.confirmDel = "";
+  try {
+    await api("/api/pods/delete", {id: p.id});
+    S.pods.pending[p.id || p.url] = {kind: "delete", t: Date.now()};
+    if (S.pods.waitFor === p.url) S.pods.waitFor = "";
+    podsDraw();
+    $("podsNote").textContent = `${p.name || p.id} is being deleted on RunPod.`;
+    setTimeout(() => podsLoad(true), 4000);
+  } catch (e) { $("podsNote").textContent = e.message; podsDraw(); }
 }
 
 async function podStop(p) {

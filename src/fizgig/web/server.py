@@ -680,14 +680,16 @@ def _pods_post(what, b):
         update_prefs({"runpod_api_key": ""})
         return {"ok": True, "found": 0}
     key = pod_stop.api_key(p)
-    if what in ("start", "stop"):
+    if what in ("start", "stop", "delete"):
         if not key:
-            raise ValueError("Starting and stopping pods from here needs your RunPod API key (below).")
+            raise ValueError("Starting, stopping and deleting pods from here needs your RunPod API key (below).")
         pid = str(b.get("id") or "")
         if not pods.POD_ID.match(pid):
             raise ValueError("No such pod.")
         if what == "start":
             pods.start(key, pid, int(b.get("gpus") or 1))
+        elif what == "delete":                # the Pods tab's Delete pod, after its own confirm in the row
+            pods.terminate(key, pid)
         else:
             pods.stop(key, pid)
         return {"ok": True}

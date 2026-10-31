@@ -7825,10 +7825,28 @@ function fileManagerLinks(fm) {
 }
 
 // ---- Pods: rented GPUs running Fizgig, opened from here (the app window goes there; a browser opens a tab) -------
-S.pods = {list: [], timer: 0, waitFor: ""};
+S.pods = {list: [], timer: 0, waitFor: "", pending: {}};
+// Start or Stop pressed here: RunPod takes a few seconds to say so, and a reload in that gap would flick the row back
+// to what it was. Each press is held for 90 s (kept by pod, as reloads make fresh rows); one RunPod hasn't moved by
+// then didn't start (or stop)
+const POD_HOLD_MS = 90000;
+function podPending(p) {
+  const k = p.id || p.url, h = S.pods.pending[k];
+  if (!h) return "";
+  const done = h.kind === "start" ? p.running || p.state === "ready" : !p.running && p.state !== "ready";
+  if (done) { delete S.pods.pending[k]; return ""; }
+  if (Date.now() - h.t < POD_HOLD_MS) return h.kind === "start" ? "starting" : "stopping";
+  delete S.pods.pending[k];
+  $("podsNote").textContent = h.kind === "start"
+    ? `${p.name || p.id} didn't start: RunPod still has it stopped. Often no GPU is free on its machine now; its page on RunPod says why.`
+    : `${p.name || p.id} hasn't stopped yet: check it on RunPod.`;
+  if (h.kind === "start" && S.pods.waitFor === p.url) S.pods.waitFor = "";
+  return "";
+}
 const inApp = () => !!window.pywebview;
 const POD_STATE = {ready: ["Ready", "ok"], waiting: ["Starting - a pod can take a few minutes. If it isn't ready after that, check it on RunPod", "warn"],
   stopped: ["Stopped", "muted"], off: ["Not answering", "muted"], starting: ["Starting...", "warn"],
+  stopping: ["Stopping...", "muted"],
   gone: ["Not on your RunPod account (another account's pod, or deleted there). Forget takes it off this list", "muted"],
   away: ["Not on your network now: is it on, awake and running Fizgig?", "muted"],
   blocked: ["Found, but it doesn't let this computer in yet: on it, Preferences > Web UI > Allow on my network", "warn"]};
@@ -7847,7 +7865,7 @@ async function podsLoad(quiet) {
   // keep checking while the tab is open: every 6 s while one is on its way up (and open it when it's ready if asked
   // to), else every 30 s with an API key saved (a pod started or stopped on RunPod shows up by itself)
   clearTimeout(S.pods.timer);
-  const starting = S.pods.list.some((p) => p.state === "waiting" || p._starting);
+  const starting = S.pods.list.some((p) => p.state === "waiting") || Object.keys(S.pods.pending).length > 0;
   S.pods.timer = setTimeout(() => {          // the network's Fizgigs come and go too: every 30 s regardless
     if ($("tab-pods").classList.contains("active")) podsLoad(true);
   }, starting ? 6000 : 30000);
@@ -7858,7 +7876,7 @@ async function podsLoad(quiet) {
 function podsDraw() {
   const box = $("podsList");
   box.replaceChildren(...S.pods.list.map((p) => {
-    const st = p._starting && p.state !== "ready" ? "starting" : p.state;
+    const hold = podPending(p), st = hold || p.state;
     const [label, tone] = POD_STATE[st] || [st, "muted"];
     const title = p.name || p.id || p.url;
     const build = {mine: "Newer Fizgig there: update this computer",
@@ -7870,14 +7888,15 @@ function podsDraw() {
       p.cost ? `$${p.cost.toFixed(2)}/hr` : "", p.id && p.id !== title ? p.id : "",
       !p.id && p.url !== title ? p.url.replace(/^https?:\/\/|\/$/g, "") : "", build].filter(Boolean).join(" · ");
     const btns = [];
-    if (p.state === "ready") btns.push(el("button", {class: "btn btn-primary btn-sm", text: inApp() ? "Open" : "Open ↗",
+    if (hold === "stopping") { /* nothing to press while it goes */ }
+    else if (p.state === "ready") btns.push(el("button", {class: "btn btn-primary btn-sm", text: inApp() ? "Open" : "Open ↗",
       onclick: () => podOpen(p)}));
-    else if (p.state === "waiting" || p._starting) btns.push(el("button", {class: "btn btn-sm",
+    else if (p.state === "waiting" || hold === "starting") btns.push(el("button", {class: "btn btn-sm",
       text: S.pods.waitFor === p.url ? "Opens when ready..." : "Open when ready", onclick: () => {
         S.pods.waitFor = p.url; podsDraw(); }}));
-    if (p.account && !p.running && S.pods.key) btns.push(el("button", {class: "btn btn-primary btn-sm",
+    if (p.account && !p.running && !hold && S.pods.key) btns.push(el("button", {class: "btn btn-primary btn-sm",
       text: "Start and open", onclick: () => podStart(p)}));
-    if (p.account && p.running && S.pods.key) btns.push(el("button", {class: "btn btn-sm", text: "Stop",
+    if (p.account && p.running && !hold && S.pods.key) btns.push(el("button", {class: "btn btn-sm", text: "Stop",
       title: "Stop the pod (it stops billing for the GPU; its files stay on its volume)", onclick: () => podStop(p)}));
     if (p.saved) btns.push(el("button", {class: "btn btn-sm", text: "Forget", title: "Take it off this list (the pod itself is untouched)",
       onclick: async () => { await api("/api/pods/forget", {url: p.url}).catch(() => {}); podsLoad(true); }}));
@@ -7898,7 +7917,7 @@ function podOpen(p) {
 async function podStart(p) {
   try {
     await api("/api/pods/start", {id: p.id, gpus: p.gpus || 1});
-    p._starting = true; S.pods.waitFor = p.url; podsDraw();
+    S.pods.pending[p.id || p.url] = {kind: "start", t: Date.now()}; S.pods.waitFor = p.url; podsDraw();
     $("podsNote").textContent = `Starting ${p.name || p.id}: it opens here when it's ready. A pod can take a few minutes to start; if it isn't ` +
       "ready after that, check it on RunPod (its Logs show what it's doing).";
     setTimeout(() => podsLoad(true), 4000);
@@ -7908,6 +7927,9 @@ async function podStart(p) {
 async function podStop(p) {
   try {
     await api("/api/pods/stop", {id: p.id});
+    S.pods.pending[p.id || p.url] = {kind: "stop", t: Date.now()};
+    if (S.pods.waitFor === p.url) S.pods.waitFor = "";
+    podsDraw();
     $("podsNote").textContent = `${p.name || p.id} is stopping. Its files stay on its volume for next time.`;
     setTimeout(() => podsLoad(true), 4000);
   } catch (e) { $("podsNote").textContent = e.message; }

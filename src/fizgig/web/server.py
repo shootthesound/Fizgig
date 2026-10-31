@@ -2495,12 +2495,42 @@ def _finish_upload(name, ext, dest, tmp, single):
 
 
 # ---- model downloads: the desktop's "Download models for me" (fizgig.scripts.fetch_models) ----------------------
-_fetch = {"proc": None, "state": "idle", "family": "", "file": "", "done": 0, "total": 0, "lines": []}
+_fetch = {"proc": None, "state": "idle", "family": "", "file": "", "done": 0, "total": 0, "lines": [],
+          "then_start": None}           # (family, values, image folder): Start pressed before the model was here
+
+
+def _only_downloads(desc, problems):
+    """True when everything stopping a Start is this model's files not downloaded yet, all of which Download models
+    for me fetches."""
+    labels = [f.label for f in desc.model_files if f.repo and f.path]
+    return bool(problems) and all(any(p.startswith((f"{lab} path is empty", f"{lab} file does not exist"))
+                                      for lab in labels) for p in problems)
+
+
+def _fetch_then_start(desc, family, values, image_folder, problems):
+    """Start pressed on a model not downloaded yet: Download models for me for it, and the run starts once it's done
+    (the server does both, so it happens with the page closed too)."""
+    with _lock:
+        going = _run["proc"] is not None and _run["proc"].poll() is None or _run["state"] in ("starting", "running")
+    if going:
+        return {"error": "A run is already going. Stop or pause it first."}
+    if any(f.gated and f.repo for f in desc.model_files) and not os.environ.get("HF_TOKEN", "").strip():
+        return {"problems": problems + [f"{desc.display_name}'s files need a Hugging Face token: download them on the "
+                                        "Preferences tab (its Download models for me, with the token box there)."]}
+    try:
+        _start_fetch(desc.key)
+    except ValueError as e:
+        return {"problems": problems + [str(e)]}
+    with _lock:
+        _fetch["then_start"] = (family, values, image_folder)
+    append_log(f"{desc.display_name}'s model files aren't here yet: downloading them, then the run starts.\n")
+    return {"fetching": True, "family": desc.key}
 
 
 def _fetch_status() -> dict:
     with _lock:
-        out = {k: v for k, v in _fetch.items() if k not in ("proc", "lines")}
+        out = {k: v for k, v in _fetch.items() if k not in ("proc", "lines", "then_start")}
+        out["then_start"] = bool(_fetch["then_start"])
         out["lines"] = _fetch["lines"][-40:]
     out["env_token"] = bool(os.environ.get("HF_TOKEN"))
     return out
@@ -2535,7 +2565,7 @@ def _start_fetch(family, token="", optional=False, choices=None):
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
                             encoding="utf-8", errors="replace", env=env, cwd=BASE_DIR, **kw)
     with _lock:
-        _fetch.update(proc=proc, state="running", family=family, file="", done=0, total=0, lines=[])
+        _fetch.update(proc=proc, state="running", family=family, file="", done=0, total=0, lines=[], then_start=None)
     threading.Thread(target=_fetch_watch, args=(proc,), daemon=True).start()
 
 
@@ -2615,6 +2645,16 @@ def _fetch_watch(proc):
     with _lock:
         if _fetch["state"] == "running":
             _fetch["state"] = "done" if code == 0 else "failed"
+        then, _fetch["then_start"] = _fetch["then_start"], None
+        ok = _fetch["state"] == "done"
+    if then and ok:                       # Start was pressed before the model was here: the run starts now
+        r = _start(*then)
+        if not r.get("ok"):
+            append_log("The download finished but the run didn't start: "
+                       + "; ".join(r.get("problems") or [r.get("error") or "?"]) + "\n")
+    elif then:
+        append_log("The model download didn't finish, so the run didn't start: see Preferences, where pressing "
+                   "Download models for me again carries on.\n")
 
 
 def captioner_for(prefs) -> str:
@@ -3943,13 +3983,21 @@ class Handler(BaseHTTPRequestHandler):
                                   "warnings": launch.start_checks(desc, inputs, b.get("image_folder") or "")
                                   if desc is not None and not plan.problems else []})
             if path == "/api/start":
+                fam, vals, folder = b.get("family", ""), b.get("values") or {}, b.get("image_folder") or ""
                 if not b.get("anyway"):          # the Start checks first: warnings come back, nothing starts
-                    desc, inputs, plan = _plan(b.get("family", ""), b.get("values") or {}, b.get("image_folder") or "")
-                    warn = launch.start_checks(desc, inputs, b.get("image_folder") or "") \
-                        if desc is not None and not plan.problems else []
+                    desc, inputs, plan = _plan(fam, vals, folder)
+                    fetch = desc is not None and _only_downloads(desc, plan.problems)
+                    warn = launch.start_checks(desc, inputs, folder) \
+                        if desc is not None and (not plan.problems or fetch) else []
                     if warn:
                         return self.json({"warnings": warn})
-                return self.json(_start(b.get("family", ""), b.get("values") or {}, b.get("image_folder") or ""))
+                    if fetch:
+                        return self.json(_fetch_then_start(desc, fam, vals, folder, plan.problems))
+                r = _start(fam, vals, folder)
+                desc = get_family(fam) if r.get("problems") and fam != refmod.KEY else None
+                if desc is not None and _only_downloads(desc, r["problems"]):
+                    r = _fetch_then_start(desc, fam, vals, folder, r["problems"])
+                return self.json(r)
             if path == "/api/resume":                    # as the desktop's Resume Training
                 with _lock:
                     last = {k: _run.get(k) for k in ("state", "family", "values", "image_folder", "resume",

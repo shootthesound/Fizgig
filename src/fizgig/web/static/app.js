@@ -1146,6 +1146,28 @@ function paintFetch() {
   const st = S.fetch || {};
   const busy = st.state === "running";
   const gb = (n) => (n / 1024 ** 3).toFixed(1);
+  // Start pressed before the model was downloaded: the Training tab shows the download, and the run starts after it
+  if (busy && st.then_start) S.fetchStart = true;
+  if (S.fetchStart && $("problems")) {
+    const box = $("problems"), name = (S.schema?.families || []).find((f) => f.key === st.family)?.display_name || "The model";
+    box.classList.remove("ok");
+    if (busy && st.then_start) {
+      const pct = st.total ? Math.min(100, (100 * st.done) / st.total) : 0;
+      box.replaceChildren(
+        el("div", {text: `${name}'s model files aren't downloaded yet: downloading them now, then training starts by itself.`}),
+        el("div", {class: "fetch-msg", text: st.file ? `${st.file}: ${gb(st.done)} of ${gb(st.total)} GB` :
+          ((st.lines || []).slice(-1)[0] || "Starting…")}),
+        el("div", {class: "fetch-bar"}, el("div", {style: `width:${pct.toFixed(1)}%`})),
+        el("button", {class: "btn btn-sm", text: "Cancel download",
+          onclick: () => api("/api/fetch/cancel", {}).then(watchFetch)}));
+    } else {
+      S.fetchStart = false;
+      box.replaceChildren(...(st.state === "done" ? [] : [el("div", {text: st.state === "cancelled"
+        ? "Download cancelled, so the run didn't start. Press Start again to carry on downloading."
+        : "Some files didn't download, so the run didn't start. Press Start again to retry just those (Preferences " +
+          "shows what went wrong)."})]));
+    }
+  }
   for (const [key, r] of Object.entries(S.fetchRows || {})) {
     r.btn.disabled = busy;
     r.status.innerHTML = "";
@@ -1561,6 +1583,7 @@ async function start(path, body) {
   try {
     const r = await api(path, path === "/api/start" ? {...runBody(), ...(body || {})} : (body || {}));
     if (r.warnings && r.warnings.length) { showWarnings(r.warnings, body || {}); return; }
+    if (r.fetching) { S.fetchStart = true; watchFetch(); return; }    // the model isn't here yet: it downloads first
     showProblems(r.problems || (r.error ? [r.error] : []));    // stays up: the run line below refreshes itself
     // the form went to a run that started: it isn't the queued run being edited any more (Save to queue would have
     // put this run's settings in its place)

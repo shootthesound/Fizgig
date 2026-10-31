@@ -144,7 +144,7 @@ Three small models download on first use: InsightFace `buffalo_l` (~300 MB, duri
 
 ## Model downloads
 
-Fizgig doesn't bundle weights; download only the family you use. **Preferences has a ⬇ Download models for me button** under each model card that downloads, verifies, and fills in the paths. Klein and Flux 3 Image Klein need a free HuggingFace token for BFL's licence; Krea 2 needs no account. Every row also has a manual **Download** link. From the command line:
+Fizgig doesn't bundle weights; download only the family you use. **Preferences has a ⬇ Download models for me button** under each model card that downloads, verifies, and fills in the paths. Pressing **Start** on the Training tab for a model you haven't downloaded does the same for you, then starts the run once the files are in (Klein and Flux 3 need the token first, so those go through Preferences). Klein and Flux 3 Image Klein need a free HuggingFace token for BFL's licence; Krea 2 needs no account. Every row also has a manual **Download** link. From the command line:
 
 ```bash
 python -m fizgig.scripts.fetch_models --family krea2   # ~32 GB, no account needed

@@ -7795,7 +7795,22 @@ function fileManagerLinks(fm) {
     "Log in as admin with this pod's password" + (fm.login === "padded" ? ", with 0s added to make it 12 characters " +
     "(the file manager refused it as too common): abc123 → abc123000000. The pod's log shows it" : "");
   $("sideFiles").style.display = fm ? "" : "none";
+  $("sideFilesLogin").style.display = fm ? "" : "none";
   $("uploadFm").style.display = fm ? "" : "none";
+  // the login pill above the button: admin, and the password on Show (asked of the pod only then, never kept)
+  const pw = $("sideFilesPw"), show = $("sideFilesShow");
+  const hide = () => { pw.textContent = "••••••"; pw.classList.remove("fm-note"); show.textContent = "Show"; };
+  hide();
+  show.onclick = async () => {
+    if (show.textContent === "Hide") return hide();
+    try {
+      const d = await api("/api/pod/files_login");
+      pw.textContent = d.password || (d.login === "none" ? "not set up: see the pod's log on RunPod"
+        : "in the pod's log on RunPod");
+      pw.classList.toggle("fm-note", !d.password);
+    } catch (e) { pw.textContent = "in the pod's log on RunPod"; pw.classList.add("fm-note"); }
+    show.textContent = "Hide";
+  };
   for (const a of [$("sideFiles"), ...document.querySelectorAll(".fm-link")]) {
     if (fm) { a.href = fm.url; a.title = `Big files in and out, by drag and drop. ${how}.`; }
     else if (a.classList.contains("fm-text")) a.removeAttribute("href");

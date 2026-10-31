@@ -1244,7 +1244,7 @@ input[type="range"] {
 .rs-cell { display: flex; flex-direction: column; min-width: 0; }
 .rs-section:last-of-type .rs-cell { display: contents; }
 .rs-key { color: var(--text-secondary); font-size: 9pt; }
-.rs-val { font-family: var(--font-mono, monospace); font-size: 10.5pt; color: var(--text-primary); overflow-wrap: anywhere; }
+.rs-val { font-family: var(--font-mono); font-size: 10.5pt; color: var(--text-primary); overflow-wrap: anywhere; }
 .rs-full { max-height: 320px; overflow: auto; font-size: 9pt; background: var(--bg-inset); padding: 8px; border-radius: 6px;
   border: 1px solid var(--border); margin: 0; }
 /* the sidebar: the run card's loss line, what's loaded on the GPU, background jobs */
@@ -1835,7 +1835,16 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .files-btn { background: var(--files); }
 .files-btn:hover { background: var(--files-hover); box-shadow: 0 4px 14px color-mix(in srgb, var(--files) 35%, transparent); }
 .files-btn i { --bolt: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Cpath d='M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'/%3E%3C/svg%3E"); }
+.fm-login { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 8px; padding: 6px 12px;
+  border-radius: 999px; background: color-mix(in srgb, var(--files) 14%, var(--bg-surface));
+  border: 1px solid color-mix(in srgb, var(--files) 40%, transparent); font-size: 11px; color: var(--text-secondary); }
+.fm-login b { color: var(--text-primary); font-family: var(--font-mono); user-select: all; word-break: break-all; }
+.fm-login b.fm-note { font-family: inherit; font-weight: 400; user-select: auto; }
+.fm-eye { margin-left: auto; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border);
+  background: transparent; color: var(--text-secondary); font-size: 11px; cursor: pointer; }
+.fm-eye:hover { color: var(--text-primary); }
 @media (max-width: 760px) {
+  .fm-login { display: none !important; }
   .runpod-btn { order: 2; margin: 0; padding: 7px 9px; border-radius: 999px; flex: 0 0 auto; }
   .runpod-btn span { display: none; }
 }

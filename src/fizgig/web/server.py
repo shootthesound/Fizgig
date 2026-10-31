@@ -2841,6 +2841,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/schema":
             return self.json({**get_schema(ref_dit_set=bool(pref_path(load_prefs(), "minimax_ref_dit"))),
                               "logged_in": True, "outdated": _code_stamp() > _STARTED_CODE + 1})
+        if path == "/api/pod/files_login":          # the sidebar pill: the file manager's login, for whoever is in
+            from fizgig.web import pod_stop
+            fm, pw = pod_stop.file_manager(), self.password or ""
+            if not fm or fm["login"] == "none" or not pw:
+                return self.json({"user": "admin", "password": None, "login": (fm or {}).get("login")})
+            return self.json({"user": "admin", "login": fm["login"],
+                              "password": pw.ljust(12, "0") if fm["login"] == "padded" else pw})
         if path == "/api/prefs":
             from fizgig.web import pod_stop
             p = load_prefs()

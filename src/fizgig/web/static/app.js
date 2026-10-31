@@ -7903,7 +7903,11 @@ function podsDraw() {
     return el("div", {class: "pod-row"},
       el("span", {class: `pod-dot ${build ? "warn" : tone}`}),
       el("div", {class: "pod-main"}, el("div", {class: "pod-name", text: title}),
-        el("div", {class: "field-hint", text: `${label}${sub ? " · " + sub : ""}`})),
+        el("div", {class: "field-hint", text: `${label}${sub ? " · " + sub : ""}`}),
+        // a stopped pod still pays for its volume disk; RunPod's own page has the price (its API reads 0)
+        st === "stopped" && p.account ? el("div", {class: "field-hint"}, "Its cost while stopped (its disk) is on ",
+          el("a", {class: "inline-link", href: "https://console.runpod.io/pods", target: "_blank", rel: "noopener",
+            text: "your RunPod account"}), ".") : null),
       el("div", {class: "pod-btns"}, ...btns));
   }));
 }

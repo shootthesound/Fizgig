@@ -7903,7 +7903,7 @@ function podsDraw() {
       title: "Stop the pod (it stops billing for the GPU; its files stay on its volume)", onclick: () => podStop(p)}));
     if (p.account && S.pods.key && hold !== "deleting") btns.push(el("button", {class: "btn btn-sm btn-danger",
       text: "Delete pod", title: "Delete the pod on RunPod: it and its volume disk go for good",
-      onclick: () => { S.pods.confirmDel = S.pods.confirmDel === p.id ? "" : p.id; podsDraw(); }}));
+      onclick: () => { S.pods.confirmDel = S.pods.confirmDel === p.id ? null : p.id; podsDraw(); }}));
     if (p.saved) btns.push(el("button", {class: "btn btn-sm", text: "Forget", title: "Take it off this list (the pod itself is untouched)",
       onclick: async () => { await api("/api/pods/forget", {url: p.url}).catch(() => {}); podsLoad(true); }}));
     return el("div", {class: "pod-row"},
@@ -7914,7 +7914,8 @@ function podsDraw() {
         st === "stopped" && p.account ? el("div", {class: "field-hint"}, "Its cost while stopped (its disk) is on ",
           el("a", {class: "inline-link", href: "https://console.runpod.io/pods", target: "_blank", rel: "noopener",
             text: "your RunPod account"}), ".") : null,
-        S.pods.confirmDel === p.id && hold !== "deleting" ? podDeleteConfirm(p) : null),
+        // only this RunPod pod's row (a computer on your network has no id)
+        p.account && p.id && S.pods.confirmDel === p.id && hold !== "deleting" ? podDeleteConfirm(p) : null),
       el("div", {class: "pod-btns"}, ...btns));
   }));
 }
@@ -7945,11 +7946,11 @@ function podDeleteConfirm(p) {
       "its run card first."}) : null,
     el("div", {class: "pod-btns"},
       el("button", {class: "btn btn-sm btn-danger", text: "Delete it", onclick: () => podDelete(p)}),
-      el("button", {class: "btn btn-sm", text: "Cancel", onclick: () => { S.pods.confirmDel = ""; podsDraw(); }})));
+      el("button", {class: "btn btn-sm", text: "Cancel", onclick: () => { S.pods.confirmDel = null; podsDraw(); }})));
 }
 
 async function podDelete(p) {
-  S.pods.confirmDel = "";
+  S.pods.confirmDel = null;
   try {
     await api("/api/pods/delete", {id: p.id});
     S.pods.pending[p.id || p.url] = {kind: "delete", t: Date.now()};
@@ -8534,7 +8535,7 @@ function showTab(name) {
   if (name === "samples") loadGallery();
   if (name === "training") loadCheckpoints();
   if (name === "outputs") { loadRuns(); if (S.outputsOpen) loadOutputs(); }
-  if (name === "pods") { podsLoad(); pickLoad(); }
+  if (name === "pods") { S.pods.confirmDel = null; podsLoad(); pickLoad(); }   // a Delete left open closes
   if (name === "helpers") helpLoad();
   // the workbench's render choice follows the Samples tab, which may have changed since the tab last drew it
   if (["studio", "royale", "profiler"].includes(name)) renderChoiceRefresh();

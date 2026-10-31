@@ -8535,7 +8535,8 @@ function showTab(name) {
   if (name === "samples") loadGallery();
   if (name === "training") loadCheckpoints();
   if (name === "outputs") { loadRuns(); if (S.outputsOpen) loadOutputs(); }
-  if (name === "pods") { S.pods.confirmDel = null; podsLoad(); pickLoad(); }   // a Delete left open closes
+  if (S.pods.confirmDel) { S.pods.confirmDel = null; podsDraw(); }   // a Delete pod left open: gone, not waiting
+  if (name === "pods") { podsLoad(); pickLoad(); }
   if (name === "helpers") helpLoad();
   // the workbench's render choice follows the Samples tab, which may have changed since the tab last drew it
   if (["studio", "royale", "profiler"].includes(name)) renderChoiceRefresh();

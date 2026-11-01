@@ -1133,7 +1133,10 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     if pairs:
         notes["_slider_plus_dir"] = image_folder or "Not chosen yet - pick it on the Start tab"
     notes["_edit_edited_dir"] = image_folder or "Not chosen yet - pick it on the Start tab"
-    media = launch.dataset_media(image_folder) if image_folder else set()
+    # the folder's own media plus its sub-folders' when the run trains on them (the tick is shown and on): the clip
+    # size row doesn't vanish when the clips sit only under a sub-folder
+    subs_on = "TRAIN_SUBFOLDERS" not in hidden and bool(values.get("TRAIN_SUBFOLDERS"))
+    media = launch.dataset_media(image_folder, subs_on) if image_folder else set()
     if "clip" not in media:                          # clips' own size only when the folder holds clips
         hidden.add("CLIP_MEGAPIXELS")
     # what the run ignores (launch.plan): a slider or a fine-tune trains its own blocks (Model Area), and a

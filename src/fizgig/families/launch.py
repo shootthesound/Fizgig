@@ -704,8 +704,12 @@ def _balance_repeats(folders):
     return {f: max(1, round(top / c)) for f, c in counts.items() if c}
 
 
-def dataset_media(folder):
-    """The media kinds in a training folder: {"photo", "clip", "voice"} (the dataset layer's extensions)."""
+def dataset_media(folder, include_subfolders=False):
+    """The media kinds in a training folder: {"photo", "clip", "voice"} (the dataset layer's extensions).
+
+    With `include_subfolders`: the media kinds in the sub-folders the dataset trains on (the TRAIN_SUBFOLDERS tick),
+    so a folder that holds its clips only under a sub-folder is still seen as mixed - the UI row for the clip size
+    doesn't vanish just because the clips sit one level down."""
     from fizgig.dataset.image_dataset import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
     kinds = set()
     try:
@@ -718,6 +722,9 @@ def dataset_media(folder):
         if is_mask_file(n):
             continue
         kinds |= {"photo"} if ext in img else {"clip"} if ext in vid else {"voice"} if ext in aud else set()
+    if include_subfolders:
+        for _rel, f in subfolders(folder):
+            kinds |= dataset_media(f)                 # subfolders() already goes to every depth
     return kinds
 
 
@@ -1274,7 +1281,10 @@ def dataset_toml(desc, inputs, cache_suffix=""):
         cmp_ = float(inputs.get("clip_megapixels") or 0)
     except (TypeError, ValueError):
         cmp_ = 0.0
-    if cmp_ > 0 and "clip" in desc.media and any("clip" in dataset_media(f) for f in [folder] + extra):
+    # the clips counted wherever the dataset trains on them: a folder whose clips sit only in a sub-folder (the
+    # TRAIN_SUBFOLDERS tick) still gets its clip size - without it the sub-folder inherits the pictures' resolution
+    subs = run_subfolders(desc, inputs)
+    if cmp_ > 0 and "clip" in desc.media and any("clip" in dataset_media(f) for f in [folder] + extra + [f for _r, f in subs]):
         lines.append(f"clip_megapixels = {cmp_:g}")      # clips cache and train at their own size
     reps = _balance_repeats([folder] + extra) if extra and inputs.get("concept_balance") else {}
     mp = {f: (s, w) for f, s, _why, w in multi_person_subjects(desc, inputs) if s} \
@@ -1287,7 +1297,6 @@ def dataset_toml(desc, inputs, cache_suffix=""):
                 lines.append(f"caption_replace = {_json.dumps(mp[f][0]['rules'])}")
             if isolation_photos_only(desc):  # a clip / voice family trains Isolation's subjects from their stills
                 lines.append("photos_only = true")
-    subs = run_subfolders(desc, inputs)
     head = len(lines)
     lines += ["", "[[datasets]]", f'image_directory = "{folder.replace(chr(92), "/")}"']
     if reps.get(folder, 1) > 1:

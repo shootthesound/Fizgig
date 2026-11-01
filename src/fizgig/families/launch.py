@@ -1281,7 +1281,10 @@ def dataset_toml(desc, inputs, cache_suffix=""):
         cmp_ = float(inputs.get("clip_megapixels") or 0)
     except (TypeError, ValueError):
         cmp_ = 0.0
-    if cmp_ > 0 and "clip" in desc.media and any("clip" in dataset_media(f) for f in [folder] + extra):
+    # the clips counted wherever the dataset trains on them: a folder whose clips sit only in a sub-folder (the
+    # TRAIN_SUBFOLDERS tick) still gets its clip size - without it the sub-folder inherits the pictures' resolution
+    subs = run_subfolders(desc, inputs)
+    if cmp_ > 0 and "clip" in desc.media and any("clip" in dataset_media(f) for f in [folder] + extra + [f for _r, f in subs]):
         lines.append(f"clip_megapixels = {cmp_:g}")      # clips cache and train at their own size
     reps = _balance_repeats([folder] + extra) if extra and inputs.get("concept_balance") else {}
     mp = {f: (s, w) for f, s, _why, w in multi_person_subjects(desc, inputs) if s} \
@@ -1294,7 +1297,6 @@ def dataset_toml(desc, inputs, cache_suffix=""):
                 lines.append(f"caption_replace = {_json.dumps(mp[f][0]['rules'])}")
             if isolation_photos_only(desc):  # a clip / voice family trains Isolation's subjects from their stills
                 lines.append("photos_only = true")
-    subs = run_subfolders(desc, inputs)
     head = len(lines)
     lines += ["", "[[datasets]]", f'image_directory = "{folder.replace(chr(92), "/")}"']
     if reps.get(folder, 1) > 1:

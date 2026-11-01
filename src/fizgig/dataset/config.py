@@ -318,6 +318,7 @@ def generate_dataset_group_by_blueprint(
             f"""\
       [Dataset {i}]
         resolution: {dataset.resolution}
+        clip_megapixels: {dataset.clip_megapixels}
         batch_size: {dataset.batch_size}
         num_repeats: {dataset.num_repeats}
         caption_extension: "{dataset.caption_extension}"

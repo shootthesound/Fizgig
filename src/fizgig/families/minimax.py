@@ -384,12 +384,21 @@ MINIMAX = FamilyDescription(
     precisions=("int8", "nf4", "hqq"),
     # without gradient checkpointing (24 Oct 2026 night, RTX PRO 6000, uncompiled as H3 always is, rank 8, its
     # training adapter): stills by Target Megapixels; clips by the heaviest clip's effective MP (spatial x latent
-    # frames) - past 13.3 it runs out even on 96 GB. nf4 goes without it too here (H3's own nf4 path)
+    # frames) - past 13.3 it runs out even on 96 GB. nf4 goes without it too here (H3's own nf4 path).
+    # Clips re-measured 1 Nov 2026 on the same card (rank 16, adapter + Context LoRA + EMA + caption dropout on):
+    # the 24 Oct points cost 4.5 GB per effective MP and the live ones 9.4, and the old 82.2 GB at 13.3 MP sits
+    # below the 85.9 GB a 6.6 MP clip actually peaked at - a 9 MP clip job planned against the old table went
+    # without checkpointing and died at 89 GB. Stills unchanged: that run's 1.03 MP photo stepped at 31.8 GB
+    # against the 30.2 GB stored for 1.05 MP. Past 6.6 MP the clips are left unmeasured, not extrapolated - the
+    # planner refuses what it has no figure for, which is the safe direction.
+    # The two 4-bit clip rows disagree with the same job too: hqq planned ~58.7 GB at 9.09 MP and died with 88.2 GB
+    # allocated (understates, as int8's did); nf4 planned 42.2 GB at 6.39 MP and completed a full epoch at 17.5 GB
+    # reserved (overstates ~2.4x - the safe direction, but not a figure for this job either). Left as measured.
     train_memory_nogc={
         "int8": ((0.25, 23.6), (0.37, 24.6), (0.5, 25.6), (0.75, 27.6), (1.05, 30.2), (1.5, 33.6), (2.0, 37.6)),
         "hqq": ((0.25, 19.5), (0.37, 20.4), (0.5, 21.4), (0.75, 23.3), (1.05, 25.8), (1.5, 29.1), (2.0, 33.1)),
         "nf4": ((0.25, 14.2), (0.37, 15.2), (0.5, 16.1), (0.75, 18.1), (1.05, 20.5), (1.5, 23.7)),
-        "int8:clips": ((6.39, 51.8), (9.7, 66.5), (13.27, 82.2)),
+        "int8:clips": ((1.72, 37.9), (2.95, 49.4), (6.64, 85.9)),
         "hqq:clips": ((6.39, 46.7), (13.27, 77.3)),
         "nf4:clips": ((6.39, 42.2),)},
     # partial checkpointing (quant.plan_partial_checkpointing): every block checkpointed, GB per block without it - the

@@ -704,8 +704,12 @@ def _balance_repeats(folders):
     return {f: max(1, round(top / c)) for f, c in counts.items() if c}
 
 
-def dataset_media(folder):
-    """The media kinds in a training folder: {"photo", "clip", "voice"} (the dataset layer's extensions)."""
+def dataset_media(folder, include_subfolders=False):
+    """The media kinds in a training folder: {"photo", "clip", "voice"} (the dataset layer's extensions).
+
+    With `include_subfolders`: the media kinds in the sub-folders the dataset trains on (the TRAIN_SUBFOLDERS tick),
+    so a folder that holds its clips only under a sub-folder is still seen as mixed - the UI row for the clip size
+    doesn't vanish just because the clips sit one level down."""
     from fizgig.dataset.image_dataset import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
     kinds = set()
     try:
@@ -718,6 +722,9 @@ def dataset_media(folder):
         if is_mask_file(n):
             continue
         kinds |= {"photo"} if ext in img else {"clip"} if ext in vid else {"voice"} if ext in aud else set()
+    if include_subfolders:
+        for _rel, f in subfolders(folder):
+            kinds |= dataset_media(f, True)
     return kinds
 
 

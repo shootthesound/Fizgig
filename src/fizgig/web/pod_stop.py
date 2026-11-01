@@ -8,6 +8,7 @@ import os
 import shutil
 import threading
 import time
+import urllib.error
 import urllib.request
 
 COUNTDOWN = 120                # seconds
@@ -135,6 +136,24 @@ def _stop_vast(log):
     log("[pod] " + msg + "\n")
     with _lock:
         _s["note"] = msg
+
+
+def _runpod_stop_v2(key, pid) -> str:
+    """The pod's own stop over RunPod's REST v2 (GraphQL stops in January 2027): the line for the log."""
+    req = urllib.request.Request(f"https://api.runpod.io/v2/pods/{pid}/action", data=b'{"action": "stop"}',
+                                 method="POST", headers={"Content-Type": "application/json", "User-Agent": "Fizgig",
+                                                         "Authorization": f"Bearer {key}"})
+    try:
+        with urllib.request.urlopen(req, timeout=45):
+            return "Stop requested - this pod is shutting down."
+    except urllib.error.HTTPError as e:
+        try:
+            why = json.loads(e.read().decode() or "{}").get("detail") or f"HTTP {e.code}"
+        except ValueError:
+            why = f"HTTP {e.code}"
+        return f"RunPod refused the stop: {why}. Stop it from the dashboard to stop billing."
+    except Exception as e:
+        return f"Auto-stop failed ({type(e).__name__}: {e}). Stop it from the dashboard to stop billing."
 
 
 def _stop(prefs, log):

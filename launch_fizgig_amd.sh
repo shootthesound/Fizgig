@@ -71,6 +71,7 @@ if [[ "$IS_LEGACY_GPU" -eq 1 ]]; then
     export TORCH_BACKENDS_CUDA_MEM_EFF_SDP_ENABLED=0
     export TORCH_BACKENDS_CUDA_MATH_SDP_ENABLED=1
     unset TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL
+    export HSA_OVERRIDE_GFX_VERSION="${HSA_OVERRIDE_GFX_VERSION:-10.3.0}"
 else
     if [[ -n "$GPU_ARCH" ]]; then
         echo "[AMD-ROCm] GPU arch: ${GPU_ARCH}"

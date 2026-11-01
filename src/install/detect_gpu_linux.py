@@ -54,6 +54,9 @@ PCI_DEV_TO_GFX: dict[str, str] = {
     "164e": "gfx1153",
     "15bf": "gfx1152",
     "15c8": "gfx1150",
+    "73d0": "gfx1031",
+    "73df": "gfx1031",
+
 }
 
 

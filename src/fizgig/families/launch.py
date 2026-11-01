@@ -724,7 +724,7 @@ def dataset_media(folder, include_subfolders=False):
         kinds |= {"photo"} if ext in img else {"clip"} if ext in vid else {"voice"} if ext in aud else set()
     if include_subfolders:
         for _rel, f in subfolders(folder):
-            kinds |= dataset_media(f, True)
+            kinds |= dataset_media(f)                 # subfolders() already goes to every depth
     return kinds
 
 

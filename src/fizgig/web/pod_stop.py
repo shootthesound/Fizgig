@@ -138,24 +138,6 @@ def _stop_vast(log):
         _s["note"] = msg
 
 
-def _runpod_stop_v2(key, pid) -> str:
-    """The pod's own stop over RunPod's REST v2 (GraphQL stops in January 2027): the line for the log."""
-    req = urllib.request.Request(f"https://api.runpod.io/v2/pods/{pid}/action", data=b'{"action": "stop"}',
-                                 method="POST", headers={"Content-Type": "application/json", "User-Agent": "Fizgig",
-                                                         "Authorization": f"Bearer {key}"})
-    try:
-        with urllib.request.urlopen(req, timeout=45):
-            return "Stop requested - this pod is shutting down."
-    except urllib.error.HTTPError as e:
-        try:
-            why = json.loads(e.read().decode() or "{}").get("detail") or f"HTTP {e.code}"
-        except ValueError:
-            why = f"HTTP {e.code}"
-        return f"RunPod refused the stop: {why}. Stop it from the dashboard to stop billing."
-    except Exception as e:
-        return f"Auto-stop failed ({type(e).__name__}: {e}). Stop it from the dashboard to stop billing."
-
-
 def _stop(prefs, log):
     if _vast() and not os.environ.get("RUNPOD_POD_ID"):
         return _stop_vast(log)
@@ -168,18 +150,18 @@ def _stop(prefs, log):
             _s["note"] = msg
         return
     log(f"[pod] stopping pod {pid or '(unknown id)'}…\n")
+    req = urllib.request.Request(f"https://api.runpod.io/v2/pods/{pid}/action", data=b'{"action": "stop"}',
+                                 method="POST", headers={"Content-Type": "application/json", "User-Agent": "Fizgig",
+                                                         "Authorization": f"Bearer {key}"})
     try:
-        body = json.dumps({"query": "mutation($id: String!) { podStop(input: {podId: $id}) { id desiredStatus } }",
-                           "variables": {"id": pid}}).encode()
-        req = urllib.request.Request(f"https://api.runpod.io/graphql?api_key={key}", data=body,
-                                     headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=45) as resp:
-            payload = json.loads(resp.read().decode())
-        if payload.get("errors"):
-            msg = f"RunPod refused the stop: {payload['errors'][0].get('message', 'unknown error')}. Stop it from the " \
-                  "dashboard to stop billing."
-        else:
+        with urllib.request.urlopen(req, timeout=45):
             msg = "Stop requested - this pod is shutting down."
+    except urllib.error.HTTPError as e:
+        try:
+            why = json.loads(e.read().decode() or "{}").get("detail") or f"HTTP {e.code}"
+        except ValueError:
+            why = f"HTTP {e.code}"
+        msg = f"RunPod refused the stop: {why}. Stop it from the dashboard to stop billing."
     except Exception as e:
         msg = f"Auto-stop failed ({type(e).__name__}: {e}). Stop it from the dashboard to stop billing."
     log("[pod] " + msg + "\n")

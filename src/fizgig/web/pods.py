@@ -167,8 +167,8 @@ def account(key) -> list:
     while True:
         d = _rest(key, "GET", "/pods", query={"cursor": cursor} if cursor else None)
         pods += d.get("pods") or []
-        cursor = (d.get("pagination") or {}).get("nextCursor")
-        if not cursor:
+        cursor, last = (d.get("pagination") or {}).get("nextCursor"), cursor
+        if not cursor or cursor == last:
             break
     out = []
     for p in pods:
@@ -177,7 +177,8 @@ def account(key) -> list:
         status = str(p.get("status") or "").upper()
         gpu = p.get("gpu") or {}
         out.append({"id": p.get("id") or "", "name": p.get("name") or "", "url": pod_url(p.get("id") or ""),
-                    "running": status == "RUNNING", "status": status, "gpu": _gpu_name(key, gpu.get("id")),
+                    # still coming up counts as on (RunPod's status is the pod's real state, not the one asked for)
+                    "running": status in ("RUNNING", "STARTING", "PROVISIONING"), "status": status, "gpu": _gpu_name(key, gpu.get("id")),
                     "gpus": int(gpu.get("count") or 1), "cost": float(p.get("cost") or 0),
                     "auto_login": bool(_env_password(p))})       # the app window logs you in (never the password itself)
     out.sort(key=lambda r: (not r["running"], r["name"].lower()))
@@ -374,7 +375,15 @@ def start(key, pod_id, gpus=1):
 
 
 def stop(key, pod_id):
-    _action(key, pod_id, "stop")
+    try:
+        _action(key, pod_id, "stop")
+    except ValueError:                   # RunPod refuses (409) a stop of a pod that's stopped already: done
+        try:
+            if str(_rest(key, "GET", f"/pods/{urllib.parse.quote(pod_id)}").get("status") or "").upper() == "EXITED":
+                return
+        except (ValueError, LookupError):
+            pass
+        raise
 
 
 def terminate(key, pod_id):

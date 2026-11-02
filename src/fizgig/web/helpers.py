@@ -2362,7 +2362,9 @@ def _probe(family, shas):
         if not want:
             return {"ok": False, "why": "the run has no cache step for it", "files": files}
         if want == shas.get("dit") and "dit" in files:
-            files[stage] = files["dit"]  # made from the model's own file (SDXL's checkpoint holds its VAE + encoders)
+            # made from the model's own file (SDXL's checkpoint holds its VAE and encoders): that file, never a
+            # separate VAE / encoder this computer has set (_same_as_dit, once the model is here)
+            files[stage] = {**files["dit"], "same_as": "dit"}
             continue
         f, got = pick(role, want)
         if got is None:
@@ -2370,6 +2372,15 @@ def _probe(family, shas):
                                                         f"download (not in {desc.display_name}'s list of builds)"}
         files[stage] = got
     return {"ok": True, "files": files}
+
+
+def _same_as_dit(desc, specs, paths):
+    """The cache steps the lead made from the model's own file take this computer's copy of it."""
+    f = next((m for m in desc.model_files if m.role == "dit"), None)
+    dit = paths.get("dit") or (_srv().pref_path(_srv().load_prefs(), f.pref_key) if f is not None else "")
+    for stage, spec in specs.items():
+        if spec.get("same_as") == "dit" and not paths.get(stage) and dit:
+            paths[stage] = dit
 
 
 _gets = {}                         # repo/path -> this computer fetching a build for a share: {state, error}
@@ -2507,6 +2518,8 @@ def _share_start(body):
     m = models(desc.key, {"conds": not make or "text" in paths, "turbo": 0, "look": 0}, fetch=True)
     if m["missing"]:
         return {"models": m}
+    if make:
+        _same_as_dit(desc, specs, paths)
     old = _sw.get(tag)
     if old and old["proc"].poll() is None:
         return {"ok": True, "dir": old["dir"]}
@@ -4176,6 +4189,7 @@ def move_in(body):
                fetch=True)
     if m["missing"]:
         return {"models": m}
+    _same_as_dit(desc, body.get("files") or {}, paths)
     name = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(body.get("run") or "run")).strip("._")[:80] or "run"
     for old in glob.glob(_dir("files", "mv*.tar")):      # an earlier attempt's file that never became a run
         if os.path.basename(old) != f"mv{tag}.tar" and time.time() - os.path.getmtime(old) > 3600:

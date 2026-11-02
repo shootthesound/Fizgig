@@ -137,7 +137,10 @@ def _needs(desc, job, prefs):
     for role in ("dit", "vae") if job.get("conds") else ("dit", "vae", "text_encoder"):
         f = next((m for m in desc.model_files if m.role == role), None)
         if f is not None:
-            out.append((f.label, s.pref_path(prefs, f.pref_key), f))
+            p = s.pref_path(prefs, f.pref_key)
+            if not p and not f.required and getattr(f, "inside", ""):
+                continue                 # left empty: read from the file it's inside (SDXL's checkpoint)
+            out.append((f.label, p, f))
     sp = desc.preview_speed()
     if sp is not None and float(job.get("turbo") or 0) > 0 and sp.pref_key:
         f = next((m for m in desc.model_files if m.pref_key == sp.pref_key), None)

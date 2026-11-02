@@ -2358,6 +2358,9 @@ def _probe(family, shas):
         want = shas.get(stage)
         if not want:
             return {"ok": False, "why": "the run has no cache step for it", "files": files}
+        if want == shas.get("dit") and "dit" in files:
+            files[stage] = files["dit"]  # made from the model's own file (SDXL's checkpoint holds its VAE + encoders)
+            continue
         f, got = pick(role, want)
         if got is None:
             return {"ok": False, "files": files, "why": f"this run's {f.label if f else role} isn't one it can "

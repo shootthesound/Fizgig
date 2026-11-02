@@ -60,7 +60,7 @@ def save_latents(desc, item, latent, controls=(), extra=None):
     save_file(sd, item.latent_cache_path, metadata={
         "architecture": desc.arch_id, "width": str(item.original_size[0]), "height": str(item.original_size[1]),
         "dtype": dtype_to_str(latent.dtype), "format_version": FORMAT_VERSION, "source": source_stamp(item.item_key),
-        **({"alpha": "1"} if getattr(item, "alpha", False) else {})})
+        **({"alpha": item.alpha} if getattr(item, "alpha", "") else {})})
 
 
 def _ref_sizes(item):

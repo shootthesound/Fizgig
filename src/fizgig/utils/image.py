@@ -49,6 +49,14 @@ def flatten(image: Image.Image, background=(255, 255, 255)) -> Image.Image:
     return image.convert("RGB")
 
 
+def on_white(a: np.ndarray) -> np.ndarray:
+    """flatten() for a uint8 (H, W, 4) array: RGB, its see-through pixels laid on white. Any other array as it is."""
+    if not (isinstance(a, np.ndarray) and a.ndim == 3 and a.shape[-1] == 4):
+        return a
+    al = a[..., 3:].astype(np.float32) / 255.0
+    return (a[..., :3].astype(np.float32) * al + 255.0 * (1.0 - al)).round().astype(np.uint8)
+
+
 def resize_image_to_bucket(image_np: np.ndarray, bucket_size: Tuple[int, int]) -> np.ndarray:
     """Resize an image (numpy HWC) to the target bucket size using PIL."""
     w, h = bucket_size

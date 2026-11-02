@@ -66,7 +66,7 @@ Repair Studio and LoRA Royale preview on the Turbo DiT (8 steps, CFG 1) when it'
 
 Qwen Image 2.1's VAE has an alpha channel, so it can learn and draw see-through pictures: stickers, cut-outs, logos, subjects on a transparent background.
 
-- **Training:** a PNG with transparency trains with its alpha. Pictures that are fully opaque train as before, so a folder can mix both. Image Prep keeps the alpha when it resizes or crops.
+- **Training:** a PNG with transparency trains with its alpha. Pictures that are fully opaque train as before, so a folder can mix both. Image Prep keeps the alpha when it resizes or crops. Every other model trains a transparent PNG laid on white, as the captioner sees it.
 - **Captions:** use the model's own wording for transparent pictures, on either side of what's in the picture: `This is an RGBA image with transparency. A red fox sticker. The image has alpha channel and the background is transparent.` Write your sample prompts the same way.
 - **Previews:** a preview the model draws with transparency is saved as a PNG with its alpha. Fizgig shows it on a checkerboard in the gallery, the lightbox, Studio and LoRA Royale, and in ComfyUI the same file keeps its transparency.
 

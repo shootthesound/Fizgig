@@ -542,15 +542,14 @@ class WorkbenchEngine:
             mp = 1.0
         return (path, mp) if path and os.path.isfile(path) else ("", 1.0)
 
-    @staticmethod
-    def _fit_reference(path, width, height):
-        """An edit reference as uint8 (H, W, 3), or (H, W, 4) with its transparency as training reads it, cropped and
+    def _fit_reference(self, path, width, height):
+        """An edit reference as uint8 (H, W, 3), or (H, W, 4) with its transparency, as training takes it, cropped and
         scaled to the preview's size."""
         import numpy as np
         from PIL import Image, ImageOps
         from fizgig.families.train import _as_trained
         with Image.open(path) as im:
-            return np.array(ImageOps.fit(_as_trained(upright(im)), (int(width), int(height)), Image.LANCZOS))
+            return np.array(ImageOps.fit(_as_trained(upright(im), self.desc.rgba), (int(width), int(height)), Image.LANCZOS))
 
     def _reference_latents(self, path, width, height):
         """The edit reference's latents (CPU, batch dim), cached per picture and size."""

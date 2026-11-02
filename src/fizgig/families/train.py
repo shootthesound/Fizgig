@@ -468,20 +468,23 @@ def _reference_size(w, h, area):
     return max(64, round((area * r) ** 0.5 / 64) * 64), max(64, round((area / r) ** 0.5 / 64) * 64)
 
 
-def _as_trained(im):
-    """A picture as the dataset loader reads it: RGB, or RGBA when it has transparency."""
-    return im.convert("RGBA" if im.mode in ("RGBA", "LA", "PA") or "transparency" in im.info else "RGB")
+def _as_trained(im, rgba=False):
+    """A picture as training takes it: RGBA when it has transparency and the family's VAE takes alpha (description
+    rgba), else RGB with a see-through picture laid on white."""
+    from fizgig.utils.image import flatten
+    if rgba and (im.mode in ("RGBA", "LA", "PA") or "transparency" in im.info):
+        return im.convert("RGBA")
+    return flatten(im)
 
 
-def _load_references(paths, width, height):
+def _load_references(paths, width, height, rgba=False):
     """uint8 (H, W, 3) arrays of the preview's reference images and the preview's (width, height): the first (the
     photo the edit is made to) sets the preview's shape at its area; extra pictures (a multi-picture edit's photo_1,
     photo_2 ...) keep their own shape at that area, as they are sized in training."""
     import numpy as np
     from PIL import Image, ImageOps
     from fizgig.utils.upright import open_upright
-    # as training reads them: a transparent picture keeps its alpha (each driver takes what its VAE takes)
-    imgs = [_as_trained(open_upright(p)) for p in paths]
+    imgs = [_as_trained(open_upright(p), rgba) for p in paths]       # as training takes them
     size = _reference_size(*imgs[0].size, width * height)
     return [np.array(ImageOps.fit(im, size if i == 0 else _reference_size(*im.size, width * height), Image.LANCZOS))
             for i, im in enumerate(imgs)], size
@@ -1495,7 +1498,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     if sample_prompts and sample_every_n_epochs and te_path and vae_path:
         logger.info("[sample] encoding %d preview prompt(s) with %s", len(sample_prompts), desc.text_encoder_label)
         if sample_reference:
-            ref_imgs, (sample_width, sample_height) = _load_references(sample_reference, sample_width, sample_height)
+            ref_imgs, (sample_width, sample_height) = _load_references(sample_reference, sample_width, sample_height,
+                                                                    desc.rgba)
             logger.info(f"[sample] edit previews from {len(ref_imgs)} reference image(s) at "
                         f"{sample_width}x{sample_height}")
             te = driver.load_reference_text_encoder(te_path, device)

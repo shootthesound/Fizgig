@@ -95,13 +95,16 @@ def encode_datasets(datasets, encode_fn, args):
             keep_alpha = getattr(args, "keep_alpha", False)
             def _see(a):
                 return isinstance(a, np.ndarray) and a.ndim == 3 and a.shape[-1] == 4 and bool((a[..., 3] < 255).any())
+            from fizgig.utils.image import on_white
             for item in batch:
-                main = keep_alpha and _see(item.content)
-                if isinstance(item.content, np.ndarray) and item.content.ndim == 3 and item.content.shape[-1] == 4 \
-                        and not main:
-                    item.content = item.content[..., :3]
-                # the cache's mark: the picture or one of its before-images went in with its alpha
-                item.alpha = main or (keep_alpha and any(_see(c) for c in (item.control_content or [])))
+                ctrls = item.control_content or []
+                see = _see(item.content) or any(_see(c) for c in ctrls)
+                if not (keep_alpha and _see(item.content)):
+                    item.content = on_white(item.content)
+                if not keep_alpha and ctrls:
+                    item.control_content = [on_white(c) for c in ctrls]
+                # the cache's mark: the picture or a before-image went in with its alpha ("1") or laid on white
+                item.alpha = ("1" if keep_alpha else "white") if see else ""
 
             all_cache_paths.extend([item.latent_cache_path for item in batch])
 
@@ -127,8 +130,8 @@ def encode_datasets(datasets, encode_fn, args):
                         from safetensors import safe_open
                         with safe_open(item.latent_cache_path, framework="pt") as f:
                             md = f.metadata() or {}
-                        if getattr(item, "alpha", False) != (md.get("alpha") == "1"):
-                            return True         # cached without its transparency (or with it, now dropped)
+                        if getattr(item, "alpha", "") != md.get("alpha", ""):
+                            return True         # cached on its hidden colour (or another way than now)
                         was = md.get("source")
                         if was:
                             return was != source_stamp(item.item_key)

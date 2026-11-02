@@ -2,7 +2,7 @@
 
 Everything Qwen-specific the generic cache/train/preview code needs, behind the FamilyDriver interface:
 * conditioning: Qwen3-VL-8B last layer before the final RMSNorm, system tokens dropped -> {"hidden_states": (L, 4096)}
-* latents: RGBA VAE (RGB gets an opaque alpha), normalised with the checkpoint's latents_mean/std, (64, h, w) at /16
+* latents: RGBA VAE (a see-through picture keeps its alpha, an RGB one gets an opaque alpha), normalised with the checkpoint's latents_mean/std, (64, h, w) at /16
 * training: flow matching, x_t = (1 - t) x0 + t noise, target = noise - x0, logit-normal t with the checkpoint's
   resolution-dependent exponential shift (the sampler's mu); block-causal joint forward, keep the image tokens
 * sampling: FlowMatch Euler with the reference schedule (sampling.py)
@@ -152,7 +152,9 @@ class QwenImage21Driver(FamilyDriver):
     # ---- encoding -------------------------------------------------------------------------------
     @torch.no_grad()
     def encode_images(self, vae, images):
-        x = torch.stack([torch.from_numpy(np.ascontiguousarray(a[..., :3])) for a in images])
+        # a see-through picture keeps its alpha (description rgba); an RGB one is opaque (encode_image)
+        x = torch.stack([torch.from_numpy(np.ascontiguousarray(
+            a if a.shape[-1] == 4 else np.concatenate([a, np.full_like(a[..., :1], 255)], -1))) for a in images])
         x = x.permute(0, 3, 1, 2).float().div(127.5).sub(1.0)
         p = next(vae.parameters())
         return [z.to(torch.bfloat16).cpu() for z in S.encode_image(vae, x.to(p.device, p.dtype))]
@@ -282,5 +284,7 @@ class QwenImage21Driver(FamilyDriver):
     @torch.no_grad()
     def decode(self, vae, latents, width, height):
         from PIL import Image
-        img = S.decode(vae, latents, height, width)[0, :3].float().clamp(-1, 1)
-        return Image.fromarray(((img.permute(1, 2, 0).cpu().numpy() + 1) * 127.5).round().astype(np.uint8))
+        img = S.decode(vae, latents, height, width)[0].float().clamp(-1, 1)
+        px = ((img.permute(1, 2, 0).cpu().numpy() + 1) * 127.5).round().astype(np.uint8)
+        # RGBA when the model drew some transparency (a prompt asking for it), else RGB as every other family
+        return Image.fromarray(px, "RGBA") if (px[..., 3] < 250).mean() > 0.002 else Image.fromarray(px[..., :3])

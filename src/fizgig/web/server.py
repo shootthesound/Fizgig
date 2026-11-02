@@ -2151,7 +2151,12 @@ def _thumb(path, size=320):
                 im = upright(im)
                 im.thumbnail((size, size))
                 buf = io.BytesIO()
-                im.convert("RGB").save(buf, "JPEG", quality=82)
+                if im.mode in ("RGBA", "LA", "PA") or "transparency" in im.info:
+                    im = im.convert("RGBA")
+                    if im.getextrema()[3][0] < 255:
+                        im.save(buf, "PNG")     # see-through: a PNG keeps it (the page puts it on a checkerboard)
+                if not buf.tell():
+                    im.convert("RGB").save(buf, "JPEG", quality=82)
         data = buf.getvalue()
     except Exception:
         return None
@@ -3362,7 +3367,8 @@ class Handler(BaseHTTPRequestHandler):
             data = _thumb(p)
             if data is None:
                 return self._stream(p, attachment=False)
-            return self._send(200, data, "image/jpeg", extra=[("Cache-Control", "private, max-age=3600")])
+            return self._send(200, data, "image/png" if data[:4] == b"\x89PNG" else "image/jpeg",
+                              extra=[("Cache-Control", "private, max-age=3600")])
         if path == "/api/media":
             p = (qs.get("path") or [""])[0]
             if os.path.splitext(p)[1].lower() not in MEDIA or not os.path.isfile(p):

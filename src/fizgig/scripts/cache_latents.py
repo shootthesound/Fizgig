@@ -91,10 +91,13 @@ def encode_datasets(datasets, encode_fn, args):
 
         for _, batch in tqdm(dataset.retrieve_latent_cache_batches(num_workers)):
             shown.add(len(batch))
-            # Ensure RGB (strip alpha)
+            # RGB, unless the family's VAE takes alpha (description rgba) and the picture is see-through somewhere
+            keep_alpha = getattr(args, "keep_alpha", False)
             for item in batch:
                 if isinstance(item.content, np.ndarray) and item.content.shape[-1] == 4:
-                    item.content = item.content[..., :3]
+                    item.alpha = keep_alpha and bool((item.content[..., 3] < 255).any())
+                    if not item.alpha:
+                        item.content = item.content[..., :3]
 
             all_cache_paths.extend([item.latent_cache_path for item in batch])
 
@@ -119,7 +122,10 @@ def encode_datasets(datasets, encode_fn, args):
                     try:
                         from safetensors import safe_open
                         with safe_open(item.latent_cache_path, framework="pt") as f:
-                            was = (f.metadata() or {}).get("source")
+                            md = f.metadata() or {}
+                        if getattr(item, "alpha", False) != (md.get("alpha") == "1"):
+                            return True         # cached without its transparency (or with it, now dropped)
+                        was = md.get("source")
                         if was:
                             return was != source_stamp(item.item_key)
                         return os.path.getmtime(item.item_key) > os.path.getmtime(item.latent_cache_path)

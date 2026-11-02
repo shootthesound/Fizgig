@@ -59,7 +59,8 @@ def save_latents(desc, item, latent, controls=(), extra=None):
         sd[f"latent_control_{i}_{c.shape[-2]}x{c.shape[-1]}"] = _clean(c, "control latent", item.item_key)
     save_file(sd, item.latent_cache_path, metadata={
         "architecture": desc.arch_id, "width": str(item.original_size[0]), "height": str(item.original_size[1]),
-        "dtype": dtype_to_str(latent.dtype), "format_version": FORMAT_VERSION, "source": source_stamp(item.item_key)})
+        "dtype": dtype_to_str(latent.dtype), "format_version": FORMAT_VERSION, "source": source_stamp(item.item_key),
+        **({"alpha": "1"} if getattr(item, "alpha", False) else {})})
 
 
 def _ref_sizes(item):
@@ -178,6 +179,7 @@ def main():
         vae = driver.load_vae(args.model, device)
         # a cache from before the pairs were added (or after they were removed) no longer fits: re-encode it
         args.needs_reencode = lambda path: _has_controls(path) != pairs
+        args.keep_alpha = desc.rgba
 
         def encode(batch):
             imgs = [(it.content[0] if isinstance(it.content, list) else it.content) for it in batch]

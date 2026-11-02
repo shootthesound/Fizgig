@@ -533,6 +533,9 @@ class FamilyDescription:
     # masked training (fizgig/dataset/masks.py): the driver's training_loss takes loss_mask; opt in, so a family added
     # later never gets a tick its driver can't honour
     masked_training: bool = False
+    # see-through pictures (an RGBA VAE: Qwen Image 2.1): the latent cache keeps a picture's alpha when some of it is
+    # transparent, and the driver's decode returns RGBA when the render is; off: the alpha is dropped, as for RGB VAEs
+    rgba: bool = False
     # caption dropout (families/train.py): a share of steps trains on the empty caption's encoding, made once at the
     # start with the family's own text encoder; off for a family with its own (H3) or no pictures (ACE-Step)
     caption_dropout: bool = True

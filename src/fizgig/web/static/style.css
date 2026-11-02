@@ -1802,6 +1802,14 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .lightbox-mode { color: var(--text-primary); background: var(--bg-surface); border: 1px solid var(--border);
   border-radius: 8px; padding: 6px 12px; margin-bottom: 8px; font-size: 10pt; max-width: calc(100vw - 140px); }
 .lightbox-figure img { width: calc(100vw - 140px); height: calc(100vh - 80px); object-fit: contain; cursor: zoom-out; }
+/* a see-through picture (app.js marks it) on a checkerboard; in the lightbox at its own shape, so the board stops
+   at its edges instead of filling the letterbox */
+img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
+  color-mix(in srgb, var(--pic-shade) 16%, var(--pic-text)) 0 50%) 0 0 / 16px 16px; }
+.lightbox-figure img.see-through { width: auto; height: auto; max-width: calc(100vw - 140px);
+  max-height: calc(100vh - 80px); }
+.lightbox.with-cap .lightbox-figure img.see-through { height: auto; max-height: calc(100vh - 330px); }
+.caption-card > img.see-through { width: auto; max-width: 100%; align-self: center; }
 .lightbox-figure figcaption { color: var(--text-secondary); font-size: 9pt; margin-top: 8px; overflow-wrap: anywhere;
   text-align: center; }
 .lightbox-close { position: absolute; top: 12px; right: 12px; }

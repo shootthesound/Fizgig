@@ -182,8 +182,8 @@ def test_faces(path, face_label):
     hi = faces.index(sel) if sel in faces else None
     with Image.open(path) as img:
         img = upright(img)
-        img = img.convert("RGB") if img.mode not in ("RGB", "RGBA") else img
-        shown = draw_face_boxes(img, faces, highlight_index=hi).convert("RGB")
+        from fizgig.utils.image import flatten
+        shown = draw_face_boxes(flatten(img), faces, highlight_index=hi).convert("RGB")
     shown.thumbnail((1400, 1400))
     buf = io.BytesIO()
     shown.save(buf, "JPEG", quality=88)

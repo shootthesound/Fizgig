@@ -29,8 +29,9 @@ def listing(folder):
 
 
 def _open_upright(path):
+    from fizgig.utils.image import flatten
     with Image.open(path) as im:
-        return upright(im).convert("RGB")
+        return flatten(upright(im))
 
 
 def picture_jpeg(folder, name):

@@ -569,7 +569,8 @@ class Qwen3VLConditioner(torch.nn.Module):
     def _cap_image(im, megapixels: float):
         """RGB + downscale an image so its pixel area is <= megapixels (never upscale)."""
         from PIL import Image
-        im = im.convert("RGB")
+        from fizgig.utils.image import flatten
+        im = flatten(im)                    # a see-through picture on white, not on its hidden colour
         cap = int(megapixels * 1024 * 1024)
         w, h = im.size
         if w * h > cap and w > 0 and h > 0:

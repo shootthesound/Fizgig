@@ -20,7 +20,8 @@ SETTINGS = "fizgig_detail_crops.json"   # its switch, in the training folder (fi
 MANIFEST = ".crops.json"               # per size folder: each crop's source picture and box
 MASTERS = "detail_masters"              # Train on the crops only: the full pictures, kept here and not trained
 PICS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
-RULE = 3                                # the spot rule's version: a crop made by an older one is made again
+RULE = 4                                # the spot rule's version: a crop made by an older one is made again
+                                        # (4: a see-through picture's crops keep its alpha; the spot is unchanged)
 FLAT = 0.4                              # a spot with under 40% of the detail of the picture's busiest spot counts as flat
 
 
@@ -256,6 +257,7 @@ def make(folder, mp, log=print, ext=".txt"):
     no caption yet."""
     from PIL import Image
     from fizgig.dataset.masks import mask_for_stem
+    from fizgig.utils.image import flatten
     from fizgig.utils.upright import open_upright
     s = side(mp)
     out = size_dir(folder, mp)
@@ -285,7 +287,9 @@ def make(folder, mp, log=print, ext=".txt"):
         if man.get(stem, {}).get("mtime") == mt and man[stem].get("rule") == RULE and os.path.isfile(dst):
             continue
         try:
-            im = open_upright(src).convert("RGB")
+            im = open_upright(src)
+            im = im.convert("RGBA") if im.mode in ("RGBA", "LA", "PA") or "transparency" in im.info else \
+                im.convert("RGB")
         except Exception as e:
             log(f"[detail crops] {n}: can't read it ({e})")
             continue
@@ -294,7 +298,7 @@ def make(folder, mp, log=print, ext=".txt"):
             skipped += 1
             man.pop(stem, None)
             continue
-        gray = im.convert("L")
+        gray = flatten(im).convert("L")         # a see-through picture as seen on white
         gray.thumbnail((256, 256))
         x, y = spot(*centre(stem, w, h, gray), w, h, s)
         im.crop((x, y, x + s, y + s)).save(dst)

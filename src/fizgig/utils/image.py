@@ -38,6 +38,17 @@ def preprocess_image(
     return image_tensor, image_np, alpha
 
 
+def flatten(image: Image.Image, background=(255, 255, 255)) -> Image.Image:
+    """An RGB copy of a picture to look at (a captioner, a face finder, a thumbnail, a video): a see-through one is laid
+    on `background` first. convert("RGB") alone shows whatever colour its transparent pixels happen to hold - often
+    black, and random in a render that drew transparency."""
+    if image.mode in ("RGBA", "LA", "PA") or (image.mode == "P" and "transparency" in image.info):
+        rgba = image.convert("RGBA")
+        base = Image.new("RGBA", rgba.size, tuple(background) + (255,))
+        return Image.alpha_composite(base, rgba).convert("RGB")
+    return image.convert("RGB")
+
+
 def resize_image_to_bucket(image_np: np.ndarray, bucket_size: Tuple[int, int]) -> np.ndarray:
     """Resize an image (numpy HWC) to the target bucket size using PIL."""
     w, h = bucket_size

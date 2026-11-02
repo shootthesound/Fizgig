@@ -159,8 +159,9 @@ def _pil_to_bgr(pil_image: Image.Image) -> np.ndarray:
 
 def _load_pil(path: str) -> Image.Image:
     """PIL, not cv2.imread: handles unicode paths on Windows."""
+    from fizgig.utils.image import flatten
     with Image.open(path) as im:
-        return upright(im).convert("RGB")
+        return flatten(upright(im))
 
 
 def _box_iou(a, b) -> float:
@@ -827,7 +828,8 @@ class _CropEmbedder:
 def _preprocess(img: Image.Image, short: int, size: int, mean, std) -> np.ndarray:
     """The models' own preprocessing (shortest side -> `short`, bicubic; centre crop `size`; normalise), done here so
     no image-processor class (whose fast variants need torchvision on newer transformers) is involved."""
-    img = img.convert("RGB")
+    from fizgig.utils.image import flatten
+    img = flatten(img)
     w, h = img.size
     r = short / min(w, h)
     img = img.resize((max(size, round(w * r)), max(size, round(h * r))), Image.BICUBIC)

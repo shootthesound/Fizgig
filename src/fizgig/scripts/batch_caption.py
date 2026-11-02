@@ -117,7 +117,8 @@ def _load_florence(model_name: str, revision: str | None, code_revision: str | N
 
 
 def _caption_florence(model, processor, device, path: str, task: str, max_new_tokens: int) -> str:
-    image = _open_training_frame(path).convert("RGB")
+    from fizgig.utils.image import flatten
+    image = flatten(_open_training_frame(path))
     inputs = processor(text=task, images=image, return_tensors="pt").to(device)
     inputs["pixel_values"] = inputs["pixel_values"].to(model.dtype)
     generated_ids = model.generate(

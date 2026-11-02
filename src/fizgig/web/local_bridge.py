@@ -40,6 +40,11 @@ def _thumb(path, side=96):
             im = upright(im)
             im.thumbnail((side, side))
             buf = io.BytesIO()
+            if im.mode in ("RGBA", "LA", "PA") or "transparency" in im.info:
+                im = im.convert("RGBA")
+                if im.getextrema()[3][0] < 255:
+                    im.save(buf, "PNG")
+                    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
             im.convert("RGB").save(buf, "JPEG", quality=70)
         return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
     except Exception:

@@ -112,7 +112,7 @@ def export(rendered, out_dir, run, fmt="MP4", speed="Normal", pingpong=True, sho
         if like["gen"] != gen or not like["scores"]:
             raise ValueError("Score likeness first - the clip shows each epoch's score beside your subject image.")
         with Image.open(like["ref"]) as ri:
-            ref_img = ri.convert("RGB")
+            ref_img = flatten(ri)
         scores = {lbl: (float("nan") if like["scores"].get(str(lbl)) is None else like["scores"][str(lbl)])
                   for lbl, _ in images}
         frames = rexport.build_likeness_frames(ref_img, images, scores, speed=speed, pingpong=pingpong, brand=brand,

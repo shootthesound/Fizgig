@@ -88,7 +88,8 @@ def weight_stats(desc, lora_path):
 # ---- rendering --------------------------------------------------------------------------------------------------
 def _small(img, side=128):
     from PIL import Image
-    return np.asarray(img.convert("RGB").resize((side, side), Image.LANCZOS), dtype=np.float32) / 255.0
+    from fizgig.utils.image import flatten
+    return np.asarray(flatten(img).resize((side, side), Image.LANCZOS), dtype=np.float32) / 255.0
 
 
 def _dist(a, b):
@@ -98,7 +99,8 @@ def _dist(a, b):
 
 def _thumb(img, side=220):
     from PIL import Image
-    im = img.convert("RGB")
+    from fizgig.utils.image import flatten
+    im = flatten(img)
     im.thumbnail((side, side), Image.LANCZOS)
     buf = io.BytesIO()
     im.save(buf, "JPEG", quality=82)

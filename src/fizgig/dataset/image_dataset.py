@@ -815,8 +815,8 @@ class ImageDirectoryDatasource:
             return image_path, imgs, caption, controls
 
         img = open_upright(image_path)
-        if img.mode not in ("RGB", "RGBA"):
-            img = img.convert("RGB")
+        if img.mode not in ("RGB", "RGBA"):     # a palette / grey PNG with transparency keeps it, as RGBA
+            img = img.convert("RGBA" if img.mode in ("LA", "PA") or "transparency" in img.info else "RGB")
 
         _, caption = self.get_caption(idx)
 
@@ -826,7 +826,7 @@ class ImageDirectoryDatasource:
             for cp in self.control_paths[image_path]:
                 c = open_upright(cp)
                 if c.mode not in ("RGB", "RGBA"):
-                    c = c.convert("RGB")
+                    c = c.convert("RGBA" if c.mode in ("LA", "PA") or "transparency" in c.info else "RGB")
                 controls.append(c)
 
         return image_path, [img], caption, controls

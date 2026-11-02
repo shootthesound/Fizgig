@@ -46,6 +46,7 @@ from fizgig.training.metadata import (build_metadata, latest_sample_image, refre
                                       resolve_title, sample_for_epoch, thumbnail_data_uri)
 from fizgig.training.train_utils import LossRecorder, prune_state_dirs, validate_output_name  # noqa: E402
 from fizgig.training.step_log import StepLog, take_request  # noqa: E402
+from fizgig.utils.image import flatten
 from fizgig.utils.upright import open_upright
 
 logger = logging.getLogger(__name__)
@@ -467,6 +468,11 @@ def _reference_size(w, h, area):
     return max(64, round((area * r) ** 0.5 / 64) * 64), max(64, round((area / r) ** 0.5 / 64) * 64)
 
 
+def _as_trained(im):
+    """A picture as the dataset loader reads it: RGB, or RGBA when it has transparency."""
+    return im.convert("RGBA" if im.mode in ("RGBA", "LA", "PA") or "transparency" in im.info else "RGB")
+
+
 def _load_references(paths, width, height):
     """uint8 (H, W, 3) arrays of the preview's reference images and the preview's (width, height): the first (the
     photo the edit is made to) sets the preview's shape at its area; extra pictures (a multi-picture edit's photo_1,
@@ -474,7 +480,8 @@ def _load_references(paths, width, height):
     import numpy as np
     from PIL import Image, ImageOps
     from fizgig.utils.upright import open_upright
-    imgs = [open_upright(p).convert("RGB") for p in paths]
+    # as training reads them: a transparent picture keeps its alpha (each driver takes what its VAE takes)
+    imgs = [_as_trained(open_upright(p)) for p in paths]
     size = _reference_size(*imgs[0].size, width * height)
     return [np.array(ImageOps.fit(im, size if i == 0 else _reference_size(*im.size, width * height), Image.LANCZOS))
             for i, im in enumerate(imgs)], size
@@ -521,7 +528,7 @@ def _slider_strip(frames, multipliers):
     draw = ImageDraw.Draw(strip)
     for k, (im, label) in enumerate(zip(frames, labels)):
         x = k * (w + gap)
-        strip.paste(im, (x, band))
+        strip.paste(flatten(im), (x, band))
         draw.text((x + 8, pad - top), label, fill=(236, 236, 236), font=font)
     return strip
 

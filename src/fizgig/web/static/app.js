@@ -2467,6 +2467,7 @@ function rvDraw(g, im, fr, W, H) {
   // the video's own frames (shown here and exported): fixed colours, not the theme's
   g.fillStyle = "#000"; g.fillRect(0, 0, W, H);
   const sc = Math.min(W / im.naturalWidth, H / im.naturalHeight), dw = im.naturalWidth * sc, dh = im.naturalHeight * sc;
+  g.fillStyle = "#fff"; g.fillRect((W - dw) / 2, (H - dh) / 2, dw, dh);    // a transparent sample on white
   g.drawImage(im, (W - dw) / 2, (H - dh) / 2, dw, dh);
   if ($("rvTicker").checked) {
     const label = "Epoch " + fr.epoch;
@@ -8959,7 +8960,7 @@ document.addEventListener("load", (e) => {
   let see = false;
   let src = img.currentSrc || img.src || "";
   try { src = decodeURIComponent(src); } catch (err) { /* as it is */ }
-  if (/\.png|image\/png|^blob:/i.test(src)) {
+  if (/\.png|\.webp|image\/png|image\/webp|^blob:/i.test(src)) {
     try {
       const c = ALPHA_PROBE.getContext("2d", {willReadFrequently: true});
       c.clearRect(0, 0, 48, 48);

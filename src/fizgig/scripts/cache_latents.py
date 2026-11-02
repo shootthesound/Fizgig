@@ -93,11 +93,15 @@ def encode_datasets(datasets, encode_fn, args):
             shown.add(len(batch))
             # RGB, unless the family's VAE takes alpha (description rgba) and the picture is see-through somewhere
             keep_alpha = getattr(args, "keep_alpha", False)
+            def _see(a):
+                return isinstance(a, np.ndarray) and a.ndim == 3 and a.shape[-1] == 4 and bool((a[..., 3] < 255).any())
             for item in batch:
-                if isinstance(item.content, np.ndarray) and item.content.shape[-1] == 4:
-                    item.alpha = keep_alpha and bool((item.content[..., 3] < 255).any())
-                    if not item.alpha:
-                        item.content = item.content[..., :3]
+                main = keep_alpha and _see(item.content)
+                if isinstance(item.content, np.ndarray) and item.content.ndim == 3 and item.content.shape[-1] == 4 \
+                        and not main:
+                    item.content = item.content[..., :3]
+                # the cache's mark: the picture or one of its before-images went in with its alpha
+                item.alpha = main or (keep_alpha and any(_see(c) for c in (item.control_content or [])))
 
             all_cache_paths.extend([item.latent_cache_path for item in batch])
 

@@ -18,6 +18,7 @@ import json
 import os
 import random
 import re
+from fizgig.utils.image import flatten
 from fizgig.utils.upright import open_upright
 
 from fizgig.dataset.masks import is_mask_file
@@ -349,7 +350,7 @@ def build(subjects, ext=".txt", seed=42, log=print, face_first=True):
         rng = random.Random(seed * 1000 + s["index"])
         order = list(range(len(people)))
         rng.shuffle(order)
-        load = lambda n: open_upright(os.path.join(s["folder"], n)).convert("RGB")
+        load = lambda n: flatten(open_upright(os.path.join(s["folder"], n)))
         picks = _picks(photos, rng, face_first, faces, load)
         n_crops = sum(1 for n, _c in picks if n.startswith(FACECROP))
         log(f"[multi-person] {s['fused']}: side-by-sides from {n_crops} face crop(s) and "
@@ -359,7 +360,7 @@ def build(subjects, ext=".txt", seed=42, log=print, face_first=True):
             mine, center = picks[k]
             left = rng.random() < 0.5
             a = _square(load(mine), center=center)
-            b = _square(open_upright(path).convert("RGB"))
+            b = _square(flatten(open_upright(path)))
             sheet = Image.new("RGB", (2 * PANEL, PANEL))
             sheet.paste(a if left else b, (0, 0))
             sheet.paste(b if left else a, (PANEL, 0))

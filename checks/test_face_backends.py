@@ -211,9 +211,11 @@ def test_arcface_look_match_gives_the_same_embedding_as_before(monkeypatch, fake
 
 def test_pil_to_bgr_is_opencvs_channel_swap():
     rgb = np.random.default_rng(1).integers(0, 255, (5, 7, 3), dtype=np.uint8)
-    rgba = np.concatenate([rgb, np.full((5, 7, 1), 9, np.uint8)], axis=-1)
+    rgba = np.concatenate([rgb, np.full((5, 7, 1), 255, np.uint8)], axis=-1)        # opaque: the same swap
     assert np.array_equal(F._pil_to_bgr(Image.fromarray(rgb)), rgb[..., ::-1])
     assert np.array_equal(F._pil_to_bgr(Image.fromarray(rgba, "RGBA")), rgb[..., ::-1])
+    clear = np.concatenate([rgb, np.zeros((5, 7, 1), np.uint8)], axis=-1)           # see-through: on white, not
+    assert (F._pil_to_bgr(Image.fromarray(clear, "RGBA")) == 255).all()             # its hidden colour
     g = F._pil_to_bgr(Image.fromarray(rgb[..., 0]))
     assert g.shape == (5, 7, 3) and all(np.array_equal(g[..., i], rgb[..., 0]) for i in range(3))
     try:

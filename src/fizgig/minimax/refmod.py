@@ -265,7 +265,7 @@ def reference_face_centres(refs, image_dirs, face_sizes: Optional[dict] = None) 
             with _Image.open(path) as im:
                 im = upright(im)
                 W, H = im.size
-                faces = det.detect_from_pil(im.convert("RGB"))
+                faces = det.detect_from_pil(im)
             face = det.get_largest(faces) if faces else None
             if face is None:
                 continue

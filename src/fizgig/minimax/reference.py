@@ -23,6 +23,8 @@ import math
 
 import torch
 
+from fizgig.utils.image import flatten
+
 CANVAS_MULTIPLE = 32          # every canvas dimension is a multiple of this
 REF_IMAGE_SHORT_EDGE = 2048   # the "max" mode's short-edge cap
 VAE_SPATIAL = 16              # the video VAE's spatial downscale
@@ -52,13 +54,13 @@ def resize_reference(image, gen_w: int, gen_h: int, mode: str = "match"):
     simply wrong."""
     from PIL import Image
     tw, th = reference_canvas(image.width, image.height, gen_w, gen_h, mode)
-    return image.convert("RGB").resize((tw, th), Image.LANCZOS)
+    return flatten(image).resize((tw, th), Image.LANCZOS)
 
 
 def reference_to_tensor(image):
     """PIL image -> [1, 3, H, W] float tensor in [-1, 1], the range the VAE encoder expects
     (it rescales to [0, 1] and applies the imagenet normalization itself)."""
-    arr = torch.from_numpy(_to_array(image.convert("RGB"))).float()
+    arr = torch.from_numpy(_to_array(flatten(image))).float()
     return (arr.permute(2, 0, 1).unsqueeze(0) / 255.0) * 2.0 - 1.0
 
 
@@ -88,8 +90,7 @@ def reference_image_for_latent(path_or_image, latent):
 
     from fizgig.dataset.image_dataset import resize_image_to_bucket
     from fizgig.utils.upright import open_upright
-    img = (open_upright(path_or_image).convert("RGB")
-           if isinstance(path_or_image, str) else path_or_image.convert("RGB"))
+    img = flatten(open_upright(path_or_image) if isinstance(path_or_image, str) else path_or_image)
     w, h = int(latent.shape[-1]) * VAE_SPATIAL, int(latent.shape[-2]) * VAE_SPATIAL
     return Image.fromarray(resize_image_to_bucket(img, (w, h)))
 

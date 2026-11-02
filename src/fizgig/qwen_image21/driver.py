@@ -166,9 +166,11 @@ class QwenImage21Driver(FamilyDriver):
     @torch.no_grad()
     def encode_text_with_references(self, te, captions, references):
         from PIL import Image
+        from fizgig.utils.image import flatten
         out = []
         for cap, imgs in zip(captions, references):
-            h, m = te.encode_with_references(cap, [Image.fromarray(np.ascontiguousarray(a[..., :3])) for a in imgs])
+            # the vision pass sees a transparent before-image on white (its latent keeps the alpha)
+            h, m = te.encode_with_references(cap, [flatten(Image.fromarray(np.ascontiguousarray(a))) for a in imgs])
             out.append({"hidden_states": h.to(torch.bfloat16).cpu(), "ref_mask": m.cpu()})
         return out
 

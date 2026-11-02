@@ -643,7 +643,8 @@ class H3RepairEngine(ClipContract):
         the call, parked back to CPU after (it is only ever used at conditioning time)."""
         w, h = int(width), int(height)
         w, h = (w // 32) * 32, (h // 32) * 32          # even latent grid, like the sampler
-        img = image.convert("RGB")
+        from fizgig.utils.image import flatten
+        img = flatten(image)
         if img.size != (w, h):
             img = img.resize((w, h), Image.LANCZOS)
         import numpy as np

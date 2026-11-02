@@ -11,6 +11,7 @@ import threading
 import time
 
 from fizgig.dataset import prep
+from fizgig.utils.image import flatten
 from fizgig.utils.upright import upright
 
 _lock = threading.Lock()
@@ -182,7 +183,6 @@ def test_faces(path, face_label):
     hi = faces.index(sel) if sel in faces else None
     with Image.open(path) as img:
         img = upright(img)
-        from fizgig.utils.image import flatten
         shown = draw_face_boxes(flatten(img), faces, highlight_index=hi).convert("RGB")
     shown.thumbnail((1400, 1400))
     buf = io.BytesIO()
@@ -226,7 +226,7 @@ def embed_face_box(path, embedder=None):
             bgr = cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_COLOR)
             return (None, None) if bgr is None else emb.embed_bgr(bgr)
         with Image.open(path) as img:
-            return emb.embed_pil(upright(img).convert("RGB"))
+            return emb.embed_pil(flatten(upright(img)))
     except Exception:
         return None, None
 
@@ -396,4 +396,4 @@ def start_masks(folder, kind, subject_only=False, overwrite=False, sam=None):
 def _open_rgb(path):
     from PIL import Image
     with Image.open(path) as im:
-        return im.convert("RGB")
+        return flatten(im)

@@ -25,6 +25,7 @@ import numpy as np
 from PIL import Image
 
 from fizgig.dataset.masks import MASK_SUFFIX, MIN_COVER, folder_names, is_mask_file, mask_for
+from fizgig.utils.image import flatten
 from fizgig.utils.upright import upright
 
 MODEL_NAME = "selfie_multiclass_256x256.tflite"
@@ -178,7 +179,7 @@ def make_folder(folder, kind, models_dir, *, overwrite=False, subject=None, dete
             continue
         try:
             with Image.open(p) as im:
-                img = upright(im).convert("RGB")      # as training reads it
+                img = flatten(upright(im))            # a see-through picture on white, not its hidden colour
         except Exception as e:
             log(f"  {name}: can't be read ({e}) - skipped\n")
             counts["skipped"] += 1

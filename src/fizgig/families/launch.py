@@ -341,7 +341,38 @@ def start_checks(desc, st, image_folder):
             e = lambda x: (lambda m, x_: f"{float(m):g}e{int(x_)}")(*f"{x:.1e}".split("e"))   # 3e-5, not 3e-05
             out.append(f"Learning rate {e(lr)} is {'below' if lr < band[0] else 'above'} {desc.display_name}'s usual "
                        f"range for {what} ({e(band[0])} to {e(band[1])}, from its presets).")
+    if st.get("VALIDATION_LOSS") and str(st.get("VALIDATION_LOSS")).lower() not in ("false", "0", "off"):
+        w = stale_validation_picks(desc, {**st, "image_folder": folder})
+        if w:
+            out.append(w)
     return out
+
+
+def _missing_picks(desc, st, picked):
+    """The picked training images (names, or "sub/name" for a sub-folder pick) not found in this run's folder(s)."""
+    from fizgig.training.val_pick import resolve_picked
+    folder = _s(st.get("image_folder"))
+    if not picked or not folder or not os.path.isdir(folder):
+        return []
+    keys = [n for n in os.listdir(folder) if os.path.isfile(os.path.join(folder, n))]
+    for rel, f in run_subfolders(desc, st):
+        keys += [f"{rel}/{n}" for n in os.listdir(f) if os.path.isfile(os.path.join(f, n))]
+    return resolve_picked(picked, keys)[1]
+
+
+def stale_validation_picks(desc, st):
+    """The Check button's warning when picked validation images aren't in this run's training folder(s) (an old pick
+    from another dataset: the run then quietly uses its automatic pick), or ""."""
+    from fizgig.training.val_pick import picked_list
+    picked = picked_list(st.get("VALIDATION_PICKED"))
+    missing = _missing_picks(desc, st, picked)
+    if not missing:
+        return ""
+    n = len(missing)
+    return (f"{n} of your {len(picked)} picked validation image{'s' if len(picked) != 1 else ''} "
+            f"{'is' if n == 1 else 'are'} not in this training folder (e.g. {missing[0]}) - probably a pick from "
+            "another dataset. Re-pick them under Your images to check, or the run skips "
+            + ("it." if n < len(picked) else "them and uses its automatic pick."))
 
 
 def caches(desc, inputs):
@@ -893,6 +924,17 @@ def train_command(desc, inputs, plan):
         cmd += ["--dop", "--dop_weight", f"{weight * every:g}", "--dop_every", str(every)]
         if trig:
             cmd += ["--dop_trigger", ", ".join(trig), "--dop_class", ", ".join(cls)]
+    if st.get("VALIDATION_LOSS") and str(st.get("VALIDATION_LOSS")).lower() not in ("false", "0", "off"):
+        from fizgig.training.val_pick import picked_list, validation_every_steps
+        def _vi(key, dflt):
+            m = re.match(r"\d+", str(st.get(key, dflt) or dflt).strip())
+            return m.group() if m else dflt
+        cmd += ["--validation_loss", "--validation_images", _vi("VALIDATION_IMAGES", "4"),
+                "--validation_timesteps", _vi("VALIDATION_TIMESTEPS", "4"),
+                "--validation_seed", _vi("VALIDATION_SEED", "42"),
+                "--validation_every_steps", str(validation_every_steps(st.get("VALIDATION_EVERY_STEPS")))]
+        for name in picked_list(st.get("VALIDATION_PICKED")):     # your own images: the count is not used
+            cmd += ["--validation_pick", name]
     if st.get("ADAPTIVE_LR") and desc.adaptive_lr and not ft_on(desc, st):   # a fine-tune trains at its own rate
         cmd += ["--adaptive_lr",
                 "--adaptive_lr_min", str(st.get("ADAPTIVE_LR_MIN", "1e-4")).split(" ")[0],

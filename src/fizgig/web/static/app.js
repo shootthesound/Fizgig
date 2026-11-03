@@ -305,9 +305,9 @@ function renderRow(r) {
   // its kind sets its layout (style.css): boxes in the grid, switches as tiles, a choice of pills, files and notes
   // across the card - from the schema's row kind, so every model's form lays out the same way
   const kind = {check: "check", radio: "radio", note: "note", text: "wide", path: "wide", folder: "wide", shown: "wide",
-    cadence: "cadence", split: "cadence"}[r.kind] || "field";
+    cadence: "cadence", split: "cadence", valpick: "wide", valevery: "cadence"}[r.kind] || "field";
   const wrap = el("div", {class: "form-row kind-" + kind + (r.featured ? " row-featured" : "") +
-    (r.boxed ? " row-boxed" : ""), "data-key": r.key});
+    (r.boxed ? " row-boxed" : "") + (r.full ? " row-full" : ""), "data-key": r.key});
   if (r.kind === "shown") {                       // a value from elsewhere (the Start tab's folder), read-only here
     const shownRow = el("div", {class: "field-row"}, el("span", {class: "field-label", text: r.label + ":"}),
       el("input", {type: "text", class: "w-path", id: "note_" + r.key, readonly: true, tabindex: -1}));
@@ -333,6 +333,8 @@ function renderRow(r) {
   if (r.kind === "blocks") return blockPicker(r, wrap);
   if (r.lines) return promptLines(r, wrap);
   if (r.kind === "cadence") return cadenceRow(r, wrap);
+  if (r.kind === "valpick") return valPickRow(r, wrap);
+  if (r.kind === "valevery") return valEveryRow(r, wrap);
   if (r.kind === "split") return splitRow(r, wrap);
   if (r.kind === "check") {
     input = el("input", {type: "checkbox", id: "f_" + r.key, onchange: (e) => set(e.target.checked)});
@@ -2357,30 +2359,125 @@ async function likenessShow(dir, items, run, view) {
     if (i % every === 0 || i === best) { g.fillStyle = themeColor("--text-secondary"); g.fillText(epochs[i], x(i) - 6, H - 6); }
   });
 }
-async function likenessPicker() {
-  S.lik.mode = "gallery";
-  await likGridShow(S.imageFolder || "", (S.lik.data && S.lik.data.baselines) || []);
+// Image Validation > How often to check: Every epoch or Every N steps, laid out as How often to preview. It stays the
+// one value it always was (0 = each epoch, N = every N steps), so old runs load as they ran; the steps box keeps its
+// number while Every epoch is chosen and only counts (and only enables) with Every N steps
+function valEveryRow(r, wrap) {
+  const cur = () => { const v = String(S.values[r.key] ?? r.default ?? "0").trim(); return /^\d+$/.test(v) && Number(v) > 0 ? v : ""; };
+  S._valN = cur() || S._valN || String(r.n_default || "500");
+  const name = "f_" + r.key + "_how";
+  const epoch = el("input", {type: "radio", name, value: "epoch", onchange: () => { onValue(r, "0"); paint(); }});
+  const steps = el("input", {type: "radio", name, value: "steps", onchange: () => { onValue(r, S._valN); paint(); }});
+  const num = el("input", {type: "text", inputmode: "numeric", class: "cad-num", id: "f_" + r.key, "data-field": "VALIDATION_EVERY_N",
+    oninput: (e) => {
+      const v = e.target.value.trim();
+      if (/^\d+$/.test(v) && Number(v) > 0) { S._valN = String(Number(v)); onValue(r, S._valN); bad.textContent = ""; }
+      else bad.textContent = "Enter a whole number above 0.";
+    }});
+  const bad = el("div", {class: "field-hint row-note"});
+  const paint = () => {
+    const n = cur();
+    if (n) S._valN = n;
+    epoch.checked = !n; steps.checked = !!n;
+    if (document.activeElement !== num) num.value = S._valN;
+    num.disabled = !n;
+  };
+  num._sync = paint;                              // a preset or a loaded run sets the value: the choice follows
+  wrap.append(el("div", {class: "cad-title", text: r.label}),
+    el("div", {class: "cad-line"}, el("label", {class: "cad-tick"}, epoch, el("span", {text: "Every epoch"}))),
+    el("div", {class: "cad-line"}, el("label", {class: "cad-tick"}, steps, el("span", {text: "Every"})), num,
+      el("span", {text: "steps"})),
+    bad, el("div", {class: "field-hint row-note", id: "note_" + r.key}),
+    el("div", {class: "field-hint", text: r.hint}));
+  paint();
+  return wrap;
 }
-// the 3-photo picker, for the Samples gallery (exactly 3, from the training images) or LoRA Royale (1-3, any folder)
+
+// Image Validation > your images: the Likeness picker (one image a click), each shown with its thumbnail and an ✕
+function valPicked(r) {
+  const v = S.values[r.key];
+  return (Array.isArray(v) ? v : String(v || "").split(/[\n;]/)).map((x) => String(x).trim()).filter(Boolean);
+}
+function valPickRow(r, wrap) {
+  const list = el("div", {class: "val-picks"});
+  const clear = el("button", {class: "btn btn-sm", text: "Clear all", onclick: () => save([])});
+  const add = el("button", {class: "btn", text: "Pick images…", title: "Choose the training images to check (the Likeness picker: click to select or unselect, ✕ to close)",
+    onclick: () => likenessPicker({mode: "multi-toggle", title: "Validation loss: pick the training images to check",
+      picked: valPicked(r), onToggle: (names) => save(names)})});
+  const draw = () => {
+    const names = valPicked(r);
+    list.replaceChildren(...names.map((n) => el("span", {class: "val-pick", title: n},
+      el("img", {class: "pair-thumb", alt: "", loading: "lazy",
+        src: `/api/thumb?path=${encodeURIComponent((S.imageFolder || "") + "/" + n)}&t=${encodeURIComponent(TOKEN)}`}),
+      el("span", {class: "pair-name", text: n}),
+      el("button", {class: "btn btn-sm pair-x", text: "✕", title: "Don't check this image",
+        onclick: () => save(valPicked(r).filter((x) => x !== n))}))));
+    if (!names.length) list.append(el("span", {class: "field-hint", text: "None picked - Fizgig picks evenly (Images to check)."}));
+    clear.style.display = names.length ? "" : "none";
+  };
+  function save(names) { onValue(r, names); draw(); }
+  wrap.append(el("div", {class: "field-row"}, el("span", {class: "field-label", text: r.label + ":"}), add, clear), list);
+  wrap.append(el("div", {class: "field-hint row-note", id: "note_" + r.key}));
+  if (r.hint) wrap.append(el("div", {class: "field-hint", text: r.hint}));
+  draw();
+  return wrap;
+}
+
+async function likenessPicker(single) {
+  // single = {current, onPick(item)}: the same picker, one image for one sample prompt (paired likeness) - it closes
+  // on the click (Image Prep's Test too, with pics = its own file pattern). single = {mode: "multi-toggle",
+  // picked: [names], onToggle(names, item), title}: it stays open, each click puts a picture in or out of the pick
+  // (Validation loss), and only the ✕ closes it.
+  S.lik.single = single && (single.onPick || single.onToggle) ? single : null;
+  const one = !!S.lik.single, multi = !!(S.lik.single && S.lik.single.mode === "multi-toggle");
+  S.lik.multi = multi;
+  $("likTitle").textContent = one ? (single.title || "Paired likeness: pick the training image this prompt describes") : "Likeness: pick 3 photos of your subject";
+  $("likHint3").textContent = multi ? " Click pictures to select or unselect them; close with ✕ when you're done." :
+    " Pick clear, typical shots of the face: each preview is scored against every photo you pick and the mean shown, so one odd photo can't skew it.";
+  $("likHint3").style.display = one && !multi ? "none" : "";
+  $("likStart").style.display = $("likClear").style.display = one ? "none" : "";
+  if ($("likCount")) $("likCount").style.display = multi ? "" : "none";
+  $("likModal").classList.toggle("lik-multi", multi);
+  S.lik.mode = "gallery";
+  await likGridShow(S.imageFolder || "", multi ? (single.picked || []) : one ? (single.current ? [single.current] : []) :
+    ((S.lik.data && S.lik.data.baselines) || []));
+}
+// the picker's grid: the Samples gallery's 3 photos (from the training images), a single / multi pick (paired
+// likeness, validation, Image Prep's Test), or LoRA Royale's 1-3 (any folder)
 async function likGridShow(folder, picked) {
   const royale = S.lik.mode === "royale";
+  if (royale) { S.lik.single = null; S.lik.multi = false; $("likModal").classList.remove("lik-multi");
+    $("likHint3").style.display = ""; if ($("likCount")) $("likCount").style.display = "none"; }
+  const one = !!S.lik.single;
   S.lik.folder = folder; S.lik.paths = {};
-  $("likTitle").textContent = `Likeness: pick ${royale ? "up to " : ""}3 photos of your subject`;
+  if (!one) $("likTitle").textContent = `Likeness: pick ${royale ? "up to " : ""}3 photos of your subject`;
   $("likFrom").textContent = royale ? "this folder" : "the training images";
-  $("likFolder").textContent = folder || "no training image folder set on the Start tab";
   $("likFolderPick").style.display = royale ? "" : "none";
-  $("likClear").style.display = royale ? "none" : "";
+  $("likClear").style.display = royale || one ? "none" : "";
+  $("likStart").style.display = one ? "none" : "";
   $("likStart").textContent = royale ? "Use these" : "Start scoring";
+  $("likFolder").textContent = folder || "no training image folder set on the Start tab";
   S.lik.picked = [...picked];
   const grid = $("likGrid");
   grid.innerHTML = "";
   $("likModal").classList.add("active");
+  likenessMarks();
   if (!folder) return;
-  const r = await api(`/api/captions?folder=${encodeURIComponent(folder)}&ext=${encodeURIComponent(capExt())}&family=${encodeURIComponent(S.family || "")}`).catch(() => ({items: []}));
-  for (const it of r.items.filter((x) => !x.crop && LIK_PICS.test(x.name))) {   // not its Detail crops (same names)
+  // Image Prep's Test (top): Image Prep works on the top folder only, so its pick never lists sub-folders
+  const r = await api(royale ? `/api/captions?folder=${encodeURIComponent(folder)}&ext=${encodeURIComponent(capExt())}&family=${encodeURIComponent(S.family || "")}`
+    : `/api/captions?folder=${encodeURIComponent(folder)}&ext=${encodeURIComponent(capExt())}&family=${encodeURIComponent(S.family || "")}`).catch(() => ({items: []}));
+  const pics = (S.lik.single && S.lik.single.pics) || LIK_PICS;      // Image Prep's Test also lists .bmp
+  for (const it of r.items.filter((x) => !x.crop && pics.test(x.name))) {
     S.lik.paths[it.name] = it.path;
-    const fig = el("figure", {title: it.name, onclick: () => {
+    const fig = el("figure", {title: it.sub ? `${it.name.slice(it.sub.length + 1)}\nin ${it.sub}` : it.name, onclick: () => {
+      if (S.lik.single && !S.lik.multi) { $("likModal").classList.remove("active"); S.lik.single.onPick(it); return; }
       const i = S.lik.picked.indexOf(it.name);
+      if (S.lik.multi) {                 // in or out, the window stays open; the form's list follows each click
+        if (i >= 0) S.lik.picked.splice(i, 1); else S.lik.picked.push(it.name);
+        likenessMarks();
+        S.lik.single.onToggle([...S.lik.picked], it);
+        return;
+      }
       if (i >= 0) S.lik.picked.splice(i, 1);
       else { if (S.lik.picked.length >= 3) S.lik.picked.shift(); S.lik.picked.push(it.name); }
       likenessMarks();
@@ -2392,14 +2489,18 @@ async function likGridShow(folder, picked) {
   likenessMarks();
 }
 function likenessMarks() {
+  const multi = !!S.lik.multi;
   for (const f of $("likGrid").querySelectorAll("figure")) {
     const i = S.lik.picked.indexOf(f.dataset.name);
-    f.classList.toggle("on", i >= 0);
+    f.classList.toggle("on", i >= 0 && !multi);
+    f.classList.toggle("lik-sel", i >= 0 && multi);
     f.querySelector(".lik-num")?.remove();
-    if (i >= 0) f.append(el("span", {class: "lik-num", text: String(i + 1)}));
+    f.querySelector(".lik-check")?.remove();
+    if (i >= 0) f.append(multi ? el("span", {class: "lik-check", text: "✓"}) : el("span", {class: "lik-num", text: String(i + 1)}));
   }
   $("likStart").disabled = S.lik.mode === "royale" ? !S.lik.picked.length : S.lik.picked.length !== 3;
-  $("likPickStatus").textContent = `${S.lik.picked.length}/3 selected`;
+  if (multi && $("likCount")) $("likCount").textContent = `${S.lik.picked.length} selected`;
+  $("likPickStatus").textContent = multi ? `${S.lik.picked.length} selected` : S.lik.single ? "Click one picture" : `${S.lik.picked.length}/3 selected`;
 }
 async function likenessSet(names) {
   $("likPickStatus").textContent = "Starting…";

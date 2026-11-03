@@ -71,7 +71,8 @@ DEFAULTS = {
     "SAVE_LATER": False, "SAVE_UNTIL_EPOCH": "10", "SAVE_EVERY_AFTER": "1",
     "SEED": "42", "BLOCKS_SWAP": "Auto (detect from GPU)", "RESUME_TRAINING": "", "OPTIMIZER_TYPE": "adamw8bit",
     "OPTIMIZER_ARGS": "", "GRADIENT_ACCUMULATION": "1", "MAX_GRAD_NORM": "1.0", "LR_SCHEDULER": "constant",
-    "LR_WARMUP_STEPS": "", "ADAPTIVE_LR": False, "ADAPTIVE_LR_MIN": "1e-5", "ADAPTIVE_LR_MAX": "4e-4",
+    "LR_WARMUP_STEPS": "", "VALIDATION_LOSS": False, "VALIDATION_IMAGES": "4", "VALIDATION_TIMESTEPS": "4",
+    "VALIDATION_SEED": "42", "VALIDATION_EVERY_STEPS": "0", "VALIDATION_PICKED": [], "ADAPTIVE_LR": False, "ADAPTIVE_LR_MIN": "1e-5", "ADAPTIVE_LR_MAX": "4e-4",
     "CONTEXT_LORA_PATH": "", "CONTEXT_LORA_STRENGTH": "1.0", "FAMILY_DOP": False, "FAMILY_MULTI_PERSON": False, "FAMILY_DOP_TRIGGER": "",
     "FAMILY_DOP_CLASS": "", "FAMILY_DOP_TRIGGER2": "", "FAMILY_DOP_CLASS2": "",
     "FAMILY_DOP_TRIGGER3": "", "FAMILY_DOP_CLASS3": "", "FAMILY_DOP_TRIGGER4": "", "FAMILY_DOP_CLASS4": "",
@@ -120,6 +121,9 @@ def _recaption_choices():
 
 def _recaption_key(label, default):
     return next((k for k, lab in _recaption_choices() if lab == label), default)
+
+
+VALIDATION_N_DEFAULT = 500          # How often to check > Every N steps: the box's first value
 
 
 def _optimizers():
@@ -759,6 +763,26 @@ def form(desc):
             _row("SAMPLE_CFG_SCALE", "CFG Scale", hint=desc.cfg_note(), default=str(desc.preview_cfg)),
             _row("SAMPLE_NEGATIVE", "Negative Prompt", "text", default=neg or "") if neg is not None else None,
         ])
+    # the fixed validation loss: its own collapsible card on the Samples tab, after the preview cards
+    add("validation", "Image Validation", "samples", [
+        _row("VALIDATION_LOSS", "Fixed validation loss (a steadier loss line on the graph)", "check",
+             "Each check scores the same few training images with the same noise, so the number only moves when "
+             "the LoRA does. It goes down while the LoRA learns and turns back up when it starts to overcook. It "
+             "uses no extra memory and adds a few seconds a check. Off by default.", full=True),
+        _row("VALIDATION_PICKED", "Your images to check (optional)", "valpick", "Pick the training images to "
+             "check from your dataset, one at a time. None picked: Fizgig spreads its own pick evenly through the "
+             "folder (Images to check). They still train as normal.", default=[]),
+        _row("VALIDATION_IMAGES", "Images to check", hint="Used when you haven't picked any: picked evenly from your "
+             "training images, the same ones every check (and every run of this dataset). They still train as "
+             "normal."),
+        _row("VALIDATION_TIMESTEPS", "Noise levels per image", hint="Evenly spaced from low to high noise "
+             "(4 = 0.125, 0.375, 0.625, 0.875)."),
+        _row("VALIDATION_SEED", "Validation seed", hint="The fixed noise. Keep it the same to compare runs."),
+        # one value (0 = each epoch, N = every N steps), shown as a choice
+        _row("VALIDATION_EVERY_STEPS", "How often to check", "valevery", "Every epoch checks once at the end of "
+             "each epoch (recommended). Every N steps checks that often instead, starting once each picked image "
+             "has come up in training.", default="0", n_default=str(VALIDATION_N_DEFAULT)),
+    ], collapsed=True)
     # the Training tab's order: what every run sets, then (after the Extras divider) the features you choose to use
     order = {sid: i for i, sid in enumerate(TRAINING_ORDER)}
     sections.sort(key=lambda sec: (sec["tab"] != "training", order.get(sec["id"], len(order))))
@@ -943,6 +967,16 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     checkpoint (Klein's Distilled) is."""
     hidden, disabled, notes, force, actions = set(), set(), {}, {}, {}
     disabled_choices = {}                         # {key: {choice: why}}: single choices greyed in a row of pills
+    from fizgig.training.val_pick import picked_list, validation_every_steps
+    _ve = str(values.get("VALIDATION_EVERY_STEPS", "0") if values.get("VALIDATION_EVERY_STEPS") is not None
+              else "0").strip()
+    if validation_every_steps(_ve) == 0:                # Every epoch: the steps box greys out
+        disabled.add("VALIDATION_EVERY_N")
+    if not _ve.isdigit():
+        notes["VALIDATION_EVERY_STEPS"] = "Steps must be a whole number above 0 - checking every epoch until then."
+    if picked_list(values.get("VALIDATION_PICKED")):    # your own validation images: the count is not used
+        disabled.add("VALIDATION_IMAGES")
+        notes["VALIDATION_IMAGES"] = "Not used: your picked images are checked instead."
     poll = False                                  # something is under way (a download): the page asks again soon
     ck_turbo = False                              # previews on a preview checkpoint that takes the Turbo LoRA
     hidden |= ({"TURBO_MISSING"} if speed_file else

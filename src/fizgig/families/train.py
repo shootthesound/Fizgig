@@ -1034,6 +1034,23 @@ class _FineTune:
         logger.info(f"[save] {path} ({replaced}{'/' + str(total) if total else ''} tensors trained)")
 
 
+def _baseline(validator, datasets, steplog, step, epoch, run):
+    """The step-0 validation baseline (the untrained LoRA): the line's first point -> True when it ran. run() ->
+    (result, failed) as val_loss.run_or_skip. A failed check is never fatal."""
+    if not validator.prefill(datasets):
+        logger.info("[validation] baseline skipped: not every validation image could be read from the cache yet")
+        return False
+    r, failed = run()
+    if failed or r is None:
+        return False
+    v, per_t, sec = r
+    steplog.add_validation(step, epoch, v, per_t, sec, seg=validator.seg)
+    logger.info(f"[validation] step {step} (baseline): loss {v:.5f}  "
+                f"[{', '.join(f't{t:.2f} {x:.4f}' for t, x in zip(validator.ts, per_t))}]  "
+                f"{len(validator.batches)} image(s), {sec:.1f}s")
+    return True
+
+
 def train_family(family, dit_path, dataset_config, output_dir, output_name, *, network_dim=32, network_alpha=32,
                  learning_rate=1e-4, max_train_epochs=16, save_every_n_epochs=1, save_until_epoch=0,
                  save_every_n_epochs_after=0, save_state=False,
@@ -1056,6 +1073,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  lr_scheduler="constant", lr_warmup_steps=0, lr_scheduler_num_cycles=1, lr_scheduler_power=1.0,
                  gradient_accumulation_steps=1, compile_blocks="auto", gradient_checkpointing="auto", blocks_to_swap=0, network_type="lora", lokr_factor=8,
                  log_per_image_loss=False, per_image_lr=False, auto_recaption=False, warmup_look_outliers=False,
+                 validation_loss=False, validation_images=4, validation_timesteps=4, validation_seed=42,
+                 validation_every_steps=0, validation_picked=None,
                  trigger_word=None, trigger_position="start", recaption_triggers=None, recaption_instruction=None,
                  recaption_instruction_detailed=None, recaption_task=None, recaption_task_detailed=None,
                  captioner=None, finetune=False, ft_rotations=10, ft_save_every_rotations=1, ft_rotate_every=1, ft_max_parts=0,
@@ -2345,6 +2364,57 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     share_now = [None]       # this epoch's training share: {frac, epoch, ...} or None (this GPU trains every image)
     _share_keys = sorted({str(it.item_key) for ds in getattr(group, "datasets", [])
                           for b in getattr(getattr(ds, "batch_manager", None), "buckets", {}).values() for it in b})
+    # the fixed validation loss (the loss graph's steadiest line): picked from the run's own images
+    validator = None
+    if validation_loss:
+        if slider or ftr is not None or not _share_keys:
+            logger.info("[validation] fixed validation loss is off for this run (sliders, fine-tunes and runs "
+                        "without a cached image dataset don't have it)")
+        else:
+            from fizgig.training.val_loss import FixedValidation
+            validator = FixedValidation(_share_keys, images=validation_images, timesteps=validation_timesteps,
+                                        seed=validation_seed, every_steps=validation_every_steps,
+                                        picked=validation_picked)
+            logger.info(f"[validation] fixed validation loss on: {len(validator.wanted)} "
+                        + ("picked" if validator.picked else "auto-picked") + " image(s) x "
+                        f"{len(validator.ts)} noise level(s), seed {validation_seed}, "
+                        + (f"every {validation_every_steps} steps" if validation_every_steps else "each epoch"))
+            # its snapshot (the images with the captions they had when first kept): a resume checks the same again
+            _vsnap = os.path.join(output_dir, f".fizgig_val_{output_name}.pt")
+            if resume_state_dir:
+                _vs = validator.restore(_vsnap)
+                if _vs == "kept":
+                    logger.info("[validation] Resumed with the same validation images and captions as before.")
+                elif _vs == "changed":
+                    logger.info("[validation] Your validation settings changed, so the validation line starts a new "
+                                f"section from epoch {start_epoch + 1}.")
+            else:
+                validator.snapshot_path = _vsnap
+                try:
+                    os.remove(_vsnap)        # an earlier run of this name's: this run keeps its own
+                except OSError:
+                    pass
+
+    def _validate(epoch_no):
+        nonlocal validator
+        if validator is None or not validator.batches:
+            return
+        _tv = time.time()
+        from fizgig.training.val_loss import run_or_skip
+        try:      # a failed check is never fatal: one console line, the details in the log, no more checks this run
+            r, failed = run_or_skip(validator, driver, dit, device, net, swapped=bool(swapped))
+        finally:
+            progress.start_t += time.time() - _tv       # the bar's s/it is training speed
+        if failed:
+            validator = None
+        if r is None:
+            return
+        v, per_t, sec = r
+        steplog.add_validation(step_off + global_step, epoch_no, v, per_t, sec, seg=validator.seg)
+        logger.info(f"[validation] step {step_off + global_step} (epoch {epoch_no}): loss {v:.5f}  "
+                    f"[{', '.join(f't{t:.2f} {x:.4f}' for t, x in zip(validator.ts, per_t))}]  "
+                    f"{len(validator.batches)} image(s), {sec:.1f}s")
+
     share_skip = [0]
     share_off_said = [False]
     catching = [False]       # training a round's images the helper didn't bring back (counted once already)
@@ -2449,6 +2519,11 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                             + " (untick Start together on the Helpers tab to start now)")
                 _noted = time.time()
             time.sleep(2)
+    # the step-0 baseline: the untrained LoRA on the validation images, the line's first point (not on a resume)
+    if validator is not None and not share_worker and not resume_state_dir:
+        from fizgig.training.val_loss import run_or_skip
+        _baseline(validator, getattr(group, "datasets", []), steplog, step_off + global_step, start_epoch,
+                  lambda: run_or_skip(validator, driver, dit, device, net, swapped=bool(swapped)))
     prior = _MaskPrior(driver, dit, net, mask_prior, swapped) if mask_prior else None
     for epoch in (_worker_epochs() if share_worker else range(start_epoch, max_train_epochs)):
         shared_epoch.value = epoch + 1
@@ -2661,6 +2736,10 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             steplog.add(step_off + global_step, epoch + 1 + (ftr.epochs_done if ftr is not None else 0), loss.item(),
                         None if global_step % 20 else      # the rate now and then (Automagic's averages it)
                         learning_rate if optimizer is None else optimizer_lr(optimizer))
+            if validator is not None:
+                validator.offer(batch)
+                if pending == 0 and validator.due(global_step):
+                    _validate(epoch + 1)
             if pending == 0 and ftr is None:   # the web UI's Sample now / Save now, between optimizer steps
                 if take_request(output_dir, "save"):
                     save_lora(os.path.join(output_dir, f"{output_name}-step{global_step:07d}.safetensors"), epoch + 1)
@@ -2686,6 +2765,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     + (f"({group_rates(optimizer)})  " if optimizer is not None and group_rates(optimizer) else "") +
                     f"peak VRAM {torch.cuda.max_memory_reserved() / 1024 ** 3:.1f} GB")
         steplog.flush()
+        if validator is not None and not share_worker and not validation_every_steps:
+            _validate(epoch + 1)
         if share_worker and epoch + 1 < int((share_now[0].get("epochs") or [share_now[0]["epoch"]])[-1]):
             continue                         # a round of several epochs: the LoRA goes back after its last
         if share_now[0] is not None and share_worker:
@@ -2823,6 +2904,14 @@ def setup_parser():
     p.add_argument("--speed_lora_strength", type=float, default=None,
                    help="the preview speed LoRA's strength (default: the family's recommended value)")
     p.add_argument("--log_per_image_loss", action="store_true", help="detect problem images (Problem Images window)")
+    p.add_argument("--validation_loss", action="store_true",
+                   help="fixed validation loss: the same images, noise levels and noise every check (the loss graph)")
+    p.add_argument("--validation_images", type=int, default=4)
+    p.add_argument("--validation_timesteps", type=int, default=4)
+    p.add_argument("--validation_seed", type=int, default=42)
+    p.add_argument("--validation_every_steps", type=int, default=0, help="0 = at the end of each epoch")
+    p.add_argument("--validation_pick", action="append", default=None,
+                   help="a training image to check (its file name; repeat for more). None: an even spread")
     p.add_argument("--per_image_lr", action="store_true", help="scale each step by the image's loss-watch multiplier")
     p.add_argument("--auto_recaption", action="store_true", help="recaption stuck images (needs --captioner)")
     p.add_argument("--warmup_look_outliers", action="store_true", help="LR warm-up for Look Filter outliers")
@@ -2989,6 +3078,9 @@ def main():
         a.family, a.dit, a.dataset_config, a.output_dir, a.output_name, precision=a.precision,
         blocks_to_swap=a.blocks_to_swap, speed_lora_strength=a.speed_lora_strength, network_type=a.network_type, lokr_factor=a.lokr_factor,
         log_per_image_loss=a.log_per_image_loss, per_image_lr=a.per_image_lr, auto_recaption=a.auto_recaption,
+        validation_loss=a.validation_loss, validation_images=a.validation_images,
+        validation_timesteps=a.validation_timesteps, validation_seed=a.validation_seed,
+        validation_every_steps=a.validation_every_steps, validation_picked=a.validation_pick,
         warmup_look_outliers=a.warmup_look_outliers, trigger_word=a.trigger_word, trigger_position=a.trigger_position,
         recaption_triggers=a.recaption_triggers,
         recaption_instruction=a.recaption_instruction,

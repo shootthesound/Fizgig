@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 import time
 
-from fizgig.bridge.agent import DEFAULT_LLM, LLM, Agent, LocalTools
+from fizgig.bridge.agent import DEFAULT_LLM, LLM, Agent, LocalTools, SplitTools
 
 _lock = threading.Lock()
 _S = {"agent": None, "busy": False, "events": [], "n": 0, "started": 0.0, "key": None}
@@ -15,7 +15,11 @@ def settings(prefs):
     return {"url": str(prefs.get("assistant_llm_url") or DEFAULT_LLM),
             "model": str(prefs.get("assistant_llm_model") or ""),
             "free_gpu": str(prefs.get("assistant_free_gpu") or "1") == "1",
-            "vision": str(prefs.get("assistant_vision") or "1") == "1"}
+            "vision": str(prefs.get("assistant_vision") or "1") == "1",
+            # a GPU machine for Fizgig's side (a pod): its address and login; Affinity stays on this computer
+            "pod": str(prefs.get("assistant_fizgig_url") or "").strip(),
+            "pod_password": str(prefs.get("assistant_fizgig_password") or ""),
+            "key": str(prefs.get("assistant_llm_key") or "") or "local"}
 
 
 def _event(kind, data):
@@ -31,13 +35,14 @@ def _event(kind, data):
 
 def send(text, server, prefs):
     st = settings(prefs)
-    key = (st["url"], st["model"], st["free_gpu"], st["vision"])
+    key = (st["url"], st["model"], st["free_gpu"], st["vision"], st["pod"], st["key"])
     with _lock:
         if _S["busy"]:
             raise ValueError("The assistant is still working on the last message.")
         if _S["agent"] is None or _S["key"] != key:
-            _S["agent"] = Agent(LLM(st["url"], st["model"]), LocalTools(server), vision=st["vision"],
-                                free_gpu=st["free_gpu"], on_event=_event)
+            tools = SplitTools(LocalTools(server), st["pod"], st["pod_password"]) if st["pod"] else LocalTools(server)
+            _S["agent"] = Agent(LLM(st["url"], st["model"], st["key"]), tools, vision=st["vision"],
+                                free_gpu=st["free_gpu"] and not st["pod"], on_event=_event)
             _S["key"] = key
         _S["busy"] = True
         if not _S["started"]:

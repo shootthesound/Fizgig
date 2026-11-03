@@ -51,7 +51,8 @@ class LLM:
     def _req(self, path, body=None, timeout=900, method=None):
         req = urllib.request.Request(self.base + path, data=json.dumps(body).encode() if body is not None else None,
                                      method=method or ("POST" if body is not None else "GET"),
-                                     headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.key}"})
+                                     headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.key}",
+                                              "User-Agent": "Fizgig-assistant/1"})   # a proxy refuses Python's own
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read() or b"{}")
 
@@ -159,6 +160,70 @@ class LocalTools:
 
     def call(self, name, args):
         return self.server.call(name, args)
+
+
+class SplitTools:
+    """Affinity's tools here, Fizgig's on a pod (its /mcp, logged in): the language model, training and renders run
+    there, the user's documents stay on this computer. Pictures cross where the two meet: a training folder made from
+    Affinity's layers goes up to the pod, and a picture from the pod comes down before it goes into Affinity."""
+
+    def __init__(self, local: LocalTools, pod_url, password):
+        from fizgig.web.helpers import Client
+        self.local, self.pod = local, Client(pod_url.rstrip("/"))
+        self.pod.login(password)
+        self._n = 0
+        self.remote = {t["name"]: t for t in self._rpc("tools/list").get("tools", [])}
+
+    def _rpc(self, method, params=None):
+        self._n += 1
+        msg = self.pod.call("/mcp", {"jsonrpc": "2.0", "id": self._n, "method": method, "params": params or {}},
+                            timeout=3600)
+        if msg.get("error"):
+            err = msg["error"]
+            raise RuntimeError(err.get("message") if isinstance(err, dict) else err)
+        return msg.get("result") or {}
+
+    def schemas(self):
+        here = [s for s in self.local.schemas() if s["name"].startswith("affinity_")]
+        return here + [s for n, s in self.remote.items() if not n.startswith("affinity_") and n != "release_gpu"]
+
+    def call(self, name, args):
+        if not name.startswith("affinity_"):
+            r = self._rpc("tools/call", {"name": name, "arguments": args})
+            return r.get("content") or [], bool(r.get("isError"))
+        if name == "affinity_to_training_folder":        # exported here, then sent to the pod's training data
+            return self._to_pod_folder(args)
+        if name == "affinity_place" and args.get("path") and not os.path.isfile(args["path"]):
+            args = {**args, "path": self._from_pod(args["path"])}
+        return self.local.call(name, args)
+
+    def _to_pod_folder(self, args):
+        import re
+        import tempfile
+        from fizgig.bridge import affinity, cloud
+        from fizgig.bridge.mcp import text
+        name = re.sub(r'[\\/:*?"<>|]+', "_", os.path.basename(str(args.get("folder") or "").rstrip("/\\"))).strip(" .")
+        if not name:
+            return [text("Give the training folder a name.")], True
+        try:
+            paths = affinity.export_layers(args.get("document", ""), args.get("layers"), bool(args.get("whole")),
+                                           tag=name, selected=bool(args.get("selected")))
+            if not paths:
+                return [text("Affinity exported nothing (no layers selected or visible?).")], True
+            with tempfile.TemporaryDirectory() as tmp:
+                names = affinity.copy_into(paths, tmp)
+                folder = cloud._send(self.pod, tmp, name)
+        except Exception as e:                                   # noqa: BLE001 - the model reads the reason
+            return [text(f"{type(e).__name__}: {e}")], True
+        return [text(json.dumps({"folder": folder, "pictures": names, "on": "the GPU machine"}))], False
+
+    def _from_pod(self, path):
+        import urllib.parse
+        from fizgig.bridge import affinity
+        dest = os.path.join(affinity.bridge_dir("from the GPU machine"), os.path.basename(path))
+        if not os.path.isfile(dest):
+            self.pod.download("/api/media?path=" + urllib.parse.quote(path), dest, lambda *a: None)
+        return dest
 
 
 class Agent:

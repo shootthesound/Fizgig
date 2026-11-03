@@ -128,3 +128,5 @@ demos/config.json
 demos/llm/
 demos/logs/
 demos/my photos/
+demos/amd_pod.json
+demos/AMD LoRAs/

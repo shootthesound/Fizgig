@@ -31,6 +31,14 @@ if ! venv/bin/python -c "$KTEST"; then
     venv/bin/python -c "$KTEST" || { log "FAILED: PyTorch can't run a kernel on this GPU"; sleep infinity; }
 fi
 
+venv/bin/python - <<'EOF'
+import json, os                      # the Assistant on the user's computer drives this Fizgig over /mcp (logged in)
+p = "user_data/prefs.json"
+d = json.load(open(p)) if os.path.isfile(p) else {}
+d["mcp_server"] = "1"
+os.makedirs("user_data", exist_ok=True)
+json.dump(d, open(p, "w"), indent=2)
+EOF
 log "Fizgig's models"
 venv/bin/python -m fizgig.scripts.fetch_models --family tools --family qwen_image21 2>&1 | grep -v "it/s\]" | tail -25
 

@@ -3642,7 +3642,10 @@ class Handler(BaseHTTPRequestHandler):
         never from a web page (an Origin header): a page elsewhere can't drive it."""
         if str(load_prefs().get("mcp_server") or "0") != "1":
             return self.json({"error": "Fizgig's MCP server is off: Preferences > Network > Let AI apps use Fizgig."}, 403)
-        if not self._local_viewer() or on_pod():
+        if on_pod() and self.password:              # a pod with a password: its logged-in owner's Assistant, as the API
+            if not self._api_ok():
+                return None
+        elif not self._local_viewer() or on_pod():
             return self.json({"error": "Only AI apps on the computer running Fizgig can use it."}, 403)
         origin = self.headers.get("Origin") or ""
         if origin and urlparse(origin).hostname not in ("localhost", "127.0.0.1", "::1", "[::1]"):

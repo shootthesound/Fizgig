@@ -110,7 +110,16 @@ def poster(title, cloud=False):
 
 
 def has_lora(api, name):
-    r = api("/api/runs")
+    """Demo 1's LoRA exists: on this computer, or on the AMD pod when the demos run there."""
+    import amd_pod
+    if amd_pod.active():
+        from fizgig.web.helpers import Client
+        st = json.load(open(amd_pod.STATE))
+        pod = Client(f"https://{st['pod']}-8081.proxy.runpod.net")
+        pod.login(st["FIZGIG_PASSWORD"])
+        r = pod.call("/api/runs")
+    else:
+        r = api("/api/runs")
     return any(x.get("lora") == name for x in (r if isinstance(r, list) else r.get("runs", [])))
 
 
@@ -149,8 +158,14 @@ def main():
     c = kit.config()
     if not c.get("trigger"):
         raise SystemExit("Run '0 - Set up everything' first.")
-    print(f"Demo {n}: {title}\n")
-    kit.start_llm()
+    import amd_pod
+    on_amd = amd_pod.active()
+    print(f"Demo {n}: {title}" + (" - on the rented AMD GPU" if on_amd else "") + "\n")
+    if on_amd and n == 5:
+        raise SystemExit("Demo 5 rents a cloud GPU to train on: with the demos already on the AMD pod, run it from "
+                         "this computer ('B - Back to this computer' first).")
+    if not on_amd:                                   # on the AMD pod the language model runs there
+        kit.start_llm()
     kit.start_fizgig()
     api = kit.Fizgig()
     try:

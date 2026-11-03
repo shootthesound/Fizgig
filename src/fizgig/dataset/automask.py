@@ -170,7 +170,10 @@ def make_folder(folder, kind, models_dir, *, overwrite=False, subject=None, dete
     seg = Segmenter(ensure_model(models_dir, log))
     counts = {"made": 0, "kept": 0, "skipped": 0, "no_person": 0}
     pics = pictures(folder)
+    from fizgig.dataset.masks import stop_here
     for i, p in enumerate(pics, 1):
+        if stop_here(i, len(pics), counts):
+            break
         name = os.path.basename(p)
         out = os.path.join(folder, os.path.splitext(name)[0] + MASK_SUFFIX + ".png")
         old = mask_for(p)

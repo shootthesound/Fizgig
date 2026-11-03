@@ -5987,6 +5987,24 @@ function maskShow(r) {
     "Needs the Look Filter's 3 baselines: choose them and scan the folder (the last card on this tab), then come back.";
   $("maskRun").disabled = (sam ? !(r.sam || {}).path : !r.available) || !r.pictures || S.prep.running;
 }
+// Make masks' Stop asks twice, like the training Stop: the first press turns it into "Confirm stop" for 30 s
+const MASK_STOP = {timer: null};
+function maskStopReset() {
+  clearTimeout(MASK_STOP.timer); MASK_STOP.timer = null;
+  $("maskStop").textContent = "Stop"; $("maskStop").title = "";
+}
+function maskStopClick() {
+  if (!MASK_STOP.timer) {
+    $("maskStop").textContent = "Confirm stop";
+    $("maskStop").title = "Click again within 30 s: it finishes the picture it's on and keeps the masks already made";
+    MASK_STOP.timer = setTimeout(maskStopReset, 30000);
+    return;
+  }
+  maskStopReset();
+  $("maskStop").disabled = true;
+  api("/api/masks/stop", {}).catch(() => {}).finally(() => { $("maskStop").disabled = false; });
+  $("maskState").textContent = "Stopping after this picture…";
+}
 async function maskRun() {
   if (!S.imageFolder) { $("maskState").textContent = "Choose the training folder on the Start tab first."; return; }
   const kind = (document.querySelector('input[name="maskKind"]:checked') || {}).value || "person";
@@ -6427,6 +6445,8 @@ async function pollPrep() {
       $("maskState").textContent = S.prep.running ? "Making masks on the Fizgig computer: you can leave this page." :
         r.state === "done" ? "Done." : r.state === "failed" ? "It stopped with an error: see below." : "";
       $("maskRun").disabled = S.prep.running;
+      $("maskStop").style.display = S.prep.running ? "" : "none";
+      if (!S.prep.running) maskStopReset();
     }
     if (was && !S.prep.running) { if (S.prep.masking && S.me) S.me.wantList = true; prepSummary(); loadDatasets(); maskInfo(); S.prep.masking = false; }
   }
@@ -6809,6 +6829,7 @@ function wirePrep() {
   document.querySelectorAll('input[name="prepMode"], input[name="prepReplace"]').forEach((r) =>
     r.addEventListener("change", () => { prepSummary(); savePrepSoon(); }));
   for (const id of ["prepMp", "prepFace", "prepPadding", "prepMinFace", "prepCropsOnly"]) $(id).addEventListener("change", () => { prepSummary(); savePrepSoon(); });
+  $("maskStop").addEventListener("click", maskStopClick);
   $("prepRun").addEventListener("click", prepRun);
   $("maskRun").addEventListener("click", maskRun);
   meWire();

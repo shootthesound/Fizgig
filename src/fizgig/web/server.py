@@ -5271,6 +5271,8 @@ class Handler(BaseHTTPRequestHandler):
                 from fizgig.dataset import sammask
                 sammask.download(user_data.MODELS_DIR)
                 return self.json({"ok": True, "sam": _sam_info()})
+            if path == "/api/masks/stop":          # Make masks' Stop (asked twice on the page)
+                return self.json(prep_jobs.stop_masks())
             if path == "/api/masks/edit/sam_click":  # the mask editor: the object SAM 3.1 finds where you clicked
                 from fizgig.web import mask_edit
                 import base64

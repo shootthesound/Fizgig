@@ -397,6 +397,8 @@ def start_masks(folder, kind, subject_only=False, overwrite=False, sam=None):
         if _look["state"] == "running":
             raise ValueError("The Look Filter is scanning. Wait for it to finish.")
         _job.update(state="running", log="", folder=folder, started=time.time())
+    from fizgig.dataset.masks import STOP
+    STOP.clear()
 
     def work():
         try:
@@ -419,7 +421,8 @@ def start_masks(folder, kind, subject_only=False, overwrite=False, sam=None):
             else:
                 c = automask.make_folder(folder, kind, MODELS_DIR, overwrite=overwrite, subject=subject, detector=det,
                                          log=_log)
-            _log(f"\nDone: {c['made']} mask(s) written"
+            st = c.get("stopped")
+            _log((f"\nStopped after {st[0]} of {st[1]} pictures: " if st else "\nDone: ") + f"{c['made']} mask(s) written"
                  + (f", {c['kept']} already there kept" if c["kept"] else "")
                  + (f", {c['no_person']} picture(s) with nothing to mask" if c["no_person"] else "")
                  + (f", {c['skipped']} skipped" if c["skipped"] else "")
@@ -433,6 +436,17 @@ def start_masks(folder, kind, subject_only=False, overwrite=False, sam=None):
         with _lock:
             _job["state"] = end
     threading.Thread(target=work, daemon=True).start()
+    return {"ok": True}
+
+
+def stop_masks():
+    """Make masks' Stop: the run finishes the picture it's on and ends, keeping the masks already written."""
+    from fizgig.dataset.masks import STOP
+    with _lock:
+        if _job["state"] != "running":
+            return {"ok": False}
+    STOP.set()
+    _log("\nStopping after this picture...\n")
     return {"ok": True}
 
 

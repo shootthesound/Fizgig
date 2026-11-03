@@ -166,7 +166,10 @@ def make_folder(folder, include, exclude, path, *, overwrite=False, subject=None
 def _make_folder(seg, folder, include, exclude, overwrite, subject, detector, log):
     counts = {"made": 0, "kept": 0, "skipped": 0, "no_person": 0}
     pics = pictures(folder)
+    from fizgig.dataset.masks import stop_here
     for i, p in enumerate(pics, 1):
+        if stop_here(i, len(pics), counts):
+            break
         name = os.path.basename(p)
         out = os.path.join(folder, os.path.splitext(name)[0] + MASK_SUFFIX + ".png")
         old = mask_for(p)

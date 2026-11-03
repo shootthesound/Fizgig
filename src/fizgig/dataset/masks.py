@@ -9,6 +9,17 @@ load_mask brings a mask onto a cached latent's grid with the crop the picture go
 resize_image_to_bucket, the same original size and bucket), so it is read at train time and never cached: editing a
 mask needs no re-encode."""
 import os
+import threading
+
+STOP = threading.Event()         # Make masks' Stop: the folder loops finish the current picture, then end
+
+
+def stop_here(i, total, counts):
+    """Before picture i (1-based) of total: True when Stop was pressed - counts["stopped"] = (done, total)."""
+    if STOP.is_set():
+        counts["stopped"] = (i - 1, total)
+        return True
+    return False
 
 MASK_SUFFIX = "-masklabel"
 _EXTS = (".png", ".webp", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff")

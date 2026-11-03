@@ -3299,6 +3299,17 @@ class Handler(BaseHTTPRequestHandler):
             from fizgig.bridge import assistant
             return self.json({**assistant.status(int((qs.get("since") or ["0"])[0] or 0)),
                               "settings": assistant.settings(load_prefs())})
+        if path == "/api/affinity":                 # Affinity by Canva: reachable? its open documents (no LLM needed)
+            from fizgig.bridge import affinity
+            from fizgig.bridge.mcp import ToolError
+            try:
+                docs = affinity.documents()
+            except ToolError as e:
+                return self.json({"connected": False, "error": str(e)})
+            return self.json({"connected": True, "documents": [
+                {"id": d["id"], "title": d["title"], "current": d.get("current"),
+                 "pictures": sum(1 for l in d["layers"] if l.get("visible") and l["kind"] in ("RasterNode", "ImageNode"))}
+                for d in docs]})
         if path == "/api/assistant/models":         # the model server's models (Detect)
             from fizgig.bridge import assistant
             return self.json({"models": assistant.models((qs.get("url") or [""])[0])})
@@ -4171,6 +4182,35 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"ok": _cancel_fetch()})
             if path == "/api/stop":
                 return self.json({"ok": _stop()})
+            if path in ("/api/affinity/place", "/api/affinity/import"):     # Affinity by Canva, directly
+                from fizgig.bridge import affinity
+                from fizgig.bridge.mcp import ToolError
+                try:
+                    if path == "/api/affinity/place":       # a picture on show (a preview, a render) as a new layer
+                        src = urlparse(str(b.get("src") or ""))
+                        q = parse_qs(src.query)
+                        if src.path == "/api/studio/image":
+                            pic = studio.image((q.get("which") or [""])[0], (q.get("gen") or [""])[0])
+                        else:
+                            pic = (q.get("path") or [""])[0]
+                        if not pic or not os.path.isfile(pic):
+                            return self.json({"error": "That picture isn't a file Fizgig can send."}, 400)
+                        r = affinity.place_image(pic, str(b.get("document") or ""), name=os.path.splitext(
+                            os.path.basename(pic))[0], new_document=bool(b.get("new_document")))
+                        return self.json({"ok": True, **r})
+                    name = re.sub(r'[\\/:*?"<>|]+', "_", str(b.get("name") or "")).strip(" .")
+                    if not name:
+                        return self.json({"error": "Give the new training folder a name."}, 400)
+                    folder = os.path.join(uploads_root(), name)
+                    if os.path.exists(folder):
+                        return self.json({"error": f"{name} is already in your training data - pick another name."}, 400)
+                    paths = affinity.export_layers(str(b.get("document") or ""), tag=name)
+                    if not paths:
+                        return self.json({"error": "The document has no visible picture layers."}, 400)
+                    names = affinity.copy_into(paths, folder)
+                    return self.json({"ok": True, "folder": folder, "pictures": len(names)})
+                except ToolError as e:
+                    return self.json({"error": str(e)}, 400)
             if path.startswith("/api/assistant/"):        # the Assistant tab: a local model using Fizgig's tools
                 from fizgig.bridge import assistant
                 what = path[len("/api/assistant/"):]

@@ -9051,6 +9051,7 @@ function lightboxShow(i) {
     $("lightboxCapText").value = pic.cap.ta.value;
     $("lightboxCapNote").textContent = "Changes save when you move to the next picture or close.";
   }
+  $("lightboxSend").style.display = $("affinityCard").style.display === "none" ? "none" : "";
   $("lightboxImg").src = pic.src;
   $("lightboxName").textContent = pic.name;
   $("lightboxMode").textContent = pic.mode || "";
@@ -9095,6 +9096,42 @@ document.addEventListener("load", (e) => {
   }
   img.classList.toggle("see-through", see);
 }, true);
+
+// Affinity by Canva, directly (no language model): the Start tab's From Affinity card, the lightbox's Send button
+function affinityLoad() {
+  api("/api/affinity").then((r) => {
+    $("affinityCard").style.display = r.connected ? "" : "none";
+    if (!r.connected) return;
+    const keep = $("affDoc").value;
+    $("affDoc").replaceChildren(...(r.documents || []).map((d) =>
+      el("option", {value: d.id, text: `${d.title} (${d.pictures} picture layer${d.pictures === 1 ? "" : "s"})`,
+        selected: keep ? d.id === keep : !!d.current})));
+  }).catch(() => { $("affinityCard").style.display = "none"; });
+}
+
+function wireAffinity() {
+  $("affReload").addEventListener("click", affinityLoad);
+  $("affImport").addEventListener("click", () => {
+    $("affStatus").textContent = "Exporting the layers from Affinity...";
+    api("/api/affinity/import", {name: $("affName").value, document: $("affDoc").value}).then((r) => {
+      $("affStatus").textContent = `${r.pictures} picture${r.pictures === 1 ? "" : "s"} in ${r.folder}. It's the training folder now.`;
+      loadDatasets();
+      $("imageFolder").value = r.folder;
+      $("imageFolder").dispatchEvent(new Event("change"));
+    }).catch((e) => { $("affStatus").textContent = e.message; });
+  });
+  $("lightboxSend").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const pic = S.lb.list[S.lb.at];
+    if (!pic) return;
+    const was = $("lightboxName").textContent;
+    $("lightboxSend").disabled = true;
+    api("/api/affinity/place", {src: pic.src}).then(() => { $("lightboxName").textContent = "Sent to Affinity as a new layer."; })
+      .catch((err) => { $("lightboxName").textContent = err.message; })
+      .finally(() => { $("lightboxSend").disabled = false; setTimeout(() => { $("lightboxName").textContent = was; }, 4000); });
+  });
+  affinityLoad();
+}
 
 function wireLightbox() {
   document.addEventListener("click", (e) => {
@@ -9190,6 +9227,7 @@ function wire() {
   document.addEventListener("visibilitychange", catchUp);
   window.addEventListener("focus", catchUp);
   wireLightbox();
+  wireAffinity();
   wireStudio();
   wirePrep();
   $("presetSave").addEventListener("click", presetSaveOpen);

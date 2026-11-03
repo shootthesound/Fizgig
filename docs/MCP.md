@@ -45,6 +45,8 @@ with Fizgig running. Claude Desktop's `claude_desktop_config.json`, for example:
 
 Affinity 3.2 and later has its own MCP server. In Affinity: **Edit → Settings → Model Context Protocol**, turn on **Enable Affinity MCP** and **Access files on your Desktop**, then quit and reopen Affinity.
 
+Without any AI model: the Start tab's **From Affinity** card makes a training folder from a document's picture layers, and **Send to Affinity** on an enlarged picture (a preview, a Studio render) puts it into the open document as a new layer. Both show once Affinity answers.
+
 Affinity's scripts can only reach the Desktop, so pictures cross through a folder there, **Fizgig Bridge**: `from Affinity` holds exported layers (Fizgig copies them into your training folder), `to Affinity` holds pictures on their way in. Fizgig never changes a document except by adding layers to it.
 
 ## The Assistant tab

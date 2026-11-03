@@ -174,6 +174,19 @@
               <div class="field-hint" id="folderSummary"></div>
             </div>
           </div>
+          <div class="section-card" id="affinityCard" style="display:none">
+            <div class="card-title">From Affinity</div>
+            <div class="card-desc">Make a training folder from the picture layers of a document open in Affinity by
+              Canva: each visible picture layer becomes a training picture. Then it's the training folder.</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Document:</span><select id="affDoc"></select>
+                <button class="btn btn-sm" id="affReload">Refresh</button></div>
+              <div class="field-row"><span class="field-label">New folder:</span>
+                <input type="text" id="affName" class="w-path" placeholder="my_subject">
+                <button class="btn btn-primary" id="affImport">Make training folder</button></div>
+              <div class="field-hint" id="affStatus"></div>
+            </div>
+          </div>
           <div class="section-card" id="datasetsCard">
             <div class="card-title"><span>Your training data</span>
               <button class="btn btn-sm" id="datasetsReload">Reload</button></div>
@@ -2055,6 +2068,7 @@
   <!-- a picture shown big: click a preview or a Captions picture; click, Esc or the cross closes, arrows step -->
   <div class="lightbox" id="lightbox" style="display:none">
     <button class="btn lightbox-close" id="lightboxClose" title="Close (Esc)">✕</button>
+    <button class="btn btn-sm lightbox-send" id="lightboxSend" title="Put this picture into the document open in Affinity by Canva, as a new layer">Send to Affinity</button>
     <button class="btn lightbox-step" id="lightboxPrev" title="Previous (←). On previews: ← → the same prompt an epoch earlier or later, ↑ ↓ the other prompts at this epoch">‹</button>
     <figure class="lightbox-figure"><div class="lightbox-mode" id="lightboxMode" style="display:none"></div><img id="lightboxImg" alt=""><figcaption id="lightboxName"></figcaption>
       <div class="lightbox-cap" id="lightboxCap" style="display:none">

@@ -32,14 +32,34 @@ Run it again any time: finished steps are skipped.
 
 Run them in order. Demo 1 trains the LoRA the others use. Keep Affinity open.
 
-| Launcher | The sentence asks for | Our time (RTX 5090) |
-|:--|:--|--:|
-| `1 - Your photos in Affinity to a trained portrait` | Your photos are laid out as layers of an Affinity document. The Assistant makes a training folder from the layers, captions them, trains a LoRA of you, renders 4 portraits, scores them and puts the best into Affinity | 6 min 33 s |
-| `2 - A transparent sticker into the poster` | A robot sticker with real transparency, placed in the top-right corner of a keynote poster (the launcher makes the poster) | 1 min 36 s |
-| `3 - The model reads the poster and fills the photo box` | The Assistant looks at the poster, matches its colours, renders portraits of you at the photo box's shape, scores them and fits the best into the box | 2 min 8 s |
-| `4 - Four variations laid out in Affinity` | Four photos of you in different settings, laid out as a 2×2 grid in a new document; each the best of 4 by score; then one is swapped for another | 7 min |
-| `5 - Trained on a rented cloud GPU` (optional) | Trains on a rented RunPod GPU under an hourly price cap ($2), brings the LoRA home, deletes the pod, and fills a poster here. It needs a RunPod API key (Fizgig's Pods tab) and costs about $0.25 | about 15 min |
-| `6 - A poster designed from nothing` | The Assistant designs a whole poster in Affinity (background, type, photo frame), renders 4 portraits, scores them and places the best | 3 min 55 s |
+| Launcher | The sentence asks for |
+|:--|:--|
+| `1 - Your photos in Affinity to a trained portrait` | Your photos are laid out as layers of an Affinity document. The Assistant makes a training folder from the layers, captions them, trains a LoRA of you, renders 4 portraits, scores them and puts the best into Affinity |
+| `2 - A transparent sticker into the poster` | A robot sticker with real transparency, placed in the top-right corner of a keynote poster (the launcher makes the poster) |
+| `3 - The model reads the poster and fills the photo box` | The Assistant looks at the poster, matches its colours, renders portraits of you at the photo box's shape, scores them and fits the best into the box |
+| `4 - Four variations laid out in Affinity` | Four photos of you in different settings, laid out as a 2×2 grid in a new document, each the best of 4 by score; then one is swapped for another |
+| `5 - Trained on a rented cloud GPU` (optional) | Trains on a rented RunPod GPU under an hourly price cap ($2), brings the LoRA home, deletes the pod, and fills a poster here. It needs a RunPod API key (Fizgig's Pods tab) and costs about $0.25 |
+| `6 - A poster designed from nothing` | The Assistant designs a whole poster in Affinity (background, type, photo frame), renders 4 portraits, scores them and places the best |
+
+### Our timings
+
+Each demo was measured from its launcher, sentence to finished document, on 3 November 2026:
+- **This computer:** an NVIDIA RTX 5090 (32 GB), Ryzen 9 9950X3D and 128 GB of RAM.
+- **AMD mode:** an AMD Instinct MI300X (192 GB) rented on RunPod, with Affinity on the same computer as above.
+
+| Demo | RTX 5090 (32 GB): model swaps | RTX 5090 (32 GB) | MI300X (192 GB) |
+|:--|--:|--:|--:|
+| 1. Photos → trained portrait | 3 | 6 min 33 s | 5 min 11 s |
+| 2. Transparent sticker | 1 | 1 min 36 s | 55 s |
+| 3. Fill the photo box | 1 | 2 min 8 s | 1 min 38 s |
+| 4. Social pack with a swap | 5 | 7 min 0 s | 3 min 51 s |
+| 5. Trained on a rented cloud GPU | – | 14 min 42 s ($0.12) | not in AMD mode |
+| 6. Poster from nothing | 1 | 3 min 55 s | 3 min 15 s |
+
+- **On the RTX 5090 (32 GB),** the language model and Fizgig's models can't share the card, so they swap each time the Assistant renders or trains. On the MI300X (192 GB) all of them stay loaded: no swaps at all, with 83.7 GB of the 192 GB in use at the peak.
+- **The language model decides how to batch its work,** so the same demo varies by about ±20% between runs on either machine. Demo 1 on the MI300X (192 GB) took 5 min 11 s, 5 min 46 s and 6 min 16 s in three runs.
+- **In AMD mode, every picture crosses the internet** between this computer and the pod. Each crossing measured under a second.
+- **Demo 5** rents its own cloud GPU, so it only runs from this computer.
 
 `Stop the demo servers` stops the language model and the demos' Fizgig (port 8095). Affinity stays open.
 
@@ -49,7 +69,7 @@ Run them in order. Demo 1 trains the LoRA the others use. Keep Affinity open.
 - **Setup:** it waits for one to be free, then installs Fizgig, its models and the language model on it with AMD's ROCm image (about 10 minutes).
 - **What runs where:** your Assistant then thinks, trains, captions, renders and scores on the AMD card, and Affinity stays on this computer. Pictures cross by themselves: a training folder made from your Affinity layers goes up, and a render comes down before it goes into Affinity.
 - **The demos:** run them as usual with their launchers. Demo 5 is the exception, since it rents its own cloud GPU.
-- **Memory:** on the MI300X, the language model, the render model and a training run all stay loaded together, so nothing swaps.
+- **Memory:** on the MI300X (192 GB), the language model, the render model and a training run all stay loaded together, so nothing swaps.
 
 **`B - Back to this computer (delete the AMD GPU)`** brings every LoRA the pod trained home to `demos\AMD LoRAs`, deletes the pod and points the Assistant back here. Run it when you're done: the pod is billed until then.
 

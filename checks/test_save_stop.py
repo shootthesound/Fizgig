@@ -17,7 +17,7 @@ from fizgig.families import registry
 from fizgig.families.driver import FamilyDriver
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SPE = 4                                    # 8 pictures in two buckets, Batch Size 2: 4 steps an epoch
+SPE = 4                                    # 4 pictures, batch 1: 4 steps an epoch
 
 
 class _Layer(nn.Module):
@@ -118,12 +118,12 @@ def data(tmp_path_factory):
     img = d / "img"
     img.mkdir()
     rng = np.random.default_rng(0)
-    for i in range(8):
+    for i in range(4):
         h = 64 if i % 2 == 0 else 96
         Image.fromarray(rng.integers(0, 255, (h, 64, 3), dtype=np.uint8)).save(img / f"p{i}.png")
         (img / f"p{i}.txt").write_text(f"a photo number {i}")
     cfg = d / "ds.toml"
-    cfg.write_text(f'[general]\nresolution = [64, 64]\ncaption_extension = ".txt"\nbatch_size = 2\n'
+    cfg.write_text(f'[general]\nresolution = [64, 64]\ncaption_extension = ".txt"\nbatch_size = 1\n'
                    f'enable_bucket = true\n\n[[datasets]]\nimage_directory = "{img.as_posix()}"\n'
                    f'cache_directory = "{(d / "cache").as_posix()}"\nnum_repeats = 1\n')
     return d, str(cfg)

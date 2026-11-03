@@ -64,18 +64,52 @@ class LLM:
         r = self._req("/chat/completions", body)
         return r["choices"][0]["message"], r.get("usage") or {}
 
+    def load(self, timeout=300):
+        """Load the model back after free_gpu (a llama.cpp router: POST /models/load, then wait until it says loaded);
+        True once it is. Servers without this load on the next chat anyway."""
+        if self._state() is None:               # not a router: the next chat loads it
+            return False
+        self._until(lambda s: s not in ("unloading", "stopping"), 120)      # a stop still finishing first
+        if not self._router("/models/load"):
+            return False
+        return self._until(lambda s: s == "loaded", timeout)
+
     def free_gpu(self):
-        """Unload the model from the GPU, where the server can (a llama.cpp router: POST /models/unload). True if it
-        did; the next chat loads it again."""
+        """Unload the model from the GPU, where the server can (a llama.cpp router: POST /models/unload), and wait
+        until it has gone. True if it did; load() (or the next chat) brings it back."""
+        if self._state() in (None, "unloaded"):
+            return self._state() == "unloaded"
+        return self._router("/models/unload") and self._until(lambda s: s == "unloaded", 120)
+
+    def _router(self, path):
         root = self.base[:-3] if self.base.endswith("/v1") else self.base
         try:
-            req = urllib.request.Request(root + "/models/unload", data=json.dumps({"model": self.pick_model()}).encode(),
+            req = urllib.request.Request(root + path, data=json.dumps({"model": self.pick_model()}).encode(),
                                          method="POST", headers={"Content-Type": "application/json"})
             with urllib.request.urlopen(req, timeout=60) as r:
                 r.read()
             return True
         except Exception:
             return False
+
+    def _state(self):
+        """A llama.cpp router's word for the model (loaded / loading / unloaded ...); None from other servers."""
+        try:
+            for m in self._req("/models", timeout=5).get("data", []):
+                if m.get("id") == self.pick_model():
+                    return (m.get("status") or {}).get("value")
+        except Exception:
+            pass
+        return None
+
+    def _until(self, ok, timeout):
+        end = time.time() + timeout
+        while time.time() < end:
+            s = self._state()
+            if s is None or ok(s):
+                return s is not None
+            time.sleep(0.5)
+        return False
 
 
 class RemoteTools:
@@ -122,7 +156,9 @@ class Agent:
         self.on_event = on_event or (lambda kind, data: None)
         self.max_steps = max_steps
         self.messages = [{"role": "system", "content": SYSTEM}]
-        self.stats = {"llm_seconds": 0.0, "tool_seconds": 0.0, "gpu_handovers": 0, "handover_seconds": 0.0}
+        self.stats = {"llm_seconds": 0.0, "tool_seconds": 0.0, "gpu_handovers": 0, "handover_seconds": 0.0,
+                      "reload_seconds": 0.0, "release_seconds": 0.0}
+        self._off_gpu = False
 
     def _functions(self):
         return [{"type": "function", "function": {"name": s["name"], "description": s.get("description", ""),
@@ -134,6 +170,20 @@ class Agent:
         self.messages.append({"role": "user", "content": text})
         functions = self._functions()
         for _step in range(self.max_steps):
+            if self._off_gpu:                 # back on the card after a handover: the time that costs, measured
+                r0 = time.time()
+                try:                          # Fizgig's render model makes room first (it reloads for the next one)
+                    content, _bad = self.tools.call("release_gpu", {})
+                    self.stats["release_seconds"] += time.time() - r0
+                except Exception:
+                    pass
+                r0 = time.time()
+                self.on_event("gpu", {"text": "Fizgig's models left the GPU; loading the language model back..."})
+                if self.llm.load():
+                    took = time.time() - r0
+                    self.stats["reload_seconds"] += took
+                    self.on_event("gpu", {"text": f"The model is back on the GPU ({took:.0f} s)."})
+                self._off_gpu = False
             t0 = time.time()
             self.on_event("thinking", {})
             msg, usage = self.llm.chat(self.messages, functions)
@@ -160,12 +210,23 @@ class Agent:
                     if self.llm.free_gpu():
                         self.stats["gpu_handovers"] += 1
                         self.stats["handover_seconds"] += time.time() - h0
-                        self.on_event("gpu", {"text": "The model stepped off the GPU for Fizgig."})
+                        self._off_gpu = True
+                        self.on_event("gpu", {"text": "The model stepped off the GPU so Fizgig can use it."})
                 self.on_event("tool", {"name": name, "args": args})
                 t1 = time.time()
                 content, bad = self.tools.call(name, args)
-                self.stats["tool_seconds"] += time.time() - t1
                 texts = "\n".join(x.get("text", "") for x in content if x.get("type") == "text")
+                if name == "start_training" and not bad and self.free_gpu and '"started": true' in texts:
+                    # a training run holds the card: the language model can't come back beside it, so the agent
+                    # waits the run out here (a machine with memory for both would keep talking meanwhile)
+                    self.on_event("gpu", {"text": "Training has the GPU; the language model waits until it's done."})
+                    w0 = time.time()
+                    more, _b = self.tools.call("wait_for_training", {"minutes": 240})
+                    self.stats["waited_for_training_seconds"] = self.stats.get("waited_for_training_seconds", 0) + \
+                        time.time() - w0
+                    texts += "\n\nThe run, after waiting for it:\n" + "\n".join(
+                        x.get("text", "") for x in more if x.get("type") == "text")
+                self.stats["tool_seconds"] += time.time() - t1
                 imgs = [x for x in content if x.get("type") == "image"]
                 self.on_event("result", {"name": name, "error": bad, "text": texts[:1500], "images": len(imgs),
                                          "image": imgs[0] if imgs else None})

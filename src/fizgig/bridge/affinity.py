@@ -110,6 +110,8 @@ const { Document } = require('/document.js');
 function pick(id) {
   if (!id) return Document.current;
   for (const d of Document.all) if (String(d.sessionUuid) === id) return d;
+  const t = String(id).toLowerCase().replace(/\\.af$/, '');                     // or by its title
+  for (const d of Document.all) if (String(d.title).toLowerCase().replace(/\\.af$/, '') === t) return d;
   throw new Error('No open document ' + id);
 }
 function nm(n) { try { return n.userDescription || n.description || ''; } catch (e) { return ''; } }
@@ -138,9 +140,9 @@ console.log('FIZGIG:' + JSON.stringify(out));
     return _json_out(js)
 
 
-def export_layers(doc_id="", layers=None, whole=False, tag=""):
-    """PNGs of a document's layers (by index, bottom = 0; none given = the selected ones, else every visible one),
-    or of the whole document, into the bridge folder's from-affinity/<tag> folder. Their paths."""
+def export_layers(doc_id="", layers=None, whole=False, tag="", selected=False):
+    """PNGs of a document's layers (by index, bottom = 0; else the selected ones with selected; else every visible
+    picture layer), or of the whole document, into the bridge folder's from-affinity/<tag> folder. Their paths."""
     tag = re.sub(r"[^A-Za-z0-9 _-]+", "_", tag or time.strftime("%Y%m%d-%H%M%S")).strip() or "export"
     out = bridge_dir("from Affinity", tag)
     js = _DOC + f"""
@@ -158,11 +160,13 @@ if ({json.dumps(bool(whole))}) {{
 }} else {{
   const all = []; for (const l of d.layers) all.push(l);
   let want = {json.dumps(list(layers) if layers else None)};
-  let nodes;
+  const vis = (l) => {{ try {{ return l.isVisible; }} catch (e) {{ return true; }} }};
+  let nodes = [];
   if (want) nodes = want.map(i => all[i]).filter(Boolean);
+  else if ({json.dumps(bool(selected))}) {{ try {{ for (const n of d.selection.nodes) nodes.push(n); }} catch (e) {{}} }}
   else {{
-    nodes = []; try {{ for (const n of d.selection.nodes) nodes.push(n); }} catch (e) {{}}
-    if (!nodes.length) nodes = all.filter(l => {{ try {{ return l.isVisible; }} catch (e) {{ return true; }} }});
+    nodes = all.filter(l => vis(l) && /Raster|Image/.test(l.constructor.name));   // the pictures, not text or shapes
+    if (!nodes.length) nodes = all.filter(vis);
   }}
   let k = 0;
   for (const n of nodes) {{
@@ -179,9 +183,11 @@ console.log('FIZGIG:' + JSON.stringify({{saved: saved}}));
     return [os.path.normpath(p) for p in r.get("saved", [])]
 
 
-def place_image(path, doc_id="", name="", new_document=False):
+def place_image(path, doc_id="", name="", new_document=False, into_layer=None, box=None):
     """A picture on this computer as a new pixel layer: in the given (or current) document, or in a new one of its
-    size. It is copied into the bridge folder first (Affinity reads only the Desktop). The document's id."""
+    size. into_layer (an index from documents()) or box [x, y, w, h]: scaled to cover that area, centred, and put
+    just above that layer. It is copied into the bridge folder first (Affinity reads only the Desktop). The
+    document's id."""
     if not os.path.isfile(path):
         raise ToolError(f"{path} isn't there.")
     if os.path.splitext(path)[1].lower() not in PICTURES:
@@ -196,6 +202,26 @@ def place_image(path, doc_id="", name="", new_document=False):
             n += 1
         shutil.copy2(path, dest)
     name = name or os.path.splitext(os.path.basename(path))[0]
+    if into_layer is not None and not box and not new_document:
+        docs = documents()
+        d = next((x for x in docs if doc_id in (x["id"], x["title"])) if doc_id else
+                 (x for x in docs if x.get("current")), None)
+        layer = next((l for l in (d or {}).get("layers", []) if l["index"] == int(into_layer)), None)
+        if layer is None or not layer.get("box"):
+            raise ToolError(f"No layer {into_layer} with an area in that document (see affinity_documents).")
+        box = layer["box"]
+    if box:                                     # the picture cut to the area's shape, centred: it fits exactly
+        from PIL import Image
+        with Image.open(dest) as im:
+            im.load()
+        want = float(box[2]) / max(1.0, float(box[3]))
+        w, h = im.size
+        if abs(w / h - want) > 0.005:
+            cw, ch = (round(h * want), h) if w / h > want else (w, round(w / want))
+            im = im.crop(((w - cw) // 2, (h - ch) // 2, (w - cw) // 2 + cw, (h - ch) // 2 + ch))
+            dest = os.path.splitext(dest)[0] + "_fit.png"
+            im.save(dest)
+        into_layer = None
     js = _DOC + f"""
 const {{ Bitmap, RasterFormat }} = require('/rasterobject.js');
 const {{ RasterNodeDefinition }} = require('/nodes.js');
@@ -207,12 +233,28 @@ if ({json.dumps(bool(new_document))} || !Document.current) {{
   o.units = UnitType.Pixel; o.width = bm.width; o.height = bm.height; o.dpi = 72; o.createArtboard = false; o.isTransparentBackground = true;
   d = Document.create(o);
 }} else d = pick({json.dumps(doc_id)});
+const {{ Transform }} = require('/geometry.js');
+const {{ Selection }} = require('/selections.js');
 const def = RasterNodeDefinition.create(RasterFormat.RGBA8);
 def.bitmap = bm;
+const all = []; for (const l of d.layers) all.push(l);
+const target = {json.dumps(into_layer)} === null ? null : all[{json.dumps(into_layer)}];
 d.addNode(def);
 const node = d.selection.firstNode;
 try {{ node.userDescription = {json.dumps(name)}; }} catch (e) {{}}
-console.log('FIZGIG:' + JSON.stringify({{id: String(d.sessionUuid), width: bm.width, height: bm.height}}));
+let area = {json.dumps(box)};
+if (!area && target) {{ const b = target.spreadBaseBox; area = [b.x, b.y, b.width, b.height]; }}
+let placed = null;
+if (area) {{
+  const now = node.spreadBaseBox;
+  const s = Math.max(area[2] / bm.width, area[3] / bm.height);
+  const w = bm.width * s, h = bm.height * s;
+  const t = Transform.createTranslate(area[0] + (area[2] - w) / 2 - now.x * s, area[1] + (area[3] - h) / 2 - now.y * s)
+    .multiply(Transform.createScale(s, s));
+  d.applyTransform(t, Selection.create(d, node));
+  const b = node.spreadBaseBox; placed = [b.x, b.y, b.width, b.height].map(v => Math.round(v));
+}}
+console.log('FIZGIG:' + JSON.stringify({{id: String(d.sessionUuid), width: bm.width, height: bm.height, placed: placed}}));
 """
     return _json_out(js)
 

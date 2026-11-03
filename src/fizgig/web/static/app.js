@@ -8561,6 +8561,7 @@ function showTab(name) {
   if (name === "royale") royaleOpen();
   if (name === "refmod") refmodOpen();
   if (name === "metadata") mdWire();
+  if (name === "assistant") asOpen();
   if (name === "samples") loadGallery();
   if (name === "training") loadCheckpoints();
   if (name === "outputs") { loadRuns(); if (S.outputsOpen) loadOutputs(); }
@@ -8570,6 +8571,123 @@ function showTab(name) {
   // the workbench's render choice follows the Samples tab, which may have changed since the tab last drew it
   if (["studio", "royale", "profiler"].includes(name)) renderChoiceRefresh();
   api("/api/state", {tab: name}).catch(() => {});
+}
+
+// ---- the Assistant tab: a local model using Fizgig's tools (fizgig/bridge), a step at a time
+const AS_EXAMPLES = [
+  "What's open in Affinity, and what is Fizgig doing?",
+  "Make a training folder from the layers in my Affinity document, then caption it with the trigger word gwelt.",
+  "Render my newest LoRA as a keynote speaker on a conference stage and put it in my Affinity document as a new layer.",
+  "Look at my Affinity poster and make a picture that fits its empty space, then place it there.",
+];
+const AS = {since: 0, timer: null, wired: false, busy: false};
+
+function asOpen() {
+  if (!AS.wired) {
+    AS.wired = true;
+    $("asSend").addEventListener("click", asSend);
+    $("asText").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); asSend(); } });
+    $("asReset").addEventListener("click", () => api("/api/assistant/reset", {}).then(() => {
+      AS.since = 0; $("asLog").replaceChildren(el("div", {class: "as-empty", text: "Try one of these, or say anything."}));
+      $("asStats").textContent = ""; asChips(true);
+    }).catch((e) => ($("asStats").textContent = e.message || String(e))));
+    const save = (o) => api("/api/assistant/settings", o).catch((e) => ($("asStats").textContent = e.message || String(e)));
+    $("asUrl").addEventListener("change", () => save({url: $("asUrl").value}));
+    $("asModel").addEventListener("change", () => save({model: $("asModel").value}));
+    $("asFree").addEventListener("change", () => save({free_gpu: $("asFree").checked}));
+    $("asVision").addEventListener("change", () => save({vision: $("asVision").checked}));
+    $("asDetect").addEventListener("click", asDetect);
+    api("/api/assistant").then((r) => {
+      const s = r.settings || {};
+      $("asUrl").value = s.url || ""; $("asFree").checked = !!s.free_gpu; $("asVision").checked = !!s.vision;
+      asDetect(s.model);
+    }).catch(() => {});
+  }
+  asPoll();
+}
+
+function asDetect(want) {
+  const keep = typeof want === "string" ? want : $("asModel").value;
+  $("asModelHint").textContent = "Asking the model server...";
+  api("/api/assistant/models?url=" + encodeURIComponent($("asUrl").value)).then((r) => {
+    const ms = r.models || [];
+    $("asModel").replaceChildren(el("option", {value: "", text: "The server's first"}),
+      ...ms.map((m) => el("option", {value: m, text: m})));
+    if (keep && ms.includes(keep)) $("asModel").value = keep;
+    $("asModelHint").textContent = ms.length ? `${ms.length} model${ms.length > 1 ? "s" : ""} on the server.` :
+      "No model server answers there. Start one (llama-server, LM Studio, Ollama) and press Detect.";
+  }).catch(() => { $("asModelHint").textContent = "No model server answers there."; });
+}
+
+function asChips(show) {
+  const box = $("asChips");
+  box.replaceChildren(...(show ? AS_EXAMPLES.map((t) => {
+    const b = el("button", {class: "as-chip", text: t});
+    b.addEventListener("click", () => { $("asText").value = t; $("asText").focus(); });
+    return b;
+  }) : []));
+}
+
+function asSend() {
+  const text = $("asText").value.trim();
+  if (!text || AS.busy) return;
+  $("asText").value = "";
+  api("/api/assistant/send", {text}).then(() => { AS.busy = true; asChips(false); asPoll(); })
+    .catch((e) => ($("asStats").textContent = e.message || String(e)));
+}
+
+const AS_TOOL_NAMES = {
+  fizgig_status: "Checked what Fizgig is doing", list_models: "Listed the models", list_training_folders: "Listed the training folders",
+  create_training_folder: "Made a training folder", add_pictures: "Added pictures", set_training_folder: "Picked the training folder",
+  list_pictures: "Read the pictures and captions", look_at_picture: "Looked at a picture", write_caption: "Wrote a caption",
+  caption_folder: "Captioned the folder", make_masks: "Made masks", start_training: "Started training",
+  training_status: "Checked the run", wait_for_training: "Waited for the run", pause_training: "Paused the run",
+  stop_training: "Stopped the run", list_runs: "Listed the runs", list_loras: "Listed the LoRAs", list_previews: "Listed the previews",
+  render: "Rendered", affinity_status: "Checked Affinity", affinity_documents: "Read Affinity's documents",
+  affinity_to_training_folder: "Exported layers from Affinity", affinity_place: "Placed it in Affinity", affinity_view: "Looked at the Affinity document",
+};
+
+function asPoll() {
+  clearTimeout(AS.timer);
+  if (!document.querySelector("#tab-assistant.active")) return;
+  api("/api/assistant?since=" + AS.since).then((r) => {
+    const log = $("asLog");
+    if ((r.events || []).length) log.querySelector(".as-empty")?.remove();
+    for (const ev of r.events || []) {
+      AS.since = Math.max(AS.since, ev.id);
+      log.querySelector(".as-thinking")?.remove();
+      if (ev.kind === "user") log.append(el("div", {class: "as-msg as-user", text: ev.text}));
+      else if (ev.kind === "answer" || ev.kind === "note")
+        log.append(el("div", {class: "as-msg as-bot" + (ev.kind === "note" ? " as-note" : ""), text: ev.text}));
+      else if (ev.kind === "tool") {
+        const step = el("div", {class: "as-step"}, el("span", {class: "as-step-name", text: AS_TOOL_NAMES[ev.name] || ev.name}),
+          el("span", {class: "as-step-args", text: JSON.stringify(ev.args || {})}));
+        step.dataset.tool = ev.name;
+        log.append(step);
+      } else if (ev.kind === "result") {
+        const last = [...log.querySelectorAll(".as-step")].pop();
+        if (last) {
+          last.classList.add(ev.error ? "as-bad" : "as-ok");
+          if (ev.error) last.append(el("div", {class: "as-step-err", text: ev.text}));
+          last.title = ev.text || "";
+          if (ev.src) last.append(el("img", {class: "as-pic", src: ev.src}));
+        }
+      } else if (ev.kind === "gpu") log.append(el("div", {class: "as-gpu", text: ev.text}));
+      else if (ev.kind === "error") log.append(el("div", {class: "as-msg as-err", text: ev.text}));
+      else if (ev.kind === "thinking") log.append(el("div", {class: "as-thinking", text: "Thinking..."}));
+    }
+    if (!r.busy) log.querySelector(".as-thinking")?.remove();
+    if ((r.events || []).length) log.scrollTop = log.scrollHeight;
+    AS.busy = !!r.busy;
+    $("asSend").disabled = AS.busy;
+    if (!AS.since) asChips(true);
+    const s = r.stats || {};
+    if (s.llm_seconds !== undefined)
+      $("asStats").textContent = `${r.model || "model"}: thinking ${Math.round(s.llm_seconds)} s · Fizgig's tools ` +
+        `${Math.round(s.tool_seconds)} s · GPU handovers ${s.gpu_handovers || 0}` +
+        (s.gpu_handovers ? ` (swapping models cost ${Math.round((s.reload_seconds || 0) + (s.release_seconds || 0))} s)` : "");
+    AS.timer = setTimeout(asPoll, AS.busy ? 800 : 3000);
+  }).catch(() => { AS.timer = setTimeout(asPoll, 4000); });
 }
 
 // a dropped / chosen folder: every file inside it, subfolders included (each still goes up on its own)

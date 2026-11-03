@@ -85,6 +85,7 @@
           <button class="tab-item" data-tab="outputs"><i></i><span>Runs &amp; outputs</span></button>
           <button class="tab-item" data-tab="profiler"><i></i><span>Profiler</span></button>
           <button class="tab-item" data-tab="studio"><i></i><span>Studio</span></button>
+          <button class="tab-item" data-tab="assistant"><i></i><span>Assistant</span></button>
           <button class="tab-item" data-tab="royale"><i></i><span>LoRA Royale</span></button>
           <button class="tab-item" data-tab="refmod"><i></i><span>RefMod Toolkit</span></button>
           <button class="tab-item" data-tab="extract"><i></i><span>Extract</span></button>
@@ -1561,6 +1562,44 @@
                 <span class="field-hint" id="exStatus"></span><span id="exDone"></span></div>
               <div class="run-bar"><span id="exBar" style="width:0"></span></div>
               <pre class="console-terminal" id="exLog"></pre>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-assistant" class="tab-panel">
+          <div class="tab-banner">
+            <h1>Assistant</h1>
+            <p>Say what you want in plain words: a language model on this computer does it with Fizgig's tools, and
+              with Affinity by Canva when it's open (layers out to a training folder, renders back in as layers).
+              Nothing leaves this computer.</p>
+          </div>
+          <div class="section-card">
+            <div class="card-title">Model</div>
+            <div class="card-desc">Any model server with tool calling that speaks the OpenAI API: llama.cpp's
+              llama-server (with --jinja), LM Studio, Ollama.</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Address:</span>
+                <input type="text" id="asUrl" class="w-path" placeholder="http://127.0.0.1:38088/v1">
+                <button class="btn btn-secondary" id="asDetect">Detect</button></div>
+              <div class="field-row"><span class="field-label">Model:</span>
+                <select id="asModel"><option value="">The server's first</option></select></div>
+              <label class="checkbox-label"><input type="checkbox" id="asFree"> Free the GPU for Fizgig (the model steps
+                off the card for a render or a training run, and comes back after)</label>
+              <label class="checkbox-label"><input type="checkbox" id="asVision"> The model can see pictures</label>
+              <div class="field-hint" id="asModelHint"></div>
+            </div>
+          </div>
+          <div class="section-card as-chat-card">
+            <div class="card-title"><span>Conversation</span>
+              <button class="btn btn-secondary btn-sm" id="asReset">New conversation</button></div>
+            <div class="card-content">
+              <div id="asLog" class="as-log"><div class="as-empty">Try one of these, or say anything.</div></div>
+              <div class="as-chips" id="asChips"></div>
+              <div class="as-input-row">
+                <textarea id="asText" rows="2" placeholder="e.g. Make a training folder from the layers in my Affinity document"></textarea>
+                <button class="btn btn-primary" id="asSend">Send</button>
+              </div>
+              <div class="field-hint" id="asStats"></div>
             </div>
           </div>
         </section>

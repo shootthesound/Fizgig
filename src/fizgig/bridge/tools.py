@@ -155,12 +155,29 @@ def build(ctx) -> Server:
         post("/api/captions/save", {"folder": folder, "name": name, "text": caption})
         return {"ok": True}
 
-    @tool("caption_folder", "Caption a training folder's pictures with Fizgig's AI captioner (on the GPU; check "
-                            "fizgig_status for progress). task: what to describe, e.g. 'person', 'style', 'object'.",
-          {"folder": S, "trigger": S, "task": S, "overwrite": B}, ["folder"])
-    def _caption_all(folder, trigger="", task="", overwrite=False):
-        return post("/api/captions/ai", {"folder": folder, "trigger": trigger, "task": task,
-                                         "overwrite": bool(overwrite)})
+    @tool("caption_folder", "Caption a training folder's pictures with Fizgig's AI captioner (Qwen3-VL, on the GPU) "
+                            "and wait until they're done. task: training (a person), object, concept or style. "
+                            "trigger: the word the LoRA is called by, added to every caption.",
+          {"folder": S, "trigger": S, "task": {"type": "string", "enum": ["training", "object", "concept", "style",
+                                                                          "short", "detailed"]},
+           "overwrite": B}, ["folder"])
+    def _caption_all(folder, trigger="", task="training", overwrite=False):
+        from fizgig.web import captions
+        opts = get("/api/captions/options")
+        if not opts.get("qwen_available"):
+            raise ToolError("The AI captioner needs its model file set in Preferences (Krea 2's text encoder).")
+        tasks = {t["key"]: t for t in opts.get("qwen_tasks", [])}
+        t = tasks.get(task or "training") or tasks.get("training")
+        t0 = time.time()
+        if trigger:                             # the folder's trigger word, as the Captions tab keeps it
+            post("/api/trigger", {"folder": folder, "word": trigger})
+        post("/api/captions/ai", {"folder": folder, "trigger": trigger, "model": opts.get("qwen_model"),
+                                  "task": t["label"], "instruction": t["instruction"], "overwrite": bool(overwrite),
+                                  "max_tokens": t.get("tokens") or 120})
+        _wait(lambda: captions.status().get("state") in ("idle", "loaded"), 1800, first=2.0)
+        st = captions.status()
+        return {"captioned": st.get("ok"), "failed": st.get("fail"), "seconds": round(time.time() - t0),
+                "last_lines": st.get("log", [])[-3:]}
 
     @tool("make_masks", "Make masks for masked training (the subject white, the rest black). kind: 'person' or "
                         "'sam' with words saying what to keep.",
@@ -174,12 +191,17 @@ def build(ctx) -> Server:
     @tool("start_training", "Start training a LoRA: a model (list_models key), a training folder and a preset; "
                             "overrides change single settings by their form key (LORA_NAME, MAX_TRAIN_EPOCHS, "
                             "NETWORK_DIM, LEARNING_RATE, CAPTION_TRIGGER_WORD ...). The Start checks' warnings come "
-                            "back first; call again with anyway=true to start regardless.",
-          {"model": S, "folder": S, "preset": S, "lora_name": S, "overrides": {"type": "object"}, "anyway": B},
-          ["model", "folder"])
-    def _start(model, folder, preset="", lora_name="", overrides=None, anyway=False):
+                            "back first; call again with anyway=true to start regardless. A person's likeness in "
+                            "minutes: model qwen_image21, preset '✨ Qwen 2.1 Fast Identity Mode (rank 8) - very close "
+                            "to full-model likeness, ~1.5x faster', overrides {\"MAX_TRAIN_EPOCHS\": \"20\", "
+                            "\"SAVE_EVERY_N_EPOCHS\": \"5\", \"SAMPLE_ENABLED\": false}.",
+          {"model": S, "folder": S, "preset": S, "lora_name": S, "trigger": S, "overrides": {"type": "object"},
+           "anyway": B}, ["model", "folder"])
+    def _start(model, folder, preset="", lora_name="", trigger="", overrides=None, anyway=False):
         if not os.path.isdir(folder):
             raise ToolError(f"{folder} isn't a folder.")
+        if trigger:
+            post("/api/trigger", {"folder": folder, "word": trigger})
         st = get("/api/state")
         values = dict(((st.get("values") or {}).get(model)) or {})
         if preset:
@@ -191,14 +213,49 @@ def build(ctx) -> Server:
         if r.get("warnings"):
             return {"started": False, "warnings": r["warnings"],
                     "next": "Tell the user these, then call start_training again with anyway=true if they agree."}
-        return {"started": not r.get("problems"), **{k: v for k, v in r.items() if k in ("problems", "fetching", "lora",
-                                                                                           "output_dir", "ok")}}
+        if r.get("problems"):
+            return {"started": False, "problems": r["problems"]}
+        run = get("/api/run")
+        return {"started": True, "lora": run.get("lora"), "output_dir": run.get("output_dir"),
+                "stages": r.get("stages"), **({"fetching": r["fetching"]} if r.get("fetching") else {})}
 
     @tool("training_status", "The current run's state and its console's last lines.", {"lines": I})
     def _train_status(lines=30):
+        return _run_now() | {"console": log(max(1, min(int(lines), 200)))}
+
+    def _run_now():
         run = get("/api/run")
-        return {k: run.get(k) for k in ("state", "stage", "lora", "family", "output_dir", "running", "resume")} | \
-            {"console": log(max(1, min(int(lines), 200)))}
+        return {k: v for k, v in run.items() if k not in ("values", "web_queue", "pod_stop", "move", "slider_live")
+                and v not in (None, "", [], {})}
+
+    @tool("wait_for_training", "Wait for the current run to finish (or pause, or fail), up to `minutes`; then its "
+                               "state and its newest LoRA file. Use it when the user wants the result in one go.",
+          {"minutes": N})
+    def _wait_train(minutes=30):
+        end = time.time() + max(0.1, float(minutes)) * 60
+        time.sleep(3)
+        while time.time() < end:
+            run = get("/api/run")
+            if not run.get("running") and run.get("state") not in ("starting", "running", "caching"):
+                break
+            time.sleep(5)
+        run = _run_now()
+        return run | {"newest_lora": _newest_lora(run.get("output_dir") or "", run.get("lora") or ""),
+                      "console": log(6), "finished": not run.get("running")}
+
+    @tool("release_gpu", "Take Fizgig's models off the GPU (Studio's render model and the captioner), so another "
+                         "program can use it. A training run is not touched.")
+    def _release():
+        from fizgig.web import captions, studio
+        t0 = time.time()
+        held = studio.holding_gpu()
+        if held:
+            post("/api/studio/reset")
+        try:
+            captions.unload()
+        except Exception:
+            pass
+        return {"released": bool(held), "seconds": round(time.time() - t0, 1)}
 
     @tool("pause_training", "Pause the run at the end of this epoch (it saves, frees the GPU, and can resume).")
     def _pause():
@@ -242,7 +299,10 @@ def build(ctx) -> Server:
                              for it in items[:max(1, int(limit))]]}
 
     @tool("render", "Render a picture with a LoRA (Studio's preview model, on the GPU): prompt, seed, size and the "
-                    "LoRA's strength. Takes Studio over while it works. Returns the picture's path and a look at it.",
+                    "LoRA's strength. Takes Studio over while it works. Returns the picture's path and a look at it. A "
+                    "see-through picture (a sticker, a cut-out, a logo) on Qwen Image 2.1: put the subject in its own "
+                    "wording, 'This is an RGBA image with transparency. <subject>. The image has alpha channel and "
+                    "the background is transparent.' - the PNG keeps its alpha and goes into Affinity as a cut-out.",
           {"lora": S, "prompt": S, "seed": I, "width": I, "height": I, "strength": N,
            "model": {"type": "string", "description": "the LoRA's model key; found from the file when left out"},
            "reference": {"type": "string", "description": "an edit model's before-picture"}},
@@ -261,25 +321,29 @@ def build(ctx) -> Server:
         return affinity.documents()
 
     @tool("affinity_to_training_folder", "Export layers from an Affinity document as PNGs into a training folder: "
-                                         "the given layer indexes, else the selected layers, else every visible one; "
-                                         "whole=true exports the flattened document instead. A new folder is made "
-                                         "when `folder` is a name rather than a path.",
-          {"folder": S, "document": S, "layers": {"type": "array", "items": I}, "whole": B}, ["folder"])
-    def _a_out(folder, document="", layers=None, whole=False):
+                                         "the given layer indexes, else (selected=true) the selected layers, else "
+                                         "every visible picture layer; whole=true exports the flattened document "
+                                         "instead. A new folder is made when `folder` is a name rather than a path.",
+          {"folder": S, "document": S, "layers": {"type": "array", "items": I}, "whole": B, "selected": B},
+          ["folder"])
+    def _a_out(folder, document="", layers=None, whole=False, selected=False):
         if not os.path.isabs(folder):
             root = get("/api/upload/root")["root"]
             folder = os.path.join(root, re.sub(r'[\\/:*?"<>|]+', "_", folder).strip(" ."))
-        paths = affinity.export_layers(document, layers, whole, tag=os.path.basename(folder))
+        paths = affinity.export_layers(document, layers, whole, tag=os.path.basename(folder), selected=selected)
         if not paths:
             raise ToolError("Affinity exported nothing (no layers selected or visible?).")
         names = affinity.copy_into(paths, folder)
         return {"folder": folder, "pictures": names}
 
     @tool("affinity_place", "Put a picture (a render, a preview, a training picture) into Affinity as a new layer: in "
-                            "the given or current document, or a new document of its size.",
-          {"path": S, "document": S, "name": S, "new_document": B}, ["path"])
-    def _a_place(path, document="", name="", new_document=False):
-        return affinity.place_image(path, document, name, new_document)
+                            "the given or current document, or a new document of its size. into_layer (a layer index "
+                            "from affinity_documents, e.g. an empty photo box) fits the picture over that layer's "
+                            "area; render at that area's shape first so nothing is cropped.",
+          {"path": S, "document": S, "name": S, "new_document": B, "into_layer": I,
+           "box": {"type": "array", "items": N, "description": "[x, y, width, height] in pixels"}}, ["path"])
+    def _a_place(path, document="", name="", new_document=False, into_layer=None, box=None):
+        return affinity.place_image(path, document, name, new_document, into_layer, box)
 
     @tool("affinity_view", "See an Affinity document as it looks now (at most 1024 px).", {"document": S})
     def _a_view(document=""):
@@ -287,6 +351,18 @@ def build(ctx) -> Server:
         return [text("The document in Affinity:"), image(data, mime)]
 
     return srv
+
+
+def _newest_lora(out_dir, name):
+    best = None
+    try:
+        for e in os.scandir(out_dir):
+            if name and e.name.lower().endswith(".safetensors") and e.name.startswith(name) \
+                    and (best is None or e.stat().st_mtime > best[0]):
+                best = (e.stat().st_mtime, e.path)
+    except OSError:
+        return ""
+    return best[1] if best else ""
 
 
 def _copy_pictures(paths, folder):
@@ -327,7 +403,7 @@ def _studio_render(api, post, lora, prompt, seed, width, height, strength, model
             or st.get("family") != model:
         if st.get("state") not in ("idle", "error", None, ""):
             try:
-                post("/api/studio/unload")
+                post("/api/studio/reset")
             except ToolError:
                 pass
             _wait(lambda: studio.status().get("state") in ("idle", "error"), 120)
@@ -365,8 +441,11 @@ def _wait(cond, seconds, first=0.3):
 
 
 def _version():
+    import subprocess
     try:
-        from fizgig.web.about import version
-        return version()
-    except Exception:
+        here = os.path.dirname(os.path.abspath(__file__))
+        r = subprocess.run(["git", "describe", "--tags", "--always"], cwd=here, capture_output=True, text=True,
+                           timeout=5, creationflags=0x08000000 if os.name == "nt" else 0)
+        return r.stdout.strip() or "dev"
+    except (OSError, subprocess.SubprocessError):
         return "dev"

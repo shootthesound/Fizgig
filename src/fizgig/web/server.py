@@ -3295,6 +3295,13 @@ class Handler(BaseHTTPRequestHandler):
                               "pod_version": pod_version.status() if on_pod() else None})
         if path == "/api/datasets":
             return self.json(list_datasets())
+        if path == "/api/assistant":                # the Assistant tab: its steps since `since`, and its settings
+            from fizgig.bridge import assistant
+            return self.json({**assistant.status(int((qs.get("since") or ["0"])[0] or 0)),
+                              "settings": assistant.settings(load_prefs())})
+        if path == "/api/assistant/models":         # the model server's models (Detect)
+            from fizgig.bridge import assistant
+            return self.json({"models": assistant.models((qs.get("url") or [""])[0])})
         if path == "/api/upload/status":
             try:
                 mt = (qs.get("mtime") or [""])[0]
@@ -4164,6 +4171,29 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"ok": _cancel_fetch()})
             if path == "/api/stop":
                 return self.json({"ok": _stop()})
+            if path.startswith("/api/assistant/"):        # the Assistant tab: a local model using Fizgig's tools
+                from fizgig.bridge import assistant
+                what = path[len("/api/assistant/"):]
+                if what == "send":
+                    text_in = str(b.get("text") or "").strip()
+                    if not text_in:
+                        return self.json({"error": "Say what you'd like done."}, 400)
+                    return self.json(assistant.send(text_in, _mcp_server(self.server.server_address[1], self.password),
+                                                    load_prefs()))
+                if what == "reset":
+                    return self.json(assistant.reset())
+                if what == "settings":
+                    upd = {}
+                    if "url" in b:
+                        upd["assistant_llm_url"] = str(b["url"] or "").strip()
+                    if "model" in b:
+                        upd["assistant_llm_model"] = str(b["model"] or "").strip()
+                    for k in ("free_gpu", "vision"):
+                        if k in b:
+                            upd["assistant_" + k] = "1" if b[k] in (True, "1", 1) else "0"
+                    update_prefs(upd)
+                    return self.json({"ok": True})
+                return self.json({"error": "not found"}, 404)
             if path == "/api/logout":                     # this device: its login cookie goes
                 return self.json({"ok": True}, extra=[("Set-Cookie", "fizgig_session=; Path=/; Max-Age=0; HttpOnly; "
                                                                      "SameSite=Strict")])

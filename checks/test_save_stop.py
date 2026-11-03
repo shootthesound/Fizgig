@@ -134,7 +134,7 @@ def tiny(monkeypatch, data):
     """The trainer on a tiny CPU family (zimage's description, this file's driver), the cache made."""
     import fizgig.families.cache as C
     import fizgig.families.train as T
-    desc = dataclasses.replace(registry.FAMILIES["zimage"], driver=f"{__name__}:TinyDriver", supports_batch=True)
+    desc = dataclasses.replace(registry.FAMILIES["zimage"], driver=f"{__name__}:TinyDriver")
     monkeypatch.setitem(registry.FAMILIES, "zimage", desc)
     monkeypatch.setattr(T, "torch", _CpuTorch("torch"))
     monkeypatch.setattr(torch.cuda, "reset_peak_memory_stats", lambda *a, **k: None)

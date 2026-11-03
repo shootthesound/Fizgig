@@ -1460,9 +1460,9 @@ function firewallRow() {
 // what Fizgig does on the network by itself (issue #236): finding your other computers and being found by them (a
 // broadcast on the local network while the Helpers or Pods tab is open, and an answer to theirs), and the release check
 function networkCard() {
-  const box = (key, label) => {
+  const box = (key, label, dflt = "1") => {
     const on = el("input", {type: "checkbox"});
-    on.checked = String(S.set[key] ?? "1") !== "0";
+    on.checked = String(S.set[key] ?? dflt) !== "0";
     on.addEventListener("change", () => api("/api/prefs", {changes: {[key]: on.checked}})
       .then(() => { S.set[key] = on.checked ? "1" : "0"; }));
     return el("label", {class: "checkbox-label"}, on, " " + label);
@@ -1477,7 +1477,12 @@ function networkCard() {
         "Off: no asking and no answering."}),
       box("update_check", "Check for new releases"),
       el("div", {class: "field-hint", text: "Once at start-up, Fizgig asks GitHub for its newest release tag (the About " +
-        "box says when one is out). Off: no check unless you press Check for updates in the About box."})));
+        "box says when one is out). Off: no check unless you press Check for updates in the About box."}),
+      box("mcp_server", "Let AI apps use Fizgig (MCP)", "0"),
+      el("div", {class: "field-hint", text: "AI apps on this computer (Claude Desktop, LM Studio, a local model through " +
+        "Fizgig's assistant) can use Fizgig's tools: your training folders, captions, training, previews and renders, " +
+        "and pictures to and from Affinity. Only from this computer, never from a web page. Address: " +
+        `http://127.0.0.1:${S.portNow || S.webPort || 8081}/mcp`})));
 }
 
 // the web UI's port: saved by the first launch (8081, or the next free port if 8081 was taken)

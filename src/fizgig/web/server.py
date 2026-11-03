@@ -358,7 +358,7 @@ def _write_json(path, data):
 # the desktop's DEFAULT_PREFS that aren't empty: a web-only install starts where the desktop app would
 PREF_DEFAULTS = {"lora_output_dir": "output_loras", "profiles_dir": "user_data/profiles", "cache_dir": "user_data/cache",
                  "runpod_stop_when_done": "0", "inference_blocks_to_swap": "Auto (detect from GPU)",
-                 "inference_int8": "1", "lan_discovery": "1", "update_check": "1"}
+                 "inference_int8": "1", "lan_discovery": "1", "update_check": "1", "mcp_server": "0"}
 
 
 LAST_USED_FILE = user_data.LAST_USED_FILE           # the training folder, each folder's trigger word
@@ -420,7 +420,7 @@ def set_folder_trigger(folder, word):
 
 # the Preferences settings Reset to defaults puts back (the model files are never reset)
 SETTING_PREFS = ("lora_output_dir", "profiles_dir", "cache_dir", "input_lora_dir", "input_ref_dir",
-                 "inference_blocks_to_swap", "inference_int8", "lan_discovery", "update_check")
+                 "inference_blocks_to_swap", "inference_int8", "lan_discovery", "update_check", "mcp_server")
 
 
 def load_prefs() -> dict:
@@ -2898,6 +2898,8 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/manifest.webmanifest", "/icon-192.png", "/icon-512.png"):   # Add to Home Screen (no login:
             return self._file(os.path.join(STATIC_DIR, path[1:]),                 # a phone fetches it without one)
                               "application/manifest+json" if path.endswith(".webmanifest") else None)
+        if path == "/mcp":
+            return self.json({"error": "POST JSON-RPC to /mcp"}, 405)
         if not path.startswith("/api/") or not self._api_ok(qs):
             return None if path.startswith("/api/") else self.json({"error": "not found"}, 404)
 
@@ -3603,6 +3605,30 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 pass
 
+    def _mcp(self):
+        """Fizgig's MCP server (Streamable HTTP, JSON replies): AI apps on this computer use Fizgig's tools
+        (fizgig/bridge). Only with Preferences > Network > Let AI apps use Fizgig on, only from this computer, and
+        never from a web page (an Origin header): a page elsewhere can't drive it."""
+        if str(load_prefs().get("mcp_server") or "0") != "1":
+            return self.json({"error": "Fizgig's MCP server is off: Preferences > Network > Let AI apps use Fizgig."}, 403)
+        if not self._local_viewer() or on_pod():
+            return self.json({"error": "Only AI apps on the computer running Fizgig can use it."}, 403)
+        origin = self.headers.get("Origin") or ""
+        if origin and urlparse(origin).hostname not in ("localhost", "127.0.0.1", "::1", "[::1]"):
+            return self.json({"error": "not from a web page"}, 403)
+        try:
+            msg = self._body_json_raw()
+        except ValueError:
+            return self.json({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}}, 400)
+        reply = _mcp_server(self.server.server_address[1], self.password).handle(msg)
+        if reply is None:
+            return self._send(202, b"", "application/json")
+        return self.json(reply)
+
+    def _body_json_raw(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        return json.loads(self.rfile.read(n) or b"null")
+
     def _app_window(self):
         """A call from the Fizgig window that started this server: it carries that window's key."""
         key = os.environ.get("FIZGIG_APP_KEY", "")
@@ -3612,6 +3638,8 @@ class Handler(BaseHTTPRequestHandler):
         if not self._host_ok():
             return self.json({"error": "bad host"}, 403)
         path = urlparse(self.path).path
+        if path == "/mcp":
+            return self._mcp()
         if path in ("/api/app/busy", "/api/app/stop_run"):   # the window, closing: is a run training? stop it
             if not self._app_window():
                 return self.json({"error": "no"}, 403)
@@ -4156,7 +4184,7 @@ class Handler(BaseHTTPRequestHandler):
                                                                   if k in SETTING_PREFS}}
                 if "inference_int8" in ch:
                     ch["inference_int8"] = "1" if ch["inference_int8"] in (True, "1", 1) else "0"
-                for k in ("lan_discovery", "update_check"):
+                for k in ("lan_discovery", "update_check", "mcp_server"):
                     if k in ch:
                         ch[k] = "1" if ch[k] in (True, "1", 1) else "0"
                 upd = {k: str(v) for k, v in ch.items() if k in allowed}
@@ -4747,6 +4775,48 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as e:
             return self.json({"error": str(e)}, 400)
         return self.json({"error": "not found"}, 404)
+
+
+_MCP = {}
+
+
+def _mcp_server(port, password):
+    """Fizgig's MCP tool registry (fizgig/bridge/tools.py), calling this server's own API over loopback with its token
+    (and its login, when a password is set)."""
+    srv = _MCP.get(port)
+    if srv is not None:
+        return srv
+    import urllib.error
+    import urllib.request
+    from urllib.parse import urlencode
+    from fizgig.bridge import tools as bridge_tools
+
+    session = hmac.new(_session_key().encode(), (password or "").encode(), hashlib.sha256).hexdigest()
+
+    class Ctx:
+        @staticmethod
+        def api(method, path, body=None, qs=None):
+            url = f"http://127.0.0.1:{port}{path}" + (("?" + urlencode(qs)) if qs else "")
+            data = json.dumps(body or {}).encode("utf-8") if method == "POST" else None
+            req = urllib.request.Request(url, data=data, method=method, headers={
+                "X-Fizgig-Token": TOKEN, "Content-Type": "application/json", "Host": f"127.0.0.1:{port}",
+                "Cookie": f"fizgig_session={session}"})
+            try:
+                with urllib.request.urlopen(req, timeout=600) as r:
+                    return json.loads(r.read() or b"{}")
+            except urllib.error.HTTPError as e:
+                try:
+                    return json.loads(e.read() or b"{}")
+                except ValueError:
+                    return {"error": f"HTTP {e.code}"}
+
+        @staticmethod
+        def log(n):
+            with _lock:
+                return [t for _i, t in _log[-int(n):]]
+
+    srv = _MCP[port] = bridge_tools.build(Ctx)
+    return srv
 
 
 class _Server(ThreadingHTTPServer):

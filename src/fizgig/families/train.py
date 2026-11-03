@@ -89,9 +89,23 @@ def _step_scheduler(optimizer, kind, warmup, total, cycles=1, power=1.0):
     return torch.optim.lr_scheduler.LambdaLR(optimizer, f)
 
 
-def _save_state(output_dir, output_name, net, optimizer, *, epoch, global_step, arch_id, extra=None, ema=None):
-    state_dir = os.path.join(output_dir, f"{output_name}-{epoch:06d}-state")
+def _batch_key(batch, i):
+    """A batch's identity for a Save & stop restore point: its images' keys (an epoch's batches are the same ones on a
+    resume, in another order); a batch without keys (a prompt slider's) goes by its place in the epoch."""
+    keys = batch.get("item_keys") if isinstance(batch, dict) else None
+    return tuple(str(k) for k in keys) if keys else ("#", str(i))
+
+
+def _save_state(output_dir, output_name, net, optimizer, *, epoch, global_step, arch_id, extra=None, ema=None,
+                folder_epoch=None):
+    """folder_epoch: the number in the folder's name when it isn't `epoch` - a Save & stop restore point mid-epoch is
+    named after the epoch in progress (so it is the newest), while its training_state.json says the epochs done."""
+    state_dir = os.path.join(output_dir, f"{output_name}-{epoch if folder_epoch is None else folder_epoch:06d}-state")
     os.makedirs(state_dir, exist_ok=True)
+    try:                     # rewriting a folder (an epoch's end over its Save & stop point): not complete until the end
+        os.remove(os.path.join(state_dir, "training_state.json"))
+    except OSError:
+        pass
     net.save(os.path.join(state_dir, "lora.safetensors"), dtype=torch.float32)
     torch.save(optimizer.state_dict(), os.path.join(state_dir, "optimizer.pt"))
     if ema is not None:
@@ -1736,12 +1750,15 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         logger.info(f"[ema] ON at decay {float(ema_decay):g} - checkpoints and previews use the running average")
 
     start_epoch = global_step = 0
+    resume_mid = None                # a Save & stop restore point: where inside its epoch the run stopped
     if resume_state_dir:
         _fresh_lrs = [g["lr"] for g in optimizer.param_groups] if optimizer is not None else []
         start_epoch, global_step, meta = _load_state(resume_state_dir, net, optimizer, device, arch,
                                                      untagged_own=desc.resumes_untagged_states, driver=driver)
         if global_step is None:
             global_step = start_epoch * steps_per_epoch
+        if isinstance(meta.get("mid_epoch"), dict) and meta["own_state"]:
+            resume_mid = meta["mid_epoch"]
         if adaptive:
             adaptive.load_state_dict(meta.get("adaptive_lr_state"))
         if (optimizer is not None and meta.get("own_state") and not meta.get("fresh_optimizer")
@@ -1755,7 +1772,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     _sh[meta["legacy_perm"][_i]] = _t
                 _esd["shadow"] = _sh
             ema.load_state_dict(_esd)
-        logger.info(f"[resume] from {resume_state_dir}: continuing at epoch {start_epoch + 1}/{max_train_epochs}")
+        logger.info(f"[resume] from {resume_state_dir}: continuing at epoch {start_epoch + 1}/{max_train_epochs}"
+                    + (f", after the {len(resume_mid.get('batches') or [])} of its steps trained before Save & stop"
+                       if resume_mid else ""))
     from fizgig.families.loss_watch import Watch
     watch = Watch(output_dir, group, user_config, driver, log=log_per_image_loss, per_image_lr=per_image_lr,
                   auto_recaption=auto_recaption, warmup_look=warmup_look_outliers,
@@ -1784,7 +1803,10 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             # a resume moves the schedule to where the run paused before the first optimizer step, on purpose;
             # PyTorch's "lr_scheduler.step() before optimizer.step()" warning is for training loops, not this
             warnings.filterwarnings("ignore", message=r"Detected call of `lr_scheduler\.step\(\)` before")
-            for _ in range(start_epoch * updates_per_epoch if accum > 1 else global_step):
+            _n = (start_epoch * updates_per_epoch if accum > 1 else global_step)
+            if resume_mid and resume_mid.get("scheduler_steps") is not None:
+                _n = int(resume_mid["scheduler_steps"])      # mid-epoch: exactly where the schedule stood
+            for _ in range(_n):
                 scheduler.step()
 
     last_prompt = [None]
@@ -2186,22 +2208,29 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     if (speed_lora and speed_desc and not speed_idle) else 0}
         write_mode(mode)
 
-    def state(epoch, required=False):
+    def state(epoch, required=False, mid=None):
         """Save the resume state. A failed write (a full disk, or a sync / antivirus program holding the file) is
         retried once, then only warned about: the epoch's LoRA is already saved, and the state only serves a resume.
-        A pause needs it (required=True), so there the second failure stops the run."""
+        A pause needs it (required=True), so there the second failure stops the run.
+        mid: a Save & stop restore point inside epoch `epoch` + 1 (the batches it already trained, see
+        _save_and_stop), saved as that epoch's folder."""
         for attempt in (1, 2):
             try:
                 _save_state(output_dir, output_name, net, optimizer, epoch=epoch, global_step=global_step,
-                            arch_id=arch, ema=ema,
+                            arch_id=arch, ema=ema, folder_epoch=None if mid is None else epoch + 1,
                             extra={"learning_rate": box_learning_rate,
-                                   **({"adaptive_lr_state": adaptive.state_dict()} if adaptive else {})})
+                                   **({"adaptive_lr_state": adaptive.state_dict()} if adaptive else {}),
+                                   **({"mid_epoch": mid} if mid is not None else {})})
                 return True
             except (OSError, RuntimeError) as e:
+                if attempt == 2 and mid is not None:
+                    shutil.rmtree(os.path.join(output_dir, f"{output_name}-{epoch + 1:06d}-state"),
+                                  ignore_errors=True)
                 if attempt == 2 and required:
                     raise
                 if attempt == 1:
-                    logger.warning(f"[state] saving the epoch {epoch} resume state failed ({e}) - trying again")
+                    what = f"epoch {epoch} resume state" if mid is None else "Save & stop restore point"
+                    logger.warning(f"[state] saving the {what} failed ({e}) - trying again")
                     time.sleep(5)
                 else:
                     # a half-written state must not count as the newest when states are pruned
@@ -2222,8 +2251,21 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     # the web UI's loss graph: each step's loss, numbered across a resume / a fine-tune's continuation
     step_off = ftr.epochs_done * steps_per_epoch if ftr is not None else 0
     steplog = StepLog(output_dir, output_name, start_step=step_off + global_step)
-    for _w in ("sample", "save"):          # a request left from an earlier run is not this one's
+    for _w in ("sample", "save", "savestop"):   # a request left from an earlier run is not this one's
         take_request(output_dir, _w)
+    # Save & stop (Pause pressed again): the batches this epoch has trained so far, [keys, loss or None] each, so a
+    # resume from the restore point trains only the rest of the epoch. The epoch's batches are the same on a resume
+    # (buckets shuffle by seed + epoch); only their order is drawn afresh, hence the keys.
+    epoch_done = []
+    resume_left = {}                 # the restore point's batches still to pass over: key -> [losses]
+    if resume_mid:
+        for _k, _l in resume_mid.get("batches") or []:
+            resume_left.setdefault(tuple(_k), []).append(_l)
+        _seeds = resume_mid.get("dataset_seeds") or []
+        _dss = list(getattr(group, "datasets", []))
+        if len(_seeds) == len(_dss) and all(isinstance(x, int) for x in _seeds):
+            for _ds, _sd in zip(_dss, _seeds):      # before the first batch: the epoch's buckets shuffle as they did
+                _ds.seed = _sd
     progress = tqdm(total=steps_per_epoch * max_train_epochs, initial=global_step, desc="steps", smoothing=0)
     dit.train()
     pending = 0                            # micro-batches backpropagated since the last optimizer step
@@ -2337,6 +2379,50 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         if ema is not None:
             ema.update()                   # after the clipped step, so the average tracks what was applied
         pending = 0
+
+    def _save_and_stop(epoch, only):
+        """Pause pressed a second time: a full restore point now (between optimizer steps), then a clean stop - the
+        server records the run as paused, and Resume trains the rest of this epoch from it. Not saved: the run goes
+        on (still pausing at the epoch's end, as the first press asked) and the reason goes to the log and the UI."""
+        why = None
+        if share_worker:
+            return
+        if share_now[0] is not None or only is not None or catching[0]:
+            why = (f"a helper is training its share of epoch {share_now[0]['epoch'] if share_now[0] else epoch + 1}"
+                   + (f"-{share_now[0]['last']}" if share_now[0] and share_now[0]['last'] > share_now[0]['epoch']
+                      else "") + ", so the run pauses when that round ends instead")
+        elif optimizer is None:
+            why = "this run has no optimizer state to save mid-epoch"
+        else:
+            mid = {"epoch": epoch + 1, "steps": len(epoch_done), "steps_per_epoch": steps_per_epoch,
+                   "global_step": global_step, "batches": [list(b) for b in epoch_done],
+                   # each dataset's shuffle seed (drawn afresh at every launch): the resume makes the same batches
+                   "dataset_seeds": [getattr(ds, "seed", None) for ds in getattr(group, "datasets", [])],
+                   "scheduler_steps": None if scheduler is None else int(scheduler.last_epoch)}
+            steplog.flush()
+            _tp = time.time()
+            try:
+                ok = state(epoch, required=True, mid=mid)
+            except Exception as e:          # a full disk, a locked file: the run goes on, it doesn't stop unsaved
+                ok, why = False, f"saving it failed: {e}"
+            else:
+                if not ok:
+                    why = "saving it failed (see the warning above)"
+            progress.start_t += time.time() - _tp
+            if ok:
+                _dir = f"{output_name}-{epoch + 1:06d}-state"
+                logger.info(f"[pause] Restore point saved at step {global_step} (epoch {epoch + 1}, step "
+                            f"{len(epoch_done)}/{steps_per_epoch} of it) in {_dir}. Training stopped; Resume carries "
+                            f"on from there.")
+                progress.close()
+                sys.exit(0)
+        logger.warning(f"[pause] Save & stop: no restore point - {why}. Training goes on and pauses at the end of "
+                       f"epoch {epoch + 1}.")
+        try:
+            with open(os.path.join(output_dir, ".savestop_failed"), "w", encoding="utf-8") as f:
+                f.write(why)
+        except OSError:
+            pass
 
     # Warm-up reassurance: the first two epochs of a run start slowly (first-sight kernel planning, cuBLAS picks,
     # allocator and cache warm-up, and on a compiled run the blocks compiling for each new shape) - a crawling bar
@@ -2478,7 +2564,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         elif share_worker is None:
             if share_now[0] is not None and epoch + 1 > share_now[0]["last"]:
                 share_now[0] = None
-            _hs = _helper_share(output_dir, output_name) if share_now[0] is None and _share_ok() else None
+            _hs = (_helper_share(output_dir, output_name)
+                   if share_now[0] is None and _share_ok() and not (resume_left and epoch == start_epoch) else None)
             if ((not gradient_checkpointing or gc_off_blocks) and not share_off_said[0] and share_now[0] is None
                     and _helper_share(output_dir, output_name)):
                 share_off_said[0] = True
@@ -2534,7 +2621,21 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         t0 = time.time()
         _theirs = (_share_split(seed, epoch + 1, _share_keys, share_now[0]["frac"]) if share_now[0] is not None
                    else None)                       # the helper's images this epoch (both sides draw the same)
+        epoch_done.clear()
         for i, batch, _only in _epoch_batches(epoch):
+            _cur = None
+            if _only is None:
+                _bk = _batch_key(batch, i)
+                if resume_left and epoch == start_epoch and resume_left.get(_bk):
+                    _l = resume_left[_bk].pop(0)       # trained before Save & stop: counted in global_step already
+                    if _l is None:
+                        recorder.drop(step=i)
+                    else:
+                        recorder.add(epoch=epoch, step=i, loss=float(_l))
+                    epoch_done.append([list(_bk), _l])
+                    continue
+                _cur = [list(_bk), None]
+                epoch_done.append(_cur)
             if epoch - start_epoch < 2 and time.time() - warmup_note[0] > 30.0:
                 warmup_note[0] = time.time()
                 logger.info("[warm-up] Warm-up phase — the first two epochs start slowly while the GPU plans kernels"
@@ -2658,6 +2759,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 _update()
             global_step += 1
             recorder.add(epoch=epoch, step=i, loss=loss.item())
+            if _cur is not None:
+                _cur[1] = round(float(loss.item()), 6)
             steplog.add(step_off + global_step, epoch + 1 + (ftr.epochs_done if ftr is not None else 0), loss.item(),
                         None if global_step % 20 else      # the rate now and then (Automagic's averages it)
                         learning_rate if optimizer is None else optimizer_lr(optimizer))
@@ -2665,6 +2768,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 if take_request(output_dir, "save"):
                     save_lora(os.path.join(output_dir, f"{output_name}-step{global_step:07d}.safetensors"), epoch + 1)
                     logger.info(f"[save now] step {global_step} saved as {output_name}-step{global_step:07d}.safetensors")
+                if take_request(output_dir, "savestop"):
+                    _save_and_stop(epoch, _only)
                 if take_request(output_dir, "sample"):
                     logger.info(f"[sample now] previews at step {global_step} (epoch {epoch + 1} in progress)")
                     _tp = time.time()
@@ -2679,6 +2784,12 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
 
         if pending:                        # a partial group: settle the optimizer before the epoch-end work
             _update()
+        if resume_left and epoch == start_epoch:
+            _miss = sum(len(v) for v in resume_left.values())
+            if _miss:
+                logger.warning(f"[resume] {_miss} of the restore point's steps matched none of this epoch's batches "
+                               "(the training images changed?) - the rest of the epoch trained as usual")
+            resume_left.clear()
         _off = ftr.epochs_done if ftr is not None else 0
         logger.info(f"epoch {epoch + 1 + _off}/{max_train_epochs + _off}  avr_loss={recorder.moving_average:.4f}  "
                     f"step={global_step}  {(time.time() - t0) / max(1, steps_per_epoch):.2f}s/step  "

@@ -1671,7 +1671,20 @@ async function pollRun() {
   showProgress(r.progress, r.state, r.lora, r.stage);
   const moveBusy = !!(r.move && ["moving", "back", "moved"].includes(r.move.state));
   $("btnStart").disabled = live || moveBusy || !!S.starting;
-  $("btnPause").disabled = !r.running;
+  // Pause, pressed again while the pause waits for the epoch's end: Save & stop - a restore point after the current
+  // step, then the run stops (a fine-tune stops at whole rotations only: it just waits)
+  const pausing = !!(r.running && r.pause);
+  const ftNow = r.values && r.values.FAMILY_KIND && /fine-tune/i.test(String(r.values.FAMILY_KIND));
+  const pb = $("btnPause");
+  pb.textContent = !pausing ? "Pause" : r.save_stop ? "Saving…" : ftNow ? "Pausing…" : "Save & stop";
+  pb.disabled = !r.running || (pausing && (!!r.save_stop || !!ftNow));
+  pb.title = !pausing ? "Stop cleanly at the end of this epoch, with a saved state that Resume carries on from"
+    : "Don't wait for the epoch's end: save a restore point after the current step, then stop. Resume carries on " +
+      "from it, mid-epoch";
+  if (pausing && r.save_stop) $("runStatus").textContent = "Saving restore point, then stopping…";
+  else if (pausing && r.save_stop_note) {
+    $("runStatus").textContent = `Save & stop: no restore point (${r.save_stop_note}). Pausing at the epoch's end.`;
+  }
   // a model that can't pause (a RefMod is made in one go): no Pause button for its runs
   const runFam = S.schema.families.find((f) => f.key === (r.family || S.family)) || {};
   $("btnPause").style.display = runFam.no_pause ? "none" : "";

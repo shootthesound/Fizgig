@@ -87,7 +87,7 @@ def _phone_pass_take(p) -> bool:
 
 _login_fails: dict = {}    # client address -> (wrong guesses, locked until, last miss)
 _run = {"proc": None, "state": "idle", "stage": "", "lora": "", "output_dir": "", "family": "", "values": {},
-        "image_folder": "", "pause": False}
+        "image_folder": "", "pause": False, "save_stop": False, "save_stop_note": ""}
 _log: list[tuple[int, str]] = []        # (line number, text), the last 5000
 _log_n = [0]
 _log_event = threading.Condition(_lock)
@@ -1491,7 +1491,8 @@ def _continue_point(rec):
         of = int(str(values.get("MAX_TRAIN_EPOCHS") or "0").strip())
     except ValueError:
         of = 0
-    return {"kind": "state", "path": path, "done": int(m.group(1)), "of": of, "key": "MAX_TRAIN_EPOCHS",
+    return {"kind": "state", "path": path, "done": state_epochs_done(path, int(m.group(1))), "of": of,
+            "key": "MAX_TRAIN_EPOCHS",
             "unit": "epoch"}
 
 
@@ -1522,6 +1523,19 @@ def _run_form(rec, values=None):
         mk = {o.key for o in desc.options if o.tab == "model"}   # Base Model card's options beside them
         vals = {**form.apply_preset(desc, {}, vals, whole=True), **{k: v for k, v in vals.items() if k in mk}}
     return {"family": desc.key, "values": vals, "image_folder": rec.get("image_folder") or ""}
+
+
+def state_epochs_done(path, named):
+    """The whole epochs a state folder holds: its name's number, except a Save & stop restore point's (named after
+    the epoch it stopped inside: its training_state.json says the epochs done before it)."""
+    try:
+        with open(os.path.join(path, "training_state.json"), encoding="utf-8") as f:
+            meta = json.load(f)
+        if isinstance(meta.get("mid_epoch"), dict):
+            return int(meta["epoch"])
+    except (OSError, ValueError, TypeError, KeyError):
+        pass
+    return named
 
 
 def _continue_run(run_id, more="", queue_ok=True, values=None):
@@ -1632,7 +1646,8 @@ def _start_one(family_key, values, image_folder, resume, ft_continue, note, mode
         _look_fetch(desc, values, launch.look_path(desc, {"models": {lk.pref_key: pref_path(load_prefs(), lk.pref_key)}}))
     out_dir = inputs["LORA_OUTPUT_DIR"]
     # as the desktop's Start clears them; a resume's pause record is used up once its run launches
-    for stale in (".pause_requested", ".sample_override.json", ".sample_now", ".save_now") + (
+    for stale in (".pause_requested", ".sample_override.json", ".sample_now", ".save_now",
+                  ".savestop_now", ".savestop_failed") + (
             (PAUSED_FILE,) if resume or ft_continue else ()):
         try:
             os.remove(os.path.join(out_dir, stale))
@@ -1656,7 +1671,8 @@ def _start_one(family_key, values, image_folder, resume, ft_continue, note, mode
             pass
     with _lock:
         _run.update(state="starting", stage="", lora=inputs["LORA_NAME"], output_dir=out_dir, family=family_key,
-                    values=dict(values), image_folder=image_folder, pause=False, resume="", resume_mode="")
+                    values=dict(values), image_folder=image_folder, pause=False, save_stop=False, save_stop_note="",
+                    resume="", resume_mode="")
     save_state({"last_run": {"family": family_key, "values": values, "image_folder": image_folder}})
     hid = history.start("web", family_key, inputs["LORA_NAME"], out_dir, image_folder, dict(values),
                         resume=bool(resume or ft_continue), carry=carry)
@@ -1833,7 +1849,8 @@ def _run_stages(stages, out_dir):
         _run.update(state="paused" if paused else "completed", proc=None, stage="", ended_at=time.time())
     history.end(_run.get("history_id"), "paused" if paused else "finished", _run.get("progress"))
     webqueue.on_run_ended("paused" if paused else "finished", _run.get("lora"), _queue_starter)
-    append_log("\n⏸ Paused. Resume continues from the saved state.\n" if paused else "\n✔ Run complete.\n")
+    append_log(("\n⏸ Restore point saved and training stopped. Resume continues from it.\n" if _run.get("save_stop")
+                else "\n⏸ Paused. Resume continues from the saved state.\n") if paused else "\n✔ Run complete.\n")
     from fizgig.web import helpers as _h
     if not paused and not webqueue.status()["items"] and not _h.moved_in_waiting(out_dir):
         from fizgig.web import pod_stop                    # the last run done: a pod can stop billing (a run moved
@@ -1851,6 +1868,46 @@ def _stop_and_wait(timeout=20.0):
                 break
         time.sleep(0.25)
     return True
+
+
+def _save_stop(out, stage, fam, vals, saving):
+    """Pause's second press (its button reads Save & stop then): the trainer saves a full restore point after the
+    current step (`.savestop_now`, as Save now's request) and exits; the run ends paused, so Resume carries on from
+    there. A restore point that can't be saved leaves `.savestop_failed` (why): the run trains on and still pauses at
+    the epoch's end."""
+    if saving:
+        return {"ok": True}
+    if stage != "Training":
+        return {"error": "Save & stop works once training has started. The run still pauses at the end of its first "
+                         "epoch."}
+    desc = get_family(fam)
+    if desc is not None and vals and form._kind(desc, vals) == "finetune":
+        return {"error": "A fine-tune can only stop at a whole rotation, which the first Pause already does."}
+    try:
+        os.remove(os.path.join(out, ".savestop_failed"))
+    except OSError:
+        pass
+    open(os.path.join(out, ".savestop_now"), "w").close()
+    with _lock:
+        _run.update(save_stop=True, save_stop_note="")
+    append_log("\n⏹ Saving restore point, then stopping… (after the current training step)\n")
+    return {"ok": True}
+
+
+def _save_stop_check(r):
+    """/api/run: a Save & stop the trainer couldn't save is over - its reason for the run line, the button back."""
+    if not r.get("save_stop") or not r.get("output_dir"):
+        return
+    p = os.path.join(r["output_dir"], ".savestop_failed")
+    try:
+        with open(p, encoding="utf-8") as f:
+            why = f.read().strip()
+        os.remove(p)
+    except OSError:
+        return
+    with _lock:
+        _run.update(save_stop=False, save_stop_note=why or "the restore point couldn't be saved")
+    r.update(save_stop=False, save_stop_note=_run["save_stop_note"])
 
 
 def _stop():
@@ -3341,6 +3398,8 @@ class Handler(BaseHTTPRequestHandler):
                 r = {k: v for k, v in _run.items() if k != "proc"}
                 r["running"] = _run["proc"] is not None and _run["proc"].poll() is None
             r["resume"] = r.get("resume") if r["state"] == "paused" else ""
+            if r["running"]:
+                _save_stop_check(r)
             from fizgig.web import helpers
             r["move"] = helpers.move_status()
             r["web_queue"] = webqueue.status()
@@ -4122,11 +4181,20 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": "Nothing is running."}, 400)
                 if _run.get("family") == refmod.KEY:
                     return self.json({"error": "A RefMod can't pause: it is made in one go. Stop ends it."}, 400)
+                with _lock:
+                    again, stage = _run["pause"], _run["stage"]
+                    fam, vals, saving = _run["family"], dict(_run["values"]), _run["save_stop"]
+                if again:                   # pressed again: Save & stop - a restore point now, then the run stops
+                    return self.json(_save_stop(out, stage, fam, vals, saving))
                 with open(os.path.join(out, ".pause_requested"), "w", encoding="utf-8") as f:
                     f.write("pause\n")
                 with _lock:
                     _run["pause"] = True
-                append_log("\n⏸ Pause requested: the run stops cleanly at the end of this epoch.\n")
+                _d = get_family(fam)
+                _ft = _d is not None and vals and form._kind(_d, vals) == "finetune"
+                append_log("\n⏸ Pause requested: the run stops cleanly at the end of this epoch."
+                           + ("" if _ft else " Press Save & stop to stop sooner, after the current step, with a "
+                                             "restore point.") + "\n")
                 return self.json({"ok": True})
             if path == "/api/fetch":
                 _start_fetch(b.get("family", ""), b.get("token", ""), bool(b.get("optional")),

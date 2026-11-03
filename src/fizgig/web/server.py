@@ -621,6 +621,19 @@ def _gpu_training():
         return _run["proc"] is not None and _run["proc"].poll() is None
 
 
+BESIDE_TRAINING_GB = 48     # free GPU memory Studio needs to load beside a training run (a 192 GB card, unified memory)
+
+
+def _studio_waits_for_training():
+    """A training run is using the GPU and the card hasn't room for Studio too. Cards up to 32 GB always wait; a card
+    with BESIDE_TRAINING_GB free right now (an MI300X, a big unified-memory machine) renders while it trains."""
+    if not _gpu_training():
+        return False
+    with _lock:
+        used, total = (_stats.get("vram") or [0, 0])[:2]
+    return not total or (total - used) / 2 ** 30 < BESIDE_TRAINING_GB
+
+
 STUDIO_SETUPS = os.path.join(STUDIO_PRESETS, "setups")      # the desktop's Save / Load Setup folder
 
 
@@ -712,7 +725,7 @@ def _studio_post(what, b):
         os.replace(tmp, p)
         return {"ok": True, "name": os.path.basename(p)[:-5]}
     if what == "load":
-        if _gpu_training():
+        if _studio_waits_for_training():
             raise ValueError("A training run is using the GPU. Repair Studio can load when it finishes.")
         from fizgig.web import tools
         if tools.holding_gpu():

@@ -24,8 +24,11 @@ if ! venv/bin/python -c "import huggingface_hub, torch" 2>/dev/null; then
     printf 'y\n' | FIZGIG_PYTHON=/usr/bin/python3 bash install_fizgig_rocm.sh 2>&1 | tail -60
 fi
 log "chip detected: $(python3 src/install/detect_gpu_linux.py 2>/dev/null)"
-if ! venv/bin/python -c "import torch; x = torch.ones(1024, device='cuda'); print('[amd] torch', torch.__version__, torch.cuda.get_device_name(0), 'kernel test', (x * 2).sum().item())"; then
-    log "FAILED: PyTorch can't run a kernel on this GPU"; sleep infinity
+KTEST="import torch; x = torch.ones(1024, device='cuda'); print('[amd] torch', torch.__version__, torch.cuda.get_device_name(0), 'kernel test', (x * 2).sum().item())"
+if ! venv/bin/python -c "$KTEST"; then
+    log "the nightly wheels can't run here: Fizgig's installer again on its stable channel"
+    printf 'y\n' | ROCM_CHANNEL=stable FIZGIG_PYTHON=/usr/bin/python3 bash install_fizgig_rocm.sh 2>&1 | tail -40
+    venv/bin/python -c "$KTEST" || { log "FAILED: PyTorch can't run a kernel on this GPU"; sleep infinity; }
 fi
 
 log "Fizgig's models"

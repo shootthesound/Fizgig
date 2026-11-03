@@ -87,7 +87,7 @@ def _gfx_from_rocminfo() -> list[str]:
             continue
         m = re.match(r"\s*([^:]+):\s*(.+)", line)
         if m:
-            current[m.group(1).strip().lower()] = m.group(2).strip()
+            current.setdefault(m.group(1).strip().lower(), m.group(2).strip())   # the agent's own name, not its ISAs' (gfx9-4-generic)
     if current:
         agents.append(current)
 

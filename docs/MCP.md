@@ -35,6 +35,7 @@ with Fizgig running. Claude Desktop's `claude_desktop_config.json`, for example:
 | `start_training`, `training_status`, `wait_for_training`, `pause_training`, `stop_training` | Training runs. Start shows the Start checks' warnings first |
 | `list_runs`, `list_loras`, `list_previews` | Results |
 | `render` | Pictures with a LoRA, on Studio's preview model: several in one call load the model once |
+| `cloud_train`, `cloud_status`, `cloud_cancel` | Training on a rented RunPod GPU (your RunPod API key on the Pods tab): the best-value card under your hourly price, a pod that doesn't start in time deleted and the next tried, the LoRA files brought home and the pod deleted. Fizgig stops it at the spending cap or time limit you set |
 | `release_gpu` | Takes Fizgig's models off the GPU for another program |
 | `affinity_status`, `affinity_documents`, `affinity_view` | What's open in Affinity, and how it looks |
 | `affinity_to_training_folder` | Exports a document's layers (or the selected ones, or the whole document) into a training folder |

@@ -31,7 +31,10 @@ SYSTEM = (
     "is changed otherwise. With a LoRA of a person, say who they are in every prompt after the trigger word ('gwelt, "
     "a man ...'): a quickly trained LoRA needs it. Look at every picture you make: if one is wrong (not the person, "
     "broken), make it again with a new seed and a clearer prompt before you finish - fix it, don't just report it. To "
-    "redo a picture already in Affinity, place the new one with into_layer and replace.")
+    "redo a picture already in Affinity, place the new one with into_layer and replace. To train in the cloud (the "
+    "user asks for a rented GPU or gives a price), use cloud_train with their price as max_price, then cloud_status "
+    "with wait=true until it's done, and carry on with the LoRA it brought home; if it failed, say why in one line "
+    "and train here with start_training (the same model, preset and settings).")
 
 
 class LLM:

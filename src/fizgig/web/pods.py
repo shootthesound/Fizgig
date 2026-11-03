@@ -442,7 +442,7 @@ def offers(key, dc="", count=1) -> dict:
         name = g.get("name") or ""
         if not _trains({"id": gid, "displayName": name}) or name not in SPEED:
             continue
-        row = {"gpu": name, "vram": int(g.get("memory") or 0), "speed": SPEED.get(name),
+        row = {"gpu": name, "id": gid, "vram": int(g.get("memory") or 0), "speed": SPEED.get(name),
                "url": deploy_url(name, count)}
         for cloud in ("secure", "community"):
             c = clouds[cloud].get(gid) or {}

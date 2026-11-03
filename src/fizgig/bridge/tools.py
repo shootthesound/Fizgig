@@ -96,6 +96,15 @@ def build(ctx) -> Server:
         return out
 
     # -- training folders
+    def training_folder(folder):
+        """A folder's path, or a training folder's name (as list_training_folders shows it) made its path."""
+        if os.path.isdir(folder or ""):
+            return folder
+        named = os.path.join(get("/api/upload/root")["root"], str(folder or "").strip(" /\\"))
+        if folder and os.path.isdir(named):
+            return named
+        raise ToolError(f"{folder} isn't a folder: give its path, or its name from list_training_folders.")
+
     @tool("list_training_folders", "The training folders (datasets) on this computer: path, pictures, how many "
                                    "are captioned.")
     def _datasets():
@@ -121,15 +130,13 @@ def build(ctx) -> Server:
     @tool("add_pictures", "Copy pictures (and their caption .txt files) into an existing training folder.",
           {"folder": S, "pictures": {"type": "array", "items": S}}, ["folder", "pictures"])
     def _add(folder, pictures):
-        if not os.path.isdir(folder):
-            raise ToolError(f"{folder} isn't a folder.")
+        folder = training_folder(folder)
         return {"folder": folder, "copied": _copy_pictures(pictures, folder)}
 
     @tool("set_training_folder", "Pick the training folder the Start tab, Image Prep and Captions work on.",
           {"folder": S}, ["folder"])
     def _set_folder(folder):
-        if not os.path.isdir(folder):
-            raise ToolError(f"{folder} isn't a folder.")
+        folder = training_folder(folder)
         post("/api/state", {"image_folder": folder})
         return {"training_folder": folder}
 
@@ -198,8 +205,7 @@ def build(ctx) -> Server:
           {"model": S, "folder": S, "preset": S, "lora_name": S, "trigger": S, "overrides": {"type": "object"},
            "anyway": B}, ["model", "folder"])
     def _start(model, folder, preset="", lora_name="", trigger="", overrides=None, anyway=False):
-        if not os.path.isdir(folder):
-            raise ToolError(f"{folder} isn't a folder.")
+        folder = training_folder(folder)
         if trigger:
             post("/api/trigger", {"folder": folder, "word": trigger})
         st = get("/api/state")
@@ -242,6 +248,49 @@ def build(ctx) -> Server:
         run = _run_now()
         return run | {"newest_lora": _newest_lora(run.get("output_dir") or "", run.get("lora") or ""),
                       "console": log(6), "finished": not run.get("running")}
+
+    # -- training on a rented pod (RunPod): this computer's GPU stays free
+    @tool("cloud_train", "Train a LoRA on a rented RunPod GPU instead of this computer's: Fizgig rents the cheapest "
+                         "card that can train it at or under max_price dollars an hour, waits for it (a pod that "
+                         "doesn't come up in boot_minutes is deleted and the next offer tried, up to 3), sends the "
+                         "training folder, trains there with the model and preset (as start_training), brings every "
+                         "LoRA file home and deletes the pod. Fizgig itself stops it at max_total dollars or "
+                         "max_minutes. It runs in the background: follow it with cloud_status (wait=true). If it "
+                         "fails, train here with start_training instead.",
+          {"model": S, "folder": S, "preset": S, "lora_name": S, "trigger": S, "overrides": {"type": "object"},
+           "max_price": N, "max_total": N, "boot_minutes": N, "max_minutes": N}, ["model", "folder"])
+    def _cloud(model, folder, preset="", lora_name="", trigger="", overrides=None, max_price=2.0, max_total=4.0,
+               boot_minutes=15, max_minutes=75):
+        from fizgig.bridge import cloud
+        from fizgig.web import helpers, pod_stop
+        s = helpers._srv()
+        folder = training_folder(folder)
+        try:
+            return cloud.start(pod_stop.api_key(s.load_prefs()), folder, model, preset=preset, overrides=overrides,
+                               lora_name=lora_name, trigger=trigger, dest_root=s.default_output_dir(),
+                               max_price=float(max_price), max_total=float(max_total),
+                               boot_minutes=float(boot_minutes), max_minutes=float(max_minutes))
+        except ValueError as e:
+            raise ToolError(str(e))
+
+    @tool("cloud_status", "The cloud training job: what it's doing, the pods it rented, money spent so far, and when "
+                          "done the LoRA files here (newest first). wait=true waits (up to `minutes`) until it's done "
+                          "or failed.", {"wait": B, "minutes": N})
+    def _cloud_status(wait=False, minutes=60):
+        from fizgig.bridge import cloud
+        end = time.time() + max(0.1, float(minutes)) * 60
+        while wait and time.time() < end and cloud.status().get("state") not in ("done", "failed", None):
+            time.sleep(10)
+        st = cloud.status()
+        if not st:
+            return {"state": "none"}
+        st["log"] = st.get("log", [])[-14:]
+        return st
+
+    @tool("cloud_cancel", "Cancel the cloud training job: its pods are deleted (nothing is brought home).")
+    def _cloud_cancel():
+        from fizgig.bridge import cloud
+        return cloud.cancel()
 
     @tool("release_gpu", "Take Fizgig's models off the GPU (Studio's render model and the captioner), so another "
                          "program can use it. A training run is not touched.")

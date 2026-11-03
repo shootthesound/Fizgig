@@ -19,11 +19,14 @@ rocminfo 2>/dev/null | grep -m3 "gfx"
 
 if [ ! -d Fizgig ]; then git clone -q -b "$BRANCH" https://github.com/shootthesound/Fizgig; fi
 cd Fizgig && git pull -q
-if [ ! -x venv/bin/python ]; then
+if ! venv/bin/python -c "import huggingface_hub, torch" 2>/dev/null; then
     log "Fizgig's ROCm installer"
-    FIZGIG_PYTHON=/usr/bin/python3 bash install_fizgig_rocm.sh 2>&1 | tail -60
+    printf 'y\n' | FIZGIG_PYTHON=/usr/bin/python3 bash install_fizgig_rocm.sh 2>&1 | tail -60
 fi
-venv/bin/python -c "import torch; print('[amd] torch', torch.__version__, 'gpu', torch.cuda.is_available() and torch.cuda.get_device_name(0))"
+log "chip detected: $(python3 src/install/detect_gpu_linux.py 2>/dev/null)"
+if ! venv/bin/python -c "import torch; x = torch.ones(1024, device='cuda'); print('[amd] torch', torch.__version__, torch.cuda.get_device_name(0), 'kernel test', (x * 2).sum().item())"; then
+    log "FAILED: PyTorch can't run a kernel on this GPU"; sleep infinity
+fi
 
 log "Fizgig's models"
 venv/bin/python -m fizgig.scripts.fetch_models --family tools --family qwen_image21 2>&1 | grep -v "it/s\]" | tail -25
@@ -68,7 +71,8 @@ export MIOPEN_FIND_MODE=2 FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE FIZGIG_NO_EXPAN
 # shellcheck disable=SC1091
 [ -f user_data/rocm_env.sh ] && source user_data/rocm_env.sh
 nohup venv/bin/python fizgig.py --web --host 0.0.0.0 --port 8081 > "$W/fizgig.log" 2>&1 &
-for i in $(seq 1 90); do curl -fs -o /dev/null http://127.0.0.1:8081/ && break; sleep 2; done
-log "READY"
+ok=""
+for i in $(seq 1 120); do curl -fs -o /dev/null http://127.0.0.1:8081/ && ok=1 && break; sleep 2; done
+if [ -n "$ok" ]; then log "READY"; else log "FAILED: Fizgig didn't start"; tail -40 "$W/fizgig.log"; fi
 tail -F "$W/fizgig.log" "$W/llm.log" 2>/dev/null | grep --line-buffered -i "error\|traceback\|warn" &
 sleep infinity

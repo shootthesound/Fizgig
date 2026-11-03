@@ -9,6 +9,7 @@ are present.
 from __future__ import annotations
 
 import glob
+import os
 import re
 import subprocess
 import sys
@@ -40,7 +41,7 @@ PCI_DEV_TO_GFX: dict[str, str] = {
     "748d": "gfx1100",
     "7499": "gfx1100",
     "74a0": "gfx1101",
-    "74a1": "gfx1101",
+    "74a1": "gfx942",          # AMD Instinct MI300X (its rocm-smi: Card Model 0x74a1, GFX Version gfx942)
     "74a2": "gfx1102",
     "74a3": "gfx1102",
     "73ef": "gfx1032",
@@ -72,7 +73,8 @@ def _run(cmd: list[str], timeout: float = 8) -> Optional[str]:
 
 
 def _gfx_from_rocminfo() -> list[str]:
-    text = _run(["rocminfo"])
+    text = _run(["rocminfo"], timeout=30) or (_run(["/opt/rocm/bin/rocminfo"], timeout=30)
+                                               if os.path.exists("/opt/rocm/bin/rocminfo") else None)
     if not text:
         return []
     agents: list[dict[str, str]] = []
@@ -110,9 +112,10 @@ def _gfx_from_kfd_topology() -> list[str]:
                 text = fh.read()
         except OSError:
             continue
-        m = re.search(r"gfx_target_version\s+\d+\s+(gfx\d+[a-z0-9]*)", text, re.I)
-        if m:
-            hits.append(m.group(1).lower())
+        m = re.search(r"gfx_target_version\s+(\d+)", text)
+        if m and int(m.group(1)):        # e.g. 90402 -> gfx942, 110001 -> gfx1101, 90010 -> gfx90a (CPU nodes are 0)
+            v = int(m.group(1))
+            hits.append(f"gfx{v // 10000}{v // 100 % 100}{v % 100:x}")
     return hits
 
 
@@ -160,10 +163,12 @@ def _pick_gfx(candidates: Iterable[str]) -> Optional[str]:
 
 
 def detect_gfx() -> Optional[str]:
-    candidates: list[str] = []
-    candidates.extend(_gfx_from_rocminfo())
-    candidates.extend(_gfx_from_kfd_topology())
-    candidates.extend(_gfx_from_drm_pci())
+    forced = os.environ.get("FIZGIG_GFX", "").strip().lower()
+    if forced:
+        log(f"gfx from FIZGIG_GFX: {forced}")
+        return forced
+    # what the driver reports first; the PCI table only when neither answers (it can only guess from an id)
+    candidates: list[str] = _gfx_from_rocminfo() or _gfx_from_kfd_topology() or _gfx_from_drm_pci()
     if not candidates:
         log("No AMD gfx target found (rocminfo, kfd topology, drm PCI).")
         return None

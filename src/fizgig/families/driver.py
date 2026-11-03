@@ -89,6 +89,10 @@ class FamilyDriver:
         """How many blocks may stream between CPU and GPU; 0 = the family has no block swap."""
         return 0
 
+    # the driver's enable_block_swap takes send_only=True: the frozen base streams host -> device only (no copy back
+    # - fizgig.krea2.offloading.LoRAStreamOffloader), at the classic swap's VRAM (quant.load_base passes it)
+    send_only_block_swap = False
+
     def enable_block_swap(self, dit, num_blocks: int, device, supports_backward: bool = True) -> None:
         """Stream `num_blocks` blocks: called with the model on CPU; leaves everything else on `device`."""
         raise NotImplementedError

@@ -163,16 +163,28 @@ class MOSSImageDiT(nn.Module):
         self.gradient_checkpointing = on
 
     # ---- block swap (Fizgig's shared offloader, as Qwen Image 2.1's model uses it) ------------------------------
-    def enable_block_swap(self, num_blocks: int, device, supports_backward: bool = True):
+    def enable_block_swap(self, num_blocks: int, device, supports_backward: bool = True, send_only=None):
+        """send_only: stream the frozen base host -> device only (fizgig.krea2.offloading.LoRAStreamOffloader: no
+        copy back, the CPU copy never changes) instead of the classic exchange. None keeps the mode the model was
+        last given - the preview park and unpark re-enter here bare and must come back in the run's mode."""
         from fizgig.modules.offloading import ModelOffloader
         if self.offloader is not None:
             self.offloader.remove_hooks()       # stale backward hooks double-swap blocks ("mat2 is on cpu")
         n = len(self.layers)
         if not 0 < num_blocks <= n - 2:
             raise ValueError(f"block swap: 1..{n - 2} blocks, got {num_blocks}")
+        if send_only is None:
+            send_only = getattr(self, "_send_only", False)
+        self._send_only = bool(send_only)
         self.blocks_to_swap = num_blocks
-        self.offloader = ModelOffloader("moss_image", list(self.layers), n, num_blocks, supports_backward,
-                                        torch.device(device))
+        self.offloader = None
+        if self._send_only:
+            from fizgig.krea2.offloading import BlockSwapConfig, create_offloader
+            self.offloader = create_offloader("moss_image", list(self.layers), n, num_blocks, BlockSwapConfig(
+                torch.device(device), supports_backward=supports_backward, h2d_only=True))
+        if self.offloader is None or not hasattr(self.offloader, "copier"):     # classic, or send-only fell back
+            self.offloader = ModelOffloader("moss_image", list(self.layers), n, num_blocks, supports_backward,
+                                            torch.device(device))
 
     def move_to_device_except_swap_blocks(self, device):
         """Everything to `device` except the swapped blocks' weights (the model is assumed to be on CPU)."""

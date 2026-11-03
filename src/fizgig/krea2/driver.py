@@ -91,9 +91,12 @@ class Krea2Driver(FamilyDriver):
     def max_blocks_to_swap(self, dit=None):
         return (len(dit.blocks) if dit is not None else self.description.n_blocks) - 2
 
-    def enable_block_swap(self, dit, num_blocks, device, supports_backward=True):
+    send_only_block_swap = True
+
+    def enable_block_swap(self, dit, num_blocks, device, supports_backward=True, send_only=False):
         from fizgig.krea2.offloading import BlockSwapConfig
-        dit.enable_block_swap(num_blocks, BlockSwapConfig(torch.device(device), supports_backward=supports_backward))
+        dit.enable_block_swap(num_blocks, BlockSwapConfig(torch.device(device), supports_backward=supports_backward,
+                                                          h2d_only=bool(send_only)))
         dit.move_to_device_except_swap_blocks(torch.device(device))
         dit.switch_block_swap_for_training()
 

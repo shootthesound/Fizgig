@@ -5,10 +5,13 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
 import gc
+import logging
 import time
 from typing import Optional
 import torch
 import torch.nn as nn
+
+logger = logging.getLogger(__name__)
 
 
 # Keep these functions here for portability, and private to avoid confusion with the ones in device_utils.py
@@ -86,6 +89,9 @@ class BlockSwapConfig:
     h2d_only: bool = False  # frozen-base (LoRA / LoHa / LoKr) only: H2D-only streaming, no device->host copy
     ring_size: int = 2  # (h2d_only) number of GPU ring buffers for streamed blocks; 2 = double buffering
     debug: bool = False
+    # (h2d_only, Fizgig) stream `blocks_to_swap + ring_size` blocks, so the GPU holds the same number of block
+    # weights as the classic swap of `blocks_to_swap` does (N - S resident there; N - S' resident + the ring here)
+    match_classic_vram: bool = True
 
     @classmethod
     def from_args(cls, args, device: torch.device, supports_backward: bool) -> "BlockSwapConfig":
@@ -120,25 +126,61 @@ class BlockSwapConfig:
         )
 
 
+def send_only_unfit(blocks: list[nn.Module], num_blocks: int, blocks_to_swap: int) -> Optional[str]:
+    """Why the send-only (H2D-only) offloader cannot stream these blocks, or None when it can (Fizgig).
+
+    Send-only never copies a block back, so it is only correct when nothing on the GPU side can differ from the CPU
+    master: every streamed weight frozen, a plain tensor (not NF4's empty placeholder or a tensor subclass), and the
+    streamed blocks alike (they share one GPU ring layout). The LoRA / LoKr adapters are not streamed at all - their
+    classes do not end in "Linear" (families/lora.py LoRAFactor), so they stay resident wherever they were put."""
+    if blocks_to_swap <= 0:
+        return "no blocks to swap"
+    idx = sorted({((2 * i + 1) * num_blocks) // (2 * blocks_to_swap) for i in range(blocks_to_swap)})
+    template = None
+    for b in idx:
+        ws = [m.weight for m in blocks[b].modules()
+              if hasattr(m, "weight") and m.weight is not None and m.__class__.__name__.endswith("Linear")]
+        if not ws:
+            return f"block {b} has no Linear weights to stream"
+        for w in ws:
+            if w.requires_grad:
+                return f"block {b} has a trainable Linear weight (a fine-tune trains the base)"
+            if type(w.data) is not torch.Tensor or w.numel() == 0 or w.is_meta:
+                return f"block {b} keeps a weight send-only cannot stream ({type(w.data).__name__}, {w.numel()} values)"
+        sig = [(tuple(w.shape), w.dtype) for w in ws]
+        if template is None:
+            template = sig
+        elif sig != template:
+            return f"block {b}'s weights differ in shape or dtype from block {idx[0]}'s"
+    return None
+
+
 def create_offloader(block_type: str, blocks: list[nn.Module], num_blocks: int, blocks_to_swap: int, config: BlockSwapConfig):
     """
     Create the block-swap offloader for one block list. This is the single place that selects the offloader
     implementation from ``config``; ``enable_block_swap`` only supplies the per-block-list arguments, so a new
     offloader type plugs in here without touching any architecture.
+
+    Fizgig: a send-only request the blocks cannot honour (send_only_unfit) falls back to the classic swap with a log
+    line instead of failing the run.
     """
     if config.h2d_only:
-        # H2D-only streaming for frozen-base (LoRA) training: keep a CPU master, copy Host->Device only.
-        return LoRAStreamOffloader(
-            block_type,
-            blocks,
-            num_blocks,
-            blocks_to_swap,
-            config.supports_backward,
-            config.device,
-            ring_size=config.ring_size,
-            use_pinned_memory=config.use_pinned_memory,
-            debug=config.debug,
-        )
+        n = min(num_blocks, blocks_to_swap + config.ring_size) if config.match_classic_vram else blocks_to_swap
+        why = send_only_unfit(blocks, num_blocks, n)
+        if why is None:
+            # H2D-only streaming for frozen-base (LoRA) training: keep a CPU master, copy Host->Device only.
+            return LoRAStreamOffloader(
+                block_type,
+                blocks,
+                num_blocks,
+                n,
+                config.supports_backward,
+                config.device,
+                ring_size=config.ring_size,
+                use_pinned_memory=config.use_pinned_memory,
+                debug=config.debug,
+            )
+        logger.info(f"[block swap] send-only off for {block_type}: {why} - classic swap (copies each block back)")
     return ModelOffloader(
         block_type,
         blocks,
@@ -182,6 +224,8 @@ class Offloader:
 
         self.thread_pool = ThreadPoolExecutor(max_workers=1)
         self.futures = {}
+        # Fizgig: per-run transfer tally (weights only), read by the checks and the end-of-run log
+        self.transfers = {"h2d_copies": 0, "h2d_bytes": 0, "d2h_copies": 0, "d2h_bytes": 0}
         self.cuda_available = device.type == "cuda"
         self.stream = torch.cuda.Stream(device=device) if self.cuda_available else None
 
@@ -375,7 +419,15 @@ class Offloader:
 
         return sync_event
 
+    def _tally(self, block_to_cpu: nn.Module, block_to_cuda: nn.Module):
+        for key, block in (("d2h", block_to_cpu), ("h2d", block_to_cuda)):
+            for m in block.modules():
+                if hasattr(m, "weight") and m.weight is not None and m.__class__.__name__.endswith("Linear"):
+                    self.transfers[key + "_copies"] += 1
+                    self.transfers[key + "_bytes"] += m.weight.numel() * m.weight.element_size()
+
     def swap_weight_devices(self, block_to_cpu: nn.Module, block_to_cuda: nn.Module):
+        self._tally(block_to_cpu, block_to_cuda)
         if self.cuda_available:
             sync_event = self.swap_weight_devices_cuda(self.device, block_to_cpu, block_to_cuda)
         else:
@@ -391,8 +443,9 @@ class Offloader:
                     f"[{self.block_type}] Move block {bidx_to_cpu} to CPU and block {bidx_to_cuda} to {'CUDA' if self.cuda_available else 'device'}"
                 )
 
-            dev = self.device.index if self.device.index is not None else torch.cuda.current_device()
-            torch.cuda.set_device(dev)
+            if self.cuda_available:
+                dev = self.device.index if self.device.index is not None else torch.cuda.current_device()
+                torch.cuda.set_device(dev)
 
             sync_event = self.swap_weight_devices(block_to_cpu, block_to_cuda)
 
@@ -728,6 +781,29 @@ class _StagedCopier:
             pool.shutdown(wait=False)
 
 
+class _SyncCopier:
+    """Transfer engine for a non-CUDA device (Fizgig: the CPU checks drive the real residency logic through it): a
+    plain synchronous copy, so there is never anything in flight to wait for. Same interface as the CUDA copiers."""
+
+    def __init__(self, device: torch.device, debug: bool = False):
+        self.device = device
+
+    def submit(self, key, dst_flat: torch.Tensor, src_flat: torch.Tensor, gate_event=None):
+        dst_flat.copy_(src_flat)
+
+    def wait(self, key):
+        return None
+
+    def pop_xfer_timing(self, key):
+        return None
+
+    def sync(self):
+        pass
+
+    def reset(self):
+        pass
+
+
 class LoRAStreamOffloader:
     """
     H2D-only offloader for training where the base weights are frozen (e.g. LoRA / LoHa / LoKr).
@@ -791,7 +867,12 @@ class LoRAStreamOffloader:
         self.debug = debug
         self.debug_interval = int(os.getenv("MUSUBI_TUNER_OFFLOADER_DEBUG_INTERVAL", "10"))  # steps between prints
 
-        assert device.type == "cuda", "LoRAStreamOffloader currently supports CUDA only"
+        self.cuda_available = device.type == "cuda"
+        if not self.cuda_available:
+            self.debug = False  # the debug timing is CUDA events
+        # Fizgig: per-run transfer tally - streamed loads only (the one-time placement at the first prepare is not a
+        # per-step cost); a send-only swap never copies device -> host, so the d2h counters stay 0
+        self.transfers = {"h2d_copies": 0, "h2d_bytes": 0, "d2h_copies": 0, "d2h_bytes": 0}
 
         # ---- streaming placement: S evenly spaced block indices (midpoint formula -> distinct for S <= N) ----
         stream_idx = sorted({((2 * i + 1) * num_blocks) // (2 * blocks_to_swap) for i in range(blocks_to_swap)})
@@ -812,7 +893,9 @@ class LoRAStreamOffloader:
         # ---- transfer engine: owns the copy stream and all H2D primitives ----
         # pinned masters -> direct async H2D; pageable masters -> stage through a worker thread + pinned pool
         # (low "shared GPU memory" footprint, e.g. on Windows). Both expose the same submit/wait interface.
-        if use_pinned_memory:
+        if not self.cuda_available:
+            self.copier = _SyncCopier(device)
+        elif use_pinned_memory:
             self.copier = _DirectCopier(device, debug=self.debug)
         else:
             self.copier = _StagedCopier(device, num_staging=self.B, debug=self.debug)
@@ -904,6 +987,8 @@ class LoRAStreamOffloader:
         # only overwritten after its free_event); without checkpointing autograd raises a version error
         # instead of silently using stale-saved weights -- which the old per-tensor `.data.copy_` hid.
         self.copier.submit(blk, self.ring_flat[slot], self.cpu_flat[blk], self.free_event[slot])
+        self.transfers["h2d_copies"] += 1
+        self.transfers["h2d_bytes"] += self.cpu_flat[blk].numel()
 
         self._bind(blk, self.ring_param[slot])  # reference swap (no .data trick, no cudaMalloc)
         self.in_slot[slot] = blk
@@ -921,8 +1006,16 @@ class LoRAStreamOffloader:
         self.copier.sync()
         self.forward_only = forward_only
 
+    def _record(self):
+        """The compute stream's 'done with this slot' event (None off CUDA: copies there are synchronous)."""
+        return torch.cuda.current_stream().record_event() if self.cuda_available else None
+
     def remove_hooks(self):
-        """Detach backward hooks NOW, not at GC (see ModelOffloader.remove_hooks)."""
+        """Detach backward hooks NOW, not at GC (see ModelOffloader.remove_hooks). Fizgig: also lets any copy still in
+        flight land first, so a replacement offloader never races this one's ring writes."""
+        cop = getattr(self, "copier", None)
+        if cop is not None:
+            cop.sync()
         if getattr(self, "supports_backward", False):
             for handle in getattr(self, "remove_handles", []):
                 handle.remove()
@@ -958,7 +1051,7 @@ class LoRAStreamOffloader:
                 if self._layout is None:
                     self._layout = self._compute_layout(weights)  # first streaming block defines the shared layout
                 flat = torch.empty(self._layout[1], dtype=torch.uint8, device=cpu_device)
-                if self.use_pinned_memory:
+                if self.use_pinned_memory and self.cuda_available:
                     flat = flat.pin_memory(device=self.device)
                 master = []
                 for m, view in zip(mods, self._flat_views(flat, weights)):
@@ -1045,7 +1138,7 @@ class LoRAStreamOffloader:
         if self.S == 0 or not self.is_stream[block_idx]:
             return
         j = self.rank[block_idx]
-        self.free_event[j % self.B] = torch.cuda.current_stream().record_event()
+        self.free_event[j % self.B] = self._record()
         if j + self.B < self.S:
             self._load(j + self.B, (j + self.B) % self.B, "fwd")  # same slot as rank j; evicts rank j
         elif self.forward_only and j == self.S - 1 and self.S > self.B:
@@ -1066,7 +1159,7 @@ class LoRAStreamOffloader:
             if prefetch:
                 # consumed block_index in backward: free its slot and prefetch B streaming-slots behind
                 j = self.rank[block_index]
-                self.free_event[j % self.B] = torch.cuda.current_stream().record_event()
+                self.free_event[j % self.B] = self._record()
                 if j - self.B >= 0:
                     self._load(j - self.B, (j - self.B) % self.B, "bwd")  # same slot as rank j; evicts rank j
             if wait_prev:

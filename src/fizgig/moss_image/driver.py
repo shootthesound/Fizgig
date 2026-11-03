@@ -126,8 +126,10 @@ class MOSSImageDriver(FamilyDriver):
     def max_blocks_to_swap(self, dit=None):
         return (len(dit.layers) if dit is not None else N_BLOCKS) - 2
 
-    def enable_block_swap(self, dit, num_blocks, device, supports_backward=True):
-        dit.enable_block_swap(num_blocks, device, supports_backward)
+    send_only_block_swap = True
+
+    def enable_block_swap(self, dit, num_blocks, device, supports_backward=True, send_only=False):
+        dit.enable_block_swap(num_blocks, device, supports_backward, send_only=bool(send_only))
         dit.move_to_device_except_swap_blocks(device)
 
     def block_swap_mode(self, dit, inference):

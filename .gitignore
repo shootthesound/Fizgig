@@ -122,3 +122,9 @@ uploads/
 .fizgig_web_queue.json*
 .fizgig_app_profile/
 .fizgig_web_studio/
+
+# The demo kit's local files (demos/README.md)
+demos/config.json
+demos/llm/
+demos/logs/
+demos/my photos/

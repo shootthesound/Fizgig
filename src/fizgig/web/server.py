@@ -3814,6 +3814,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._log_stream(int((qs.get("since") or ["0"])[0] or 0))
         if path == "/api/browse":
             return self._browse((qs.get("path") or [""])[0])
+        if path == "/api/native_pick":              # the computer's own Open / folder window (this machine only)
+            from fizgig.web import native_pick
+            if not self._local_viewer():
+                return self.json({"unavailable": True})
+            return self.json(native_pick.pick((qs.get("path") or [""])[0], (qs.get("dir") or ["1"])[0] == "1"))
         if path == "/api/samples":
             return self._samples((qs.get("dir") or [""])[0], (qs.get("run") or [""])[0])
         if path == "/api/style":                    # the gallery's Style score (resumes the scorer when on)

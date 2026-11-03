@@ -9803,8 +9803,18 @@ function playTogether(btn, ids) {
 }
 
 // ---- file picker -------------------------------------------------------------------------------------------
-let pickDone = null, pickDir = false;
+let pickDone = null, pickDir = false, nativePickOff = false;
+// On the machine running Fizgig: the computer's own Open / folder window. Cancel there = nothing; no window to be
+// had (no tkinter, no screen, another computer, an error) = Fizgig's own picker below.
 async function pick(start, dirOnly, done) {
+  if (!nativePickOff && !pageIsElsewhere()) {
+    try {
+      const r = await api(`/api/native_pick?dir=${dirOnly ? 1 : 0}&path=${encodeURIComponent(start || "")}`);
+      if (r && r.path) { done(r.path); return; }
+      if (r && r.cancelled) return;
+      nativePickOff = true;                                         // unavailable: don't ask again this session
+    } catch (e) { /* fall back */ }
+  }
   pickDone = done; pickDir = dirOnly;
   $("pickerTitle").textContent = dirOnly ? "Choose a folder" : "Choose a file";
   $("pickerChoose").style.display = dirOnly ? "" : "none";

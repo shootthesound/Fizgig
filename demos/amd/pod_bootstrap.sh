@@ -90,5 +90,5 @@ nohup venv/bin/python fizgig.py --web --host 0.0.0.0 --port 8081 > "$W/fizgig.lo
 ok=""
 for i in $(seq 1 120); do curl -fs -o /dev/null http://127.0.0.1:8081/ && ok=1 && break; sleep 2; done
 if [ -n "$ok" ]; then log "READY"; else log "FAILED: Fizgig didn't start"; tail -40 "$W/fizgig.log"; fi
-tail -F "$W/fizgig.log" "$W/llm.log" 2>/dev/null | grep --line-buffered -iE "error|traceback|warn|offload|ROCm|using device|load_tensors"\|traceback\|warn" &
+tail -F "$W/fizgig.log" "$W/llm.log" 2>/dev/null | grep --line-buffered -iE "error|traceback|warn|offload|ROCm|using device|load_tensors" &
 sleep infinity

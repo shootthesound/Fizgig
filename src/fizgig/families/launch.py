@@ -1370,7 +1370,15 @@ def multi_concept_problems(desc, inputs):
 
 
 def automagic(inputs):
-    return _s(inputs.get("OPTIMIZER_TYPE")).lower() == "automagic3"
+    return _s(inputs.get("OPTIMIZER_TYPE")).lower() in ("automagic3", "automagic4")
+
+
+def prodigy(inputs):
+    return _s(inputs.get("OPTIMIZER_TYPE")).lower() == "prodigy"
+
+
+def muon(inputs):
+    return _s(inputs.get("OPTIMIZER_TYPE")).lower() == "muon"
 
 
 def _dop_folders(st):
@@ -1633,9 +1641,29 @@ def plan(desc, inputs):
     if folder and not os.path.isabs(folder):
         inputs["image_folder"] = os.path.abspath(folder)     # the subprocesses run from the Fizgig folder
     inputs["LORA_NAME"] = tidy_name(_s(inputs.get("LORA_NAME")))[0]
-    if automagic(inputs):            # it owns the rate: Adaptive LR, per-image LR and the look warm-up are off
+    if automagic(inputs) or prodigy(inputs):   # it owns the rate: Adaptive LR and the look warm-up are off
         inputs["ADAPTIVE_LR"] = False
-        inputs["loss_watch"] = {**(inputs.get("loss_watch") or {}), "per_image_lr": False, "warmup": False}
+        off = {"warmup": False} if prodigy(inputs) else {"per_image_lr": False, "warmup": False}
+        inputs["loss_watch"] = {**(inputs.get("loss_watch") or {}), **off}   # Prodigy: per-image LR is a loss weight
+    from fizgig.training.optimizers import (
+        MUON_DEFAULT_ARGS, PRODIGY_DEFAULT_ARGS, strip_muon_args, strip_prodigy_args,
+    )
+    raw_oargs = _s(inputs.get("OPTIMIZER_ARGS"))
+    if not prodigy(inputs) and raw_oargs:
+        raw_oargs = strip_prodigy_args(raw_oargs)
+    if not muon(inputs) and raw_oargs:
+        raw_oargs = strip_muon_args(raw_oargs)
+    if prodigy(inputs):
+        try:
+            if float(inputs.get("LEARNING_RATE") or 0) < 0.1:
+                inputs["LEARNING_RATE"] = 1.0
+        except (TypeError, ValueError):
+            inputs["LEARNING_RATE"] = 1.0
+        inputs["OPTIMIZER_ARGS"] = raw_oargs or PRODIGY_DEFAULT_ARGS
+    elif muon(inputs):
+        inputs["OPTIMIZER_ARGS"] = raw_oargs or MUON_DEFAULT_ARGS
+    else:
+        inputs["OPTIMIZER_ARGS"] = raw_oargs
     p = LaunchPlan(problems=start_problems(desc, inputs))
     _cp = detail_crops_problem(desc, inputs) if not p.problems else ""
     if _cp:

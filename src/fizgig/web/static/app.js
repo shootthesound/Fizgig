@@ -735,8 +735,79 @@ function blockPicker(r, wrap) {
   return wrap;
 }
 
+const PRODIGY_DEFAULT_ARGS = "decouple=True weight_decay=0.01 d_coef=1.0 use_bias_correction=True safeguard_warmup=True";
+const PRODIGY_ONLY_KEYS = new Set(["decouple", "d_coef", "use_bias_correction", "safeguard_warmup",
+  "d0", "beta3", "growth_rate", "slice_p", "fsdp_in_use"]);
+const MUON_DEFAULT_ARGS = "adjust_lr_fn=match_rms_adamw weight_decay=0.01 momentum=0.95 nesterov=True ns_steps=5";
+const MUON_ONLY_KEYS = new Set(["adjust_lr_fn", "momentum", "nesterov", "ns_steps", "ns_coefficients"]);
+
+function _stripOptKeys(raw, defaultStr, onlyKeys) {
+  const s = String(raw || "").trim();
+  if (!s || s === defaultStr) return "";
+  const kept = [];
+  let hadSpecial = false;
+  for (const tok of s.split(/\s+/)) {
+    const key = tok.split("=", 1)[0].trim();
+    if (onlyKeys.has(key)) hadSpecial = true;
+    else kept.push(tok);
+  }
+  if (hadSpecial && kept.every((k) => k.split("=", 1)[0].trim() === "weight_decay")) return "";
+  return kept.join(" ");
+}
+
+function stripProdigyArgs(raw) { return _stripOptKeys(raw, PRODIGY_DEFAULT_ARGS, PRODIGY_ONLY_KEYS); }
+function stripMuonArgs(raw) { return _stripOptKeys(raw, MUON_DEFAULT_ARGS, MUON_ONLY_KEYS); }
+
+function familyDefaultLr() {
+  for (const p of (S.fam && S.fam.form && S.fam.form.presets) || []) {
+    const v = p.values || {};
+    const opt = String(v.OPTIMIZER_TYPE || "").toLowerCase();
+    if (opt !== "automagic3" && opt !== "automagic4" && opt !== "prodigy" && !v.FAMILY_SLIDER && !v.FAMILY_FT && v.LEARNING_RATE) {
+      const n = Number(v.LEARNING_RATE);
+      if (isFinite(n) && n > 0) return n.toExponential().replace("e-0", "e-").replace("e+0", "e+");
+    }
+  }
+  return "1e-4";
+}
+
 function onValue(r, val) {
+  const prev = S.values[r.key];
   S.values[r.key] = val;
+  if (r.key === "OPTIMIZER_TYPE") {
+    const opt = String(val || "").trim().toLowerCase();
+    const prevOpt = String(prev || "").trim().toLowerCase();
+    const wasProdigy = prevOpt === "prodigy", wasMuon = prevOpt === "muon";
+    let curArgs = String(S.values.OPTIMIZER_ARGS || "").trim();
+    if (opt !== "prodigy") curArgs = stripProdigyArgs(curArgs);
+    if (opt !== "muon") curArgs = stripMuonArgs(curArgs);
+    if (opt === "prodigy") {
+      S.values.LEARNING_RATE = "1.0";
+      S.values.ADAPTIVE_LR = false;
+      S.values.KREA2_WARMUP_LOOK = false;               // per-image LR stays as it was: a loss weight with Prodigy
+      S.values.OPTIMIZER_ARGS = curArgs || PRODIGY_DEFAULT_ARGS;
+      syncInputs(["LEARNING_RATE", "ADAPTIVE_LR", "KREA2_WARMUP_LOOK", "OPTIMIZER_ARGS"]);
+    } else if (opt === "muon") {
+      const touched = ["OPTIMIZER_ARGS"];
+      if (wasProdigy || parseFloat(S.values.LEARNING_RATE) >= 0.1) {
+        S.values.LEARNING_RATE = familyDefaultLr();
+        touched.push("LEARNING_RATE");
+      }
+      S.values.OPTIMIZER_ARGS = curArgs || MUON_DEFAULT_ARGS;
+      syncInputs(touched);
+    } else {
+      const touched = [];
+      if (wasProdigy || parseFloat(S.values.LEARNING_RATE) >= 0.1) {
+        S.values.LEARNING_RATE = (opt === "automagic3" || opt === "automagic4") ? "1e-6" : familyDefaultLr();
+        touched.push("LEARNING_RATE");
+      }
+      const nextArgs = (wasProdigy || wasMuon) ? "" : curArgs;
+      if (wasProdigy || wasMuon || nextArgs !== String(S.values.OPTIMIZER_ARGS || "").trim()) {
+        S.values.OPTIMIZER_ARGS = nextArgs;
+        touched.push("OPTIMIZER_ARGS");
+      }
+      if (touched.length) syncInputs(touched);
+    }
+  }
   if (r.key === "__SAMPLE_LIVE" || (S.values.__SAMPLE_LIVE &&
       ["SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS", "SAMPLE_CFG_SCALE",
        "FAMILY_TURBO_STRENGTH", "SAMPLE_EVERY_N_EPOCHS", "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH",

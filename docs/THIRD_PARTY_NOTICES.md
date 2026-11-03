@@ -63,6 +63,10 @@ byte-for-byte as upstream's `toolkit/optimizers/automagic3.py`, under a Fizgig
 header describing how it is constructed. Offered as an optimizer choice on the
 MiniMax H3 and Krea 2 LoRA paths.
 
+The Automagic v4 optimizer (`src/fizgig/training/automagic4.py`) is upstream's
+`toolkit/optimizers/automagic4.py` (commit 534d462f), unchanged except that its
+base-class import points at Fizgig's vendored Automagic v3.
+
 ```
 MIT License
 
@@ -297,6 +301,36 @@ the tokenizer of OpenAI's CLIP ViT-L/14 (`openai/clip-vit-large-patch14`), as
 ComfyUI ships it. Copyright (c) 2021 OpenAI, MIT License.
 
 ---
+
+## Prodigy (`prodigyopt`, Konstantin Mishchenko) — MIT License
+
+Upstream: https://github.com/konstmish/prodigy
+
+`src/fizgig/training/prodigy.py` is vendored from `prodigyopt` 1.1.2 (`prodigyopt/prodigy.py`) under the MIT License:
+
+```
+MIT License
+
+Copyright (c) 2023 Konstantin Mishchenko and Prodigy contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
 
 ## Note on model weights
 

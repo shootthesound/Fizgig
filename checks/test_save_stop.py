@@ -206,7 +206,7 @@ def test_second_press_saves_a_restore_point_then_resume_finishes_the_epoch(tiny,
     assert [r["s"] for r in log] == list(range(1, 3 * SPE + 1))   # 12 steps, as the run without a stop
     assert [r["e"] for r in log] == [1] * 4 + [2] * 4 + [3] * 4
     # the LR schedule carries on where it stood: the same rates as the run that never stopped
-    assert [r["lr"] for r in log] == [r["lr"] for r in _losses(full)]
+    assert [r.get("lr") for r in log] == [r.get("lr") for r in _losses(full)]
     meta = json.loads((sd / "training_state.json").read_text())   # epoch 2's end rewrote the folder: a whole epoch
     assert meta["epoch"] == 2 and "mid_epoch" not in meta
     assert (out / "t.safetensors").exists()

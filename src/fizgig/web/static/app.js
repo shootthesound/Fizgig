@@ -3809,9 +3809,68 @@ function lossChart(curve) {
 // ---- the loss graph: a run's loss at every step (the trainer's .fizgig_loss_<name>.jsonl), with smoothing, a log
 // scale and outliers clipped - its settings kept in this browser
 const LG_KEY = "fizgig_lossgraph";
-const lgSet = () => { try { return {smooth: 0.9, log: false, clip: true, lr: true, ...JSON.parse(localStorage.getItem(LG_KEY) || "{}")}; } catch (e) { return {smooth: 0.9, log: false, clip: true, lr: true}; } };
+const LG_DEF = {smooth: 0.9, log: false, clip: true, lr: true, emean: false, ravg: false, val: false};
+const lgSet = () => { try { return {...LG_DEF, ...JSON.parse(localStorage.getItem(LG_KEY) || "{}")}; } catch (e) { return {...LG_DEF}; } };
 const lgSave = (s) => { try { localStorage.setItem(LG_KEY, JSON.stringify(s)); } catch (e) { /* private window */ } };
 
+// the loss graph's LR scale: 0 at the bottom, the run's start/peak rate at the top (the largest rate logged - a
+// cosine or constant run's first, after any warmup). A rate that grows past its start (Prodigy) gets 10% headroom.
+function lrAxis(lv) {
+  const v = lv.map(Number).filter((x) => isFinite(x) && x >= 0);
+  const peak = v.length ? Math.max(...v) : 0, first = v.length ? v[0] : 0;
+  const climbs = first > 0 && peak > first * 1.05 && v[v.length - 1] > first * 1.05;
+  const top = peak > 0 ? peak * (climbs ? 1.1 : 1) : 1;
+  const pct = (x) => { const p = 100 * x / peak; return p >= 99.95 && p < 100 ? "99.9" : p.toFixed(p >= 10 ? 1 : 2); };
+  return {top, peak, climbs, pct};
+}
+// the loss graph's right-hand scale, top label: the learning rate now, as 6.55e-5
+function lrNowLabel(x) {
+  return Number(x).toExponential(2);
+}
+
+// the loss graph's left scale in the Epoch average / Running avg views: fitted to the averages and validation points
+// drawn (in the scale's own units, log10 on a log scale), 10% padding each side; a near-constant series is shown
+// at least 5% of its value tall (0.02 decades on a log scale) so its last-digit noise doesn't fill the plot.
+// minFrac: that floor's fraction instead - validation on its own scale uses 1%: it's the same images, noise and seed
+// each check, so a small move is a real one
+function trendRange(vals, log, minFrac = 0.05) {
+  const v = vals.map(Number).filter((x) => isFinite(x) && (!log || x > 0)).map((x) => (log ? Math.log10(x) : x));
+  if (!v.length) return null;
+  let lo = Math.min(...v), hi = Math.max(...v);
+  const mid = (lo + hi) / 2, minSpan = log ? 0.4 * minFrac : Math.max(Math.abs(mid) * minFrac, 1e-6);
+  if (hi - lo < minSpan) { lo = mid - minSpan / 2; hi = mid + minSpan / 2; }
+  const pad = (hi - lo) * 0.1;
+  return [lo - pad, hi + pad];
+}
+
+// the running avg points the trend views' scale fits: from the end of the first epoch on (before that it's the mean of
+// the few steps so far - it starts wherever the first step landed and would stretch the scale), all of them when the
+// run hasn't finished an epoch yet. data.epochs: [[epoch, its first step], ...]
+function raFit(ra, epochs) {
+  const e2 = (epochs || []).length > 1 ? epochs[1][1] : null;
+  const after = e2 == null ? ra : ra.filter((p) => p[0] >= e2);
+  return after.length ? after : ra;
+}
+
+// does validation get its own scale? In the Epoch average / Running avg views (trends), with validation shown and at
+// least 2 checks: it then fills the plot height on its own, beside the averages, instead of sharing their scale (a
+// validation loss sits apart from the training loss, so on one scale both look flat with a gap between them)
+function valScale(trends, valOn, nVal) {
+  return !!(trends && valOn && nVal >= 2);
+}
+
+// the validation checks as the line's sections ([[step, epoch, loss, per-t, seg?], ...] -> one array a section)
+function valSections(val) {
+  const parts = [];
+  for (const p of val) {
+    const seg = p[4] || 0;
+    if (!parts.length || (parts[parts.length - 1][0][4] || 0) !== seg) parts.push([]);
+    parts[parts.length - 1].push(p);
+  }
+  return parts;
+}
+
+let lgClipN = 0;
 function lossGraph(data) {
   const box = el("div", {class: "loss-graph"});
   const pts = (data && data.points || []).filter((p) => isFinite(p[2]));
@@ -3828,26 +3887,54 @@ function lossGraph(data) {
   const clip = el("input", {type: "checkbox"}); clip.checked = set.clip;
   const lrOn = el("input", {type: "checkbox"}); lrOn.checked = set.lr;
   const hasLr = pts.some((p) => p[3] != null);
+  // the trend views (each its own switch, kept with the others): worked out by the server from every step
+  const tog = (k) => { const i = el("input", {type: "checkbox"}); i.checked = !!set[k]; return i; };
+  const emOn = tog("emean"), raOn = tog("ravg"), valOn = tog("val");
+  const em = (data.epoch_mean || []).filter((p) => isFinite(p[2]));
+  const ra = (data.running_avg || []).filter((p) => isFinite(p[1]));
+  const val = (data.val || []).filter((p) => isFinite(p[2]));
+  const hasVal = val.length > 0;
   const redraw = () => {
-    Object.assign(set, {smooth: Number(smooth.value), log: log.checked, clip: clip.checked, lr: lrOn.checked});
+    Object.assign(set, {smooth: Number(smooth.value), log: log.checked, clip: clip.checked, lr: lrOn.checked,
+      emean: emOn.checked, ravg: raOn.checked, val: valOn.checked});
     lgSave(set);
+    legendFill();
     draw();
   };
-  for (const i of [smooth, log, clip, lrOn]) i.addEventListener("input", redraw);
+  for (const i of [smooth, log, clip, lrOn, emOn, raOn, valOn]) i.addEventListener("input", redraw);
   // what each line and mark is
   const key = (cls, text) => el("span", {class: "lg-key"}, el("i", {class: "lg-sw " + cls}), text);
-  const legend = el("div", {class: "lg-legend"},
+  const legend = el("div", {class: "lg-legend"});
+  const legendFill = () => legend.replaceChildren(...[
     key("lg-sw-raw", "loss at each step"), key("lg-sw-smooth", "smoothed loss"),
-    hasLr ? key("lg-sw-lr", "learning rate (right-hand scale)") : null,
-    key("lg-sw-best", "lowest smoothed loss"), key("lg-sw-epoch", "start of an epoch (e1, e2…)"));
+    hasLr && set.lr ? key("lg-sw-lr", "learning rate (right-hand scale)") : null,
+    set.emean && em.length ? key("lg-sw-emean", "average loss of each epoch") : null,
+    set.ravg && ra.length ? key("lg-sw-ravg", "running avg (kohya-style: drifts down by itself)") : null,
+    set.val && hasVal ? key("lg-sw-val", "fixed validation loss (same images, noise and seed)" +
+      (valScale((set.emean && em.length) || (set.ravg && ra.length), set.val, val.length) ?
+        " - its own scale, the teal numbers" : "")) : null,
+    key("lg-sw-best", "lowest smoothed loss"), key("lg-sw-epoch", "start of an epoch (e1, e2…)")].filter(Boolean));
+  legendFill();
+  const tip = (node, text) => { node.title = text; return node; };
   box.append(el("div", {class: "field-row loss-graph-ctl"},
     el("span", {class: "field-label", text: "Smoothing:"}), smooth, ctl("Log scale", log), ctl("Clip outliers", clip),
-    hasLr ? ctl("Learning rate", lrOn) : null), svgHost, legend, read);
+    hasLr ? ctl("Learning rate", lrOn) : null),
+  el("div", {class: "field-row loss-graph-ctl"}, el("span", {class: "field-label", text: "Trends:"}),
+    tip(ctl("Epoch average", emOn), "One point an epoch: the mean loss of all its steps."),
+    tip(ctl("Running avg (kohya-style)", raOn), "What kohya-based trainers (and Anima Standalone) show as avr_loss: " +
+      "a mean from the start, then a window of one epoch. It drifts down even when nothing improves, so it's mostly for show."),
+    hasVal ? tip(ctl("Validation loss", valOn), "The fixed validation check (Samples > Image Validation): the same " +
+      "images at the same noise levels and noise each time. Down = learning; turning up = overcooking.") : null),
+  svgHost, legend, read);
 
   function draw() {
     // drawn at the width it has, so the text stays its own size on a phone
     const W = Math.max(300, Math.round(svgHost.clientWidth || 800)), H = W < 600 ? 220 : 240;
-    const L = 54, R = hasLr && set.lr ? 54 : 12, T = 10, B = 26;
+    // Epoch average / Running avg on with 2+ validation checks shown: validation gets its own scale (valScale), its
+    // numbers in teal in a second column beside the loss numbers, so both trends fill the plot height
+    const trends = (set.emean && em.length) || (set.ravg && ra.length);
+    const ownVal = valScale(trends, set.val, val.length);
+    const L = ownVal ? 110 : 54, R = hasLr && set.lr ? 64 : 12, T = 10, B = 26;   // room for the live rate beside "LR"
     const xs = pts.map((p) => p[0]);
     const x0 = xs[0], x1 = xs[xs.length - 1];
     const tf = (v) => (set.log ? Math.log10(Math.max(v, 1e-8)) : v);
@@ -3860,10 +3947,27 @@ function lossGraph(data) {
       const s = pts.map((p) => p[2]).sort((u, v) => u - v);
       ys = [s[Math.floor(s.length * 0.01)], s[Math.ceil(s.length * 0.99) - 1]].concat(sm);
     }
-    let y0 = Math.min(...ys.map(tf)), y1 = Math.max(...ys.map(tf));
-    if (y1 - y0 < 1e-9) { y0 -= 0.5; y1 += 0.5; }
+    // the trend lines that are on stay inside the scale
+    if (set.emean) ys = ys.concat(em.map((p) => p[2]));
+    if (set.ravg) ys = ys.concat(ra.map((p) => p[1]));
+    if (set.val && hasVal) ys = ys.concat(val.map((p) => p[2]));
+    // Epoch average / Running avg on: the scale fits those and the validation points, so their trend shows; the
+    // step loss and its smoothed line run past it, cut at the plot's edges
+    const fit = (set.emean && em.length) || (set.ravg && ra.length) ? trendRange([
+      ...(set.emean ? em.map((p) => p[2]) : []), ...(set.ravg ? raFit(ra, data.epochs).map((p) => p[1]) : []),
+      ...(set.val && hasVal && !ownVal ? val.map((p) => p[2]) : [])], set.log) : null;
+    const vfit = ownVal ? trendRange(val.map((p) => p[2]), set.log, 0.01) : null;   // validation's own (log: in decades)
+    let y0, y1;
+    if (fit) [y0, y1] = fit;
+    else {
+      y0 = Math.min(...ys.map(tf)); y1 = Math.max(...ys.map(tf));
+      if (y1 - y0 < 1e-9) { y0 -= 0.5; y1 += 0.5; }
+    }
     const X = (x) => L + (W - L - R) * (x1 === x0 ? 0.5 : (x - x0) / (x1 - x0));
     const Y = (v) => T + (H - T - B) * (1 - (Math.min(Math.max(tf(v), y0), y1) - y0) / (y1 - y0));
+    const YS = fit ? (v) => T + (H - T - B) * (1 - (tf(v) - y0) / (y1 - y0)) : Y;   // unclamped: cut, not flattened
+    const VY = vfit ? (v) => T + (H - T - B) * (1 - (Math.min(Math.max(tf(v), vfit[0]), vfit[1]) - vfit[0]) /
+      (vfit[1] - vfit[0])) : Y;                                                       // validation's own scale
     const ns = "http://www.w3.org/2000/svg";
     const mk = (tag, attrs) => { const n = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); return n; };
     const svg = mk("svg", {viewBox: `0 0 ${W} ${H}`, class: "loss-graph-svg"});
@@ -3878,39 +3982,79 @@ function lossGraph(data) {
     for (const f of [0, 0.5, 1]) {
       const v = y0 + (y1 - y0) * f, yy = T + (H - T - B) * (1 - f);
       svg.append(mk("line", {x1: L, x2: W - R, y1: yy, y2: yy, class: "lg-grid"}));
-      const t = mk("text", {x: L - 6, y: yy + 4, class: "lg-axis", "text-anchor": "end"});
+      const ty = yy + 4;
+      const t = mk("text", {x: ownVal ? 48 : L - 6, y: ty, class: "lg-axis", "text-anchor": "end"});
       t.textContent = (set.log ? 10 ** v : v).toPrecision(3);
       svg.append(t);
+      if (vfit) {                                  // the same grid line on validation's scale, in its colour
+        const vv = vfit[0] + (vfit[1] - vfit[0]) * f;
+        const vt = mk("text", {x: L - 6, y: ty, class: "lg-axis lg-val-axis", "text-anchor": "end"});
+        vt.textContent = (set.log ? 10 ** vv : vv).toPrecision(3);
+        svg.append(vt);
+      }
     }
-    svg.append(mk("polyline", {class: "lg-raw", points: pts.map((p) => `${X(p[0]).toFixed(1)},${Y(p[2]).toFixed(1)}`).join(" ")}));
-    svg.append(mk("polyline", {class: "lg-smooth", points: pts.map((p, i) => `${X(p[0]).toFixed(1)},${Y(sm[i]).toFixed(1)}`).join(" ")}));
+    let steps = svg;
+    if (fit) {
+      const id = `lg-clip-${++lgClipN}`, cp = mk("clipPath", {id});
+      cp.append(mk("rect", {x: L, y: T, width: W - L - R, height: H - T - B}));
+      svg.append(cp);
+      steps = mk("g", {"clip-path": `url(#${id})`, class: "lg-steps-fit"});   // faded: the trends lead
+      svg.append(steps);
+    }
+    steps.append(mk("polyline", {class: "lg-raw", points: pts.map((p) => `${X(p[0]).toFixed(1)},${YS(p[2]).toFixed(1)}`).join(" ")}));
+    steps.append(mk("polyline", {class: "lg-smooth", points: pts.map((p, i) => `${X(p[0]).toFixed(1)},${YS(sm[i]).toFixed(1)}`).join(" ")}));
+    const line = (cls, sp, yi, y = Y) => { if (sp.length > 1) svg.append(mk("polyline", {class: cls,
+      points: sp.map((p) => `${X(p[0]).toFixed(1)},${y(p[yi]).toFixed(1)}`).join(" ")})); };
+    const dots = (cls, sp, yi, label, y = Y) => sp.forEach((p) => {
+      const c = mk("circle", {cx: X(p[0]), cy: y(p[yi]), r: 3.5, class: cls});
+      const tt = mk("title", {}); tt.textContent = label(p); c.append(tt); svg.append(c);
+    });
+    if (set.ravg) {                  // in the trend views its first-epoch start runs past the scale, cut at the edge
+      if (fit && ra.length > 1) steps.append(mk("polyline", {class: "lg-ravg",
+        points: ra.map((p) => `${X(p[0]).toFixed(1)},${YS(p[1]).toFixed(1)}`).join(" ")}));
+      else line("lg-ravg", ra, 1);
+    }
+    if (set.emean) { line("lg-emean", em, 2); dots("lg-emean-dot", em, 2, (p) => `Epoch ${p[1]} average: ${p[2].toFixed(4)}`); }
+    if (set.val && hasVal) {
+      // one line per section: a resume that changed what's checked starts a new one (p[4]), never joined across
+      for (const part of valSections(val)) line("lg-val", part, 2, VY);
+      dots("lg-val-dot", val, 2, (p) => `Validation at step ${p[0]} (epoch ${p[1]}): ${p[2].toFixed(4)}`, VY);
+    }
     // the learning rate, on its own scale at the right (adaptive LR moves it)
     const lrPts = pts.filter((p) => p[3] != null);
     if (hasLr && set.lr && lrPts.length > 1) {
-      const lv = lrPts.map((p) => p[3]), l0 = Math.min(...lv), l1 = Math.max(...lv);
-      const LY = (v) => T + (H - T - B) * (l1 === l0 ? 0.5 : 1 - (v - l0) / (l1 - l0));
+      // a linear scale from 0 up to the run's peak rate: a cosine run starts at the top and slides down, and a
+      // 0.01% change looks like 0.01%. A rate that climbs (Prodigy's d*lr, adaptive LR going up) gets headroom.
+      const ax = lrAxis(lrPts.map((p) => p[3]));
+      const LY = (v) => T + (H - T - B) * (1 - Math.min(Math.max(v, 0), ax.top) / ax.top);
       svg.append(mk("polyline", {class: "lg-lr", points: lrPts.map((p) => `${X(p[0]).toFixed(1)},${LY(p[3]).toFixed(1)}`).join(" ")}));
-      for (const [v, yy] of [[l1, T + 4], [l0, H - B]]) {
-        const t = mk("text", {x: W - R + 4, y: yy, class: "lg-axis lg-lr-axis"}); t.textContent = v.toExponential(1); svg.append(t);
+      // the scale's top label is live: the rate now (the last point drawn, Prodigy's d*lr when that's plotted); the
+      // line is still drawn on 0..peak, and the bottom stays 0. A dot marks where the line is now.
+      const lp = lrPts[lrPts.length - 1], lx = X(lp[0]), ly = LY(lp[3]);
+      for (const [text, yy, cls] of [[lrNowLabel(lp[3]), T + 14, " lg-lr-live"], ["0", H - B, ""]]) {
+        const t = mk("text", {x: W - R + 4, y: yy, class: "lg-axis lg-lr-axis" + cls}); t.textContent = text; svg.append(t);
       }
+      svg.append(mk("circle", {cx: lx, cy: ly, r: 3, class: "lg-lr-now"}));
     }
     // the lowest smoothed point
     let bi = 0;
     sm.forEach((v, i) => { if (v < sm[bi]) bi = i; });
-    const best = mk("circle", {cx: X(pts[bi][0]), cy: Y(sm[bi]), r: 4, class: "lg-best"});
+    const best = mk("circle", {cx: X(pts[bi][0]), cy: YS(sm[bi]), r: 4, class: "lg-best"});
     const bt = mk("title", {}); bt.textContent = `Lowest smoothed loss: ${sm[bi].toFixed(4)} at step ${pts[bi][0]}`;
     best.append(bt);
-    svg.append(best);
+    steps.append(best);
     const axisT = (x, text, cls, anchor) => { const t = mk("text", {x, y: T + 2, class: "lg-axis " + cls, "text-anchor": anchor,
       "dominant-baseline": "hanging"}); t.textContent = text; svg.append(t); };
     axisT(4, "loss", "lg-axis-title", "start");
+    if (vfit) axisT(56, "val", "lg-axis-title lg-val-axis", "start");   // at the head of its column of teal numbers
     if (hasLr && set.lr && lrPts.length > 1) axisT(W - 4, "LR", "lg-axis-title lg-lr-axis", "end");
     const cursor = mk("line", {y1: T, y2: H - B, class: "lg-cursor", style: "display:none"});
     svg.append(cursor);
     const say = (i) => read.textContent = `Step ${pts[i][0]} · epoch ${pts[i][1]} · loss ${pts[i][2].toFixed(4)} ` +
       `(smoothed ${sm[i].toFixed(4)})` + (pts[i][3] != null ? ` · LR ${Number(pts[i][3]).toExponential(2)}` : "");
     const base = () => read.textContent = `${data.steps} steps · lowest smoothed loss ${sm[bi].toFixed(4)} at step ` +
-      `${pts[bi][0]} (epoch ${pts[bi][1]})` + (data.stride > 1 ? ` · every ${data.stride}th step drawn` : "");
+      `${pts[bi][0]} (epoch ${pts[bi][1]})` + (data.stride > 1 ? ` · every ${data.stride}th step drawn` : "") +
+      (set.val && hasVal ? ` · validation ${val[val.length - 1][2].toFixed(4)} (best ${Math.min(...val.map((p) => p[2])).toFixed(4)})` : "");
     svg.addEventListener("pointermove", (ev) => {
       const r = svg.getBoundingClientRect(), x = x0 + (x1 - x0) * Math.min(1, Math.max(0, ((ev.clientX - r.left) / r.width * W - L) / (W - L - R)));
       let i = 0;

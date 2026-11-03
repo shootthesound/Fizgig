@@ -2415,6 +2415,10 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 .loss-graph-svg .lg-axis { fill: var(--text-muted); font-size: 11px; }
 .loss-graph-svg .lg-lr-axis { fill: var(--special); }
 .loss-graph-svg .lg-best { fill: var(--success); }
+.loss-graph-svg .lg-val-axis { fill: #12C2B0; }
+.loss-graph-svg .lg-lr-now { fill: #8E7CC3; stroke: var(--bg-deep); stroke-width: 1.5; }
+.loss-graph-svg .lg-steps-fit .lg-raw { opacity: 0.18; }
+.loss-graph-svg .lg-steps-fit .lg-smooth { opacity: 0.35; }
 .loss-graph-svg .lg-cursor { stroke: var(--text-secondary); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .loss-graph-read { min-height: 1.4em; }
 .lg-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 6px 2px 0; font-size: 12px; color: var(--text-secondary); }
@@ -2424,6 +2428,14 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 .lg-sw-smooth { border-color: var(--accent); }
 .lg-sw-lr { border-color: var(--special); border-top-style: dashed; }
 .lg-sw-best { width: 9px; height: 9px; border: 0; border-radius: 50%; background: var(--success); }
+.lg-sw-emean { border-color: #FF6F61; border-top-width: 3px; }
+.lg-sw-ravg { border-color: #FFC233; border-top-width: 3px; }
+.lg-sw-val { border-color: #12C2B0; border-top-width: 3px; }
+.lg-emean { fill: none; stroke: #FF6F61; stroke-width: 2.5; }
+.lg-emean-dot { fill: #FF6F61; stroke: #fff; stroke-width: 1; }
+.lg-ravg { fill: none; stroke: #FFC233; stroke-width: 2.5; }
+.lg-val { fill: none; stroke: #12C2B0; stroke-width: 2.5; stroke-dasharray: 6 3; }
+.lg-val-dot { fill: #12C2B0; stroke: #fff; stroke-width: 1.2; }
 .lg-sw-epoch { width: 0; height: 12px; border-top: 0; border-left: 1px solid var(--border); }
 .loss-graph-svg .lg-axis-title { font-weight: 600; }
 

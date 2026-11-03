@@ -42,6 +42,19 @@ if [ ! -d llama.cpp ]; then
 fi
 SERVER="$(find "$W/llm/llama.cpp" -name llama-server -type f | head -1)"
 chmod +x "$SERVER"
+DEVS="$(LD_LIBRARY_PATH="$(dirname "$SERVER"):${LD_LIBRARY_PATH:-}" "$SERVER" --list-devices 2>&1)"
+echo "$DEVS" | sed 's/^/[amd llama] /' | head -12
+if ! echo "$DEVS" | grep -qiE "ROCm[0-9]|HIP"; then        # the prebuilt build has no code for this chip: build it
+    GFX="$(python3 "$W/Fizgig/src/install/detect_gpu_linux.py" 2>/dev/null)"
+    log "llama.cpp's prebuilt ROCm build doesn't see the GPU: building $LLAMA_BUILD for $GFX"
+    apt-get install -y -qq cmake build-essential >/dev/null
+    [ -d llama-src ] || git clone -q --depth 1 -b "$LLAMA_BUILD" https://github.com/ggml-org/llama.cpp llama-src
+    (cd llama-src && HIPCXX="$(hipconfig -l)/clang" HIP_PATH="$(hipconfig -R)" cmake -S . -B build -DGGML_HIP=ON \
+        -DAMDGPU_TARGETS="$GFX" -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF >/dev/null \
+        && cmake --build build --config Release -j"$(nproc)" --target llama-server 2>&1 | tail -5)
+    SERVER="$W/llm/llama-src/build/bin/llama-server"
+    "$SERVER" --list-devices 2>&1 | sed 's/^/[amd llama] /' | head -12
+fi
 "$W/Fizgig/venv/bin/python" - <<EOF
 from huggingface_hub import hf_hub_download
 for f in ("$LLM_FILE", "mmproj-F16.gguf"):
@@ -77,5 +90,5 @@ nohup venv/bin/python fizgig.py --web --host 0.0.0.0 --port 8081 > "$W/fizgig.lo
 ok=""
 for i in $(seq 1 120); do curl -fs -o /dev/null http://127.0.0.1:8081/ && ok=1 && break; sleep 2; done
 if [ -n "$ok" ]; then log "READY"; else log "FAILED: Fizgig didn't start"; tail -40 "$W/fizgig.log"; fi
-tail -F "$W/fizgig.log" "$W/llm.log" 2>/dev/null | grep --line-buffered -i "error\|traceback\|warn" &
+tail -F "$W/fizgig.log" "$W/llm.log" 2>/dev/null | grep --line-buffered -iE "error|traceback|warn|offload|ROCm|using device|load_tensors"\|traceback\|warn" &
 sleep infinity

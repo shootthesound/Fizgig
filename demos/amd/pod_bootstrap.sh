@@ -13,7 +13,7 @@ mkdir -p "$W" && cd "$W" || exit 1
 
 command -v sudo >/dev/null || { printf '#!/bin/sh\nexec "$@"\n' > /usr/local/bin/sudo; chmod +x /usr/local/bin/sudo; }
 log "packages"
-apt-get update -qq >/dev/null && apt-get install -y -qq git curl python3-venv python3-dev libnuma-dev >/dev/null
+apt-get update -qq >/dev/null && apt-get install -y -qq git curl python3-venv python3-dev libnuma-dev libgl1 libglib2.0-0 >/dev/null   # libGL: OpenCV (faces)
 log "GPU:"; (rocm-smi --showproductname --showmeminfo vram 2>/dev/null || amd-smi static 2>/dev/null) | head -30
 rocminfo 2>/dev/null | grep -m3 "gfx"
 

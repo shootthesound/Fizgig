@@ -21,7 +21,33 @@ BRIDGE = "Fizgig Bridge"
 PICTURES = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff")
 
 _lock = threading.Lock()
-_conn = {"client": None, "desktop": "", "preamble": False}
+_conn = {"client": None, "desktop": "", "preamble": False, "used": 0.0, "busy": 0, "reaper": False}
+IDLE = 30                   # seconds: then the connection is let go, so another app (Claude Desktop ...) can have it
+
+
+def _reap():
+    """Close the connection once it's idle: Affinity's server takes one session at a time."""
+    while True:
+        time.sleep(5)
+        with _lock:
+            c = _conn["client"]
+            if c is not None and not _conn["busy"] and time.time() - _conn["used"] > IDLE:
+                c.close()
+                _conn.update(client=None, preamble=False)
+
+
+class _Use:
+    """A stretch of work on the connection: it is not reaped meanwhile."""
+
+    def __enter__(self):
+        with _lock:
+            _conn["busy"] += 1
+        return client()
+
+    def __exit__(self, *exc):
+        with _lock:
+            _conn["busy"] -= 1
+            _conn["used"] = time.time()
 
 
 def _url_list():
@@ -33,6 +59,10 @@ def client():
     """The one connection to Affinity (its server handles one session at a time), made on first use and again when
     Affinity was restarted."""
     with _lock:
+        _conn["used"] = time.time()
+        if not _conn["reaper"]:
+            _conn["reaper"] = True
+            threading.Thread(target=_reap, daemon=True, name="affinity-idle").start()
         c = _conn["client"]
         if c is not None and c.alive:
             return c
@@ -47,7 +77,7 @@ def client():
             raise ToolError("Affinity isn't answering. Open Affinity (3.2 or later), turn on Edit > Settings > Model "
                             "Context Protocol > Enable Affinity MCP and Access files on your Desktop, then quit and "
                             f"reopen Affinity. ({last})")
-        _conn.update(client=c, desktop="", preamble=False)
+        _conn.update(client=c, preamble=False)
         return c
 
 
@@ -64,9 +94,9 @@ def _prepare(c):
 
 def run_script(js, timeout=180):
     """Run JavaScript in Affinity; its console output. A script error comes back as a ToolError."""
-    c = client()
-    _prepare(c)
-    content, bad = c.call_tool("execute_script", {"script": js}, timeout=timeout)
+    with _Use() as c:
+        _prepare(c)
+        content, bad = c.call_tool("execute_script", {"script": js}, timeout=timeout)
     out = content_text(content)
     if bad:
         raise ToolError(f"Affinity: {out.strip() or 'the script failed'}")
@@ -292,7 +322,6 @@ console.log('FIZGIG:' + JSON.stringify({{id: String(d.sessionUuid), width: d.wid
 
 def view(doc_id="", spread=0):
     """The document as Affinity draws it (JPEG, longest side 1024): (base64, mime)."""
-    c = client()
     if not doc_id:
         doc_id = next((d["id"] for d in documents() if d.get("current")), "")
         if not doc_id:
@@ -301,7 +330,8 @@ def view(doc_id="", spread=0):
         t = doc_id.lower().removesuffix(".af")
         doc_id = next((d["id"] for d in documents() if doc_id == d["id"] or t == d["title"].lower().removesuffix(".af")),
                       doc_id)
-    content, bad = c.call_tool("render_spread", {"document_session_uuid": doc_id, "spread_index": int(spread)})
+    with _Use() as c:
+        content, bad = c.call_tool("render_spread", {"document_session_uuid": doc_id, "spread_index": int(spread)})
     if bad:
         raise ToolError(f"Affinity: {content_text(content)}")
     for item in content:

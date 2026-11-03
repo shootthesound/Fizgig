@@ -8670,7 +8670,8 @@ function asPoll() {
           last.classList.add(ev.error ? "as-bad" : "as-ok");
           if (ev.error) last.append(el("div", {class: "as-step-err", text: ev.text}));
           last.title = ev.text || "";
-          if (ev.src) last.append(el("img", {class: "as-pic", src: ev.src}));
+          if ((ev.srcs || []).length) last.append(el("div", {class: "as-pics" + (ev.srcs.length > 1 ? " as-many" : "")},
+            ...ev.srcs.map((s) => el("img", {class: "as-pic", src: s}))));
         }
       } else if (ev.kind === "gpu") log.append(el("div", {class: "as-gpu", text: ev.text}));
       else if (ev.kind === "error") log.append(el("div", {class: "as-msg as-err", text: ev.text}));

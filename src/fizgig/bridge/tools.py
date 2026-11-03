@@ -299,16 +299,22 @@ def build(ctx) -> Server:
                              for it in items[:max(1, int(limit))]]}
 
     @tool("render", "Render a picture with a LoRA (Studio's preview model, on the GPU): prompt, seed, size and the "
-                    "LoRA's strength. Takes Studio over while it works. Returns the picture's path and a look at it. A "
+                    "LoRA's strength. Several pictures in one call (variations, or prompts) load the model once: much faster than one call each. Takes Studio over while it works. Returns the pictures' paths and a look at them. A "
                     "see-through picture (a sticker, a cut-out, a logo) on Qwen Image 2.1: put the subject in its own "
                     "wording, 'This is an RGBA image with transparency. <subject>. The image has alpha channel and "
                     "the background is transparent.' - the PNG keeps its alpha and goes into Affinity as a cut-out.",
           {"lora": S, "prompt": S, "seed": I, "width": I, "height": I, "strength": N,
+           "variations": {"type": "integer", "description": "how many pictures of this prompt (seeds seed, seed+1 ...)"},
+           "prompts": {"type": "array", "items": S, "description": "several prompts in one go (instead of prompt)"},
            "model": {"type": "string", "description": "the LoRA's model key; found from the file when left out"},
            "reference": {"type": "string", "description": "an edit model's before-picture"}},
-          ["lora", "prompt"])
-    def _render(lora, prompt, seed=42, width=1024, height=1024, strength=1.0, model="", reference=""):
-        return _studio_render(api, post, lora, prompt, seed, width, height, strength, model, reference)
+          ["lora"])
+    def _render(lora, prompt="", seed=42, width=1024, height=1024, strength=1.0, variations=1, prompts=None,
+                model="", reference=""):
+        todo = list(prompts or []) or [prompt] * max(1, min(int(variations or 1), 8))
+        if not any(p.strip() for p in todo):
+            raise ToolError("Give a prompt.")
+        return _studio_render(api, post, lora, todo, seed, width, height, strength, model, reference)
 
     # -- Affinity
     @tool("affinity_status", "Is Affinity by Canva reachable (its MCP server on)? Its Desktop bridge folder.")
@@ -341,9 +347,18 @@ def build(ctx) -> Server:
                             "from affinity_documents, e.g. an empty photo box) fits the picture over that layer's "
                             "area; render at that area's shape first so nothing is cropped.",
           {"path": S, "document": S, "name": S, "new_document": B, "into_layer": I,
-           "box": {"type": "array", "items": N, "description": "[x, y, width, height] in pixels"}}, ["path"])
-    def _a_place(path, document="", name="", new_document=False, into_layer=None, box=None):
-        return affinity.place_image(path, document, name, new_document, into_layer, box)
+           "box": {"type": "array", "items": N, "description": "[x, y, width, height] in pixels"},
+           "replace": {"type": "boolean", "description": "with into_layer: the new picture takes that layer's place "
+                                                         "and the old layer is hidden (not deleted)"}}, ["path"])
+    def _a_place(path, document="", name="", new_document=False, into_layer=None, box=None, replace=False):
+        return affinity.place_image(path, document, name, new_document, into_layer, box, replace)
+
+    @tool("affinity_new_document", "Make a new Affinity document of this many pixels (transparent, or on a "
+                                   "background colour [r, g, b]), named and saved in the Desktop's Fizgig Bridge "
+                                   "folder. Lay pictures out on it with affinity_place's box.",
+          {"width": I, "height": I, "name": S, "background": {"type": "array", "items": I}}, ["width", "height"])
+    def _a_new(width, height, name="", background=None):
+        return affinity.new_document(width, height, name, background)
 
     @tool("affinity_view", "See an Affinity document as it looks now (at most 1024 px).", {"document": S})
     def _a_view(document=""):
@@ -388,7 +403,7 @@ def _short(st):
                                                  "kind", "folder")}
 
 
-def _studio_render(api, post, lora, prompt, seed, width, height, strength, model, reference):
+def _studio_render(api, post, lora, prompts, seed, width, height, strength, model, reference):
     from fizgig.web import studio
     if not os.path.isfile(lora):
         raise ToolError(f"{lora} isn't there.")
@@ -413,21 +428,32 @@ def _studio_render(api, post, lora, prompt, seed, width, height, strength, model
         st = studio.status()
         if st.get("state") != "ready":
             raise ToolError(f"Studio couldn't load: {st.get('error') or st.get('status')}")
-    state = {"prompt": prompt, "seed": int(seed), "preview_width": int(width), "preview_height": int(height),
-             "primary_scale": float(strength)}
-    if reference:
-        state["ref_image_path"] = reference
-    r = post("/api/studio/render", {"state": state})
-    gen = r.get("gen")
-    _wait(lambda: not studio.status().get("rendering"), 900, first=1.0)
-    st = studio.status()
-    if st.get("error"):
-        raise ToolError(f"The render failed: {st['error']}")
-    path = studio.image("tweaked", gen or 0) or studio.image("baseline", gen or 0)
-    if not path:
-        raise ToolError("The render finished but left no picture.")
-    data, size = _shrink(path)
-    return [text(f"Rendered {path} ({size[0]}x{size[1]})."), image(data, "image/jpeg")]
+    from fizgig.user_data import user_file
+    out_dir = user_file("renders")
+    os.makedirs(out_dir, exist_ok=True)
+    stem = re.sub(r"[^A-Za-z0-9_-]+", "_", os.path.splitext(os.path.basename(lora))[0])[:40]
+    jobs = [(p, int(seed) + i) for i, p in enumerate(prompts)]
+    saved, looks = [], []
+    for p, s in jobs:                       # one model load, then each render warm
+        state = {"prompt": p, "seed": s, "preview_width": int(width), "preview_height": int(height),
+                 "primary_scale": float(strength)}
+        if reference:
+            state["ref_image_path"] = reference
+        gen = post("/api/studio/render", {"state": state}).get("gen")
+        _wait(lambda: not studio.status().get("rendering"), 900, first=0.5)
+        st = studio.status()
+        if st.get("error"):
+            raise ToolError(f"The render failed: {st['error']}")
+        path = studio.image("tweaked", gen or 0) or studio.image("baseline", gen or 0)
+        if not path:
+            raise ToolError("The render finished but left no picture.")
+        keep = os.path.join(out_dir, f"{time.strftime('%Y%m%d-%H%M%S')}_{stem}_s{s}.png")
+        shutil.copy2(path, keep)            # the next render reuses Studio's file
+        saved.append(keep)
+        if len(looks) < 4:
+            looks.append(_shrink(keep, 768 if len(jobs) == 1 else 448))
+    sizes = ", ".join(f"{w}x{h}" for (_d, (w, h)) in looks[:1])
+    return [text("Rendered " + ("\n".join(saved)) + f" ({sizes}).")] + [image(d, "image/jpeg") for d, _ in looks]
 
 
 def _wait(cond, seconds, first=0.3):

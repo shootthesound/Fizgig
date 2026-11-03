@@ -183,11 +183,12 @@ console.log('FIZGIG:' + JSON.stringify({{saved: saved}}));
     return [os.path.normpath(p) for p in r.get("saved", [])]
 
 
-def place_image(path, doc_id="", name="", new_document=False, into_layer=None, box=None):
+def place_image(path, doc_id="", name="", new_document=False, into_layer=None, box=None, replace=False):
     """A picture on this computer as a new pixel layer: in the given (or current) document, or in a new one of its
-    size. into_layer (an index from documents()) or box [x, y, w, h]: scaled to cover that area, centred, and put
-    just above that layer. It is copied into the bridge folder first (Affinity reads only the Desktop). The
-    document's id."""
+    size. into_layer (an index from documents()) or box [x, y, w, h]: cut to that area's shape and fitted to it;
+    replace (with into_layer): that layer is hidden, never deleted. It is copied into the bridge folder first
+    (Affinity reads only the Desktop). The document's id."""
+    hide = int(into_layer) if replace and into_layer is not None else None
     if not os.path.isfile(path):
         raise ToolError(f"{path} isn't there.")
     if os.path.splitext(path)[1].lower() not in PICTURES:
@@ -238,12 +239,13 @@ const {{ Selection }} = require('/selections.js');
 const def = RasterNodeDefinition.create(RasterFormat.RGBA8);
 def.bitmap = bm;
 const all = []; for (const l of d.layers) all.push(l);
-const target = {json.dumps(into_layer)} === null ? null : all[{json.dumps(into_layer)}];
+const old = {json.dumps(hide)} === null ? null : all[{json.dumps(hide)}];
 d.addNode(def);
 const node = d.selection.firstNode;
 try {{ node.userDescription = {json.dumps(name)}; }} catch (e) {{}}
+let hidden = null;
+if (old) try {{ d.setVisible(false, old); hidden = nm(old) || ('layer ' + {json.dumps(hide)}); }} catch (e) {{}}   // replaced: hidden, still there
 let area = {json.dumps(box)};
-if (!area && target) {{ const b = target.spreadBaseBox; area = [b.x, b.y, b.width, b.height]; }}
 let placed = null;
 if (area) {{
   const now = node.spreadBaseBox;
@@ -254,7 +256,36 @@ if (area) {{
   d.applyTransform(t, Selection.create(d, node));
   const b = node.spreadBaseBox; placed = [b.x, b.y, b.width, b.height].map(v => Math.round(v));
 }}
-console.log('FIZGIG:' + JSON.stringify({{id: String(d.sessionUuid), width: bm.width, height: bm.height, placed: placed}}));
+console.log('FIZGIG:' + JSON.stringify({{id: String(d.sessionUuid), width: bm.width, height: bm.height, placed: placed, hidden: hidden}}));
+"""
+    return _json_out(js)
+
+
+def new_document(width, height, name="", background=None):
+    """A new Affinity document of this many pixels (transparent, or filled with background [r, g, b]); saved into the
+    bridge folder as <name>.af when named. Its id."""
+    safe = re.sub(r'[\\/:*?"<>|]+', "_", name).strip()
+    path = os.path.join(bridge_dir(), safe + ".af").replace(os.sep, "/") if safe else ""
+    js = f"""
+const {{ Document, NewDocumentOptions, UnitType }} = require('/document.js');
+const o = NewDocumentOptions.createDefault();
+o.units = UnitType.Pixel; o.width = {int(width)}; o.height = {int(height)}; o.dpi = 72; o.createArtboard = false;
+o.isTransparentBackground = {json.dumps(background is None)};
+const d = Document.create(o);
+const bg = {json.dumps(list(background) if background else None)};
+if (bg) {{
+  const {{ ShapeRectangle }} = require('/shapes.js');
+  const {{ ShapeNodeDefinition }} = require('/nodes.js');
+  const {{ Rectangle }} = require('/geometry.js');
+  const {{ FillDescriptor, BlendMode }} = require('/fills.js');
+  const {{ RGBA8 }} = require('/colours.js');
+  d.addNode(ShapeNodeDefinition.create(ShapeRectangle.create(), new Rectangle(0, 0, {int(width)}, {int(height)}),
+    FillDescriptor.createSolid(RGBA8(bg[0], bg[1], bg[2]), BlendMode.Normal), null, null, null));
+  try {{ d.layers.at(0).userDescription = 'Background'; }} catch (e) {{}}
+}}
+const p = {json.dumps(path)};
+if (p) d.saveAs(p);
+console.log('FIZGIG:' + JSON.stringify({{id: String(d.sessionUuid), width: d.widthPixels, height: d.heightPixels, saved: p}}));
 """
     return _json_out(js)
 

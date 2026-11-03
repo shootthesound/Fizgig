@@ -22,9 +22,9 @@ def _event(kind, data):
     with _lock:
         _S["n"] += 1
         ev = {"id": _S["n"], "kind": kind, "t": round(time.time() - _S["started"], 1), **data}
-        if ev.get("image"):                     # a picture as a data URI the page shows as it is
-            im = ev.pop("image")
-            ev["src"] = f"data:{im.get('mimeType', 'image/jpeg')};base64,{im.get('data', '')}"
+        pics = ev.pop("pictures", None) or []   # pictures as data URIs the page shows as they are
+        if pics:
+            ev["srcs"] = [f"data:{im.get('mimeType', 'image/jpeg')};base64,{im.get('data', '')}" for im in pics]
         _S["events"].append(ev)
         del _S["events"][:-400]
 

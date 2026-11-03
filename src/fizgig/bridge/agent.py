@@ -28,7 +28,10 @@ SYSTEM = (
     "at the picture, affinity_view). Say what you did in a few plain sentences: folders, files, what to look at. Never "
     "stop, delete or overwrite anything the user didn't ask about. A training run takes minutes to hours: start it, "
     "say where to watch it, and stop there. Pictures go into Affinity as new layers; nothing in the user's documents "
-    "is changed otherwise.")
+    "is changed otherwise. With a LoRA of a person, say who they are in every prompt after the trigger word ('gwelt, "
+    "a man ...'): a quickly trained LoRA needs it. Look at every picture you make: if one is wrong (not the person, "
+    "broken), make it again with a new seed and a clearer prompt before you finish - fix it, don't just report it. To "
+    "redo a picture already in Affinity, place the new one with into_layer and replace.")
 
 
 class LLM:
@@ -229,7 +232,7 @@ class Agent:
                 self.stats["tool_seconds"] += time.time() - t1
                 imgs = [x for x in content if x.get("type") == "image"]
                 self.on_event("result", {"name": name, "error": bad, "text": texts[:1500], "images": len(imgs),
-                                         "image": imgs[0] if imgs else None})
+                                         "pictures": imgs[:4]})
                 self.messages.append({"role": "tool", "tool_call_id": c.get("id", name), "name": name,
                                       "content": (texts or "(done)")[:12000] + (f"\n[{len(imgs)} picture(s) attached]"
                                                                                 if imgs and self.vision else "")})

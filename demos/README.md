@@ -38,7 +38,7 @@ Run them in order. Demo 1 trains the LoRA the others use. Keep Affinity open.
 | `2 - A transparent sticker into the poster` | A robot sticker with real transparency, placed in the top-right corner of a keynote poster (the launcher makes the poster) | 1 min 36 s |
 | `3 - The model reads the poster and fills the photo box` | The Assistant looks at the poster, matches its colours, renders portraits of you at the photo box's shape, scores them and fits the best into the box | 2 min 8 s |
 | `4 - Four variations laid out in Affinity` | Four photos of you in different settings, laid out as a 2×2 grid in a new document; each the best of 4 by score; then one is swapped for another | 7 min |
-| `5 - Trained on a rented cloud GPU` (optional) | Trains on a rented RunPod GPU under an hourly price cap, brings the LoRA home, deletes the pod, and fills a poster here. It needs a RunPod API key (Fizgig's Pods tab) and costs about $0.25 | about 15 min |
+| `5 - Trained on a rented cloud GPU` (optional) | Trains on a rented RunPod GPU under an hourly price cap ($2), brings the LoRA home, deletes the pod, and fills a poster here. It needs a RunPod API key (Fizgig's Pods tab) and costs about $0.25 | about 15 min |
 | `6 - A poster designed from nothing` | The Assistant designs a whole poster in Affinity (background, type, photo frame), renders 4 portraits, scores them and places the best | 3 min 55 s |
 
 `Stop the demo servers` stops the language model and the demos' Fizgig (port 8095). Affinity stays open.

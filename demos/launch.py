@@ -34,7 +34,7 @@ DEMOS = {
         "'Social pack'."),
     5: ("Trained on a rented cloud GPU, designed here",
         "My training folder 'Me from Affinity' is captioned with the trigger word {t} (it's me, {who}). Train a "
-        "quick likeness of me called {t}_cloud on a rented cloud GPU - no more than $1.50 an hour - " + QUICK + ". "
+        "quick likeness of me called {t}_cloud on a rented cloud GPU - no more than $2 an hour - " + QUICK + ". "
         "Then make a professional keynote-speaker portrait of me for the empty photo box on my '{poster}' "
         "document in Affinity, matching the poster's colours, and put it in the box. Tell me what the "
         "cloud training cost."),

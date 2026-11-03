@@ -26,6 +26,7 @@ from fizgig.web.helpers import Client
 
 POD_FILE = "bridge_cloud.json"
 TRAIN_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".txt", ".json")
+SOLD_OUT_WAIT = 600         # seconds of looking again when every card under the price sells out before it's rented
 _lock = threading.Lock()
 _job: dict = {}
 
@@ -186,25 +187,35 @@ def _work(key, folder, family, preset, overrides, lora, trigger, dest, max_price
         gone = leftovers(key)
         if gone:
             _note(f"Deleted {len(gone)} pod{'s' if len(gone) != 1 else ''} an earlier job left behind.")
-        offers = candidates(key, max_price, min_vram)
-        if not offers:
-            raise Stop(f"No card with {min_vram} GB or more is free at ${max_price:.2f}/hr or less right now.")
-        _note(f"{len(offers)} offers at or under ${max_price:.2f}/hr; best value {offers[0]['gpu']} "
-              f"({offers[0]['cloud'].lower()}) ${offers[0]['price']:.2f}/hr.")
         password = secrets.token_urlsafe(12)
         tried = 0
-        for offer in offers:
-            if tried >= attempts:
+        wait_until = time.time() + SOLD_OUT_WAIT
+        while pod is None and tried < attempts:
+            offers = candidates(key, max_price, min_vram)
+            if offers:
+                _note(f"{len(offers)} offers at or under ${max_price:.2f}/hr; best value {offers[0]['gpu']} "
+                      f"({offers[0]['cloud'].lower()}) ${offers[0]['price']:.2f}/hr.")
+            for offer in offers:
+                if tried >= attempts:
+                    break
+                _check()
+                pod = _rent(key, offer, password, tried + 1)
+                if pod is None:              # refused (sold out since the list): no money spent, not a try
+                    continue
+                tried += 1
+                if _boot(key, pod, boot):
+                    break
+                _end(key, pod)
+                pod = None
+            if pod is not None or tried >= attempts:
                 break
-            _check()
-            pod = _rent(key, offer, password, tried + 1)
-            if pod is None:                  # refused (sold out since the list): no money spent, not a try
-                continue
-            tried += 1
-            if _boot(key, pod, boot):
-                break
-            _end(key, pod)
-            pod = None
+            if time.time() >= wait_until:   # cards under the price keep selling out: give up, train at home
+                raise Stop(f"No card with {min_vram} GB or more could be rented at ${max_price:.2f}/hr or less "
+                           f"in {SOLD_OUT_WAIT // 60} minutes.")
+            _note("Everything under the price is taken just now; looking again in 30 s.", state="renting")
+            for _ in range(30):
+                _check()
+                time.sleep(1)
         if pod is None:
             raise Stop(f"No pod came up after {tried} tr{'y' if tried == 1 else 'ies'}.")
         c = Client(pods.pod_url(pod["id"]))

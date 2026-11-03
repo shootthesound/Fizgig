@@ -205,10 +205,20 @@ def build(ctx) -> Server:
                             "back first; call again with anyway=true to start regardless. A person's likeness in "
                             "minutes: model qwen_image21, preset '✨ Qwen 2.1 Fast Identity Mode (rank 8) - very close "
                             "to full-model likeness, ~1.5x faster', overrides {\"MAX_TRAIN_EPOCHS\": \"20\", "
-                            "\"SAVE_EVERY_N_EPOCHS\": \"5\", \"SAMPLE_ENABLED\": false}.",
+                            "\"SAVE_EVERY_N_EPOCHS\": \"5\", \"SAMPLE_ENABLED\": false}. Two or more people in one LoRA "
+                            "who must not leak onto anyone else: subjects + people_mode isolation.",
           {"model": S, "folder": S, "preset": S, "lora_name": S, "trigger": S, "overrides": {"type": "object"},
+           "subjects": {"type": "array", "items": S, "description": "more subjects (people) in the same LoRA: up to "
+                        "3 more training folders, each captioned with its own trigger word"},
+           "people_mode": {"type": "string", "enum": ["off", "leave_others_alone", "isolation"], "description":
+                           "off: a normal LoRA. leave_others_alone: the subject only appears with its trigger word "
+                           "(DOP). isolation: Fizgig LoRA Isolation - two or more subjects, every other person keeps "
+                           "their own face; needs subjects"},
            "anyway": B}, ["model", "folder"])
-    def _start(model, folder, preset="", lora_name="", trigger="", overrides=None, anyway=False):
+    def _start(model, folder, preset="", lora_name="", trigger="", overrides=None, subjects=None, people_mode="",
+               anyway=False):
+        from fizgig.families import form
+        from fizgig.families.registry import get as get_family
         folder = training_folder(folder)
         if trigger:
             post("/api/trigger", {"folder": folder, "word": trigger})
@@ -219,6 +229,26 @@ def build(ctx) -> Server:
         values.update(overrides or {})
         if lora_name:
             values["LORA_NAME"] = lora_name
+        more = [training_folder(f) for f in (subjects or []) if str(f).strip()]
+        if len(more) > 3:
+            raise ToolError("Up to 4 subjects in all: the training folder and 3 more.")
+        if people_mode == "isolation" and not more:
+            raise ToolError("Fizgig LoRA Isolation needs two or more subjects: give the others' folders in subjects.")
+        desc = get_family(model)
+        if more:                                # the Subjects card's "Who or what is this LoRA of?"
+            values.update(dict((desc.multi_concept_defaults if desc else ()) or ()))
+            values.update(FAMILY_MULTICONCEPT=True, FAMILY_CONCEPT_COUNT=form.CONCEPT_COUNTS[len(more) - 1])
+            for key, f in zip(("FAMILY_CONCEPT_DIR", "FAMILY_CONCEPT_DIR3", "FAMILY_CONCEPT_DIR4"), more):
+                values[key] = f
+        elif subjects is not None:
+            values["FAMILY_MULTICONCEPT"] = False
+        if people_mode:                         # ... and "Your subject and other people"
+            values.update(FAMILY_DOP=people_mode != "off", FAMILY_MULTI_PERSON=people_mode == "isolation")
+        for _ in range(3):                      # the form's own rules, as the page applies them (Isolation's must-haves)
+            force = post("/api/form/state", {"family": model, "values": values, "image_folder": folder}).get("force")
+            if not force:
+                break
+            values.update(force)
         r = post("/api/start", {"family": model, "values": values, "image_folder": folder, "anyway": bool(anyway)})
         if r.get("warnings"):
             return {"started": False, "warnings": r["warnings"],

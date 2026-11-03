@@ -266,6 +266,10 @@ def view(doc_id="", spread=0):
         doc_id = next((d["id"] for d in documents() if d.get("current")), "")
         if not doc_id:
             raise ToolError("No document is open in Affinity.")
+    else:                                       # a title works too
+        t = doc_id.lower().removesuffix(".af")
+        doc_id = next((d["id"] for d in documents() if doc_id == d["id"] or t == d["title"].lower().removesuffix(".af")),
+                      doc_id)
     content, bad = c.call_tool("render_spread", {"document_session_uuid": doc_id, "spread_index": int(spread)})
     if bad:
         raise ToolError(f"Affinity: {content_text(content)}")

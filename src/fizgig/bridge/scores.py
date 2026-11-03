@@ -30,11 +30,46 @@ def _analysis():
             from insightface.app import FaceAnalysis
             have = ort.get_available_providers()
             providers = ([NPU] if NPU in have else []) + ["CPUExecutionProvider"]
+            _fit_threads(ort)
             t = time.time()
             app = FaceAnalysis(name="buffalo_l", allowed_modules=MODULES, providers=providers)
             app.prepare(ctx_id=-1)
             _app.update(app=app, provider=providers[0], load=round(time.time() - t, 2))
         return _app["app"]
+
+
+def _cpu_budget():
+    """The CPUs this process may really use: a container's quota (a pod sees the whole host's cores but gets 24), else
+    its affinity, else the count; at most 16."""
+    n = os.cpu_count() or 4
+    try:
+        with open("/sys/fs/cgroup/cpu.max") as f:                  # cgroup v2: "<quota> <period>" or "max ..."
+            q, p = f.read().split()[:2]
+        if q != "max":
+            n = min(n, max(1, int(int(q) / int(p))))
+    except (OSError, ValueError):
+        try:
+            n = min(n, len(os.sched_getaffinity(0)))
+        except (AttributeError, OSError):
+            pass
+    return max(1, min(n, 16))
+
+
+def _fit_threads(ort):
+    """onnxruntime sizes its thread pool by the host's cores; in a container with fewer, the threads fight and each
+    picture took 20x longer. Every InsightFace session gets a pool the size of the budget instead."""
+    from insightface.model_zoo import model_zoo as mz
+    base = mz.PickableInferenceSession.__init__
+    if getattr(base, "_fizgig_threads", False):
+        return
+    so = ort.SessionOptions()
+    so.intra_op_num_threads, so.inter_op_num_threads = _cpu_budget(), 1
+
+    def init(self, model_path, **kw):
+        kw.setdefault("sess_options", so)
+        base(self, model_path, **kw)
+    init._fizgig_threads = True
+    mz.PickableInferenceSession.__init__ = init
 
 
 def _read(path):

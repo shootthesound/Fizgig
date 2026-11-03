@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# One AMD GPU, everything at once: the start command of a pod on AMD's rocm/pytorch image (an MI300X on RunPod).
+# Installs Fizgig with its ROCm installer, Fizgig's models, llama.cpp's ROCm build and the language model, then
+# starts both servers and keeps the pod up. Progress goes to the pod's log, each line marked [amd].
+# Needs FIZGIG_PASSWORD (Fizgig's login) and LLM_KEY (the language model server's key) in the pod's environment.
+set -uo pipefail
+BRANCH="${FIZGIG_BRANCH:-wip-tools}"
+LLAMA_BUILD=b10666
+LLM_FILE="${LLM_FILE:-Qwen3.8-27B-Q8_0.gguf}"
+W=/workspace
+log() { echo "[amd $(date +%H:%M:%S)] $*"; }
+mkdir -p "$W" && cd "$W" || exit 1
+
+command -v sudo >/dev/null || { printf '#!/bin/sh\nexec "$@"\n' > /usr/local/bin/sudo; chmod +x /usr/local/bin/sudo; }
+log "packages"
+apt-get update -qq >/dev/null && apt-get install -y -qq git curl python3-venv python3-dev libnuma-dev >/dev/null
+log "GPU:"; (rocm-smi --showproductname --showmeminfo vram 2>/dev/null || amd-smi static 2>/dev/null) | head -30
+rocminfo 2>/dev/null | grep -m3 "gfx"
+
+if [ ! -d Fizgig ]; then git clone -q -b "$BRANCH" https://github.com/shootthesound/Fizgig; fi
+cd Fizgig && git pull -q
+if [ ! -x venv/bin/python ]; then
+    log "Fizgig's ROCm installer"
+    FIZGIG_PYTHON=/usr/bin/python3 bash install_fizgig_rocm.sh 2>&1 | tail -60
+fi
+venv/bin/python -c "import torch; print('[amd] torch', torch.__version__, 'gpu', torch.cuda.is_available() and torch.cuda.get_device_name(0))"
+
+log "Fizgig's models"
+venv/bin/python -m fizgig.scripts.fetch_models --family tools --family qwen_image21 2>&1 | grep -v "it/s\]" | tail -25
+
+log "llama.cpp $LLAMA_BUILD (ROCm) and $LLM_FILE"
+mkdir -p "$W/llm" && cd "$W/llm" || exit 1
+if [ ! -d llama.cpp ]; then
+    curl -fsSL -o llama.tgz "https://github.com/ggml-org/llama.cpp/releases/download/$LLAMA_BUILD/llama-$LLAMA_BUILD-bin-ubuntu-rocm-7.14-x64.tar.gz"
+    mkdir llama.cpp && tar -xzf llama.tgz -C llama.cpp && rm llama.tgz
+fi
+SERVER="$(find "$W/llm/llama.cpp" -name llama-server -type f | head -1)"
+chmod +x "$SERVER"
+"$W/Fizgig/venv/bin/python" - <<EOF
+from huggingface_hub import hf_hub_download
+for f in ("$LLM_FILE", "mmproj-F16.gguf"):
+    print("[amd]", hf_hub_download("unsloth/Qwen3.8-27B-GGUF", f, local_dir="$W/llm/models"))
+EOF
+cat > presets.ini <<EOF
+[*]
+parallel = 1
+temp = 1.0
+top-p = 0.95
+top-k = 20
+min-p = 0.0
+
+[demo-llm]
+model = $W/llm/models/$LLM_FILE
+mmproj = $W/llm/models/mmproj-F16.gguf
+n-gpu-layers = all
+flash-attn = on
+ctx-size = 131072
+cache-type-k = q8_0
+cache-type-v = q8_0
+EOF
+
+log "starting the language model's server (port 38100) and Fizgig (port 8081)"
+LD_LIBRARY_PATH="$(dirname "$SERVER"):${LD_LIBRARY_PATH:-}" nohup "$SERVER" --models-preset presets.ini --models-max 1 \
+    --host 0.0.0.0 --port 38100 --jinja --api-key "${LLM_KEY:?}" > "$W/llm.log" 2>&1 &
+cd "$W/Fizgig" || exit 1
+export MIOPEN_FIND_MODE=2 FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE FIZGIG_NO_EXPANDABLE=1 FIZGIG_GPU_BACKEND=rocm
+[ -f user_data/rocm_env.sh ] || venv/bin/python write_rocm_env.py >/dev/null 2>&1
+# shellcheck disable=SC1091
+[ -f user_data/rocm_env.sh ] && source user_data/rocm_env.sh
+nohup venv/bin/python fizgig.py --web --host 0.0.0.0 --port 8081 > "$W/fizgig.log" 2>&1 &
+for i in $(seq 1 90); do curl -fs -o /dev/null http://127.0.0.1:8081/ && break; sleep 2; done
+log "READY"
+tail -F "$W/fizgig.log" "$W/llm.log" 2>/dev/null | grep --line-buffered -i "error\|traceback\|warn" &
+sleep infinity

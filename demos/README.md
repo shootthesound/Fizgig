@@ -43,6 +43,16 @@ Run them in order. Demo 1 trains the LoRA the others use. Keep Affinity open.
 
 `Stop the demo servers` stops the language model and the demos' Fizgig (port 8095). Affinity stays open.
 
+## The demos on a rented AMD GPU
+
+**`A - Run the demos on a rented AMD GPU (MI300X)`** rents an AMD Instinct MI300X (192 GB) on RunPod, about $2.40 an hour. It needs a RunPod API key in Fizgig's Preferences > Pods.
+- **Setup:** it waits for one to be free, then installs Fizgig, its models and the language model on it with AMD's ROCm image (about 10 minutes).
+- **What runs where:** your Assistant then thinks, trains, captions, renders and scores on the AMD card, and Affinity stays on this computer. Pictures cross by themselves: a training folder made from your Affinity layers goes up, and a render comes down before it goes into Affinity.
+- **The demos:** run them as usual with their launchers. Demo 5 is the exception, since it rents its own cloud GPU.
+- **Memory:** on the MI300X, the language model, the render model and a training run all stay loaded together, so nothing swaps.
+
+**`B - Back to this computer (delete the AMD GPU)`** brings every LoRA the pod trained home to `demos\AMD LoRAs`, deletes the pod and points the Assistant back here. Run it when you're done: the pod is billed until then.
+
 Where things go:
 - Affinity documents: the Desktop's `Fizgig Bridge` folder.
 - Training folders and LoRAs: Fizgig's usual folders.

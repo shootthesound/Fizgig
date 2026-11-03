@@ -42,18 +42,24 @@ if [ ! -d llama.cpp ]; then
 fi
 SERVER="$(find "$W/llm/llama.cpp" -name llama-server -type f | head -1)"
 chmod +x "$SERVER"
-DEVS="$(LD_LIBRARY_PATH="$(dirname "$SERVER"):${LD_LIBRARY_PATH:-}" "$SERVER" --list-devices 2>&1)"
+# this image's ROCm is pip packages (no /opt/rocm): Fizgig's installer unpacked the full ROCm tree into its venv
+RSDK="$(find "$W/Fizgig/venv/lib" -maxdepth 3 -type d -name _rocm_sdk_devel | head -1)"
+RLIBS="$RSDK/lib:$(find "$W/Fizgig/venv/lib" -maxdepth 3 -type d -name _rocm_sdk_core | head -1)/lib"
+devices() { LD_LIBRARY_PATH="$(dirname "$1"):$RLIBS:${LD_LIBRARY_PATH:-}" "$1" --list-devices 2>&1; }
+DEVS="$(devices "$SERVER")"
 echo "$DEVS" | sed 's/^/[amd llama] /' | head -12
 if ! echo "$DEVS" | grep -qiE "ROCm[0-9]|HIP"; then        # the prebuilt build has no code for this chip: build it
     GFX="$(python3 "$W/Fizgig/src/install/detect_gpu_linux.py" 2>/dev/null)"
-    log "llama.cpp's prebuilt ROCm build doesn't see the GPU: building $LLAMA_BUILD for $GFX"
+    CLANG="$(find "$RSDK" -path '*llvm/bin/clang++' | head -1)"
+    log "llama.cpp's prebuilt ROCm build doesn't see the GPU: building $LLAMA_BUILD for $GFX against $RSDK"
     apt-get install -y -qq cmake build-essential >/dev/null
-    [ -d llama-src ] || git clone -q --depth 1 -b "$LLAMA_BUILD" https://github.com/ggml-org/llama.cpp llama-src
-    (cd llama-src && HIPCXX="$(hipconfig -l)/clang" HIP_PATH="$(hipconfig -R)" cmake -S . -B build -DGGML_HIP=ON \
-        -DAMDGPU_TARGETS="$GFX" -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF >/dev/null \
-        && cmake --build build --config Release -j"$(nproc)" --target llama-server 2>&1 | tail -5)
-    SERVER="$W/llm/llama-src/build/bin/llama-server"
-    "$SERVER" --list-devices 2>&1 | sed 's/^/[amd llama] /' | head -12
+    [ -d llama-src ] || git clone -q --depth 1 -b "$LLAMA_BUILD" https://github.com/ggml-org/llama.cpp llama-src 2>/dev/null
+    (cd llama-src && HIP_PATH="$RSDK" ROCM_PATH="$RSDK" cmake -S . -B build -DGGML_HIP=ON -DAMDGPU_TARGETS="$GFX" \
+        -DCMAKE_HIP_COMPILER="$CLANG" -DCMAKE_HIP_COMPILER_ROCM_ROOT="$RSDK" -DCMAKE_PREFIX_PATH="$RSDK" \
+        -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF 2>&1 | grep -iE "error|hip|rocm" | head -20 \
+        ; cmake --build build --config Release -j"$(nproc)" --target llama-server 2>&1 | grep -iE "error|built target" | tail -8)
+    [ -x "$W/llm/llama-src/build/bin/llama-server" ] && SERVER="$W/llm/llama-src/build/bin/llama-server"
+    devices "$SERVER" | sed 's/^/[amd llama] /' | head -12
 fi
 "$W/Fizgig/venv/bin/python" - <<EOF
 from huggingface_hub import hf_hub_download
@@ -79,7 +85,7 @@ cache-type-v = q8_0
 EOF
 
 log "starting the language model's server (port 38100) and Fizgig (port 8081)"
-LD_LIBRARY_PATH="$(dirname "$SERVER"):${LD_LIBRARY_PATH:-}" nohup "$SERVER" --models-preset presets.ini --models-max 1 \
+LD_LIBRARY_PATH="$(dirname "$SERVER"):$RLIBS:${LD_LIBRARY_PATH:-}" nohup "$SERVER" --models-preset presets.ini --models-max 1 \
     --host 0.0.0.0 --port 38100 --jinja --api-key "${LLM_KEY:?}" > "$W/llm.log" 2>&1 &
 cd "$W/Fizgig" || exit 1
 export MIOPEN_FIND_MODE=2 FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE FIZGIG_NO_EXPANDABLE=1 FIZGIG_GPU_BACKEND=rocm

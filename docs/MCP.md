@@ -34,10 +34,12 @@ with Fizgig running. Claude Desktop's `claude_desktop_config.json`, for example:
 | `make_masks` | Masks for masked training |
 | `start_training`, `training_status`, `wait_for_training`, `pause_training`, `stop_training` | Training runs. Start shows the Start checks' warnings first |
 | `list_runs`, `list_loras`, `list_previews` | Results |
-| `render` | Pictures with a LoRA, on Studio's preview model: several in one call load the model once |
+| `render` | Pictures with a LoRA, on Studio's preview model: several in one call load the model once. A LoRA at strength 0 renders with the plain model |
+| `score_pictures` | Scores pictures of a person before one is used, no GPU needed: likeness to their training folder (ArcFace), eyes open, facing the camera, one main face, sharpness; picks the best likeness among those that pass. ONNX models on onnxruntime |
 | `cloud_train`, `cloud_status`, `cloud_cancel` | Training on a rented RunPod GPU (your RunPod API key on the Pods tab): the best-value card under your hourly price, a pod that doesn't start in time deleted and the next tried, the LoRA files brought home and the pod deleted. Fizgig stops it at the spending cap or time limit you set |
 | `release_gpu` | Takes Fizgig's models off the GPU for another program |
 | `affinity_status`, `affinity_documents`, `affinity_view` | What's open in Affinity, and how it looks |
+| `affinity_add_shape`, `affinity_add_text`, `affinity_hide_layer`, `affinity_save` | Lay out a design: rectangles (solid or gradient fill, outline), lines of text, hiding a layer (never deleting), saving |
 | `affinity_to_training_folder` | Exports a document's layers (or the selected ones, or the whole document) into a training folder |
 | `affinity_new_document` | A new document of a set size, saved in the Fizgig Bridge folder |
 | `affinity_place` | Puts a picture into Affinity as a new layer, fitted into a layer's box if you name one; with replace, the old layer is hidden (never deleted) |

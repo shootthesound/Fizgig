@@ -97,7 +97,8 @@ async function boot() {
     for (const f of S.schema.families) sel.append(el("option", {value: f.key, text: f.gui_label || f.display_name}));
   }
   await chooseFamily(st.family && S.schema.order.includes(st.family) ? st.family : S.schema.order[0]);
-  showTab("start");                // Fizgig always opens on Start (its News card), never the last tab used
+  const askTab = new URLSearchParams(location.search).get("tab");   // a link to one tab (the demo launchers: ?tab=assistant)
+  showTab(askTab && document.getElementById("tab-" + askTab) ? askTab : "start");   // else Start (its News card), never the last tab used
   // the forms are there: the page is usable. The cover stays at least 3.5 s from the page opening, so its tip can be
   // read - once a window: switching it between this computer and a pod (window.name stays across the switch, whatever
   // the address) shows the cover only while the page loads

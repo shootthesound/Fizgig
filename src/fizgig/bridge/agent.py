@@ -34,7 +34,12 @@ SYSTEM = (
     "redo a picture already in Affinity, place the new one with into_layer and replace. To train in the cloud (the "
     "user asks for a rented GPU or gives a price), use cloud_train with their price as max_price, then cloud_status "
     "with wait=true until it's done, and carry on with the LoRA it brought home; if it failed, say why in one line "
-    "and train here with start_training (the same model, preset and settings).")
+    "and train here with start_training (the same model, preset and settings). For a picture of a person that goes into "
+    "a design, render 4 variations in one call and run score_pictures on them with the LoRA's training folder; place "
+    "its pick, and say in one line why it won (likeness, eyes, facing). To design a layout from nothing (a poster, a "
+    "flyer, a card), make the document with affinity_new_document, then build it with affinity_add_shape (background, "
+    "panels, an empty photo frame) and affinity_add_text (one call per line), name every layer, look at it with "
+    "affinity_view, fix what's off, and affinity_save it.")
 
 
 class LLM:

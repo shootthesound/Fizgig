@@ -11,7 +11,7 @@ import re
 import shutil
 import time
 
-from fizgig.bridge import affinity
+from fizgig.bridge import affinity, scores
 from fizgig.bridge.mcp import Server, Tool, ToolError, image, text
 
 PICTURES = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
@@ -143,6 +143,7 @@ def build(ctx) -> Server:
     @tool("list_pictures", "A training folder's pictures with their captions (and masks, for masked training).",
           {"folder": S}, ["folder"])
     def _pictures(folder):
+        folder = training_folder(folder)
         r = get("/api/captions", folder=folder)
         return [{"name": it.get("name"), "caption": it.get("caption"), **({"mask": it["mask"]} if it.get("mask") else {})}
                 for it in r.get("items", [])]
@@ -159,6 +160,7 @@ def build(ctx) -> Server:
           {"folder": S, "name": {"type": "string", "description": "the picture's file name"}, "caption": S},
           ["folder", "name", "caption"])
     def _caption(folder, name, caption):
+        folder = training_folder(folder)
         post("/api/captions/save", {"folder": folder, "name": name, "text": caption})
         return {"ok": True}
 
@@ -169,6 +171,7 @@ def build(ctx) -> Server:
                                                                           "short", "detailed"]},
            "overwrite": B}, ["folder"])
     def _caption_all(folder, trigger="", task="training", overwrite=False):
+        folder = training_folder(folder)
         from fizgig.web import captions
         opts = get("/api/captions/options")
         if not opts.get("qwen_available"):
@@ -190,6 +193,7 @@ def build(ctx) -> Server:
                         "'sam' with words saying what to keep.",
           {"folder": S, "kind": S, "include": S, "exclude": S, "overwrite": B}, ["folder"])
     def _masks(folder, kind="person", include="", exclude="", overwrite=False):
+        folder = training_folder(folder)
         sam = kind.lower().startswith("sam")
         return post("/api/masks/make", {"folder": folder, "kind": "" if sam else kind, "sam": sam,
                                         "include": include, "exclude": exclude, "overwrite": bool(overwrite)})
@@ -347,11 +351,13 @@ def build(ctx) -> Server:
                 "previews": [{"path": it.get("path"), "epoch": it.get("epoch"), "prompt": it.get("idx")}
                              for it in items[:max(1, int(limit))]]}
 
-    @tool("render", "Render a picture with a LoRA (Studio's preview model, on the GPU): prompt, seed, size and the "
+    @tool("render", "Render a picture with a LoRA (a file, or a run's LoRA name) on Studio's preview model, on the GPU: prompt, seed, size and the "
                     "LoRA's strength. Several pictures in one call (variations, or prompts) load the model once: much faster than one call each. Takes Studio over while it works. Returns the pictures' paths and a look at them. A "
                     "see-through picture (a sticker, a cut-out, a logo) on Qwen Image 2.1: put the subject in its own "
                     "wording, 'This is an RGBA image with transparency. <subject>. The image has alpha channel and "
-                    "the background is transparent.' - the PNG keeps its alpha and goes into Affinity as a cut-out.",
+                    "the background is transparent.' - the PNG keeps its alpha and goes into Affinity as a cut-out. A "
+                    "picture that isn't of the LoRA's subject (a sticker, a logo, a scene): any LoRA of that model at "
+                    "strength 0 renders with the plain model.",
           {"lora": S, "prompt": S, "seed": I, "width": I, "height": I, "strength": N,
            "variations": {"type": "integer", "description": "how many pictures of this prompt (seeds seed, seed+1 ...)"},
            "prompts": {"type": "array", "items": S, "description": "several prompts in one go (instead of prompt)"},
@@ -363,7 +369,27 @@ def build(ctx) -> Server:
         todo = list(prompts or []) or [prompt] * max(1, min(int(variations or 1), 8))
         if not any(p.strip() for p in todo):
             raise ToolError("Give a prompt.")
+        if not os.path.isfile(lora):                # a run's LoRA name: its final file, else its newest checkpoint
+            name = os.path.basename(lora).removesuffix(".safetensors")
+            r = get("/api/runs")
+            for x in (r if isinstance(r, list) else r.get("runs", [])):
+                d = x.get("output_dir") or ""
+                if x.get("lora") == name and d:
+                    final = os.path.join(d, name + ".safetensors")
+                    lora = final if os.path.isfile(final) else (_newest_lora(d, name) or lora)
+                    break
         return _studio_render(api, post, lora, todo, seed, width, height, strength, model, reference)
+
+    @tool("score_pictures", "Score pictures of a person before one is used (no GPU needed): likeness to the person's "
+                            "training folder (ArcFace), eyes open, facing the camera, one main face, sharpness. Returns "
+                            "each picture's scores and a pick: the best likeness among those that pass.",
+          {"paths": {"type": "array", "items": S}, "likeness_folder": {"type": "string", "description":
+           "the person's training folder (a name or a path)"}}, ["paths"])
+    def _score(paths, likeness_folder=""):
+        r = scores.score(paths, training_folder(likeness_folder) if likeness_folder else "")
+        for row in r["pictures"]:
+            row["file"] = os.path.basename(row.pop("path"))
+        return r
 
     # -- Affinity
     @tool("affinity_status", "Is Affinity by Canva reachable (its MCP server on)? Its Desktop bridge folder.")
@@ -371,9 +397,17 @@ def build(ctx) -> Server:
         return affinity.status()
 
     @tool("affinity_documents", "The documents open in Affinity, each with its layers (top first; index counts from "
-                                "the bottom, 0).")
-    def _a_docs():
-        return affinity.documents()
+                                "the bottom, 0). document (an id or title): just that one.", {"document": S})
+    def _a_docs(document=""):
+        docs = affinity.documents(document)
+        if document or len(docs) < 3:
+            return docs
+        out = []                                # many open: newest first, the layers in full for the current one only
+        for d in reversed(docs):
+            if not d.get("current"):
+                d = {**d, "layers": f"{len(d['layers'])} layers (affinity_documents with this document lists them)"}
+            out.append(d)
+        return out
 
     @tool("affinity_to_training_folder", "Export layers from an Affinity document as PNGs into a training folder: "
                                          "the given layer indexes, else (selected=true) the selected layers, else "
@@ -404,10 +438,45 @@ def build(ctx) -> Server:
 
     @tool("affinity_new_document", "Make a new Affinity document of this many pixels (transparent, or on a "
                                    "background colour [r, g, b]), named and saved in the Desktop's Fizgig Bridge "
-                                   "folder. Lay pictures out on it with affinity_place's box.",
+                                   "folder (a name that is taken gets a number: use the title it returns). Lay pictures out on it with "
+                                   "affinity_place's box.",
           {"width": I, "height": I, "name": S, "background": {"type": "array", "items": I}}, ["width", "height"])
     def _a_new(width, height, name="", background=None):
         return affinity.new_document(width, height, name, background)
+
+    colour = {"type": "array", "items": N, "description": "[r, g, b] or [r, g, b, a], 0-255"}
+
+    @tool("affinity_add_shape", "Draw a rectangle layer in an Affinity document: a background, a panel, a band, or an "
+                                "empty photo frame for affinity_place's into_layer (a faint fill, e.g. alpha 20, and "
+                                "an outline). fill alone is solid; fill + fill_to is a gradient (angle 90 = top to "
+                                "bottom, 0 = left to right). Give every layer a name.",
+          {"document": S, "box": {"type": "array", "items": N, "description": "[x, y, width, height] in pixels"},
+           "fill": colour, "fill_to": colour, "angle": N, "outline": colour, "outline_width": N, "name": S},
+          ["box", "name"])
+    def _a_shape(box, name, document="", fill=None, fill_to=None, angle=90, outline=None, outline_width=3):
+        return affinity.add_shape(document, box, fill, fill_to, angle, outline, outline_width, name)
+
+    @tool("affinity_add_text", "Write one line of text in an Affinity document: (x, y) is the left end of its "
+                               "baseline, size in pixels (a headline ~90-110 on a 1080 px wide page, body ~30), bold "
+                               "or not, a colour. One call per line; check the layout with affinity_view after.",
+          {"document": S, "text": S, "x": N, "y": N, "size": N, "bold": B, "colour": colour,
+           "font": {"type": "string", "description": "a PostScript font name; Arial when left out"}, "name": S},
+          ["text", "x", "y", "size"])
+    def _a_text(text, x, y, size, document="", bold=False, colour=None, font="", name=""):
+        return affinity.add_text(document, text, x, y, size, bold, colour, font, name)
+
+    @tool("affinity_hide_layer", "Hide a layer in an Affinity document (by index from affinity_documents or by "
+                                 "name), e.g. a line of text to write again; it is hidden, not deleted.",
+          {"document": S, "layer": I, "name": S})
+    def _a_hide(document="", layer=None, name=""):
+        if layer is None and not name:
+            raise ToolError("Give the layer's index or name.")
+        return affinity.hide_layer(document, layer, name)
+
+    @tool("affinity_save", "Save an Affinity document (a new one goes into the Desktop's Fizgig Bridge folder, under "
+                           "name or its title; a taken name gets a number).", {"document": S, "name": S})
+    def _a_save(document="", name=""):
+        return affinity.save(document, name)
 
     @tool("affinity_view", "See an Affinity document as it looks now (at most 1024 px).", {"document": S})
     def _a_view(document=""):

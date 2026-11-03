@@ -109,7 +109,8 @@ def down():
                 d = run.get("output_dir") or ""
                 for it in (c.call("/api/checkpoints?dir=" + urllib.parse.quote(d)).get("items") or []) if d else []:
                     if it.get("name", "").endswith(".safetensors"):
-                        dest = os.path.join(HOME, run.get("lora") or "run", it["name"])
+                        dest = os.path.join(HOME, f"{time.strftime('%Y-%m-%d')} pod {st['pod']}",   # never another
+                                            run.get("lora") or "run", it["name"])                    # session's files
                         os.makedirs(os.path.dirname(dest), exist_ok=True)
                         if not os.path.isfile(dest):
                             c.download("/api/download?path=" + urllib.parse.quote(it["path"]), dest, lambda *a: None)

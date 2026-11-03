@@ -188,14 +188,49 @@ class SplitTools:
         return here + [s for n, s in self.remote.items() if not n.startswith("affinity_") and n != "release_gpu"]
 
     def call(self, name, args):
+        if name == "wait_for_training":                  # a proxy cuts a request at ~100 s: wait here, in short asks
+            return self._wait_training(args)
         if not name.startswith("affinity_"):
-            r = self._rpc("tools/call", {"name": name, "arguments": args})
+            try:
+                r = self._rpc("tools/call", {"name": name, "arguments": args})
+            except (OSError, ValueError) as e:           # cut off on the way (the work carries on there)
+                from fizgig.bridge.mcp import text
+                logger.info("pod %s: %s; waiting for it to finish there", name, e)
+                self._until_idle()
+                return [text(f"{name} took longer than the connection to the GPU machine holds, and has finished "
+                             "there now. Check its result (list_pictures, training_status, list_runs, ...).")], False
             return r.get("content") or [], bool(r.get("isError"))
         if name == "affinity_to_training_folder":        # exported here, then sent to the pod's training data
             return self._to_pod_folder(args)
         if name == "affinity_place" and args.get("path") and not os.path.isfile(args["path"]):
             args = {**args, "path": self._from_pod(args["path"])}
         return self.local.call(name, args)
+
+    def _busy(self):
+        try:
+            run = self.pod.call("/api/run")
+            cap = self.pod.call("/api/captions/status")
+        except (OSError, ValueError):
+            return True                                  # not answering: count as busy, ask again
+        return bool(run.get("running")) or str(cap.get("state") or "idle") not in ("idle", "loaded")
+
+    def _until_idle(self, minutes=120):
+        end = time.time() + minutes * 60
+        while time.time() < end and self._busy():
+            time.sleep(15)
+
+    def _wait_training(self, args):
+        end = time.time() + max(0.1, float(args.get("minutes") or 30)) * 60
+        time.sleep(3)
+        while time.time() < end:
+            try:
+                if not self.pod.call("/api/run").get("running"):
+                    break
+            except (OSError, ValueError):
+                pass
+            time.sleep(15)
+        r = self._rpc("tools/call", {"name": "wait_for_training", "arguments": {"minutes": 0.05}})
+        return r.get("content") or [], bool(r.get("isError"))
 
     def _to_pod_folder(self, args):
         import re

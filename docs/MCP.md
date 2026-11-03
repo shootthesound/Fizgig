@@ -34,11 +34,12 @@ with Fizgig running. Claude Desktop's `claude_desktop_config.json`, for example:
 | `make_masks` | Masks for masked training |
 | `start_training`, `training_status`, `wait_for_training`, `pause_training`, `stop_training` | Training runs. Start shows the Start checks' warnings first |
 | `list_runs`, `list_loras`, `list_previews` | Results |
-| `render` | A picture with a LoRA, on Studio's preview model |
+| `render` | Pictures with a LoRA, on Studio's preview model: several in one call load the model once |
 | `release_gpu` | Takes Fizgig's models off the GPU for another program |
 | `affinity_status`, `affinity_documents`, `affinity_view` | What's open in Affinity, and how it looks |
 | `affinity_to_training_folder` | Exports a document's layers (or the selected ones, or the whole document) into a training folder |
-| `affinity_place` | Puts a picture into Affinity as a new layer, fitted into a layer's box if you name one |
+| `affinity_new_document` | A new document of a set size, saved in the Fizgig Bridge folder |
+| `affinity_place` | Puts a picture into Affinity as a new layer, fitted into a layer's box if you name one; with replace, the old layer is hidden (never deleted) |
 
 ## Affinity by Canva
 

@@ -212,4 +212,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if sys.platform == "linux" and os.environ.get("FIZGIG_GPU_BACKEND", "").lower() == "rocm":
+        from fizgig.rocm.cache_exit import run_cache_main     # exit before HIP teardown, which can crash a finished cache
+
+        run_cache_main(main)
+    else:
+        main()

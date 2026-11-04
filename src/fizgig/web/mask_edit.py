@@ -84,6 +84,8 @@ def save(folder, name, png_data_url):
         mask = mask.resize(size, Image.BILINEAR)
     old = mask_for(pic)
     out = os.path.join(folder, os.path.splitext(name)[0] + MASK_SUFFIX + ".png")
+    if old and old.lower().endswith(".png"):
+        out = old                                         # same file, so a running run keeps finding it
     if float(np.asarray(mask, np.float32).mean()) / 255.0 < MIN_COVER:
         if old:
             os.remove(old)

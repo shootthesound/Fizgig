@@ -5319,8 +5319,15 @@ class Handler(BaseHTTPRequestHandler):
                                                             b.get("offset") or 0))
                 except ValueError as e:
                     return self.json({"error": str(e)}, 400)
-            if path in ("/api/prep/run", "/api/look/scan", "/api/look/move", "/api/masks/make", "/api/masks/edit/save",
-                        "/api/dupes/scan", "/api/dupes/move"):
+            if path == "/api/masks/edit/save":  # allowed while training: written atomically, a running run reads it
+                from fizgig.web import mask_edit  # the next time that picture comes up (masks.load_mask checks mtime)
+                try:
+                    return self.json(mask_edit.save(str(b.get("folder") or ""), str(b.get("name") or ""),
+                                                    str(b.get("png") or "")))
+                except ValueError as e:
+                    return self.json({"error": str(e)}, 400)
+            if path in ("/api/prep/run", "/api/look/scan", "/api/look/move", "/api/masks/make", "/api/dupes/scan",
+                        "/api/dupes/move"):
                 folder = str(b.get("folder") or "")
                 norm = lambda p: os.path.normcase(os.path.abspath(p or "."))
                 with _lock:
@@ -5345,9 +5352,6 @@ class Handler(BaseHTTPRequestHandler):
                     if path == "/api/look/scan":
                         captions.unload()
                         return self.json(prep_jobs.look_scan(folder, b.get("baselines") or []))
-                    if path == "/api/masks/edit/save":
-                        from fizgig.web import mask_edit
-                        return self.json(mask_edit.save(folder, str(b.get("name") or ""), str(b.get("png") or "")))
                     if path == "/api/masks/make":
                         captions.unload()
                         sam = None

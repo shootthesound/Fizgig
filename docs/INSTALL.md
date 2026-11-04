@@ -12,7 +12,7 @@ Fizgig ships as a ready-made cloud image: the whole app in a browser tab, not a 
 
 ## Requirements
 
-- **GPU** — NVIDIA RTX 30 / 40 / 50-series, or **AMD Radeon** with ROCm (RDNA1 through RDNA4, Strix Point / Halo, Instinct MI300+). **Klein 9B** trains on 10 GB (the 4-bit base below 16 GB), **Flux 3 Image Klein** and **Krea 2** train on 8 GB, **MiniMax H3** on 16 GB, **Qwen Image 2.1** on 10 GB — see [VRAM guidance](#vram-guidance). The fp8 Base's VRAM savings apply on NVIDIA Ada+; on AMD, NF4 and INT8 are the primary quant paths.
+- **GPU** — NVIDIA RTX 30 / 40 / 50-series, or **AMD Radeon** with ROCm (RDNA1 through RDNA4, Strix Point / Halo, Instinct MI300+). **Klein 9B** trains on 10 GB (the 4-bit base below 16 GB), **Flux 3 Image Klein** and **Krea 2** train on 8 GB, **Fibo 2.0** on 12 GB, **MiniMax H3** on 16 GB, **Qwen Image 2.1** on 10 GB — see [VRAM guidance](#vram-guidance). The fp8 Base's VRAM savings apply on NVIDIA Ada+; on AMD, NF4 and INT8 are the primary quant paths.
 - **NVIDIA driver** — 555+ on Windows, 550+ on Linux (CUDA 12.8 wheels).
 - **AMD ROCm** — **Windows:** `install_fizgig_rocm.bat` (supported path; launcher and installer improvements by [@scryptio](https://github.com/scryptio)). **Linux:** `./install_fizgig_rocm.sh`, **highly experimental**: newer gfx such as RDNA4, a desktop compositor sharing the training GPU, and driver resets are common. Use Windows ROCm or NVIDIA Linux for production training. Optional system `amdrocm-amdsmi` gives accurate status-bar VRAM via `amd-smi`.
 - **OS** — Windows 10 / 11 or Linux. macOS handles captioning and image prep; training needs CUDA or ROCm.
@@ -178,6 +178,17 @@ All files live in [black-forest-labs/flux-3-image-klein-comfy](https://huggingfa
 | Autoencoder | `flux2-vae.safetensors` | ~340 MB |
 | Text Encoder | `qwen3vl_4b_bf16.safetensors` | ~8.9 GB |
 
+### Fibo 2.0
+
+All files live in [Comfy-Org/Fibo-2.0](https://huggingface.co/Comfy-Org/Fibo-2.0), not gated.
+
+| Model | File | Size |
+|---|---|---|
+| **Dev DiT (bf16) — training** | `fibo2_dev_bf16.safetensors` (or the int8 `fibo2_dev_int8_convrot.safetensors`, ~8.4 GB) | ~16.5 GB |
+| Autoencoder | `flux2-vae.safetensors` | ~340 MB |
+| Text Encoder | `qwen3vl_4b_bf16.safetensors` | ~8.9 GB |
+| Turbo LoRA — previews | `fibo_2.0_turbo_lora_avg_rank_270_bf16.safetensors` | ~2.0 GB |
+
 Files with `_sd_` in the name are the distilled model; train on the one without. More in [FLUX3.md](FLUX3.md).
 
 ### Krea 2
@@ -223,6 +234,10 @@ On first launch Fizgig detects your VRAM and picks the default (0 on 16 GB cards
 ### Flux 3 Image Klein
 
 Trains on cards down to **8 GB**. Auto picks bf16, INT8 or 4-bit NF4 from your free VRAM; a rank-16 LoRA at 1 MP peaked at 12.7 GB on bf16, 9.1 GB on INT8 and 6.2 GB on NF4. On small cards the training model steps off the GPU while previews render. See [FLUX3.md](FLUX3.md#memory-8-gb-and-up).
+
+### Fibo 2.0
+
+Trains on cards down to **12 GB**. Auto picks INT8 or 4-bit NF4 from your free VRAM: a 16 GB card trains INT8 with no block swap (about 11 GB), a 12 GB card NF4 (about 8 GB). With the 1024 previews the peaks are 18.7 GB (INT8) and 15.5 GB (NF4) at 0.25 MP; on cards under 20 GB the previews render at 768 with the model parked, so they fit. See [FIBO2.md](FIBO2.md#memory-12-gb-and-up).
 
 ### Krea 2
 

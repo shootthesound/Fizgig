@@ -123,6 +123,18 @@ All rights reserved. Licensed under the Apache License, Version 2.0.
 
 ---
 
+## Diffusers / Fibo 2.0 — Apache License 2.0
+
+Upstream: https://github.com/huggingface/diffusers
+
+`src/fizgig/fibo2/model.py` is ported from the Diffusers `BriaFibo2Transformer2DModel`
+(`models/transformers/transformer_bria_fibo2.py`, v0.42.1) and the text recipe and edit-prompt builder of
+`BriaFibo2Pipeline` (`pipelines/bria_fibo2/pipeline_bria_fibo2.py`). Copyright 2026 Bria AI and The HuggingFace
+Team. Licensed under the Apache License, Version 2.0. Fizgig's changes are described in the file's header. (The
+Fibo 2.0 weights are distributed separately by BRIA under CC BY-NC 4.0.)
+
+---
+
 ## Z-Image (Tongyi-MAI / Alibaba) — Apache License 2.0
 
 Upstream: https://github.com/Tongyi-MAI/Z-Image

@@ -35,7 +35,7 @@ _IO = ("x_embedder", "t_embedder", "final_layer")
 _SAMPLING_NOTE = "Flow matching; CFG 5 against the negative prompt, as the reference pipeline."
 
 
-def _preset(rank, area, lr=1e-6, adaptive=None, epochs=40, mp="0.25", slider=False, edit=False, optimizer="automagic3"):
+def _preset(rank, area, lr=1e-6, adaptive=None, epochs=40, mp="0.25", slider=False, edit=False, ft=False, optimizer="automagic3"):
     """The built-in presets' values, in the standard layer's keys (the shape krea2.py and moss_image.py use). Automagic
     starts at 1e-6 and sets its own rate (measured 4 Nov 2026, rank 32 Full Model, 16 photos at 0.25 MP: up to 1.1e-4 by
     epoch 10, easing to 2.5e-5 by 60; likeness earlier than AdamW at a flat 1e-4, best by eye at epoch 40). A 1e-4 start overcooked the LoRA (PR #250).
@@ -43,13 +43,14 @@ def _preset(rank, area, lr=1e-6, adaptive=None, epochs=40, mp="0.25", slider=Fal
     lo, hi = adaptive or ("1e-5", "4e-4")
     return {
         "NETWORK_DIM": rank, "NETWORK_ALPHA": rank, "NETWORK_TYPE": "LoRA (standard)",
-        "TARGET_LAYERS": area, "FAMILY_EDIT": edit, "FAMILY_SLIDER": slider, "FAMILY_FT": False,
+        "TARGET_LAYERS": area, "FAMILY_EDIT": edit, "FAMILY_SLIDER": slider, "FAMILY_FT": ft,
         "FAMILY_SLIDER_GUIDANCE": "3",                               # Krea 2 and Flux 3's prompt-slider push
         "LEARNING_RATE": lr, "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 42,
         "ADAPTIVE_LR": adaptive is not None, "ADAPTIVE_LR_MIN": lo, "ADAPTIVE_LR_MAX": hi,
         "OPTIMIZER_TYPE": optimizer, "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
         "DATASET_MEGAPIXELS": mp, "FAMILY_EMA": "0.98 (recommended)", "COMPILE_BLOCKS": "Auto",
         "BLOCKS_SWAP": "Auto (detect from GPU)", "FAMILY_PRECISION": "Auto (fits your free VRAM)",
+        **({"FAMILY_FT_ROTATIONS": "3", "FAMILY_FT_ROTATE_EVERY": "2", "FAMILY_FT_SAVE_EVERY": "1"} if ft else {}),
     }
 
 
@@ -289,7 +290,7 @@ _FIBO2 = FamilyDescription(
     workbench_follows_samples=True,   # CFG 5: the workbench takes the Samples tab's negative, steps and CFG
     # a third to three times the AdamW rate measured to train cleanly (1e-4, 4 Nov 2026); Automagic sets its own rate,
     # so the built-in presets never warn
-    start_lr_bands=(("lora", 3e-5, 3e-4), ("slider", 7e-5, 6e-4)),   # the slider band from its 2e-4 preset
+    start_lr_bands=(("lora", 3e-5, 3e-4), ("finetune", 3.3e-6, 3e-5), ("slider", 7e-5, 6e-4)),  # from the presets
     preview_width=1024,
     preview_height=1024,
 
@@ -307,6 +308,9 @@ _FIBO2 = FamilyDescription(
         # sliders are rank 8 on every model, AdamW at 2e-4 for 20 epochs at 0.5 MP as Flux 3's
         # edit pairs, as trained on 4 Nov 2026 (15 greyscale -> colour pairs, 6 epochs at 0.25 MP): AdamW at 1e-4
         ("✨ Fibo 2.0 Edit (rank 16)", _preset(16, "Full Model", lr=1e-4, epochs=6, edit=True, optimizer="adamw")),
+        # a full fine-tune, as run on 4 Nov 2026 (16 photos at 0.25 MP: 3 rotations, 2 epochs a part, its checkpoint
+        # loaded in ComfyUI in place of the base and showed the training)
+        ("✨ Fibo 2.0 Fine-tune (1e-5)", _preset(16, "Full Model", lr=1e-5, ft=True, optimizer="adamw")),
         ("✨ Fibo 2.0 Slider (rank 8, 2e-4)",
          _preset(8, "Full Model", lr=2e-4, epochs=20, mp="0.5", slider=True, optimizer="adamw")),
     ),

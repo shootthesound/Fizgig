@@ -413,7 +413,7 @@ Fibo 2.0 trains through the shared cache script and trainer with `--family fibo2
 
 ### Full example
 
-The GUI's **Fibo 2.0 Dev (rank 32, full model)** preset, as it builds it: rank 32, 0.25 MP (`resolution = [512, 512]` in the TOML), Automagic from 1e-6, 40 epochs, with Turbo previews:
+The GUI's **Fibo 2.0 (rank 32, full model)** preset, as it builds it: rank 32, 0.25 MP (`resolution = [512, 512]` in the TOML), Automagic from 1e-6, 40 epochs, with Turbo previews:
 
 ```bash
 python src/fizgig/families/cache.py --family fibo2 --stage latents --dataset_config my_dataset.toml --model /models/flux2-vae.safetensors

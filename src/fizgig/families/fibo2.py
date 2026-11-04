@@ -252,7 +252,7 @@ _FIBO2 = FamilyDescription(
         # an empty structured caption when none is given. The model is not CFG-distilled, so CFG > 1 is the intended
         # use and the negative prompt does fire; 20 steps was too low for Dev. The card's 50-step figure is the
         # same recipe with more steps, not a different one.
-        SamplingSettings("Fibo 2.0 Dev", steps=30, cfg=5.0, sampler="euler", scheduler="simple",
+        SamplingSettings("Fibo 2.0", steps=30, cfg=5.0, sampler="euler", scheduler="simple",
                          negative_prompt=True, note="Flow matching on the reference schedule; CFG 5 against the "
                          "negative prompt, as the diffusers pipeline defaults to it.",
                          source="diffusers 0.42.1 BriaFibo2Pipeline.__call__ defaults (num_inference_steps=30, "
@@ -267,7 +267,7 @@ _FIBO2 = FamilyDescription(
             name="Turbo LoRA (4-step)",
             repo="Comfy-Org/Fibo-2.0",
             file="loras/fibo_2.0_turbo_lora_avg_rank_270_bf16.safetensors",
-            pairs_with="Fibo 2.0 Dev",
+            pairs_with="Fibo 2.0",
             strength=1.0,
             settings=SamplingSettings("Turbo LoRA 4-step", steps=4, cfg=1.0, sampler="euler", scheduler="simple",
                                       note="Comfy-Org's Fibo 2.0 Turbo workflow: 4 steps, CFG 1.",
@@ -302,8 +302,8 @@ _FIBO2 = FamilyDescription(
     # The built-in Training-tab presets: the first is applied on a first visit. Full Model at rank 32 is the general
     # default; the rank-16 area leaves the refiners and the perceivers out, the shape the 0.25 MP probes trained.
     presets=(
-        ("✨ Fibo 2.0 Dev (rank 32, full model)", _preset(32, "Full Model")),
-        ("✨ Fibo 2.0 Dev (rank 16, skip refiner + perceiver blocks)",
+        ("✨ Fibo 2.0 (rank 32, full model)", _preset(32, "Full Model")),
+        ("✨ Fibo 2.0 (rank 16, skip refiner + perceiver blocks)",
          _preset(16, "Full without refiners or perceivers")),
         # sliders are rank 8 on every model, AdamW at 2e-4 for 20 epochs at 0.5 MP as Flux 3's
         # edit pairs, as trained on 4 Nov 2026 (15 greyscale -> colour pairs, 6 epochs at 0.25 MP): AdamW at 1e-4
@@ -315,8 +315,8 @@ _FIBO2 = FamilyDescription(
          _preset(8, "Full Model", lr=2e-4, epochs=20, mp="0.5", slider=True, optimizer="adamw")),
     ),
     # notes beside Load Preset: (preset name, note) pairs
-    preset_notes=(("✨ Fibo 2.0 Dev (rank 32, full model)", _SAMPLING_NOTE),
-                  ("✨ Fibo 2.0 Dev (rank 16, skip refiner + perceiver blocks)", _SAMPLING_NOTE)),
+    preset_notes=(("✨ Fibo 2.0 (rank 32, full model)", _SAMPLING_NOTE),
+                  ("✨ Fibo 2.0 (rank 16, skip refiner + perceiver blocks)", _SAMPLING_NOTE)),
     # The Model Area to Train presets: (name, (block ids), (min_t, max_t) or None). The first is the default; the
     # window is None on all four, so the Timestep Range control stays unused. The reference trains all 415
     # nn.Linear layers - that is "Full Model", the 51-block row.

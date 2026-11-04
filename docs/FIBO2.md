@@ -30,8 +30,8 @@ All of them come from [Comfy-Org/Fibo-2.0](https://huggingface.co/Comfy-Org/Fibo
 
 | Preset | Rank | Learning rate | Epochs |
 |---|---|---|---|
-| **Fibo 2.0 Dev (rank 32, full model)** | 32 | Automagic, from 1e-6 | 40 |
-| **Fibo 2.0 Dev (rank 16, skip refiner + perceiver blocks)** | 16 | Automagic, from 1e-6 | 40 |
+| **Fibo 2.0 (rank 32, full model)** | 32 | Automagic, from 1e-6 | 40 |
+| **Fibo 2.0 (rank 16, skip refiner + perceiver blocks)** | 16 | Automagic, from 1e-6 | 40 |
 | **Fibo 2.0 Edit** | 16 | AdamW 1e-4 | 6 |
 | **Fibo 2.0 Fine-tune** | — | 1e-5, 3 rotations | 2 a part |
 | **Fibo 2.0 Slider** | 8 | AdamW 2e-4, at 0.5 MP | 20 |

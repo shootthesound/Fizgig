@@ -117,18 +117,17 @@ class LoRALinear(nn.Module):
         self.scales = {}
         self._meter_block = None         # set by the workbench for block activity (BlockMeter)
 
+    _BASE_ATTRS = ("weight", "bias", "in_features", "out_features")
+
     def __getattr__(self, name):
-        """Attribute lookup falls through to the wrapped Linear. A diffusers forward reads the base module's own
-        attributes off it (TimestepEmbedder.forward does self.mlp[0].weight.dtype), so a wrapped Linear must still
-        answer for .weight / .bias / .in_features / .out_features exactly as the base would - without this, a LoRA
-        on the timestep or modulation Linears breaks the model's own forward instead of just adding a delta."""
-        base = self.__dict__.get("_modules", {}).get("base")
-        if base is None:
-            return super().__getattr__(name)
-        try:
-            return super().__getattr__(name)
-        except AttributeError:
-            return getattr(base, name)
+        """.weight / .bias / .in_features / .out_features answer as the wrapped Linear's: a diffusers forward reads
+        them off the module it holds (Fibo 2.0's TimestepEmbedder does self.mlp[0].weight.dtype). Only those four -
+        a module's own flags (_is_int8, _nf4_packed ...) stay the base's, so a walk over modules counts each once."""
+        if name in LoRALinear._BASE_ATTRS:
+            base = self.__dict__.get("_modules", {}).get("base")
+            if base is not None:
+                return getattr(base, name)
+        return super().__getattr__(name)
 
     def _base_device(self):
         """Where the base weight lives, read off its storage: a ConvRot int8 Linear's .weight decodes the whole
@@ -647,9 +646,9 @@ class FamilyLoRA:
     def load_trainable(self, path):
         """Restore the trainable adapter from a file saved by save(). Returns modules matched."""
         from safetensors.torch import load_file
-        # the family's own save may already be in the export layout (Fibo 2.0's fused single output): the
-        # read-side inverse puts it back onto the live split Linears first, exactly as read_file does
-        sd = self.driver.convert_lora_state_dict(load_file(path))
+        sd = load_file(path)
+        if self.desc.lora.save_fused:        # saved in the checkpoint's fused layout: split it back onto the live Linears
+            sd = self.driver.convert_lora_state_dict(sd)
         n = 0
         for full, w in self.wrapped.items():
             if TRAINABLE not in w.adapters:

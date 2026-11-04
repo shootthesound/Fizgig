@@ -303,7 +303,7 @@ def form(desc):
         custom = bool(getattr(desc, "train_area_custom", True))
         params.append(_row("TARGET_LAYERS", "Model Area to Train", "choice",
                            "Which blocks train. Style also limits training to the late, clean timesteps."
-                           + (" Custom picks the blocks yourself." if custom else " Pick one of the family's areas."),
+                           + (" Custom picks the blocks yourself." if custom else ""),
                            names + (["Custom"] if custom else []),
                            names[0], timesteps={a[0]: [str(int(a[2][0] * 1000)), str(int(a[2][1] * 1000))]
                                                 if a[2] else ["", ""] for a in desc.train_areas}))
@@ -311,7 +311,9 @@ def form(desc):
         if groups:                           # the desktop's Custom block picker: All / None, an area's blocks, ticks
             params.append(_row("TRAINING_BLOCKS", "Blocks to train", "blocks", "", default={}, groups=groups,
                                areas={a[0]: list(a[1]) for a in desc.train_areas if a[1]}))
-        # the family's timesteps are the reference's sigma recipe: no range to set, so the boxes are gone
+        params += [_row("MIN_TIMESTEP", "Min timestep", hint="0-1000: 0 is the clean end, 1000 pure noise. Empty = "
+                        "the whole range."),
+                   _row("MAX_TIMESTEP", "Max timestep")]
     params += [
         _row("NETWORK_DIM", "Network Dim (Rank)"),
         _row("NETWORK_ALPHA", "Network Alpha"),

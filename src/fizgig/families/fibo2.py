@@ -289,12 +289,9 @@ _FIBO2 = FamilyDescription(
     # Repair Studio at 1024 for the 1 MP model (the 1.0 native_megapixels).
     repair_size=1024,
     samples_text=(),  # the family's sampler is in sampling (Euler, simple scheduler, flow matching)
-    # The built-in Training-tab presets: the first is applied on a first visit. Full Model at rank 32 is the general
-    # default; the rank-16 area leaves the refiners and the perceivers out, the shape the 0.25 MP probes trained.
+    # The built-in Training-tab presets: the first is applied on a first visit.
     presets=(
         ("✨ Fibo 2.0 (rank 32, full model)", _preset(32, "Full Model")),
-        ("✨ Fibo 2.0 (rank 16, skip refiner + perceiver blocks)",
-         _preset(16, "Full without refiners or perceivers")),
         # sliders are rank 8 on every model, AdamW at 2e-4 for 20 epochs at 0.5 MP as Flux 3's
         # edit pairs, as trained on 4 Nov 2026 (15 greyscale -> colour pairs, 6 epochs at 0.25 MP): AdamW at 1e-4
         ("✨ Fibo 2.0 Edit (rank 16)", _preset(16, "Full Model", lr=1e-4, epochs=6, edit=True, optimizer="adamw")),
@@ -305,8 +302,7 @@ _FIBO2 = FamilyDescription(
          _preset(8, "Full Model", lr=2e-4, epochs=20, mp="0.5", slider=True, optimizer="adamw")),
     ),
     # notes beside Load Preset: (preset name, note) pairs
-    preset_notes=(("✨ Fibo 2.0 (rank 32, full model)", _SAMPLING_NOTE),
-                  ("✨ Fibo 2.0 (rank 16, skip refiner + perceiver blocks)", _SAMPLING_NOTE)),
+    preset_notes=(("✨ Fibo 2.0 (rank 32, full model)", _SAMPLING_NOTE),),
     # The Model Area to Train presets: (name, (block ids), (min_t, max_t) or None). The first is the default; the
     # window is None on all four, so the Timestep Range control stays unused. The reference trains all 415
     # nn.Linear layers - that is "Full Model", the 51-block row.

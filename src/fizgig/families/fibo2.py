@@ -127,10 +127,8 @@ _FIBO2 = FamilyDescription(
         file_prefix="",
         alpha_key="{prefix}.alpha",
         kohya=True,                     # the form ComfyUI's loader registers on this checkpoint
-        # single output (docs/drivers/STILLS.md): the training save itself writes the fused+padded ComfyUI
-        # layout via driver.export_lora_state_dict - no separate export step. The live model trains on the
-        # split Linears; driver.convert_lora_state_dict is the read-side inverse that turns a fused file back
-        # into them (resume states stay split: _save_state saves without fuse).
+        # ComfyUI's Fibo 2.0 keeps attention.qkv, to_kv and w13 fused and maps no split keys onto them, so every
+        # file is written in that layout (driver.export_lora_state_dict) and read back split
         save_fused=True,
         note="kohya keys (module path with dots as underscores), as every Fizgig Fibo 2.0 LoRA; ComfyUI reads them. "
              "The save writes the checkpoint's fused layout (attention.qkv, ffn.w13 with the FFN hidden padded "
@@ -282,9 +280,6 @@ _FIBO2 = FamilyDescription(
         ("Full without perceivers", _LAYERS + _REFINERS + _IO, None),           # 49
         ("Full without refiners or perceivers", _LAYERS + _IO, None),          # 47
     ),
-    # The four areas already partition the whole model, so a tick list over the same blocks adds nothing: Custom
-    # is not offered. A saved run that still names "Custom" resolves through families/launch.py's area_blocks.
-    train_area_custom=False,
     identity_blocks=(),
     # The Extract tab's presets, on the block map's ids.
     extract_presets=(),

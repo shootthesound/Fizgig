@@ -127,6 +127,11 @@ def _self_check(fused):
                        "instead of alpha/rank", missing_alpha)
 
 
+def _stem(module):
+    """A module's key stem in the family's kohya form (LoRAFormat kohya=True): lora_unet_<path, dots as underscores>."""
+    return f"lora_unet_{module.replace('.', '_')}"
+
+
 class Fibo2Driver(FamilyDriver):
     """The Fibo 2.0 family driver. The block map declares every Linear of the transformer (all 415, the I/O group
     included), so families/quant.py's runtime INT8/NF4 pass wraps the whole model: an INT8 base keeps its weights
@@ -679,7 +684,7 @@ class Fibo2Driver(FamilyDriver):
         def keep(mods):
             return [m for m in mods if m in names] if names is not None else list(mods)
 
-        groups = []
+        layers, refiners, perceiver = [], [], []
         for i in range(N_BLOCKS):
             pre = f"layers.{i}"
             mods = [f"{pre}.attention.to_q", f"{pre}.attention.to_k", f"{pre}.attention.to_v",
@@ -688,27 +693,26 @@ class Fibo2Driver(FamilyDriver):
             if i in INJECTION:
                 mods += [f"{pre}.cross_attention.to_q", f"{pre}.cross_attention.to_k",
                          f"{pre}.cross_attention.to_v", f"{pre}.cross_attention.to_out.0"]
-            groups.append(BlockGroup(pre, [Block(pre, f"Block {i}", keep(mods))]))
+            layers.append(Block(pre, f"Layer {i}", keep(mods)))
         for i in range(N_REFINER):
             pre = f"noise_refiner.{i}"
             mods = [f"{pre}.attention.to_q", f"{pre}.attention.to_k", f"{pre}.attention.to_v",
                     f"{pre}.attention.to_out.0", f"{pre}.feed_forward.w1", f"{pre}.feed_forward.w2",
                     f"{pre}.feed_forward.w3", f"{pre}.adaLN_modulation.0"]
-            groups.append(BlockGroup(pre, [Block(pre, pre, keep(mods))]))
+            refiners.append(Block(pre, f"Noise refiner {i}", keep(mods)))
         for i in range(N_PERCEIVER):
             pre = f"perceiver.layers.{i}"
             mods = [f"{pre}.self_attention.to_q", f"{pre}.self_attention.to_k", f"{pre}.self_attention.to_v",
                     f"{pre}.self_attention.to_out.0", f"{pre}.cross_attention.to_q",
                     f"{pre}.cross_attention.to_k", f"{pre}.cross_attention.to_v",
                     f"{pre}.cross_attention.to_out.0", f"{pre}.ffn.w1", f"{pre}.ffn.w2", f"{pre}.ffn.w3"]
-            groups.append(BlockGroup(pre, [Block(pre, pre, keep(mods))]))
-        groups.append(BlockGroup("I/O", [
-            Block("x_embedder", "Input projection", keep(["x_embedder"])),
-            Block("t_embedder", "Timestep embedding", keep(["t_embedder.mlp.0", "t_embedder.mlp.2"])),
-            Block("final_layer", "Output projection",
-                  keep(["final_layer.linear", "final_layer.adaLN_modulation.1"])),
-        ]))
-        return groups
+            perceiver.append(Block(pre, f"Perceiver layer {i}", keep(mods)))
+        # labels end in one word: the Blocks to Train picker shows a group's first word and a block's last
+        io = [Block("x_embedder", "Input", keep(["x_embedder"])),
+              Block("t_embedder", "Timestep", keep(["t_embedder.mlp.0", "t_embedder.mlp.2"])),
+              Block("final_layer", "Output", keep(["final_layer.linear", "final_layer.adaLN_modulation.1"]))]
+        return [BlockGroup("Layers", layers), BlockGroup("Refiners (noise)", refiners),
+                BlockGroup("Perceiver", perceiver), BlockGroup("I/O", io)]
 
     def _module_paths(self):
         """{declared stem: dotted module path} for every module the block map names.
@@ -718,25 +722,22 @@ class Fibo2Driver(FamilyDriver):
         authority on which trained parts make up a fused tensor - whichever stem form the description declares."""
         idx = getattr(self, "_stem_index", None)
         if idx is None:
-            fmt = self.description.lora
-            idx = {fmt.stem(m): m for g in self.block_map() for b in g.blocks for m in b.modules}
+            idx = {_stem(m): m for g in self.block_map() for b in g.blocks for m in b.modules}
             self._stem_index = idx
         return idx
 
     def convert_lora_state_dict(self, sd):
         """The read-side inverse of export_lora_state_dict: a file in the checkpoint's fused layout (this family's
         own exported LoRAs, or another trainer's file written against the fused base) back onto the split Linears
-        the live diffusers model trains against. A split file passes through untouched; a fused tensor is split
-        exactly - the shared down hands back each part's own rank rows, the block-diagonal up each part's own
-        rows and columns - and the FFN's 9728 lanes un-pad to the model's own 9536. The summed alpha goes back
-        as equal parts, exact for what the trainer builds (one rank and one alpha per part)."""
+        the live diffusers model trains against. A split file passes through untouched; a fused pair splits
+        exactly onto its parts (see the end of this method), and the FFN's 9728 lanes un-pad to the model's own
+        9536."""
         if not any(any(leaf in k for leaf in ("_attention_qkv.", "_feed_forward_w13.", "_ffn_w13.",
                                               "_cross_attention_to_kv.", "_self_attention_to_kv.",
                                               "_attention_out.", "_cross_attention_to_out.",
                                               "_self_attention_to_out.", "_feed_forward_w2.", "_ffn_w2."))
                    for k in sd):
             return sd
-        fmt = self.description.lora
         # flat block id -> dotted block id, for every block the map names: a fused stem's parent is the BLOCK
         # (layers_0 -> layers.0), never one of its modules - the map is the authority, as in export_lora_state_dict
         parents = {b.id.replace(".", "_"): b.id for g in self.block_map() for b in g.blocks}
@@ -765,7 +766,7 @@ class Fibo2Driver(FamilyDriver):
         }
 
         _LEAVES = tuple(sorted(list(_GROUPS) + list(_RENAMES), key=len, reverse=True))
-        out = {}
+        out, fused = {}, {}
         for k, v in sd.items():
             r = _ab_of(k)
             if r is None:
@@ -782,32 +783,39 @@ class Fibo2Driver(FamilyDriver):
                 out[k] = v
                 continue
             if leaf in _GROUPS:
-                parts, rows = _GROUPS[leaf]
-                n = len(parts)
-                if ab == "alpha":                      # the summed alpha, back as equal parts
-                    for p in parts:
-                        out[f"{fmt.stem(f'{par}.{p}')}.alpha"] = (v.float() / n).to(v.dtype)
-                    continue
-                rank = v.shape[0] // n if ab == "down" else v.shape[1] // n
-                if ab == "down":                       # (n*rank, d) -> one (rank, d) per part
-                    for i, p in enumerate(parts):
-                        out[f"{fmt.stem(f'{par}.{p}')}.lora_down.weight"] = v[i * rank:(i + 1) * rank].contiguous()
-                else:                                  # blockdiag (sum(rows), n*rank) -> each part's own block
-                    for i, p in enumerate(parts):
-                        r0 = sum(rows[:i])
-                        t = v[r0:r0 + rows[i], i * rank:(i + 1) * rank]
-                        if rows[i] > HIDDEN:           # an FFN lane: drop the 192 zero rows back off
-                            t = t[:HIDDEN]
-                        out[f"{fmt.stem(f'{par}.{p}')}.lora_up.weight"] = t.contiguous()
+                fused.setdefault((par, leaf), {})[ab] = v
                 continue
             if leaf in _RENAMES:
                 p = _RENAMES[leaf]
                 if ab == "down" and v.shape[1] == HIDDEN_FUSED:
                     v = v[:, :HIDDEN].contiguous()     # w2's contraction dim, un-padded
                 tail = ".lora_down.weight" if ab == "down" else ".lora_up.weight" if ab == "up" else ".alpha"
-                out[f"{fmt.stem(f'{par}.{p}')}{tail}"] = v
+                out[f"{_stem(f'{par}.{p}')}{tail}"] = v
                 continue
             out[k] = v
+        # a fused pair (down (R, d), up (sum of rows, R)) splits exactly onto its parts: each part's delta is its
+        # rows of up @ down. Its columns that are zero in those rows are dropped with their down rows, so this
+        # family's own block-diagonal files come back at each part's own rank; another trainer's fused LoRA keeps
+        # the full rank R per part. The scale alpha / R stays the same on every part.
+        for (par, leaf), t in fused.items():
+            if "down" not in t or "up" not in t:
+                continue
+            parts, rows = _GROUPS[leaf]
+            down, up = t["down"], t["up"]
+            scale = float(t["alpha"].float().reshape(-1)[0]) / down.shape[0] if "alpha" in t else 1.0
+            r0 = 0
+            for p, n in zip(parts, rows):
+                u = up[r0:r0 + n]
+                r0 += n
+                if n > HIDDEN:                     # an FFN lane: drop the 192 zero rows back off
+                    u = u[:HIDDEN]
+                cols = (u != 0).any(dim=0).nonzero().flatten()
+                if cols.numel() == 0:
+                    continue                       # this part was not trained
+                s = _stem(f"{par}.{p}")
+                out[f"{s}.lora_down.weight"] = down[cols].contiguous()
+                out[f"{s}.lora_up.weight"] = u[:, cols].contiguous()
+                out[f"{s}.alpha"] = torch.tensor(scale * cols.numel())
         return out
 
     def export_lora_state_dict(self, sd):
@@ -820,9 +828,8 @@ class Fibo2Driver(FamilyDriver):
         comfy/weight_adapter/lora.py LoRAAdapter computes (up @ down).reshape(weight.shape) *
         (alpha / down.shape[0]), so each fused group must reproduce the fused tensor's exact shape and
         scaling: the downs stack along dim 0 (the fused rank is the sum of the part ranks), the ups are
-        block-diagonal (each part's delta stays inside its own rows), and the fused alpha is the sum of the
-        part alphas - with one rank and one alpha per part (what the trainer builds) that keeps every part's
-        own alpha/rank scaling exactly. The FFN hidden is padded back to 9728 (w13 up rows, w2 down cols):
+        block-diagonal (each part's delta stays inside its own rows) with each part's alpha/rank folded in, and
+        the fused alpha is the fused rank - exact whatever the parts' ranks and alphas. The FFN hidden is padded back to 9728 (w13 up rows, w2 down cols):
         the checkpoint's extra lanes are zero, so the padded lanes of the delta stay zero too.
         """
         def _ab_of(k):
@@ -831,7 +838,6 @@ class Fibo2Driver(FamilyDriver):
                     return k[: -len(suf)], ab
             return None
 
-        fmt = self.description.lora
         inv = self._module_paths()
         mods = {}                                       # module path -> {down, up, alpha}
         arrival = {}                                    # module path -> the stem its keys came in on
@@ -876,7 +882,7 @@ class Fibo2Driver(FamilyDriver):
             got = [mods.get(s) for s in srcs]
             if not any(m and "down" in m for m in got):
                 return                                  # nothing trained in this group
-            ks = fmt.stem(fused_stem)
+            ks = _stem(fused_stem)
             if len(srcs) == 1:
                 m = got[0]
                 d = m["down"] if down_cols is None else _pad_cols(m["down"], down_cols)
@@ -886,25 +892,27 @@ class Fibo2Driver(FamilyDriver):
                     out[f"{ks}.alpha"] = m["alpha"]
                 used.add(srcs[0])
                 return
+            # each part's alpha/rank scale goes into its up rows and the fused alpha is the fused rank (scale 1):
+            # exact whatever the parts' ranks and alphas (a Studio bake with a donor gives them different ranks)
             ref = next(m for m in got if m and "down" in m)
-            rank = ref["down"].shape[0]
-            downs, ups, alpha = [], [], None
-            for s, m in zip(srcs, got):
+            downs, ups = [], []
+            for s_, m in zip(srcs, got):
                 if m and "down" in m:
+                    r = m["down"].shape[0]
+                    sc = float(m["alpha"].float().reshape(-1)[0]) / r if "alpha" in m else 1.0
+                    up = (m["up"].float() * sc).to(m["up"].dtype)
                     downs.append(m["down"])
-                    ups.append(m["up"] if part_rows is None else _pad_rows(m["up"], part_rows))
-                    if "alpha" in m:
-                        alpha = m["alpha"].clone() if alpha is None else alpha + m["alpha"]
-                    used.add(s)
+                    ups.append(up if part_rows is None else _pad_rows(up, part_rows))
+                    used.add(s_)
                 else:
-                    # an untrained part still occupies its rows of the fused tensor, with a zero delta
-                    downs.append(torch.zeros((rank, ref["down"].shape[1]),
-                                             dtype=ref["down"].dtype, device=ref["down"].device))
-                    ups.append(torch.zeros((part_rows, rank), dtype=ref["up"].dtype, device=ref["up"].device))
-            out[f"{ks}.lora_down.weight"] = torch.cat(downs, dim=0)
+                    # an untrained part still occupies its rows of the fused tensor, with a zero delta (rank 1)
+                    downs.append(torch.zeros((1, ref["down"].shape[1]), dtype=ref["down"].dtype,
+                                             device=ref["down"].device))
+                    ups.append(torch.zeros((part_rows, 1), dtype=ref["up"].dtype, device=ref["up"].device))
+            down = torch.cat(downs, dim=0)
+            out[f"{ks}.lora_down.weight"] = down
             out[f"{ks}.lora_up.weight"] = _block_diag(ups)
-            if alpha is not None:
-                out[f"{ks}.alpha"] = alpha
+            out[f"{ks}.alpha"] = torch.tensor(float(down.shape[0]))
 
         for pre in [f"layers.{i}" for i in range(N_BLOCKS)] + [f"noise_refiner.{i}" for i in range(N_REFINER)]:
             fuse(f"{pre}.attention.qkv",

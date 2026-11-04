@@ -356,9 +356,7 @@ def write_report(desc, lora_path, stats, abl, output_html, labels):
             kpis.append(("Bleed into the plain prompt", f"+{100 * gb:.0f} pts" if gb > 0.03 else "none measurable"))
     parts.append('<div class="card"><div class="kpis">' + "".join(
         f'<div class="kpi"><div class="lab">{_html.escape(k)}</div><div class="big">{_html.escape(v)}</div></div>'
-        for k, v in kpis) + "</div>" + (
-        '<div class="note">Fused qkv and w1+w3 modules hold three or two times the LoRA\'s rank, so these ranks can '
-        'read above it.</div>' if desc.lora.save_fused else "") + "</div>")
+        for k, v in kpis) + "</div></div>")
     cats = dict(desc.block_categories)
     if cats:
         chips = "".join(f'<span title="{_html.escape(lab(b))}" style="display:inline-block;min-width:26px;padding:4px 0;'

@@ -1901,7 +1901,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         if ema is not None:
             ema.swap_in()
         try:
-            net.save(path, metadata(epoch), fuse=desc.lora.save_fused)   # the checkpoint layout when the family saves fused
+            net.save(path, metadata(epoch))
         finally:
             if ema is not None:
                 ema.swap_out()

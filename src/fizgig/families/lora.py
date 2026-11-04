@@ -271,9 +271,13 @@ class FamilyLoRA:
         return f"{stem}.{f.down}.weight", f"{stem}.{f.up}.weight", f.alpha_key.format(prefix=stem)
 
     def _stem(self, full, lokr=False):
-        """A module's key stem in the family's format - the rule lives on the declared format (LoRAFormat.stem),
-        so the layer, the file readers and a driver's export cannot drift apart."""
-        return self.desc.lora.stem(full, lokr=lokr)
+        """A module's key stem in the family's format: '<file_prefix><dotted path>', or for a kohya family
+        'lora_unet_<path with dots as underscores>' (a LoKR there uses the LyCORIS standard 'diffusion_model.<path>',
+        as Fizgig's Krea 2 always saved it)."""
+        f = self.desc.lora
+        if f.kohya:
+            return f"diffusion_model.{full}" if lokr and not f.lokr_kohya_stems else f"lora_unet_{full.replace('.', '_')}"
+        return f"{f.file_prefix}{full}"
 
     def _wrap(self, full):
         """Wrap one Linear by dotted name (targets at init; frozen files may reach beyond them, e.g. a speed LoRA
@@ -623,10 +627,10 @@ class FamilyLoRA:
                 sd[kal] = torch.tensor(float(self.alpha))
         return sd
 
-    def save(self, path, metadata=None, dtype=torch.bfloat16, *, fuse=False):
+    def save(self, path, metadata=None, dtype=torch.bfloat16):
         from safetensors.torch import save_file
         sd = self.state_dict(dtype)
-        if fuse:                       # the final export only - the resume checkpoint and previews stay separate
+        if self.desc.lora.save_fused:
             sd = self.driver.export_lora_state_dict(sd)
         save_file(sd, path, metadata={k: str(v) for k, v in (metadata or {}).items()})
 
@@ -635,7 +639,7 @@ class FamilyLoRA:
         """Restore the trainable adapter from a file saved by save(). Returns modules matched."""
         from safetensors.torch import load_file
         sd = load_file(path)
-        if self.desc.lora.save_fused:        # saved in the checkpoint's fused layout: split it back onto the live Linears
+        if self.desc.lora.save_fused:                # saved in the checkpoint's layout: back onto the split Linears
             sd = self.driver.convert_lora_state_dict(sd)
         n = 0
         for full, w in self.wrapped.items():

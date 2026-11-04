@@ -298,16 +298,12 @@ def form(desc):
         ]
     if desc.train_areas:
         names = [a[0] for a in desc.train_areas]
-        # a family whose areas already cover the whole model (desc.train_area_custom = False) is not offered the
-        # per-block picker: the areas are the choice list, and "Custom" would only re-enter the same blocks by hand
-        custom = bool(getattr(desc, "train_area_custom", True))
         params.append(_row("TARGET_LAYERS", "Model Area to Train", "choice",
-                           "Which blocks train. Style also limits training to the late, clean timesteps."
-                           + (" Custom picks the blocks yourself." if custom else ""),
-                           names + (["Custom"] if custom else []),
+                           "Which blocks train. Style also limits training to the late, clean timesteps. Custom picks "
+                           "the blocks yourself.", names + ["Custom"],
                            names[0], timesteps={a[0]: [str(int(a[2][0] * 1000)), str(int(a[2][1] * 1000))]
                                                 if a[2] else ["", ""] for a in desc.train_areas}))
-        groups = _block_groups(desc) if custom else []
+        groups = _block_groups(desc)
         if groups:                           # the desktop's Custom block picker: All / None, an area's blocks, ticks
             params.append(_row("TRAINING_BLOCKS", "Blocks to train", "blocks", "", default={}, groups=groups,
                                areas={a[0]: list(a[1]) for a in desc.train_areas if a[1]}))

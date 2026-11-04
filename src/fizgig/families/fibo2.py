@@ -159,16 +159,17 @@ _FIBO2 = FamilyDescription(
     optimizers=("adamw", "adamw8bit", "automagic3"),
     ema_default="0.98",
     finetune=False,
-    # train_memory: the trainer's logged reserved peaks, previews on (1024 canvas), 2 epochs, RTX PRO 6000 96GB,
-    # gradient accumulation 32, checkpointing on, eager. The 0.25 MP points (496x496, 57 images) came from
-    # desktop-app runs; the 1.05 MP points (1024x1024, same 57 images) from CLI runs A4 (bf16 22.1), A5 (int8 15.9)
-    # and A6 (nf4 12.3 - the run's high-water, which is the max across epochs: the trainer resets the peak counter at
-    # every epoch start, and A6's first epoch reached 12.3 where its last reported 12.2). The per-block saving is the
+    # train_memory: the per-block saving is the
     # checkpoint's own parameter bytes per main layer: the 44-block stack carries 7.43B of the model's 8.23B, so
     # 168.9M params a block - 0.314 GiB resident in bf16, 0.157 GiB in int8. NF4 stays 0.0: load_base refuses to
     # stream a 4-bit base, so nothing parks and nothing moves.
-    train_memory={"bf16": (((0.25, 20.0), (1.05, 22.1)), 0.314), "int8": (((0.25, 13.1), (1.05, 15.9)), 0.157),
-                  "nf4": (((0.25, 10.2), (1.05, 12.3)), 0.0)},
+    # Re-measured 4 Nov 2026 on an RTX 5090 (eager, checkpointed, no swap, rank 16, a 1024 preview after each of 2
+    # epochs): the preview sets every peak, so the figures are the preview's reserved peak (training's alone: bf16
+    # 18.5 / 21.5, int8 10.6 / 14.1, nf4 8.3 / 11.2 at 0.25 / 1 MP). The 1 MP points trained on real photos above
+    # 1 MP (buckets 1248x832, 1360x768). Swap check: bf16 with 26 blocks swapped peaked 10.6 GB against 18.5, 0.30 GB
+    # a block, beside the 0.314 from the file.
+    train_memory={"bf16": (((0.25, 25.5), (1.0, 27.8)), 0.314), "int8": (((0.25, 17.7), (1.0, 20.5)), 0.157),
+                  "nf4": (((0.25, 15.2), (1.0, 17.5)), 0.0)},
     # measured: bf16 LoRA rank 32 / alpha 32, automagic3, lr 1e-4 constant, EMA 0.98, no swap,
     # previews on (1024 canvas), compiled at the family's "outside" boundary, gradient accumulation 1 (the only setting
     # in which the trainer consults the checkpointing planner at all), 2 epochs on the 57-image 496x496 dataset,

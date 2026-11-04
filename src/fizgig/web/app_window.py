@@ -424,7 +424,7 @@ def _unhook_requests():
     """pywebview's WebView2 window passes every request the page makes through Python on the window's UI thread
     (for its request_sent / response_received events, which Fizgig doesn't use). A clip streams as many byte-range
     requests, so playing one froze the window - the pointer included - while it loaded. The hook is taken off as
-    soon as WebView2 is ready."""
+    soon as WebView2 is ready, which is also when the right-click menu is set up (_text_menu)."""
     if os.name != "nt":
         return
     try:
@@ -444,8 +444,38 @@ def _unhook_requests():
             core.RemoveWebResourceRequestedFilter("*", ec.CoreWebView2WebResourceContext.All)
         except Exception:
             pass
+        _text_menu(sender)
     on_ready._fizgig = True
     ec.EdgeChrome.on_webview_ready = on_ready
+
+
+
+# right-click in the window: the edit menu on a text box, Copy on selected text, nothing anywhere else (the browser's
+# own Back / Reload / Save as / Print would throw the page away). pywebview turns WebView2's menus off outside debug.
+_MENU_ITEMS = {"undo", "redo", "cut", "copy", "paste", "pasteAndMatchStyle", "selectAll", "emoji"}
+
+
+def _text_menu(sender):
+    try:
+        core = sender.CoreWebView2
+        core.Settings.AreDefaultContextMenusEnabled = True
+
+        def requested(_s, args):
+            try:
+                target = args.ContextMenuTarget
+                if not (target.IsEditable or target.HasSelection):
+                    args.Handled = True                    # no menu: the page's own right-click (mask brush) stays
+                    return
+                items = args.MenuItems
+                for item in [i for i in items if i.Name not in _MENU_ITEMS]:
+                    items.Remove(item)
+                if items.Count == 0:
+                    args.Handled = True
+            except Exception:
+                args.Handled = True
+        core.ContextMenuRequested += requested
+    except Exception as e:
+        _log(f"[app] right-click menu not set up: {e}")
 
 
 _MUTEX = []

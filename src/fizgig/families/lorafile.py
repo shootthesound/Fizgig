@@ -36,7 +36,7 @@ def fused_parts(drv, stem):
     except Exception:
         spec = None
     out = []
-    for msuf, fsuf, pt, n in getattr(spec, "file_layout", ()) or ():
+    for msuf, fsuf, pt, n, *_ in getattr(spec, "file_layout", ()) or ():
         f, m = fsuf[:-len(".weight")], msuf[:-len(".weight")]
         for fs, ms in ((f, m), (f.replace(".", "_"), m.replace(".", "_"))):
             if stem.endswith(fs):

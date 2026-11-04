@@ -146,6 +146,10 @@ class LoRAFormat:
     lokr_kohya_stems: bool = False
     note: str = ""
     source: str = ""
+    # True: every LoRA file written for the family (training saves, Save Repaired, Extract) goes through
+    # driver.export_lora_state_dict into the checkpoint's own layout, and a resume reads it back through
+    # convert_lora_state_dict. For a model whose ComfyUI checkpoint fuses Linears the driver trains split.
+    save_fused: bool = False
 
     def module_of(self, key: str) -> Optional[str]:
         """Dotted module path of a down-weight key ('transformer.modulation.1.lora_A.weight' -> 'modulation.1'),

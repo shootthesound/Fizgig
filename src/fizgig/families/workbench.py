@@ -1081,6 +1081,8 @@ class WorkbenchEngine:
             if combined:
                 metadata["ss_repair_studio_combined_ranks"] = json.dumps(dict(sorted(combined.items())),
                                                                          separators=(",", ":"))
+        if self.desc.lora.save_fused:
+            sd = self.driver.export_lora_state_dict(sd)
         save_file(sd, out_path, metadata=metadata)
         kept = {self.driver.block_of(m) for m in ranks}
         dropped = sorted((self.primary_block_ids - kept) - blended)

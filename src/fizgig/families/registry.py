@@ -14,8 +14,9 @@ from fizgig.families.zimage import ZIMAGE, ZIMAGE_BASE
 from fizgig.families.acestep import ACESTEP15
 from fizgig.families.flux3 import FLUX3
 from fizgig.families.moss_image import MOSS_IMAGE
+from fizgig.families.fibo2 import FIBO2
 
-FAMILIES = {d.key: d for d in (KLEIN, MINIMAX, KREA2, QWEN_IMAGE_21, SDXL, ANIMA, ZIMAGE, ZIMAGE_BASE, ACESTEP15, FLUX3, MOSS_IMAGE)}
+FAMILIES = {d.key: d for d in (KLEIN, MINIMAX, KREA2, QWEN_IMAGE_21, SDXL, ANIMA, ZIMAGE, ZIMAGE_BASE, ACESTEP15, FLUX3, MOSS_IMAGE, FIBO2)}
 
 for _d in FAMILIES.values():
     _problems = _d.validate()

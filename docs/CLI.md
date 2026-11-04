@@ -33,6 +33,7 @@ Every script supports `--help` for the full argument list. This document covers 
 - [Preparing images and captions](#preparing-images-and-captions)
 - [Klein 9B training](#klein-9b-training)
 - [Flux 3 Image Klein training](#flux-3-image-klein-training)
+- [Fibo 2.0 training](#fibo-20-training)
 - [MOSS-Image training](#moss-image-training)
 - [Krea 2 training](#krea-2-training)
 - [MiniMax H3 training](#minimax-h3-training)
@@ -59,7 +60,7 @@ Every script supports `--help` for the full argument list. This document covers 
 
 ## Model files: where they come from, where they go
 
-Headless, there is no Preferences tab: **model locations are passed as flags on every command** (`--dit`, `--vae`, `--text_encoder`, for MiniMax H3 `--audio_vae`, `--turbo_lora_path` and `--training_adapter_path`, for Krea 2 and Qwen Image 2.1 `--speed_lora`, and for Qwen `--training_adapter`). The CLI does not read the GUI's `prefs.json` — put the paths in a shell script or Makefile once and forget about them. The files themselves are the same ones the GUI's Preferences tab links to:
+Headless, there is no Preferences tab: **model locations are passed as flags on every command** (`--dit`, `--vae`, `--text_encoder`, for MiniMax H3 `--audio_vae`, `--turbo_lora_path` and `--training_adapter_path`, for Krea 2, Qwen Image 2.1 and Fibo 2.0 `--speed_lora`, and for Qwen `--training_adapter`). The CLI does not read the GUI's `prefs.json` — put the paths in a shell script or Makefile once and forget about them. The files themselves are the same ones the GUI's Preferences tab links to:
 
 **Klein 9B:**
 
@@ -81,6 +82,15 @@ Headless, there is no Preferences tab: **model locations are passed as flags on 
 | Distilled DiT `flux3_image_klein_sd_bf16.safetensors` | diffusion_models/ | 16-step previews (`--preview_checkpoint`) and the workbench tabs |
 | Autoencoder `flux2-vae.safetensors` | vae/ | `--vae` (cache step: `--model`) |
 | Text encoder `qwen3vl_4b_bf16.safetensors` | text_encoders/ | `--text_encoder` (cache step: `--model`) |
+
+**Fibo 2.0** (all in [Comfy-Org/Fibo-2.0](https://huggingface.co/Comfy-Org/Fibo-2.0/tree/main), none gated):
+
+| File | Download | Used for |
+|---|---|---|
+| Dev DiT `fibo2_dev_bf16.safetensors` | diffusion_models/ | training (`--dit`); quantised to INT8 or NF4 at load when `--precision` asks. The 8.4 GB `fibo2_dev_int8_convrot.safetensors` there loads too (decoded at load) |
+| Autoencoder `flux2-vae.safetensors` | vae/ | `--vae` (cache step: `--model`) |
+| Text encoder `qwen3vl_4b_bf16.safetensors` | text_encoders/ | `--text_encoder` (cache step: `--model`) |
+| Turbo LoRA `fibo_2.0_turbo_lora_avg_rank_270_bf16.safetensors` | loras/ | 4-step previews (`--speed_lora`, with `--sample_steps 4 --sample_cfg_scale 1`) |
 
 **MOSS-Image** (none gated):
 
@@ -163,7 +173,7 @@ The quickest way to get every file is the fetcher the Preferences download butto
 
 ## What's family-specific at a glance
 
-Every family trains through the same two scripts — `src/fizgig/families/cache.py` and `src/fizgig/families/train.py`, selected with `--family` (`klein`, `flux3`, `moss_image`, `krea2`, `minimax`, `qwen_image21`, `zimage`, `zimage_base`, `sdxl`, `anima`, `acestep15xl`) — and shares the dataset format, pause/resume, Context LoRA, LoKR, sliders, fine-tuning and the memory planner. What differs:
+Every family trains through the same two scripts — `src/fizgig/families/cache.py` and `src/fizgig/families/train.py`, selected with `--family` (`klein`, `flux3`, `fibo2`, `moss_image`, `krea2`, `minimax`, `qwen_image21`, `zimage`, `zimage_base`, `sdxl`, `anima`, `acestep15xl`) — and shares the dataset format, pause/resume, Context LoRA, LoKR, sliders, fine-tuning and the memory planner. What differs:
 
 | Feature | Klein 9B | Flux 3 Image Klein | MiniMax H3 | Krea 2 | Qwen Image 2.1 |
 |---|---|---|---|---|---|
@@ -394,6 +404,47 @@ python src/fizgig/families/train.py \
 - `--train_blocks` and Model Area presets aren't offered yet: Flux 3's block map isn't charted.
 
 The saved LoRA loads in ComfyUI's standard LoRA loader.
+
+---
+
+## Fibo 2.0 training
+
+Fibo 2.0 trains through the shared cache script and trainer with `--family fibo2`. The four files are in the [download table](#model-files-where-they-come-from-where-they-go); none needs a token. See [the Fibo 2.0 guide](FIBO2.md) for the presets, memory and ComfyUI.
+
+### Full example
+
+The GUI's **Fibo 2.0 Dev (rank 32, full model)** preset, as it builds it: rank 32, 0.25 MP (`resolution = [512, 512]` in the TOML), Automagic from 1e-6, 40 epochs, with Turbo previews:
+
+```bash
+python src/fizgig/families/cache.py --family fibo2 --stage latents --dataset_config my_dataset.toml --model /models/flux2-vae.safetensors
+python src/fizgig/families/cache.py --family fibo2 --stage text    --dataset_config my_dataset.toml --model /models/qwen3vl_4b_bf16.safetensors
+
+python src/fizgig/families/train.py \
+  --family fibo2 \
+  --dataset_config my_dataset.toml \
+  --dit /models/fibo2_dev_bf16.safetensors \
+  --output_dir ./output_loras/my_subject \
+  --output_name my_subject \
+  --network_dim 32 --network_alpha 32 \
+  --optimizer_type automagic3 --learning_rate 1e-6 \
+  --max_train_epochs 40 --save_every_n_epochs 1 --seed 42 \
+  --precision auto --blocks_to_swap -1 --compile_blocks auto \
+  --ema_decay 0.98 --max_grad_norm 1.0 \
+  --vae /models/flux2-vae.safetensors \
+  --text_encoder /models/qwen3vl_4b_bf16.safetensors \
+  --speed_lora /models/fibo_2.0_turbo_lora_avg_rank_270_bf16.safetensors --speed_lora_strength 1 \
+  --sample_prompts sample_prompts.txt --sample_steps 4 --sample_cfg_scale 1 \
+  --sample_every_n_epochs 5 --sample_at_first --sample_width 1024 --sample_height 1024 --sample_seed 1234
+```
+
+Without `--speed_lora`, previews render on the Dev model: `--sample_steps 30 --sample_cfg_scale 5`.
+
+### The flags that matter
+
+- `--precision auto|bf16|int8|nf4` and `--blocks_to_swap -1`: as for Qwen Image 2.1 below.
+- **Edit LoRAs** (`control_directory` in the TOML; the caption is the edit instruction), **slider LoRAs** (`--slider_pairs`, `--slider_prompts`), **masked training** (`--masked_training`, `--mask_prior`) and **fine-tuning** (`--finetune` with `--ft_rotations`, `--ft_rotate_every`; the GUI's preset uses 1e-5, 3 rotations, 2 epochs a part) work as on [Qwen Image 2.1](#qwen-image-21-training).
+- `--train_blocks` takes the block map's ids (`layers.0` ... `layers.43`, `noise_refiner.0/1`, `perceiver.layers.0/1`, `x_embedder`, `t_embedder`, `final_layer`).
+- Every saved file (LoRA, Studio save, Extract, fine-tune checkpoint) is in ComfyUI's layout and loads there as it is.
 
 ---
 

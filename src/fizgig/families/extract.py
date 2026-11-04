@@ -102,6 +102,8 @@ def extract_weight_only(desc, source, output, rank, dtype=torch.bfloat16, progre
     metadata.update({"ss_network_dim": str(rank), "ss_network_alpha": str(float(rank)),
                      "ss_fizgig_extract": f"weight-only SVD to rank {rank}"
                                           + (f" over {len(blocks)} blocks" if blocks else "")})
+    if desc.lora.save_fused:
+        sd = desc.load_driver().export_lora_state_dict(sd)
     save_file(sd, output, metadata=metadata)
     return {"layers": len(energies), "skipped": skipped, "dropped": dropped, "energy": sum(energies) / len(energies),
             "seconds": time.time() - t0, "params": params, "output": output}

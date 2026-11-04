@@ -629,13 +629,18 @@ class FamilyLoRA:
 
     def save(self, path, metadata=None, dtype=torch.bfloat16):
         from safetensors.torch import save_file
-        save_file(self.state_dict(dtype), path, metadata={k: str(v) for k, v in (metadata or {}).items()})
+        sd = self.state_dict(dtype)
+        if self.desc.lora.save_fused:
+            sd = self.driver.export_lora_state_dict(sd)
+        save_file(sd, path, metadata={k: str(v) for k, v in (metadata or {}).items()})
 
     @torch.no_grad()
     def load_trainable(self, path):
         """Restore the trainable adapter from a file saved by save(). Returns modules matched."""
         from safetensors.torch import load_file
         sd = load_file(path)
+        if self.desc.lora.save_fused:                # saved in the checkpoint's layout: back onto the split Linears
+            sd = self.driver.convert_lora_state_dict(sd)
         n = 0
         for full, w in self.wrapped.items():
             if TRAINABLE not in w.adapters:

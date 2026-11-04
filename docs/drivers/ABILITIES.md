@@ -78,6 +78,6 @@ These change text only, so the family reads right without per-family GUI code:
 
 - **Preferences:** `prefs_title`, `prefs_intro`, `prefs_note`, `fetch_note`, `fetch_optional_label`, and per model file `hint`, `download_label`, `download_note`, `alt_repo` / `alt_path` (a second build of the same file), `gated`.
 - **New files:** `ModelFile.announce` + `announce_intro`, a one-time popup for users who set the family up before the file existed.
-- **Training tab:** `model_note` (under the Base Model picker), `preset_notes`, `network_hint`, `ema_hint`, `precision_labels`, `precision_hint`, `compile_hint`.
+- **Training tab:** `model_note` (under the Base Model picker; usage only, never the licence, which goes in the family's guide), `preset_notes`, `network_hint`, `ema_hint`, `precision_labels`, `precision_hint`, `compile_hint`.
 - **Samples tab:** `samples_text` (per-place wording, including `"sampler"`: the sampler and schedule named beside the Steps box), `samples_cfg_free` (hide CFG and the negative for a CFG-free model), `preview_cfg_note`, `preview_negative` (the default negative prompt; each family keeps the user's own edit, and `None` greys the box).
 - **Repair Studio:** `repair_size` (its starting preview size; 1024 for a 1 MP model).

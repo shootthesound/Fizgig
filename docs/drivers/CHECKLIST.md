@@ -2,7 +2,7 @@
 
 A family is ready when it trains, previews and saves correctly, every ability the model can support is switched on and does what the GUI says, its files download, and the docs name it. "It runs" isn't the bar: most driver bugs produce a run that finishes and a LoRA that quietly does less than it should, and a family that only does what its pull request set out to do is missing what people expect on every model. These checks catch both.
 
-**The rule behind every check: a new model works like the models already in Fizgig.** Users move between models and expect the same Training tab, the same presets, the same controls and the same files. So a family gets every shared ability its model can support, and nothing the other models don't have: no controls, presets, notes, hints or settings of its own. The only exceptions are ones the model itself forces, such as a file layout ComfyUI needs, and each one gets a comment saying why. If you're unsure whether something belongs, look at what Qwen Image 2.1 and Flux 3 do and do the same.
+**The rule behind every check: a new model works like the models already in Fizgig.** Users move between models and expect the same Training tab, the same presets, the same controls and the same files. So a family gets every shared ability its model can support, and nothing the other models don't have: no controls, presets, notes, hints or settings of its own. The exception is when the model offers something the others don't, and the only way to give it to people is a control of its own. Then add that control, keep it in plain words like the rest of the tab, and put a comment beside it saying what it gives. Changes people never see, such as saving LoRAs in the layout ComfyUI needs, are fine wherever the model needs them, also with a comment saying why. If you're unsure whether something belongs, look at what Qwen Image 2.1 and Flux 3 do and do the same.
 
 - [ ] A Discussion for the model is open in the repo (see [README.md](README.md#before-you-start-open-a-discussion)), and the scope agreed there.
 - [ ] **The pull request stays in its scope:** `git diff --stat master` lists your description, driver and model package, and `registry.py`. Any other file is a default-off hook your model needs, named in the pull request's description with what it leaves unchanged for the other families. A fix to shared code goes in a pull request of its own ([README.md](README.md#what-a-driver-doesnt-bring)).
@@ -102,7 +102,7 @@ The abilities that need more than a run to check:
           print(f.name)
   ```
 
-  Then the reverse: every field yours sets that at most two other families set is something only your model has. Each one is removed, or it is something the model forces and its comment says so. Check `ModelFile` fields and the driver's methods the same way:
+  Then the reverse: every field yours sets that at most two other families set is something only your model has. Each one is removed, unless it gives people something only this model offers, or it is a change they never see that the model needs; either way, its comment says so. Check `ModelFile` fields and the driver's methods the same way:
 
   ```python
   fams = {k: registry.get(k) for k in registry.FAMILIES}

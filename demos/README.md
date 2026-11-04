@@ -37,7 +37,7 @@ git clone -b wip-tools https://github.com/shootthesound/Fizgig
 3. Asks for your photos (it opens `demos\my photos`), your name and role for the posters, and a trigger word for you.
 4. Asks for your RunPod API key (make one in RunPod's console under **Settings → API Keys**).
 
-Then run **`A - Run the demos on a rented AMD GPU (MI300X)`**. It waits for an MI300X to be free (RunPod's stock comes and goes), rents it, and installs Fizgig, its models and the language model on it (about 10 minutes). When it says it's ready, run the demos below. When you're done, run **`B - Back to this computer (delete the AMD GPU)`**: it brings your LoRAs home to `demos\AMD LoRAs` and deletes the pod, which is billed until then.
+Then run **`A - Run the demos on a rented AMD GPU (MI300X)`**. It waits for an MI300X to be free (RunPod's stock comes and goes), rents it, and installs Fizgig, its models and the language model on it (about 10 minutes). When it's ready, it opens the MI300X's Fizgig in your browser, already logged in: keep that tab open to watch each training run, its previews and the GPU's memory while the demos run (`Open Fizgig on the AMD GPU` reopens it). Then run the demos below. When you're done, run **`B - Back to this computer (delete the AMD GPU)`**: it brings your LoRAs home to `demos\AMD LoRAs` and deletes the pod, which is billed until then.
 
 **On your own PC (NVIDIA):** run **`Fizgig\demos\0 - Set up on this computer (NVIDIA).bat`**. It installs Fizgig, then:
 1. Downloads Fizgig's models: Qwen Image 2.1 and the captioner.
@@ -50,7 +50,7 @@ Run either setup again any time: finished steps are skipped.
 
 ## The demos
 
-Run them in order. Demo 1 trains the LoRA the others use. Keep Affinity open.
+Run them in order. Demo 1 trains the LoRA the others use. Keep Affinity open. Each launcher opens Fizgig's Assistant tab to follow the conversation; the training run and its previews show in Fizgig itself (on your own PC, its Training tab; on the AMD GPU route, the MI300X's Fizgig that `A` opened).
 
 | Launcher | The sentence asks for |
 |:--|:--|

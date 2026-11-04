@@ -91,6 +91,25 @@ def up(hours=6.0):
     print(f"Ready after {(time.time() - t0) / 60:.0f} min. The Assistant now trains, renders and thinks on the AMD GPU; "
           "Affinity stays on this computer. Run the demos as usual, and 'down' when you're done (the pod costs "
           f"${st.get('price')}/hr until then).")
+    open_fizgig(st)
+    print(f"\nFizgig on the AMD GPU is open in your browser, logged in: keep that tab open to watch the work "
+          "happen there - each training run, its previews, and the GPU's memory with everything loaded at once."
+          f"\n  ({fiz}; if it ever asks, the password is {st['FIZGIG_PASSWORD']})")
+
+
+def open_fizgig(st):
+    """Fizgig on the AMD GPU in the browser, logged in through its own one-time pass (the link "Open on your phone"
+    makes: it works once, within a minute), so the password never sits in an address. Falls back to the login page."""
+    import webbrowser
+    from fizgig.web.helpers import Client
+    fiz = f"https://{st['pod']}-8081.proxy.runpod.net"
+    try:
+        c = Client(fiz)
+        c.login(st["FIZGIG_PASSWORD"])
+        url = c.call("/api/phone_link", {}).get("url") or fiz
+    except Exception:                                  # noqa: BLE001 - the login page instead
+        url = fiz
+    webbrowser.open(url)
 
 
 def down():
@@ -138,4 +157,9 @@ def active():
 
 
 if __name__ == "__main__":
-    {"up": up, "down": down}[sys.argv[1]]()
+    if sys.argv[1] == "open":
+        if not active():
+            raise SystemExit("No AMD pod is set up: run 'A - ...' first.")
+        open_fizgig(json.load(open(STATE)))
+    else:
+        {"up": up, "down": down}[sys.argv[1]]()

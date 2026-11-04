@@ -195,6 +195,12 @@ def main():
     api("/api/assistant/reset", {})
     since = 0
     webbrowser.open(kit.FIZGIG + "/?tab=assistant")
+    if on_amd:
+        st = json.load(open(amd_pod.STATE))
+        print(f"The work happens in Fizgig on the AMD GPU, in the tab 'A' opened "
+              f"(https://{st['pod']}-8081.proxy.runpod.net): watch the training run, previews and memory there ('Open Fizgig on the AMD GPU' reopens it).\n")
+    else:
+        print(f"Watch the work in Fizgig's other tabs too ({kit.FIZGIG}): the Training tab while it trains.\n")
     log = []
     t0 = time.time()
     for msg in [text] + ([FOLLOW_UP[n]] if n in FOLLOW_UP else []):

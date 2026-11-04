@@ -22,10 +22,6 @@ from fizgig.families.description import (
 
 _MODULES = ("to_q", "to_k", "to_v", "to_out.0", "w1", "w2", "w3")   # every Linear the LoRA targets
 
-# the note the default preset carries beside the picker: the sampler is the reference pipeline's recipe
-_SAMPLING_NOTE = "Flow matching; CFG 5 against the negative prompt, as the reference pipeline."
-
-
 def _preset(rank, lr=1e-6, adaptive=None, epochs=40, mp="0.25", slider=False, edit=False, ft=False, optimizer="automagic3"):
     """The built-in presets' values, in the standard layer's keys (the shape krea2.py and moss_image.py use). Automagic
     starts at 1e-6 and sets its own rate (measured 4 Nov 2026, rank 32 Full Model, 16 photos at 0.25 MP: up to 1.1e-4 by
@@ -292,8 +288,6 @@ _FIBO2 = FamilyDescription(
         ("✨ Fibo 2.0 Slider (rank 8, 2e-4)",
          _preset(8, lr=2e-4, epochs=20, mp="0.5", slider=True, optimizer="adamw")),
     ),
-    # notes beside Load Preset: (preset name, note) pairs
-    preset_notes=(("✨ Fibo 2.0 (rank 32, full model)", _SAMPLING_NOTE),),
     # no Model Area to Train: as on every model but Klein (the one with a charted block map), the LoRA trains the
     # whole model - Bria's reference trainer targets every Linear too
     identity_blocks=(),

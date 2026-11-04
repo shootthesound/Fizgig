@@ -5945,6 +5945,10 @@ async function studioSetupLoad(name) {
   let d;
   try { d = await api(`/api/studio/setup?name=${encodeURIComponent(name)}`); }
   catch (e) { $("stSetupMsg").textContent = e.message; return; }
+  await studioSetupApply(d, name);
+}
+
+async function studioSetupApply(d, name) {        // a saved setup, or one read from a picture Download tweaked saved
   const fam = d.family && [...$("stFamily").options].some((o) => o.value === d.family) ? d.family : $("stFamily").value;
   if (fam !== $("stFamily").value) { $("stFamily").value = fam; await studioFamily(); stRemember(); }
   const v = d.values || {};
@@ -6005,10 +6009,48 @@ async function studioSetupMix() {
   studioSchedule();
 }
 
+// a PNG's fizgig_studio_setup text (Download tweaked writes it), or null
+function studioSetupFromPng(buf) {
+  const u = new Uint8Array(buf), dv = new DataView(buf);
+  if (u.length < 8 || u[0] !== 0x89 || u[1] !== 0x50) return null;
+  for (let i = 8; i + 8 <= u.length;) {
+    const n = dv.getUint32(i), type = String.fromCharCode(...u.subarray(i + 4, i + 8));
+    if (type === "IEND") break;
+    if (type === "iTXt" || type === "tEXt") {
+      const body = u.subarray(i + 8, i + 8 + n), z = body.indexOf(0);
+      if (z > 0 && new TextDecoder("latin1").decode(body.subarray(0, z)) === "fizgig_studio_setup") {
+        let k = z + 1;
+        if (type === "iTXt") { k += 2; for (let s = 0; s < 2; s++) k = body.indexOf(0, k) + 1; }   // flags, language, keyword
+        try { return JSON.parse(new TextDecoder().decode(body.subarray(k))); } catch (e) { return null; }
+      }
+    }
+    i += 12 + n;
+  }
+  return null;
+}
+
 function wireStudioSetups() {
   $("stSetupSave").addEventListener("click", () => studioSetupSave(false));
   $("stSetupList").addEventListener("change", () => { const n = $("stSetupList").value; $("stSetupList").value = ""; if (n) studioSetupLoad(n); });
   studioSetupList();
+  // Download tweaked (a still): the setup goes up first, so the server writes it into the PNG
+  $("stDlTweak").addEventListener("click", async (e) => {
+    if ($("stDlTweak").dataset.go || (S.st.layout && S.st.layout.kind !== "stills")) return;
+    e.preventDefault();
+    try { await api("/api/studio/download_setup", {data: studioSetupData()}); } catch (err) { /* the picture alone */ }
+    $("stDlTweak").dataset.go = "1"; $("stDlTweak").click(); delete $("stDlTweak").dataset.go;
+  });
+  // a picture Download tweaked saved, dropped anywhere on Studio: its LoRAs, sliders and settings back
+  const tab = $("tab-studio");
+  tab.addEventListener("dragover", (e) => { if ([...e.dataTransfer.types].includes("Files")) e.preventDefault(); });
+  tab.addEventListener("drop", async (e) => {
+    const f = [...e.dataTransfer.files].find((x) => /\.png$/i.test(x.name) || x.type === "image/png");
+    if (!f || e.defaultPrevented) return;
+    e.preventDefault();
+    const d = studioSetupFromPng(await f.arrayBuffer());
+    if (!d || !d.fizgig_repair_setup) { $("stSetupMsg").textContent = `${f.name} has no Studio settings in it (Download tweaked saves them).`; return; }
+    await studioSetupApply(d, f.name.replace(/\.png$/i, ""));
+  });
 }
 
 function studioCanvas() {
@@ -6049,7 +6091,14 @@ function studioRow(b) {
       onchange: (e) => studioSet(b.id, en, e.target.checked)});
     const range = el("input", {type: "range", min: "-3", max: "3", step: "0.05",
       oninput: (e) => studioSet(b.id, sv, Number(e.target.value), true), onchange: () => studioCommit()});
-    const val = el("span", {class: "st-val"});
+    // the value: type one in (Enter or leaving the box sets it, -3 to 3), Esc puts the slider's back
+    const val = el("input", {type: "text", class: "st-val", title: "Type a value from -3 to 3, then Enter",
+      onkeydown: (e) => { if (e.key === "Enter") e.target.blur(); else if (e.key === "Escape") { row._sync(); e.target.blur(); } },
+      onchange: (e) => {
+        const v = Number(String(e.target.value).replace(",", ".").replace(/^\+/, ""));
+        if (!Number.isFinite(v)) { row._sync(); return; }
+        studioSet(b.id, sv, Math.max(-3, Math.min(3, Math.round(v * 100) / 100))); studioCommit();
+      }});
     const btn = (t, title, f) => el("button", {class: "btn btn-sm", text: t, title, onclick: () => { f(); studioCommit(); }});
     const label = side === "p" ? el("span", {class: "st-label", style: b.color ? `color:${b.color}` : ""},
       b.label, b.cat ? el("small", {text: `[${b.cat}]`}) : null) : el("span", {class: "st-label", text: "donor"});
@@ -6070,7 +6119,8 @@ function studioRow(b) {
           const o = side === "p" ? "ds" : "ps", v = st()[sv];
           if (S.st.donor && v >= 0 && v <= 1) { studioSet(b.id, o, Math.round((1 - v) * 100) / 100); studioSet(b.id, "de", true); }
         })));
-    row._sync = () => { tick.checked = st()[en]; range.value = st()[sv]; val.textContent = stFmt(st()[sv]);
+    row._sync = () => { tick.checked = st()[en]; range.value = st()[sv];
+      if (document.activeElement !== val) val.value = stFmt(st()[sv]);
       const on = locks().has(b.id); lock.textContent = on ? "🔒" : "🔓"; lock.classList.toggle("on", on); };
     row._sync();
     return row;

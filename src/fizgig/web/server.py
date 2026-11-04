@@ -696,8 +696,17 @@ def _pods_post(what, b):
     raise ValueError("Unknown pods action.")
 
 
+_STUDIO_DL_SETUP = []      # the setup Download tweaked writes into the picture (the page sends it first)
+
+
 def _studio_post(what, b):
     """Repair Studio's actions (fizgig/web/studio.py runs them in its worker)."""
+    if what == "download_setup":
+        data = b.get("data") or {}
+        if not isinstance(data, dict) or not data.get("fizgig_repair_setup"):
+            raise ValueError("Not a setup.")
+        _STUDIO_DL_SETUP[:] = [data]
+        return {"ok": True}
     if what == "setup_save":                 # the whole session in one file, the desktop's format (Save Setup)
         data = b.get("data") or {}
         if not isinstance(data, dict) or not data.get("fizgig_repair_setup"):
@@ -3043,6 +3052,12 @@ class Handler(BaseHTTPRequestHandler):
             dl = re.sub(r'[\\/:*?"<>|]+', "_", (qs.get("dl") or [""])[0])        # a Save / Download button
             if dl:                                    # the name the page asks for, with the file's own extension
                 dl = os.path.splitext(dl)[0] + os.path.splitext(p)[1]
+            if dl and (qs.get("which") or [""])[0] == "tweaked" and _STUDIO_DL_SETUP:
+                # Download tweaked: the setup on the page when it was pressed, inside the PNG (drop it on Studio)
+                png = studio.png_with_setup(p, _STUDIO_DL_SETUP[0])
+                if png is not None:
+                    return self._send(200, png, "image/png",
+                                      [("Content-Disposition", f"attachment; filename=\"{dl}\"")])
             return self._stream(p, attachment=bool(dl), filename=dl or None, keep=bool((qs.get("gen") or [""])[0]))
         if path == "/api/studio/peaks":             # a song's waveform for the player's strip
             p = studio.image((qs.get("which") or [""])[0], (qs.get("gen") or [""])[0])

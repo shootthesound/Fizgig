@@ -695,6 +695,24 @@ def image(which, gen):
     return p if p and os.path.isfile(p) else ""
 
 
+SETUP_KEY = "fizgig_studio_setup"     # the PNG text chunk Download tweaked writes the setup into
+
+
+def png_with_setup(path, setup):
+    """The PNG at path with Studio's setup (Save setup's JSON) in an iTXt chunk before IEND, so dropping the picture
+    on Studio restores its sliders. The picture's own bytes are untouched. None when it isn't a PNG."""
+    import struct
+    import zlib
+    with open(path, "rb") as f:
+        data = f.read()
+    end = data.rfind(b"IEND") - 4                  # the IEND chunk's length field
+    if not data.startswith(b"\x89PNG\r\n\x1a\n") or end < 8:
+        return None
+    body = SETUP_KEY.encode("latin-1") + b"\0\0\0\0\0" + json.dumps(setup, separators=(",", ":")).encode("utf-8")
+    chunk = struct.pack(">I", len(body)) + b"iTXt" + body + struct.pack(">I", zlib.crc32(b"iTXt" + body) & 0xFFFFFFFF)
+    return data[:end] + chunk + data[end:]
+
+
 _peaks = {}
 
 

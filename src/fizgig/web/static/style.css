@@ -1950,6 +1950,7 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 .st-label small { font-weight: 400; color: var(--text-muted); margin-left: 4px; }
 .st-row input[type="range"] { width: 100%; }
 .st-val { font-variant-numeric: tabular-nums; font-size: 9pt; text-align: right; }
+.st-row input.st-val { width: 100%; min-width: 0; height: 24px; padding: 0 4px; }
 .st-btns { display: flex; gap: 2px; }
 .st-btns { gap: 3px; }
 .st-btns .btn-sm { padding: 0 7px; height: 26px; min-width: 28px; font-size: 10.5pt; font-weight: 700; justify-content: center; }

@@ -270,8 +270,7 @@ def form(desc):
             sections.append({"id": sid, "title": title, "tab": tab, "rows": rows, "collapsed": collapsed,
                              **({"help": help} if help else {})})
 
-    add("model", "Base Model", "training",
-        by_section("model") + ([_row("_model_note", desc.model_note, "note")] if desc.model_note else []))
+    add("model", "Base Model", "training", by_section("model"))
     add("output", "Output", "training", [
         _row("LORA_OUTPUT_DIR", "Output Directory", "folder", "Where the LoRA, its checkpoints and the previews go. A folder picked here is kept for "
              "this model; empty (or Reset to default) uses the LoRA output folder in Preferences.",

@@ -179,7 +179,7 @@ def main():
         affinity.status()
     except Exception:
         raise SystemExit("Affinity isn't answering: open Affinity by Canva (Edit > Settings > Model Context "
-                         "Protocol: 'Enable Affinity MCP' and 'Access files on your Desktop' on).")
+                         "Protocol: every switch on except 'Use Canva AI Studio features').")
     t = c["trigger"]
     names = {}
     if n == 1:

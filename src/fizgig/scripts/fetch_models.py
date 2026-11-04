@@ -13,7 +13,7 @@ writes the paths into prefs.json for you.
 
 Two kinds of asset, handled differently:
 
-  * WEIGHTS  — single .safetensors files. Downloaded into <repo>/models/ (or --models-dir)
+  * WEIGHTS  — single .safetensors files. Downloaded into <repo>/user_data/models/ (or --models-dir)
                and written into prefs.json against the pref key the GUI reads.
   * TOOLS    — Florence-2, the InsightFace face model, Make masks' person segmenter, the EN->ZH
                translator and Gizmo's Whisper transcriber. These are loaded BY NAME at runtime, not by path, so
@@ -558,7 +558,7 @@ def main():
     p.add_argument("--include-optional", action="store_true",
                    help="Also fetch the optional files (Krea 2 Turbo DiT ~13 GB, MiniMax ref2va DiT ~21 GB, "
                         "SDXL's separate VAE, Anima's Turbo LoRA).")
-    p.add_argument("--models-dir", default=None, help="Default: <repo>/models")
+    p.add_argument("--models-dir", default=None, help="Default: <repo>/user_data/models")
     p.add_argument("--token", default=None, help="HuggingFace token for gated repos (or HF_TOKEN).")
     p.add_argument("--dry-run", action="store_true", help="Show what would be fetched.")
     p.add_argument("--choose", action="append", default=[], metavar="PREF=main|alt",

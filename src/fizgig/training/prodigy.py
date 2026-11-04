@@ -4,8 +4,8 @@
 Copyright (c) 2023 Konstantin Mishchenko and Prodigy contributors. Brought in under the MIT License
 (full text in docs/THIRD_PARTY_NOTICES.md).
 
-How Fizgig uses it: `create_optimizer("prodigy", ...)` in fizgig/training/optimizers.py imports
-`prodigyopt.Prodigy` when installed and falls back to this file so `"prodigy"` is always available.
+How Fizgig uses it: `create_optimizer("prodigy", ...)` in fizgig/training/optimizers.py uses this copy only, never an
+installed `prodigyopt` package, so every install runs the same Prodigy.
 """
 
 import math

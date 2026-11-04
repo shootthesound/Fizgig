@@ -541,7 +541,10 @@ def _windows_has_amd_radeon() -> bool:
 
 
 def redirect_amd_to_rocm_installer():
-    """AMD support is additive: leave the CUDA path untouched and hand off early."""
+    """AMD support is additive: leave the CUDA path untouched and hand off early. --no-local-gpu skips it: this
+    computer only runs the app and works on another machine's GPU (the demo kit's AMD GPU route)."""
+    if "--no-local-gpu" in sys.argv:
+        return
     if platform.system() == "Linux":
         has_nvidia = os.path.exists("/dev/nvidia0") or bool(shutil.which("nvidia-smi"))
         if os.path.exists("/dev/kfd") and not has_nvidia:

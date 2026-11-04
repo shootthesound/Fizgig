@@ -157,10 +157,16 @@ def main():
     title, prompt = DEMOS[n]
     c = kit.config()
     if not c.get("trigger"):
-        raise SystemExit("Run '0 - Set up everything' first.")
+        raise SystemExit("Run one of the '0 - Set up ...' launchers first.")
     import amd_pod
     on_amd = amd_pod.active()
     print(f"Demo {n}: {title}" + (" - on the rented AMD GPU" if on_amd else "") + "\n")
+    if c.get("route") == "amd" and n == 5:
+        raise SystemExit("Demo 5 trains on a rented NVIDIA GPU and renders on this computer's own GPU, so it's for the "
+                         "NVIDIA setup. On the AMD GPU route, demos 1-4 and 6 cover the same work.")
+    if c.get("route") == "amd" and not on_amd:
+        raise SystemExit("On the AMD GPU route the demos run on the rented MI300X: run "
+                         "'A - Run the demos on a rented AMD GPU (MI300X)' first.")
     if on_amd and n == 5:
         raise SystemExit("Demo 5 rents a cloud GPU to train on: with the demos already on the AMD pod, run it from "
                          "this computer ('B - Back to this computer' first).")

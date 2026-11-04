@@ -76,7 +76,7 @@ def start_llm():
         return
     exe = llama_server()
     if not exe:
-        raise SystemExit("The language model isn't set up: run '0 - Set up everything' first.")
+        raise SystemExit("The language model isn't set up: run '0 - Set up on this computer (NVIDIA)' first.")
     print("Starting the language model's server ...")
     _detached([exe, "--models-preset", os.path.join(LLM_DIR, "presets.ini"), "--models-max", "1",
                "--port", str(LLM_PORT), "--jinja"], os.path.dirname(exe), "llm.log")
@@ -87,7 +87,7 @@ def start_fizgig():
     if up(FIZGIG + "/"):
         return
     if not os.path.isfile(PY):
-        raise SystemExit("Fizgig isn't installed: run '0 - Set up everything' first.")
+        raise SystemExit("Fizgig isn't installed: run one of the '0 - Set up ...' launchers first.")
     print("Starting Fizgig ...")
     _detached([PY, os.path.join(REPO, "fizgig.py"), "--web", "--port", str(PORT)], REPO, "fizgig.log")
     wait_for(lambda: up(FIZGIG + "/"), 180, "Fizgig")

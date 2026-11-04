@@ -30,6 +30,7 @@ KLEIN = FamilyDescription(
     key="klein",
     start_lr_bands=(("lora", 3e-5, 1.2e-3),),
     masked_training=True,
+    batch_training=True,              # Batch size (Other Options): training_loss_batch, exact per picture
     arch_id="klein9bdrv",
     display_name="Klein 9B",
     gui_label="Flux 2 Klein Base 9B",

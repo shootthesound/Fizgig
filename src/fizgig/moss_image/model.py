@@ -42,12 +42,14 @@ def _rotate(x, rope):
     return x * cos + torch.cat((-b, a), -1) * sin
 
 
-def _attention(q, k, v, rope, heads):
+def _attention(q, k, v, rope, heads, key_mask=None):
     shape = (*q.shape[:2], heads, q.shape[-1] // heads)
     q = _rotate(q.reshape(shape), rope).transpose(1, 2)
     k = _rotate(k.reshape(shape), rope).transpose(1, 2)
     v = v.reshape(shape).transpose(1, 2)
     q, k = q.to(v.dtype), k.to(v.dtype)
+    if key_mask is not None:            # a training batch (forward_batch): each picture's padded caption tokens dropped
+        return F.scaled_dot_product_attention(q, k, v, attn_mask=key_mask[:, None, None, :]).transpose(1, 2).flatten(2)
     from fizgig.modules import int8_attention as _i8a      # workbench renders only, when opted in; else None
     out = _i8a.attend(q, k, v)
     if out is None:
@@ -66,11 +68,11 @@ class _TextBlock(nn.Module):
         self.ffn_gate, self.ffn_up = nn.Linear(dim, ffn_dim), nn.Linear(dim, ffn_dim)
         self.ffn_down = nn.Linear(ffn_dim, dim)
 
-    def forward(self, x, rope):
+    def forward(self, x, rope, key_mask=None):
         q, k, v = self.qkv(self.norm1(x)).chunk(3, -1)
         q = self.q_norm(q.unflatten(-1, (self.heads, -1))).flatten(2)
         k = self.k_norm(k.unflatten(-1, (self.heads, -1))).flatten(2)
-        x = x + self.proj(_attention(q, k, v, rope, self.heads))
+        x = x + self.proj(_attention(q, k, v, rope, self.heads, key_mask))
         y = self.norm2(x)
         return x + self.ffn_down(_situ(self.ffn_up(y), self.ffn_gate(y)))
 
@@ -81,10 +83,10 @@ class _TextProjection(nn.Module):
         self.proj = nn.Linear(text_dim, dim)
         self.blocks = nn.ModuleList([_TextBlock(dim, ffn_dim, heads) for _ in range(2)])
 
-    def forward(self, x, rope):
+    def forward(self, x, rope, key_mask=None):
         x = self.proj(x.to(getattr(self.proj, "base", self.proj).weight.dtype))   # through a LoRA wrapper (#298)
         for block in self.blocks:
-            x = block(x, rope)
+            x = block(x, rope) if key_mask is None else block(x, rope, key_mask)
         return x
 
 
@@ -98,7 +100,7 @@ class _Block(nn.Module):
         self.proj["ffn_up_gate"] = nn.Linear(dim, 2 * ffn_dim, bias=False)
         self.proj["ffn_down"] = nn.Linear(ffn_dim, dim, bias=False)
 
-    def forward(self, x, rope, modulation):
+    def forward(self, x, rope, modulation, key_mask=None):
         shift_a, scale_a, gate_a, shift_f, scale_f, gate_f = modulation.unbind(1)
         y = self.norm1(x) * (1 + scale_a[:, None]) + shift_a[:, None]
         # the reference reads proj["q"].weight.dtype; Fizgig wraps (LoRA) or quantises (INT8 / NF4) that Linear, so the
@@ -107,7 +109,7 @@ class _Block(nn.Module):
         y = y.to(dtype)
         q = self.q_norm(self.proj["q"](y).unflatten(-1, (self.heads, -1))).flatten(2)
         k = self.k_norm(self.proj["k"](y).unflatten(-1, (self.heads, -1))).flatten(2)
-        x = x + self.proj["o"](_attention(q, k, self.proj["v"](y), rope, self.heads)) * gate_a[:, None]
+        x = x + self.proj["o"](_attention(q, k, self.proj["v"](y), rope, self.heads, key_mask)) * gate_a[:, None]
         y = self.norm2(x) * (1 + scale_f[:, None]) + shift_f[:, None]
         hidden, gate = self.proj["ffn_up_gate"](y.to(dtype)).chunk(2, -1)
         return x + self.proj["ffn_down"](_situ(hidden, gate)) * gate_f[:, None]
@@ -259,6 +261,57 @@ class MOSSImageDiT(nn.Module):
             x = self.final_linear_video(x.to(self._io_dtype(self.final_linear_video)))
             outputs.append(x.transpose(1, 2).reshape(1, -1, height, width))
         return torch.cat(outputs)
+
+    def forward_batch(self, hidden_states, timestep, encoder_hidden_states, encoder_attention_mask):
+        """Batch Size above 1 (training): forward's pictures in one pass instead of one at a time. Each picture's
+        caption is zero-padded at the end of the sequence with its padded keys masked out, and gets the positions its
+        own caption length gives (the image's text axis is that length), so each picture's velocity is what forward
+        gives it alone. hidden_states [B, 128, h, w], timestep [B] (1000 * sigma), encoder_hidden_states [B, L, 4096],
+        encoder_attention_mask [B, L] True on real tokens."""
+        batch, _, height, width = hidden_states.shape
+        n = height * width
+        dev = hidden_states.device
+        mask = encoder_attention_mask.to(dev).bool()
+        L = encoder_hidden_states.shape[1]
+        times = torch.as_tensor(timestep, device=dev, dtype=torch.float32).reshape(-1).expand(batch)
+        half = self.freq_dim // 2
+        freq = 10000 ** (-torch.arange(half, device=dev, dtype=torch.float64) / half)
+        phase = times.double()[:, None] * freq
+        embedding = torch.cat((phase.cos(), phase.sin()), -1).float()
+        time = self.time_embedding(embedding.to(self._io_dtype(self.time_embedding[0]))).float()
+        mod = self.shared_block_modulation(time.to(self._io_dtype(self.shared_block_modulation))).view(batch, 6, -1)
+        head = self.video_head_modulation(time.to(self._io_dtype(self.video_head_modulation))).view(batch, 2, -1)
+        video = hidden_states.flatten(2).transpose(1, 2)
+        video = self.video_embedder(video.to(self._io_dtype(self.video_embedder)).contiguous())
+        ropes = []
+        for index in range(batch):          # each picture's own: its image's text axis is its caption's length
+            real = int(mask[index].sum())
+            if real == 0:
+                raise ValueError("Each sample needs at least one valid text token.")
+            r = self.rope(height, width, real, dev)
+            if real < L:
+                r = torch.cat([r, r[:, -1:].expand(1, L - real, r.shape[-1])], 1)   # padded slots: masked keys
+            ropes.append(r)
+        rope = torch.cat(ropes).to(video.dtype)
+        key_mask = torch.cat([torch.ones(batch, n, dtype=torch.bool, device=dev), mask], 1)
+        text = self.text_embedder(encoder_hidden_states.to(dev), rope[:, n:], mask)
+        x = torch.cat((video, text), 1)
+        layers = list(self.layers) if self.blocks_to_swap else None
+        for i, layer in enumerate(self.layers):
+            if self.blocks_to_swap:
+                self.offloader.wait_for_block(i)
+            if getattr(layer, "_handles_checkpointing", False):
+                x = layer(x, rope, mod, key_mask)
+            elif torch.is_grad_enabled() and self.gradient_checkpointing:
+                x = checkpoint(layer, x, rope, mod, key_mask, use_reentrant=False)
+            else:
+                x = layer(x, rope, mod, key_mask)
+            if self.blocks_to_swap:
+                self.offloader.submit_move_blocks_forward(layers, i)
+        x = self.final_norm_video(x[:, :n].to(self.final_norm_video.weight.dtype))
+        x = x * (1 + head[:, 1, None]) + head[:, 0, None]
+        x = self.final_linear_video(x.to(self._io_dtype(self.final_linear_video)))
+        return x.transpose(1, 2).reshape(batch, -1, height, width)
 
 
 # ---- weights ---------------------------------------------------------------------------------------------------

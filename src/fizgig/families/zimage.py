@@ -39,6 +39,7 @@ ZIMAGE = FamilyDescription(
     key="zimage",
     start_lr_bands=(("lora", 3e-5, 4.5e-4), ("finetune", 1.7e-5, 3e-4), ("slider", 7e-5, 6e-4)),
     masked_training=True,
+    batch_training=True,              # Batch size (Other Options): training_loss_batch, exact per picture
     arch_id="zimageturbo",
     display_name="Z-Image Turbo",
     gui_label="Z-Image Turbo",

@@ -193,6 +193,34 @@ class AnimaDriver(FamilyDriver):
             loss = with_prior(loss, prior, base, (pred - base).pow(2).mean(dim=1).flatten(1), mw, w)
         return loss, {"t": float(t.mean())}
 
+    def stack_conds(self, conds):
+        """Batch Size above 1: every picture's own caption, kept apart - each goes through the LLM adapter alone and
+        comes out the fixed 512 tokens the DiT takes (_context), so a batch never pads a caption."""
+        return {"items": conds}
+
+    def training_loss_batch(self, dit, latents, cond, generator, *, min_t=0.0, max_t=1.0, loss_mask=None):
+        """Batch Size above 1: each picture's t and noise drawn as training_loss draws them, picture by picture, its
+        context made alone, one DiT call for them all; the MSE (and a mask's per-picture weights) is their mean."""
+        x0 = latents.float()
+        if x0.dim() == 4:
+            x0 = x0.unsqueeze(2)                                                    # (B, 16, 1, h, w)
+        ts, noises = [], []
+        for i in range(x0.shape[0]):
+            t = torch.sigmoid(torch.randn(1, generator=generator))
+            ts.append(min_t + (max_t - min_t) * t)
+            noises.append(torch.randn(x0[i:i + 1].shape, generator=generator))
+        t, noise = torch.cat(ts).to(x0.device), torch.cat(noises).to(x0.device)
+        tb = t.view(-1, 1, 1, 1, 1)
+        xt = (1 - tb) * x0 + tb * noise
+        ctx = torch.cat([self._context(dit, c, x0.device) for c in cond["items"]])
+        mask = torch.zeros(xt.shape[0], 1, xt.shape[-2], xt.shape[-1], device=xt.device, dtype=DTYPE)
+        pred = dit.forward_mini_train_dit(xt.to(DTYPE), t.to(xt.device, DTYPE)[:, None], ctx,
+                                          padding_mask=mask).float()
+        if loss_mask is None:
+            return F.mse_loss(pred, noise - x0), {"t": float(t.mean())}
+        mw = loss_mask.float().to(x0.device).flatten(1)
+        return weighted_loss((pred - (noise - x0)).pow(2).mean(dim=1).flatten(1), mw), {"t": float(t.mean())}
+
     def noise_latents(self, latents, generator, *, min_t=0.0, max_t=1.0):
         x0 = latents.float()
         if x0.dim() == 4:

@@ -185,6 +185,29 @@ class ZImageDriver(FamilyDriver):
             loss = with_prior(loss, prior, base, (pred.float() - base).pow(2).mean(dim=1).flatten(1), mw, w)
         return loss, {"t": float(sig.mean())}
 
+    def stack_conds(self, conds):
+        """Batch Size above 1: every picture's own caption, kept apart - the DiT takes a list of captions of any
+        lengths (_velocity), so a batch never pads one."""
+        return {"items": conds}
+
+    def training_loss_batch(self, dit, latents, cond, generator, *, min_t=0.0, max_t=1.0, loss_mask=None):
+        """Batch Size above 1: each picture's sigma and noise drawn as training_loss draws them, picture by picture,
+        one DiT call over the list of captions; the MSE (and a mask's per-picture weights) is the pictures' mean."""
+        x0 = latents.float()
+        sigs, noises = [], []
+        for i in range(x0.shape[0]):
+            sigs.append(self._sample_sigma(1, generator, min_t, max_t))
+            noises.append(torch.randn(x0[i:i + 1].shape, generator=generator))
+        sig, noise = torch.cat(sigs).to(x0.device), torch.cat(noises).to(x0.device)
+        sb = sig.view(-1, 1, 1, 1)
+        xt = (1 - sb) * x0 + sb * noise
+        pred = self._velocity(dit, xt, sig, [_cap(c, 0) for c in cond["items"]])
+        target = noise - x0
+        if loss_mask is None:
+            return F.mse_loss(pred, target), {"t": float(sig.mean())}
+        mw = loss_mask.float().to(x0.device).flatten(1)
+        return weighted_loss((pred - target).pow(2).mean(dim=1).flatten(1), mw), {"t": float(sig.mean())}
+
     def noise_latents(self, latents, generator, *, min_t=0.0, max_t=1.0):
         x0 = latents.float()
         sig = self._sample_sigma(x0.shape[0], generator, min_t, max_t).to(x0.device)

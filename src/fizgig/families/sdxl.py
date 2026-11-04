@@ -31,6 +31,7 @@ SDXL = FamilyDescription(
     key="sdxl",
     start_lr_bands=(("lora", 1.7e-5, 1.5e-4), ("finetune", 1e-6, 3e-5), ("slider", 1.7e-5, 1.5e-4)),
     masked_training=True,
+    batch_training=True,              # Batch size (Other Options): training_loss_batch, exact per picture
     arch_id="sdxl",
     display_name="SDXL",
     gui_label="SDXL (any checkpoint)",

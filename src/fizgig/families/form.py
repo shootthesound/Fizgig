@@ -70,7 +70,7 @@ DEFAULTS = {
     "NETWORK_TYPE": "LoRA (standard)", "LOKR_FACTOR": "8", "MAX_TRAIN_EPOCHS": "12", "SAVE_EVERY_N_EPOCHS": "1",
     "SAVE_LATER": False, "SAVE_UNTIL_EPOCH": "10", "SAVE_EVERY_AFTER": "1",
     "SEED": "42", "BLOCKS_SWAP": "Auto (detect from GPU)", "RESUME_TRAINING": "", "OPTIMIZER_TYPE": "adamw8bit",
-    "OPTIMIZER_ARGS": "", "GRADIENT_ACCUMULATION": "1", "MAX_GRAD_NORM": "1.0", "LR_SCHEDULER": "constant",
+    "OPTIMIZER_ARGS": "", "GRADIENT_ACCUMULATION": "1", "BATCH_SIZE": "1", "MAX_GRAD_NORM": "1.0", "LR_SCHEDULER": "constant",
     "LR_WARMUP_STEPS": "", "ADAPTIVE_LR": False, "ADAPTIVE_LR_MIN": "1e-5", "ADAPTIVE_LR_MAX": "4e-4",
     "CONTEXT_LORA_PATH": "", "CONTEXT_LORA_STRENGTH": "1.0", "FAMILY_DOP": False, "FAMILY_MULTI_PERSON": False, "FAMILY_DOP_TRIGGER": "",
     "FAMILY_DOP_CLASS": "", "FAMILY_DOP_TRIGGER2": "", "FAMILY_DOP_CLASS2": "",
@@ -102,6 +102,13 @@ DEFAULTS = {
     "SAMPLE_EVERY_AFTER": "1", "SAMPLE_AT_FIRST": True, "SAMPLE_CHECKPOINT": True, "CACHE_SAMPLE_MODEL": "auto",
 }
 
+
+BATCH_HINT = ("Pictures trained together in each step, from the same size bucket. Above 1 a step takes longer but "
+              "an epoch is quicker on a card with room to spare, and it uses more memory: Auto plans for it. The "
+              "per-image loss watch, Start at a smaller size and keeping the model's own picture outside the mask "
+              "need 1, as do sliders, edits, fine-tunes, DOP and Fizgig LoRA Isolation. Each picture still counts "
+              "the same.")
+BATCH_OFF = "Off while Batch size is above 1: it reads one picture a step."
 
 TRAINING_ORDER = ("model", "output", "params", "edit", "slider", "finetune", "memory", "optimizer", "other")
 # any other Training card (Masked training, Subjects) comes after these, under the Extras divider
@@ -641,6 +648,8 @@ def form(desc):
         _row("LR_WARMUP_STEPS", "Warmup steps"),
         _row("CAPTION_DROPOUT", "Caption dropout", "choice", CAPTION_DROPOUT_HINT, CAPTION_DROPOUTS,
              default=CAPTION_DROPOUTS[0]) if desc.caption_dropout and pictures else None,
+        _row("BATCH_SIZE", "Batch size", "choice", BATCH_HINT, launch.BATCH_SIZES)
+        if desc.batch_training and pictures else None,
         *by_section("training", "other", "lora"),
         _row("METADATA_TITLE", "Title"), _row("METADATA_AUTHOR", "Author"),
         _row("METADATA_DESCRIPTION", "Description"), _row("METADATA_LICENSE", "License"),
@@ -1256,6 +1265,19 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
                                                 "or download it from Preferences.")
             elif state == "done":
                 notes["FAMILY_PREVIEW_LOOK"] = "Downloaded: previews use it from the next one."
+    if desc.batch_training:
+        one_a_step = kind in ("edit", "slider", "finetune") or values.get("FAMILY_DOP") or \
+            values.get("FAMILY_MULTI_PERSON")
+        if one_a_step:
+            disabled.add("BATCH_SIZE")
+            notes["BATCH_SIZE"] = ("Greyed out: sliders, edits, fine-tunes, DOP and Fizgig LoRA Isolation train one "
+                                   "picture a step.")
+        elif str(values.get("BATCH_SIZE") or "1") not in ("", "1"):
+            off = {"KREA2_LOSS_WATCH", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK", "KREA2_AUTO_RECAPTION", "STAGE_MP",
+                   "STAGE_UNTIL", "MASK_PRIOR"}
+            disabled |= off
+            for k in off:
+                notes.setdefault(k, BATCH_OFF)
     return {"hidden": sorted(hidden), "disabled": sorted(disabled), "notes": notes, "kind": kind,
             "media": sorted(media), "turbo_file": bool(speed_file), "force": force, "actions": actions,
             "shown": shown, "checkpoint_file": bool(checkpoint_file), "labels": labels, "checkpoint_turbo": ck_turbo,

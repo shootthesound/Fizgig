@@ -57,6 +57,7 @@ MOSS_IMAGE = FamilyDescription(
     key="moss_image",
     start_lr_bands=(("lora", 1.7e-5, 3e-4), ("finetune", 3e-6, 3e-5), ("slider", 7e-5, 6e-4)),
     masked_training=True,
+    batch_training=True,              # Batch size (Other Options): training_loss_batch, exact per picture
     arch_id="mossimage",
     display_name="MOSS-Image",
     gui_label="MOSS-Image",

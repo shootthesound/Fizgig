@@ -543,6 +543,10 @@ class FamilyDescription:
     # caption dropout (families/train.py): a share of steps trains on the empty caption's encoding, made once at the
     # start with the family's own text encoder; off for a family with its own (H3) or no pictures (ACE-Step)
     caption_dropout: bool = True
+    # Batch Size above 1 (Other Options): the driver's training_loss_batch trains several pictures of one bucket in
+    # one forward. Opt in only when it is exact - each picture's loss as its own step would give - for captions of
+    # one shape (families/train.py runs each caption shape's pictures as their own group, never padding them)
+    batch_training: bool = False
     # the learning rates the Start checks call usual (launch.start_checks): ((kind, low, high), ...) for "lora",
     # "finetune" and "slider" - a third of the lowest shipped preset to three times the highest; a rate outside is a
     # warning at Start, never a block. A kind left out has no rule (an optimizer that sets its own rate has none)

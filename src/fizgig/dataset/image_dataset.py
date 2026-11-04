@@ -630,7 +630,10 @@ class BucketBatchManager:
         # Stack tensors per key
         stacked: dict[str, Any] = {}
         for key, tensors in batch_tensor_data.items():
-            stacked[key] = torch.stack(tensors)
+            if len(tensors) > 1 and any(t.shape != tensors[0].shape for t in tensors):
+                stacked[key] = tensors      # Batch Size above 1: captions of different lengths, grouped by the trainer
+            else:
+                stacked[key] = torch.stack(tensors)
 
         if self.timestep_pool is not None:
             stacked["timesteps"] = self.timestep_pool[idx][:end - start]

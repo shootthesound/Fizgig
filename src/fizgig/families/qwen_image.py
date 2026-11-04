@@ -42,6 +42,7 @@ QWEN_IMAGE_21 = FamilyDescription(
     key="qwen_image21",
     start_lr_bands=(("lora", 3e-5, 4.5e-4), ("slider", 7e-5, 6e-4)),
     masked_training=True,
+    batch_training=True,              # Batch size (Other Options): training_loss_batch, exact per picture
     rgba=True,
     arch_id="qwenimage21",
     display_name="Qwen Image 2.1",

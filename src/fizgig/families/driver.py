@@ -244,6 +244,30 @@ class FamilyDriver:
         Returns (loss tensor, info dict e.g. {"t": 0.63}). Owns the family's noise/target/timestep rules."""
         raise NotImplementedError
 
+    def training_loss_batch(self, dit, latents, cond: dict, generator, *, min_t: float = 0.0, max_t: float = 1.0,
+                            loss_mask=None):
+        """Batch Size above 1 (description batch_training): latents (B, C, h, w) of one bucket, cond = the B pictures'
+        batch_cond dicts joined by stack_conds, loss_mask (B, 1, h, w) or None. Each picture draws its noise and
+        timestep in the order B training_loss calls would, so with the same generator the loss is the mean of
+        theirs. Returns (loss tensor, info dict with "t", the pictures' mean)."""
+        raise NotImplementedError
+
+    def stack_conds(self, conds: list):
+        """B pictures' batch_cond dicts (each batch 1) -> one dict with a batch of B, or None when their shapes
+        differ: the trainer then runs each shape's pictures as their own group. Nothing is padded, so a group trains
+        as its pictures would one at a time."""
+        import torch
+        keys = list(conds[0])
+        if any(list(c) != keys for c in conds):
+            return None
+        out = {}
+        for k in keys:
+            vs = [c[k] for c in conds]
+            if not all(torch.is_tensor(v) and v.shape == vs[0].shape for v in vs):
+                return None
+            out[k] = torch.cat(vs)
+        return out
+
     # ---- prompt-pair sliders (optional) ------------------------------------------------------------
     def slider_setup(self, group) -> None:
         """A slider run's data is known (an image-pair group, or a prompt slider's practice bank)."""

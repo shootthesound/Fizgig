@@ -20,9 +20,9 @@ QWEN21_CONFIG = dict(patch_size=1, in_channels=64, out_channels=64, num_layers=3
 
 
 def apply_rotary_emb_complex(x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
-    """x [B, S, H, D]; freqs_cis complex [S, D/2]."""
+    """x [B, S, H, D]; freqs_cis complex [S, D/2], or [B, S, D/2] (a batch whose captions differ in length)."""
     x_c = torch.view_as_complex(x.float().reshape(*x.shape[:-1], -1, 2))
-    return torch.view_as_real(x_c * freqs_cis.unsqueeze(1)).flatten(3).type_as(x)
+    return torch.view_as_real(x_c * freqs_cis.unsqueeze(-2 if freqs_cis.dim() == 3 else 1)).flatten(3).type_as(x)
 
 
 class RMSNorm(nn.Module):
@@ -409,9 +409,16 @@ class QwenImage21DiT(nn.Module):
                 w[:, text_pos] = m.float()
                 text_w = w[0]
                 key_valid = torch.log(w).to(hidden_states.dtype)
-        padded = text_w is not None and not bool((text_w == 1).all())
-        rotary = self.pos_embed(img_shapes[0], image_pad_mask, hidden_states.device,
-                                text_valid=text_w if padded else None)
+        if batch > 1 and key_valid is not None and key_valid.dtype == torch.bool and not bool(key_valid.all()):
+            # Batch Size above 1 (training): each picture's caption has its own real length, so each picture gets
+            # its own positions - as its unpadded caption would place its image
+            rotary = torch.stack([self.pos_embed(img_shapes[0], image_pad_mask, hidden_states.device,
+                                                 text_valid=None if bool(kv.all()) else kv.float())
+                                  for kv in key_valid])
+        else:
+            padded = text_w is not None and not bool((text_w == 1).all())
+            rotary = self.pos_embed(img_shapes[0], image_pad_mask, hidden_states.device,
+                                    text_valid=text_w if padded else None)
         image_ids, target_token_mask = self.build_token_metadata(image_pad_mask, img_shapes[0])
 
         timestep = timestep.to(hidden_states.dtype)

@@ -881,7 +881,7 @@ def train_command(desc, inputs, plan):
         cmd += ["--caption_dropout", f"{float(st['CAPTION_DROPOUT']):g}"]
     if masked_on(desc, st):
         cmd += ["--masked_training", "--mask_floor", f"{mask_floor(st):g}"]
-        if mask_prior(desc, st):
+        if mask_prior(desc, st) and batch_size(desc, st) <= 1:
             cmd += ["--mask_prior", f"{mask_prior(desc, st):g}"]
     if dop_on(desc, st) or mp_subs:
         trig, cls = dop_rules(st)
@@ -944,10 +944,7 @@ def train_command(desc, inputs, plan):
             cmd += ["--ft_start_window", str(int(cont.get("start_window", 0))),
                     "--ft_epochs_done", str(int(cont.get("epochs_done", 0)))]
     # per-image loss watch (families/loss_watch.py), batch size 1 only
-    try:
-        bs1 = int(str(st.get("batch_size", 1)).strip() or 1) <= 1
-    except ValueError:
-        bs1 = True
+    bs1 = batch_size(desc, st) <= 1
     lw = (st.get("loss_watch") or {}) if desc.loss_watch else {}
     if multi_person_on(desc, st):    # the side-by-sides are hard on purpose: no verdicts, per-image LR or look warm-up
         lw = {**lw, "detect": False, "per_image_lr": False, "warmup": False}
@@ -1239,6 +1236,25 @@ def cache_dir_for(cache_root, image_dir):
 STAGE_BLEND = 0.1      # the share of the run the change from the smaller size to the full one blends over
 
 
+BATCH_SIZES = ("1", "2", "3", "4", "6", "8")
+
+
+def batch_size(desc, inputs):
+    """Pictures a step (Other Options' Batch size): 1 unless the family trains batches (description batch_training)
+    and the run is a plain LoRA - an edit, a slider, a fine-tune, DOP and Fizgig LoRA Isolation read one picture a
+    step."""
+    try:
+        n = int(str(_s(inputs.get("BATCH_SIZE")) or 1).strip())
+    except ValueError:
+        return 1
+    if n <= 1 or not desc.batch_training:
+        return 1
+    if edit_on(desc, inputs) or slider_on(desc, inputs) or ft_on(desc, inputs) or dop_on(desc, inputs) \
+            or multi_person_on(desc, inputs):
+        return 1
+    return n
+
+
 def stage_mp(desc, inputs):
     """Start at a smaller size: its Target Megapixels, or 0 (off, not below Target Megapixels, or a run it isn't for:
     an edit, a slider, a fine-tune, Fizgig LoRA Isolation)."""
@@ -1250,6 +1266,8 @@ def stage_mp(desc, inputs):
     if not (desc.resolution_stages and 0.25 <= smp < full):
         return 0.0
     if edit_on(desc, inputs) or slider_on(desc, inputs) or ft_on(desc, inputs) or multi_person_on(desc, inputs):
+        return 0.0
+    if batch_size(desc, inputs) > 1:
         return 0.0
     return smp
 
@@ -1265,12 +1283,12 @@ def stage_until(inputs):
 def dataset_toml(desc, inputs, cache_suffix=""):
     """The dataset TOML for the run: the training folder at Target Megapixels (a square of that area on the
     16-pixel grid), an edit's originals or a slider's -1 end as its control folder, and its own cache folder.
-    Raises ValueError on a Target Megapixels that is not a number. Batch size is always 1 (one image a step)."""
+    Raises ValueError on a Target Megapixels that is not a number. Batch size: batch_size()."""
     mp = float(inputs.get("megapixels"))
     if mp <= 0:
         raise ValueError(f"Target Megapixels {mp}")
     side = int((mp * 1_000_000) ** 0.5) // 16 * 16
-    batch = 1           # every family trains one image at a time (families/train.py); Gradient Accumulation for more
+    batch = batch_size(desc, inputs)      # 1 unless Other Options' Batch size is up and the family trains batches
     folder = _s(inputs.get("image_folder"))
     extra = [_s(f) for f in (inputs.get("extra_folders") or []) if _s(f)] if desc.multi_concept else []
     lines = ["[general]", f"resolution = [{side}, {side}]",

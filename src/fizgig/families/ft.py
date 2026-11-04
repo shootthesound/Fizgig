@@ -52,7 +52,9 @@ class FTSpec:
         ((module suffix, file suffix, part, parts), ...) - e.g. ("img_mlp.gate_layer.weight", "img_mlp.gate_up.weight",
         0, 2): the Linear's weight is the first of 2 equal row-chunks of the file's gate_up tensor. The master reads
         that slice and the checkpoint writes the parts back as the file had them. A "diffusion_model." prefix in the
-        file is found on its own.
+        file is found on its own. An optional fifth field is the weight's own shape when the file pads its slice with
+        zeros (Fibo 2.0's ComfyUI file pads the FFN's 9536 lanes to 9728): the master reads that corner, and the
+        checkpoint writes the trained weight back into it with the file's padding around it.
     file_prefix: a prefix every DiT key in the model file carries besides that one (Anima's "net."), so weights are
         read from and written back under the file's own names. Keys without it (a checkpoint's text encoders and VAE)
         are not the model's.
@@ -96,10 +98,10 @@ def _lists(spec: FTSpec) -> tuple:
 
 def _file_loc(spec: FTSpec, mkey: str, have) -> Optional[tuple]:
     """(file key, part, parts) of a model weight in a file whose keys are `have`, or None."""
-    fkey, part, parts = mkey, 0, 1
-    for msuf, fsuf, pt, n in spec.file_layout:
+    fkey, part, parts, keep = mkey, 0, 1, None
+    for msuf, fsuf, pt, n, *rest in spec.file_layout:
         if mkey.endswith(msuf):
-            fkey, part, parts = mkey[:-len(msuf)] + fsuf, int(pt), int(n)
+            fkey, part, parts, keep = mkey[:-len(msuf)] + fsuf, int(pt), int(n), (tuple(rest[0]) if rest else None)
             break
     for mp, fp in spec.file_names:
         if fkey.startswith(mp):
@@ -107,7 +109,7 @@ def _file_loc(spec: FTSpec, mkey: str, have) -> Optional[tuple]:
             break
     for k in (fkey, _PREFIX + fkey) + ((spec.file_prefix + fkey,) if spec.file_prefix else ()):
         if k in have:
-            return k, part, parts
+            return (k, part, parts) + ((keep,) if keep else ())
     return None
 
 
@@ -122,10 +124,12 @@ def _model_name(spec: FTSpec, fkey: str) -> str:
 def _read(src, loc):
     """A master weight in the file's own precision: bf16, or fp16 / fp32 (most SDXL checkpoints are fp16), so a
     weight training leaves alone is written back exactly."""
-    fkey, part, parts = loc
+    fkey, part, parts, *keep = loc
     t = src.get_tensor(fkey)
     if parts > 1:
         t = t.chunk(parts, dim=0)[part]
+    if keep:                                       # the weight's own corner of a zero-padded slice
+        t = t[tuple(slice(0, n) for n in keep[0])].contiguous()
     return t if t.dtype in (torch.bfloat16, torch.float16, torch.float32) else t.to(torch.bfloat16)
 
 
@@ -187,11 +191,11 @@ class DiskMaster:
         os.makedirs(scratch_dir, exist_ok=True)
         self._f = MemoryEfficientSafeOpen(src_path)
         self._shape = {}
-        for k, (fk, part, parts) in self._loc.items():
+        for k, (fk, part, parts, *keep) in self._loc.items():
             sh = list(self._f.header[fk]["shape"])
             sh[0] //= parts
-            self._shape[k] = tuple(sh)
-        need = sum(_master_bytes(self._f.header, fk, parts) for fk, _part, parts in self._loc.values())
+            self._shape[k] = tuple(keep[0]) if keep else tuple(sh)
+        need = sum(_master_bytes(self._f.header, fk, parts) for fk, _part, parts, *_ in self._loc.values())
         self.est_gb = need / 1e9
         free = shutil.disk_usage(scratch_dir).free
         if free < need * 1.1:
@@ -268,7 +272,7 @@ class _TrainedView:
         self._m, self._live, self._src = master, live, src_path     # live: model key -> Linear with a current .weight
         self._loc, self._srcf = loc, None
         self._parts = {}                                             # file key -> {part: model key}, and its count
-        for mk, (fk, part, parts) in loc.items():
+        for mk, (fk, part, parts, *_) in loc.items():
             self._parts.setdefault(fk, [parts, {}])[1][part] = mk
 
     def keys(self):
@@ -295,14 +299,26 @@ class _TrainedView:
             self._srcf = MemoryEfficientSafeOpen(self._src)
         return _read(self._srcf, self._loc[mk])
 
+    def _padded(self, mk, t):
+        """A trained weight back in its file slice's shape, where the file pads it with zeros (FTSpec.file_layout's
+        fifth field): the file's own slice, the weight laid over its corner."""
+        fk, part, parts, *keep = self._loc[mk]
+        if not keep:
+            return t
+        from fizgig.krea2.safetensors_utils import MemoryEfficientSafeOpen
+        with MemoryEfficientSafeOpen(self._src) as f:
+            out = _read(f, (fk, part, parts)).to(t.dtype)
+        out[tuple(slice(0, n) for n in t.shape)] = t
+        return out
+
     def __getitem__(self, fkey):
         parts, have = self._parts[fkey]
         if parts == 1:
-            return self._value(have[0])
+            return self._padded(have[0], self._value(have[0]))
         out = []
         for i in range(parts):
             if i in have:
-                out.append(self._value(have[i]))
+                out.append(self._padded(have[i], self._value(have[i])))
             else:                                   # a part nothing trains: the file's own slice
                 from fizgig.krea2.safetensors_utils import MemoryEfficientSafeOpen
                 with MemoryEfficientSafeOpen(self._src) as f:
@@ -383,7 +399,7 @@ class Rotator:
                 else:
                     self.loc[k] = loc
             gb = sum(_master_bytes(src.header, fk, n)
-                     for k, (fk, _p, n) in self.loc.items() if k in {t[0] for t in self.targets}) / 1e9
+                     for k, (fk, _p, n, *_) in self.loc.items() if k in {t[0] for t in self.targets}) / 1e9
         if missing:
             raise RuntimeError(f"[finetune] {len(missing)} weights are not in {os.path.basename(path)} under the "
                                f"expected names, e.g. {missing[:3]} (the driver's FTSpec.file_layout maps them)")
@@ -555,7 +571,7 @@ def plan_from_file(path: str, spec: FTSpec, free_gb: float, mp=None, max_parts=0
             continue
         block0_params += numel
         rest = m.group(2)
-        names = [(rest[:-len(fsuf)] + msuf, numel / n) for msuf, fsuf, _pt, n in spec.file_layout
+        names = [(rest[:-len(fsuf)] + msuf, numel / n) for msuf, fsuf, _pt, n, *_ in spec.file_layout
                  if rest.endswith(fsuf)] or [(rest, numel)]
         for name, n_el in names:
             for p in spec.components:
@@ -598,7 +614,7 @@ def _plan_from_header_lists(hdr, spec: FTSpec, free_gb: float, mp=None, max_part
             continue
         params += numel
         rest = m.group(2)
-        names = [(rest[:-len(fsuf)] + msuf, numel / n) for msuf, fsuf, _pt, n in spec.file_layout
+        names = [(rest[:-len(fsuf)] + msuf, numel / n) for msuf, fsuf, _pt, n, *_ in spec.file_layout
                  if rest.endswith(fsuf)] or [(rest, numel)]
         for name, n_el in names:
             for p in spec.components:

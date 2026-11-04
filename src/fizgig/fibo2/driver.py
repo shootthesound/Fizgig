@@ -694,29 +694,48 @@ class Fibo2Driver(FamilyDriver):
         the fused stem, and each part of the layout says which rows of the fused up matrix belong to which model
         Linear - without it those pairs cannot be placed and are reported as outside the blocks.
 
-        Fibo 2.0 is a LoRA-only family (`finetune=False`): the fine-tune half of the spec (the windows, the
-        planner's figures) is never read, so it stays at the dataclass defaults rather than claiming measurements
-        the family has not made. The layout itself is the model's, verified against `load_dit`'s splits: qkv is 3
-        equal row chunks (3x3584), w13 and to_kv are 2 equal row chunks (2x9728, 2x3584).
+        Fine-tuning trains the 44 main layers (7.43B of the model's 8.23B parameters), in five similar parts: the
+        attention, the cross-attention (the 5 injection blocks) and each FFN matrix. The refiners, the Perceiver, the
+        modulation and the embedders stay frozen. The layout is the model's against `load_dit`'s splits: qkv is 3
+        equal row chunks (3x3584), to_kv 2 (2x3584), w13 2 of 9728 rows each holding the model's 9536 (the fifth
+        field: the rest is the file's zero padding), and w2's 9728 columns hold the model's 9536. Matching is by
+        suffix, so the cross- and self-attention entries come before the plain attention ones they end with.
         """
         from fizgig.families.ft import FTSpec
-        return FTSpec(blocks=("layers", "noise_refiner"),
-                      components=("attention", "feed_forward", "cross_attention", "self_attention", "ffn",
-                                  "adaLN_modulation"),
+        ffn = (9536, 3584)                                  # the model's w1 / w3 inside the file's padded halves
+        return FTSpec(blocks=("layers",),           # the list form: cross-attention is sized over its 5 blocks only
+                      components=("attention.", "cross_attention.", "feed_forward.w1", "feed_forward.w3",
+                                  "feed_forward.w2"),
                       file_prefix="",
                       file_layout=(
+                          ("cross_attention.to_q.weight", "cross_attention.to_q.weight", 0, 1),
+                          ("cross_attention.to_k.weight", "cross_attention.to_kv.weight", 0, 2),
+                          ("cross_attention.to_v.weight", "cross_attention.to_kv.weight", 1, 2),
+                          ("cross_attention.to_out.0.weight", "cross_attention.to_out.weight", 0, 1),
+                          ("self_attention.to_q.weight", "self_attention.to_q.weight", 0, 1),
+                          ("self_attention.to_k.weight", "self_attention.to_kv.weight", 0, 2),
+                          ("self_attention.to_v.weight", "self_attention.to_kv.weight", 1, 2),
+                          ("self_attention.to_out.0.weight", "self_attention.to_out.weight", 0, 1),
                           ("attention.to_q.weight", "attention.qkv.weight", 0, 3),
                           ("attention.to_k.weight", "attention.qkv.weight", 1, 3),
                           ("attention.to_v.weight", "attention.qkv.weight", 2, 3),
-                          ("cross_attention.to_k.weight", "cross_attention.to_kv.weight", 0, 2),
-                          ("cross_attention.to_v.weight", "cross_attention.to_kv.weight", 1, 2),
-                          ("self_attention.to_k.weight", "self_attention.to_kv.weight", 0, 2),
-                          ("self_attention.to_v.weight", "self_attention.to_kv.weight", 1, 2),
-                          ("feed_forward.w1.weight", "feed_forward.w13.weight", 0, 2),
-                          ("feed_forward.w3.weight", "feed_forward.w13.weight", 1, 2),
-                          ("ffn.w1.weight", "ffn.w13.weight", 0, 2),
-                          ("ffn.w3.weight", "ffn.w13.weight", 1, 2),
-                      ))
+                          ("attention.to_out.0.weight", "attention.out.weight", 0, 1),
+                          ("feed_forward.w1.weight", "feed_forward.w13.weight", 0, 2, ffn),
+                          ("feed_forward.w3.weight", "feed_forward.w13.weight", 1, 2, ffn),
+                          ("feed_forward.w2.weight", "feed_forward.w2.weight", 0, 1, (3584, 9536)),
+                          ("ffn.w1.weight", "ffn.w13.weight", 0, 2, ffn),
+                          ("ffn.w3.weight", "ffn.w13.weight", 1, 2, ffn),
+                          ("ffn.w2.weight", "ffn.w2.weight", 0, 1, (3584, 9536)),
+                      ),
+                      # measured 4 Nov 2026 on an RTX 5090, one part per window, 8 photos: planning with 4.61 GB
+                      # allocated, trunk ~3.88 GB (4-bit of the 7.18B trained); peak - 4.61 + 3.88 - window bf16 at
+                      # 1 MP: attention 16.0 -> 10.8, cross-attention 9.3 -> 7.8, w1 / w3 14.2 -> 10.5, w2 14.3 -> 10.6;
+                      # at 0.25 MP the attention window 15.0 -> 9.8, so ~1.4 GB per extra MP. Previews peak at 13.1.
+                      # A window's cost grows faster than its weights: all five parts in one window (14.36 GB) cost
+                      # 29.8 GB to attention's 15.3 (4.52 GB), and a three-part plan credited at 18.9 ran out on a
+                      # 24 GB card. Base 9.1 + 1.75 x the window's weights (the multi-part trunk credit taken off)
+                      # covers every measured window: 17.0 / 14.4 for the one-part ones, 30.4 for the five-part one.
+                      overhead_gb=9.1, window_factor=1.75, calib_mp=1.0, act_gb_per_mp=1.4)
 
     def alias_flat(self, flat):
         """The checkpoint's flattened name for one of the model's Linears -> the model's flattened name. Fibo 2.0's

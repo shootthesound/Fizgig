@@ -170,7 +170,8 @@ _FIBO2 = FamilyDescription(
     # optimizer stays available behind it for the cards that need it.
     optimizers=("adamw", "adamw8bit", "automagic3"),
     ema_default="0.98",
-    finetune=False,
+    finetune=True,                    # driver.ft_spec: the 44 main layers on an NF4 trunk, in five parts
+    ft_learning_rate=1e-5,            # the rate ticking Fine-tune sets (the guide's default until a run says otherwise)
     # train_memory: the per-block saving is the
     # checkpoint's own parameter bytes per main layer: the 44-block stack carries 7.43B of the model's 8.23B, so
     # 168.9M params a block - 0.314 GiB resident in bf16, 0.157 GiB in int8. NF4 stays 0.0: load_base refuses to
@@ -179,21 +180,27 @@ _FIBO2 = FamilyDescription(
     # epochs): the preview sets every peak, so the figures are the preview's reserved peak (training's alone: bf16
     # 18.5 / 21.5, int8 10.6 / 14.1, nf4 8.3 / 11.2 at 0.25 / 1 MP). The 1 MP points trained on real photos above
     # 1 MP (buckets 1248x832, 1360x768). Swap check: bf16 with 26 blocks swapped peaked 10.6 GB against 18.5, 0.30 GB
-    # a block, beside the 0.314 from the file.
-    train_memory={"bf16": (((0.25, 25.5), (1.0, 27.8)), 0.314), "int8": (((0.25, 17.7), (1.0, 20.5)), 0.157),
-                  "nf4": (((0.25, 15.2), (1.0, 17.5)), 0.0)},
+    # a block, beside the 0.314 from the file. With the Turbo LoRA's 4-step previews (the default) the preview peaks
+    # are bf16 26.6 / 27.8, int8 18.7 / 20.4, nf4 15.5 / 17.4 (it sits on the GPU while a preview renders); each
+    # figure is the higher of the two, so it holds with the Turbo on or off.
+    train_memory={"bf16": (((0.25, 26.6), (1.0, 27.8)), 0.314), "int8": (((0.25, 18.7), (1.0, 20.5)), 0.157),
+                  "nf4": (((0.25, 15.5), (1.0, 17.5)), 0.0)},
     # Big cards (40 GB and up), re-measured 4 Nov 2026 on an RTX PRO 6000 (96 GB): compiled, rank 32, AdamW, accum 1,
     # no swap, a 1024 preview after each of 2 epochs, 16 photos at 0.25 MP and 8 above 1 MP (buckets 1248x832,
     # 1360x768). Reserved peaks, previews included, with gradient checkpointing on / off:
     #   bf16 0.25 MP 22.4 / 30.6, 1 MP 24.5 / 55.8;  int8 0.25 MP 14.9 / 23.7, 1 MP 17.0 / 47.9
+    # and with the Turbo LoRA's 4-step previews (the default):
+    #   bf16 0.25 MP 24.2 / 30.4, 1 MP 24.2 / 55.7;  int8 0.25 MP 16.6 / 22.7, 1 MP 16.6 / 48.0
+    # Each figure below is the higher of the two, so it holds with the Turbo on or off.
     # NF4 has no row: it keeps every dequantised bf16 weight for the backward without checkpointing, so like every
     # family's NF4 it always trains checkpointed.
-    train_memory_nogc={"bf16": ((0.25, 30.6), (1.05, 55.8)), "int8": ((0.25, 23.7), (1.05, 47.9))},
+    train_memory_nogc={"bf16": ((0.25, 30.6), (1.05, 55.8)), "int8": ((0.25, 23.7), (1.05, 48.0))},
     # (blocks, ((megapixels, GB with every block checkpointed, GB per block without it), ...)): the per-block cost is
-    # the all-off slope from the same pair, (off - on) / 44 blocks - bf16 (30.6 - 22.4) / 44 = 0.185 and
-    # (55.8 - 24.5) / 44 = 0.710; int8 (23.7 - 14.9) / 44 = 0.201 and (47.9 - 17.0) / 44 = 0.702.
-    train_memory_partial={"bf16": (44, ((0.25, 22.4, 0.185), (1.05, 24.5, 0.710))),
-                          "int8": (44, ((0.25, 14.9, 0.201), (1.05, 17.0, 0.702)))},
+    # the all-off slope from the same pair, (off - on) / 44 blocks, the steeper of Turbo off and on - bf16 0.185
+    # (30.6 - 22.4) and 0.715 (55.7 - 24.2); int8 0.201 (23.7 - 14.9) and 0.713 (48.0 - 16.6) - and the all-on
+    # figure the higher of the two (bf16 24.2 / 24.5, int8 16.6 / 17.0).
+    train_memory_partial={"bf16": (44, ((0.25, 24.2, 0.185), (1.05, 24.5, 0.715))),
+                          "int8": (44, ((0.25, 16.6, 0.201), (1.05, 17.0, 0.713)))},
     # compiles: the three block lists the driver compiles - layers (44), noise_refiner (2) and perceiver.layers
     # (2), so 48 blocks in total, exactly what F1 logged. There is no context_embedder on the diffusers model: the
     # perceiver *is* its context path, so no fourth list is missing here.
@@ -207,10 +214,11 @@ _FIBO2 = FamilyDescription(
     int8_attention=True,
     # Compiled with the checkpoint outside the graph, re-measured 4 Nov 2026 on an RTX 5090 (rank 16, 2 epochs, a 1024
     # preview after each; the preview sets the peak). The 96 GB card's checkpointed runs above read 2-3 GB lower;
-    # these are the higher. The inside boundary isn't measured on this code, so it has no row.
-    compile_memory={"bf16": {"outside": ((0.25, 25.1), (1.05, 27.0))},
-                    "int8": {"outside": ((0.25, 17.5), (1.05, 19.6))},
-                    "nf4": {"outside": ((0.25, 14.1), (1.05, 15.9))}},
+    # these are the higher. With the Turbo LoRA's previews: bf16 26.6 / 27.0, int8 18.7 / 19.7, nf4 15.5 / 15.9; each
+    # figure is the higher of Turbo on and off. The inside boundary isn't measured on this code, so it has no row.
+    compile_memory={"bf16": {"outside": ((0.25, 26.6), (1.05, 27.0))},
+                    "int8": {"outside": ((0.25, 18.7), (1.05, 19.7))},
+                    "nf4": {"outside": ((0.25, 15.5), (1.05, 15.9))}},
     # measured 25 Oct 2026, RTX PRO 6000 96GB (DDR4 host, warm inductor cache), bf16 DiT, 0.25 MP dataset
     # (113 images over 6 buckets), 5-min A/B at the "outside" boundary: --compile_blocks off 525 steps,
     # on 586 steps (0.571 -> 0.512 s/step, ~1.12x). Compiled overtakes eager by ~590 steps; 600 rounds it up.

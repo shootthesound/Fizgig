@@ -993,14 +993,36 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         hidden.add("LEARNING_RATE")          # Adaptive LR on: Min and Max in its place (the box is ignored)
     if kind == "finetune":       # a fine-tune trains at its own fixed rate: no Adaptive LR, on any model
         hidden.add("ADAPTIVE_LR")
-    if str(values.get("OPTIMIZER_TYPE", "")) == "automagic3":
+    opt = str(values.get("OPTIMIZER_TYPE", ""))
+    if opt in ("automagic3", "automagic4"):
         disabled |= {"ADAPTIVE_LR", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK"}
         force.update({k: False for k in ("ADAPTIVE_LR", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK") if values.get(k)})
         if values.get("ADAPTIVE_LR"):            # turned off now: as it shows with Adaptive LR off
             hidden.discard("LEARNING_RATE")
             hidden |= {"ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX"}
-        notes["OPTIMIZER_TYPE"] = "automagic3 sets its own learning rate: Adaptive LR, per-image LR and the look " \
+        notes["OPTIMIZER_TYPE"] = f"{opt} sets its own learning rate: Adaptive LR, per-image LR and the look " \
                                   "warm-up are off."
+    elif opt in ("prodigy", "muon"):             # #292: its own Optimizer Args when the box is empty or the other's
+        from fizgig.training.optimizers import MUON_DEFAULT_ARGS, PRODIGY_DEFAULT_ARGS
+        mine, other = ((PRODIGY_DEFAULT_ARGS, MUON_DEFAULT_ARGS) if opt == "prodigy" else
+                       (MUON_DEFAULT_ARGS, PRODIGY_DEFAULT_ARGS))
+        if str(values.get("OPTIMIZER_ARGS") or "").strip() in ("", other):
+            force["OPTIMIZER_ARGS"] = mine
+        if opt == "muon":
+            notes["OPTIMIZER_TYPE"] = "muon matches AdamW's step size: the usual learning rates and Adaptive LR apply."
+        elif kind == "finetune":                 # a fine-tune keeps its own optimizer and rate (families/ft.py)
+            notes["OPTIMIZER_TYPE"] = "A fine-tune uses its own optimizer: prodigy applies to LoRAs."
+        else:
+            # per-image LR stays: with Prodigy it weights that image's loss, it never writes the group rate
+            disabled |= {"LEARNING_RATE", "ADAPTIVE_LR", "KREA2_WARMUP_LOOK"}
+            force.update({k: False for k in ("ADAPTIVE_LR", "KREA2_WARMUP_LOOK") if values.get(k)})
+            hidden |= {"ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX"}
+            hidden.discard("LEARNING_RATE")
+            if str(values.get("LEARNING_RATE") or "").strip() != "1.0":
+                force["LEARNING_RATE"] = "1.0"
+            notes["OPTIMIZER_TYPE"] = ("prodigy finds its own learning rate: the Learning Rate box is a multiplier, "
+                                       "locked to 1.0, and Adaptive LR and the look warm-up are off. Per-image LR "
+                                       "still works, as a weight on each picture's loss.")
     hidden |= {s for s, k in (("edit", "edit"), ("slider", "slider"), ("finetune", "finetune")) if k != kind}
     if kind == "finetune":
         disabled |= {"MAX_TRAIN_EPOCHS", "SAVE_EVERY_N_EPOCHS"}
@@ -1330,6 +1352,8 @@ def _lr_hint(desc, values, kind, image_folder):
     the best point can fall between two saves. -> (the box it goes under, the text) or None."""
     hint = getattr(desc, "lr_hint", (2e-4, 125))
     if not hint or kind != "standard" or not image_folder:
+        return None
+    if str(values.get("OPTIMIZER_TYPE") or "") in ("prodigy", "automagic4"):    # they set their own rate
         return None
     adaptive = bool(values.get("ADAPTIVE_LR"))
     key = "ADAPTIVE_LR_MIN" if adaptive else "LEARNING_RATE"

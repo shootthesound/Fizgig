@@ -735,8 +735,31 @@ function blockPicker(r, wrap) {
   return wrap;
 }
 
+// Prodigy / Muon (#292): picking one fills its Optimizer Args (and Prodigy's 1.0); leaving one puts back what
+// was there before it. Switching between the other optimizers is untouched.
+const OPT_ARGS = {
+  prodigy: "decouple=True weight_decay=0.01 d_coef=1.0 use_bias_correction=True safeguard_warmup=True",
+  muon: "adjust_lr_fn=match_rms_adamw weight_decay=0.01 momentum=0.95 nesterov=True ns_steps=5"};
+const OPT_HELD = {};
+function optimizerPicked(prev, opt) {
+  const touched = [];
+  if (OPT_ARGS[prev] && !OPT_ARGS[opt]) {                       // leaving Prodigy / Muon
+    if (String(S.values.OPTIMIZER_ARGS || "").trim() === OPT_ARGS[prev]) {
+      S.values.OPTIMIZER_ARGS = OPT_HELD.args || ""; touched.push("OPTIMIZER_ARGS");
+    }
+    if (prev === "prodigy" && String(S.values.LEARNING_RATE) === "1.0" && OPT_HELD.lr) {
+      S.values.LEARNING_RATE = OPT_HELD.lr; touched.push("LEARNING_RATE");
+    }
+  } else if (OPT_ARGS[opt] && !OPT_ARGS[prev]) {                // arriving: keep what to put back
+    OPT_HELD.args = S.values.OPTIMIZER_ARGS || ""; OPT_HELD.lr = S.values.LEARNING_RATE;
+  }
+  if (touched.length) syncInputs(touched);
+}
+
 function onValue(r, val) {
+  const prev = S.values[r.key];
   S.values[r.key] = val;
+  if (r.key === "OPTIMIZER_TYPE" && prev !== val) optimizerPicked(String(prev || ""), String(val || ""));
   if (r.key === "__SAMPLE_LIVE" || (S.values.__SAMPLE_LIVE &&
       ["SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS", "SAMPLE_CFG_SCALE",
        "FAMILY_TURBO_STRENGTH", "SAMPLE_EVERY_N_EPOCHS", "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH",

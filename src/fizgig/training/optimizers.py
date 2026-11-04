@@ -11,8 +11,9 @@ Two things matter for a LoRA and pull against the "more optimizers is better" in
 * **Learning rates are not comparable across families.** Lion's update is a sign, so it wants
   roughly a tenth of AdamW's LR. Handing someone a dropdown without saying that is how you
   produce a fried LoRA and a bug report, so `create_optimizer` warns loudly on the record when
-  the LR looks wrong for the family. (Self-tuning families — Prodigy, CAME, Adafactor — were
-  removed for exactly this class of failure; see the note above _CATALOG.)
+  the LR looks wrong for the family. Prodigy estimates the rate itself (`d`) and takes `lr=1.0` as a
+  multiplier; Muon with `adjust_lr_fn=match_rms_adamw` matches AdamW's step size, so AdamW's rates
+  apply. (CAME and Adafactor stay out; see the note above _CATALOG.)
 
 Free-form `module.path.ClassName` is accepted too, so a user who pip-installs something exotic
 does not need a Fizgig release to use it.
@@ -28,6 +29,12 @@ import torch
 
 logger = logging.getLogger(__name__)
 
+# What the Optimizer Args box is filled with when Prodigy or Muon is picked (and the defaults
+# create_optimizer applies under anything typed there).
+PRODIGY_DEFAULT_ARGS = "decouple=True weight_decay=0.01 d_coef=1.0 use_bias_correction=True safeguard_warmup=True"
+MUON_DEFAULT_ARGS = "adjust_lr_fn=match_rms_adamw weight_decay=0.01 momentum=0.95 nesterov=True ns_steps=5"
+NEW_OPTIMIZERS = ("prodigy", "muon", "automagic4")    # added with #292; they never fall back to AdamW
+
 
 # name -> (import to test, one-line description shown in the GUI/CLI help)
 # Removed by decision (2026-07-28): prodigy, came, adafactor — the "manage their own LR"
@@ -36,6 +43,9 @@ logger = logging.getLogger(__name__)
 # external packages, and both prodigy and adafactor caused real bugs (silent AdamW fallback
 # at lr=1.0; TypeError against the adaptive watcher). Exotic optimizers remain available
 # via the full module.path.ClassName form.
+# Prodigy came back with #292 (@Murf-Code): vendored (fizgig/training/prodigy.py, no package),
+# Adaptive LR and the scheduler stand down for it (owns_its_rate), and it never falls back to
+# AdamW. CAME and Adafactor stay out.
 _CATALOG = {
     "adamw8bit":          ("bitsandbytes", "AdamW, 8-bit state (default — the validated recipe)"),
     "adamw":              (None,           "AdamW, fp32 state, CUDA-fused where available"),
@@ -49,6 +59,15 @@ _CATALOG = {
     # 17 Sep 2026 — unmeasured against the AdamW recipe until an A/B says otherwise.
     "automagic3":         (None,           "Automagic v3 (Ostris) — sets its own learning rate from the update signs; "
                                             "the LR box is its start, 1e-6 recommended. Experiment"),
+    "prodigy":            (None,           "Prodigy — estimates the learning rate itself; the Learning Rate box is "
+                                            "locked to 1.0 (a multiplier)"),
+    "muon":               (None,           "Muon — orthogonalized momentum, step size matched to AdamW's, so AdamW's "
+                                            "learning rates apply"),
+    # Automagic v4 (fizgig/training/automagic4.py, MIT): v3 plus a per-weight brake on the most
+    # sensitive weights and a rate controller that settles instead of annealing to zero.
+    "automagic4":         (None,           "Automagic v4 (Ostris) — like v3, sets its own learning rate, and evens "
+                                            "out how hard each weight is pushed; the LR box is its start, 1e-6 "
+                                            "recommended"),
 }
 
 DEFAULT_OPTIMIZER = "adamw8bit"
@@ -71,9 +90,12 @@ def available_optimizers() -> list[str]:
 
 def optimizer_lr(optimizer) -> float:
     """The rate the optimizer is actually applying: Automagic v3 keeps it in its state (the
-    group's "lr" is only the start); everyone else keeps it on the group."""
+    group's "lr" is only the start); Prodigy applies d x lr; everyone else keeps it on the group."""
     if optimizer is None:
         return 0.0
+    if optimizer.__class__.__name__ == "Prodigy":
+        g = optimizer.param_groups[0]
+        return float(g["lr"]) * float(g.get("d", 1.0))
     fn = getattr(optimizer, "get_avg_learning_rate", None)
     if callable(fn):
         try:
@@ -142,9 +164,9 @@ def group_rates(optimizer) -> str:
 
 
 def owns_its_rate(optimizer) -> bool:
-    """True for an optimizer that sets its own learning rate (Automagic v3): schedulers and
-    adaptive watchers that write the group rate have no effect on it and should stand down."""
-    return optimizer is not None and optimizer.__class__.__name__ == "Automagic3"
+    """True for an optimizer that sets its own learning rate (Automagic v3 / v4, Prodigy): schedulers
+    and adaptive watchers that write the group rate have no effect on it and should stand down."""
+    return optimizer is not None and optimizer.__class__.__name__ in ("Automagic3", "Automagic4", "Prodigy")
 
 
 def describe(name: str) -> str:
@@ -179,6 +201,14 @@ def _warn_lr(name: str, lr: float) -> None:
     if name == "lion8bit" and lr > 5e-5:
         logger.warning("[optimizer] Lion applies the SIGN of the update, so it needs roughly a "
                        "TENTH of an AdamW LR. %.2e will likely overbake — try %.2e.", lr, lr / 10)
+    elif name == "prodigy":
+        if lr < 0.5:
+            logger.warning("[optimizer] Prodigy estimates the rate itself and takes lr=1.0 as a multiplier; "
+                           "at %.2e it will barely train.", lr)
+    elif name == "automagic4" and lr > 1e-3:
+        logger.warning("[optimizer] Automagic v4 starts at the LR you give and finds its own rate — "
+                       "%.2e is a high start (its default is 1e-6); the controller will walk it down, "
+                       "but the first steps run at %.2e.", lr, lr)
     elif name == "automagic3" and lr > 1e-3:
         logger.warning("[optimizer] Automagic v3 starts at the LR you give and finds its own rate — "
                        "%.2e is a high start (its default is 1e-6); the controller will walk it down, "
@@ -248,6 +278,26 @@ def create_optimizer(name: str, params, lr: float, args_str: str = "",
             # and step, and a fused optimizer would update inside backward, ahead of all of it.
             kwargs.setdefault("fused", False)
             opt = Automagic3(params, lr=lr, **kwargs)
+        elif key == "prodigy":
+            from fizgig.training.prodigy import Prodigy        # the vendored copy only, never a package
+            for k, v in parse_optimizer_args(PRODIGY_DEFAULT_ARGS).items():
+                kwargs.setdefault(k, v)
+            opt = Prodigy(params, lr=lr, **kwargs)
+        elif key == "muon":
+            for k, v in parse_optimizer_args(MUON_DEFAULT_ARGS).items():
+                kwargs.setdefault(k, v)
+            params = list(params)
+            flat = ([p for g in params for p in g.get("params", ())]
+                    if params and isinstance(params[0], dict) else params)
+            if hasattr(torch.optim, "Muon") and all(getattr(p, "ndim", 0) == 2 for p in flat):
+                opt = torch.optim.Muon(params, lr=lr, **kwargs)
+            else:
+                from fizgig.training.muon import Muon
+                opt = Muon(params, lr=lr, **kwargs)
+        elif key == "automagic4":
+            from fizgig.training.automagic4 import Automagic4
+            kwargs.setdefault("fused", False)     # as v3: the H3 loop works on grads between backward and step
+            opt = Automagic4(params, lr=lr, **kwargs)
         elif "." in name:
             module_path, cls_name = name.rsplit(".", 1)
             opt = getattr(importlib.import_module(module_path), cls_name)(params, lr=lr, **kwargs)
@@ -255,6 +305,8 @@ def create_optimizer(name: str, params, lr: float, args_str: str = "",
             raise ValueError(f"unknown optimizer {name!r} — use one of {available_optimizers()} "
                              "or a full module.path.ClassName")
     except Exception as e:
+        if key in NEW_OPTIMIZERS:        # no AdamW at Prodigy's lr=1.0: say what's wrong and stop
+            raise ValueError(f"could not create {name}: {e}") from e
         logger.warning("[optimizer] could not create %s (%s) — falling back to AdamW", name, e)
         return torch.optim.AdamW(params, lr=lr), "adamw (fallback)"
 

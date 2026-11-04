@@ -329,7 +329,8 @@ def start_checks(desc, st, image_folder):
         if lack:
             out.append(f"{len(lack)} detail crop caption{'s' if len(lack) != 1 else ''} in {rel} don't contain the "
                        f"trigger word '{trig}': those crops train without it.")
-    if not st.get("ADAPTIVE_LR") and "automagic" not in _s(st.get("OPTIMIZER_TYPE")).lower():
+    if (not st.get("ADAPTIVE_LR") and "automagic" not in _s(st.get("OPTIMIZER_TYPE")).lower()
+            and not (prodigy(st) and not ft_on(desc, st))):           # Prodigy's 1.0 is a multiplier
         kind = "finetune" if ft_on(desc, st) else "slider" if slider_on(desc, st) else "lora"
         band = next(((lo, hi) for k, lo, hi in (desc.start_lr_bands or ()) if k == kind), None)
         try:
@@ -1370,7 +1371,11 @@ def multi_concept_problems(desc, inputs):
 
 
 def automagic(inputs):
-    return _s(inputs.get("OPTIMIZER_TYPE")).lower() == "automagic3"
+    return _s(inputs.get("OPTIMIZER_TYPE")).lower() in ("automagic3", "automagic4")
+
+
+def prodigy(inputs):
+    return _s(inputs.get("OPTIMIZER_TYPE")).lower() == "prodigy"
 
 
 def _dop_folders(st):
@@ -1636,6 +1641,10 @@ def plan(desc, inputs):
     if automagic(inputs):            # it owns the rate: Adaptive LR, per-image LR and the look warm-up are off
         inputs["ADAPTIVE_LR"] = False
         inputs["loss_watch"] = {**(inputs.get("loss_watch") or {}), "per_image_lr": False, "warmup": False}
+    if prodigy(inputs) and not ft_on(desc, inputs):    # it owns the rate (a fine-tune keeps its own optimizer)
+        inputs["ADAPTIVE_LR"] = False   # per-image LR stays: a weight on each picture's loss
+        inputs["loss_watch"] = {**(inputs.get("loss_watch") or {}), "warmup": False}
+        inputs["LEARNING_RATE"] = "1.0"            # a multiplier on the rate it finds
     p = LaunchPlan(problems=start_problems(desc, inputs))
     _cp = detail_crops_problem(desc, inputs) if not p.problems else ""
     if _cp:

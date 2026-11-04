@@ -135,7 +135,7 @@ def _stem(module):
 class Fibo2Driver(FamilyDriver):
     """The Fibo 2.0 family driver. The block map declares every Linear of the transformer (all 415, the I/O group
     included), so families/quant.py's runtime INT8/NF4 pass wraps the whole model: an INT8 base keeps its weights
-    in .weight.data (the compute dtype therefore resolves past them in predict), an NF4 base keeps bf16 stubs.
+    in .weight.data (the compute dtype therefore resolves past them in predict); an NF4 base keeps a packed copy.
     Decisions on the optional hooks:
       * block swap: fibo2/model.py's Fibo2DiT streams the 44 main layers through Fizgig's shared offloader, with
         the 2 noise refiners and the 2 perceiver layers resident (the stream calls sit inside its block loop).

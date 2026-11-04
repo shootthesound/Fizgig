@@ -191,7 +191,7 @@ _FIBO2 = FamilyDescription(
     # and falls back when it returns None; training never turns the switch on). Measured on this card at the real
     # shape: a loss below ~1300 tokens (0.78x at 961, 0.86x at 1054), break-even ~1408, wins from 1664 (1.35x) up
     # to 1.73x at 16384 - so the driver gates the kernel at 2048, the first size where it is clearly and reliably
-    # faster. Error per call 1.48-1.65% against bf16 SDPA's ~0.23%; the full table is in the run sheet.
+    # faster. Error per call 1.48-1.65% against bf16 SDPA's ~0.23% (the contributor's measurements, PR #250).
     int8_attention=True,
     # Compiled with the checkpoint outside the graph, re-measured 4 Nov 2026 on an RTX 5090 (rank 16, 2 epochs, a 1024
     # preview after each; the preview sets the peak). The 96 GB card's checkpointed runs above read 2-3 GB lower;
@@ -219,15 +219,15 @@ _FIBO2 = FamilyDescription(
     auto_precisions=("int8", "nf4"),
 
     sampling=(
-        # The reference is diffusers' own BriaFibo2Pipeline (verified 26 Oct 2026): 30 steps at guidance_scale 5.0,
-        # negative_prompt optional (empty by default). The model is not CFG-distilled, so CFG > 1 is the intended
+        # The reference is diffusers' own BriaFibo2Pipeline (v0.42.1): 30 steps at guidance_scale 5.0, its negative
+        # an empty structured caption when none is given. The model is not CFG-distilled, so CFG > 1 is the intended
         # use and the negative prompt does fire; 20 steps was too low for Dev. The card's 50-step figure is the
         # same recipe with more steps, not a different one.
         SamplingSettings("Fibo 2.0 Dev", steps=30, cfg=5.0, sampler="euler", scheduler="simple",
                          negative_prompt=True, note="Flow matching on the reference schedule; CFG 5 against the "
                          "negative prompt, as the diffusers pipeline defaults to it.",
-                         source="diffusers 0.42.0.dev0 BriaFibo2Pipeline.__call__ defaults (num_inference_steps=30, "
-                                "guidance_scale=5.0, negative_prompt optional)"),
+                         source="diffusers 0.42.1 BriaFibo2Pipeline.__call__ defaults (num_inference_steps=30, "
+                                "guidance_scale=5.0, DEFAULT_NEGATIVE_PROMPT)"),
     ),
     preview_steps=30,
     preview_cfg=5.0,
@@ -273,8 +273,9 @@ _FIBO2 = FamilyDescription(
     repair_presets=(),
     # LoRA Royale prompt travel needs pad_conditioning.
     notes=(
-        ("The base is the upstream diffusers repo (diffusers key layout); the training save is the split LoRA, "
-         "and a ComfyUI-fused export is an explicit transform (driver.export_lora_state_dict).", "fibo2/driver.py"),
+        ("The model trains on split Linears (diffusers' layout, fibo2/model.py); every LoRA file is written in "
+         "ComfyUI's fused layout (LoRAFormat.save_fused, driver.export_lora_state_dict) and read back split "
+         "(driver.convert_lora_state_dict).", "fibo2/driver.py"),
     ),
 )
 

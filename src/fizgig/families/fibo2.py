@@ -170,35 +170,18 @@ _FIBO2 = FamilyDescription(
     # a block, beside the 0.314 from the file.
     train_memory={"bf16": (((0.25, 25.5), (1.0, 27.8)), 0.314), "int8": (((0.25, 17.7), (1.0, 20.5)), 0.157),
                   "nf4": (((0.25, 15.2), (1.0, 17.5)), 0.0)},
-    # measured: bf16 LoRA rank 32 / alpha 32, automagic3, lr 1e-4 constant, EMA 0.98, no swap,
-    # previews on (1024 canvas), compiled at the family's "outside" boundary, gradient accumulation 1 (the only setting
-    # in which the trainer consults the checkpointing planner at all), 2 epochs on the 57-image 496x496 dataset,
-    # RTX PRO 6000 96GB: peak reserved 30.6 GB at 0.25 MP. The planner turns checkpointing off when this fits free
-    # VRAM with NOGC_MARGIN_GB (4.0) to spare, so a 34.5 GB window stops authorizing it the moment the figure is real.
-    # The 1 MP row needs a ~50 GB window.
-    # measured peaks (compiled, accum 1, previews on, rank 32, no swap), each replicated across both epochs: 30.6 GB at
-    # 0.25 MP (both epochs identical) and 57.6 GB at 1.0 MP (both epochs identical). The checkpointing delta
-    # over the compiled checkpointed baseline is 12.5 GB at 961 tokens but 36.9 GB at 4096 tokens — only 2.95x for 4.26x
-    # the pixels — so the delta is sub-linear in tokens and cannot be projected from a single resolution.
-    # int8 (measured 26 Oct 2026, compiled): 22.8 GB in both epochs, high-water 22.84 GB with the preview. NF4 has no
-    # row: it keeps every dequantised bf16 weight for the backward without checkpointing (measured 33.8 GB, more
-    # than int8), so like every family's NF4 it always trains checkpointed.
-    train_memory_nogc={"bf16": ((0.25, 30.6), (1.05, 57.6)), "int8": ((0.25, 22.8),)},
-    # (blocks, ((megapixels, GB with every block checkpointed, GB per block without it), ...)).
-    # The shipped pool is 44 — every block is available for un-checkpointing on a family with no swap. The house
-    # protocol (as krea2.py:151-153 and qwen_image.py:160-162 state it): per_block = the LARGER of the half-off and
-    # all-off slopes, both derived from measured endpoints. Applied here to fibo2's own measured figures:
-    #   0.25 MP: all-on 18.1 (D2c2), half-off 22 blocks -> 18.6 (D2e) = 0.023/block; all-off 30.6 (nogc) = 0.284/block
-    #           -> larger 0.284
-    #   1.05 MP: all-on 20.7 (C1/B3), 8-off -> 20.7 (D2d/D2d2, identical twice) = ~0; all-off 57.6 (nogc) = 0.839/block
-    #           -> larger 0.839
-    # The 1.05 MP point previously carried 1.210, borrowed from B3's 0.25 MP delta and never measured at 1 MP - it now
-    # carries the protocol figure from fibo2's own measured all-off slope. Every endpoint is a measurement; the
-    # per_block figures are protocol-derived from them, exactly as the other families' rows are.
-    # Note the empirical peak is flatter than the planner's linear model (half-off cost 0.5 GB where 0.284/block
-    # predicts 6.2; 8-off at 1 MP cost 0.0 GB where 0.839/block predicts 6.7) - the larger-slope protocol is
-    # deliberately conservative, so the planner un-checkpoints fewer blocks than it could. Never more.
-    train_memory_partial={"bf16": (44, ((0.25, 18.1, 0.284), (1.05, 20.7, 0.839))),},
+    # Big cards (40 GB and up), re-measured 4 Nov 2026 on an RTX PRO 6000 (96 GB): compiled, rank 32, AdamW, accum 1,
+    # no swap, a 1024 preview after each of 2 epochs, 16 photos at 0.25 MP and 8 above 1 MP (buckets 1248x832,
+    # 1360x768). Reserved peaks, previews included, with gradient checkpointing on / off:
+    #   bf16 0.25 MP 22.4 / 30.6, 1 MP 24.5 / 55.8;  int8 0.25 MP 14.9 / 23.7, 1 MP 17.0 / 47.9
+    # NF4 has no row: it keeps every dequantised bf16 weight for the backward without checkpointing, so like every
+    # family's NF4 it always trains checkpointed.
+    train_memory_nogc={"bf16": ((0.25, 30.6), (1.05, 55.8)), "int8": ((0.25, 23.7), (1.05, 47.9))},
+    # (blocks, ((megapixels, GB with every block checkpointed, GB per block without it), ...)): the per-block cost is
+    # the all-off slope from the same pair, (off - on) / 44 blocks - bf16 (30.6 - 22.4) / 44 = 0.185 and
+    # (55.8 - 24.5) / 44 = 0.710; int8 (23.7 - 14.9) / 44 = 0.201 and (47.9 - 17.0) / 44 = 0.702.
+    train_memory_partial={"bf16": (44, ((0.25, 22.4, 0.185), (1.05, 24.5, 0.710))),
+                          "int8": (44, ((0.25, 14.9, 0.201), (1.05, 17.0, 0.702)))},
     # compiles: the three block lists the driver compiles - layers (44), noise_refiner (2) and perceiver.layers
     # (2), so 48 blocks in total, exactly what F1 logged. There is no context_embedder on the diffusers model: the
     # perceiver *is* its context path, so no fourth list is missing here.
@@ -210,30 +193,23 @@ _FIBO2 = FamilyDescription(
     # to 1.73x at 16384 - so the driver gates the kernel at 2048, the first size where it is clearly and reliably
     # faster. Error per call 1.48-1.65% against bf16 SDPA's ~0.23%; the full table is in the run sheet.
     int8_attention=True,
-    # measured 25-26 Oct 2026, CLI runs, compiled + checkpointed, previews on (1024 canvas), 2 epochs, 96GB card.
-    # compile_plan reads these against free VRAM: the declared boundary ("outside") if it fits, else the other,
-    # else uncompiled. outside = C1 (bf16 20.7) / C5r (nf4 10.2) / F1,H1 (int8 13.06, 13.55); inside = C2 (bf16
-    # 21.4) - inside costs ~0.7 GB over outside at the same size. nf4's inside run was never taken, so nf4 has no
-    # inside row. H1/H2 closed the int8-1MP and nf4-0.25MP gaps (accum 1, 1 epoch): at 0.25 MP the 1024 preview
-    # owns the peak (nf4 9.68 high-water on a 7.6 compiled training peak), at 1 MP the training pass does (int8
-    # 13.55 on a 13.0 peak, +0.5 GB for 4x the pixels). Rows taken at accum 32 vs 1 differ by under 0.4 GB on the
-    # peaks, so the rows compare without a re-take.
-    compile_memory={"bf16": {"outside": ((1.05, 20.7),), "inside": ((1.05, 21.4),)},
-                    "nf4": {"outside": ((0.25, 9.68), (1.05, 10.2)),},
-                    "int8": {"outside": ((0.25, 13.06), (1.05, 13.55)),}},
+    # Compiled with the checkpoint outside the graph, re-measured 4 Nov 2026 on an RTX 5090 (rank 16, 2 epochs, a 1024
+    # preview after each; the preview sets the peak). The 96 GB card's checkpointed runs above read 2-3 GB lower;
+    # these are the higher. The inside boundary isn't measured on this code, so it has no row.
+    compile_memory={"bf16": {"outside": ((0.25, 25.1), (1.05, 27.0))},
+                    "int8": {"outside": ((0.25, 17.5), (1.05, 19.6))},
+                    "nf4": {"outside": ((0.25, 14.1), (1.05, 15.9))}},
     # measured 25 Oct 2026, RTX PRO 6000 96GB (DDR4 host, warm inductor cache), bf16 DiT, 0.25 MP dataset
     # (113 images over 6 buckets), 5-min A/B at the "outside" boundary: --compile_blocks off 525 steps,
     # on 586 steps (0.571 -> 0.512 s/step, ~1.12x). Compiled overtakes eager by ~590 steps; 600 rounds it up.
     # A cold-cache first run pays a longer compile pause, so its crossover sits later than this figure.
-    # 26 Oct 2026, eager (P1, P2) against compiled (F1, H2), free card, 0.25 MP, accum 1, checkpointed: int8 1.03
-    # s/step eager vs 1.36 compiled steady (25.3 s pause); nf4 0.91 vs 1.10 (19.5 s). BOTH quantised bases are
-    # slower compiled and pay the pause up front, so the crossover never arrives - None, not a step count. bf16 is
-    # the opposite (0.88 -> 0.71, 600 steps). Hypothesized mechanism (rates and pauses measured, mechanism not
-    # proven): inductor unpacks the quantised weights to full precision inside the compiled graph, losing the
-    # kernel advantage. Compiling buys them ~0.8 GB each (int8 11.7 -> 10.9, nf4 8.4 -> 7.6 training peak), so
-    # their trade is speed against memory. With None here Auto declines to compile either base on any card;
-    # --compile_blocks on forces it at the measured cost.
-    compile_payback_steps={"bf16": 600, "int8": None, "nf4": None},
+    # 4 Nov 2026, RTX 5090, master's INT8 / NF4 code, 2 epochs, eager vs compiled at the same settings (epoch 2):
+    # 0.25 MP bf16 0.77 -> 0.61, int8 0.82 -> 0.47, nf4 0.78 -> 0.70 s/step; 1 MP bf16 3.13 -> 2.49, int8 3.27 ->
+    # 2.18, nf4 3.22 -> 2.58. On those 1-2 bucket sets the pauses paid back in ~195 (bf16), ~100 (int8) and ~470
+    # (nf4, 0.25 MP) steps; each bucket shape pauses again, and bf16's 6-bucket 600 above is 3x its 195, so the
+    # quantised figures take the same factor. (The 26 Oct finding that int8 / nf4 ran slower compiled was on the
+    # INT8 storage this branch no longer changes.)
+    compile_payback_steps={"bf16": 600, "int8": 300, "nf4": 1400},
     # LoRA only: a split-layout Kronecker adapter cannot be re-fused onto this checkpoint's packed qkv/w13/to_kv
     # tensors (each part trains its own w1), so LoKR has no layout that loads in the fused build and is not offered.
     network_types=("lora",),

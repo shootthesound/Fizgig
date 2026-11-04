@@ -61,3 +61,38 @@ def test_stack_conds_keeps_shapes_apart():
     a, b = {"x": torch.zeros(1, 4, 2)}, {"x": torch.zeros(1, 5, 2)}
     assert FamilyDriver.stack_conds(None, [a, b]) is None
     assert FamilyDriver.stack_conds(None, [a, dict(a)])["x"].shape == (2, 4, 2)
+
+
+def test_batch_size_reaches_the_dataset_and_stands_down_what_reads_one_picture(tmp_path):
+    import sys
+    from PIL import Image
+    from fizgig.families import form, launch
+    from fizgig.families.registry import get as get_family
+    moss = get_family("moss_image")
+    d = tmp_path / "imgs"
+    d.mkdir()
+    for i in range(2):
+        Image.new("RGB", (64, 64)).save(d / f"p{i}.png")
+        (d / f"p{i}.txt").write_text("zwxem a photo")
+    models = {}
+    for mf in moss.model_files:
+        f = tmp_path / f"{mf.pref_key}.safetensors"
+        f.write_bytes(b"0")
+        models[mf.pref_key] = str(f)
+
+    def plan(**values):
+        v = {**form.DEFAULTS, "LORA_NAME": "t", "LORA_OUTPUT_DIR": str(tmp_path / "out"),
+             "DATASET_CONFIG": str(tmp_path / "dataset.toml"), "KREA2_LOSS_WATCH": True, **values}
+        inp = form.inputs(moss, v, models=models, python=sys.executable, repo_dir=str(tmp_path), image_folder=str(d),
+                          cache_root=str(tmp_path / "cache"), samples_dir=str(tmp_path / "out" / "sample"))
+        return v, launch.plan(moss, inp)
+
+    v, p = plan(BATCH_SIZE="3")
+    train = " ".join(next(s.cmd for s in p.stages if "train.py" in " ".join(s.cmd)))
+    assert "batch_size = 3" in p.dataset_toml and "--log_per_image_loss" not in train
+    assert "KREA2_LOSS_WATCH" in form.state(moss, v, str(d))["disabled"]
+    v, p = plan(BATCH_SIZE="1")
+    train = " ".join(next(s.cmd for s in p.stages if "train.py" in " ".join(s.cmd)))
+    assert "batch_size = 1" in p.dataset_toml and "--log_per_image_loss" in train
+    v = {**form.DEFAULTS, "BATCH_SIZE": "3", "FAMILY_KIND": "slider", "FAMILY_SLIDER": True}   # one pair a step
+    assert launch.batch_size(moss, v) == 1 and "BATCH_SIZE" in form.state(moss, v, str(d))["disabled"]

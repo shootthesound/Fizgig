@@ -1644,6 +1644,14 @@ async function resumeClick() {
   box.style.display = "";
 }
 
+// Stop's two-click confirm (see the btnStop handler)
+const STOP_CONFIRM = {timer: null};
+function stopConfirmReset() {
+  if (STOP_CONFIRM.timer) clearTimeout(STOP_CONFIRM.timer);
+  STOP_CONFIRM.timer = null;
+  const b = $("btnStop");
+  if (b) { b.textContent = "Stop"; b.title = ""; }
+}
 const RUN_LABELS = {idle: "Idle", starting: "Starting", running: "Running", pausing: "Pausing", paused: "Paused",
                     completed: "Finished", failed: "Failed", stopped: "Stopped", moved: "Moved"};
 
@@ -1676,6 +1684,7 @@ async function pollRun() {
   const runFam = S.schema.families.find((f) => f.key === (r.family || S.family)) || {};
   $("btnPause").style.display = runFam.no_pause ? "none" : "";
   $("btnStop").disabled = !live;
+  if (!live) stopConfirmReset();                    // run ended: Stop goes back to one plain button
   $("btnResume").style.display = !live && r.resume && !moveBusy ? "" : "none";
   renderWebQueue(r.web_queue || {items: []});
   queueSummary(r.web_queue || {items: []}, r);
@@ -9345,7 +9354,18 @@ function wire() {
     api("/api/queue/start", {}).then(pollRun).catch((er) => showProblems([er.message]));
   });
   $("btnPause").addEventListener("click", () => start("/api/pause"));
-  $("btnStop").addEventListener("click", () => start("/api/stop"));
+  // Stop asks twice, like Pause's second press: the first turns it into "Confirm stop" for 30 s
+  $("btnStop").addEventListener("click", () => {
+    if (!STOP_CONFIRM.timer) {
+      const b = $("btnStop");
+      b.textContent = "Confirm stop";
+      b.title = "Click again within 30 s to stop the run now (it won't save a restore point; Pause does)";
+      STOP_CONFIRM.timer = setTimeout(stopConfirmReset, 30000);
+      return;
+    }
+    stopConfirmReset();
+    start("/api/stop");
+  });
   $("btnResume").addEventListener("click", resumeClick);
   $("btnMove").addEventListener("click", () => { if (S.moveOpen) { S.moveOpen = false; pollRun(); } else moveOpen(); });
   const now = (what, say) => api("/api/run/now", {what}).then(() => { $("runNowSay").textContent = say; })

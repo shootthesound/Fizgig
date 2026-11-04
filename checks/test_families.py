@@ -70,6 +70,26 @@ def test_no_checkpointing_figures(key):
     monkey.undo()
 
 
+def test_h3_clip_figures_need_tread_and_the_default_window(monkeypatch):
+    """H3's clip figures were measured with TREAD and the Default clip window (20-49); a clip run without either keeps
+    every block checkpointed (PR #282: TREAD off ran out at 88 GB on a plan of ~64), stills are unaffected."""
+    from fizgig.families import quant
+    from fizgig.minimax import common as T
+    from fizgig.minimax.driver import MiniMaxDriver
+    d = registry.get("minimax")
+    monkeypatch.setattr(quant, "card_gb", lambda: 96.0)
+    drv = MiniMaxDriver()
+    drv.description = d
+    monkeypatch.setattr(T, "_max_effective_mp", lambda group: (6.39, 27))
+    for opts, measured in (({"tread": "0.5@2-47", "clip_blocks": "20-49"}, True), ({"clip_blocks": "20-49"}, False),
+                           ({"tread": "0.5@2-47"}, False), ({"tread": "0.5@2-47", "clip_blocks": "6-49"}, False)):
+        drv.set_options(opts)
+        kind, mp = drv.nogc_load(None)
+        assert (kind == "clips") is measured, opts
+        assert quant.plan_checkpointing(d, "int8", 0, mp, free_gb=1000, kind=kind)[0] is (not measured), opts
+        assert quant.plan_partial_checkpointing(d, "int8", 0, mp, free_gb=1000, kind=kind)[0] == 0 or measured, opts
+
+
 def test_small_cards_always_checkpoint(monkeypatch):
     from fizgig.families import quant
     monkeypatch.setattr(quant, "card_gb", lambda: 32.0)

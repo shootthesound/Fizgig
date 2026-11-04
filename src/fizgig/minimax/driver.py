@@ -70,6 +70,13 @@ class MiniMaxDriver(FamilyDriver):
         from fizgig.minimax import common as T
         eff, clip_t = T._max_effective_mp(group)
         if clip_t > 1:
+            # the clip figures were measured with TREAD routing half the video tokens past the middle blocks and the
+            # Default clip window: without either a clip step keeps about twice as much for its backward (a 9 MP
+            # clip job with TREAD off went without checkpointing and ran out at 88 GB - @spaghettified26, PR #282),
+            # so a clip run set up any other way has no figure and keeps checkpointing on
+            o = getattr(self, "options", {})
+            if o.get("tread") != "0.5@2-47" or o.get("clip_blocks") != "20-49":
+                return "clips:unmeasured", eff
             return "clips", eff
         return super().nogc_load(group)
 

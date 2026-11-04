@@ -2416,6 +2416,9 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 .loss-graph-svg .lg-axis { fill: var(--text-muted); font-size: 11px; }
 .loss-graph-svg .lg-lr-axis { fill: var(--special); }
 .loss-graph-svg .lg-best { fill: var(--success); }
+.loss-graph-svg .lg-lr-now { fill: var(--special); stroke: var(--bg-deep); stroke-width: 1.5; }
+.loss-graph-svg .lg-steps-fit .lg-raw { opacity: 0.18; }
+.loss-graph-svg .lg-steps-fit .lg-smooth { opacity: 0.35; }
 .loss-graph-svg .lg-cursor { stroke: var(--text-secondary); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .loss-graph-read { min-height: 1.4em; }
 .lg-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 6px 2px 0; font-size: 12px; color: var(--text-secondary); }
@@ -2425,6 +2428,11 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 .lg-sw-smooth { border-color: var(--accent); }
 .lg-sw-lr { border-color: var(--special); border-top-style: dashed; }
 .lg-sw-best { width: 9px; height: 9px; border: 0; border-radius: 50%; background: var(--success); }
+.lg-sw-emean { border-color: var(--data-orange); border-top-width: 3px; }
+.lg-sw-ravg { border-color: var(--data-olive); border-top-width: 3px; }
+.lg-emean { fill: none; stroke: var(--data-orange); stroke-width: 2.5; }
+.lg-emean-dot { fill: var(--data-orange); stroke: var(--bg-deep); stroke-width: 1; }
+.lg-ravg { fill: none; stroke: var(--data-olive); stroke-width: 2.5; }
 .lg-sw-epoch { width: 0; height: 12px; border-top: 0; border-left: 1px solid var(--border); }
 .loss-graph-svg .lg-axis-title { font-weight: 600; }
 

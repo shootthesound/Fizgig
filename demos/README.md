@@ -51,16 +51,16 @@ Run either setup again any time: finished steps are skipped.
 
 ## The demos
 
-Run them in order. Demo 1 trains the LoRA the others use. Keep Affinity open. Each launcher opens Fizgig's Assistant tab to follow the conversation; the training run and its previews show in Fizgig itself (on your own PC, its Training tab; on the AMD GPU route, the MI300X's Fizgig that `A` opened).
+Run them in order. Demo 1 trains the LoRA the others use. Keep Affinity open. You don't need any Affinity files: each launcher makes the document its demo starts from, in Affinity, before the Assistant begins. Each launcher opens Fizgig's Assistant tab to follow the conversation; the training run and its previews show in Fizgig itself (on your own PC, its Training tab; on the AMD GPU route, the MI300X's Fizgig that `A` opened).
 
-| Launcher | The sentence asks for |
+| Launcher | What happens |
 |:--|:--|
-| `1 - Your photos in Affinity to a trained portrait` | Your photos are laid out as layers of an Affinity document. The Assistant makes a training folder from the layers, captions them, trains a LoRA of you, renders 4 portraits, scores them and puts the best into Affinity |
-| `2 - A transparent sticker into the poster` | A robot sticker with real transparency, placed in the top-right corner of a keynote poster (the launcher makes the poster) |
-| `3 - The model reads the poster and fills the photo box` | The Assistant looks at the poster, matches its colours, renders portraits of you at the photo box's shape, scores them and fits the best into the box |
+| `1 - Your photos in Affinity to a trained portrait` | The launcher lays your photos out as layers of a new Affinity document. The Assistant makes a training folder from the layers, captions them, trains a LoRA of you, renders 4 portraits, scores them and puts the best into Affinity |
+| `2 - A transparent sticker into the poster` | A robot sticker with real transparency, placed in the top-right corner of a keynote poster (the launcher makes the poster, with your name and role) |
+| `3 - The model reads the poster and fills the photo box` | The launcher makes the keynote poster with an empty photo box. The Assistant looks at the poster, matches its colours, renders portraits of you at the photo box's shape, scores them and fits the best into the box |
 | `4 - Four variations laid out in Affinity` | Four photos of you in different settings, laid out as a 2×2 grid in a new document, each the best of 4 by score; then one is swapped for another |
 | `5 - Trained on a rented cloud GPU` (optional, own-PC setup only) | Trains on a rented RunPod GPU under an hourly price cap ($2), brings the LoRA home, deletes the pod, and fills a poster on your PC. It needs a RunPod API key (Fizgig's Pods tab) and costs about $0.25 |
-| `6 - A poster designed from nothing` | The Assistant designs a whole poster in Affinity (background, type, photo frame), renders 4 portraits, scores them and places the best |
+| `6 - A poster designed from nothing` | Nothing is prepared: the Assistant designs a whole poster in Affinity (background, type, photo frame), renders 4 portraits, scores them and places the best |
 
 ### Our timings
 

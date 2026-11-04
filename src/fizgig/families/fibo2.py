@@ -34,8 +34,10 @@ _IO = ("x_embedder", "t_embedder", "final_layer")
 _SAMPLING_NOTE = "Flow matching; CFG 5 against the negative prompt, as the reference pipeline."
 
 
-def _preset(rank, area, lr=1e-4, adaptive=None, epochs=60, mp="0.25"):
-    """The built-in presets' values, in the standard layer's keys (the shape krea2.py and moss_image.py use).
+def _preset(rank, area, lr=1e-6, adaptive=None, epochs=60, mp="0.25"):
+    """The built-in presets' values, in the standard layer's keys (the shape krea2.py and moss_image.py use). Automagic
+    starts at 1e-6 and sets its own rate (measured 4 Nov 2026, rank 32 Full Model, 16 photos at 0.25 MP: up to 1.1e-4 by
+    epoch 10, easing to 2.5e-5 by 60; likeness earlier than AdamW at a flat 1e-4). A 1e-4 start overcooked the LoRA (PR #250).
     adaptive=(min, max) turns Adaptive LR on; area is one of train_areas' names."""
     lo, hi = adaptive or ("1e-5", "4e-4")
     return {
@@ -257,6 +259,9 @@ _FIBO2 = FamilyDescription(
     preview_negative=('{"short_description":"","objects":[],"background_setting":"","lighting":{},"aesthetics":{},'
                       '"photographic_characteristics":{},"style_medium":"","context":"","artistic_style":""}'),
     workbench_follows_samples=True,   # CFG 5: the workbench takes the Samples tab's negative, steps and CFG
+    # a third to three times the AdamW rate measured to train cleanly (1e-4, 4 Nov 2026); Automagic sets its own rate,
+    # so the built-in presets never warn
+    start_lr_bands=(("lora", 3e-5, 3e-4),),
     preview_width=1024,
     preview_height=1024,
 

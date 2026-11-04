@@ -37,7 +37,7 @@ All of them come from [Comfy-Org/Fibo-2.0](https://huggingface.co/Comfy-Org/Fibo
 
 The LoRA presets train at 0.25 MP with EMA 0.98, saving every epoch. Automagic sets its own rate from its 1e-6 start: it rose to about 1e-4 within ten epochs on a 16-photo likeness set and reached likeness sooner than AdamW at a flat 1e-4, with epoch 40 the best by eye. Starting Automagic at 1e-4 overcooks the LoRA. Scrub the epochs in LoRA Royale to pick the best one.
 
-**Model Area to Train** offers the whole model, or the whole model without the 2 noise refiners, the 2 Perceiver layers, or both. **Custom** and **Blocks to Train** pick individual blocks, as on the other models.
+The LoRA trains the whole model, every Linear, as Bria's own trainer does.
 
 ## Memory: 12 GB and up
 

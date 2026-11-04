@@ -22,28 +22,19 @@ from fizgig.families.description import (
 
 _MODULES = ("to_q", "to_k", "to_v", "to_out.0", "w1", "w2", "w3")   # every Linear the LoRA targets
 
-# The block groups the "Model Area to Train" presets are built from - every id resolves against the driver's
-# block map (51 in total: 44 main blocks, 2 noise refiners, 2 context perceivers, 3 I/O). The I/O trio is
-# pinned into all four presets, so no area leaves the model without its input, timestep and output layers.
-_LAYERS = tuple(f"layers.{i}" for i in range(44))
-_REFINERS = ("noise_refiner.0", "noise_refiner.1")
-_PERCEIVERS = ("perceiver.layers.0", "perceiver.layers.1")
-_IO = ("x_embedder", "t_embedder", "final_layer")
-
-# the note both built-in presets carry beside the picker: the sampler is the reference pipeline's recipe, and it is
-# the same whatever area is trained - only the rank and the block set move between them
+# the note the default preset carries beside the picker: the sampler is the reference pipeline's recipe
 _SAMPLING_NOTE = "Flow matching; CFG 5 against the negative prompt, as the reference pipeline."
 
 
-def _preset(rank, area, lr=1e-6, adaptive=None, epochs=40, mp="0.25", slider=False, edit=False, ft=False, optimizer="automagic3"):
+def _preset(rank, lr=1e-6, adaptive=None, epochs=40, mp="0.25", slider=False, edit=False, ft=False, optimizer="automagic3"):
     """The built-in presets' values, in the standard layer's keys (the shape krea2.py and moss_image.py use). Automagic
     starts at 1e-6 and sets its own rate (measured 4 Nov 2026, rank 32 Full Model, 16 photos at 0.25 MP: up to 1.1e-4 by
     epoch 10, easing to 2.5e-5 by 60; likeness earlier than AdamW at a flat 1e-4, best by eye at epoch 40). A 1e-4 start overcooked the LoRA (PR #250).
-    adaptive=(min, max) turns Adaptive LR on; area is one of train_areas' names."""
+    adaptive=(min, max) turns Adaptive LR on."""
     lo, hi = adaptive or ("1e-5", "4e-4")
     return {
         "NETWORK_DIM": rank, "NETWORK_ALPHA": rank, "NETWORK_TYPE": "LoRA (standard)",
-        "TARGET_LAYERS": area, "FAMILY_EDIT": edit, "FAMILY_SLIDER": slider, "FAMILY_FT": ft,
+        "FAMILY_EDIT": edit, "FAMILY_SLIDER": slider, "FAMILY_FT": ft,
         "FAMILY_SLIDER_GUIDANCE": "3",                               # Krea 2 and Flux 3's prompt-slider push
         "LEARNING_RATE": lr, "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 42,
         "ADAPTIVE_LR": adaptive is not None, "ADAPTIVE_LR_MIN": lo, "ADAPTIVE_LR_MAX": hi,
@@ -291,27 +282,20 @@ _FIBO2 = FamilyDescription(
     samples_text=(),  # the family's sampler is in sampling (Euler, simple scheduler, flow matching)
     # The built-in Training-tab presets: the first is applied on a first visit.
     presets=(
-        ("✨ Fibo 2.0 (rank 32, full model)", _preset(32, "Full Model")),
+        ("✨ Fibo 2.0 (rank 32, full model)", _preset(32)),
         # sliders are rank 8 on every model, AdamW at 2e-4 for 20 epochs at 0.5 MP as Flux 3's
         # edit pairs, as trained on 4 Nov 2026 (15 greyscale -> colour pairs, 6 epochs at 0.25 MP): AdamW at 1e-4
-        ("✨ Fibo 2.0 Edit (rank 16)", _preset(16, "Full Model", lr=1e-4, epochs=6, edit=True, optimizer="adamw")),
+        ("✨ Fibo 2.0 Edit (rank 16)", _preset(16, lr=1e-4, epochs=6, edit=True, optimizer="adamw")),
         # a full fine-tune, as run on 4 Nov 2026 (16 photos at 0.25 MP: 3 rotations, 2 epochs a part, its checkpoint
         # loaded in ComfyUI in place of the base and showed the training)
-        ("✨ Fibo 2.0 Fine-tune (1e-5)", _preset(16, "Full Model", lr=1e-5, ft=True, optimizer="adamw")),
+        ("✨ Fibo 2.0 Fine-tune (1e-5)", _preset(16, lr=1e-5, ft=True, optimizer="adamw")),
         ("✨ Fibo 2.0 Slider (rank 8, 2e-4)",
-         _preset(8, "Full Model", lr=2e-4, epochs=20, mp="0.5", slider=True, optimizer="adamw")),
+         _preset(8, lr=2e-4, epochs=20, mp="0.5", slider=True, optimizer="adamw")),
     ),
     # notes beside Load Preset: (preset name, note) pairs
     preset_notes=(("✨ Fibo 2.0 (rank 32, full model)", _SAMPLING_NOTE),),
-    # The Model Area to Train presets: (name, (block ids), (min_t, max_t) or None). The first is the default; the
-    # window is None on all four, so the Timestep Range control stays unused. The reference trains all 415
-    # nn.Linear layers - that is "Full Model", the 51-block row.
-    train_areas=(
-        ("Full Model", _LAYERS + _REFINERS + _PERCEIVERS + _IO, None),          # 51 blocks
-        ("Full without refiners", _LAYERS + _PERCEIVERS + _IO, None),           # 49
-        ("Full without perceivers", _LAYERS + _REFINERS + _IO, None),           # 49
-        ("Full without refiners or perceivers", _LAYERS + _IO, None),          # 47
-    ),
+    # no Model Area to Train: as on every model but Klein (the one with a charted block map), the LoRA trains the
+    # whole model - Bria's reference trainer targets every Linear too
     identity_blocks=(),
     # The Extract tab's presets, on the block map's ids.
     extract_presets=(),

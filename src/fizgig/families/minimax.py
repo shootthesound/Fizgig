@@ -320,6 +320,7 @@ MINIMAX = FamilyDescription(
     adaptive_lr=False,
     slider_training=True,             # prompt pairs, photo pairs and clip pairs (driver: _slider_loss / predict)
     loss_watch=False,
+    masked_training=True,             # photos only: the dataset gives a mask to a still, never to a clip or a voice
     network_hint="LoRA recommended for MiniMax",
     ema_hint="A smoothed average of the weights, leading to better and more reliable previews.",
     samples_turbo_pace=True,

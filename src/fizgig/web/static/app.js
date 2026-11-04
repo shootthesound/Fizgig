@@ -736,8 +736,31 @@ function blockPicker(r, wrap) {
   return wrap;
 }
 
+// Prodigy / Muon (#292): picking one fills its Optimizer Args (and Prodigy's 1.0); leaving one puts back what
+// was there before it. Switching between the other optimizers is untouched.
+const OPT_ARGS = {
+  prodigy: "decouple=True weight_decay=0.01 d_coef=1.0 use_bias_correction=True safeguard_warmup=True",
+  muon: "adjust_lr_fn=match_rms_adamw weight_decay=0.01 momentum=0.95 nesterov=True ns_steps=5"};
+const OPT_HELD = {};
+function optimizerPicked(prev, opt) {
+  const touched = [];
+  if (OPT_ARGS[prev] && !OPT_ARGS[opt]) {                       // leaving Prodigy / Muon
+    if (String(S.values.OPTIMIZER_ARGS || "").trim() === OPT_ARGS[prev]) {
+      S.values.OPTIMIZER_ARGS = OPT_HELD.args || ""; touched.push("OPTIMIZER_ARGS");
+    }
+    if (prev === "prodigy" && String(S.values.LEARNING_RATE) === "1.0" && OPT_HELD.lr) {
+      S.values.LEARNING_RATE = OPT_HELD.lr; touched.push("LEARNING_RATE");
+    }
+  } else if (OPT_ARGS[opt] && !OPT_ARGS[prev]) {                // arriving: keep what to put back
+    OPT_HELD.args = S.values.OPTIMIZER_ARGS || ""; OPT_HELD.lr = S.values.LEARNING_RATE;
+  }
+  if (touched.length) syncInputs(touched);
+}
+
 function onValue(r, val) {
+  const prev = S.values[r.key];
   S.values[r.key] = val;
+  if (r.key === "OPTIMIZER_TYPE" && prev !== val) optimizerPicked(String(prev || ""), String(val || ""));
   if (r.key === "__SAMPLE_LIVE" || (S.values.__SAMPLE_LIVE &&
       ["SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS", "SAMPLE_CFG_SCALE",
        "FAMILY_TURBO_STRENGTH", "SAMPLE_EVERY_N_EPOCHS", "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH",
@@ -1650,6 +1673,14 @@ async function resumeClick() {
   box.style.display = "";
 }
 
+// Stop's two-click confirm (see the btnStop handler)
+const STOP_CONFIRM = {timer: null};
+function stopConfirmReset() {
+  if (STOP_CONFIRM.timer) clearTimeout(STOP_CONFIRM.timer);
+  STOP_CONFIRM.timer = null;
+  const b = $("btnStop");
+  if (b) { b.textContent = "Stop"; b.title = ""; }
+}
 const RUN_LABELS = {idle: "Idle", starting: "Starting", running: "Running", pausing: "Pausing", paused: "Paused",
                     completed: "Finished", failed: "Failed", stopped: "Stopped", moved: "Moved"};
 
@@ -1682,6 +1713,7 @@ async function pollRun() {
   const runFam = S.schema.families.find((f) => f.key === (r.family || S.family)) || {};
   $("btnPause").style.display = runFam.no_pause ? "none" : "";
   $("btnStop").disabled = !live;
+  if (!live) stopConfirmReset();                    // run ended: Stop goes back to one plain button
   $("btnResume").style.display = !live && r.resume && !moveBusy ? "" : "none";
   renderWebQueue(r.web_queue || {items: []});
   queueSummary(r.web_queue || {items: []}, r);
@@ -3815,9 +3847,48 @@ function lossChart(curve) {
 // ---- the loss graph: a run's loss at every step (the trainer's .fizgig_loss_<name>.jsonl), with smoothing, a log
 // scale and outliers clipped - its settings kept in this browser
 const LG_KEY = "fizgig_lossgraph";
-const lgSet = () => { try { return {smooth: 0.9, log: false, clip: true, lr: true, ...JSON.parse(localStorage.getItem(LG_KEY) || "{}")}; } catch (e) { return {smooth: 0.9, log: false, clip: true, lr: true}; } };
+const LG_DEF = {smooth: 0.9, log: false, clip: true, lr: true, emean: false, ravg: false};
+const lgSet = () => { try { return {...LG_DEF, ...JSON.parse(localStorage.getItem(LG_KEY) || "{}")}; } catch (e) { return {...LG_DEF}; } };
 const lgSave = (s) => { try { localStorage.setItem(LG_KEY, JSON.stringify(s)); } catch (e) { /* private window */ } };
 
+// the loss graph's LR scale: 0 at the bottom, the run's start/peak rate at the top (the largest rate logged - a
+// cosine or constant run's first, after any warmup). A rate that grows past its start (Prodigy) gets 10% headroom.
+function lrAxis(lv) {
+  const v = lv.map(Number).filter((x) => isFinite(x) && x >= 0);
+  const peak = v.length ? Math.max(...v) : 0, first = v.length ? v[0] : 0;
+  const climbs = first > 0 && peak > first * 1.05 && v[v.length - 1] > first * 1.05;
+  const top = peak > 0 ? peak * (climbs ? 1.1 : 1) : 1;
+  const pct = (x) => { const p = 100 * x / peak; return p >= 99.95 && p < 100 ? "99.9" : p.toFixed(p >= 10 ? 1 : 2); };
+  return {top, peak, climbs, pct};
+}
+// the loss graph's right-hand scale, top label: the learning rate now, as 6.55e-5
+function lrNowLabel(x) {
+  return Number(x).toExponential(2);
+}
+
+// the loss graph's left scale in the Epoch average / Running avg views: fitted to the averages drawn (in the scale's
+// own units, log10 on a log scale), 10% padding each side; a near-constant series is shown at least 5% of its value
+// tall (0.02 decades on a log scale) so its last-digit noise doesn't fill the plot
+function trendRange(vals, log, minFrac = 0.05) {
+  const v = vals.map(Number).filter((x) => isFinite(x) && (!log || x > 0)).map((x) => (log ? Math.log10(x) : x));
+  if (!v.length) return null;
+  let lo = Math.min(...v), hi = Math.max(...v);
+  const mid = (lo + hi) / 2, minSpan = log ? 0.4 * minFrac : Math.max(Math.abs(mid) * minFrac, 1e-6);
+  if (hi - lo < minSpan) { lo = mid - minSpan / 2; hi = mid + minSpan / 2; }
+  const pad = (hi - lo) * 0.1;
+  return [lo - pad, hi + pad];
+}
+
+// the running avg points the trend views' scale fits: from the end of the first epoch on (before that it's the mean of
+// the few steps so far - it starts wherever the first step landed and would stretch the scale), all of them when the
+// run hasn't finished an epoch yet. data.epochs: [[epoch, its first step], ...]
+function raFit(ra, epochs) {
+  const e2 = (epochs || []).length > 1 ? epochs[1][1] : null;
+  const after = e2 == null ? ra : ra.filter((p) => p[0] >= e2);
+  return after.length ? after : ra;
+}
+
+let lgClipN = 0;
 function lossGraph(data) {
   const box = el("div", {class: "loss-graph"});
   const pts = (data && data.points || []).filter((p) => isFinite(p[2]));
@@ -3834,26 +3905,43 @@ function lossGraph(data) {
   const clip = el("input", {type: "checkbox"}); clip.checked = set.clip;
   const lrOn = el("input", {type: "checkbox"}); lrOn.checked = set.lr;
   const hasLr = pts.some((p) => p[3] != null);
+  // the trend views (each its own switch, kept with the others): worked out by the server from every step
+  const tog = (k) => { const i = el("input", {type: "checkbox"}); i.checked = !!set[k]; return i; };
+  const emOn = tog("emean"), raOn = tog("ravg");
+  const em = (data.epoch_mean || []).filter((p) => isFinite(p[2]));
+  const ra = (data.running_avg || []).filter((p) => isFinite(p[1]));
   const redraw = () => {
-    Object.assign(set, {smooth: Number(smooth.value), log: log.checked, clip: clip.checked, lr: lrOn.checked});
+    Object.assign(set, {smooth: Number(smooth.value), log: log.checked, clip: clip.checked, lr: lrOn.checked,
+      emean: emOn.checked, ravg: raOn.checked});
     lgSave(set);
+    legendFill();
     draw();
   };
-  for (const i of [smooth, log, clip, lrOn]) i.addEventListener("input", redraw);
+  for (const i of [smooth, log, clip, lrOn, emOn, raOn]) i.addEventListener("input", redraw);
   // what each line and mark is
   const key = (cls, text) => el("span", {class: "lg-key"}, el("i", {class: "lg-sw " + cls}), text);
-  const legend = el("div", {class: "lg-legend"},
+  const legend = el("div", {class: "lg-legend"});
+  const legendFill = () => legend.replaceChildren(...[
     key("lg-sw-raw", "loss at each step"), key("lg-sw-smooth", "smoothed loss"),
-    hasLr ? key("lg-sw-lr", "learning rate (right-hand scale)") : null,
-    key("lg-sw-best", "lowest smoothed loss"), key("lg-sw-epoch", "start of an epoch (e1, e2…)"));
+    hasLr && set.lr ? key("lg-sw-lr", "learning rate (right-hand scale)") : null,
+    set.emean && em.length ? key("lg-sw-emean", "average loss of each epoch") : null,
+    set.ravg && ra.length ? key("lg-sw-ravg", "running avg (kohya-style: drifts down by itself)") : null,
+    key("lg-sw-best", "lowest smoothed loss"), key("lg-sw-epoch", "start of an epoch (e1, e2…)")].filter(Boolean));
+  legendFill();
+  const tip = (node, text) => { node.title = text; return node; };
   box.append(el("div", {class: "field-row loss-graph-ctl"},
     el("span", {class: "field-label", text: "Smoothing:"}), smooth, ctl("Log scale", log), ctl("Clip outliers", clip),
-    hasLr ? ctl("Learning rate", lrOn) : null), svgHost, legend, read);
+    hasLr ? ctl("Learning rate", lrOn) : null),
+  el("div", {class: "field-row loss-graph-ctl"}, el("span", {class: "field-label", text: "Trends:"}),
+    tip(ctl("Epoch average", emOn), "One point an epoch: the mean loss of all its steps."),
+    tip(ctl("Running avg (kohya-style)", raOn), "What kohya-based trainers (and Anima Standalone) show as avr_loss: " +
+      "a mean from the start, then a window of one epoch. It drifts down even when nothing improves, so it's mostly for show.")),
+  svgHost, legend, read);
 
   function draw() {
     // drawn at the width it has, so the text stays its own size on a phone
     const W = Math.max(300, Math.round(svgHost.clientWidth || 800)), H = W < 600 ? 220 : 240;
-    const L = 54, R = hasLr && set.lr ? 54 : 12, T = 10, B = 26;
+    const L = 54, R = hasLr && set.lr ? 64 : 12, T = 10, B = 26;   // room for the live rate beside "LR"
     const xs = pts.map((p) => p[0]);
     const x0 = xs[0], x1 = xs[xs.length - 1];
     const tf = (v) => (set.log ? Math.log10(Math.max(v, 1e-8)) : v);
@@ -3866,10 +3954,23 @@ function lossGraph(data) {
       const s = pts.map((p) => p[2]).sort((u, v) => u - v);
       ys = [s[Math.floor(s.length * 0.01)], s[Math.ceil(s.length * 0.99) - 1]].concat(sm);
     }
-    let y0 = Math.min(...ys.map(tf)), y1 = Math.max(...ys.map(tf));
-    if (y1 - y0 < 1e-9) { y0 -= 0.5; y1 += 0.5; }
+    // the trend lines that are on stay inside the scale
+    if (set.emean) ys = ys.concat(em.map((p) => p[2]));
+    if (set.ravg) ys = ys.concat(ra.map((p) => p[1]));
+    // Epoch average / Running avg on: the scale fits those, so their trend shows; the step loss and its smoothed line
+    // run past it, cut at the plot's edges
+    const fit = (set.emean && em.length) || (set.ravg && ra.length) ? trendRange([
+      ...(set.emean ? em.map((p) => p[2]) : []), ...(set.ravg ? raFit(ra, data.epochs).map((p) => p[1]) : [])],
+      set.log) : null;
+    let y0, y1;
+    if (fit) [y0, y1] = fit;
+    else {
+      y0 = Math.min(...ys.map(tf)); y1 = Math.max(...ys.map(tf));
+      if (y1 - y0 < 1e-9) { y0 -= 0.5; y1 += 0.5; }
+    }
     const X = (x) => L + (W - L - R) * (x1 === x0 ? 0.5 : (x - x0) / (x1 - x0));
     const Y = (v) => T + (H - T - B) * (1 - (Math.min(Math.max(tf(v), y0), y1) - y0) / (y1 - y0));
+    const YS = fit ? (v) => T + (H - T - B) * (1 - (tf(v) - y0) / (y1 - y0)) : Y;   // unclamped: cut, not flattened
     const ns = "http://www.w3.org/2000/svg";
     const mk = (tag, attrs) => { const n = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); return n; };
     const svg = mk("svg", {viewBox: `0 0 ${W} ${H}`, class: "loss-graph-svg"});
@@ -3884,29 +3985,56 @@ function lossGraph(data) {
     for (const f of [0, 0.5, 1]) {
       const v = y0 + (y1 - y0) * f, yy = T + (H - T - B) * (1 - f);
       svg.append(mk("line", {x1: L, x2: W - R, y1: yy, y2: yy, class: "lg-grid"}));
-      const t = mk("text", {x: L - 6, y: yy + 4, class: "lg-axis", "text-anchor": "end"});
+      const ty = yy + 4;
+      const t = mk("text", {x: L - 6, y: ty, class: "lg-axis", "text-anchor": "end"});
       t.textContent = (set.log ? 10 ** v : v).toPrecision(3);
       svg.append(t);
     }
-    svg.append(mk("polyline", {class: "lg-raw", points: pts.map((p) => `${X(p[0]).toFixed(1)},${Y(p[2]).toFixed(1)}`).join(" ")}));
-    svg.append(mk("polyline", {class: "lg-smooth", points: pts.map((p, i) => `${X(p[0]).toFixed(1)},${Y(sm[i]).toFixed(1)}`).join(" ")}));
+    let steps = svg;
+    if (fit) {
+      const id = `lg-clip-${++lgClipN}`, cp = mk("clipPath", {id});
+      cp.append(mk("rect", {x: L, y: T, width: W - L - R, height: H - T - B}));
+      svg.append(cp);
+      steps = mk("g", {"clip-path": `url(#${id})`, class: "lg-steps-fit"});   // faded: the trends lead
+      svg.append(steps);
+    }
+    steps.append(mk("polyline", {class: "lg-raw", points: pts.map((p) => `${X(p[0]).toFixed(1)},${YS(p[2]).toFixed(1)}`).join(" ")}));
+    steps.append(mk("polyline", {class: "lg-smooth", points: pts.map((p, i) => `${X(p[0]).toFixed(1)},${YS(sm[i]).toFixed(1)}`).join(" ")}));
+    const line = (cls, sp, yi, y = Y) => { if (sp.length > 1) svg.append(mk("polyline", {class: cls,
+      points: sp.map((p) => `${X(p[0]).toFixed(1)},${y(p[yi]).toFixed(1)}`).join(" ")})); };
+    const dots = (cls, sp, yi, label, y = Y) => sp.forEach((p) => {
+      const c = mk("circle", {cx: X(p[0]), cy: y(p[yi]), r: 3.5, class: cls});
+      const tt = mk("title", {}); tt.textContent = label(p); c.append(tt); svg.append(c);
+    });
+    if (set.ravg) {                  // in the trend views its first-epoch start runs past the scale, cut at the edge
+      if (fit && ra.length > 1) steps.append(mk("polyline", {class: "lg-ravg",
+        points: ra.map((p) => `${X(p[0]).toFixed(1)},${YS(p[1]).toFixed(1)}`).join(" ")}));
+      else line("lg-ravg", ra, 1);
+    }
+    if (set.emean) { line("lg-emean", em, 2); dots("lg-emean-dot", em, 2, (p) => `Epoch ${p[1]} average: ${p[2].toFixed(4)}`); }
     // the learning rate, on its own scale at the right (adaptive LR moves it)
     const lrPts = pts.filter((p) => p[3] != null);
     if (hasLr && set.lr && lrPts.length > 1) {
-      const lv = lrPts.map((p) => p[3]), l0 = Math.min(...lv), l1 = Math.max(...lv);
-      const LY = (v) => T + (H - T - B) * (l1 === l0 ? 0.5 : 1 - (v - l0) / (l1 - l0));
+      // a linear scale from 0 up to the run's peak rate: a cosine run starts at the top and slides down, and a
+      // 0.01% change looks like 0.01%. A rate that climbs (Prodigy's d*lr, adaptive LR going up) gets headroom.
+      const ax = lrAxis(lrPts.map((p) => p[3]));
+      const LY = (v) => T + (H - T - B) * (1 - Math.min(Math.max(v, 0), ax.top) / ax.top);
       svg.append(mk("polyline", {class: "lg-lr", points: lrPts.map((p) => `${X(p[0]).toFixed(1)},${LY(p[3]).toFixed(1)}`).join(" ")}));
-      for (const [v, yy] of [[l1, T + 4], [l0, H - B]]) {
-        const t = mk("text", {x: W - R + 4, y: yy, class: "lg-axis lg-lr-axis"}); t.textContent = v.toExponential(1); svg.append(t);
+      // the scale's top label is live: the rate now (the last point drawn, Prodigy's d*lr when that's plotted); the
+      // line is still drawn on 0..peak, and the bottom stays 0. A dot marks where the line is now.
+      const lp = lrPts[lrPts.length - 1], lx = X(lp[0]), ly = LY(lp[3]);
+      for (const [text, yy, cls] of [[lrNowLabel(lp[3]), T + 14, " lg-lr-live"], ["0", H - B, ""]]) {
+        const t = mk("text", {x: W - R + 4, y: yy, class: "lg-axis lg-lr-axis" + cls}); t.textContent = text; svg.append(t);
       }
+      svg.append(mk("circle", {cx: lx, cy: ly, r: 3, class: "lg-lr-now"}));
     }
     // the lowest smoothed point
     let bi = 0;
     sm.forEach((v, i) => { if (v < sm[bi]) bi = i; });
-    const best = mk("circle", {cx: X(pts[bi][0]), cy: Y(sm[bi]), r: 4, class: "lg-best"});
+    const best = mk("circle", {cx: X(pts[bi][0]), cy: YS(sm[bi]), r: 4, class: "lg-best"});
     const bt = mk("title", {}); bt.textContent = `Lowest smoothed loss: ${sm[bi].toFixed(4)} at step ${pts[bi][0]}`;
     best.append(bt);
-    svg.append(best);
+    steps.append(best);
     const axisT = (x, text, cls, anchor) => { const t = mk("text", {x, y: T + 2, class: "lg-axis " + cls, "text-anchor": anchor,
       "dominant-baseline": "hanging"}); t.textContent = text; svg.append(t); };
     axisT(4, "loss", "lg-axis-title", "start");
@@ -5951,6 +6079,10 @@ async function studioSetupLoad(name) {
   let d;
   try { d = await api(`/api/studio/setup?name=${encodeURIComponent(name)}`); }
   catch (e) { $("stSetupMsg").textContent = e.message; return; }
+  await studioSetupApply(d, name);
+}
+
+async function studioSetupApply(d, name) {        // a saved setup, or one read from a picture Download tweaked saved
   const fam = d.family && [...$("stFamily").options].some((o) => o.value === d.family) ? d.family : $("stFamily").value;
   if (fam !== $("stFamily").value) { $("stFamily").value = fam; await studioFamily(); stRemember(); }
   const v = d.values || {};
@@ -6011,10 +6143,48 @@ async function studioSetupMix() {
   studioSchedule();
 }
 
+// a PNG's fizgig_studio_setup text (Download tweaked writes it), or null
+function studioSetupFromPng(buf) {
+  const u = new Uint8Array(buf), dv = new DataView(buf);
+  if (u.length < 8 || u[0] !== 0x89 || u[1] !== 0x50) return null;
+  for (let i = 8; i + 8 <= u.length;) {
+    const n = dv.getUint32(i), type = String.fromCharCode(...u.subarray(i + 4, i + 8));
+    if (type === "IEND") break;
+    if (type === "iTXt" || type === "tEXt") {
+      const body = u.subarray(i + 8, i + 8 + n), z = body.indexOf(0);
+      if (z > 0 && new TextDecoder("latin1").decode(body.subarray(0, z)) === "fizgig_studio_setup") {
+        let k = z + 1;
+        if (type === "iTXt") { k += 2; for (let s = 0; s < 2; s++) k = body.indexOf(0, k) + 1; }   // flags, language, keyword
+        try { return JSON.parse(new TextDecoder().decode(body.subarray(k))); } catch (e) { return null; }
+      }
+    }
+    i += 12 + n;
+  }
+  return null;
+}
+
 function wireStudioSetups() {
   $("stSetupSave").addEventListener("click", () => studioSetupSave(false));
   $("stSetupList").addEventListener("change", () => { const n = $("stSetupList").value; $("stSetupList").value = ""; if (n) studioSetupLoad(n); });
   studioSetupList();
+  // Download tweaked (a still): the setup goes up first, so the server writes it into the PNG
+  $("stDlTweak").addEventListener("click", async (e) => {
+    if ($("stDlTweak").dataset.go || (S.st.layout && S.st.layout.kind !== "stills")) return;
+    e.preventDefault();
+    try { await api("/api/studio/download_setup", {data: studioSetupData()}); } catch (err) { /* the picture alone */ }
+    $("stDlTweak").dataset.go = "1"; $("stDlTweak").click(); delete $("stDlTweak").dataset.go;
+  });
+  // a picture Download tweaked saved, dropped anywhere on Studio: its LoRAs, sliders and settings back
+  const tab = $("tab-studio");
+  tab.addEventListener("dragover", (e) => { if ([...e.dataTransfer.types].includes("Files")) e.preventDefault(); });
+  tab.addEventListener("drop", async (e) => {
+    const f = [...e.dataTransfer.files].find((x) => /\.png$/i.test(x.name) || x.type === "image/png");
+    if (!f || e.defaultPrevented) return;
+    e.preventDefault();
+    const d = studioSetupFromPng(await f.arrayBuffer());
+    if (!d || !d.fizgig_repair_setup) { $("stSetupMsg").textContent = `${f.name} has no Studio settings in it (Download tweaked saves them).`; return; }
+    await studioSetupApply(d, f.name.replace(/\.png$/i, ""));
+  });
 }
 
 function studioCanvas() {
@@ -6055,7 +6225,14 @@ function studioRow(b) {
       onchange: (e) => studioSet(b.id, en, e.target.checked)});
     const range = el("input", {type: "range", min: "-3", max: "3", step: "0.05",
       oninput: (e) => studioSet(b.id, sv, Number(e.target.value), true), onchange: () => studioCommit()});
-    const val = el("span", {class: "st-val"});
+    // the value: type one in (Enter or leaving the box sets it, -3 to 3), Esc puts the slider's back
+    const val = el("input", {type: "text", class: "st-val", title: "Type a value from -3 to 3, then Enter",
+      onkeydown: (e) => { if (e.key === "Enter") e.target.blur(); else if (e.key === "Escape") { row._sync(); e.target.blur(); } },
+      onchange: (e) => {
+        const v = Number(String(e.target.value).replace(",", ".").replace(/^\+/, ""));
+        if (!Number.isFinite(v)) { row._sync(); return; }
+        studioSet(b.id, sv, Math.max(-3, Math.min(3, Math.round(v * 100) / 100))); studioCommit();
+      }});
     const btn = (t, title, f) => el("button", {class: "btn btn-sm", text: t, title, onclick: () => { f(); studioCommit(); }});
     const label = side === "p" ? el("span", {class: "st-label", style: b.color ? `color:${b.color}` : ""},
       b.label, b.cat ? el("small", {text: `[${b.cat}]`}) : null) : el("span", {class: "st-label", text: "donor"});
@@ -6076,7 +6253,8 @@ function studioRow(b) {
           const o = side === "p" ? "ds" : "ps", v = st()[sv];
           if (S.st.donor && v >= 0 && v <= 1) { studioSet(b.id, o, Math.round((1 - v) * 100) / 100); studioSet(b.id, "de", true); }
         })));
-    row._sync = () => { tick.checked = st()[en]; range.value = st()[sv]; val.textContent = stFmt(st()[sv]);
+    row._sync = () => { tick.checked = st()[en]; range.value = st()[sv];
+      if (document.activeElement !== val) val.value = stFmt(st()[sv]);
       const on = locks().has(b.id); lock.textContent = on ? "🔒" : "🔓"; lock.classList.toggle("on", on); };
     row._sync();
     return row;
@@ -9458,7 +9636,18 @@ function wire() {
     api("/api/queue/start", {}).then(pollRun).catch((er) => showProblems([er.message]));
   });
   $("btnPause").addEventListener("click", () => start("/api/pause"));
-  $("btnStop").addEventListener("click", () => start("/api/stop"));
+  // Stop asks twice, like Pause's second press: the first turns it into "Confirm stop" for 30 s
+  $("btnStop").addEventListener("click", () => {
+    if (!STOP_CONFIRM.timer) {
+      const b = $("btnStop");
+      b.textContent = "Confirm stop";
+      b.title = "Click again within 30 s to stop the run now (it won't save a restore point; Pause does)";
+      STOP_CONFIRM.timer = setTimeout(stopConfirmReset, 30000);
+      return;
+    }
+    stopConfirmReset();
+    start("/api/stop");
+  });
   $("btnResume").addEventListener("click", resumeClick);
   $("btnMove").addEventListener("click", () => { if (S.moveOpen) { S.moveOpen = false; pollRun(); } else moveOpen(); });
   const now = (what, say) => api("/api/run/now", {what}).then(() => { $("runNowSay").textContent = say; })

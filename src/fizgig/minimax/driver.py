@@ -18,7 +18,7 @@ import logging
 
 import torch
 
-from fizgig.families.driver import Block, BlockGroup, FamilyDriver
+from fizgig.families.driver import Block, BlockGroup, FamilyDriver, prior_base, weighted_loss, with_prior
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +70,13 @@ class MiniMaxDriver(FamilyDriver):
         from fizgig.minimax import common as T
         eff, clip_t = T._max_effective_mp(group)
         if clip_t > 1:
+            # the clip figures were measured with TREAD routing half the video tokens past the middle blocks and the
+            # Default clip window: without either a clip step keeps about twice as much for its backward (a 9 MP
+            # clip job with TREAD off went without checkpointing and ran out at 88 GB - @spaghettified26, PR #282),
+            # so a clip run set up any other way has no figure and keeps checkpointing on
+            o = getattr(self, "options", {})
+            if o.get("tread") != "0.5@2-47" or o.get("clip_blocks") != "20-49":
+                return "clips:unmeasured", eff
             return "clips", eff
         return super().nogc_load(group)
 
@@ -411,13 +418,31 @@ class MiniMaxDriver(FamilyDriver):
         shift = self.options.get("shift")
         return float(shift) if shift not in (None, "", "sigmoid", "resolution") else (shift or None)
 
+    def _mask_step_note(self, loss_mask, prior):
+        """The run's first masked step says so once. families/train.py's [masks] lines count the pictures that
+        carry a mask; this is the driver-side proof it is weighting the loss with one."""
+        if loss_mask is None or getattr(self, "_mask_logged", False):
+            return
+        self._mask_logged = True
+        logger.info("[masks] H3 weighting this step per cell: mask on %s, x%.2f..x%.2f, prior %s",
+                    tuple(loss_mask.shape[-2:]), float(loss_mask.min()), float(loss_mask.max()),
+                    f"x{float(prior.weight):g}" if prior is not None else "off")
+
     # ---- training: the old compute_loss ------------------------------------------------------------
     def training_loss(self, dit, latents, cond, generator, *, min_t=0.0, max_t=1.0, refs=None, diff_ref=None,
-                      diff_weight=0.0):
+                      diff_weight=0.0, loss_mask=None, prior=None):
         from fizgig.minimax.common import compute_distill_loss, compute_loss, sample_sigmas
+        if loss_mask is not None and prior is not None and float(loss_mask.min()) >= 1.0:
+            # An all-white mask leaves nothing outside it: a clip step's (the dataset makes those all-white) and a
+            # fully-painted picture's both preserve nothing, so skip the extra LoRA-off forward that would cost.
+            prior = None
         if diff_ref is not None and diff_weight > 0.0:
-            return self._slider_loss(dit, latents, cond, generator, min_t, max_t, diff_ref, diff_weight)
+            return self._slider_loss(dit, latents, cond, generator, min_t, max_t, diff_ref, diff_weight,
+                                     loss_mask=loss_mask, prior=prior)
         teacher = self._teacher_phase()
+        # A distill step trains on the model's own picture, not on the photograph, so masked training does not apply
+        # to it (compute_distill_loss takes no loss_mask): a run that distills also masks takes the mask on its
+        # ordinary steps only.
         if (getattr(self, "_distill", False) and (teacher or not self._p1) and "ref_hidden_states" in cond
                 and not cond.get("audio_only")):
             # the old distillation step: teacher = base + frozen adapters WITH the reference, trainable LoRA off;
@@ -443,12 +468,14 @@ class MiniMaxDriver(FamilyDriver):
         audio = cond.get("audio_latent")
         if audio is not None and audio.dim() == 3:
             audio = audio[0]                                                   # cached (2T, 32), batched
+        self._mask_step_note(loss_mask, prior)
         # audio_weight (CLI only, default 1.0 = parity): the weight on the sound term for clips that carry it - audio is
         # ~4% of the packed sequence, so parity may teach a voice too quietly. Stills and muted clips have no sound term.
         loss, s = compute_loss(dit, lat.to(DTYPE), cond["hidden_states"].to(DTYPE), sigma=sigma.to(lat.device),
                                noise=noise, audio_latent=audio,
                                audio_weight=float(self.options.get("audio_weight") or 1.0),
-                               video_weight=0.0 if cond.get("audio_only") else 1.0)
+                               video_weight=0.0 if cond.get("audio_only") else 1.0,
+                               loss_mask=loss_mask, prior=prior)
         info = {"t": float(s)}
         hn = float(self.options.get("highnoise_lr") or 1.0)
         if self.options.get("highnoise_lr_pct") not in (None, ""):
@@ -477,10 +504,12 @@ class MiniMaxDriver(FamilyDriver):
         noise = torch.randn(x0.shape, generator=generator, dtype=torch.float32).to(x0.device)
         return x0, noise, sigma
 
-    def _slider_loss(self, dit, latents, cond, generator, min_t, max_t, diff_ref, diff_weight):
+    def _slider_loss(self, dit, latents, cond, generator, min_t, max_t, diff_ref, diff_weight, loss_mask=None,
+                     prior=None):
         """An image- or clip-pair slider step: the plain flow loss with each patch token weighted by how much the two
         poles differ there (the Krea 2 / Qwen formula), over every frame of a clip pair; poles of different lengths
-        weigh every token the same."""
+        weigh every token the same. A masked-training mask weights the step as it does on a plain step (every family
+        that takes masks takes them here too), and masked prior preservation rides along with it."""
         import torch.nn.functional as F
         self._patch = getattr(dit, "patch_size", (1, 2, 2))
         _pt, ph, pw = self._patch
@@ -489,12 +518,20 @@ class MiniMaxDriver(FamilyDriver):
         noised = (1.0 - s) * x0 + s * noise
         txt = cond["hidden_states"]
         txt = (txt[None] if txt.dim() == 2 else txt).to(x0.device, DTYPE)
-        pred = dit(noised.to(DTYPE), (1.0 - sigma).to(x0.device), txt).float()
+        tt = (1.0 - sigma).to(x0.device)
+        # the mask is on the uncropped latent grid (_noised cropped x0 to the patch multiple): crop it the same way
+        mw = None if loss_mask is None else loss_mask.float().to(x0.device)[..., :x0.shape[-2], :x0.shape[-1]]
+        self._mask_step_note(loss_mask, prior)
+        base = prior_base(prior, loss_mask, lambda: dit(noised.to(DTYPE), tt, txt))
+        pred = dit(noised.to(DTYPE), tt, txt).float()
         ref = diff_ref if diff_ref.dim() == 5 else diff_ref.unsqueeze(2)
         ref = ref[..., :x0.shape[-2], :x0.shape[-1]].to(x0.device).float()
         if ref.shape != x0.shape:            # poles of different lengths (an edit that drops frames): even weights
             se = (pred - (x0 - noise)).pow(2)
-            return se.mean(), {"t": s}
+            loss = se.mean() if mw is None else weighted_loss(se.mean(dim=1), mw)
+            if base is not None:
+                loss = with_prior(loss, prior, base, (pred - base).pow(2).mean(dim=1), mw)
+            return loss, {"t": s}
         d = (x0 - ref).abs().mean(dim=1)                                       # (1, T, H, W)
         b, t_, h, w = d.shape
         d = F.interpolate(F.avg_pool2d(d.reshape(b * t_, 1, h, w), (ph, pw)), scale_factor=(ph, pw),
@@ -506,7 +543,10 @@ class MiniMaxDriver(FamilyDriver):
         else:
             wt = torch.ones_like(d)                                            # identical pair: uniform
         se = (pred - (x0 - noise)).pow(2).mean(dim=1)
-        return (se * wt).mean(), {"t": s}
+        loss = weighted_loss(se, wt, mw)
+        if base is not None:
+            loss = with_prior(loss, prior, base, (pred - base).pow(2).mean(dim=1), mw, wt)
+        return loss, {"t": s}
 
     def noise_latents(self, latents, generator, *, min_t=0.0, max_t=1.0):
         x0, noise, sigma = self._noised(latents, generator, min_t, max_t)

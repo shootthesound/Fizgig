@@ -252,7 +252,11 @@ _FIBO2 = FamilyDescription(
     ),
     preview_steps=30,
     preview_cfg=5.0,
-    preview_negative=None,
+    # the pipeline's own negative when none is given (diffusers 0.42.1 DEFAULT_NEGATIVE_PROMPT): an empty structured
+    # caption, not an empty string
+    preview_negative=('{"short_description":"","objects":[],"background_setting":"","lighting":{},"aesthetics":{},'
+                      '"photographic_characteristics":{},"style_medium":"","context":"","artistic_style":""}'),
+    workbench_follows_samples=True,   # CFG 5: the workbench takes the Samples tab's negative, steps and CFG
     preview_width=1024,
     preview_height=1024,
 

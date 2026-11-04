@@ -572,24 +572,41 @@ class Fibo2Driver(FamilyDriver):
         tokens, mask = self._text(cond)
         guided = cfg > 1.0 and neg_cond is not None
         neg_tokens, neg_mask = (self._text(neg_cond) if guided else (None, None))
-        x = (noise if noise is not None else self.initial_noise(seed, width, height)).to(device, torch.bfloat16)
+        # as the pipeline: the latents stay fp32 between steps, the timestep is fp32 and the guidance mix is fp32
+        x = (noise if noise is not None else self.initial_noise(seed, width, height)).to(device, torch.float32)
         if refs is not None:
             # the perceiver's context latents, as the pipeline's context_latents (edit references)
             cond = dict(cond)
             cond["context_latents"] = [r.to(torch.bfloat16) for r in refs]
         schedule = self._schedule(steps, x, sigmas=sigmas, options=options)
-        with torch.autocast(device_type=device.type, dtype=torch.bfloat16):
-            for i, (s_cur, s_next) in enumerate(zip(schedule[:-1], schedule[1:])):
-                if on_step is not None:
-                    on_step(i, len(schedule) - 1)
-                t = torch.full((x.shape[0],), float(s_cur), device=device, dtype=torch.bfloat16)
-                pred = self.predict(dit, {"hidden_states": x, "timestep": t, "noise": None, "t": s_cur}, cond)
-                if guided:
-                    uncond = self.predict(dit, {"hidden_states": x, "timestep": t, "noise": None, "t": s_cur},
-                                          {"tokens": neg_tokens, "mask": neg_mask})
-                    pred = uncond + cfg * (pred - uncond)
-                x = x + (s_next - s_cur) * pred
+        for i, (s_cur, s_next) in enumerate(zip(schedule[:-1], schedule[1:])):
+            if on_step is not None:
+                on_step(i, len(schedule) - 1)
+            t = torch.full((x.shape[0],), float(s_cur), device=device, dtype=torch.float32)
+            pred = self.predict(dit, {"hidden_states": x, "timestep": t, "noise": None, "t": s_cur}, cond).float()
+            if guided:
+                # the images to edit condition both passes, as in the pipeline
+                neg = {"tokens": neg_tokens, "mask": neg_mask}
+                if "context_latents" in cond:
+                    neg["context_latents"] = cond["context_latents"]
+                uncond = self.predict(dit, {"hidden_states": x, "timestep": t, "noise": None, "t": s_cur}, neg).float()
+                pred = uncond + cfg * (pred - uncond)
+            x = x + (s_next - s_cur) * pred
         return x
+
+    def pad_conditioning(self, conds):
+        """Prompt travel (LoRA Royale): prompts zero-padded to one length, each with a mask of its own tokens. The DiT
+        attends only the masked-in tokens and sizes the gist from them, so each waypoint renders as its own prompt."""
+        L = max(c["tokens"].shape[-2] for c in conds)
+        out = []
+        for c in conds:
+            t, m = c["tokens"], c["mask"]
+            pad = L - t.shape[-2]
+            if pad:
+                t = torch.cat([t, t.new_zeros(*t.shape[:-2], pad, t.shape[-1])], dim=-2)
+                m = torch.cat([m, torch.zeros(*m.shape[:-1], pad, dtype=torch.bool)], dim=-1)
+            out.append({"tokens": t, "mask": m})
+        return out
 
     @torch.no_grad()
     def decode(self, vae, latents, width, height):

@@ -84,7 +84,7 @@ Every image and video model gets all four workbench tools; ACE-Step has Studio a
 
 Each tool works on your own runs **or any LoRA you've downloaded**, and they hand off to each other. [More detail](docs/TRAINING.md).
 
-- **Studio** (was Repair Studio) — a live slider per block with a side-by-side preview, donor-LoRA blending, **🎲 I'm feeling lucky** for random variations within your limits, and an exact baked save. On H3 the previews are clips with sound, with a background block library and first/last-frame pinning.
+- **Studio** (was Repair Studio) — a live slider per block with a side-by-side preview, donor-LoRA blending, **🎲 I'm feeling lucky** for random variations within your limits, and an exact baked save. On H3 the previews are clips with sound, with a background block library and first/last-frame pinning. [Guide](docs/STUDIO.md)
 - **LoRA Royale** — every epoch on one seed, an optional likeness score, and MP4/GIF exports: epoch morphs, seed/prompt/strength travels, comparison sheets.
 - **Profiler** — a colour-coded per-block report that Studio reads inline.
 - **Extract** — shrink any LoRA to a lower rank.

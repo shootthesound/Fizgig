@@ -68,7 +68,7 @@ Switch on every ability the model can support, and test each one below. Leave on
 - [ ] **Compile** and **INT8 attention** where they measure faster.
 - [ ] **EMA**, **Adaptive LR**, the **per-image loss watch**, **caption dropout** and **Multi Concept**, unless the model has a reason against.
 - [ ] **`start_lr_bands`** for every kind the family offers.
-- [ ] **No Model Area to Train** (`train_areas` stays `()`), as on every model but Klein: the LoRA trains the whole model. Areas come only after the block map has been charted by measurement (what each block group does), never from a guess or from what a test run happened to train, and they are added in their own change, not with the family.
+- [ ] **No Model Area to Train** (`train_areas` stays `()`) and no Fast Identity Mode (`identity_blocks` stays `()`), as on every model but Klein (Model Areas) and Qwen Image (Fast Identity Mode): the LoRA trains the whole model. Areas and identity blocks come only after the block map has been charted by measurement (what each block group does), as Klein's and Qwen Image's were, never from a guess or from what a test run happened to train, and they are added in their own change, not with the family.
 - [ ] **Presets are the standard set**, named after the model: a LoRA preset on the whole model, plus Edit, Fine-tune and Slider where the family has them. No preset that leaves blocks out.
 
 The abilities that need more than a run to check:

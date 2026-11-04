@@ -288,8 +288,8 @@ _FIBO2 = FamilyDescription(
         ("✨ Fibo 2.0 Slider (rank 8, 2e-4)",
          _preset(8, lr=2e-4, epochs=20, mp="0.5", slider=True, optimizer="adamw")),
     ),
-    # no Model Area to Train: as on every model but Klein (the one with a charted block map), the LoRA trains the
-    # whole model - Bria's reference trainer targets every Linear too
+    # no Model Area to Train or Fast Identity Mode: those come from a measured block map (Klein's areas, Qwen Image's
+    # identity blocks), which Fibo doesn't have. The LoRA trains the whole model, as Bria's reference trainer does
     identity_blocks=(),
     # The Extract tab's presets, on the block map's ids.
     extract_presets=(),

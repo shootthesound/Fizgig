@@ -156,16 +156,6 @@ _FIBO2 = FamilyDescription(
     driver="fizgig.fibo2.driver:Fibo2Driver",
     modelspec_arch="BriaFibo2Transformer2DModel",
     implementation="briaai/Fibo-2.0-dev",
-    # CC BY-NC 4.0, straight from the snapshot's own front-matter (license_name "bria-fibo", the deed at
-    # https://creativecommons.org/licenses/by-nc/4.0/deed.en) and BRIA's README (commercial use needs a separate
-    # agreement, https://platform.bria.ai/licensing/pricing?model=fibo-2). A LoRA trained on the base is a derivative
-    # of it, so the restriction is stated where the model is picked, not in a footer. The card says nothing about
-    # *outputs*, so this note claims nothing about them either.
-    model_note="Creative Commons Attribution-NonCommercial 4.0 (CC BY-NC 4.0): BRIA releases the Fibo 2.0 weights "
-               "for non-commercial use only - https://creativecommons.org/licenses/by-nc/4.0/deed.en. Commercial "
-               "use is subject to a separate agreement with BRIA - "
-               "https://platform.bria.ai/licensing/pricing?model=fibo-2. A LoRA trained on this base is a "
-               "derivative of it and carries the same non-commercial restriction.",
     # adamw first, as docs/drivers/CHECKLIST.md prescribes for a LoRA family: 8-bit AdamW steps each LoRA tensor
     # separately, and on a model with 415 adapted Linears that costs a large share of every step. The 8-bit
     # optimizer stays available behind it for the cards that need it.

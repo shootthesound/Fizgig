@@ -49,21 +49,6 @@ class StepLog:
         if len(self.buf) >= FLUSH_EVERY:
             self.flush()
 
-    def add_validation(self, step, epoch, loss, per_t=None, seconds=None, seg=0):
-        """A fixed validation check: {"k": "val", "s", "e", "v": mean, "vt": [per timestep], "sec"}. It has no "l",
-        so anything reading only step lines skips it. Written straight away (one a check)."""
-        if self.path is None:
-            return
-        rec = {"k": "val", "s": int(step), "e": int(epoch), "v": round(float(loss), 6)}
-        if per_t:
-            rec["vt"] = [round(float(x), 6) for x in per_t]
-        if seconds is not None:
-            rec["sec"] = round(float(seconds), 1)
-        if seg:                      # a new section of the validation line (what's checked changed on a resume)
-            rec["seg"] = int(seg)
-        self.buf.append(json.dumps(rec) + "\n")
-        self.flush()
-
     def flush(self):
         if self.path is None or not self.buf:
             return
@@ -134,20 +119,15 @@ def _thin(seq, max_points):
 def read(path, max_points=4000):
     """The graph's data: {"points": [[step, epoch, loss, lr], ...] (every k-th when longer than max_points, the
     last always kept), "epochs": [[epoch, first step], ...], "steps": total, and the trend views, worked out from
-    every step: "epoch_mean", "running_avg" and "val"
-    ([[step, epoch, loss, [per timestep]], ...], the fixed validation checks)}."""
-    rows, val = [], []
+    every step: "epoch_mean" and "running_avg"}."""
+    rows = []
     try:
         with open(path, encoding="utf-8") as f:
             for line in f:
                 try:
                     d = json.loads(line)
-                    if d.get("k") == "val":
-                        val.append([int(d["s"]), int(d["e"]), float(d["v"]), d.get("vt") or []]
-                                   + ([int(d["seg"])] if d.get("seg") else []))   # [.., seg] from a new section
-                        continue
                     rows.append([int(d["s"]), int(d["e"]), float(d["l"]), d.get("lr")])
-                except (ValueError, KeyError, TypeError, AttributeError):
+                except (ValueError, KeyError, TypeError):
                     continue
     except OSError:
         return None
@@ -161,4 +141,4 @@ def read(path, max_points=4000):
     if rows and pts[-1] is not rows[-1]:
         pts.append(rows[-1])
     return {"points": pts, "epochs": epochs, "steps": len(rows), "stride": k, "epoch_mean": epoch_means(rows),
-            "running_avg": _thin(running_avg(rows), max_points), "val": val}
+            "running_avg": _thin(running_avg(rows), max_points)}

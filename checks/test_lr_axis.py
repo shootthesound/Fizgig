@@ -87,4 +87,4 @@ def test_no_lr_readout_strip_and_the_top_label_is_live():
     draw = src[src.index("function lossGraph("):]
     assert "lrNowLabel(lp[3]), T + 14" in draw                     # the top of the scale shows the latest point
     assert "ax.top.toExponential" not in draw and "v.toExponential(1)" not in draw
-    assert re.search(r"const L = ownVal \? 110 : 54, R = [^,]+, T = 10, B = 26;", draw)   # no extra strip on top
+    assert re.search(r"const L = 54, R = [^,]+, T = 10, B = 26;", draw)   # no extra strip on top

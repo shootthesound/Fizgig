@@ -304,8 +304,19 @@ class Fibo2Driver(FamilyDriver):
         tgt = torch.device(str(device))
         filled, unknown = set(), []
         with safe_open(path, framework="pt") as f:
-            for k in f.keys():
-                for name, part in self._unfuse(k, f.get_tensor(k)):
+            keys = set(f.keys())
+            for k in keys:
+                if k.endswith((".comfy_quant", ".weight_scale", ".input_scale", ".comfy_attention.config")):
+                    continue                           # read with their weight below, or ComfyUI-only
+                t = f.get_tensor(k)
+                base = k[: -len(".weight")] if k.endswith(".weight") else None
+                if base and base + ".comfy_quant" in keys:
+                    # ComfyUI's int8 ConvRot build (Comfy-Org/Fibo-2.0 fibo2_dev_int8_convrot): decoded to bf16 here,
+                    # as MOSS-Image's loader decodes it; the planner's INT8 then quantises it again its own way
+                    from fizgig.minimax.convrot import dequantize_int8_convrot, parse_comfy_quant
+                    t = dequantize_int8_convrot(t, f.get_tensor(base + ".weight_scale").float().reshape(-1, 1),
+                                                parse_comfy_quant(f.get_tensor(base + ".comfy_quant")))
+                for name, part in self._unfuse(k, t):
                     if self._assign(model, name, part.to(tgt)):
                         filled.add(name)
                     else:

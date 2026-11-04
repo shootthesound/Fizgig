@@ -35,7 +35,7 @@ _IO = ("x_embedder", "t_embedder", "final_layer")
 _SAMPLING_NOTE = "Flow matching; CFG 5 against the negative prompt, as the reference pipeline."
 
 
-def _preset(rank, area, lr=1e-6, adaptive=None, epochs=40, mp="0.25", slider=False, optimizer="automagic3"):
+def _preset(rank, area, lr=1e-6, adaptive=None, epochs=40, mp="0.25", slider=False, edit=False, optimizer="automagic3"):
     """The built-in presets' values, in the standard layer's keys (the shape krea2.py and moss_image.py use). Automagic
     starts at 1e-6 and sets its own rate (measured 4 Nov 2026, rank 32 Full Model, 16 photos at 0.25 MP: up to 1.1e-4 by
     epoch 10, easing to 2.5e-5 by 60; likeness earlier than AdamW at a flat 1e-4, best by eye at epoch 40). A 1e-4 start overcooked the LoRA (PR #250).
@@ -43,7 +43,7 @@ def _preset(rank, area, lr=1e-6, adaptive=None, epochs=40, mp="0.25", slider=Fal
     lo, hi = adaptive or ("1e-5", "4e-4")
     return {
         "NETWORK_DIM": rank, "NETWORK_ALPHA": rank, "NETWORK_TYPE": "LoRA (standard)",
-        "TARGET_LAYERS": area, "FAMILY_EDIT": False, "FAMILY_SLIDER": slider, "FAMILY_FT": False,
+        "TARGET_LAYERS": area, "FAMILY_EDIT": edit, "FAMILY_SLIDER": slider, "FAMILY_FT": False,
         "FAMILY_SLIDER_GUIDANCE": "3",                               # Krea 2 and Flux 3's prompt-slider push
         "LEARNING_RATE": lr, "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 42,
         "ADAPTIVE_LR": adaptive is not None, "ADAPTIVE_LR_MIN": lo, "ADAPTIVE_LR_MAX": hi,
@@ -79,7 +79,12 @@ _FIBO2 = FamilyDescription(
                        "(briaai/Fibo-2.0-dev, transformer/), which load too. The save writes the fused layout "
                        "back out, so the LoRA loads in ComfyUI as saved.",
                   download_note="~16.5 GB - Comfy-Org/Fibo-2.0 -> diffusion_models/fibo2_dev_bf16.safetensors "
-                                "(the fused single file; the sharded briaai repo reaches the same model)"),
+                                "(the fused single file; the sharded briaai repo reaches the same model)",
+                  # measured 4 Nov 2026: loads all 783 tensors, a 768 render 5/255 (mean) from the bf16 file's
+                  alt_repo="Comfy-Org/Fibo-2.0", alt_path="diffusion_models/fibo2_dev_int8_convrot.safetensors",
+                  alt_label="int8",
+                  alt_note="~8.4 GB int8 ConvRot, the file ComfyUI's Fibo 2.0 workflows use; decoded at load",
+                  alt_size_gb=8.41),
         ModelFile("fibo2_vae", "Fibo 2.0 autoencoder", True, "Comfy-Org/Fibo-2.0", "vae/flux2-vae.safetensors", 0.34,
                   "The FLUX.2-family autoencoder Bria ships with Fibo 2.0 (the stock flux2-vae, diffusers keys).",
                   role="vae",
@@ -265,8 +270,8 @@ _FIBO2 = FamilyDescription(
         ),
     ),
     preview_speed_lora="Turbo LoRA (4-step)",
-    preview_speed_steps=30,           # the speed LoRA defaults off: the box shows the plain model's steps
-    preview_speed_strength=0.0,
+    preview_speed_steps=4,            # on by default, as Qwen Image 2.1's Turbo LoRA: 4-step previews
+    preview_speed_strength=1.0,
     preview_steps=30,
     preview_cfg=5.0,
     # the pipeline's own negative when none is given (diffusers 0.42.1 DEFAULT_NEGATIVE_PROMPT): an empty structured
@@ -292,6 +297,8 @@ _FIBO2 = FamilyDescription(
         ("✨ Fibo 2.0 Dev (rank 16, skip refiner + perceiver blocks)",
          _preset(16, "Full without refiners or perceivers")),
         # sliders are rank 8 on every model, AdamW at 2e-4 for 20 epochs at 0.5 MP as Flux 3's
+        # edit pairs, as trained on 4 Nov 2026 (15 greyscale -> colour pairs, 6 epochs at 0.25 MP): AdamW at 1e-4
+        ("✨ Fibo 2.0 Edit (rank 16)", _preset(16, "Full Model", lr=1e-4, epochs=6, edit=True, optimizer="adamw")),
         ("✨ Fibo 2.0 Slider (rank 8, 2e-4)",
          _preset(8, "Full Model", lr=2e-4, epochs=20, mp="0.5", slider=True, optimizer="adamw")),
     ),

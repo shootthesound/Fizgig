@@ -23,7 +23,7 @@ import torch
 import torch.nn.functional as F
 from safetensors.torch import load_file
 
-from fizgig.families.driver import Block, BlockGroup, FamilyDriver
+from fizgig.families.driver import Block, BlockGroup, FamilyDriver, prior_base, weighted_loss, with_prior
 
 logger = logging.getLogger(__name__)
 
@@ -384,36 +384,49 @@ class Fibo2Driver(FamilyDriver):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-    def encode_text(self, te, captions):
-        """One conditioning dict per caption: the transformer's six text bundles as tokens (6, L, 7680) plus the
-        mask (L,), on CPU. Built exactly as the Fibo 2.0 pipeline builds them - every selected layer scaled to
-        unit RMS per token in float32, its three layers concatenated along the feature dim into one 7680-wide
-        bundle, and the six bundles stacked behind the Perceiver's (bundle 0) and the injection blocks' (1..5)."""
+    def _encode(self, te, text, images=None):
+        """One prompt (and its images, for Qwen3-VL's vision path) -> {"tokens": (1, 6, L, 7680), "mask": (1, L)} on
+        CPU, built as the pipeline builds them: every selected layer scaled to unit RMS per token in float32, its three
+        layers concatenated into one 7680-wide bundle, the six bundles stacked behind the Perceiver's (bundle 0) and
+        the injection blocks' (1..5)."""
         from fizgig.fibo2.model import PROMPT_TEMPLATE, TEXT_ENCODER_OUT_LAYERS
-        proc = self._te_processor
-        device = te.device
         used = sorted({i for group in TEXT_ENCODER_OUT_LAYERS for i in group})
-        out = []
-        for cap in captions:
-            text = cap if isinstance(cap, str) else cap.get("text", "")
-            enc = proc(text=[PROMPT_TEMPLATE.format(text)], images=None, padding="longest",
-                       max_length=4096, truncation=True, return_tensors="pt").to(device)
-            states = te(**enc, output_hidden_states=True).hidden_states
-            norm = {}
-            for i in used:
-                s = states[i].float()
-                norm[i] = (s * torch.rsqrt(s.pow(2).mean(dim=-1, keepdim=True) + 1e-6)).to(te.dtype)
-            bundles = torch.stack([torch.cat([norm[i] for i in group], dim=-1)
-                                   for group in TEXT_ENCODER_OUT_LAYERS], dim=1)
-            # one conditioning dict per caption: the transformer's encoder_hidden_states is (batch, 6, text_len,
-            # cap_feat_dim), so the six bundles get the batch axis and the mask is (batch, text_len)
-            out.append({"tokens": bundles[0].unsqueeze(0).cpu(), "mask": enc.attention_mask.bool().cpu()})
-        return out
+        enc = self._te_processor(text=[PROMPT_TEMPLATE.format(text)], images=images or None, padding="longest",
+                                 max_length=4096, truncation=True, return_tensors="pt").to(te.device)
+        states = te(**enc, output_hidden_states=True).hidden_states
+        norm = {}
+        for i in used:
+            st = states[i].float()
+            norm[i] = (st * torch.rsqrt(st.pow(2).mean(dim=-1, keepdim=True) + 1e-6)).to(te.dtype)
+        bundles = torch.stack([torch.cat([norm[i] for i in group], dim=-1) for group in TEXT_ENCODER_OUT_LAYERS], dim=1)
+        return {"tokens": bundles[0].unsqueeze(0).cpu(), "mask": enc.attention_mask.bool().cpu()}
+
+    def encode_text(self, te, captions):
+        return [self._encode(te, cap if isinstance(cap, str) else cap.get("text", "")) for cap in captions]
+
+    supports_references = True
+
+    def load_reference_text_encoder(self, path, device):
+        """The same Qwen3-VL: load_text_encoder keeps the whole model, vision tower included."""
+        return self.load_text_encoder(path, device)
 
     def encode_text_with_references(self, te, captions, references):
-        # edit_training is False for Fibo 2.0: reference images reach the encoder's vision path only when an
-        # edit recipe is wired up, so until then the caption-only path is the same encoding
-        return self.encode_text(te, captions)
+        """Edit pairs, as the pipeline encodes an edit: the prompt becomes one JSON object - a vision marker per
+        image, the result's structured caption when the caption has one, then the instruction (a plain caption is
+        the instruction) - and Qwen3-VL sees each before-image at most 768 px a side (BriaFibo2ImageProcessor's
+        text_encoder_image_size). The DiT gets the same images as clean context latents (training_loss / generate)."""
+        from PIL import Image
+        from fizgig.fibo2.model import edit_prompt
+        out = []
+        for cap, imgs in zip(captions, references):
+            text = cap if isinstance(cap, str) else cap.get("text", "")
+            pics = []
+            for a in imgs:
+                im = (a if isinstance(a, Image.Image) else Image.fromarray(np.ascontiguousarray(a))).convert("RGB")
+                im.thumbnail((768, 768))
+                pics.append(im)
+            out.append(self._encode(te, edit_prompt(text, len(pics)), pics))
+        return out
 
     def predict(self, dit, state, cond):
         """The velocity as a tensor (the trainer's loss paths take it apart as one). The cached latents and the text
@@ -534,12 +547,32 @@ class Fibo2Driver(FamilyDriver):
         return {"hidden_states": x_t, "timestep": sigma, "noise": noise, "t": t}
 
     def training_loss(self, dit, latents, cond, generator, *, min_t=0.0, max_t=1.0, refs=None,
-                      diff_ref=None, diff_weight=0.0):
+                      diff_ref=None, diff_weight=0.0, loss_mask=None, prior=None):
         latents = self._as4(latents)
         state = self.noise_latents(latents, generator, min_t=min_t, max_t=max_t)
-        pred = self.predict(dit, state, cond)
-        loss = F.mse_loss(pred.float(), (state["noise"] - latents).float())
-        return loss, {"t": state["t"], "loss": float(loss.detach())}
+        if refs is not None:                           # edit pairs: the references are the DiT's clean context
+            cond = {**cond, "context_latents": [self._as4(r) for r in refs]}
+        base = prior_base(prior, loss_mask, lambda: self.predict(dit, state, cond))
+        pred = self.predict(dit, state, cond).float()
+        target = (state["noise"] - latents).float()
+        wgt = None
+        if diff_ref is not None and diff_weight > 0.0:
+            # image-pair sliders (Krea 2's weighting, on Fibo's latent grid): each cell's error weighted by how much
+            # the two poles differ there, so the slider learns what changes between them, not what they share
+            d = (latents.float() - self._as4(diff_ref).float().to(latents.device)).abs().mean(dim=1)   # (B, h, w)
+            dm = d.mean().clamp_min(1e-8)
+            wgt = (1.0 - float(diff_weight)) + float(diff_weight) * (d / dm).clamp(max=8.0)
+            wgt = wgt / wgt.mean().clamp_min(1e-8)
+            if float(dm) <= 1e-6:
+                wgt = torch.ones_like(wgt)                 # identical pair: uniform, never all-zero
+        mw = None if loss_mask is None else loss_mask.float().to(latents.device).reshape(
+            latents.shape[0], *latents.shape[-2:])        # (B, h, w), on the latent grid
+        if wgt is None and mw is None:
+            return F.mse_loss(pred, target), {"t": state["t"]}
+        loss = weighted_loss((pred - target).pow(2).mean(dim=1), wgt, mw)
+        if base is not None:
+            loss = with_prior(loss, prior, base, (pred - base.float()).pow(2).mean(dim=1), mw, wgt)
+        return loss, {"t": state["t"]}
 
     @torch.no_grad()
     def initial_noise(self, seed, width, height):
@@ -749,7 +782,12 @@ class Fibo2Driver(FamilyDriver):
         own exported LoRAs, or another trainer's file written against the fused base) back onto the split Linears
         the live diffusers model trains against. A split file passes through untouched; a fused pair splits
         exactly onto its parts (see the end of this method), and the FFN's 9728 lanes un-pad to the model's own
-        9536."""
+        9536. ComfyUI's dotted names (`diffusion_model.layers.0.attention.qkv.lora_down.weight`, as Comfy-Org's Turbo
+        LoRA has them) take the flattened form first; other tensors (diff, diff_b) keep their names."""
+        sd = {(_stem(k[len("diffusion_model."):-len(t)]) + t
+               if k.startswith("diffusion_model.") and (t := next((s for s in (".lora_down.weight", ".lora_up.weight",
+                                                                                 ".alpha") if k.endswith(s)), None))
+               else k): v for k, v in sd.items()}
         if not any(any(leaf in k for leaf in ("_attention_qkv.", "_feed_forward_w13.", "_ffn_w13.",
                                               "_cross_attention_to_kv.", "_self_attention_to_kv.",
                                               "_attention_out.", "_cross_attention_to_out.",

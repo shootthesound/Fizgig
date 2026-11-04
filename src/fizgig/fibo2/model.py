@@ -38,6 +38,62 @@ TEXT_ENCODER_OUT_LAYERS = ((9, 20, 31), (5, 16, 27), (7, 18, 29), (9, 20, 31), (
 PROMPT_TEMPLATE = "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n"
 
 
+VISION_MARKER = "<|vision_start|><|image_pad|><|vision_end|>"
+
+
+def _parse_prompt(prompt):
+    """A prompt's caption (as Fibo 2.0 was trained with it) and its edit instruction - diffusers' _parse_prompt: a
+    prompt that isn't a JSON object is returned as it is with no instruction; empty values and the score keys go."""
+    import json
+    try:
+        caption = json.loads(prompt)
+    except json.JSONDecodeError:
+        return prompt, None
+    if not isinstance(caption, dict):
+        return prompt, None
+    instruction = caption.pop("edit_instruction", None)
+    if "structured_caption" in caption:
+        caption = caption.pop("structured_caption")
+        if not isinstance(caption, dict):
+            return caption or None, instruction
+
+    def empty(v):
+        return math.isnan(v) if isinstance(v, float) else v is None or (isinstance(v, (str, dict, list)) and not v)
+
+    def clean(v):
+        if isinstance(v, dict):
+            v = {k: clean(x) for k, x in v.items()}
+            return {k: x for k, x in v.items() if not empty(x)}
+        if isinstance(v, list):
+            return [x for x in map(clean, v) if not empty(x)]
+        return v
+
+    keys = set(caption)
+    scores = ("aesthetic_score", "preference_score")
+    caption = {k: {a: b for a, b in v.items() if a not in scores} if isinstance(v, dict) else v
+               for k, v in clean(caption).items() if k not in scores}
+    caption = {k: v for k, v in caption.items() if v != {}}
+    if keys == {"short_description", "text_render"}:
+        caption = {"short_description": caption.get("short_description") or "",
+                   "text_render": caption.get("text_render") or []}
+    return caption or None, instruction
+
+
+def edit_prompt(prompt, num_images):
+    """An edit prompt as the pipeline builds it (_get_edit_prompt, without text images): one JSON object - a vision
+    marker per image, the result's caption when the prompt has one, then the instruction."""
+    import json
+    caption, instruction = _parse_prompt(prompt)
+    if instruction is None:
+        caption, instruction = None, prompt
+    edit = {"image": VISION_MARKER} if num_images == 1 else \
+        {f"image_{k}": VISION_MARKER for k in range(1, num_images + 1)}
+    if caption:
+        edit["structured_caption"] = caption
+    edit["edit_instruction"] = instruction
+    return json.dumps(edit, separators=(",", ":"), ensure_ascii=False)
+
+
 def attention(query, key, value, attn_mask=None):
     """[B, S, H, D] in and out. A render past INT8_MIN_TOKENS keys takes the INT8 kernel when the workbench has it
     on (attend() refuses a live grad, a mask that drops tokens, or no kernel); everything else is torch SDPA."""

@@ -16,6 +16,7 @@ from fizgig.families.description import (
     LoRAFormat,
     ModelFile,
     SamplingSettings,
+    SpeedLoRA,
     TextEncoderBuild,
 )
 
@@ -34,7 +35,7 @@ _IO = ("x_embedder", "t_embedder", "final_layer")
 _SAMPLING_NOTE = "Flow matching; CFG 5 against the negative prompt, as the reference pipeline."
 
 
-def _preset(rank, area, lr=1e-6, adaptive=None, epochs=40, mp="0.25"):
+def _preset(rank, area, lr=1e-6, adaptive=None, epochs=40, mp="0.25", slider=False, optimizer="automagic3"):
     """The built-in presets' values, in the standard layer's keys (the shape krea2.py and moss_image.py use). Automagic
     starts at 1e-6 and sets its own rate (measured 4 Nov 2026, rank 32 Full Model, 16 photos at 0.25 MP: up to 1.1e-4 by
     epoch 10, easing to 2.5e-5 by 60; likeness earlier than AdamW at a flat 1e-4, best by eye at epoch 40). A 1e-4 start overcooked the LoRA (PR #250).
@@ -42,10 +43,11 @@ def _preset(rank, area, lr=1e-6, adaptive=None, epochs=40, mp="0.25"):
     lo, hi = adaptive or ("1e-5", "4e-4")
     return {
         "NETWORK_DIM": rank, "NETWORK_ALPHA": rank, "NETWORK_TYPE": "LoRA (standard)",
-        "TARGET_LAYERS": area, "FAMILY_EDIT": False, "FAMILY_SLIDER": False, "FAMILY_FT": False,
+        "TARGET_LAYERS": area, "FAMILY_EDIT": False, "FAMILY_SLIDER": slider, "FAMILY_FT": False,
+        "FAMILY_SLIDER_GUIDANCE": "3",                               # Krea 2 and Flux 3's prompt-slider push
         "LEARNING_RATE": lr, "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 42,
         "ADAPTIVE_LR": adaptive is not None, "ADAPTIVE_LR_MIN": lo, "ADAPTIVE_LR_MAX": hi,
-        "OPTIMIZER_TYPE": "automagic3", "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
+        "OPTIMIZER_TYPE": optimizer, "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
         "DATASET_MEGAPIXELS": mp, "FAMILY_EMA": "0.98 (recommended)", "COMPILE_BLOCKS": "Auto",
         "BLOCKS_SWAP": "Auto (detect from GPU)", "FAMILY_PRECISION": "Auto (fits your free VRAM)",
     }
@@ -87,15 +89,20 @@ _FIBO2 = FamilyDescription(
                        "parent-dir path all load.",
                   download_note="~0.34 GB - Comfy-Org/Fibo-2.0 -> vae/flux2-vae.safetensors (the stock FLUX.2 "
                                 "autoencoder; any copy of it loads, whatever repo it is filed under)"),
-        ModelFile("fibo2_text_encoder", "Fibo 2.0 text encoder", True, _CANON, "text_encoder/model.safetensors",
-                  8.88, "The text encoder (Qwen3-VL 4B): loaded whole onto the target device, unloaded after caching.",
+        ModelFile("fibo2_text_encoder", "Fibo 2.0 text encoder", True, "Comfy-Org/Fibo-2.0",
+                  "text_encoders/qwen3vl_4b_bf16.safetensors", 8.88, "The text encoder (Qwen3-VL 4B): loaded whole onto the target device, unloaded after caching.",
                   role="text_encoder", local_name="fibo2_text_encoder.safetensors",
                   hint="Qwen3-VL 4B Instruct - the same encoder Krea 2 and FLUX.3 use. Loaded whole onto the GPU "
                        "for encoding (the pipeline runs it with output_hidden_states=True and takes the selected "
                        "layers' hidden states), then offloaded before the step loop. The tokenizer/processor "
                        "comes from the copy bundled with Fizgig (offline); the Hub cache is the fallback.",
-                  download_note="~8.9 GB - briaai/Fibo-2.0-dev -> text_encoder/model.safetensors (bf16; fetched "
-                                "as fibo2_text_encoder.safetensors)"),
+                  download_note="~8.9 GB - Comfy-Org/Fibo-2.0 -> text_encoders/qwen3vl_4b_bf16.safetensors (the "
+                                "same bf16 build as briaai/Fibo-2.0-dev's, which is gated; fetched as "
+                                "fibo2_text_encoder.safetensors)"),
+        ModelFile("fibo2_turbo_lora", "Turbo LoRA (previews)", False, "Comfy-Org/Fibo-2.0",
+                  "loras/fibo_2.0_turbo_lora_avg_rank_270_bf16.safetensors", 1.99,
+                  "Comfy-Org's Turbo LoRA for the Dev model: previews and the workbench in 4 steps at CFG 1.",
+                  role="speed_lora", fetch_optional=False),
     ),
     text_encoder_label="Fibo 2.0 text encoder",
     vae_label="Fibo 2.0 autoencoder",
@@ -213,6 +220,14 @@ _FIBO2 = FamilyDescription(
     # LoRA only: a split-layout Kronecker adapter cannot be re-fused onto this checkpoint's packed qkv/w13/to_kv
     # tensors (each part trains its own w1), so LoKR has no layout that loads in the fused build and is not offered.
     network_types=("lora",),
+    masked_training=True,             # training_loss takes loss_mask (and the prior outside it)
+    slider_training=True,             # photo pairs (training_loss diff weighting) or prompts (noise_latents / predict)
+    # edit pairs as the pipeline edits: Qwen3-VL sees each before-image (encode_text_with_references) and the DiT
+    # takes them as clean context latents (training_loss / generate refs)
+    edit_training=True,
+    edit_references=10,
+    edit_note=("Pairs of an original and its edited version, the same crop and shape. The caption is the edit instruction ('make it night'), or a JSON caption of the result with an edit_instruction key."),
+    activation_cache=True,            # Turbo Preview: step-1 replay over layers / refiners / Perceiver layers
     # int8/nf4: offered with measured peaks and the attention measurement.
     precisions=("int8", "nf4", "bf16"),
     # Auto plans from the measured figures.
@@ -229,6 +244,29 @@ _FIBO2 = FamilyDescription(
                          source="diffusers 0.42.1 BriaFibo2Pipeline.__call__ defaults (num_inference_steps=30, "
                                 "guidance_scale=5.0, DEFAULT_NEGATIVE_PROMPT)"),
     ),
+    # Comfy-Org's Turbo LoRA (the Dev-to-Edit-Turbo difference, dynamic rank, sv_fro 0.95): 4 steps at CFG 1, Euler
+    # on the simple scheduler, as Comfy-Org's Fibo 2.0 Turbo workflow samples. Its low-rank pairs cover all 415
+    # Linears (the fused qkv / to_kv / w13 split exactly by convert_lora_state_dict) and its bias deltas load; its
+    # norm-weight deltas (.diff) are not applied, as on Qwen Image 2.1's Turbo LoRA.
+    speed_loras=(
+        SpeedLoRA(
+            name="Turbo LoRA (4-step)",
+            repo="Comfy-Org/Fibo-2.0",
+            file="loras/fibo_2.0_turbo_lora_avg_rank_270_bf16.safetensors",
+            pairs_with="Fibo 2.0 Dev",
+            strength=1.0,
+            settings=SamplingSettings("Turbo LoRA 4-step", steps=4, cfg=1.0, sampler="euler", scheduler="simple",
+                                      note="Comfy-Org's Fibo 2.0 Turbo workflow: 4 steps, CFG 1.",
+                                      source="https://github.com/Comfy-Org/workflow_templates/blob/main/templates/"
+                                             "image_fibo2_edit_turbo_pe.json"),
+            load_unmerged=True,
+            pref_key="fibo2_turbo_lora",
+            source="https://huggingface.co/Comfy-Org/Fibo-2.0",
+        ),
+    ),
+    preview_speed_lora="Turbo LoRA (4-step)",
+    preview_speed_steps=30,           # the speed LoRA defaults off: the box shows the plain model's steps
+    preview_speed_strength=0.0,
     preview_steps=30,
     preview_cfg=5.0,
     # the pipeline's own negative when none is given (diffusers 0.42.1 DEFAULT_NEGATIVE_PROMPT): an empty structured
@@ -238,7 +276,7 @@ _FIBO2 = FamilyDescription(
     workbench_follows_samples=True,   # CFG 5: the workbench takes the Samples tab's negative, steps and CFG
     # a third to three times the AdamW rate measured to train cleanly (1e-4, 4 Nov 2026); Automagic sets its own rate,
     # so the built-in presets never warn
-    start_lr_bands=(("lora", 3e-5, 3e-4),),
+    start_lr_bands=(("lora", 3e-5, 3e-4), ("slider", 7e-5, 6e-4)),   # the slider band from its 2e-4 preset
     preview_width=1024,
     preview_height=1024,
 
@@ -253,6 +291,9 @@ _FIBO2 = FamilyDescription(
         ("✨ Fibo 2.0 Dev (rank 32, full model)", _preset(32, "Full Model")),
         ("✨ Fibo 2.0 Dev (rank 16, skip refiner + perceiver blocks)",
          _preset(16, "Full without refiners or perceivers")),
+        # sliders are rank 8 on every model, AdamW at 2e-4 for 20 epochs at 0.5 MP as Flux 3's
+        ("✨ Fibo 2.0 Slider (rank 8, 2e-4)",
+         _preset(8, "Full Model", lr=2e-4, epochs=20, mp="0.5", slider=True, optimizer="adamw")),
     ),
     # notes beside Load Preset: (preset name, note) pairs
     preset_notes=(("✨ Fibo 2.0 Dev (rank 32, full model)", _SAMPLING_NOTE),

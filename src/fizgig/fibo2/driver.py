@@ -285,8 +285,9 @@ class Fibo2Driver(FamilyDriver):
             q = m.get_parameter(leaf)
             if tuple(q.shape) != tuple(tensor.shape):
                 return False          # the model rejects a tensor that does not fit its own architecture
-            tensor.requires_grad_(q.requires_grad)
-            m._parameters[leaf] = tensor
+            # an nn.Parameter, as load_state_dict(assign=True) leaves it: a bare tensor in _parameters runs eagerly
+            # but torch.compile cannot resolve it (the INT8 + compile crash at step 1)
+            m._parameters[leaf] = torch.nn.Parameter(tensor, requires_grad=q.requires_grad)
             return True
         if leaf in m._buffers:
             m._buffers[leaf] = tensor

@@ -117,18 +117,6 @@ class LoRALinear(nn.Module):
         self.scales = {}
         self._meter_block = None         # set by the workbench for block activity (BlockMeter)
 
-    _BASE_ATTRS = ("weight", "bias", "in_features", "out_features")
-
-    def __getattr__(self, name):
-        """.weight / .bias / .in_features / .out_features answer as the wrapped Linear's: a diffusers forward reads
-        them off the module it holds (Fibo 2.0's TimestepEmbedder does self.mlp[0].weight.dtype). Only those four -
-        a module's own flags (_is_int8, _nf4_packed ...) stay the base's, so a walk over modules counts each once."""
-        if name in LoRALinear._BASE_ATTRS:
-            base = self.__dict__.get("_modules", {}).get("base")
-            if base is not None:
-                return getattr(base, name)
-        return super().__getattr__(name)
-
     def _base_device(self):
         """Where the base weight lives, read off its storage: a ConvRot int8 Linear's .weight decodes the whole
         matrix."""

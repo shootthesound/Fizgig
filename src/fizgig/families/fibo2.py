@@ -109,8 +109,8 @@ _FIBO2 = FamilyDescription(
                          "file (cosine 1.00000, worst token 1.0000)."),
     ),
 
-    latent_channels=128,              # Fibo 2.0 autoencoder latents
-    spatial_factor=16,                # latents at /16
+    latent_channels=32,               # the FLUX.2 autoencoder's latents before its 2x2 pack, as the cache stores them
+    spatial_factor=8,                 # /8 (the DiT patchifies 2x2 itself)
     bucket_step=16,
     image_channels=3,
     media=("photo",),                 # stills only: Fibo 2.0 trains single images, never clips or voice
@@ -174,31 +174,15 @@ _FIBO2 = FamilyDescription(
     # in which the trainer consults the checkpointing planner at all), 2 epochs on the 57-image 496x496 dataset,
     # RTX PRO 6000 96GB: peak reserved 30.6 GB at 0.25 MP. The planner turns checkpointing off when this fits free
     # VRAM with NOGC_MARGIN_GB (4.0) to spare, so a 34.5 GB window stops authorizing it the moment the figure is real.
-    # The 1 MP row needs a ~50 GB window; int8 and nf4 cannot be measured here until the int8 compile crash is fixed.
+    # The 1 MP row needs a ~50 GB window.
     # measured peaks (compiled, accum 1, previews on, rank 32, no swap), each replicated across both epochs: 30.6 GB at
     # 0.25 MP (both epochs identical) and 57.6 GB at 1.0 MP (both epochs identical). The checkpointing delta
     # over the compiled checkpointed baseline is 12.5 GB at 961 tokens but 36.9 GB at 4096 tokens — only 2.95x for 4.26x
     # the pixels — so the delta is sub-linear in tokens and cannot be projected from a single resolution.
-    # Both quantised rows are MEASURED (26 Oct 2026), each with the planner answering off on a free ~92 GB card.
-    # int8: 22.8 GB in both epochs, high-water 22.84 GB with the preview. Its 23.4 GB seed was derived as the
-    # checkpointed peak (10.9) plus bf16's checkpointing delta (12.5), and the real int8 delta measured 12.2 GB -
-    # within 0.3 GB, because checkpointing stashes ACTIVATIONS, which are bf16 whichever way the weights are stored.
-    # nf4: 33.8 GB in both epochs, high-water 33.83 GB, against a 22.4 GB seed - wrong by 11.4 GB, and the reason
-    # is not activations. nf4_linear_forward_patch dequantises the packed 4-bit weight to x.dtype and calls
-    # F.linear, so autograd SAVES THAT BF16 WEIGHT for the input-gradient of each of the 415 quantised Linears;
-    # with checkpointing off they are all resident at once, which is most of the bf16 weight set, so 4-bit storage
-    # buys nothing on the memory axis. With checkpointing on only one block's copy is live (recomputed inside the
-    # checkpoint), so the resident weights stay 4-bit. int8 pays neither: its matmul runs in 8-bit and no bf16
-    # copy is ever materialised. The lesson for the next seed: a derived figure can only bootstrap the planner
-    # into answering at all - never read it as a fit decision, because a 30 GB-free card would have been told nf4
-    # fits uncheckpointed at 26.4 GB and would have OOMed on the real 37.8 GB.
-    # THE FIX THAT DID NOT MOVE IT, same day: nf4 now goes through _NF4DequantLinear (packed weight + quant state
-    # on the context, the bf16 copy rebuilt in the backward - bit-identical parity, an eager-mode residency win).
-    # But compiling gives the residency straight back: inductor keeps the dequantised weights alive across the step
-    # however the Python-level forward is written, so 33.8 GB stands unchanged for compiled nf4. The conversion
-    # stays (exact, and it wins in eager); reclaiming the compiled gap needs bnb's C++ matmul_4bit, not a Python
-    # autograd.Function. Full A/B numbers in the run sheet.
-    train_memory_nogc={"bf16": ((0.25, 30.6), (1.05, 57.6)), "int8": ((0.25, 22.8),), "nf4": ((0.25, 33.8),)},
+    # int8 (measured 26 Oct 2026, compiled): 22.8 GB in both epochs, high-water 22.84 GB with the preview. NF4 has no
+    # row: it keeps every dequantised bf16 weight for the backward without checkpointing (measured 33.8 GB, more
+    # than int8), so like every family's NF4 it always trains checkpointed.
+    train_memory_nogc={"bf16": ((0.25, 30.6), (1.05, 57.6)), "int8": ((0.25, 22.8),)},
     # (blocks, ((megapixels, GB with every block checkpointed, GB per block without it), ...)).
     # The shipped pool is 44 — every block is available for un-checkpointing on a family with no swap. The house
     # protocol (as krea2.py:151-153 and qwen_image.py:160-162 state it): per_block = the LARGER of the half-off and
@@ -214,17 +198,12 @@ _FIBO2 = FamilyDescription(
     # predicts 6.2; 8-off at 1 MP cost 0.0 GB where 0.839/block predicts 6.7) - the larger-slope protocol is
     # deliberately conservative, so the planner un-checkpoints fewer blocks than it could. Never more.
     train_memory_partial={"bf16": (44, ((0.25, 18.1, 0.284), (1.05, 20.7, 0.839))),},
-    # int8 + torch.compile: FIXED 26 Oct 2026 - a compiled INT8 run died at step 1, because the int8 bytes sat in
-    # Parameter.data and FakeTensor cannot reconcile a Parameter whose dtype disagrees with the compute dtype. The
-    # fix (NF4's shape: bytes in a non-persistent buffer, .weight a bf16 stub) is in modules/int8_train.py's
-    # apply_int8_training, mirrored by families/quant.py's _quantize_one. Proof: run F1, 57/57 steps compiled,
-    # 10.9 GB training peak, adapter saved.
     # compiles: the three block lists the driver compiles - layers (44), noise_refiner (2) and perceiver.layers
     # (2), so 48 blocks in total, exactly what F1 logged. There is no context_embedder on the diffusers model: the
     # perceiver *is* its context path, so no fourth list is missing here.
     compiles=True,
     compile_boundary="outside",       # as Flux 3's and MOSS-Image's: the checkpoint wraps the compiled block
-    # comfy-kitchen's INT8 attention for renders (the driver's dispatch_attention_fn wrapper tries attend() first
+    # comfy-kitchen's INT8 attention for renders (fibo2/model.py's attention() tries attend() first
     # and falls back when it returns None; training never turns the switch on). Measured on this card at the real
     # shape: a loss below ~1300 tokens (0.78x at 961, 0.86x at 1054), break-even ~1408, wins from 1664 (1.35x) up
     # to 1.73x at 16384 - so the driver gates the kernel at 2048, the first size where it is clearly and reliably

@@ -11,7 +11,7 @@
 * latents: the Fibo 2.0 autoencoder (the FLUX.2 one) -> (32, H/8, W/8), normalized with the VAE's BatchNorm
   over the 2x2-packed latents, exactly as the pipeline's prepare_image_latents does it; the transformer packs
   the 2x2 itself (x_embedder is Linear(4*32, dim)).
-* training: flow matching, x_t = sigma*x0 + (1-sigma)*noise, target = noise - x0.
+* training: flow matching, x_t = (1-sigma)*x0 + sigma*noise, target = noise - x0.
 """
 import logging
 import math
@@ -32,18 +32,6 @@ def _is_upstream_repo(path: str) -> bool:
     """The upstream diffusers repo: a directory of shards plus index.json, or its index.json."""
     import os
     return os.path.isdir(path) or path.endswith(".json")
-
-
-def _sdpa_log(n, q, k, v, mask):
-    """The SDPA dtype diagnostic, emitted through a PLAIN FUNCTION so torch.compile can reorder it:
-    torch._dynamo.config.reorderable_logging_functions only accepts FunctionType/BuiltinFunctionType objects
-    (a logging.Logger bound method is a MethodType, so it never matches and dynamo aborts the graph instead),
-    while a registered function becomes a DebuggingVariable whose call is deferred to run after the compiled
-    region - so the dtype data still lands for compiled blocks. The logger method itself is additionally
-    registered in ignore_logger_methods as the fallback (dynamo then skips any Logger call inside a traced
-    region instead of aborting), and torch._dynamo.config.ignore_logger_methods is consulted for both the
-    bound method and the unbound function, so either registration form works there."""
-    logger.info("Fibo2 sdpa[%d]: q=%s k=%s v=%s mask=%s", n, q, k, v, mask)
 
 
 N_BLOCKS = 44
@@ -145,8 +133,7 @@ class Fibo2Driver(FamilyDriver):
     in .weight.data (the compute dtype therefore resolves past them in predict), an NF4 base keeps bf16 stubs.
     Decisions on the optional hooks:
       * block swap: fibo2/model.py's Fibo2DiT streams the 44 main layers through Fizgig's shared offloader, with
-        the 2 noise refiners and the 2 perceiver layers resident. diffusers' base class has no swap hooks and the
-        stream calls have to sit inside the block loop, so its forward is forked (see the module docstring).
+        the 2 noise refiners and the 2 perceiver layers resident (the stream calls sit inside its block loop).
       * int8_fp32_scales: left at the default True - Fibo 2.0 has no original INT8 trainer whose scale layout
         must be reproduced, so the more accurate fp32 quantisation math applies.
       * loads_quantized: not set - every Fibo 2.0 checkpoint is bf16 on disk; a pre-quantised repack would need
@@ -155,41 +142,13 @@ class Fibo2Driver(FamilyDriver):
 
     _te_processor = None        # the Qwen3-VL processor, resolved when the encoder is loaded
 
-    def _log_memory(self, stage, device):
-        """One line per component load/unload: what the device holds now, the high-water mark it has reached since
-        the last peak reset, the allocator's reservation, and the host's peak RSS. The memory-peak evidence (todo
-        17's measurement), logged from inside a real run so the log itself is the measurement: a paste of the
-        [memory] lines is what the figures need, with no separate profiler pass and no idle GPU handoff.
-        """
-        try:
-            parts = []
-            dev = str(device) if device is not None else ""
-            if dev.startswith("cuda") and torch.cuda.is_available():
-                gb = 2 ** 30
-                d = torch.device(dev)
-                # the planner's basis is the reserved peak (families/quant.py reads a family's figures as reserved
-                # peaks at the run's megapixels), so it is logged beside the current reservation
-                parts.append(f"gpu alloc {torch.cuda.memory_allocated(d) / gb:.1f} GB, "
-                             f"peak reserved {torch.cuda.max_memory_reserved(d) / gb:.1f} GB, "
-                             f"reserved {torch.cuda.memory_reserved(d) / gb:.1f} GB")
-            import resource
-            parts.append(f"host peak {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2 ** 20:.1f} GB")
-            logger.info("[memory] %s: %s", stage, "; ".join(parts))
-        except Exception as e:                       # a diagnostic never breaks a run
-            logger.debug("[memory] %s: unavailable (%s)", stage, e)
-
     def load_dit(self, path, device):
         from accelerate import init_empty_weights
         from fizgig.fibo2.model import Fibo2DiT
 
-        # a bare model.safetensors carries no config.json, so the architecture is built from its constructor
-        # defaults on the meta device (no allocation at all) and the real tensors are assigned into it
+        # built on the meta device (no allocation at all) and the real tensors assigned into it
         with init_empty_weights():
-            model = Fibo2DiT(
-                in_channels=32, patch_size=2, dim=3584, n_heads=28, cap_feat_dim=7680,
-                n_layers=44, n_refiner_layers=2, perceiver_num_layers=2,
-                injection_layer_ids=(6, 14, 22, 30, 38), max_num_gist_tokens=512,
-            )
+            model = Fibo2DiT()
         d = self._component_path(path, "transformer")
         if os.path.isdir(d):
             # the upstream diffusers repo (a directory of shards plus its index.json, or the index.json itself):
@@ -207,7 +166,6 @@ class Fibo2Driver(FamilyDriver):
         else:
             raise ValueError(f"Fibo2 load_dit: no checkpoint at {path} - expected the upstream repo (its "
                              f"transformer/ dir, a shard or the index.json) or a single-file build")
-        self._log_memory("after load_dit", device)
         return model.eval().requires_grad_(False)
 
     # ---- block swap (the family's Fibo2DiT, Fizgig's shared offloader) ------------------------------------------
@@ -358,9 +316,7 @@ class Fibo2Driver(FamilyDriver):
         # the convention for a FLUX.2-family autoencoder (as MOSS-Image, Klein and Flux 3 load it): the shared
         # shape-built loader, which takes the weights file directly - a repo component dir, a file inside it,
         # or a fetched standalone file all reach the same tensors
-        vae = load_flux3_vae(self._component_path(path, "vae", want="file"), device=device)
-        self._log_memory("after load_vae", device)
-        return vae
+        return load_flux3_vae(self._component_path(path, "vae", want="file"), device=device)
 
     # ---- the VAE round trip: the FLUX.2 autoencoder normalizes its latents with a BatchNorm over the 2x2-packed
     # ---- form, so both directions pack, touch the statistics, and unpack again (as the pipeline itself does)
@@ -411,7 +367,6 @@ class Fibo2Driver(FamilyDriver):
         model = _load_qwen3_vl_model(path, dtype=torch.bfloat16, device=device)
         self._te_processor = from_pretrained_cache_first(
             AutoProcessor, _resolve_tokenizer_source(path, QWEN3_VL_4B_INSTRUCT_REPO_ID))
-        self._log_memory("after load_text_encoder", device)
         return model.to(device).eval().requires_grad_(False)
 
     def unload_text_encoder(self, te) -> None:
@@ -422,14 +377,13 @@ class Fibo2Driver(FamilyDriver):
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-        self._log_memory("after unload_text_encoder (TE weights freed)", device)
 
     def encode_text(self, te, captions):
         """One conditioning dict per caption: the transformer's six text bundles as tokens (6, L, 7680) plus the
         mask (L,), on CPU. Built exactly as the Fibo 2.0 pipeline builds them - every selected layer scaled to
         unit RMS per token in float32, its three layers concatenated along the feature dim into one 7680-wide
         bundle, and the six bundles stacked behind the Perceiver's (bundle 0) and the injection blocks' (1..5)."""
-        from diffusers.pipelines.bria_fibo2.pipeline_bria_fibo2 import PROMPT_TEMPLATE, TEXT_ENCODER_OUT_LAYERS
+        from fizgig.fibo2.model import PROMPT_TEMPLATE, TEXT_ENCODER_OUT_LAYERS
         proc = self._te_processor
         device = te.device
         used = sorted({i for group in TEXT_ENCODER_OUT_LAYERS for i in group})
@@ -455,179 +409,19 @@ class Fibo2Driver(FamilyDriver):
         # edit recipe is wired up, so until then the caption-only path is the same encoding
         return self.encode_text(te, captions)
 
-    # ---- temporary diagnostics ---------------------------------------------------------------------------
-    # The INT8 precision run crashed inside the DiT's scaled_dot_product_attention with mismatched dtypes
-    # ("expected scalar type bfloat16 but got float"). These logs pin down, without guessing: what the shared
-    # quant layer (families/quant.py) did to the base, what dtype predict() resolves and casts with, and the
-    # exact q/k/v/mask dtypes every SDPA call receives. Remove once the crash is explained.
-
-    _DIAG_PROBES = ("x_embedder", "t_embedder.mlp.0", "t_embedder.mlp.2",
-                    "layers.0.attention.to_q", "layers.0.attention.to_k", "layers.0.attention.to_v",
-                    "layers.0.attention.to_out.0", "layers.0.adaLN_modulation.0",
-                    "layers.6.cross_attention.to_q", "layers.6.cross_attention.to_k",
-                    "layers.6.cross_attention.to_v", "layers.6.cross_attention.to_out.0",
-                    "noise_refiner.0.attention.to_v", "noise_refiner.0.adaLN_modulation.0",
-                    "perceiver.layers.0.self_attention.to_v", "perceiver.layers.0.cross_attention.to_v",
-                    "final_layer.linear", "final_layer.adaLN_modulation.1")
-    _DIAG_SDPA_LIMIT = 40
-    _INT8_MIN_TOKENS = 2048      # first token count where the int8 kernel measures faster on this card
-
-    def _diag_dtypes(self, dit):
-        """One line: the quant flags, how many of the model's Linears are quantised to int8, the compute dtype
-        predict() resolves (the first parameter that is not int8), and the dtype of every probed Linear (an int8 or
-        NF4 base shows a zero-element bf16 stub; the flag is the module's own _is_int8 / _is_nf4 marker)."""
-        named = list(dit.named_parameters())
-        mods = dict(dit.named_modules())
-        # The count comes from the module flags, not from parameter dtypes: since the torch.compile fix the int8
-        # bytes sit in a non-persistent buffer (modules/int8_train.py), so a quantised base carries no int8
-        # parameter at all and a dtype count reports 0 while every block Linear is quantised.
-        n_int8 = sum(1 for m in mods.values() if getattr(m, "_is_int8", False))
-        n_lin = sum(1 for m in mods.values() if isinstance(m, torch.nn.Linear))
-        parts = [f"int8={getattr(dit, '_int8_quantized', False)}",
-                 f"nf4={getattr(dit, '_nf4_quantized', False)}",
-                 f"n_int8={n_int8}/{n_lin}"]
-        if named:
-            c0, p0 = next((p for p in named if p[1].dtype != torch.int8), named[0])
-            parts.append(f"compute={c0}:{str(p0.dtype).replace('torch.', '')}@{p0.device.type}")
-        for probe in self._DIAG_PROBES:
-            m = mods.get(probe)
-            if m is None or not isinstance(m, torch.nn.Linear):
-                continue
-            flag = "i8" if getattr(m, "_is_int8", False) else ("nf4" if getattr(m, "_is_nf4", False) else "--")
-            parts.append(f"{probe}:{str(m.weight.dtype).replace('torch.', '')}({flag})")
-        return "  ".join(parts)
-
-    def _install_sdpa_diag(self):
-        """Wrap the fibo2 transformer module's dispatch_attention_fn so every SDPA call logs the exact q/k/v/mask
-        dtypes it receives (the crash site). Installed once; logs the first _DIAG_SDPA_LIMIT calls.
-        A raw logger.info inside a torch.compile region aborts the graph (dynamo: "logging.Logger method not
-        supported for non-export cases"), so the logger method is first registered with
-        torch._dynamo.config.reorderable_logging_functions - dynamo then reorders the side effect to run after
-        the compiled region, so the dtype data still lands even for compiled blocks. If that config is not
-        available, the call falls back to a torch.compiler.is_compiling() guard: the compiled graph omits the
-        log (no abort) and eager still logs."""
-        if getattr(self, "_sdpa_diag_installed", False):
-            return
-        self._sdpa_diag_installed = True
-        self._sdpa_diag_count = 0
-        self._sdpa_coerced = False
-        from diffusers.models.transformers import transformer_bria_fibo2 as _tbf
-        self._sdpa_diag_reorderable = False
-        try:
-            import torch._dynamo as _dynamo
-            cfg = getattr(_dynamo.config, "reorderable_logging_functions", None)
-            if isinstance(cfg, set):
-                cfg.discard(logger.info)   # a bound Logger method can never be reorderable - drop the stale entry
-                cfg.add(_sdpa_log)
-                self._sdpa_diag_reorderable = True
-            ign = getattr(_dynamo.config, "ignore_logger_methods", None)
-            if isinstance(ign, set):
-                ign.add(logger.info)
-            logger.info("Fibo2 sdpa diag: _sdpa_log registered as dynamo-reorderable (the dtype logs run "
-                        "after each compiled region); logger.info also in ignore_logger_methods as the "
-                        "fallback (no abort, no data from compiled blocks)")
-        except Exception:
-            logger.info("Fibo2 sdpa diag: dynamo logging configs unavailable, falling back to the "
-                        "is_compiling() guard (eager logs only)")
-        orig = _tbf.dispatch_attention_fn
-        from fizgig.modules import int8_attention as _i8a
-
-        def _logged(query, key, value, *a, **kw):
-            eager = not torch.compiler.is_compiling()
-            if eager and self._sdpa_diag_count < self._DIAG_SDPA_LIMIT:
-                self._sdpa_diag_count += 1
-                n = self._sdpa_diag_count
-                def d(t):
-                    return "None" if t is None else str(t.dtype).replace("torch.", "")
-                _sdpa_log(n, d(query), d(key), d(value), d(kw.get("attn_mask")))
-            # int8 keeps a stray fp32 island in the value path (t_embedder -> adaLN -> modulation -> to_v);
-            # SDPA rejects mixed q/k/v dtypes outright. Coerce everything to the attention input's own dtype
-            # so the forward runs - if it does, the fp32 value was the whole problem and nothing else is.
-            if query.dtype != key.dtype or query.dtype != value.dtype:
-                if eager and not self._sdpa_coerced:
-                    self._sdpa_coerced = True
-                    logger.info("Fibo2 sdpa: coercing mixed q/k/v dtypes to query's %s (stray fp32 island)",
-                                str(query.dtype).replace("torch.", ""))
-                key = key.to(query.dtype)
-                value = value.to(query.dtype)
-            # The int8 attention kernel, for renders only. wanted() is a Python bool, so training - where the
-            # switch is never turned on - never enters this branch at all, and attend() itself refuses a live
-            # grad, a mask that excludes tokens, or a missing kernel. The 2048-token floor is this card's own
-            # measurement (loss below ~1300 tokens, wins from 1664 up - table in the run sheet), so short
-            # renders stay on PyTorch SDPA. diffusers hands the processor [B, S, H, D] and flattens dims 2-3
-            # back after the call, while attend() works in [B, H, S, D] - hence the transposes on both sides.
-            if _i8a.wanted() and key.shape[1] >= self._INT8_MIN_TOKENS:
-                out = _i8a.attend(query.transpose(1, 2), key.transpose(1, 2), value.transpose(1, 2),
-                                  kw.get("attn_mask"))
-                if out is not None:
-                    return out.transpose(1, 2)
-            return orig(query, key, value, *a, **kw)
-
-        _tbf.dispatch_attention_fn = _logged
-
     def predict(self, dit, state, cond):
-        # the trainer's own loss paths call predict() and take its result apart as a tensor (they .float() it and
-        # add it into guidance deltas), so the velocity comes back, not the output object. The cast to the model's
-        # compute dtype is the driver's job (the trainer only moves tensors to the device): the cached latents and
-        # the text bundles are fp32, the DiT runs bf16, and the reference Fibo2 recipe keeps the fp32 timestep
-        # while casting the noised latents and the reference-image latents to bf16 for the forward.
-        first = not getattr(self, "_shapes_logged", False)
-        self._shapes_logged = True
-        if first:
-            def spec(v):
-                if v is None:
-                    return "None"
-                if isinstance(v, (list, tuple)):
-                    return "[" + ", ".join(spec(x) for x in v) + "]"
-                if not torch.is_tensor(v):
-                    return f"{type(v).__name__}:{v}"
-                return f"{tuple(v.shape)}/{str(v.dtype).replace('torch.', '')}/{v.device}"
-            logger.info("Fibo2 step inputs: x_t=%s  timestep=%s  noise=%s  tokens=%s  mask=%s  context=%s",
-                        spec(state.get("hidden_states")), spec(state.get("timestep")), spec(state.get("noise")),
-                        spec(cond.get("tokens")), spec(cond.get("mask")), spec(cond.get("context_latents")))
-            logger.info("Fibo2 quant diag: %s", self._diag_dtypes(dit))
-            self._install_sdpa_diag()
+        """The velocity as a tensor (the trainer's loss paths take it apart as one). The cached latents and the text
+        bundles are fp32 on the CPU; they go to the model's device and compute dtype (the first parameter that is
+        not INT8). The timestep stays fp32 as the pipeline passes it - the DiT embeds it in fp32 and casts the
+        embedding. The mask stays bool: the DiT counts its tokens for the gist length. The dataset stacks the
+        per-caption (1, 6, L, 7680) into (batch, 1, 6, L, 7680), so the squeeze gives the DiT (batch, 6, L, 7680)."""
         device = next(p for p in dit.parameters() if p.device.type != "meta").device
-        # The compute dtype is the first parameter that is not INT8. An INT8 base keeps its bytes in buffers now,
-        # so this filter is a no-op for it too; it stays for a base whose driver quantises into the Parameter
-        # (qwen_image21's embedder does), and an NF4 stub or unquantised base is bf16 either way.
         dtype = next(p.dtype for p in dit.parameters() if p.dtype != torch.int8)
-        if first:
-            # what predict casts WITH: the bf16 latents, the 7680-wide text bundles AND the timestep go to this
-            # dtype - the log shows both sides of every cast the model receives. The timestep joins the compute
-            # dtype (measured 25 Oct 2026): the checkpoint is uniformly BF16 (all 634 tensors, header-verified),
-            # and an fp32 timestep creates an fp32 island (t_embedder -> adaLN -> modulation -> attention input
-            # -> to_v) that the bf16-weighted RMSNorms then cast away from q/k, leaving value the odd dtype out
-            # at the SDPA call ("query.dtype: BFloat16 key.dtype: BFloat16 and value.dtype: float").
-            logger.info("Fibo2 predict dtype resolution: device=%s dtype=%s | x_t %s -> %s | tokens %s -> %s | "
-                        "timestep %s -> %s",
-                        device, dtype, state["hidden_states"].dtype, dtype,
-                        cond["tokens"].dtype, dtype, state["timestep"].dtype, dtype)
         ctx = cond.get("context_latents")
         if ctx is not None:
             ctx = [c.to(device, dtype) for c in ctx]
-        # the cached latents and the text bundles are fp32 and the DiT runs bf16: the family's conditioning stays on
-        # the CPU (the cache holds it there) so the model's device must be resolved here, not only its dtype
-        # the mask must stay bool - the transformer's compute_gist_count sums it over the text tokens and the sum
-        # of a bool tensor is an int count, but a bf16 sum is a float that the transformer's ratio math rejects
-        # the batch's extra axis: the dataset stacks the family's per-caption conditioning (1, 6, L, cap_feat_dim)
-        # into (batch, 1, 6, L, cap_feat_dim) - the squeeze removes the family's per-caption axis so the DiT gets
-        # (batch, 6, L, cap_feat_dim) as its contract declares (diffusers' prompt_embeds)
-        tokens = cond["tokens"].squeeze(1)
-        mask = cond.get("mask").squeeze(1)
-        try:
-            pred = dit(state["hidden_states"].to(device, dtype), state["timestep"].to(dtype),
-                       tokens.to(device, dtype), mask.to(device), ctx).sample
-        except Exception:
-            logger.exception("Fibo2 predict crashed")
-            try:
-                logger.info("Fibo2 quant state at crash: %s", self._diag_dtypes(dit))
-            except Exception as diag_exc:
-                logger.info("Fibo2 quant state at crash: (diag failed: %s)", diag_exc)
-            raise
-        if first:
-            logger.info("Fibo2 step output: pred=%s/%s", tuple(pred.shape), str(pred.dtype).replace("torch.", ""))
-        return pred
+        return dit(state["hidden_states"].to(device, dtype), state["timestep"].to(device, torch.float32),
+                   cond["tokens"].squeeze(1).to(device, dtype), cond["mask"].squeeze(1).to(device), ctx)
 
     @staticmethod
     def _as4(latents):
@@ -735,16 +529,6 @@ class Fibo2Driver(FamilyDriver):
 
     def training_loss(self, dit, latents, cond, generator, *, min_t=0.0, max_t=1.0, refs=None,
                       diff_ref=None, diff_weight=0.0):
-        if not getattr(self, "_step_logged", False):
-            self._step_logged = True
-            logger.info("Fibo2 training_loss in: latents=%s/%s refs=%s", tuple(latents.shape),
-                        str(latents.dtype).replace("torch.", ""),
-                        None if not refs else [tuple(r.shape) for r in refs])
-        self._step_count = getattr(self, "_step_count", 0) + 1
-        if self._step_count == 1 or self._step_count % 100 == 0:
-            # the trainer resets the peak stats at the epoch start and again at "preview start", so the epoch's
-            # training high-water mark can only be read from inside the steps themselves
-            self._log_memory(f"training step {self._step_count}", next(dit.parameters()).device)
         latents = self._as4(latents)
         state = self.noise_latents(latents, generator, min_t=min_t, max_t=max_t)
         pred = self.predict(dit, state, cond)
@@ -816,10 +600,7 @@ class Fibo2Driver(FamilyDriver):
         return Image.fromarray((px.permute(1, 2, 0).numpy() * 255).astype(np.uint8))
 
     def enable_gradient_checkpointing(self, dit, on=True):
-        if on:
-            dit.enable_gradient_checkpointing()
-        else:
-            dit.disable_gradient_checkpointing()
+        dit.gradient_checkpointing = bool(on)
 
     def compile_targets(self, dit):
         """The 44 transformer blocks torch.compile replaces in place (the main compute; the refiner and the

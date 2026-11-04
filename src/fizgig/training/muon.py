@@ -1,5 +1,10 @@
 """Muon — Momentum Orthogonalized by Newton-Schulz, with RMS-matched AdamW scaling.
 
+Adapted from PyTorch's `torch.optim.Muon` (torch/optim/_muon.py: its Newton-Schulz constants, checks and
+`adjust_lr` rules), BSD-3-Clause, Copyright (c) 2016- Facebook, Inc. and the PyTorch contributors; the
+licence is in docs/THIRD_PARTY_NOTICES.md.
+
+
 Used as a fallback when `torch.optim.Muon` is unavailable or when a parameter list includes
 non-2D tensors (e.g. >2D convolutional weights flattened to 2D `(out, -1)` or 1D vectors).
 When all parameters are 2D and `torch.optim.Muon` is present (PyTorch 2.10+), `create_optimizer`

@@ -677,17 +677,6 @@ class FamilyDescription:
         return bool(self.driver)
 
     @property
-    def lr(self) -> str:
-        """The family's default standard-LoRA learning rate (e.g. '1e-4' or '5e-5')."""
-        for _name, pr in self.presets or ():
-            if (str(pr.get("OPTIMIZER_TYPE") or "").lower() not in ("automagic3", "automagic4", "prodigy")
-                    and not pr.get("FAMILY_SLIDER") and not pr.get("FAMILY_FT") and pr.get("LEARNING_RATE")):
-                v = float(pr["LEARNING_RATE"])
-                txt = f"{v:.0e}".replace("e-0", "e-").replace("e+0", "e+")
-                return txt if float(txt) == v else f"{v:g}"
-        return "1e-4"
-
-    @property
     def reference_kind(self) -> str:
         """How a reference picture reaches previews and the workbench: "vision" (the text encoder sees it,
         preview_image), "edit" (the prompt edits it, edit_training) or "" (none)."""

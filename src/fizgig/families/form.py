@@ -841,15 +841,6 @@ def apply_preset(desc, values, preset, whole=False):
     for o in desc.options:                       # an option's value under its old settings key
         if o.tab != "model" and o.key not in p and o.setting and o.setting in p:
             out[o.key] = p[o.setting]
-    if "OPTIMIZER_ARGS" not in p:
-        from fizgig.training.optimizers import strip_muon_args, strip_prodigy_args
-        _opt_p = str(out.get("OPTIMIZER_TYPE") or "").strip().lower()
-        _oa = str(out.get("OPTIMIZER_ARGS") or "")
-        if _opt_p != "prodigy":
-            _oa = strip_prodigy_args(_oa)
-        if _opt_p != "muon":
-            _oa = strip_muon_args(_oa)
-        out["OPTIMIZER_ARGS"] = _oa
     return out
 
 
@@ -1002,16 +993,7 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         hidden.add("LEARNING_RATE")          # Adaptive LR on: Min and Max in its place (the box is ignored)
     if kind == "finetune":       # a fine-tune trains at its own fixed rate: no Adaptive LR, on any model
         hidden.add("ADAPTIVE_LR")
-    from fizgig.training.optimizers import (
-        MUON_DEFAULT_ARGS, PRODIGY_DEFAULT_ARGS, strip_muon_args, strip_prodigy_args,
-    )
-    opt = str(values.get("OPTIMIZER_TYPE", "")).strip().lower()
-    raw_args = str(values.get("OPTIMIZER_ARGS") or "").strip()
-    cleaned_args = raw_args
-    if opt != "prodigy":
-        cleaned_args = strip_prodigy_args(cleaned_args)
-    if opt != "muon":
-        cleaned_args = strip_muon_args(cleaned_args)
+    opt = str(values.get("OPTIMIZER_TYPE", ""))
     if opt in ("automagic3", "automagic4"):
         disabled |= {"ADAPTIVE_LR", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK"}
         force.update({k: False for k in ("ADAPTIVE_LR", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK") if values.get(k)})
@@ -1020,42 +1002,27 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             hidden |= {"ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX"}
         notes["OPTIMIZER_TYPE"] = f"{opt} sets its own learning rate: Adaptive LR, per-image LR and the look " \
                                   "warm-up are off."
-    elif opt == "prodigy":
-        # per-image LR stays: with Prodigy it is a weight on that image's loss, not a write to the group rate
-        disabled |= {"LEARNING_RATE", "ADAPTIVE_LR", "KREA2_WARMUP_LOOK"}
-        force.update({k: False for k in ("ADAPTIVE_LR", "KREA2_WARMUP_LOOK") if values.get(k)})
-        hidden |= {"ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX"}
-        if str(values.get("LEARNING_RATE") or "").strip() != "1.0":
-            force["LEARNING_RATE"] = "1.0"
-        want_args = cleaned_args or PRODIGY_DEFAULT_ARGS
-        if want_args != raw_args:
-            force["OPTIMIZER_ARGS"] = want_args
-        notes["OPTIMIZER_TYPE"] = ("prodigy estimates its own learning rate (d): Learning Rate is locked to 1.0, and "
-                                   "Adaptive LR and the look warm-up are off. Per-image LR still works, as a loss "
-                                   "weight on each image.")
-        notes["OPTIMIZER_ARGS"] = ("Prodigy defaults: decouple=True weight_decay=0.01 d_coef=1.0 "
-                                   "use_bias_correction=True safeguard_warmup=True (also accepts betas=0.9,0.99, "
-                                   "d0=1e-6, slice_p=11).")
-    elif opt == "muon":
-        want_args = cleaned_args or MUON_DEFAULT_ARGS
-        if want_args != raw_args:
-            force["OPTIMIZER_ARGS"] = want_args
-        notes["OPTIMIZER_TYPE"] = ("muon orthogonalizes 2D LoRA updates via Newton-Schulz; "
-                                   "adjust_lr_fn=match_rms_adamw matches AdamW step sizes so standard learning "
-                                   "rates (1e-4 to 2e-4) and schedulers apply.")
-        notes["OPTIMIZER_ARGS"] = ("Muon defaults: adjust_lr_fn=match_rms_adamw weight_decay=0.01 "
-                                   "momentum=0.95 nesterov=True ns_steps=5.")
-    if opt not in ("prodigy", "muon") and cleaned_args != raw_args:
-        force["OPTIMIZER_ARGS"] = cleaned_args
-    if opt != "prodigy":
-        try:
-            lr_val = float(str(values.get("LEARNING_RATE") or "").strip())
-        except ValueError:
-            lr_val = 0.0
-        if lr_val >= 0.1:
-            restored_lr = "1e-6" if opt in ("automagic3", "automagic4") else _default_lr(desc)
-            force["LEARNING_RATE"] = restored_lr
-            values = {**values, "LEARNING_RATE": restored_lr}
+    elif opt in ("prodigy", "muon"):             # #292: its own Optimizer Args when the box is empty or the other's
+        from fizgig.training.optimizers import MUON_DEFAULT_ARGS, PRODIGY_DEFAULT_ARGS
+        mine, other = ((PRODIGY_DEFAULT_ARGS, MUON_DEFAULT_ARGS) if opt == "prodigy" else
+                       (MUON_DEFAULT_ARGS, PRODIGY_DEFAULT_ARGS))
+        if str(values.get("OPTIMIZER_ARGS") or "").strip() in ("", other):
+            force["OPTIMIZER_ARGS"] = mine
+        if opt == "muon":
+            notes["OPTIMIZER_TYPE"] = "muon matches AdamW's step size: the usual learning rates and Adaptive LR apply."
+        elif kind == "finetune":                 # a fine-tune keeps its own optimizer and rate (families/ft.py)
+            notes["OPTIMIZER_TYPE"] = "A fine-tune uses its own optimizer: prodigy applies to LoRAs."
+        else:
+            # per-image LR stays: with Prodigy it weights that image's loss, it never writes the group rate
+            disabled |= {"LEARNING_RATE", "ADAPTIVE_LR", "KREA2_WARMUP_LOOK"}
+            force.update({k: False for k in ("ADAPTIVE_LR", "KREA2_WARMUP_LOOK") if values.get(k)})
+            hidden |= {"ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX"}
+            hidden.discard("LEARNING_RATE")
+            if str(values.get("LEARNING_RATE") or "").strip() != "1.0":
+                force["LEARNING_RATE"] = "1.0"
+            notes["OPTIMIZER_TYPE"] = ("prodigy finds its own learning rate: the Learning Rate box is a multiplier, "
+                                       "locked to 1.0, and Adaptive LR and the look warm-up are off. Per-image LR "
+                                       "still works, as a weight on each picture's loss.")
     hidden |= {s for s, k in (("edit", "edit"), ("slider", "slider"), ("finetune", "finetune")) if k != kind}
     if kind == "finetune":
         disabled |= {"MAX_TRAIN_EPOCHS", "SAVE_EVERY_N_EPOCHS"}
@@ -1379,25 +1346,6 @@ def _picture_count(image_folder):
     return hit[1]
 
 
-def _default_lr(desc) -> str:
-    """The family's default standard-LoRA learning rate (e.g. '1e-4' or '5e-5')."""
-    lr = getattr(desc, "lr", None)
-    if lr is not None:
-        try:
-            v = float(lr)
-            txt = f"{v:.0e}".replace("e-0", "e-").replace("e+0", "e+")
-            return txt if float(txt) == v else f"{v:g}"
-        except (TypeError, ValueError):
-            return str(lr)
-    for _name, pr in getattr(desc, "presets", None) or ():
-        if (str(pr.get("OPTIMIZER_TYPE") or "").lower() not in ("automagic3", "automagic4", "prodigy")
-                and not pr.get("FAMILY_SLIDER") and not pr.get("FAMILY_FT") and pr.get("LEARNING_RATE")):
-            v = float(pr["LEARNING_RATE"])
-            txt = f"{v:.0e}".replace("e-0", "e-").replace("e+0", "e+")
-            return txt if float(txt) == v else f"{v:g}"
-    return "1e-4"
-
-
 def _lr_hint(desc, values, kind, image_folder):
     """The desktop's large-dataset hint: a standard LoRA whose learning rate (adaptive: Min LR) is at or above the
     family's lr_hint rate, on more steps an epoch than its count (one picture a step), moves a long way each epoch -
@@ -1405,7 +1353,7 @@ def _lr_hint(desc, values, kind, image_folder):
     hint = getattr(desc, "lr_hint", (2e-4, 125))
     if not hint or kind != "standard" or not image_folder:
         return None
-    if str(values.get("OPTIMIZER_TYPE") or "").strip().lower() in ("prodigy", "automagic3", "automagic4"):
+    if str(values.get("OPTIMIZER_TYPE") or "") in ("prodigy", "automagic4"):    # they set their own rate
         return None
     adaptive = bool(values.get("ADAPTIVE_LR"))
     key = "ADAPTIVE_LR_MIN" if adaptive else "LEARNING_RATE"

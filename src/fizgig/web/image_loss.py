@@ -106,6 +106,13 @@ def _where(run, key):
         d = str((run.get("values") or {}).get(rows[0][0]) or "") if rows else ""
         return d, m.group(2)
     rel, _, name = key.rpartition("/")
+    if rel == "fizgig_detail_crops":       # a detail crop (one key for every size): the size the run trains at
+        from fizgig.dataset import detail_crops
+        try:
+            mp = float(str((run.get("values") or {}).get("DATASET_MEGAPIXELS") or "0").split(" ")[0])
+        except ValueError:
+            mp = 0.0
+        return (detail_crops.size_dir(image_folder, mp) if mp > 0 else ""), name
     return (os.path.join(image_folder, *rel.split("/")) if rel else image_folder), name
 
 

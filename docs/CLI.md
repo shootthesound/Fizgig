@@ -1,6 +1,6 @@
 # Fizgig Headless CLI
 
-Everything the GUI does for training runs through `src/fizgig/families/cache.py` and `train.py` (plus the tools in `src/fizgig/scripts/`) — the GUI is a front-end that builds these exact commands and runs them as subprocesses. That means the CLI is always feature-complete for every family — Klein 9B, Krea 2, MiniMax H3 and Qwen Image 2.1: adaptive LR, the per-image loss watch, auto-recaptioning, Context LoRA, video and voice training, pause/resume — all of it is available from a plain terminal, on **Windows and Linux alike** (including display-less boxes).
+Everything the GUI does for training runs through `src/fizgig/families/cache.py` and `train.py` (plus the tools in `src/fizgig/scripts/`) — the GUI is a front-end that builds these exact commands and runs them as subprocesses. That means the CLI is always feature-complete for every family — Klein 9B, Flux 3 Image Klein, MOSS-Image, Krea 2, MiniMax H3, Qwen Image 2.1, Z-Image Turbo and Base, SDXL, Anima and ACE-Step: adaptive LR, the per-image loss watch, auto-recaptioning, Context LoRA, video and voice training, pause/resume — all of it is available from a plain terminal, on **Windows and Linux alike** (including display-less boxes).
 
 All commands below are run from the repo root. The scripts add `src/` to `sys.path` themselves, so the direct form always works:
 
@@ -37,6 +37,14 @@ Every script supports `--help` for the full argument list. This document covers 
 - [Krea 2 training](#krea-2-training)
 - [MiniMax H3 training](#minimax-h3-training)
 - [Qwen Image 2.1 training](#qwen-image-21-training)
+- [Z-Image Turbo and Z-Image Base training](#z-image-turbo-and-z-image-base-training)
+- [SDXL training](#sdxl-training)
+- [Anima training](#anima-training)
+- [ACE-Step training (songs)](#ace-step-training-songs)
+- [Masked training](#masked-training)
+- [Start at a smaller size](#start-at-a-smaller-size)
+- [Caption dropout](#caption-dropout)
+- [Detail crops (style LoRAs)](#detail-crops-style-loras)
 - [Keeping a subject to its trigger (DOP)](#keeping-a-subject-to-its-trigger-dop)
 - [Sample previews during training](#sample-previews-during-training)
 - [Pause and resume](#pause-and-resume)
@@ -44,6 +52,8 @@ Every script supports `--help` for the full argument list. This document covers 
 - [LoRA extraction (rank reduction)](#lora-extraction)
 - [LoRA profiling](#lora-profiling)
 - [Analyzing a per-image loss log](#analyzing-a-per-image-loss-log)
+- [Captioning, translating and extracting from a fine-tune](#captioning-translating-and-extracting-from-a-fine-tune)
+- [Other training flags](#other-training-flags)
 
 ---
 
@@ -116,13 +126,44 @@ Headless, there is no Preferences tab: **model locations are passed as flags on 
 | Turbo LoRA | [qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/blob/main/loras/qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors) | fast previews on the model being trained (`--speed_lora`) |
 | Turbo DiT (int8) | [qwen_image_2.1_turbo_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/blob/main/diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors) | the workbench tabs' previews; training previews with `--preview_checkpoint` |
 
+**Z-Image Turbo** (`--family zimage`):
+
+| File | Download | Used for |
+|---|---|---|
+| DiT `z_image_turbo_bf16.safetensors` | [Comfy-Org/z_image_turbo → diffusion_models](https://huggingface.co/Comfy-Org/z_image_turbo/tree/main/split_files/diffusion_models) | training (`--dit`) |
+| VAE `ae.safetensors` | [Comfy-Org/z_image_turbo → vae](https://huggingface.co/Comfy-Org/z_image_turbo/tree/main/split_files/vae) | `--vae` (cache step: `--model`) |
+| Text encoder `qwen_3_4b.safetensors` | [Comfy-Org/z_image_turbo → text_encoders](https://huggingface.co/Comfy-Org/z_image_turbo/tree/main/split_files/text_encoders) | `--text_encoder` (cache step: `--model`); loads 8-bit with less than 11 GB free |
+| Fizgig training adapter *(recommended)* | [fizgig_z_image_turbo_training_adapter.safetensors](https://huggingface.co/ShootTheSound/Fizgig-Z-Image-Turbo-Training-Adapter) | `--training_adapter` |
+
+**Z-Image Base** (`--family zimage_base`): the DiT is `z_image_bf16.safetensors` from [Comfy-Org/z_image → diffusion_models](https://huggingface.co/Comfy-Org/z_image/tree/main/split_files/diffusion_models); the VAE and text encoder are the same files as Turbo's, and the Turbo DiT above is `--preview_checkpoint` for Turbo previews. No training adapter: Base isn't distilled.
+
+**SDXL** (`--family sdxl`): any SDXL checkpoint as `--dit`, its text encoders read from inside it (the GUI's default is [Juggernaut-XL v9](https://huggingface.co/RunDiffusion/Juggernaut-XL-v9/blob/main/Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors)); for the text cache step pass the same checkpoint as `--model`. A separate VAE, [sdxl_vae.safetensors](https://huggingface.co/stabilityai/sdxl-vae/blob/main/sdxl_vae.safetensors), is optional (`--vae`, cache step: `--model`).
+
+**Anima** (`--family anima`, all in [circlestone-labs/Anima](https://huggingface.co/circlestone-labs/Anima/tree/main/split_files)):
+
+| File | Download | Used for |
+|---|---|---|
+| DiT `anima-base-v1.0.safetensors` | diffusion_models/ | training (`--dit`) |
+| VAE `qwen_image_vae.safetensors` | vae/ | `--vae` (cache step: `--model`) |
+| Text encoder `qwen_3_06b_base.safetensors` | text_encoders/ | `--text_encoder` (cache step: `--model`) |
+| Turbo LoRA *(optional)* | [anima-turbo-lora-v0.2.safetensors](https://huggingface.co/circlestone-labs/Anima-Official-LoRAs/blob/main/anima-turbo-lora-v0.2.safetensors) | fast previews (`--speed_lora`) |
+
+**ACE-Step 1.5 XL** (`--family acestep15xl`, all in [Comfy-Org/ace_step_1.5_ComfyUI_files](https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files/tree/main/split_files)):
+
+| File | Download | Used for |
+|---|---|---|
+| XL Turbo DiT `acestep_v1.5_xl_turbo_bf16.safetensors` | diffusion_models/ | training (`--dit`), the usual choice |
+| XL SFT DiT `acestep_v1.5_xl_sft_bf16.safetensors` *(optional)* | diffusion_models/ | `--dit` to train on the non-distilled model, with `--family_option base=sft` |
+| VAE `ace_1.5_vae.safetensors` | vae/ | `--vae` (cache step: `--model`) |
+| Text encoder `qwen_0.6b_ace15.safetensors` | text_encoders/ | `--text_encoder` (cache step: `--model`) |
+
 The quickest way to get every file is the fetcher the Preferences download button runs — `python -m fizgig.scripts.fetch_models --family qwen_image21 --include-optional` (from the repo root with `src` on `PYTHONPATH`). It also caches the tokenizer files so training works offline.
 
 ---
 
 ## What's family-specific at a glance
 
-Every family trains through the same two scripts — `src/fizgig/families/cache.py` and `src/fizgig/families/train.py`, selected with `--family` (`klein`, `flux3`, `minimax`, `krea2`, `qwen_image21`, `moss_image`) — and shares the dataset format, pause/resume, Context LoRA, LoKR, sliders, fine-tuning and the memory planner. What differs:
+Every family trains through the same two scripts — `src/fizgig/families/cache.py` and `src/fizgig/families/train.py`, selected with `--family` (`klein`, `flux3`, `moss_image`, `krea2`, `minimax`, `qwen_image21`, `zimage`, `zimage_base`, `sdxl`, `anima`, `acestep15xl`) — and shares the dataset format, pause/resume, Context LoRA, LoKR, sliders, fine-tuning and the memory planner. What differs:
 
 | Feature | Klein 9B | Flux 3 Image Klein | MiniMax H3 | Krea 2 | Qwen Image 2.1 |
 |---|---|---|---|---|---|
@@ -135,7 +176,7 @@ Every family trains through the same two scripts — `src/fizgig/families/cache.
 | Edit LoRAs (original + edited pairs) | ✅ | ✅ | ❌ | ❌ | ✅ |
 | Photos, video clips with sound, voice | photos | photos | all three | photos | photos |
 
-Auto-recaption captions with Krea 2's Qwen3-VL-4B, the same model the GUI's Captions tab uses, whichever model you're training (`--captioner`). MiniMax H3's own settings (training structure, Training mode, TREAD, clip stills, distillation, retirement of a finished category) reach the trainer as `--family_option name=value` pairs; see [MiniMax H3 training](#minimax-h3-training).
+The table covers the families with the longest history; Z-Image, SDXL, Anima and ACE-Step have their own sections below. Masked training (`--masked_training`), caption dropout (`--caption_dropout`) and Start at a smaller size (`--stage_dataset_config`) work on every picture family. Auto-recaption captions with Krea 2's Qwen3-VL-4B, the same model the GUI's Captions tab uses, whichever model you're training (`--captioner`). MiniMax H3's own settings (training structure, Training mode, TREAD, clip stills, distillation, retirement of a finished category) reach the trainer as `--family_option name=value` pairs; see [MiniMax H3 training](#minimax-h3-training).
 
 ---
 
@@ -174,6 +215,8 @@ python src/fizgig/families/cache.py --family qwen_image21 --stage latents --data
 python src/fizgig/families/cache.py --family qwen_image21 --stage text    --dataset_config my_dataset.toml --model /models/qwen3vl_8b_bf16.safetensors
 python src/fizgig/families/train.py --family qwen_image21 --dataset_config my_dataset.toml ...   # full example below
 ```
+
+Every other family follows the same pattern with its own VAE and text encoder from the [download table](#model-files-where-they-come-from-where-they-go): `--family zimage`, `zimage_base`, `sdxl` (the checkpoint itself as the text step's `--model`), `anima`, `flux3`, `moss_image`, `acestep15xl`.
 
 Re-running a cache step is cheap: pass `--skip_existing` to only encode new images. Stale cache files for images that were removed from the dataset are deleted automatically (pass `--keep_cache` to keep them, but see the warning in the next section).
 
@@ -278,7 +321,7 @@ Checkpoints land as `output_loras/my_subject/my_subject-000001.safetensors` (epo
 
 ### The flags that matter
 
-**Precision / VRAM** — `--precision auto --blocks_to_swap -1` reads the free VRAM at launch: INT8 when it compiles, else the Base file as it is (BFL's fp8 file stays fp8), NF4 on small cards, swapping blocks only when nothing else fits. Set either by hand to override. Gradient checkpointing is always on.
+**Precision / VRAM** — `--precision auto --blocks_to_swap -1` reads the free VRAM at launch: INT8 when it compiles, else the Base file as it is (BFL's fp8 file stays fp8), NF4 on small cards, swapping blocks only when nothing else fits. Set either by hand to override. Gradient checkpointing turns itself off on big cards where the run fits (see `--gradient_checkpointing` under [Other training flags](#other-training-flags)).
 
 **LoRA shape** — `--network_dim` / `--network_alpha` (the GUI presets use matched pairs: 4/4 style and details, 8/8, 16/16 identity); `--network_type lokr --lokr_factor 8` for LoKR.
 
@@ -481,7 +524,7 @@ Two warnings worth internalising before you reach for the dropdown. **Learning r
 
 **Fine-tuning the base model** — `--finetune` trains the model's own weights a component at a time instead of a LoRA; see [FINETUNE.md](FINETUNE.md). A Context LoRA doesn't combine with it (a fine-tune trains the base itself), so the trainer refuses `--context_lora_path` with `--finetune`. **Sliders** work as on [Qwen Image 2.1](#qwen-image-21-training) (`--slider_pairs`, `--slider_prompts`).
 
-**Not offered (by design):** block targeting (no Krea 2 block map yet) and turning off gradient checkpointing (always on).
+**Not offered (by design):** block targeting (no Krea 2 block map yet).
 
 ---
 
@@ -584,7 +627,7 @@ The other two presets change only a few flags. **Standard** is `--network_dim 16
 
 - `--training_adapter FILE` — the Fizgig training adapter, frozen for every training step, off for previews and absent from the saved LoRA. Without it Qwen 2.1 LoRAs tend to collapse into texture or wobble part-way through.
 - `--ema_decay 0.98` — weight averaging: checkpoints and previews come from a smoothed average of the weights. `0` (the CLI default) turns it off.
-- `--optimizer_type adamw8bit|adamw|automagic3` — `automagic3` sets its own learning rate from `--learning_rate` as a start, and turns off `--adaptive_lr`, `--per_image_lr` and `--warmup_look_outliers`.
+- `--optimizer_type adamw8bit|adamw|automagic3|automagic4|prodigy|muon` — `automagic3` and `automagic4` set their own learning rate from `--learning_rate` as a start, and turn off `--adaptive_lr`, `--per_image_lr` and `--warmup_look_outliers`. `prodigy` finds its own rate too: give `--learning_rate 1.0` (a multiplier); Adaptive LR and the look warm-up stand down, per-image LR stays. `muon` takes AdamW's learning rates.
 - `--network_type lokr --lokr_factor 8` — LoKR instead of LoRA.
 - `--min_timestep` / `--max_timestep` — restrict training to a noise band, on a 0-1 scale.
 
@@ -597,6 +640,197 @@ The other two presets change only a few flags. **Standard** is `--network_dim 16
 **Fine-tuning the base model** — `--finetune` (with `--ft_rotations`, `--ft_save_every_rotations`, `--ft_rotate_every`) trains Qwen's own weights a component at a time instead of a LoRA, as on Krea 2; the GUI starts it at a learning rate of 1e-5. See [FINETUNE.md](FINETUNE.md).
 
 **Other** — `--context_lora_path FILE --context_lora_strength S` trains on top of an existing Qwen LoRA, frozen and active in training and previews (not with `--finetune`). `--metadata_title/author/description/license/tags/trigger_phrase` are recorded in the saved LoRA. The saved file loads in ComfyUI's standard LoRA loader.
+
+---
+
+## Z-Image Turbo and Z-Image Base training
+
+Z-Image trains as two families: `--family zimage` on the Turbo model, with the Fizgig training adapter (the Turbo model is distilled, and the adapter keeps a LoRA from undoing that), and `--family zimage_base` on the undistilled Base, with no adapter. Most people generate with Turbo, so a Base run previews on the Turbo DiT by default (`--preview_checkpoint`, 8 steps, no CFG); leave it out to preview on Base at `--sample_steps 25 --sample_cfg_scale 4` with a negative prompt. Both do LoRAs, LoKR, sliders, masked training and fine-tunes. Guide: [Z-Image](ZIMAGE.md).
+
+### Full example
+
+The **Fast** preset on Turbo, as the GUI's planner builds it: rank 8, 0.25 MP (`resolution = [496, 496]` in the TOML), Adaptive LR 2e-4 to 4e-4, 30 epochs:
+
+```bash
+python src/fizgig/families/cache.py --family zimage --stage latents --dataset_config my_dataset.toml --model /models/ae.safetensors
+python src/fizgig/families/cache.py --family zimage --stage text    --dataset_config my_dataset.toml --model /models/qwen_3_4b.safetensors
+
+python src/fizgig/families/train.py \
+  --family zimage \
+  --dataset_config my_dataset.toml \
+  --dit /models/z_image_turbo_bf16.safetensors \
+  --output_dir ./output_loras/my_subject \
+  --output_name my_subject \
+  --network_dim 8 --network_alpha 8 \
+  --learning_rate 1e-4 \
+  --adaptive_lr --adaptive_lr_min 2e-4 --adaptive_lr_max 4e-4 \
+  --max_train_epochs 30 --save_every_n_epochs 1 --seed 42 \
+  --save_state --save_state_on_train_end --keep_last_n_states 2 \
+  --training_adapter /models/fizgig_z_image_turbo_training_adapter.safetensors \
+  --precision auto --blocks_to_swap -1 --compile_blocks auto \
+  --ema_decay 0.98 --optimizer_type adamw \
+  --log_per_image_loss \
+  --vae /models/ae.safetensors \
+  --text_encoder /models/qwen_3_4b.safetensors \
+  --sample_prompts sample_prompts.txt --sample_every_n_epochs 1 --sample_at_first \
+  --sample_width 1024 --sample_height 1024 --sample_cfg_scale 1.0 --sample_seed 1234
+```
+
+For **Base**, use `--family zimage_base --dit /models/z_image_bf16.safetensors`, drop `--training_adapter`, and add `--preview_checkpoint /models/z_image_turbo_bf16.safetensors` for Turbo previews.
+
+---
+
+## SDXL training
+
+`--family sdxl` trains on any SDXL checkpoint (`--dit`), reading the text encoders from inside it; caching the text uses the same checkpoint as `--model`. The GUI's presets train at 1 MP: **Strong** is rank 32 / alpha 16 at 5e-5 for 50 epochs, **Standard** rank 16 / alpha 8 at 5e-5. SDXL does LoRAs, sliders, masked training and fine-tunes. Guide: [SDXL](SDXL.md).
+
+```bash
+python src/fizgig/families/cache.py --family sdxl --stage latents --dataset_config my_dataset.toml --model /models/sdxl_vae.safetensors
+python src/fizgig/families/cache.py --family sdxl --stage text    --dataset_config my_dataset.toml --model /models/Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors
+
+python src/fizgig/families/train.py \
+  --family sdxl \
+  --dataset_config my_dataset.toml \
+  --dit /models/Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors \
+  --output_dir ./output_loras/my_subject \
+  --output_name my_subject \
+  --network_dim 32 --network_alpha 16 \
+  --learning_rate 5e-5 \
+  --max_train_epochs 50 --save_every_n_epochs 1 --seed 42 \
+  --save_state --save_state_on_train_end --keep_last_n_states 2 \
+  --precision auto --compile_blocks auto \
+  --sample_prompts sample_prompts.txt --sample_every_n_epochs 1 --sample_at_first \
+  --sample_width 1024 --sample_height 1024 --sample_seed 1234
+```
+
+Without a separate VAE file, pass the checkpoint to the latent cache as well.
+
+---
+
+## Anima training
+
+`--family anima` trains Anima's Base DiT with its Qwen-Image VAE and Qwen3 0.6B text encoder. With the optional Turbo LoRA as `--speed_lora`, previews render fast on the training model. Presets: **Character** (rank 16, 1e-4, 50 epochs at 1 MP, below), **Style** (rank 16, 5e-5), **Official** (rank 32, 2e-5), a slider and fine-tunes. Guide: [Anima](ANIMA.md).
+
+```bash
+python src/fizgig/families/cache.py --family anima --stage latents --dataset_config my_dataset.toml --model /models/qwen_image_vae.safetensors
+python src/fizgig/families/cache.py --family anima --stage text    --dataset_config my_dataset.toml --model /models/qwen_3_06b_base.safetensors
+
+python src/fizgig/families/train.py \
+  --family anima \
+  --dataset_config my_dataset.toml \
+  --dit /models/anima-base-v1.0.safetensors \
+  --output_dir ./output_loras/my_subject \
+  --output_name my_subject \
+  --network_dim 16 --network_alpha 16 \
+  --learning_rate 1e-4 \
+  --max_train_epochs 50 --save_every_n_epochs 1 --seed 42 \
+  --save_state --save_state_on_train_end --keep_last_n_states 2 \
+  --precision auto --blocks_to_swap -1 --compile_blocks auto \
+  --ema_decay 0.98 --optimizer_type adamw \
+  --log_per_image_loss \
+  --vae /models/qwen_image_vae.safetensors \
+  --text_encoder /models/qwen_3_06b_base.safetensors \
+  --speed_lora /models/anima-turbo-lora-v0.2.safetensors \
+  --sample_prompts sample_prompts.txt --sample_every_n_epochs 1 --sample_at_first \
+  --sample_width 1024 --sample_height 1024 --sample_cfg_scale 4.5 --sample_seed 1234
+```
+
+---
+
+## ACE-Step training (songs)
+
+`--family acestep15xl` trains ACE-Step 1.5 XL on songs. A training song is an audio file with a caption `.txt` beside it; its lyrics go in `<name>.lyrics.txt` (none = an instrumental), and bpm, time signature, key and language in an optional `<name>.json`. Songs over 240 s are cut to the first 240 s. The dataset TOML is the same as for pictures. A sample prompt is a song: `caption | lyrics`, lyric lines separated by ` / `. Guide: [ACE-Step](ACESTEP.md).
+
+The **Official LoRA** preset, as the GUI builds it: rank 64 / alpha 128, 1e-4, gradient accumulation 4, 800 epochs (the official recipe for 10-20 songs), a checkpoint and a preview every 40 epochs, each preview also played at strength 0.5:
+
+```bash
+python src/fizgig/families/cache.py --family acestep15xl --stage latents --dataset_config my_songs.toml --model /models/ace_1.5_vae.safetensors
+python src/fizgig/families/cache.py --family acestep15xl --stage text    --dataset_config my_songs.toml --model /models/qwen_0.6b_ace15.safetensors
+
+python src/fizgig/families/train.py \
+  --family acestep15xl \
+  --dataset_config my_songs.toml \
+  --dit /models/acestep_v1.5_xl_turbo_bf16.safetensors \
+  --output_dir ./output_loras/my_sound \
+  --output_name my_sound \
+  --network_dim 64 --network_alpha 128 \
+  --learning_rate 1e-4 \
+  --gradient_accumulation_steps 4 \
+  --max_train_epochs 800 --save_every_n_epochs 40 --seed 42 \
+  --save_state --save_state_on_train_end --keep_last_n_states 2 \
+  --blocks_to_swap -1 --ema_decay 0.98 --optimizer_type adamw \
+  --vae /models/ace_1.5_vae.safetensors \
+  --text_encoder /models/qwen_0.6b_ace15.safetensors \
+  --sample_prompts song_prompts.txt --sample_every_n_epochs 40 \
+  --sample_strengths 0.5 --family_option preview_seconds=60
+```
+
+To train on the SFT model, pass its DiT as `--dit` with `--family_option base=sft`; its previews take 30 guided steps. Masked training, caption dropout and Start at a smaller size don't apply to songs.
+
+---
+
+## Masked training
+
+Every picture family. A mask is a black-and-white picture beside its photo, `photo-masklabel.png` for `photo.jpg`: white trains fully, grey partly, black only as much as `--mask_floor` says. The photo still trains whole; the mask weights its loss. Pictures without a mask train as normal, and a mask that isn't its picture's shape (aspect ratio more than 2% off) is named in the log and left out. A mask at a different size is scaled to its picture.
+
+| Flag | Meaning |
+|---|---|
+| `--masked_training` | turn it on |
+| `--mask_floor 0.1` | how much outside the mask counts: 0 = nothing, 1 = as much as inside (default 0.1) |
+| `--mask_prior W` | prior preservation outside the mask: keep the LoRA to the model's own prediction there, at weight W (0 = off; the GUI offers 0.5, 1 and 2). One extra forward a step |
+
+The saved LoRA records `ss_masked_training`, `ss_mask_floor` and how many pictures had a mask. The GUI's Image Prep tab makes masks (a person finder, or SAM 3.1 from words) and edits them by hand. Guide: [Masked training](MASKED_TRAINING.md).
+
+---
+
+## Start at a smaller size
+
+Standard LoRAs on every picture family (not edits, sliders, fine-tunes or MiniMax H3). The first part of the run trains at a smaller size from its own dataset TOML, then blends into the full size.
+
+1. Write a second dataset TOML at the smaller `resolution` (for 0.25 MP, `[496, 496]`) with **its own `cache_directory`**, and run both cache steps on it too.
+2. Train with the full-size TOML as `--dataset_config`, plus:
+
+| Flag | Meaning |
+|---|---|
+| `--stage_dataset_config small.toml` | the smaller size's TOML |
+| `--stage_until 0.3` | the share of the run's epochs at the smaller size (the GUI offers 0.2, 0.3 and 0.5) |
+| `--stage_blend 0.1` | the share of the run the change blends over (default 0.1) |
+
+The log says when each part starts. In a Z-Image Turbo test, 0.25 MP for the first 30% of a 1 MP run took about a fifth less time, with likeness arriving a little later.
+
+---
+
+## Caption dropout
+
+`--caption_dropout 0.05` trains that share of steps with no caption (the empty caption's encoding, made once), so the LoRA leans less on the trigger word and the caption's exact words. The GUI offers 0.05 and 0.10. Every picture family; MiniMax H3 has its own, `--family_option caption_dropout=0.05`.
+
+---
+
+## Detail crops (style LoRAs)
+
+Detail crops give each picture one square crop at its own scale, so a style's brushwork and texture train pixel for pixel. Headless, it's two steps:
+
+1. **Make and caption the crops** for each size the run trains at (its `resolution`, plus the smaller size if it starts smaller). Switch the folder on first by writing `{"on": true}` to `<training folder>/fizgig_detail_crops.json`:
+
+```bash
+python src/fizgig/scripts/detail_crops.py --folder /data/my_style \
+  --mp 0.5 --mp 0.25 \
+  --captioner /models/qwen3vl_4b_fp8_scaled.safetensors --instruction_file style_instruction.txt \
+  --trigger zwxstyle --ext .txt
+```
+
+The crops go in `<folder>/fizgig_detail_crops/<size>mp/`. A crop with no caption gets the same picture's caption from another size; a picture with none at any size is captioned once, on its largest crop, with `--captioner` and the instruction in `--instruction_file`, and that caption is copied to every size. Without a captioner, crops that need a caption stop it with exit code 1. A picture smaller than the crop gets none. Pictures kept in `<folder>/detail_masters/` (the GUI's Train on the crops only) are cropped as well, and never trained.
+
+2. **Train them as their own dataset block**, one per size, beside the pictures' block:
+
+```toml
+[[datasets]]
+image_directory = "/data/my_style/fizgig_detail_crops/0.5mp"
+item_prefix = "fizgig_detail_crops/"
+cache_directory = "/data/cache/my_style_crops_0.5mp"
+```
+
+Use `item_prefix = "fizgig_detail_crops/"` for every size, so each crop keeps one per-image loss history through Start at a smaller size; the smaller size's TOML names its own size folder.
 
 ---
 
@@ -713,3 +947,40 @@ python src/fizgig/scripts/analyze_loss_log.py ./output_loras/my_subject --top 20
 ```
 
 Points at the output dir (or the `per_image_loss.jsonl` directly) and prints the N hardest images by mean residual — the same signal that drives the watch's verdicts. Cross-reference against your captions: the top offenders are usually caption-viewpoint mismatches, and fixing the caption beats letting the throttle handle it.
+
+---
+
+## Captioning, translating and extracting from a fine-tune
+
+**AI captions** — `batch_caption.py` is what the Captions tab runs. Qwen3-VL (the Krea 2 text encoder file, or a bigger Qwen3-VL as the GUI's secondary captioning model) captions every file listed in a text file, one path a line, with your instruction, putting the trigger word first:
+
+```bash
+python -m fizgig.scripts.batch_caption --backend qwen --text_encoder /models/qwen3vl_4b_fp8_scaled.safetensors \
+  --list_file images.txt --instruction_file instruction.txt --trigger zwxem --max_new_tokens 160
+```
+
+The GUI's caption tasks (person or character, object or product, style, concept) are instructions; write the one you want to a file. `--backend florence` uses Florence-2 instead.
+
+**Bilingual captions** — `python -m fizgig.scripts.translate_captions <folder> [--skip_existing] [--ext .txt]` adds a Chinese translation to every caption (`<trigger>, <english> - <chinese>`), keeping the trigger word as it is.
+
+**A fine-tune as LoRAs** — `extract_finetune.py` takes the difference between a fine-tuned checkpoint and the base it started from, one LoRA per rank from a single pass:
+
+```bash
+python -m fizgig.scripts.extract_finetune --base /models/base.safetensors --tuned ./output/my_finetune.safetensors \
+  --out-dir ./output_loras --name my_finetune --ranks 32,64
+```
+
+**Model files** — `python -m fizgig.scripts.fetch_models --family <key> --include-optional` downloads a family's files (`--all` for every family, `--dry-run` to list them first, `--token` for gated repos).
+
+---
+
+## Other training flags
+
+- `--gradient_checkpointing auto|on` — `auto` (default) turns it off for a compiled LoRA run with no block swap when the measured peak fits free VRAM, as on most 40 GB+ cards (13–27% faster per step); where it doesn't all fit, the last blocks go without it. `on` keeps it everywhere.
+- `--training_adapter_strength S` — the training adapter's strength (default 1.0), for the families that use one.
+- `--sample_strengths 0.5` — also render each preview at these LoRA strengths, comma-separated.
+- `--preview_int8` — INT8 matmuls on the preview checkpoint, for smaller cards.
+- **Auto-recaption's tasks** — `--recaption_instruction TEXT` and `--recaption_instruction_detailed TEXT` are the first and second tries' instructions (the GUI fills them from its **First try uses** / **Second try uses** picks); `--recaption_task` and `--recaption_task_detailed` name those tasks for the log. `--recaption_triggers '{"outfits/red/": "zwxred"}'` gives other dataset blocks their own trigger word, keyed by `item_prefix`.
+- **Cache steps** — `--batch_size`, `--num_workers` and `--device` tune the cache scripts; the defaults suit most machines.
+
+The trainer also has options Fizgig itself uses between computers (`--share_worker`, the `--ft_*` window and continue options, `--preview_checkpoint_cache`); you don't need them by hand.

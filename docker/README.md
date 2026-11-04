@@ -134,7 +134,7 @@ In the pod's **Connect** menu, open **HTTP port 8081** and log in with that pass
 
 **Choosing the password.** On the deploy screen expand **Edit Template → Environment Variables** and add `FIZGIG_PASSWORD` (12+ characters). If you don't, the pod generates one on its first start, prints it in the log, and keeps it on your volume, so it stays the same every time you stop and start the pod. Either way, Fizgig on your own computer finds it for you (with your RunPod API key saved there): see below. If the log seems to stop short of the banner, switch to another tab and back; RunPod's log view sometimes needs a nudge.
 
-**Opening it from Fizgig on your own computer.** With your RunPod API key saved in Fizgig's **Pods** tab, the Fizgig window opens your pod already logged in, and **Helpers** adds the pod with no password typed. Fizgig reads the password each time and never saves it: from the pod's settings on RunPod (`FIZGIG_PASSWORD`), or, when the pod made up its own or keeps it as a RunPod secret, from the log the pod printed when it started.
+**Opening it from Fizgig on your own computer.** With your RunPod API key saved in Fizgig's **Pods** tab, the Fizgig window opens your pod already logged in, and the pod joins **Helpers** by itself once it's up, with no password typed. Fizgig reads the password each time and never saves it: from the pod's settings on RunPod (`FIZGIG_PASSWORD`), or, when the pod made up its own or keeps it as a RunPod secret, from the log the pod printed when it started.
 
 <p align="center"><img src="../docs/assets/screenshots/pods.png" alt="The Pods tab: your pods and your other computers" width="800"></p>
 
@@ -153,7 +153,7 @@ In the pod's **Connect** menu, open **HTTP port 8081** and log in with that pass
 3. **Start tab → Upload a training folder**, or drag a folder into `/workspace/datasets` on **port 8080**.
 4. **Training → Start.**
 
-**Using Fizgig on your own computer too?** Its **Pods** tab opens this pod in the Fizgig window: paste the pod's ID, or add your RunPod API key and your pods appear by themselves, with Start and Stop. See [Pods](../docs/WEB_UI.md#pods-a-rented-gpu-from-your-own-fizgig).
+**Using Fizgig on your own computer too?** Its **Pods** tab opens this pod in the Fizgig window: paste the pod's ID, or add your RunPod API key and your pods appear by themselves, with Start, Stop and Delete pod. See [Pods](../docs/WEB_UI.md#pods-a-rented-gpu-from-your-own-fizgig).
 
 Closing the browser tab does **not** stop training. Fizgig runs on the pod, so close the tab, come back later (from your phone if you like) and the run is still going. Finished LoRAs download from the Training tab and the gallery. More in [the web UI guide](../docs/WEB_UI.md).
 
@@ -179,6 +179,10 @@ better bet for a large dataset since it resumes.
 Fizgig on your own computer can render a pod run's previews, so the pod's time goes on training, or train a share of each epoch's images, and bring the run's checkpoints home to try your own prompts on them: **Helpers** > **Help another Fizgig with this GPU** on your computer. A training share pays on big datasets only, as your home upload sets the transfer time: see [Helpers](../docs/TRAINING_SHARE.md#is-it-worth-it).
 
 <p align="center"><img src="../docs/assets/screenshots/helpers_pod.png" alt="Your home Fizgig helping a pod train, with its verdict, and the pod's checkpoints ready to bring home" width="800"></p>
+
+## The pod helping your home computer
+
+The other way round: the pod's GPU takes work off your computer's run. With your RunPod API key saved on the **Pods** tab of Fizgig on your own computer, each pod you start joins that computer's **Helpers** list by itself once it's up, tagged **Added by itself**. Its **Previews** and **Training share** are off until you tick one, so a pod on the list does nothing for your computer's runs until then, and you can still train on it, open it, or move a run to it as usual. A pod you delete leaves the list; one you **Remove** stays off it until you add it again. See [Helpers](../docs/HELPERS.md).
 
 ## Where things live
 

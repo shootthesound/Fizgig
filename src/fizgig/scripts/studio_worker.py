@@ -194,12 +194,13 @@ def _cond(eng, c, width, height, frames):
         return None, None
     ref = bool(c.get("ref_mode"))
     out = []
+    from fizgig.utils.image import flatten
     from fizgig.utils.upright import open_upright
     for k in spec:
         slot, path = k.get("slot"), k["path"]
         if not ref and slot == "last" and int(frames) <= 1:
             continue
-        img = open_upright(path).convert("RGB")
+        img = flatten(open_upright(path))
         rect = k.get("rect")
         if rect:                                 # the box placed for another W x H: its shape now, centred inside it
             x0, y0, x1, y1 = (int(v) for v in rect)

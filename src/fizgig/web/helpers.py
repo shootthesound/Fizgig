@@ -137,7 +137,10 @@ def _needs(desc, job, prefs):
     for role in ("dit", "vae") if job.get("conds") else ("dit", "vae", "text_encoder"):
         f = next((m for m in desc.model_files if m.role == role), None)
         if f is not None:
-            out.append((f.label, s.pref_path(prefs, f.pref_key), f))
+            p = s.pref_path(prefs, f.pref_key)
+            if not p and not f.required and getattr(f, "inside", ""):
+                continue                 # left empty: read from the file it's inside (SDXL's checkpoint)
+            out.append((f.label, p, f))
     sp = desc.preview_speed()
     if sp is not None and float(job.get("turbo") or 0) > 0 and sp.pref_key:
         f = next((m for m in desc.model_files if m.pref_key == sp.pref_key), None)
@@ -452,7 +455,8 @@ def _norm(url):
     return url
 
 
-def add(url, password):
+def add(url, password, auto=False):
+    """A helper added (`auto`: one of your pods, added by itself once it answered: see _auto_pods)."""
     url = _norm(url)
     c = Client(url)
     prefs = _srv().load_prefs()
@@ -487,10 +491,13 @@ def add(url, password):
         if _norm(h.get("url") or url) != url:
             _readdress(_norm(h["url"]), url, c.cookie)
     rows.append({"id": hid, "url": url, "name": name, "cookie": c.cookie, "where": _where(url),
-                 "previews": any(h.get("previews") for h in old), "share": any(h.get("share") for h in old)})
+                 "previews": any(h.get("previews") for h in old), "share": any(h.get("share") for h in old), "auto": auto,
+                 "ours": url in {_norm(a["url"]) for a in _acct.get("all") or []}})
     for h in old:
         _live.pop(h["id"], None)
     _save(rows)
+    if not auto:                         # added by hand: one removed before may come back by itself again
+        _srv().update_prefs({"helpers_declined": [u for u in prefs.get("helpers_declined") or [] if u != url]})
     _live.pop(hid, None)
     ensure_lead()
     threading.Thread(target=measure_link, args=(url, c.cookie), daemon=True).start()
@@ -530,6 +537,11 @@ def _readdress(old, new, cookie):
 
 
 def remove(hid):
+    h = next((x for x in _helpers() if x.get("id") == hid), None)
+    if h and _where(h.get("url") or "") == "pod":      # removed by hand: _auto_pods doesn't add it back
+        prefs = _srv().load_prefs()
+        _srv().update_prefs({"helpers_declined": ([u for u in prefs.get("helpers_declined") or [] if u != h["url"]]
+                                                  + [h["url"]])[-50:]})
     _save([h for h in _helpers() if h.get("id") != hid])
     _live.pop(hid, None)
     return {"say": "Removed."}
@@ -642,7 +654,7 @@ def listing(look=False):
         lv = _live.get(h["id"]) or {"state": "away"}
         st = lv.get("state")
         rows.append({"id": h["id"], "name": h.get("name"), "url": h.get("url"), "where": h.get("where"),
-                     "previews": h.get("previews"), "share": h.get("share"),
+                     "previews": h.get("previews"), "share": h.get("share"), "auto": bool(h.get("auto")),
                      "state": st, "training": lv.get("training"), "gpu": lv.get("gpu"), "vram": lv.get("vram"),
                      "ping_ms": lv.get("ping_ms"), "build": lv.get("build"), "elsewhere": lv.get("elsewhere"),
                      "match": lv.get("match", ""),
@@ -738,7 +750,7 @@ def _pods_to_help():
         return []
 
 
-_acct = {"at": 0.0, "rows": None, "key": "", "busy": False}
+_acct = {"at": 0.0, "rows": None, "all": None, "key": "", "busy": False}
 _lan_seen = {"at": 0.0, "rows": []}
 _found_lock = threading.Lock()
 
@@ -774,11 +786,16 @@ def _account_rows(key):
     def ask():
         from fizgig.web import pods
         try:
-            rows = [p for p in pods.account(key) if p.get("running")]
+            every = pods.account(key)    # stopped ones too: a pod missing from it was deleted
+            rows = [p for p in every if p.get("running")]
         except ValueError:
-            rows = None                  # a refused key: the saved pods are listed instead
+            rows = every = None          # a refused key: the saved pods are listed instead
+        except Exception:                # RunPod didn't answer: the last copy stays, asked again next time
+            with _found_lock:
+                _acct["busy"] = False
+            return
         with _found_lock:
-            _acct.update(rows=rows, at=time.time(), key=key, busy=False)
+            _acct.update(rows=rows, all=every, at=time.time(), key=key, busy=False)
     threading.Thread(target=ask, daemon=True, name="helpers-account").start()
     return _acct["rows"] if _acct["key"] == key else None
 
@@ -824,6 +841,66 @@ def _found(look=False):
     return out
 
 
+_auto = {"thread": None, "tried": {}}    # url -> when adding it last failed
+
+
+def _auto_pods():
+    """Your RunPod pods as helpers, with no adding: each running Fizgig pod on the account is added once its Fizgig
+    answers, Previews and Training share off (a tick away on the Helpers tab), and one deleted from the account goes
+    from the list. One removed by hand stays removed until it's added by hand again."""
+    from fizgig.web import pod_stop, pods
+    s = _srv()
+    prefs = s.load_prefs()
+    key = pod_stop.api_key(prefs)
+    if not key:
+        return
+    running = _account_rows(key)
+    every = _acct.get("all") if _acct["key"] == key else None
+    if running is None or every is None:
+        return                           # not known yet (or a refused key): nothing added, nothing removed
+    known = {_norm(a["url"]) for a in every}
+    gone = [h for h in _helpers() if (h.get("auto") or h.get("ours")) and _norm(h["url"]) not in known]
+    if gone:
+        _save([h for h in _helpers() if h not in gone])
+        for h in gone:
+            _live.pop(h["id"], None)
+            logger.info(f"[helpers] {h.get('name')}: its pod was deleted, so it's no longer a helper")
+    mine = {_norm(h["url"]) for h in _helpers()}
+    declined = set(prefs.get("helpers_declined") or [])
+    for a in running:
+        url = _norm(a["url"])
+        if url in mine or url in declined or time.time() - _auto["tried"].get(url, 0) < 120:
+            continue
+        if pods.probe(url, 6.0) != "ready":
+            continue                     # still starting: asked again next time round
+        try:
+            add(url, "", auto=True)
+        except Exception as e:
+            _auto["tried"][url] = time.time()
+            logger.info(f"[helpers] adding pod {a.get('name') or url} by itself: {_plain(e)}")
+            continue
+        logger.info(f"[helpers] pod {a.get('name') or url} added as a helper (its jobs are off until you tick one)")
+
+
+def _auto_loop():
+    while True:
+        try:
+            _auto_pods()
+        except Exception:
+            logger.exception("[helpers] adding pods")
+        time.sleep(30.0)
+
+
+def ensure_auto():
+    """Started with the server, on a computer (a pod, or this computer's second Fizgig on another GPU, adds none)."""
+    s = _srv()
+    if s.on_pod() or os.environ.get("FIZGIG_PARENT_PID"):
+        return
+    if _auto["thread"] is None or not _auto["thread"].is_alive():
+        _auto["thread"] = threading.Thread(target=_auto_loop, daemon=True, name="helpers-auto")
+        _auto["thread"].start()
+
+
 def ensure_lead():
     """The lead's two threads: one checks the helpers and keeps the trainer's note fresh, one sends the rounds (a
     round can take minutes; the note must not go stale meanwhile)."""
@@ -856,7 +933,9 @@ def _check_loop():
                         continue
                 lv["misses"] = 0
                 lv.update(r)
-                if r.get("pod") and r.get("state") == "ready" and r.get("build") not in ("", "same", None) and \
+                if r.get("pod") and not (h.get("previews") or h.get("share")):
+                    lv["match"] = ""         # on the list with no job: it stays on its own Fizgig until one is ticked
+                elif r.get("pod") and r.get("state") == "ready" and r.get("build") not in ("", "same", None) and \
                         _lead["mine"]:
                     _match_pod(h, lv, _lead["mine"])
                 elif r.get("pod") and r.get("state") == "busy" and r.get("build") not in ("", "same", None):
@@ -2282,12 +2361,26 @@ def _probe(family, shas):
         want = shas.get(stage)
         if not want:
             return {"ok": False, "why": "the run has no cache step for it", "files": files}
+        if want == shas.get("dit") and "dit" in files:
+            # made from the model's own file (SDXL's checkpoint holds its VAE and encoders): that file, never a
+            # separate VAE / encoder this computer has set (_same_as_dit, once the model is here)
+            files[stage] = {**files["dit"], "same_as": "dit"}
+            continue
         f, got = pick(role, want)
         if got is None:
             return {"ok": False, "files": files, "why": f"this run's {f.label if f else role} isn't one it can "
                                                         f"download (not in {desc.display_name}'s list of builds)"}
         files[stage] = got
     return {"ok": True, "files": files}
+
+
+def _same_as_dit(desc, specs, paths):
+    """The cache steps the lead made from the model's own file take this computer's copy of it."""
+    f = next((m for m in desc.model_files if m.role == "dit"), None)
+    dit = paths.get("dit") or (_srv().pref_path(_srv().load_prefs(), f.pref_key) if f is not None else "")
+    for stage, spec in specs.items():
+        if spec.get("same_as") == "dit" and not paths.get(stage) and dit:
+            paths[stage] = dit
 
 
 _gets = {}                         # repo/path -> this computer fetching a build for a share: {state, error}
@@ -2425,6 +2518,8 @@ def _share_start(body):
     m = models(desc.key, {"conds": not make or "text" in paths, "turbo": 0, "look": 0}, fetch=True)
     if m["missing"]:
         return {"models": m}
+    if make:
+        _same_as_dit(desc, specs, paths)
     old = _sw.get(tag)
     if old and old["proc"].poll() is None:
         return {"ok": True, "dir": old["dir"]}
@@ -3576,12 +3671,29 @@ def _move_extras(values):
 
 
 def _run_subfolders(folder, values):
-    """[(relative path, folder)] of the run's sub-folders when it trains them (Also train on its sub-folders)."""
-    if not (values or {}).get("TRAIN_SUBFOLDERS"):
-        return []
+    """[(relative path, folder)] of the run's sub-folders when it trains them (Also train on its sub-folders), and its
+    detail crops for each size it trains at (Target Megapixels, Start at a smaller size's): they go with a move or a
+    training share as a sub-folder does."""
     from fizgig.families import launch
-    return launch.subfolders(folder, (str(values.get("LORA_OUTPUT_DIR") or ""),
-                                      str(values.get("FAMILY_FT_REG_DIR") or "")))
+    subs = launch.subfolders(folder, (str(values.get("LORA_OUTPUT_DIR") or ""),
+                                      str(values.get("FAMILY_FT_REG_DIR") or ""))) \
+        if (values or {}).get("TRAIN_SUBFOLDERS") else []
+    from fizgig.dataset import detail_crops
+    if not detail_crops.is_on(folder):
+        return subs
+    crops = []
+    m = os.path.join(folder, detail_crops.MASTERS)      # Train on the crops only: the pictures crops are cut from
+    if os.path.isdir(m):
+        crops.append((detail_crops.MASTERS, m))
+    for k in ("DATASET_MEGAPIXELS", "STAGE_MP"):
+        try:
+            mp = float(str((values or {}).get(k) or "0").split(" ")[0])
+        except ValueError:
+            continue
+        d = detail_crops.size_dir(folder, mp) if mp > 0 else ""
+        if d and os.path.isdir(d) and all(c[1] != d for c in crops):
+            crops.append((f"{detail_crops.DIR}/{detail_crops.size_name(mp)}", d))
+    return subs + crops
 
 
 def _safe_rel(rel):
@@ -4077,6 +4189,7 @@ def move_in(body):
                fetch=True)
     if m["missing"]:
         return {"models": m}
+    _same_as_dit(desc, body.get("files") or {}, paths)
     name = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(body.get("run") or "run")).strip("._")[:80] or "run"
     for old in glob.glob(_dir("files", "mv*.tar")):      # an earlier attempt's file that never became a run
         if os.path.basename(old) != f"mv{tag}.tar" and time.time() - os.path.getmtime(old) > 3600:

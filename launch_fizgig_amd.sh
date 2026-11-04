@@ -71,6 +71,10 @@ if [[ "$IS_LEGACY_GPU" -eq 1 ]]; then
     export TORCH_BACKENDS_CUDA_MEM_EFF_SDP_ENABLED=0
     export TORCH_BACKENDS_CUDA_MATH_SDP_ENABLED=1
     unset TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL
+    # gfx1031 / gfx1032 run as gfx1030, the RDNA2 chip ROCm builds for; never RDNA1 (gfx101x), which it would break
+    case "${GPU_ARCH}" in
+        gfx1031|gfx1032) export HSA_OVERRIDE_GFX_VERSION="${HSA_OVERRIDE_GFX_VERSION:-10.3.0}" ;;
+    esac
 else
     if [[ -n "$GPU_ARCH" ]]; then
         echo "[AMD-ROCm] GPU arch: ${GPU_ARCH}"

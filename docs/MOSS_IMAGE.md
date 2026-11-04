@@ -98,4 +98,5 @@ Fizgig never trains the text encoder or the model's text adapter, as OpenMOSS ad
 | Your LoRA | Load LoRA |
 
 - **Text encoder:** use the bf16 one. MOSS-Image's developers say the text encoder is more fragile than the model, so avoid heavy quants of it.
+- **On the int8 SFT file** (`moss_image_sft_int8_convrot.safetensors`), load your LoRA with **LoraLoaderBypassModelOnly** rather than Load LoRA. It runs the LoRA beside the int8 weights instead of merging it in and re-quantising them, so it adds no rounding error, for a step about 2% slower (u/Mycelia_Bygonepath's measurements on r/comfyui).
 - **Same as Fizgig:** a LoRA trained on Base and run on SFT, with the settings above and the same seed and resolution, gives matching images in ComfyUI and the same likeness scores as Fizgig's previews.

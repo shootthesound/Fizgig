@@ -240,7 +240,17 @@ def resize_image_to_bucket(image: Union[Image.Image, np.ndarray], bucket_reso: T
         arr = np.array(img)
     else:
         arr = np.array(image) if is_pil else image
-        arr = cv2.resize(arr, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        if arr.ndim == 3 and arr.shape[-1] == 4:
+            # premultiplied while averaging, so a transparent area's hidden colour doesn't bleed into the edges (the
+            # PIL path above does the same)
+            a = arr[..., 3:].astype(np.float32) / 255.0
+            pm = cv2.resize(np.concatenate([arr[..., :3] * a, a * 255.0], -1), (new_w, new_h),
+                            interpolation=cv2.INTER_AREA)
+            al = pm[..., 3:] / 255.0
+            rgb = np.where(al > 0, pm[..., :3] / np.maximum(al, 1e-6), 0.0)
+            arr = np.concatenate([rgb, pm[..., 3:]], -1).round().clip(0, 255).astype(np.uint8)
+        else:
+            arr = cv2.resize(arr, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
     crop_left = (new_w - bucket_width) // 2
     crop_top = (new_h - bucket_height) // 2
@@ -808,8 +818,8 @@ class ImageDirectoryDatasource:
             return image_path, imgs, caption, controls
 
         img = open_upright(image_path)
-        if img.mode not in ("RGB", "RGBA"):
-            img = img.convert("RGB")
+        if img.mode not in ("RGB", "RGBA"):     # a palette / grey PNG with transparency keeps it, as RGBA
+            img = img.convert("RGBA" if img.mode in ("LA", "PA") or "transparency" in img.info else "RGB")
 
         _, caption = self.get_caption(idx)
 
@@ -819,7 +829,7 @@ class ImageDirectoryDatasource:
             for cp in self.control_paths[image_path]:
                 c = open_upright(cp)
                 if c.mode not in ("RGB", "RGBA"):
-                    c = c.convert("RGB")
+                    c = c.convert("RGBA" if c.mode in ("LA", "PA") or "transparency" in c.info else "RGB")
                 controls.append(c)
 
         return image_path, [img], caption, controls

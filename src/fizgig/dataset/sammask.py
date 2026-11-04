@@ -13,6 +13,7 @@ from PIL import Image
 
 from fizgig.dataset.automask import pictures
 from fizgig.dataset.masks import MASK_SUFFIX, MIN_COVER, mask_for
+from fizgig.utils.image import flatten
 from fizgig.utils.upright import upright
 from fizgig.utils import hf_public
 
@@ -174,7 +175,7 @@ def _make_folder(seg, folder, include, exclude, overwrite, subject, detector, lo
             continue
         try:
             with Image.open(p) as im:
-                img = upright(im).convert("RGB")      # as training reads it
+                img = flatten(upright(im))            # a see-through picture on white, not its hidden colour
         except Exception as e:
             log(f"  {name}: can't be read ({e}) - skipped\n")
             counts["skipped"] += 1
@@ -236,7 +237,7 @@ def _preview(seg, pics, include, exclude, side):
     out = []
     for p in pics:
         with Image.open(p) as im:
-            img = upright(im).convert("RGB")
+            img = flatten(upright(im))
         m, _ = picture_mask(seg, img, include, exclude)
         a = np.asarray(img).astype(np.float32)
         tint = np.array([90, 170, 255], np.float32)

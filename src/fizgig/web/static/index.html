@@ -97,6 +97,7 @@
           <span class="side-queue-title">Training</span>
           <span class="side-run-top"><span class="run-badge" id="runBadge"></span><span id="sideRunName"></span></span>
           <span class="run-bar"><span id="sideRunBar"></span></span>
+          <span class="side-run-spark" id="sideRunSpark" style="display:none"></span>
           <span class="side-run-text" id="sideRunText"></span>
         </button>
         <div class="side-queue" id="sideQueue" role="button" tabindex="0" title="The queue - open it on Runs &amp; outputs">
@@ -109,6 +110,12 @@
         <div class="gpu-monitor" id="statusBar"></div>
         <a class="runpod-btn" id="sideDeploy" href="https://console.runpod.io/deploy?type=GPU&amp;gpu=RTX+5090&amp;count=1&amp;template=bdrdew7hxw&amp;ref=vkb387ep"
           target="_blank" rel="noopener" title="Run Fizgig on a rented GPU: the Pods tab's Rent a pod (pick a card, then add a 300 GB Volume disk on RunPod's page)"><i></i><span>Deploy on RunPod</span></a>
+        <div class="fm-login" id="sideFilesLogin" style="display:none" title="The file manager's login">
+          <span class="fm-login-head">File manager login</span>
+          <span>User <b>admin</b></span>
+          <span>Password <b id="sideFilesPw">••••••</b></span>
+          <button class="fm-eye" id="sideFilesShow" type="button" title="Show the password">Show</button>
+        </div>
         <a class="runpod-btn files-btn" id="sideFiles" target="_blank" rel="noopener" style="display:none"><i></i><span>File manager</span></a>
         <button class="about-btn" id="aboutBtn" title="About Fizgig"><i></i><span>About</span></button>
         <a class="coffee-btn" href="https://buymeacoffee.com/lorasandlenses" target="_blank" rel="noopener"
@@ -278,9 +285,20 @@
                   Face close-ups only</label>
                 <div class="field-hint radio-hint">Keep only the cropped face from each photo: the full shot is not
                   kept.</div>
+                <label class="radio-label"><input type="radio" name="prepMode" value="Detail Crops (Style)">
+                  Detail crops — for a style</label>
+                <div class="field-hint radio-hint">Each picture also trains as one square crop
+                  at its own scale, so brushwork and texture aren't shrunk away. The crop is at a random spot, moved off
+                  flat areas, and the same spot at every size. Run it once per folder; after that,
+                  each run makes its own crops at Start, at the size it trains at, captioned with the Style task.</div>
+                <label class="checkbox-label radio-hint" id="prepCropsOnlyRow"><input type="checkbox" id="prepCropsOnly">
+                  Train on the crops only</label>
+                <div class="field-hint radio-hint" id="prepCropsOnlyHint">Moves the full pictures, with their captions
+                  and masks, into a detail_masters sub-folder that never trains (it stays in the folder for making crops at
+                  other sizes). Untick and run again to move them back.</div>
                 <div class="field-row prep-opts">
                   <span class="field-label">Target megapixels:</span><select id="prepMp" class="w-combo"></select>
-                  <span class="field-hint">MP (larger images shrink to fit; smaller are left alone)</span>
+                  <span class="field-hint" id="prepMpHint">MP (larger images shrink to fit; smaller are left alone)</span>
                 </div>
                 <div class="field-row prep-opts prep-face">
                   <span class="field-label">Face:</span><select id="prepFace" class="w-combo"></select>
@@ -312,13 +330,13 @@
                 </details>
                 <div class="field-hint" id="prepNoFaces" style="display:none">Face detection isn't installed on the
                   Fizgig computer: run install_fizgig.py there to add it. Resize only still works.</div>
-                <div class="field-hint">Sizing is by target area (megapixels), not longest side: this matches how
+                <div class="field-hint" id="prepSizingNote">Sizing is by target area (megapixels), not longest side: this matches how
                   training buckets your images, so prepping costs you no resolution. Aspect ratio is kept; nothing is
                   cropped.</div>
                 <div class="problems" id="prepMpWarn"></div>
               </div>
             </div>
-            <div class="section-card">
+            <div class="section-card" id="prepOriginals">
               <div class="card-title">2 · Your originals</div>
               <div class="card-content">
                 <label class="radio-label"><input type="radio" name="prepReplace" value="0" checked>
@@ -332,11 +350,11 @@
               <div class="card-content"><div class="prep-summary" id="prepSummary"></div></div>
             </div>
             <div class="section-card">
-              <div class="card-title">3 · Run it</div>
+              <div class="card-title" id="prepRunTitle">3 · Run it</div>
               <div class="card-content">
                 <div class="field-row"><button class="btn btn-primary" id="prepRun">✨ Prepare Images Now</button>
                   <span class="field-hint" id="prepState"></span></div>
-                <div class="field-row"><span class="field-hint">Want to check first?</span>
+                <div class="field-row" id="prepTestRow"><span class="field-hint">Want to check first?</span>
                   <button class="btn btn-sm" id="prepTest">Test face detection on one photo…</button>
                   <span class="field-hint">optional and safe: shows the crop, writes nothing</span></div>
                 <div id="prepTestResult"></div>
@@ -404,8 +422,8 @@
                     <span class="me-name" id="meName"></span>
                   </div>
                   <div class="me-bar">
-                    <span class="seg" id="meTool"><button class="btn btn-sm active" data-tool="brush" title="Paint white: learned (B)">Brush</button><button
-                      class="btn btn-sm" data-tool="erase" title="Paint black: not learned (E)">Eraser</button><button
+                    <span class="seg" id="meTool"><button class="btn btn-sm active" data-tool="brush" title="Paint white: learned (B). Right-click paints black">Brush</button><button
+                      class="btn btn-sm" data-tool="erase" title="Paint black: not learned (E). Right-click paints white">Eraser</button><button
                       class="btn btn-sm" data-tool="sam" title="Click a thing to add it to the mask, right-click or Alt+click to take it away (S). Needs SAM 3.1, downloaded on this card">SAM click</button></span>
                     <label class="me-slider" title="Brush size ([ and ])">Size <input type="range" id="meSize" min="2" max="400" value="40"></label>
                     <label class="me-slider" title="Soft edges: 0 is a hard edge">Softness <input type="range" id="meSoft" min="0" max="100" value="30"></label>
@@ -431,7 +449,7 @@
                     <span class="field-hint" id="meState"></span>
                   </div>
                   <div class="field-hint">Scroll to zoom, hold Space and drag (or drag with the middle button) to move
-                    around. Keys: B brush, E eraser, S SAM click, [ ] size, Ctrl+Z / Ctrl+Y, 0 fit, ← → pictures. SAM click: click
+                    around. Keys: B brush, E eraser, S SAM click, [ ] size, Ctrl+Z / Ctrl+Y, 0 fit, ← → pictures. Right-click with the Brush erases, with the Eraser paints. SAM click: click
                     something to add it to the mask, right-click or Alt+click to take it away.</div>
                 </details>
               </div>
@@ -555,9 +573,9 @@
             </div>
           </div>
           <div class="section-card">
-            <div class="card-title">Find &amp; Replace</div>
+            <div class="card-title">Find, Replace &amp; Add</div>
             <div class="card-desc">Across every .txt caption in the training folder (not songs' .lyrics.txt), ignoring upper and lower case.
-              Preview shows each change first; nothing is written until Replace.</div>
+              Preview shows each change first; nothing is written until Replace or Add.</div>
             <div class="card-content">
               <div class="field-row"><span class="field-label">Find:</span>
                 <input type="text" id="frFind" class="w-path"></div>
@@ -566,6 +584,14 @@
               <div class="field-row"><button class="btn" id="frPreview">Preview</button>
                 <button class="btn btn-primary" id="frApply">Replace in all captions</button>
                 <span class="field-hint" id="frStatus"></span></div>
+              <div class="field-row"><span class="field-label">Add to the start:</span>
+                <input type="text" id="frStart" class="w-path" placeholder="after the trigger word, e.g. photo"></div>
+              <div class="field-row"><span class="field-label">Add to the end:</span>
+                <input type="text" id="frEnd" class="w-path" placeholder="e.g. soft window light"></div>
+              <div class="field-hint">Added after the trigger word when a caption starts with it, so the trigger stays
+                first. A caption that already has the words is left as it is.</div>
+              <div class="field-row"><button class="btn" id="frAddPreview">Preview</button>
+                <button class="btn btn-primary" id="frAdd">Add to all captions</button></div>
               <div id="frChanges" class="checkpoint-list"></div>
             </div>
           </div>
@@ -583,6 +609,9 @@
                 <select id="capSort" class="w-combo" title="Smallest first finds pictures too small to train on.">
                   <option value="name">By file name</option><option value="small">By size, smallest first</option>
                   <option value="large">By size, largest first</option></select></div>
+              <div class="field-row"><span class="field-label">View:</span>
+                <select id="capView" class="w-combo" title="Table: one row each, sortable by any column">
+                  <option value="cards">Cards</option><option value="table">Table</option></select></div>
               <div class="field-row"><span class="field-label">Per page:</span>
                 <select id="capPerPage" class="w-combo"><option>12</option><option>24</option><option>48</option>
                   <option>96</option><option>200</option></select></div>
@@ -622,8 +651,10 @@
                   <button class="btn btn-sm" data-view="list">Newest first</button>
                   <button class="btn btn-sm" data-view="grid">Prompt × epoch</button></span>
                 <button class="btn btn-sm" id="likBtn" title="For a person or character LoRA: scores the face in every preview against three photos of your subject from the training images (on the CPU - training keeps the GPU). Faces only: judge a style or object LoRA, and overbaking and skin on any LoRA, by eye.">🎯 Likeness…</button>
+                <button class="btn btn-sm" id="styBtn" title="For a style LoRA: how close each preview is to your training pictures' look as a whole (texture, palette, line and medium more than who is in it), 0-100%. On the CPU; downloads DINOv2 (about 350 MB) the first time.">🎨 Style score</button>
                 <button class="btn btn-sm" id="rvBtn" title="Scrub this run epoch by epoch, one prompt at a time; play it, save a frame or a clip">🎞 Visualiser</button>
                 <span class="field-hint" id="likStatus"></span>
+                <span class="field-hint" id="styStatus"></span>
               </div>
               <div class="lik-panel" id="likPanel" style="display:none">
                 <div class="lik-run" id="likRun"></div>
@@ -708,6 +739,7 @@
               <pre class="console-terminal" id="console"></pre>
             </div>
           </div>
+          <div class="section-card run-summary" id="runSummary" style="display:none"></div>
           <div class="section-card">
             <div class="card-title">Checkpoints</div>
             <div class="card-desc" id="checkpointsInfo">The LoRAs and checkpoints this run has saved, newest first.
@@ -891,7 +923,7 @@
               <div class="field-row" id="stPlayBoth" style="display:none"><button class="btn btn-sm" id="stPlayBothBtn">▶ Play together</button></div>
               <div class="field-row" id="stDownloads" style="display:none">
                 <a class="btn btn-sm" id="stDlBase" title="The Baseline as rendered: the LoRA at its load strength, before your slider changes">💾 Download original</a>
-                <a class="btn btn-sm" id="stDlTweak" title="The Tweaked render as it is now, with your slider changes">💾 Download tweaked</a></div>
+                <a class="btn btn-sm" id="stDlTweak" title="The Tweaked render as it is now, with your slider changes. A picture keeps Studio's settings inside it (the LoRAs, every slider, the prompt and seed): drop it on this tab to get them all back.">💾 Download tweaked</a></div>
               <div class="st-song" id="stSong" style="display:none">
                 <div class="field-row st-song-btns">
                   <button class="btn btn-sm" id="stSongBaseline" data-side="baseline">▶ Baseline</button>
@@ -1738,7 +1770,9 @@
           </div>
           <div class="section-card">
             <div class="card-title">Add a helper</div>
-            <div class="card-desc">Your pods and the computers on your network that run Fizgig are listed below.
+            <div class="card-desc">With your RunPod API key saved on the Pods tab, each pod you start is added by itself,
+              with both jobs off, and taken off the list when you delete it.<br><br>
+              Your other pods and the computers on your network that run Fizgig are listed below.
               Press <b>Add as a helper</b> beside one. For anything else, type its address in the last row.<br><br>
               <b>Passwords.</b> For one of your pods, leave the password box empty: Fizgig finds the password itself,
               using the RunPod API key saved on the Pods tab. For another computer, type the password set in its
@@ -1982,7 +2016,7 @@
   <!-- a picture shown big: click a preview or a Captions picture; click, Esc or the cross closes, arrows step -->
   <div class="lightbox" id="lightbox" style="display:none">
     <button class="btn lightbox-close" id="lightboxClose" title="Close (Esc)">✕</button>
-    <button class="btn lightbox-step" id="lightboxPrev" title="Previous (←)">‹</button>
+    <button class="btn lightbox-step" id="lightboxPrev" title="Previous (←). On previews: ← → the same prompt an epoch earlier or later, ↑ ↓ the other prompts at this epoch">‹</button>
     <figure class="lightbox-figure"><div class="lightbox-mode" id="lightboxMode" style="display:none"></div><img id="lightboxImg" alt=""><figcaption id="lightboxName"></figcaption>
       <div class="lightbox-cap" id="lightboxCap" style="display:none">
         <textarea id="lightboxCapText" rows="3" spellcheck="true"></textarea>

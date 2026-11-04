@@ -509,7 +509,8 @@ def build_comparison_grid(rows, col_labels, *, row_labels=None, cell=None,
                 continue
             im = row[ci]
             if im.mode != "RGB":
-                im = im.convert("RGB")
+                from fizgig.utils.image import flatten
+                im = flatten(im)
             if im.size != (cw, ch):
                 im = im.resize((cw, ch), Image.LANCZOS)
             sheet.paste(im, (gutter + ci * (cw + gap), y))

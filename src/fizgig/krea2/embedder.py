@@ -223,6 +223,16 @@ def _gpu_room_gb(device) -> float:
         return float("inf")
 
 
+def _gpu_total_gb(device) -> float:
+    try:
+        d = torch.device(device)
+        if d.type != "cuda" or not torch.cuda.is_available():
+            return float("inf")
+        return torch.cuda.mem_get_info(d)[1] / 2 ** 30
+    except Exception:
+        return float("inf")
+
+
 # what a caption needs on the card beside the weights: a 1 MP picture's vision tokens, the KV cache, the logits
 _CAPTION_WORK_GB = 2.5
 
@@ -236,13 +246,15 @@ def _load_qwen3_vl_model(
 ) -> Qwen3VLForConditionalGeneration:
     """Build Qwen3-VL (4B, or the 8B Qwen Image 2.1 ships) from its vendored config and load weights from a local
     safetensors. A model bigger than the card's free memory keeps what fits on the card and streams the rest of its
-    language layers from system RAM for each step (slower, but it runs)."""
+    language layers from system RAM for each step (slower, but it runs). Only a model bigger than the whole card
+    streams: one that fits an empty card goes on it whole, as it did before streaming, even mid-run beside a training
+    model (#275 - streamed there, a stuck image's recaption moved every layer across for each word and ran for hours)."""
     config = Qwen3VLConfig.from_dict(_qwen3_vl_config(model_path))
     with init_empty_weights():
         model = Qwen3VLForConditionalGeneration._from_config(config)
     weights_gb = os.path.getsize(model_path) / 2 ** 30
     room = _gpu_room_gb(device)
-    stream = weights_gb + _CAPTION_WORK_GB > room
+    stream = weights_gb + _CAPTION_WORK_GB > _gpu_total_gb(device)
     if stream:
         logger.info(f"Qwen3-VL text encoder: {weights_gb:.1f} GB of weights, {room:.1f} GB free on the card - loading "
                     "to system RAM and streaming the layers that don't fit")
@@ -557,7 +569,8 @@ class Qwen3VLConditioner(torch.nn.Module):
     def _cap_image(im, megapixels: float):
         """RGB + downscale an image so its pixel area is <= megapixels (never upscale)."""
         from PIL import Image
-        im = im.convert("RGB")
+        from fizgig.utils.image import flatten
+        im = flatten(im)                    # a see-through picture on white, not on its hidden colour
         cap = int(megapixels * 1024 * 1024)
         w, h = im.size
         if w * h > cap and w > 0 and h > 0:

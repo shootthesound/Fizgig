@@ -175,6 +175,7 @@ OPTIONS = (
 
 MINIMAX = FamilyDescription(
     key="minimax",
+    start_lr_bands=(("slider", 7e-5, 6e-4),),
     arch_id="minimaxh3",
     display_name="MiniMax H3",
     gui_label="MiniMax H3",
@@ -310,12 +311,16 @@ MINIMAX = FamilyDescription(
     multi_concept=True,
     # the old H3 recipe on the box's click: a stronger caption dropout (each subject must answer to its own trigger)
     multi_concept_defaults=(("H3_CAPTION_DROPOUT", "0.10 (strong)"),),
+    caption_dropout=False,                   # its own Caption dropout option (the cached uncond embed)
+    resolution_stages=False,                 # clips train at their own size: not measured with stages
+    detail_crops=False,                      # clips: a crop of a frame isn't a clip
     multi_concept_hint="See the MiniMax section of the README.",
     int8_attention=True,              # workbench renders: comfy-kitchen's INT8 attention
     activation_cache=True,            # Turbo Preview: step-1 replay, identical to a full render
     adaptive_lr=False,
     slider_training=True,             # prompt pairs, photo pairs and clip pairs (driver: _slider_loss / predict)
     loss_watch=False,
+    masked_training=True,             # photos only: the dataset gives a mask to a still, never to a clip or a voice
     network_hint="LoRA recommended for MiniMax",
     ema_hint="A smoothed average of the weights, leading to better and more reliable previews.",
     samples_turbo_pace=True,

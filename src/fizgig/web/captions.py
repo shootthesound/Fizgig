@@ -172,13 +172,20 @@ def media_files(folder, clips, photos=True, audio=False):
         return []
 
 
+def with_crops(folder):
+    """[the folder] and, when it trains detail crops, its largest crop folder (what the Captions tab shows)."""
+    from fizgig.dataset import detail_crops
+    big = detail_crops.largest(folder)
+    return [folder] + ([big] if big else [])
+
+
 def static_captions(folder, trigger, overwrite, clips, photos=True, voice=False, ext=".txt"):
     """The trigger word as every file's caption (only files without one unless overwrite); a family that trains on
-    recordings gets them too."""
+    recordings gets them too, and so do the folder's detail crops."""
     if not trigger.strip():
         raise ValueError("Type a trigger word first.")
     made = skipped = 0
-    for p in media_files(folder, clips, photos, audio=voice):
+    for p in [p for f in with_crops(folder) for p in media_files(f, clips, photos, audio=voice)]:
         cap = os.path.splitext(p)[0] + ext
         if os.path.exists(cap) and not overwrite:
             skipped += 1
@@ -186,6 +193,7 @@ def static_captions(folder, trigger, overwrite, clips, photos=True, voice=False,
         with open(cap, "w", encoding="utf-8") as f:
             f.write(trigger.strip())
         made += 1
+    _mirror_crops([folder], ext)
     _log(f"Static captions: {made} written, {skipped} kept (they had one)")
     return {"written": made, "skipped": skipped}
 
@@ -214,13 +222,24 @@ def song_captions(folder, trigger, words, overwrite, ext=".txt"):
     return {"written": made, "skipped": skipped, "caption": caption}
 
 
+def _caption_files(folder, ext):
+    """The folder's caption files, then its largest detail crops' (the ones the Captions tab shows)."""
+    return [fp for f in with_crops(folder) for fp in sorted(glob.glob(os.path.join(glob.escape(f), "*" + ext)))]
+
+
+def _caption_name(folder, fp):
+    """A caption's name in a change list: a detail crop's says so."""
+    n = os.path.basename(fp)
+    return n if os.path.dirname(fp) == folder else f"{n} (detail crop)"
+
+
 def find_replace(folder, find, replace, apply, ext=".txt"):
     """Case-insensitive find & replace across the folder's .txt captions: the changes, and (apply) written."""
     if not find:
         raise ValueError("Type the text to find first.")
     pat = re.compile(re.escape(find), re.IGNORECASE)
     changes = []
-    for fp in sorted(glob.glob(os.path.join(glob.escape(folder), "*" + ext))):
+    for fp in _caption_files(folder, ext):
         if fp.lower().endswith(".lyrics.txt"):          # a song's lyrics are the words sung, not a caption
             continue
         try:
@@ -230,12 +249,49 @@ def find_replace(folder, find, replace, apply, ext=".txt"):
         if not pat.search(old):
             continue
         new = pat.sub(lambda _m: replace, old)
-        changes.append({"name": os.path.basename(fp), "old": old[:300], "new": new[:300]})
+        changes.append({"name": _caption_name(folder, fp), "old": old[:300], "new": new[:300]})
         if apply:
             with open(fp, "w", encoding="utf-8") as f:
                 f.write(new)
     if apply:
+        _mirror_crops([folder], ext)
         _log(f"Find & Replace: '{find}' -> '{replace}' in {len(changes)} captions")
+    return {"changes": changes, "applied": bool(apply)}
+
+
+def add_text(folder, start, end, trigger, apply, ext=".txt"):
+    """Text added to the start and/or end of every .txt caption (not songs' lyrics): the changes, and (apply)
+    written. The start goes after the trigger word when a caption opens with it, so captions stay trigger-first; a
+    caption that already has the text is left as it is."""
+    start, end, trigger = (str(x or "").strip().strip(",").strip() for x in (start, end, trigger))
+    if not (start or end):
+        raise ValueError("Type what to add to the start or the end first.")
+    has = lambda cap, t: re.search(r"(?<!\w)" + re.escape(t) + r"(?!\w)", cap, re.IGNORECASE)
+    changes = []
+    for fp in _caption_files(folder, ext):
+        if fp.lower().endswith(".lyrics.txt"):
+            continue
+        try:
+            old = read_text(fp)
+        except OSError:
+            continue
+        new = old.strip()
+        if start and not has(new, start):
+            m = re.match(r"\s*" + re.escape(trigger) + r"(?!\w)\s*,?\s*", new, re.IGNORECASE) if trigger else None
+            new = (new[:m.end()].rstrip(" ,") + ", " + start + (", " + new[m.end():] if new[m.end():] else "")
+                   if m else start + (", " + new if new else ""))
+        if end and not has(new, end):
+            new = (new.rstrip(" .,") + ", " if new else "") + end
+        if new == old.strip():
+            continue
+        changes.append({"name": _caption_name(folder, fp), "old": old[:300], "new": new[:300]})
+        if apply:
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(new)
+    if apply:
+        _mirror_crops([folder], ext)
+        _log(f"Added to {len(changes)} captions" + (f": '{start}' at the start" if start else "")
+             + (f"{' and' if start else ':'} '{end}' at the end" if end else ""))
     return {"changes": changes, "applied": bool(apply)}
 
 
@@ -251,6 +307,36 @@ def _worker_config(model, captioner, clips):
         if FLORENCE_CODE_REVISIONS.get(model):
             cfg["florence_code_revision"] = FLORENCE_CODE_REVISIONS[model]
     return cfg
+
+
+def _crop_images(images, overwrite, ext):
+    """(the files to caption, the training folders whose detail crops then mirror their captions): a detail crop is
+    captioned at the largest size it has, and that caption is copied over its other sizes (detail_crops.share_captions);
+    without overwrite, one with a caption at its largest size is left out."""
+    from fizgig.dataset import detail_crops
+    out, roots = [], []
+    for p in images:
+        d = os.path.dirname(p)
+        if not detail_crops.is_crop_dir(d):
+            out.append(p)
+            continue
+        root = detail_crops.root_of(d)
+        if root not in roots:
+            roots.append(root)
+        name = os.path.basename(p)
+        big = next((os.path.join(o, name) for _l, o in detail_crops.sizes(root)[::-1]
+                     if os.path.isfile(os.path.join(o, name))), p)
+        if (overwrite or not os.path.isfile(os.path.splitext(big)[0] + ext)) and big not in out:
+            out.append(big)
+    return out, roots
+
+
+def _mirror_crops(roots, ext):
+    from fizgig.dataset import detail_crops
+    n = sum(detail_crops.share_captions(r, ext) for r in roots)
+    if n:
+        _log(f"Copied {n} caption(s) to the same detail crops at their other sizes")
+    return n
 
 
 def _reader(proc):
@@ -272,10 +358,15 @@ def _reader(proc):
                 _st["ok"] += 1
             elif line.startswith("FAIL: "):
                 _st["fail"] += 1
+            roots = ()
             if line in ("DONE", "STOPPED"):
                 _st["state"] = "loaded"
                 _st["job"] = ""
+                roots, _st["crop_roots"] = _st.get("crop_roots") or (), []
+                ext = _st.get("crop_ext") or ".txt"
         _log(line)
+        if roots:                                 # detail crops: the new captions over their other sizes
+            _mirror_crops(roots, ext)
     with _lock:
         if _st["proc"] is proc:
             _st.update(proc=None, key=None, state="idle", job="", model="")
@@ -306,13 +397,15 @@ def ai_captions(prefs, captioner, folder, model, task_label, instruction, max_to
         raise ValueError("A captioning job is already running. Stop it first.")
     if model == QWEN_MODEL and not captioner:
         raise ValueError("Qwen3-VL needs the Krea 2 text encoder set in Preferences.")
-    images = [p for p in (only or media_files(folder, clips, photos)) if os.path.isfile(p)]
+    images = [p for p in (only or [p for f in with_crops(folder) for p in media_files(f, clips, photos)])
+              if os.path.isfile(p)]
     if not images and not only:
         raise ValueError("Nothing here for the AI to caption: this model trains on recordings. Use Static Caption All "
                          "or Caption every song." if not photos and not clips else
                          "No pictures or clips in the training folder.")
     if not only and not overwrite:
         images = [p for p in images if not os.path.exists(os.path.splitext(p)[0] + ext)]
+    images, roots = _crop_images(images, overwrite or bool(only), ext)    # detail crops: at their largest size
     if not images:
         raise ValueError("Every file already has a caption. Tick Overwrite to caption them again."
                          if not only else "That file isn't there any more.")
@@ -355,7 +448,8 @@ def ai_captions(prefs, captioner, folder, model, task_label, instruction, max_to
     with open(job_path, "w", encoding="utf-8") as f:
         json.dump(job, f)
     with _lock:
-        _st.update(job="re-caption" if only else "captions", done=0, total=len(images), ok=0, fail=0)
+        _st.update(job="re-caption" if only else "captions", done=0, total=len(images), ok=0, fail=0,
+                   crop_roots=roots, crop_ext=ext)
         if _st["state"] == "loaded":
             _st["state"] = "running"                  # busy from now: a second job waits for this one
         ready, proc = _st["ready"], _st["proc"]

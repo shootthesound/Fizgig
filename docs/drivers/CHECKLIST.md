@@ -49,6 +49,7 @@ Most people train on 12–24 GB cards, so a family isn't finished until it has b
 - [ ] Edit training: an edit LoRA trained on a few pairs applies the edit to a new photo.
 - [ ] Sliders: at strength −1, 0 and +1 the previews move between the two looks, and 0 matches the base model.
 - [ ] Video: an off-spec clip (wrong frame rate or frame count) is refused at Start with the reason; a clip preview plays with sound (if the model has sound); Repair Studio plays the tweaked and baseline clips.
+- [ ] Start checks: `start_lr_bands` declared for each kind the family offers, from its presets (a third of the lowest to three times the highest); a preset's own rate gives no warning at Start.
 
 ## What a finished family includes
 

@@ -13,7 +13,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-API = "https://api.runpod.io/graphql"
+REST = "https://api.runpod.io/v2"   # RunPod's REST API (its GraphQL one stops in January 2027)
 TEMPLATE = "bdrdew7hxw"
 REF = "vkb387ep"                    # Fizgig's RunPod referral: every Deploy link carries it
 
@@ -33,11 +33,6 @@ UA = "Fizgig"                       # RunPod's proxy refuses Python's default Us
 POD_ID = re.compile(r"^[a-z0-9]{8,24}$")
 PROXY = re.compile(r"^https?://([a-z0-9]+)-\d+\.proxy\.runpod\.net", re.I)
 MAX_SAVED = 20
-
-# runpodctl's own fields; FIELDS_MIN when RunPod rejects one of them
-FIELDS = "id name desiredStatus imageName costPerHr gpuCount ports env machine { gpuDisplayName }"
-FIELDS_MIN = "id name desiredStatus imageName"
-
 
 def pod_url(pod_id: str) -> str:
     return f"https://{pod_id}-8081.proxy.runpod.net/"
@@ -120,23 +115,30 @@ def probe(url: str, timeout=6.0) -> str:
         return "off"
 
 
-def _gql(key, query, variables=None, timeout=20):
-    body = json.dumps({"query": query, "variables": variables or {}}).encode()
-    req = urllib.request.Request(API, data=body, headers={"Content-Type": "application/json", "User-Agent": UA,
-                                                         "Authorization": f"Bearer {key}"})
+def _rest(key, method, path, body=None, query=None, timeout=20):
+    """One call to RunPod's REST API: the JSON it answers ({} for a 204), or ValueError with RunPod's own reason (its
+    problem object's detail). 404 raises LookupError: no such pod on this account."""
+    url = REST + path + ("?" + urllib.parse.urlencode(query, doseq=True) if query else "")
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, method=method, headers={
+        "Content-Type": "application/json", "User-Agent": UA, "Authorization": f"Bearer {key}"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            payload = json.loads(r.read().decode("utf-8", "replace"))
+            raw = r.read()
     except urllib.error.HTTPError as e:
         if e.code in (401, 403):
             raise ValueError("RunPod didn't accept that API key. Make one at RunPod > Settings > API Keys "
                              "(read and write).") from None
-        raise ValueError(f"RunPod's API answered {e.code}. Try again in a moment.") from None
+        if e.code == 404:
+            raise LookupError("RunPod has no such pod on this account.") from None
+        try:
+            detail = str(json.loads(e.read().decode("utf-8", "replace")).get("detail") or "")
+        except (ValueError, OSError):
+            detail = ""
+        raise ValueError(detail or f"RunPod's API answered {e.code}. Try again in a moment.") from None
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         raise ValueError(f"Couldn't reach RunPod ({getattr(e, 'reason', e)}).") from None
-    if payload.get("errors"):
-        raise ValueError(str(payload["errors"][0].get("message") or "RunPod refused that."))
-    return payload.get("data") or {}
+    return json.loads(raw.decode("utf-8", "replace")) if raw else {}
 
 
 def is_fizgig(pod) -> bool:
@@ -144,25 +146,40 @@ def is_fizgig(pod) -> bool:
     return "fizgig" in str(pod.get("imageName") or "").lower() or "8081" in ports
 
 
+_gpu_names = {}
+
+
+def _gpu_name(key, gpu_id) -> str:
+    """A GPU type's short name ("RTX 5090") from its id ("NVIDIA GeForce RTX 5090"): a pod gives only the id.
+    The catalog is asked once."""
+    if gpu_id and gpu_id not in _gpu_names:
+        try:
+            _gpu_names.update({g.get("id"): g.get("name") or ""
+                               for g in _rest(key, "GET", "/catalog/gpus").get("gpus") or []})
+        except ValueError:
+            pass
+    return _gpu_names.get(gpu_id) or gpu_id or ""
+
+
 def account(key) -> list:
     """The account's Fizgig pods (made from a Fizgig template: its image, or port 8081 open), running ones first."""
-    q = "query { myself { pods { %s } } }"
-    try:
-        data = _gql(key, q % FIELDS)
-    except ValueError as e:
-        if "Cannot query field" not in str(e):
-            raise
-        data = _gql(key, q % FIELDS_MIN)
-    pods = ((data.get("myself") or {}).get("pods")) or []
+    pods, cursor = [], None
+    while True:
+        d = _rest(key, "GET", "/pods", query={"cursor": cursor} if cursor else None)
+        pods += d.get("pods") or []
+        cursor, last = (d.get("pagination") or {}).get("nextCursor"), cursor
+        if not cursor or cursor == last:
+            break
     out = []
     for p in pods:
-        if not is_fizgig(p):
+        if not is_fizgig({"imageName": p.get("image"), "ports": ",".join(p.get("ports") or [])}):
             continue
+        status = str(p.get("status") or "").upper()
+        gpu = p.get("gpu") or {}
         out.append({"id": p.get("id") or "", "name": p.get("name") or "", "url": pod_url(p.get("id") or ""),
-                    "running": str(p.get("desiredStatus") or "").upper() == "RUNNING",
-                    "status": str(p.get("desiredStatus") or "").upper(),
-                    "gpu": ((p.get("machine") or {}).get("gpuDisplayName")) or "",
-                    "gpus": int(p.get("gpuCount") or 1), "cost": float(p.get("costPerHr") or 0),
+                    # still coming up counts as on (RunPod's status is the pod's real state, not the one asked for)
+                    "running": status in ("RUNNING", "STARTING", "PROVISIONING"), "status": status, "gpu": _gpu_name(key, gpu.get("id")),
+                    "gpus": int(gpu.get("count") or 1), "cost": float(p.get("cost") or 0),
                     "auto_login": bool(_env_password(p))})       # the app window logs you in (never the password itself)
     out.sort(key=lambda r: (not r["running"], r["name"].lower()))
     return out
@@ -176,23 +193,19 @@ def login_password(key, url) -> str:
     if not key or not pod_id:
         return ""
     try:
-        pods = ((_gql(key, "query { myself { pods { id env runtime { uptimeInSeconds } } } }", timeout=10)
-                 .get("myself") or {}).get("pods")) or []
-    except ValueError:
-        return ""
-    pod = next((p for p in pods if p.get("id") == pod_id), None)
-    if pod is None:
+        pod = _rest(key, "GET", f"/pods/{urllib.parse.quote(pod_id)}", timeout=10)
+    except (ValueError, LookupError):
         return ""
     # none in its settings (deployed from the template link: the pod made one up; or a RunPod secret): the one its
     # start-up banner printed, from its log
-    return _env_password(pod) or _log_password(key, pod_id, (pod.get("runtime") or {}).get("uptimeInSeconds"))
+    return _env_password(pod) or _log_password(key, pod_id, (pod.get("runtime") or {}).get("uptime"))
 
 
 _BANNER_PW = re.compile(r"^\[fizgig\]\s+password:\s*(\S+)\s*$")
 
 
 def _log_password(key, pod_id, uptime=None, wait=4.0) -> str:
-    """The password in the "Ready" banner the pod printed when it started, read from its container log (RunPod's v2
+    """The password in the "Ready" banner the pod printed when it started, read from its container log (RunPod's
     log stream), or "". Read from the start of this run of the pod, so a long training log can't push the banner out
     of reach; the stream then goes quiet and is closed."""
     if uptime:
@@ -200,7 +213,7 @@ def _log_password(key, pod_id, uptime=None, wait=4.0) -> str:
         q = "since=" + urllib.parse.quote(since)
     else:
         q = "tail=5000"
-    req = urllib.request.Request(f"https://api.runpod.io/v2/pods/{urllib.parse.quote(pod_id)}/logs?source=container"
+    req = urllib.request.Request(f"{REST}/pods/{urllib.parse.quote(pod_id)}/logs?source=container"
                                  f"&{q}", headers={"Authorization": f"Bearer {key}", "User-Agent": UA,
                                                    "Accept": "text/event-stream"})
     found, end = "", time.time() + wait
@@ -227,8 +240,8 @@ def _log_password(key, pod_id, uptime=None, wait=4.0) -> str:
 
 
 def _env_password(pod) -> str:
-    env = {}
-    for e in pod.get("env") or []:
+    env = dict(pod["env"]) if isinstance(pod.get("env"), dict) else {}     # a {name: value} map (or a list, below)
+    for e in pod.get("env") if isinstance(pod.get("env"), list) else []:
         if isinstance(e, str) and "=" in e:
             k, _, v = e.partition("=")
             env[k.strip()] = v
@@ -239,29 +252,6 @@ def _env_password(pod) -> str:
         if v:
             return "" if "{{" in v else v          # a secret's reference: the pod uses it, the API won't say it
     return ""
-
-
-def start(key, pod_id, gpus=1):
-    """podResume - RunPod finds the pod's GPU on its own machine again; when that machine's GPUs are all rented, it
-    says so and the pod stays stopped."""
-    try:
-        _gql(key, "mutation($id: String!, $n: Int!) { podResume(input: {podId: $id, gpuCount: $n}) "
-                  "{ id desiredStatus } }", {"id": pod_id, "n": int(gpus or 1)})
-    except ValueError as e:
-        msg = str(e)
-        if "not enough free" in msg.lower() or "no longer any instances" in msg.lower():
-            raise ValueError("The machine this pod lives on has no free GPU right now. Try again in a while, or "
-                             "deploy a new pod (this pod's files stay on its volume).") from None
-        raise
-
-
-def stop(key, pod_id):
-    _gql(key, "mutation($id: String!) { podStop(input: {podId: $id}) { id desiredStatus } }", {"id": pod_id})
-
-
-def terminate(key, pod_id):
-    """podTerminate: the pod and its disk gone for good (once its run's checkpoints are home, helpers._home_delete)."""
-    _gql(key, "mutation($id: String!) { podTerminate(input: {podId: $id}) }", {"id": pod_id})
 
 
 def _lan_rows(rows, found, mine, save):
@@ -363,6 +353,47 @@ def listing(prefs, key, save=None, mine=""):
     return {"pods": items, "error": err, "deploy": DEPLOY}
 
 
+def _action(key, pod_id, action):
+    try:
+        return _rest(key, "POST", f"/pods/{urllib.parse.quote(pod_id)}/action", {"action": action})
+    except LookupError as e:
+        raise ValueError(str(e)) from None
+
+
+def start(key, pod_id, gpus=1):
+    """RunPod finds the pod's GPU on its own machine again; when that machine's GPUs are all rented, it says so and
+    the pod stays stopped. It resumes with its own number of cards (RunPod's REST start takes none: `gpus` is
+    ignored)."""
+    try:
+        _action(key, pod_id, "start")
+    except ValueError as e:
+        msg = str(e).lower()
+        if "not enough free" in msg or "no longer any instances" in msg:
+            raise ValueError("The machine this pod lives on has no free GPU right now. Try again in a while, or "
+                             "deploy a new pod (this pod's files stay on its volume).") from None
+        raise
+
+
+def stop(key, pod_id):
+    try:
+        _action(key, pod_id, "stop")
+    except ValueError:                   # RunPod refuses (409) a stop of a pod that's stopped already: done
+        try:
+            if str(_rest(key, "GET", f"/pods/{urllib.parse.quote(pod_id)}").get("status") or "").upper() == "EXITED":
+                return
+        except (ValueError, LookupError):
+            pass
+        raise
+
+
+def terminate(key, pod_id):
+    """The pod and its disk gone for good (once its run's checkpoints are home, helpers._home_delete)."""
+    try:
+        _rest(key, "DELETE", f"/pods/{urllib.parse.quote(pod_id)}")
+    except LookupError as e:
+        raise ValueError(str(e)) from None
+
+
 # How fast each card trains next to an RTX 5090: a rough guide from public diffusion-training benchmarks, not a
 # measurement of Fizgig (real runs vary with the model and settings). It is also the list the picker offers: exactly
 # the whole cards on RunPod's deploy page (its All tab, 14 Oct 2026). RunPod's API names cards that page doesn't
@@ -385,11 +416,15 @@ def _trains(g) -> bool:
     return gid.startswith("NVIDIA") and "V100" not in gid and "MIG" not in name
 
 
+_STOCK = {"HIGH": "High", "MEDIUM": "Medium", "LOW": "Low"}    # the catalog's availability, as the page shows it
+
+
 def offers(key, dc="", count=1) -> dict:
     """Every card Fizgig can train on, with its live price and stock in Secure and Community Cloud (in one data
-    centre when `dc` is set: where a network volume lives), for pods of `count` cards, on hosts whose driver runs the
-    pod image (MIN_CUDA: RunPod's plain stock counts every host, so a card could show free and then not deploy), and
-    the account's network volumes. Asked again at most once a minute."""
+    centre when `dc` is set: where a network volume lives; the price is still the lowest anywhere), for pods of
+    `count` cards, on hosts whose driver runs the pod image (MIN_CUDA: RunPod's plain stock counts every host, so a
+    card could show free and then not deploy), and the account's network volumes. Asked again at most once a
+    minute."""
     count = 2 if str(count) == "2" else 1
     if not key:
         return {"key": False, "volumes": [], "count": count, "gpus": [
@@ -397,28 +432,30 @@ def offers(key, dc="", count=1) -> dict:
     hit = _offers_cache.get((key, dc, count))
     if hit and time.time() - hit[0] < 60:
         return hit[1]
-    where = f', dataCenterId: "{dc}"' if re.match(r"^[A-Z0-9-]{3,20}$", dc or "") else ""
-    d = _gql(key, "{ myself { networkVolumes { id name size dataCenterId } } gpuTypes { id displayName memoryInGb "
-                  f's: lowestPrice(input: {{gpuCount: {count}, secureCloud: true, minCudaVersion: "{MIN_CUDA}"{where}}}) '
-                  "{ uninterruptablePrice stockStatus } "
-                  f'c: lowestPrice(input: {{gpuCount: {count}, secureCloud: false, minCudaVersion: "{MIN_CUDA}"{where}}}) '
-                  "{ uninterruptablePrice stockStatus } } }")
+    where = dc if re.match(r"^[A-Z0-9-]{3,20}$", dc or "") else ""
+    clouds = {c: {g.get("id"): g for g in _rest(key, "GET", "/catalog/gpus", query={
+        "include": "AVAILABILITY", "product": "POD", "count": count, "cloud": c.upper(),
+        "minCudaVersion": MIN_CUDA}).get("gpus") or []} for c in ("secure", "community")}
     gpus = []
-    for g in d.get("gpuTypes") or []:
-        if not _trains(g):
+    for gid in dict.fromkeys([*clouds["secure"], *clouds["community"]]):
+        g = clouds["secure"].get(gid) or clouds["community"][gid]
+        name = g.get("name") or ""
+        if not _trains({"id": gid, "displayName": name}) or name not in SPEED:
             continue
-        name = g["displayName"]
-        if name not in SPEED:                    # not on RunPod's deploy page
-            continue
-        row = {"gpu": name, "vram": int(g.get("memoryInGb") or 0), "speed": SPEED.get(name),
+        row = {"gpu": name, "vram": int(g.get("memory") or 0), "speed": SPEED.get(name),
                "url": deploy_url(name, count)}
-        for cloud, k in (("secure", "s"), ("community", "c")):
-            lp = g.get(k) or {}
-            if lp.get("uninterruptablePrice"):
-                row[cloud] = {"price": float(lp["uninterruptablePrice"]), "stock": lp.get("stockStatus") or ""}
+        for cloud in ("secure", "community"):
+            c = clouds[cloud].get(gid) or {}
+            stock = c.get("availability") or "NONE"
+            if where:                            # that data centre's own stock
+                stock = next((x.get("availability") for x in c.get("dataCenters") or [] if x.get("id") == where),
+                             "NONE")
+            price = (c.get("price") or {}).get(cloud)
+            if stock != "NONE" and price:
+                row[cloud] = {"price": round(float(price) * count, 4), "stock": _STOCK.get(stock, "")}   # per card in v2
         gpus.append(row)
-    vols = [{"id": v["id"], "name": v.get("name") or v["id"], "size": v.get("size"), "dc": v.get("dataCenterId") or ""}
-            for v in (d.get("myself") or {}).get("networkVolumes") or []]
-    out = {"key": True, "gpus": gpus, "volumes": vols, "dc": dc if where else "", "count": count}
+    vols = [{"id": v["id"], "name": v.get("name") or v["id"], "size": v.get("size"), "dc": v.get("dataCenter") or ""}
+            for v in _rest(key, "GET", "/network-volumes").get("networkVolumes") or []]
+    out = {"key": True, "gpus": gpus, "volumes": vols, "dc": where, "count": count}
     _offers_cache[(key, dc, count)] = (time.time(), out)
     return out

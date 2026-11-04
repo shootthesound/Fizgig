@@ -40,6 +40,11 @@ def _thumb(path, side=96):
             im = upright(im)
             im.thumbnail((side, side))
             buf = io.BytesIO()
+            if im.mode in ("RGBA", "LA", "PA") or "transparency" in im.info:
+                im = im.convert("RGBA")
+                if im.getextrema()[3][0] < 255:
+                    im.save(buf, "PNG")
+                    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
             im.convert("RGB").save(buf, "JPEG", quality=70)
         return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
     except Exception:
@@ -69,6 +74,11 @@ def local_files(folder, subfolders=False):
     if subfolders:
         from fizgig.families import launch
         dirs += [(rel + "/", d) for rel, d in launch.subfolders(p)]
+    from fizgig.dataset import detail_crops
+    if detail_crops.is_on(p):                # its detail crops, in their folders (their captions may be hand-edited)
+        dirs += [(f"{detail_crops.DIR}/{os.path.basename(d)}/", d) for _label, d in detail_crops.sizes(p)]
+        if os.path.isdir(os.path.join(p, detail_crops.MASTERS)):   # Train on the crops only: their source pictures
+            dirs.append((detail_crops.MASTERS + "/", os.path.join(p, detail_crops.MASTERS)))
     files = []
     for rel, d in dirs:
         for e in sorted(os.scandir(d), key=lambda e: e.name.lower()):

@@ -63,6 +63,7 @@ def model_eq_gain(path):
 EPOCH = "epoch_"                    # + the epoch number: one adapter per blended epoch (the primary keeps PRIMARY)
 
 from fizgig.families.epochs import _EPOCH_RE, ema_weights, run_epochs   # noqa: F401 (the workbench's own names)
+from fizgig.utils.image import flatten
 from fizgig.utils.upright import upright
 
 
@@ -209,7 +210,7 @@ class WorkbenchEngine:
         from fizgig.families import quant
         if precision == "auto":
             try:
-                need = os.path.getsize(dit_path) / 1e9 + 6.0
+                need = self.driver.dit_gb(dit_path) + 6.0
             except OSError:
                 need = 20.0
             free = _free_vram_gb()
@@ -541,13 +542,14 @@ class WorkbenchEngine:
             mp = 1.0
         return (path, mp) if path and os.path.isfile(path) else ("", 1.0)
 
-    @staticmethod
-    def _fit_reference(path, width, height):
-        """An edit reference as uint8 (H, W, 3), cropped and scaled to the preview's size."""
+    def _fit_reference(self, path, width, height):
+        """An edit reference as uint8 (H, W, 3), or (H, W, 4) with its transparency, as training takes it, cropped and
+        scaled to the preview's size."""
         import numpy as np
         from PIL import Image, ImageOps
+        from fizgig.families.train import _as_trained
         with Image.open(path) as im:
-            return np.array(ImageOps.fit(upright(im).convert("RGB"), (int(width), int(height)), Image.LANCZOS))
+            return np.array(ImageOps.fit(_as_trained(upright(im), self.desc.rgba), (int(width), int(height)), Image.LANCZOS))
 
     def _reference_latents(self, path, width, height):
         """The edit reference's latents (CPU, batch dim), cached per picture and size."""
@@ -588,7 +590,7 @@ class WorkbenchEngine:
                     if kind == "vision":
                         from PIL import Image
                         with Image.open(ref) as im:
-                            conds = self.driver.encode_text_with_image(te, list(need), upright(im).convert("RGB"),
+                            conds = self.driver.encode_text_with_image(te, list(need), flatten(upright(im)),
                                                                        megapixels=ref_mp)
                     elif kind == "edit":
                         pic = self._fit_reference(ref, *size)

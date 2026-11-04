@@ -37,6 +37,32 @@ SIZES = ("512", "640", "768", "1024", "1280", "1536")
 KINDS = (("standard", "Standard LoRA"), ("edit", "Edit (original + edited photo pairs)"),
          ("slider", "Slider (a dial between two looks)"), ("finetune", "Fine-tune the whole model"))
 FT_REG_MULT = ("0.05", "0.1", "0.2", "0.3", "0.5", "0.75", "1.0")
+CAPTION_DROPOUTS = ("Off", "0.05", "0.10 (strong)")
+# rows that belong together, drawn as one box each on the Training tab (app.js renderSection): the box sits where its
+# first row is, its rows side by side, their hints behind its ?
+ROW_GROUPS = (
+    ("lr", "Learning rate", ("LEARNING_RATE", "ADAPTIVE_LR", "ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX")),
+    ("network", "Network", ("NETWORK_TYPE", "NETWORK_DIM", "NETWORK_ALPHA", "LOKR_FACTOR")),
+    ("length", "Length", ("MAX_TRAIN_EPOCHS", "SEED")),
+    ("size", "Picture size", ("DATASET_MEGAPIXELS", "CLIP_MEGAPIXELS", "STAGE_MP", "STAGE_UNTIL")),
+    ("context", "Context LoRA", ("CONTEXT_LORA_PATH", "CONTEXT_LORA_STRENGTH")),
+)
+STAGE_MPS = ("Off", "0.25", "0.37", "0.5", "0.75")
+STAGE_UNTILS = ("20%", "30%", "50%")
+STAGE_HINT = ("Trains the first part of the run at this smaller size, then the full Target Megapixels: those epochs "
+              "run faster (about a fifth less training time at 0.25 MP for the first 30%). Likeness arrives a little "
+              "later than training at the full size throughout, so allow a few more epochs. Below Target Megapixels "
+              "only; standard LoRAs (not edits, sliders or fine-tunes). Caching makes the smaller size's cache too.")
+CAPTION_DROPOUT_HINT = ("Trains this share of steps with no caption, so the LoRA leans less on the trigger word and "
+                        "the caption's exact words. 0.05 is the usual choice.")
+
+
+def caption_dropout_share(label):
+    """The Caption dropout choice as a share of steps (0 = off)."""
+    try:
+        return max(0.0, min(0.5, float(str(label or "0").split(" ")[0])))
+    except ValueError:
+        return 0.0
 
 # the desktop app's self.settings defaults (lora_trainer_gui.py), for the keys these forms carry
 DEFAULTS = {
@@ -254,9 +280,8 @@ def form(desc):
     ])
     ks = kinds(desc)
     params = [
-        _row("_when_read", "These settings are read when a run starts. A paused run resumes with its own settings"
-             + (" (only a new picture size is offered)" if pictures else "") + "; a dataset or caption change needs a "
-             "fresh run." + (" The previews' prompts can change while it trains, on the Samples tab." if pictures else ""),
+        _row("_when_read", "Read when a run starts. While a run is paused, the rows marked Applies on Resume can still "
+             "change" + (", and the previews' prompts can change while it trains (Samples tab)" if pictures else "") + ".",
              "note"),
         _row("FAMILY_KIND", "Kind of training", "radio", choices=[label for _, label in ks], default=ks[0][1],
              sets={label: kind_sets(desc, k) for k, label in ks if kind_sets(desc, k)}) if len(ks) > 1 else None,
@@ -312,6 +337,11 @@ def form(desc):
              "far more memory and time than a photo of the same size, so e.g. photos at 1.0 with clips at 0.25 "
              "keeps caching and training fast. A clip that would not fit in your card's free memory is cached "
              "smaller still.", MEGAPIXELS, "0.25") if "clip" in desc.media else None,
+        _row("STAGE_MP", "Start at a smaller size", "choice", STAGE_HINT, STAGE_MPS, default="Off")
+        if pictures and desc.resolution_stages else None,
+        _row("STAGE_UNTIL", "For the first", "choice", "Of the run's epochs, at the smaller size; the change to the "
+             "full size blends over a tenth of the run.", STAGE_UNTILS, default="30%")
+        if pictures and desc.resolution_stages else None,
     ]
     if len(desc.network_types) > 1:
         params += [_row("NETWORK_TYPE", "Network Type", "choice",
@@ -612,6 +642,8 @@ def form(desc):
         _row("LR_SCHEDULER", "LR Scheduler", "choice", choices=["constant", "constant_with_warmup", "cosine",
                                                                  "cosine_with_restarts", "linear", "polynomial"]),
         _row("LR_WARMUP_STEPS", "Warmup steps"),
+        _row("CAPTION_DROPOUT", "Caption dropout", "choice", CAPTION_DROPOUT_HINT, CAPTION_DROPOUTS,
+             default=CAPTION_DROPOUTS[0]) if desc.caption_dropout and pictures else None,
         *by_section("training", "other", "lora"),
         _row("METADATA_TITLE", "Title"), _row("METADATA_AUTHOR", "Author"),
         _row("METADATA_DESCRIPTION", "Description"), _row("METADATA_LICENSE", "License"),
@@ -735,6 +767,11 @@ def form(desc):
     first = next((sec for sec in sections if sec["tab"] == "training" and sec["id"] not in order), None)
     if first:
         first["extras"] = True               # the divider goes above it
+    where = {k: (g, label) for g, label, keys in ROW_GROUPS for k in keys}
+    for sec in sections:                     # each grouped row says its box
+        for r in sec["rows"]:
+            if r and r["key"] in where:
+                r["group"], r["group_label"] = where[r["key"]]
     return {"sections": sections, "presets": [{"name": n, "values": dict(v)} for n, v in (desc.presets or ())]}
 
 
@@ -955,17 +992,39 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     if not values.get("ADAPTIVE_LR") or kind in ("slider", "finetune"):   # these train at the Learning Rate box
         hidden |= {"ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX"}
     else:
-        disabled.add("LEARNING_RATE")
+        hidden.add("LEARNING_RATE")          # Adaptive LR on: Min and Max in its place (the box is ignored)
     if kind == "finetune":       # a fine-tune trains at its own fixed rate: no Adaptive LR, on any model
         hidden.add("ADAPTIVE_LR")
-    if str(values.get("OPTIMIZER_TYPE", "")) == "automagic3":
+    opt = str(values.get("OPTIMIZER_TYPE", ""))
+    if opt in ("automagic3", "automagic4"):
         disabled |= {"ADAPTIVE_LR", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK"}
         force.update({k: False for k in ("ADAPTIVE_LR", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK") if values.get(k)})
         if values.get("ADAPTIVE_LR"):            # turned off now: as it shows with Adaptive LR off
-            disabled.discard("LEARNING_RATE")
+            hidden.discard("LEARNING_RATE")
             hidden |= {"ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX"}
-        notes["OPTIMIZER_TYPE"] = "automagic3 sets its own learning rate: Adaptive LR, per-image LR and the look " \
+        notes["OPTIMIZER_TYPE"] = f"{opt} sets its own learning rate: Adaptive LR, per-image LR and the look " \
                                   "warm-up are off."
+    elif opt in ("prodigy", "muon"):             # #292: its own Optimizer Args when the box is empty or the other's
+        from fizgig.training.optimizers import MUON_DEFAULT_ARGS, PRODIGY_DEFAULT_ARGS
+        mine, other = ((PRODIGY_DEFAULT_ARGS, MUON_DEFAULT_ARGS) if opt == "prodigy" else
+                       (MUON_DEFAULT_ARGS, PRODIGY_DEFAULT_ARGS))
+        if str(values.get("OPTIMIZER_ARGS") or "").strip() in ("", other):
+            force["OPTIMIZER_ARGS"] = mine
+        if opt == "muon":
+            notes["OPTIMIZER_TYPE"] = "muon matches AdamW's step size: the usual learning rates and Adaptive LR apply."
+        elif kind == "finetune":                 # a fine-tune keeps its own optimizer and rate (families/ft.py)
+            notes["OPTIMIZER_TYPE"] = "A fine-tune uses its own optimizer: prodigy applies to LoRAs."
+        else:
+            # per-image LR stays: with Prodigy it weights that image's loss, it never writes the group rate
+            disabled |= {"LEARNING_RATE", "ADAPTIVE_LR", "KREA2_WARMUP_LOOK"}
+            force.update({k: False for k in ("ADAPTIVE_LR", "KREA2_WARMUP_LOOK") if values.get(k)})
+            hidden |= {"ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX"}
+            hidden.discard("LEARNING_RATE")
+            if str(values.get("LEARNING_RATE") or "").strip() != "1.0":
+                force["LEARNING_RATE"] = "1.0"
+            notes["OPTIMIZER_TYPE"] = ("prodigy finds its own learning rate: the Learning Rate box is a multiplier, "
+                                       "locked to 1.0, and Adaptive LR and the look warm-up are off. Per-image LR "
+                                       "still works, as a weight on each picture's loss.")
     hidden |= {s for s, k in (("edit", "edit"), ("slider", "slider"), ("finetune", "finetune")) if k != kind}
     if kind == "finetune":
         disabled |= {"MAX_TRAIN_EPOCHS", "SAVE_EVERY_N_EPOCHS"}
@@ -1098,7 +1157,10 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     if pairs:
         notes["_slider_plus_dir"] = image_folder or "Not chosen yet - pick it on the Start tab"
     notes["_edit_edited_dir"] = image_folder or "Not chosen yet - pick it on the Start tab"
-    media = launch.dataset_media(image_folder) if image_folder else set()
+    # the folder's own media plus its sub-folders' when the run trains on them (the tick is shown and on): the clip
+    # size row doesn't vanish when the clips sit only under a sub-folder
+    subs_on = "TRAIN_SUBFOLDERS" not in hidden and bool(values.get("TRAIN_SUBFOLDERS"))
+    media = launch.dataset_media(image_folder, subs_on) if image_folder else set()
     if "clip" not in media:                          # clips' own size only when the folder holds clips
         hidden.add("CLIP_MEGAPIXELS")
     # what the run ignores (launch.plan): a slider or a fine-tune trains its own blocks (Model Area), and a
@@ -1293,6 +1355,8 @@ def _lr_hint(desc, values, kind, image_folder):
     hint = getattr(desc, "lr_hint", (2e-4, 125))
     if not hint or kind != "standard" or not image_folder:
         return None
+    if str(values.get("OPTIMIZER_TYPE") or "") in ("prodigy", "automagic4"):    # they set their own rate
+        return None
     adaptive = bool(values.get("ADAPTIVE_LR"))
     key = "ADAPTIVE_LR_MIN" if adaptive else "LEARNING_RATE"
     raw = str(values.get(key) or "").split(" ")[0].strip()
@@ -1354,10 +1418,12 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
         FAMILY_TRAINING_ADAPTER=b("FAMILY_TRAINING_ADAPTER"),
         FAMILY_TURBO_STRENGTH=s("FAMILY_TURBO_STRENGTH"), FAMILY_TURBO_STEPS=s("FAMILY_TURBO_STEPS"),
         FAMILY_TURBO_PACE=s("FAMILY_TURBO_PACE"), FAMILY_PREVIEW_LOOK=b("FAMILY_PREVIEW_LOOK"),
+        CAPTION_DROPOUT=caption_dropout_share(s("CAPTION_DROPOUT")) if desc.caption_dropout else 0.0,
         MASKED_TRAINING=b("MASKED_TRAINING") and desc.masked_training, MASK_FLOOR=s("MASK_FLOOR"),
         MASK_PRIOR=s("MASK_PRIOR"),
         python=python, repo_dir=repo_dir, models=models, image_folder=image_folder,
         caption_ext=s("DATASET_CAPTION_EXT") or ".txt", batch_size=1, megapixels=s("DATASET_MEGAPIXELS"),
+        STAGE_MP=s("STAGE_MP") if desc.resolution_stages else "", STAGE_UNTIL=s("STAGE_UNTIL"),
         clip_megapixels=s("CLIP_MEGAPIXELS") if "clip" in desc.media else "",
         enable_bucket=b("ENABLE_BUCKET"), no_upscale=b("BUCKET_NO_UPSCALE"), cache_root=cache_root,
         blocks_swap=s("BLOCKS_SWAP"), enable_cache=b("ENABLE_CACHE"), resuming=bool(s("RESUME_TRAINING")),

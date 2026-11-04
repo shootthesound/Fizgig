@@ -45,9 +45,20 @@ The full field list, with comments, is `FamilyDescription` in `src/fizgig/famili
 | `train_areas` | Model Area to Train: named block sets with optional timestep windows, plus a Custom block pick. |
 | `identity_blocks` | Fast Identity Mode: a standard LoRA trains only the identity blocks, faster. |
 | `multi_concept`, `multi_concept_defaults`, `multi_concept_hint` | The Subjects card's "Who is this LoRA of?" (2 to 4 subjects): extra subject folders, each its own dataset block. The card's protection choices (DOP, the side-by-side pictures) need nothing more from a driver than training does. |
+| `caption_dropout` (default on) | Caption dropout in Other Options: that share of steps trains on the empty caption's encoding, made once with the family's own `encode_text`. Turn it off for a family with its own (H3) or no pictures (ACE-Step). |
 | `options` (`FamilyOption`) | Your own Training / Samples tab controls; each value becomes trainer flags, `--family_option` pairs for `set_options`, or cache `--aux` values. |
 
 The Context LoRA (train on top of another LoRA, frozen) needs nothing; every family has it.
+
+## Start checks
+
+Before a run starts, Fizgig lists what looks wrong, as warnings with **Start anyway** (never a block): pictures with no caption, captions without the trigger word, and a learning rate outside the model's usual range (`launch.start_checks`). The first two need nothing from a family. The third is declared:
+
+| Field | What users get |
+|---|---|
+| `start_lr_bands` | `((kind, low, high), ...)` for `"lora"`, `"finetune"` and `"slider"`: a rate outside is a warning at Start (only with Adaptive LR off, and never for an optimizer that sets its own rate). |
+
+Set each band from your shipped presets: a third of the lowest preset's learning rate to three times the highest, for each kind the family offers. Leave a kind out when nothing measured says what's usual (MiniMax H3's LoRAs train on Automagic, so it declares only its slider band). Update the band when you change a preset's rate.
 
 ## Workbench
 

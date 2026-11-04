@@ -91,10 +91,20 @@ def encode_datasets(datasets, encode_fn, args):
 
         for _, batch in tqdm(dataset.retrieve_latent_cache_batches(num_workers)):
             shown.add(len(batch))
-            # Ensure RGB (strip alpha)
+            # RGB, unless the family's VAE takes alpha (description rgba) and the picture is see-through somewhere
+            keep_alpha = getattr(args, "keep_alpha", False)
+            def _see(a):
+                return isinstance(a, np.ndarray) and a.ndim == 3 and a.shape[-1] == 4 and bool((a[..., 3] < 255).any())
+            from fizgig.utils.image import on_white
             for item in batch:
-                if isinstance(item.content, np.ndarray) and item.content.shape[-1] == 4:
-                    item.content = item.content[..., :3]
+                ctrls = item.control_content or []
+                see = _see(item.content) or any(_see(c) for c in ctrls)
+                if not (keep_alpha and _see(item.content)):
+                    item.content = on_white(item.content)
+                if not keep_alpha and ctrls:
+                    item.control_content = [on_white(c) for c in ctrls]
+                # the cache's mark: the picture or a before-image went in with its alpha ("1") or laid on white
+                item.alpha = ("1" if keep_alpha else "white") if see else ""
 
             all_cache_paths.extend([item.latent_cache_path for item in batch])
 
@@ -119,7 +129,10 @@ def encode_datasets(datasets, encode_fn, args):
                     try:
                         from safetensors import safe_open
                         with safe_open(item.latent_cache_path, framework="pt") as f:
-                            was = (f.metadata() or {}).get("source")
+                            md = f.metadata() or {}
+                        if getattr(item, "alpha", "") != md.get("alpha", ""):
+                            return True         # cached on its hidden colour (or another way than now)
+                        was = md.get("source")
                         if was:
                             return was != source_stamp(item.item_key)
                         return os.path.getmtime(item.item_key) > os.path.getmtime(item.latent_cache_path)

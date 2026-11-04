@@ -151,6 +151,9 @@ def _face_info(x1, y1, x2, y2, gender="unknown", score=1.0, source="insightface"
 def _pil_to_bgr(pil_image: Image.Image) -> np.ndarray:
     """The BGR array InsightFace / OpenCV expect: the same pixels cv2.cvtColor's GRAY2BGR / RGBA2BGR / RGB2BGR give
     (a channel copy or swap, nothing rounded), done in numpy."""
+    if pil_image.mode not in ("RGB", "L"):
+        from fizgig.utils.image import flatten
+        pil_image = flatten(pil_image)             # a transparent picture on white, not its hidden colour
     a = np.array(pil_image)
     if a.ndim == 2:
         a = np.stack([a, a, a], axis=-1)
@@ -159,8 +162,9 @@ def _pil_to_bgr(pil_image: Image.Image) -> np.ndarray:
 
 def _load_pil(path: str) -> Image.Image:
     """PIL, not cv2.imread: handles unicode paths on Windows."""
+    from fizgig.utils.image import flatten
     with Image.open(path) as im:
-        return upright(im).convert("RGB")
+        return flatten(upright(im))
 
 
 def _box_iou(a, b) -> float:
@@ -576,6 +580,10 @@ class FaceDetector:
             bgr = cv2.imread(image_path)
             if bgr is None:
                 raise ValueError(f"Could not load image: {image_path}")
+            if os.path.splitext(image_path)[1].lower() in (".png", ".webp"):
+                with Image.open(image_path) as im:
+                    if im.mode in ("RGBA", "LA", "PA") or "transparency" in im.info:
+                        bgr = _pil_to_bgr(_load_pil(image_path))    # see-through: on white, upright
         else:
             try:
                 bgr = _pil_to_bgr(_load_pil(image_path))
@@ -827,7 +835,8 @@ class _CropEmbedder:
 def _preprocess(img: Image.Image, short: int, size: int, mean, std) -> np.ndarray:
     """The models' own preprocessing (shortest side -> `short`, bicubic; centre crop `size`; normalise), done here so
     no image-processor class (whose fast variants need torchvision on newer transformers) is involved."""
-    img = img.convert("RGB")
+    from fizgig.utils.image import flatten
+    img = flatten(img)
     w, h = img.size
     r = short / min(w, h)
     img = img.resize((max(size, round(w * r)), max(size, round(h * r))), Image.BICUBIC)
@@ -920,7 +929,7 @@ class FaceEmbedder:
         when there is no face."""
         self._ensure_loaded()
         with self._lock:
-            return self._impl.embed_bgr(_pil_to_bgr(pil.convert("RGB")))
+            return self._impl.embed_bgr(_pil_to_bgr(pil))
 
     def embed_bgr(self, bgr):
         """(embedding, bbox) of the largest face in a BGR array, as embed_pil."""

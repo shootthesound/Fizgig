@@ -26,6 +26,10 @@ def _preset(rank, alpha, lr, epochs, kind="LoRA (standard)", ema="0.98 (recommen
 
 ACESTEP15 = FamilyDescription(
     key="acestep15xl",
+    caption_dropout=False,                   # songs: no captions to drop
+    resolution_stages=False,                 # songs: no picture size
+    detail_crops=False,                      # songs: no pictures to crop
+    start_lr_bands=(("lora", 3e-5, 3e-4), ("finetune", 3e-6, 3e-5), ("slider", 7e-5, 6e-4)),
     arch_id="acestep15xl",
     display_name="ACE-Step 1.5 XL",
     gui_label="ACE-Step 1.5 XL (music)",

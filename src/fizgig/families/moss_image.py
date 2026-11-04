@@ -55,12 +55,12 @@ def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="1.0", slider=False, ft=
 
 MOSS_IMAGE = FamilyDescription(
     key="moss_image",
+    start_lr_bands=(("lora", 1.7e-5, 3e-4), ("finetune", 3e-6, 3e-5), ("slider", 7e-5, 6e-4)),
     masked_training=True,
     arch_id="mossimage",
     display_name="MOSS-Image",
     gui_label="MOSS-Image",
     lora_name_suffix="moss",
-    status_note="MOSS-Image support is new and improving daily: update Fizgig regularly to get the latest fixes.",
     aliases=("moss-image", "mossimage"),
 
     model_files=(

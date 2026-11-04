@@ -933,7 +933,7 @@ def compute_loss(model, latent: torch.Tensor, text_embeds: torch.Tensor, *,
                  sigma: torch.Tensor = None, shift: float = None, generator=None,
                  noise: torch.Tensor = None, audio_latent: torch.Tensor = None,
                  audio_weight: float = 1.0, video_weight: float = 1.0,
-                 parts_out: dict = None, ref_latents=None):
+                 parts_out: dict = None, ref_latents=None, loss_mask=None, prior=None):
     """One training step's loss.
 
     latent      : [1, 24, T, H, W] clean VAE latent (x0). T=1 is a still.
@@ -952,10 +952,21 @@ def compute_loss(model, latent: torch.Tensor, text_embeds: torch.Tensor, *,
                   MSE against the dataset-mean latent is a real, wrong gradient ("every frame
                   looks like the average"), not a harmless no-op.
 
+    loss_mask   : optional (1, 1, h, w) per-cell weights on the latent's grid, as the dataset
+                  builds them (masked training, dataset/masks.py): the video term's error is
+                  weighted per position and rescaled to the same total, so a masked picture
+                  counts for as much as an unmasked one. Never the audio term — a mask is a
+                  picture's, and the dataset gives one only to a still.
+    prior       : optional masked prior preservation (families/train.py _MaskPrior): with a
+                  loss_mask, the target outside the mask is the model's own prediction with the
+                  LoRA at 0, taken before the training forward.
+
     Returns (loss, sigma_used). parts_out, if given, receives the video and audio terms
     separately — they are on different noise schedules and averaging them into one number hides
-    which stream is actually learning.
+    which stream is actually learning. The prior term is added after parts_out is filled, so the video term it
+    reports is the video term alone.
     """
+    from fizgig.families.driver import prior_base, weighted_loss, with_prior
     if latent.shape[0] != 1:
         raise ValueError("MiniMax H3 image training is batch size 1")
     device = latent.device
@@ -970,6 +981,10 @@ def compute_loss(model, latent: torch.Tensor, text_embeds: torch.Tensor, *,
     _Hc, _Wc = (_H // _ph) * _ph, (_W // _pw) * _pw
     if (_Hc, _Wc) != (_H, _W):
         x0 = x0[..., :_Hc, :_Wc].contiguous()
+    # The mask arrives on the UNCROPPED latent grid (the dataset sizes it from the cached latent), so
+    # it takes exactly the crop x0 just had - otherwise se and mw differ by a row or a column on any
+    # latent whose edges aren't a patch multiple.
+    mw = None if loss_mask is None else loss_mask.float().to(device)[..., :_Hc, :_Wc]
     if noise is None:
         noise = torch.randn(x0.shape, device=device, generator=generator, dtype=torch.float32)
     else:
@@ -987,10 +1002,18 @@ def compute_loss(model, latent: torch.Tensor, text_embeds: torch.Tensor, *,
     # learns what the reference can't carry). None = the ordinary step.
     _ref_kw = {"ref_latents": ref_latents} if ref_latents else {}
     if audio_latent is None:
+        # masked prior preservation's forward runs BEFORE the training forward (families/driver.py)
+        base = prior_base(prior, loss_mask, lambda: model(noised.to(latent.dtype), t, text_embeds, **_ref_kw))
         pred = model(noised.to(latent.dtype), t, text_embeds, **_ref_kw)
-        loss = F.mse_loss(pred.float(), (x0 - noise).to(pred.dtype).float())
+        target = (x0 - noise).to(pred.dtype).float()
+        if mw is None:
+            loss = F.mse_loss(pred.float(), target)
+        else:
+            loss = weighted_loss((pred.float() - target).pow(2).mean(dim=1), mw)      # one weight per cell
         if parts_out is not None:
             parts_out.update(video=float(loss.detach()), audio=None)
+        if base is not None:
+            loss = with_prior(loss, prior, base, (pred.float() - base).pow(2).mean(dim=1), mw)
         if video_weight != 1.0:              # degenerate (an audio item missing its rows) but honest
             loss = video_weight * loss
         return loss, float(sigma.reshape(-1)[0])
@@ -1009,7 +1032,13 @@ def compute_loss(model, latent: torch.Tensor, text_embeds: torch.Tensor, *,
 
     pred, pred_a = model(noised.to(latent.dtype), t, text_embeds,
                          audio_rows=a_noised, return_audio=True, **_ref_kw)
-    v_loss = F.mse_loss(pred.float(), (x0 - noise).to(pred.dtype).float())
+    target = (x0 - noise).to(pred.dtype).float()
+    if mw is None:
+        v_loss = F.mse_loss(pred.float(), target)
+    else:
+        v_loss = weighted_loss((pred.float() - target).pow(2).mean(dim=1), mw)
+    # No prior term on this path: it is a clip with sound (a still never reaches it), and the
+    # dataset gives a mask to a still alone - a clip step's mask is all-white, so it preserves nothing.
     if pred_a is None:                      # pack_audio_rows off — nothing to train against
         if parts_out is not None:
             parts_out.update(video=float(v_loss.detach()), audio=None)

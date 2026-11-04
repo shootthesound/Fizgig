@@ -17,6 +17,8 @@ _TQDM_PROGRESS_RE = re.compile(
     r"(?P<speed>[0-9]+(?:\.[0-9]+)?)(?P<unit>it/s|s/it)"
     r"(?:,\s*avr_loss=(?P<loss>[-+0-9.eE]+))?"
 )
+# the postfix's other figures, read on their own (tqdm sorts its postfix keys): the run summary's Learning
+_POSTFIX_RE = re.compile(r"[,\s](lr|gn)=([-+0-9.eE]+)")
 # The cache stages' own count (cache_progress below), for the run card:  [cache] captions 40/120
 _CACHE_RE = re.compile(r"\[cache\]\s+(?P<what>[a-z ]+?)\s+(?P<n>\d+)/(?P<total>\d+)")
 _EPOCH_RE = re.compile(r"\bepoch\s+(?P<epoch>\d+)\s*/\s*(?P<total>\d+)", re.I)
@@ -79,6 +81,7 @@ def parse_tqdm_progress_line(line: str):
             "eta_text": match.group("eta").strip(),
             "speed_text": f"{match.group('speed')} {match.group('unit')}",
             "average_loss_text": match.group("loss"),
+            **{{"lr": "lr_text", "gn": "grad_norm_text"}[k]: v for k, v in _POSTFIX_RE.findall(clean)},
         }
     except (TypeError, ValueError):
         return None

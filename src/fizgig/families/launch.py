@@ -279,6 +279,72 @@ def uncached_pictures(toml_text):
     return n
 
 
+def start_checks(desc, st, image_folder):
+    """Warnings for Start, each one line, never a block (Start anyway goes on): pictures with no caption, captions
+    without the trigger word, a learning rate outside the model's usual band (description start_lr_bands)."""
+    out = []
+    folder = str(image_folder or "").strip()
+    if folder and os.path.isdir(folder) and not slider_on(desc, st, "prompts"):
+        from fizgig.dataset.image_dataset import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
+        exts = {e.lower() for e in (*IMAGE_EXTENSIONS, *VIDEO_EXTENSIONS, *AUDIO_EXTENSIONS)}
+        cap = _s(st.get("DATASET_CAPTION_EXT")) or ".txt"
+        cap = cap if cap.startswith(".") else "." + cap
+        items = sorted(f for f in os.listdir(folder) if os.path.splitext(f)[1].lower() in exts and not is_mask_file(f))
+        texts = {}
+        for f in items:
+            p = os.path.join(folder, os.path.splitext(f)[0] + cap)
+            try:
+                with open(p, encoding="utf-8", errors="replace") as fh:
+                    texts[f] = fh.read()
+            except OSError:
+                texts[f] = None
+        none = [f for f, t in texts.items() if t is None or not t.strip()]
+        if none:
+            out.append(f"{len(none)} of {len(items)} pictures {'has' if len(none) == 1 else 'have'} no caption ({', '.join(none[:3])}"
+                       f"{', ...' if len(none) > 3 else ''}): {'it trains' if len(none) == 1 else 'they train'} on an empty caption.")
+        trig = _s(st.get("CAPTION_TRIGGER_WORD"))
+        if trig and trig.lower() != "trigger_word" and not multi_person_on(desc, st):
+            pat = re.compile(r"(?<!\w)" + re.escape(trig) + r"(?!\w)", re.I)
+            lack = [f for f, t in texts.items() if t and t.strip() and not pat.search(t)]
+            if lack:
+                out.append(f"{len(lack)} caption{'s don' if len(lack) != 1 else ' doesn'}'t contain the trigger word "
+                           f"'{trig}' ({', '.join(lack[:3])}{', ...' if len(lack) > 3 else ''}): "
+                           + ("that picture trains" if len(lack) == 1 else "those pictures train") + " without it.")
+    trig = _s(st.get("CAPTION_TRIGGER_WORD"))
+    for rel, d in (detail_crop_folders(desc, st) if trig and trig.lower() != "trigger_word" else []):
+        # the detail crops for this size: a caption edited without the trigger (the crop stage writes it in)
+        pat = re.compile(r"(?<!\w)" + re.escape(trig) + r"(?!\w)", re.I)
+        ext = _s(st.get("DATASET_CAPTION_EXT")) or ".txt"
+        lack = []
+        for f in (sorted(os.listdir(d)) if os.path.isdir(d) else []):
+            if not f.lower().endswith(ext.lower()):
+                continue
+            try:
+                with open(os.path.join(d, f), encoding="utf-8", errors="replace") as fh:
+                    text = fh.read()
+            except OSError:
+                continue
+            if text.strip() and not pat.search(text):
+                lack.append(f)
+        if lack:
+            out.append(f"{len(lack)} detail crop caption{'s' if len(lack) != 1 else ''} in {rel} don't contain the "
+                       f"trigger word '{trig}': those crops train without it.")
+    if (not st.get("ADAPTIVE_LR") and "automagic" not in _s(st.get("OPTIMIZER_TYPE")).lower()
+            and not (prodigy(st) and not ft_on(desc, st))):           # Prodigy's 1.0 is a multiplier
+        kind = "finetune" if ft_on(desc, st) else "slider" if slider_on(desc, st) else "lora"
+        band = next(((lo, hi) for k, lo, hi in (desc.start_lr_bands or ()) if k == kind), None)
+        try:
+            lr = float(_s(st.get("LEARNING_RATE")))
+        except ValueError:
+            lr = None
+        if band and lr is not None and not band[0] <= lr <= band[1]:
+            what = {"finetune": "a fine-tune", "slider": "a slider"}.get(kind, "a LoRA")
+            e = lambda x: (lambda m, x_: f"{float(m):g}e{int(x_)}")(*f"{x:.1e}".split("e"))   # 3e-5, not 3e-05
+            out.append(f"Learning rate {e(lr)} is {'below' if lr < band[0] else 'above'} {desc.display_name}'s usual "
+                       f"range for {what} ({e(band[0])} to {e(band[1])}, from its presets).")
+    return out
+
+
 def caches(desc, inputs):
     """Whether the cache stages run: not on a resume (the cache is already built) unless it trains at a different
     size from now on (recache: the latents that still fit are kept), not for a prompt slider (no photos), not with
@@ -508,7 +574,7 @@ def _media_count(folder):
 
 # Folders Fizgig itself makes inside a training folder: never trained on as sub-folders. Image Prep's Keep them safe
 # (originals, then originals_2, _3... on later runs), Exclude by look and the desktop's Remove. Matched in any case.
-OWN_SUBFOLDERS = {"excluded_by_look", "originals", "removed"}
+OWN_SUBFOLDERS = {"excluded_by_look", "originals", "removed", "fizgig_detail_crops", "detail_masters"}
 _OWN_NUMBERED = re.compile(r"originals(_\d+)?", re.IGNORECASE)
 
 
@@ -547,17 +613,85 @@ def subfolders(folder, skip=(), skipped=None):
 
 
 def run_subfolders(desc, st, skipped=None):
-    """The run's sub-folders (subfolders), or [] when the tick is off or doesn't apply."""
-    if not subfolders_on(desc, st):
+    """The run's sub-folders (subfolders, when the tick is on and applies), then its detail crops folder for the size
+    it trains at (detail_crops_on): each its own dataset block, item prefix and cache folder, so the per-image loss,
+    auto-recaption, a move and a training share treat a crop like a sub-folder's picture."""
+    subs = subfolders(_s(st.get("image_folder")), (_s(st.get("LORA_OUTPUT_DIR")), _s(st.get("cache_root")),
+                                                   ft_reg_dir(desc, st)), skipped) if subfolders_on(desc, st) else []
+    return subs + detail_crop_folders(desc, st)
+
+
+def item_prefix(rel):
+    """A sub-folder's item prefix in the dataset TOML (its key in the per-image loss and the auto-recaption triggers).
+    Detail crops share one for every size, so a crop keeps one loss history through Start at a smaller size and maps
+    to the folder of the size the run trains at."""
+    return "fizgig_detail_crops/" if rel.split("/")[0] == "fizgig_detail_crops" else rel + "/"
+
+
+def detail_crops_on(desc, st):
+    """The training folder is switched to Detail crops (Image Prep) and this run can take them: a standard LoRA of a
+    family with the ability (not an edit, a slider, a fine-tune or Fizgig LoRA Isolation)."""
+    from fizgig.dataset import detail_crops
+    folder = _s(st.get("image_folder"))
+    if not (desc.detail_crops and folder and detail_crops.is_on(folder)):
+        return False
+    return not (edit_on(desc, st) or slider_on(desc, st) or ft_on(desc, st) or multi_person_on(desc, st))
+
+
+def detail_crop_folders(desc, st):
+    """[(relative path, folder)] of the detail crops for the size this dataset trains at (st's megapixels)."""
+    if not detail_crops_on(desc, st):
         return []
-    return subfolders(_s(st.get("image_folder")), (_s(st.get("LORA_OUTPUT_DIR")), _s(st.get("cache_root")),
-                                                   ft_reg_dir(desc, st)), skipped)
+    from fizgig.dataset import detail_crops
+    try:
+        mp = float(st.get("megapixels") or st.get("DATASET_MEGAPIXELS") or 0)
+    except (TypeError, ValueError):
+        return []
+    if mp <= 0:
+        return []
+    d = detail_crops.size_dir(_s(st.get("image_folder")), mp)
+    try:
+        os.makedirs(d, exist_ok=True)            # a size not made yet: the Detail crops stage fills it before caching
+    except OSError:
+        pass
+    return [(f"{detail_crops.DIR}/{detail_crops.size_name(mp)}", d)]
+
+
+def detail_crop_sizes(desc, inputs):
+    """The sizes a run's detail crops are made at: its Target Megapixels, and Start at a smaller size's."""
+    if not detail_crops_on(desc, inputs):
+        return []
+    try:
+        out = [float(inputs.get("megapixels"))]
+    except (TypeError, ValueError):
+        return []
+    smp = stage_mp(desc, inputs)
+    return out + ([smp] if smp else [])
+
+
+def detail_crops_problem(desc, inputs):
+    """Detail crops that still need captions, with no captioner to write them: why it can't start, or ""."""
+    from fizgig.dataset import detail_crops
+    if _s(inputs.get("captioner")) and os.path.isfile(_s(inputs.get("captioner"))):
+        return ""
+    folder, ext = _s(inputs.get("image_folder")), _s(inputs.get("caption_ext")) or ".txt"
+    if not detail_crop_sizes(desc, inputs):
+        return ""
+    have = set()                         # a picture's crop captioned at any size: the Detail crops stage copies it
+    for _label, d in detail_crops.sizes(folder):
+        have |= {os.path.splitext(n)[0] for n in os.listdir(d) if n.endswith(ext)}
+    if any(os.path.splitext(n)[0] not in have for n in detail_crops.pictures(folder)):
+        return ("Detail crops need captions, written by the captioner: set the Krea 2 text encoder (or a secondary "
+                "captioning model) in Preferences, or switch Detail crops off for this folder in Image Prep.")
+    return ""
 
 
 def own_skipped_line(desc, st):
     """The run log's one line naming the Fizgig folders the sub-folder tick left out, or "" (none, or tick off)."""
     skipped = []
     run_subfolders(desc, st, skipped)
+    if detail_crops_on(desc, st):                # its detail crops train (as their own block): not "left out"
+        skipped = [s for s in skipped if s.split("/")[0] != "fizgig_detail_crops"]
     if not skipped:
         return ""
     return "[sub-folders] Not trained (Fizgig's own folders): " + ", ".join(skipped[:6]) + (
@@ -571,8 +705,12 @@ def _balance_repeats(folders):
     return {f: max(1, round(top / c)) for f, c in counts.items() if c}
 
 
-def dataset_media(folder):
-    """The media kinds in a training folder: {"photo", "clip", "voice"} (the dataset layer's extensions)."""
+def dataset_media(folder, include_subfolders=False):
+    """The media kinds in a training folder: {"photo", "clip", "voice"} (the dataset layer's extensions).
+
+    With `include_subfolders`: the media kinds in the sub-folders the dataset trains on (the TRAIN_SUBFOLDERS tick),
+    so a folder that holds its clips only under a sub-folder is still seen as mixed - the UI row for the clip size
+    doesn't vanish just because the clips sit one level down."""
     from fizgig.dataset.image_dataset import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
     kinds = set()
     try:
@@ -585,6 +723,9 @@ def dataset_media(folder):
         if is_mask_file(n):
             continue
         kinds |= {"photo"} if ext in img else {"clip"} if ext in vid else {"voice"} if ext in aud else set()
+    if include_subfolders:
+        for _rel, f in subfolders(folder):
+            kinds |= dataset_media(f)                 # subfolders() already goes to every depth
     return kinds
 
 
@@ -679,11 +820,12 @@ def _dedupe_flags(cmd):
     return out[::-1]
 
 
-def cache_command(desc, inputs, stage):
-    """families/cache.py: latents with the family's VAE, text with its text encoder."""
+def cache_command(desc, inputs, stage, config=""):
+    """families/cache.py: latents with the family's VAE, text with its text encoder (config: another dataset TOML,
+    Start at a smaller size's)."""
     model = _model(inputs, desc, "vae" if stage == "latents" else "text_encoder")
     cmd = [inputs["python"], os.path.join(inputs["repo_dir"], desc.cache_script), "--family", desc.key,
-           "--stage", stage, "--dataset_config", inputs["DATASET_CONFIG"], "--model", model]
+           "--stage", stage, "--dataset_config", config or inputs["DATASET_CONFIG"], "--model", model]
     cmd += option_tokens(desc, inputs)[1]
     if stage == "latents":
         cmd.append("--skip_existing")   # validated against the current bucket
@@ -735,6 +877,8 @@ def train_command(desc, inputs, plan):
         cmd += ["--context_lora_path", ctx,
                 "--context_lora_strength", _s(st.get("CONTEXT_LORA_STRENGTH") or "1.0") or "1.0"]
     mp_subs = [x[1] for x in multi_person_subjects(desc, st) if x[1]] if multi_person_on(desc, st) else []
+    if float(st.get("CAPTION_DROPOUT") or 0) > 0 and desc.caption_dropout and not slider_on(desc, st, "prompts"):
+        cmd += ["--caption_dropout", f"{float(st['CAPTION_DROPOUT']):g}"]
     if masked_on(desc, st):
         cmd += ["--masked_training", "--mask_floor", f"{mask_floor(st):g}"]
         if mask_prior(desc, st):
@@ -1092,7 +1236,33 @@ def cache_dir_for(cache_root, image_dir):
     return os.path.join(cache_root, f"{nm}-{h}")
 
 
-def dataset_toml(desc, inputs):
+STAGE_BLEND = 0.1      # the share of the run the change from the smaller size to the full one blends over
+
+
+def stage_mp(desc, inputs):
+    """Start at a smaller size: its Target Megapixels, or 0 (off, not below Target Megapixels, or a run it isn't for:
+    an edit, a slider, a fine-tune, Fizgig LoRA Isolation)."""
+    try:
+        smp = float(_s(inputs.get("STAGE_MP")) or 0)
+        full = float(inputs.get("megapixels") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if not (desc.resolution_stages and 0.25 <= smp < full):
+        return 0.0
+    if edit_on(desc, inputs) or slider_on(desc, inputs) or ft_on(desc, inputs) or multi_person_on(desc, inputs):
+        return 0.0
+    return smp
+
+
+def stage_until(inputs):
+    """The share of the run at the smaller size (the For the first choice)."""
+    try:
+        return max(0.05, min(0.9, float(_s(inputs.get("STAGE_UNTIL")).rstrip("%") or 30) / 100))
+    except ValueError:
+        return 0.3
+
+
+def dataset_toml(desc, inputs, cache_suffix=""):
     """The dataset TOML for the run: the training folder at Target Megapixels (a square of that area on the
     16-pixel grid), an edit's originals or a slider's -1 end as its control folder, and its own cache folder.
     Raises ValueError on a Target Megapixels that is not a number. Batch size is always 1 (one image a step)."""
@@ -1112,7 +1282,10 @@ def dataset_toml(desc, inputs):
         cmp_ = float(inputs.get("clip_megapixels") or 0)
     except (TypeError, ValueError):
         cmp_ = 0.0
-    if cmp_ > 0 and "clip" in desc.media and any("clip" in dataset_media(f) for f in [folder] + extra):
+    # the clips counted wherever the dataset trains on them: a folder whose clips sit only in a sub-folder (the
+    # TRAIN_SUBFOLDERS tick) still gets its clip size - without it the sub-folder inherits the pictures' resolution
+    subs = run_subfolders(desc, inputs)
+    if cmp_ > 0 and "clip" in desc.media and any("clip" in dataset_media(f) for f in [folder] + extra + [f for _r, f in subs]):
         lines.append(f"clip_megapixels = {cmp_:g}")      # clips cache and train at their own size
     reps = _balance_repeats([folder] + extra) if extra and inputs.get("concept_balance") else {}
     mp = {f: (s, w) for f, s, _why, w in multi_person_subjects(desc, inputs) if s} \
@@ -1125,7 +1298,6 @@ def dataset_toml(desc, inputs):
                 lines.append(f"caption_replace = {_json.dumps(mp[f][0]['rules'])}")
             if isolation_photos_only(desc):  # a clip / voice family trains Isolation's subjects from their stills
                 lines.append("photos_only = true")
-    subs = run_subfolders(desc, inputs)
     head = len(lines)
     lines += ["", "[[datasets]]", f'image_directory = "{folder.replace(chr(92), "/")}"']
     if reps.get(folder, 1) > 1:
@@ -1139,32 +1311,32 @@ def dataset_toml(desc, inputs):
         lines.append(f'control_directory = "{_s(inputs.get("FAMILY_SLIDER_DIR")).replace(chr(92), "/")}"')
     root = _s(inputs.get("cache_root"))
     if root and folder:
-        lines.append(f'cache_directory = "{cache_dir_for(root, folder).replace(chr(92), "/")}"')
+        lines.append(f'cache_directory = "{(cache_dir_for(root, folder) + cache_suffix).replace(chr(92), "/")}"')
     if subs and not _media_count(folder):     # everything is in the sub-folders: the training folder has no block
         del lines[head:]
     for rel, f in subs:                  # Also train on its sub-folders: each its own block and cache folder
         lines += ["", "[[datasets]]", f'image_directory = "{f.replace(chr(92), "/")}"',
-                  f'item_prefix = "{_toml_str(rel + "/")}"']
+                  f'item_prefix = "{_toml_str(item_prefix(rel))}"']
         if root:
-            lines.append(f'cache_directory = "{cache_dir_for(root, f).replace(chr(92), "/")}"')
+            lines.append(f'cache_directory = "{(cache_dir_for(root, f) + cache_suffix).replace(chr(92), "/")}"')
     for n, f in enumerate(extra, start=2):   # Multi Concept: each subject its own block and cache folder
         lines += ["", "[[datasets]]", f'image_directory = "{f.replace(chr(92), "/")}"', f'item_prefix = "s{n}:"']
         if reps.get(f, 1) > 1:
             lines.append(f"num_repeats = {reps[f]}")
         _fuse(f)
         if root:
-            lines.append(f'cache_directory = "{cache_dir_for(root, f).replace(chr(92), "/")}"')
+            lines.append(f'cache_directory = "{(cache_dir_for(root, f) + cache_suffix).replace(chr(92), "/")}"')
     for f, (_s_, w) in mp.items():        # multi-person mode: each person's composites, already captioned fused
         if _s_["kind"] != "person":
             continue
         lines += ["", "[[datasets]]", f'image_directory = "{w.replace(chr(92), "/")}"']
         if root:
-            lines.append(f'cache_directory = "{cache_dir_for(root, w).replace(chr(92), "/")}"')
+            lines.append(f'cache_directory = "{(cache_dir_for(root, w) + cache_suffix).replace(chr(92), "/")}"')
     reg = ft_reg_dir(desc, inputs)
     if reg:                              # a fine-tune's regularisation set: its own block (and cache folder)
         lines += ["", "[[datasets]]", f'image_directory = "{reg.replace(chr(92), "/")}"', 'item_prefix = "reg:"']
         if root:
-            lines.append(f'cache_directory = "{cache_dir_for(root, reg).replace(chr(92), "/")}"')
+            lines.append(f'cache_directory = "{(cache_dir_for(root, reg) + cache_suffix).replace(chr(92), "/")}"')
         lines.append("is_reg = true")
     return "\n".join(lines) + "\n"
 
@@ -1199,7 +1371,11 @@ def multi_concept_problems(desc, inputs):
 
 
 def automagic(inputs):
-    return _s(inputs.get("OPTIMIZER_TYPE")).lower() == "automagic3"
+    return _s(inputs.get("OPTIMIZER_TYPE")).lower() in ("automagic3", "automagic4")
+
+
+def prodigy(inputs):
+    return _s(inputs.get("OPTIMIZER_TYPE")).lower() == "prodigy"
 
 
 def _dop_folders(st):
@@ -1409,6 +1585,8 @@ def start_problems(desc, inputs):
                                       check_captions=not slider_on(desc, inputs, "prompts"), media_exts=exts)
         out += clip_problems(desc, _s(v.get("image_folder")))
     for rel, f in subs:                  # Also train on its sub-folders: each one's captions and clips too
+        if rel.split("/")[0] == "fizgig_detail_crops":
+            continue                     # the Detail crops stage makes and captions them (detail_crops_problem)
         out += checks.training_folder(f, _s(v.get("caption_ext", ".txt")), media_exts=exts,
                                       label=f"the sub-folder {rel}")
         out += clip_problems(desc, f)
@@ -1463,7 +1641,14 @@ def plan(desc, inputs):
     if automagic(inputs):            # it owns the rate: Adaptive LR, per-image LR and the look warm-up are off
         inputs["ADAPTIVE_LR"] = False
         inputs["loss_watch"] = {**(inputs.get("loss_watch") or {}), "per_image_lr": False, "warmup": False}
+    if prodigy(inputs) and not ft_on(desc, inputs):    # it owns the rate (a fine-tune keeps its own optimizer)
+        inputs["ADAPTIVE_LR"] = False   # per-image LR stays: a weight on each picture's loss
+        inputs["loss_watch"] = {**(inputs.get("loss_watch") or {}), "warmup": False}
+        inputs["LEARNING_RATE"] = "1.0"            # a multiplier on the rate it finds
     p = LaunchPlan(problems=start_problems(desc, inputs))
+    _cp = detail_crops_problem(desc, inputs) if not p.problems else ""
+    if _cp:
+        p.problems.append(_cp)
     if not p.problems:
         try:
             p.dataset_toml = dataset_toml(desc, inputs)
@@ -1476,6 +1661,13 @@ def plan(desc, inputs):
     if p.problems:
         return p                        # nothing to write or run
     p.files.append((inputs["DATASET_CONFIG"], p.dataset_toml))
+    smp = stage_mp(desc, inputs)
+    stage_cfg = ""
+    if smp:                             # Start at a smaller size: that size's dataset, in its own cache folder
+        stage_cfg = os.path.splitext(inputs["DATASET_CONFIG"])[0] + f"_stage{smp:g}.toml"
+        p.files.append((stage_cfg, dataset_toml(desc, {**inputs, "megapixels": smp}, f"-{smp:g}mp")))
+        p.console.append(f"[stages] the first {stage_until(inputs) * 100:.0f}% of the epochs at {smp:g} MP, then "
+                         f"{float(inputs['megapixels']):g} MP\n")
     own = own_skipped_line(desc, inputs)
     if own:
         p.console.append(own)
@@ -1496,8 +1688,28 @@ def plan(desc, inputs):
         if n:                           # a resume expects its cache; deleted by hand, it's made again (only what's gone)
             inputs["recache"] = True
             p.console.append(f"[cache] {n} picture(s) have no cache - caching them before the run resumes.\n")
+    crop_sizes = detail_crop_sizes(desc, inputs)
+    if crop_sizes:                      # before caching: the crops (and their captions) the dataset blocks name
+        from fizgig.krea2.caption_text import recaption_instruction
+        instr = os.path.splitext(inputs["DATASET_CONFIG"])[0] + "_crops_instruction.txt"
+        p.files.append((instr, recaption_instruction("style", inputs.get("caption_overrides") or {})[1]))
+        cmd = [inputs["python"], os.path.join(inputs["repo_dir"], "src", "fizgig", "scripts", "detail_crops.py"),
+               "--folder", _s(inputs.get("image_folder")), "--captioner", _s(inputs.get("captioner")),
+               "--instruction_file", instr, "--ext", _s(inputs.get("caption_ext")) or ".txt"]
+        for mp in crop_sizes:
+            cmd += ["--mp", f"{mp:g}"]
+        trig = _s(inputs.get("caption_trigger"))
+        if trig and trig.lower() != "trigger_word":
+            cmd += ["--trigger", trig]
+        p.stages.append(Stage("Detail crops", cmd))
     if caches(desc, inputs):
         p.stages += [Stage("Cache Preparation", cache_command(desc, inputs, "latents")),
                      Stage("Text Encoder Caching", cache_command(desc, inputs, "text"))]
+    if stage_cfg:
+        if caches(desc, inputs):
+            p.stages += [Stage(f"Cache Preparation ({smp:g} MP)", cache_command(desc, inputs, "latents", stage_cfg)),
+                         Stage(f"Text Encoder Caching ({smp:g} MP)", cache_command(desc, inputs, "text", stage_cfg))]
+        train += ["--stage_dataset_config", stage_cfg, "--stage_until", f"{stage_until(inputs):g}",
+                  "--stage_blend", f"{STAGE_BLEND:g}"]
     p.stages.append(Stage("Training", train))
     return p

@@ -12,6 +12,8 @@ A helper is another computer running Fizgig (a second computer on your network, 
 2. Make sure both computers run the same Fizgig version (**About** > **Check for updates**).
 3. On your main computer, open **Helpers** > **Add a helper** and pick it from the list: computers on your network and your running pods are listed. Give its password once. A pod of yours needs none: Fizgig finds its password itself, with your RunPod API key on the Pods tab. A Tailscale computer is added by its address.
 
+A pod of yours needs no adding: with your RunPod API key saved on the Pods tab, each Fizgig pod you start joins **Your helpers** by itself once it's up, with **Previews** and **Training share** off, and leaves the list when you delete the pod. A pod you **Remove** stays off until you add it again.
+
 Details: [Set one up](#set-one-up).
 
 ### …use a second GPU in this computer?
@@ -68,7 +70,7 @@ There's nothing to set: Fizgig already handles it. See [When a helper fails or g
 
 1. **On the helper**, set a web password (**Preferences > Web UI**) and press **Restart Fizgig now**, so Fizgig listens on your network. On Windows, allow Fizgig through the firewall when asked. Fizgig uses port 8081 unless you changed it.
 2. **Use the same Fizgig version on both.** **About** shows the version, and **Check for updates** there (or `update_fizgig.bat`) updates to the latest. A pod takes the latest version each time it starts, so update your home computer to match.
-3. **On your main computer**, open **Helpers** > **Add a helper**. Computers on your network are listed, and so are the pods running on your RunPod account (with your API key on the **Pods** tab; without it, the pods saved there). Give the helper's password once: Fizgig keeps the login, not the password. A pod of yours is added with no password typed: Fizgig reads it from the pod's settings on RunPod (FIZGIG_PASSWORD or VNC_PASSWORD), or, when the pod made up its own, from the log the pod printed when it started. Add a Tailscale computer, or anything not listed, by its address.
+3. **On your main computer**, open **Helpers** > **Add a helper**. Computers on your network are listed, and so are the pods running on your RunPod account (with your API key on the **Pods** tab; without it, the pods saved there). Give the helper's password once: Fizgig keeps the login, not the password. A pod of yours is added with no password typed: Fizgig reads it from the pod's settings on RunPod (FIZGIG_PASSWORD or VNC_PASSWORD), or, when the pod made up its own, from the log the pod printed when it started. Add a Tailscale computer, or anything not listed, by its address. With your API key saved, your pods are added by themselves as they start (tagged **Added by itself**) and taken off the list when deleted; a pod on the list with no job switched on is left on its own Fizgig version until you switch one on.
 4. **Switch on what it should do**, on its tile: **Previews** or **Training share**. Moving a run and fetching checkpoints need no switch.
 
 ### This computer's other GPU

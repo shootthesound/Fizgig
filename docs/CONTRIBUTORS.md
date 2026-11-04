@@ -23,6 +23,23 @@ the GUI process, which silently poisoned the next training run's memory planning
 architecture training and caching already use — so the VRAM genuinely returns, with a warm
 worker keeping single-image Regenerate instant. Validated on AMD by them and on NVIDIA here.
 
+Since then they've kept the AMD path working: a safe ROCm update ([#107](https://github.com/shootthesound/Fizgig/pull/107)), the nightly
+wheels behind `--experimental` ([#129](https://github.com/shootthesound/Fizgig/pull/129)), RDNA1/2 attention overrides and the MIOpen /
+rocBLAS paths ([#130](https://github.com/shootthesound/Fizgig/pull/130)), and the ROCm settings and VRAM readout for the web UI
+([#192](https://github.com/shootthesound/Fizgig/pull/192)).
+
+## Murf-Code
+
+[Murf-Code](https://github.com/Murf-Code) brought **MOSS-Image** to Fizgig
+([#195](https://github.com/shootthesound/Fizgig/pull/195), v8.5): OpenMOSS's 5B image model as a training family, with LoRAs, previews on
+MOSS-Image SFT and the workbench tools. Since then: a **pluggable face finder and look match**
+([#190](https://github.com/shootthesound/Fizgig/pull/190)) so furry, anime and drawn characters get likeness scores too; Resume taking the
+learning rate from the form ([#214](https://github.com/shootthesound/Fizgig/pull/214)); three bug fixes in one ([#259](https://github.com/shootthesound/Fizgig/pull/259)); the
+**loss graph views** ([#290](https://github.com/shootthesound/Fizgig/pull/290)); **Prodigy, Muon and Automagic v4** ([#292](https://github.com/shootthesound/Fizgig/pull/292)); and
+Stop asking for a second click ([#294](https://github.com/shootthesound/Fizgig/pull/294)). Two ideas came over from their Fizgig Advanced
+fork with credit: Adaptive LR judging plateaus on a 3-epoch average, and the Samples gallery's
+**Style score**.
+
 ## rintic-13
 
 [rintic-13](https://github.com/rintic-13) designed and prototyped the **async H2D-only int8
@@ -52,7 +69,8 @@ report with instrumented diagnosis of the two crashes in the way, both fixed in 
 ([#92](https://github.com/shootthesound/Fizgig/issues/92)): the checkpoint-save MemoryError
 in the optional hash metadata (landed with co-author credit, e54b0d3) and the post-preview
 fragmentation OOM. Confirmed training otherwise fully stable at 12 GB — epoch 14 with
-checkpoints throughout when they first reported.
+checkpoints throughout when they first reported. They later added the **live Progress section**
+to the Training tab ([#138](https://github.com/shootthesound/Fizgig/pull/138)) and keep sending precise bug reports.
 
 ## Hell-Bent-Fox
 
@@ -64,7 +82,9 @@ clip preview's decoder fit ran only for clips, so a still preview loaded the 4.8
 into 4 GB of free VRAM, failed twice and switched previews off for the rest of the run. Their
 fix parks for stills too and takes the decoder off the card before the parked blocks return.
 The PR was first offered in August with the same exact write-up, closed here on a promise that
-did not get delivered, and merged as theirs in September once they came back with the log.
+did not get delivered, and merged as theirs in September once they came back with the log. In October they added
+**chunked prefill for long captions** in H3's text encoder on cards older than RTX 30
+([#172](https://github.com/shootthesound/Fizgig/pull/172)).
 
 ## marduk191
 
@@ -103,6 +123,58 @@ Windows machines** ([#104](https://github.com/shootthesound/Fizgig/issues/104) �
 in different orders, so picking "GPU 0" could train on a different card. The GPU chooser now
 carries each card's UUID, which is the same across NVML, nvidia-smi and torch.
 
+## spaghettified26
+
+[spaghettified26](https://github.com/spaghettified26) added **masked training for MiniMax H3
+stills** ([#295](https://github.com/shootthesound/Fizgig/pull/295), v9.0.3), with prior preservation outside the mask, and fixed the clip
+size row for clips kept in sub-folders ([#278](https://github.com/shootthesound/Fizgig/pull/278)). Their careful memory measurements on a
+96 GB card ([#282](https://github.com/shootthesound/Fizgig/pull/282)) found that H3 clip runs with TREAD off could go without gradient
+checkpointing and run out of memory; those runs now keep it on.
+
+## DmitryAkDev
+
+[DmitryAkDev](https://github.com/DmitryAkDev) fixed the **app window on Linux**: closing it no
+longer hangs ([#197](https://github.com/shootthesound/Fizgig/pull/197)), and Ctrl+= / Ctrl+- / Ctrl+0 zoom works under WebKitGTK
+([#198](https://github.com/shootthesound/Fizgig/pull/198)), both in v8.9.0.
+
+## vishnuteja7054
+
+[vishnuteja7054](https://github.com/vishnuteja7054) built the first **web UI for headless cloud
+machines** ([#182](https://github.com/shootthesound/Fizgig/pull/182), from [#165](https://github.com/shootthesound/Fizgig/issues/165)): the schema extractor, the server with its
+login, live log and pause, and Start running through the same launch plan as the app. Fizgig's
+web UI was built on top of their commit.
+
+## PyroclasticFloe
+
+[PyroclasticFloe](https://github.com/PyroclasticFloe) added **AMD RX 6000-series (gfx10.3)
+detection on Linux** ([#281](https://github.com/shootthesound/Fizgig/pull/281), v9.0.3).
+
+## Linkram
+
+[Linkram](https://github.com/Linkram) spotted that a failed Krea 2 preview decode could leave the
+model parked ([#152](https://github.com/shootthesound/Fizgig/pull/152)); the fix restores it whatever happens. Their RDNA2 speed-ups for
+Krea 2 on the RX 6800 ([#158](https://github.com/shootthesound/Fizgig/pull/158)) are in progress.
+
+## Ideas and bug reports
+
+Features and fixes that started as someone's issue, credited in the release notes:
+[driqeks](https://github.com/driqeks) (slider anchor prompts, [#252](https://github.com/shootthesound/Fizgig/issues/252)),
+[zer0signa1](https://github.com/zer0signa1) (LoRA Royale likeness from several photos,
+[#263](https://github.com/shootthesound/Fizgig/issues/263)), [VRAM-Hoarder](https://github.com/VRAM-Hoarder) (sample prompt sets,
+[#267](https://github.com/shootthesound/Fizgig/issues/267)), [girzai](https://github.com/girzai) (Z-Image Base, [#261](https://github.com/shootthesound/Fizgig/issues/261)),
+[Dwuuds](https://github.com/Dwuuds) (the 8B captioning model, [#270](https://github.com/shootthesound/Fizgig/issues/270)),
+[bkrew](https://github.com/bkrew) (wording for style, object and concept LoRAs, [#244](https://github.com/shootthesound/Fizgig/issues/244)),
+[mart-hill](https://github.com/mart-hill) (the mask painter's brush, [#271](https://github.com/shootthesound/Fizgig/issues/271)),
+[crazyscale-dotcom](https://github.com/crazyscale-dotcom) (ComfyUI checkpoints for Krea 2,
+[#273](https://github.com/shootthesound/Fizgig/issues/273)), [Klow666](https://github.com/Klow666) (the auto-recaption stall, [#275](https://github.com/shootthesound/Fizgig/issues/275)),
+[CognitiveDiffusion](https://github.com/CognitiveDiffusion) (transparent pictures,
+[#284](https://github.com/shootthesound/Fizgig/issues/284)), [tsk5cb-cmyk](https://github.com/tsk5cb-cmyk) (Studio's typed values and saved
+setups, [#286](https://github.com/shootthesound/Fizgig/issues/286)), [LeonKLAKMUF](https://github.com/LeonKLAKMUF) (the app window's
+right-click menu, [#296](https://github.com/shootthesound/Fizgig/issues/296)), [gradyhouston](https://github.com/gradyhouston) (the H3
+reference distillation crash, [#264](https://github.com/shootthesound/Fizgig/issues/264)) and [amoszach](https://github.com/amoszach)
+(taking a folder off the training data list, [#266](https://github.com/shootthesound/Fizgig/issues/266)). [Nynxz](https://github.com/Nynxz)'s ZenTrainer gave Fizgig the ideas for
+Start at a smaller size, the run summary, the sidebar meters and the captions table.
+
 ## FNGarvin
 
 [FNGarvin](https://github.com/FNGarvin) has contributed a string of high-quality features and
@@ -121,8 +193,10 @@ fixes, including:
   default, wired to RunPod's own `PUBLIC_KEY` convention.
 - **`HF_TOKEN` handling in the model downloader** ([#29](https://github.com/shootthesound/Fizgig/pull/29)),
   and the UI truthfulness fix in [#6](https://github.com/shootthesound/Fizgig/pull/6).
+- **A model-family check before Royale, Explorer and Studio load a pipeline** ([#63](https://github.com/shootthesound/Fizgig/pull/63)), the
+  installer's uv hardlinks with a fallback ([#66](https://github.com/shootthesound/Fizgig/pull/66)), and the Pillow 12.3 bump ([#68](https://github.com/shootthesound/Fizgig/pull/68)).
 
-**A note on the record:** the PRs above (except #6) show as *closed* rather than *merged* — a
+**A note on the record:** the PRs above (except #6, #63, #66 and #68) show as *closed* rather than *merged* — a
 back-end merge script applied them to master under the maintainer's authorship and closed them.
 That was wrong, and it erased FNGarvin's contribution record. Retroactive `Co-authored-by`
 attribution commits were added for each one (512e6cc…2e9ba2d), and contributor PRs are merged

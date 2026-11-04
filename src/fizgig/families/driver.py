@@ -79,6 +79,11 @@ class FamilyDriver:
         INT8 / NF4 are applied afterwards by families/quant.py to the block map's Linears; the driver only loads."""
         raise NotImplementedError
 
+    def dit_gb(self, path: str) -> float:
+        """The DiT as load_dit loads it, in GB, for sizing precision and RAM: the file's size. A driver that
+        decodes a smaller file at load (an int8 build read as bf16) gives the decoded size."""
+        return os.path.getsize(path) / 1e9
+
     # ---- block swap (optional) --------------------------------------------------------------------
     def max_blocks_to_swap(self, dit=None) -> int:
         """How many blocks may stream between CPU and GPU; 0 = the family has no block swap."""

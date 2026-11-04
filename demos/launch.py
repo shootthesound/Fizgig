@@ -178,8 +178,8 @@ def main():
         from fizgig.bridge import affinity
         affinity.status()
     except Exception:
-        raise SystemExit("Affinity isn't answering: open Affinity by Canva (Edit > Settings > Model Context "
-                         "Protocol: every switch on except 'Use Canva AI Studio features').")
+        raise SystemExit("Affinity isn't answering: open Affinity by Canva (Edit > Settings, search for "
+                         "MCP: every switch on except 'Use Canva AI Studio features').")
     t = c["trigger"]
     names = {}
     if n == 1:

@@ -33,7 +33,7 @@ git clone -b wip-tools https://github.com/shootthesound/Fizgig
 
 **The AMD GPU route:** run **`Fizgig\demos\0 - Set up for the AMD GPU route.bat`**. It installs Fizgig, then:
 1. Switches on Fizgig's MCP server (this computer only).
-2. Checks Affinity: installs it if it's missing, then waits while you turn on its MCP server. In Affinity, open **Edit → Settings → Model Context Protocol** and turn on every switch except **Use Canva AI Studio features**, as in the picture below, then quit and reopen Affinity.
+2. Checks Affinity: installs it if it's missing, then waits while you turn on its MCP server. In Affinity, open **Edit → Settings** and type **MCP** in the search box: that brings up the **Model Context Protocol** settings. Turn on every switch except **Use Canva AI Studio features**, as in the picture below, then quit and reopen Affinity.
    ![Affinity's Model Context Protocol settings for the demos](affinity_mcp_settings.png)
 3. Asks for your photos (it opens `demos\my photos`), your name and role for the posters, and a trigger word for you.
 4. Asks for your RunPod API key (make one in RunPod's console under **Settings → API Keys**).

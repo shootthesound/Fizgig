@@ -170,7 +170,7 @@ def affinity_step(n):
     else:
         print("  Get it from https://www.affinity.studio and run this again.")
     while not affinity_mcp():
-        print("  Open Affinity and sign in. Then Edit > Settings > Model Context Protocol: turn on every switch\n"
+        print("  Open Affinity and sign in. Then Edit > Settings, type MCP in the search box, and turn on every switch\n"
               "  except 'Use Canva AI Studio features' (the README has a picture), and quit and reopen Affinity.\n"
               "  (Leave it open for the demos.)")
         if ask("  Press Enter once it's on (or type s to skip for now)").lower() == "s":

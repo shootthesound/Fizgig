@@ -95,6 +95,12 @@ FRAME_RESCALE = 5.0 / 3.0
 VISUAL_COND_TIMESTEP = 0.999
 
 
+def _wdtype(lin):
+    """A Linear's weight dtype, read through a LoRA wrapper (a frozen file - a Context LoRA from another trainer - can
+    adapt the patch projections and the output heads, and the wrapper has no .weight of its own; #298)."""
+    return getattr(lin, "base", lin).weight.dtype
+
+
 def _axis_from_sqrt_area(dim, patch, sqrt_area):
     ratio = dim / sqrt_area
     n = dim // patch
@@ -342,7 +348,7 @@ class TimeEmbedder(nn.Module):
         # rejects the mix. (Pre-existing: the bf16-checkpoint path could never forward;
         # unnoticed because everyone trains the pruned int8 file, which has no
         # time_embedder at all. Found by the NF4-ring bf16-shape test, 25 Aug.)
-        return self.proj_out(F.silu(self.proj_in(emb.to(self.proj_in.weight.dtype))))
+        return self.proj_out(F.silu(self.proj_in(emb.to(_wdtype(self.proj_in)))))
 
 
 class Attention(nn.Module):
@@ -563,7 +569,7 @@ class FinalLayer(nn.Module):
         video rows' own timestep."""
         shift, scale = self.adaln_proj(t_emb)
         hv = self.norm(x_video) * (1.0 + scale[t_index]) + shift[t_index]
-        return self.video_out(hv.to(self.video_out.weight.dtype))
+        return self.video_out(hv.to(_wdtype(self.video_out)))
 
     def forward_audio(self, x_audio, t_emb, t_index: int = 0):
         """Same shared norm+modulation, but at the AUDIO rows' timestep and through the audio
@@ -571,7 +577,7 @@ class FinalLayer(nn.Module):
         applies the per-modality head. Used by joint audio denoising in the sampler."""
         shift, scale = self.adaln_proj(t_emb)
         ha = self.norm(x_audio) * (1.0 + scale[t_index]) + shift[t_index]
-        return self.audio_out(ha.to(self.audio_out.weight.dtype))
+        return self.audio_out(ha.to(_wdtype(self.audio_out)))
 
 
 # --- model -------------------------------------------------------------------------------
@@ -858,7 +864,7 @@ class MiniMaxH3DiT(nn.Module):
         # the checkpoint stored (fp32 island on the pruned file, bf16 elsewhere) — feed
         # it its own dtype, same rule as TimeEmbedder (review, 25 Aug).
         video_embed = self.video_patch_proj(
-            video_rows.to(self.video_patch_proj.weight.dtype)).to(dtype)
+            video_rows.to(_wdtype(self.video_patch_proj))).to(dtype)
 
         # r2v reference condition rows. Same patchify + projection as the target, but blended
         # with a trace of noise first: r = aug*r + (1-aug)*noise. The reference restarts the SAME
@@ -876,7 +882,7 @@ class MiniMaxH3DiT(nn.Module):
                 _rows.append(r)
                 ref_shapes.append((z.shape[-2], z.shape[-1], z.shape[2]))
             ref_embed = self.video_patch_proj(
-                torch.cat(_rows, dim=0).to(self.video_patch_proj.weight.dtype)).to(dtype)
+                torch.cat(_rows, dim=0).to(_wdtype(self.video_patch_proj))).to(dtype)
 
         # fl2va keyframe condition rows: the same row machinery as a reference, on the
         # target's own grid, with a role-pinned noise seed per frame (see the docstring).
@@ -902,7 +908,7 @@ class MiniMaxH3DiT(nn.Module):
                 _rows.append(r)
                 kf_indices.append(idx)
             kf_embed = self.video_patch_proj(
-                torch.cat(_rows, dim=0).to(self.video_patch_proj.weight.dtype)).to(dtype)
+                torch.cat(_rows, dim=0).to(_wdtype(self.video_patch_proj))).to(dtype)
 
         # audio: silence (x0 = 0) noised on the audio schedule at the same schedule position as
         # the video rows. Present because the base model has never seen a pack without it.
@@ -938,7 +944,7 @@ class MiniMaxH3DiT(nn.Module):
                                       device=device, dtype=torch.float32)
                 _arows = sigma_a * eps.to(device=device, dtype=torch.float32)
             audio_embed = self.audio_patch_proj(
-                _arows.to(self.audio_patch_proj.weight.dtype)).to(dtype)
+                _arows.to(_wdtype(self.audio_patch_proj))).to(dtype)
 
         # pack [text | keyframes | refs | audio | video] — the reference's segment order
         parts = ([text_states.to(dtype)]
@@ -1121,7 +1127,7 @@ class MiniMaxH3DiT(nn.Module):
                 text_states = self.token_refiner(self.condition_proj(text_states))
             video_rows = patchify_video(video_latent.to(torch.float32), self.patch_size)
             video_embed = self.video_patch_proj(
-                video_rows.to(self.video_patch_proj.weight.dtype)).to(dtype)
+                video_rows.to(_wdtype(self.video_patch_proj))).to(dtype)
 
             t_val = t.reshape(-1)[:1].to(torch.float32) if torch.is_tensor(t) else torch.tensor([float(t)], device=device)
             t_val = t_val.to(device)
@@ -1142,7 +1148,7 @@ class MiniMaxH3DiT(nn.Module):
                                                    self.config.audio_latents_dim,
                                                    device=device, dtype=torch.float32)
                 audio_embed = self.audio_patch_proj(
-                    _arows.to(self.audio_patch_proj.weight.dtype)).to(dtype)
+                    _arows.to(_wdtype(self.audio_patch_proj))).to(dtype)
 
             parts = ([text_states.to(dtype)]
                      + ([audio_embed] if audio_embed is not None else [])

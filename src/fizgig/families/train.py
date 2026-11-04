@@ -1548,7 +1548,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         logger.warning("[adapter] no training adapter for this run")
     if context_lora_path:
         n = net.add_file(context_lora_path, CONTEXT, context_lora_strength)
-        driver.frozen_file_added(dit, context_lora_path, context_lora_strength, "context")
+        if n + driver.frozen_file_added(dit, context_lora_path, context_lora_strength, "context") == 0:
+            raise RuntimeError(f"Context LoRA {os.path.basename(context_lora_path)} matched no {desc.display_name} "
+                               f"layers: is it a {desc.display_name} LoRA?")
         logger.info(f"[context] {os.path.basename(context_lora_path)} frozen + active at {context_lora_strength:g} "
                     f"({n} Linears)")
     def _add_speed(strength):

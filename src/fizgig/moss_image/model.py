@@ -82,7 +82,7 @@ class _TextProjection(nn.Module):
         self.blocks = nn.ModuleList([_TextBlock(dim, ffn_dim, heads) for _ in range(2)])
 
     def forward(self, x, rope):
-        x = self.proj(x.to(self.proj.weight.dtype))
+        x = self.proj(x.to(getattr(self.proj, "base", self.proj).weight.dtype))   # through a LoRA wrapper (#298)
         for block in self.blocks:
             x = block(x, rope)
         return x

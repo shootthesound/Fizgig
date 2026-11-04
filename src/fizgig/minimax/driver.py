@@ -693,12 +693,13 @@ class MiniMaxDriver(FamilyDriver):
         load_context_lora did - on for every training step; in previews the adapter's come off, the context's stay."""
         pairs = self._adaln_pairs(dit, path, strength)
         if not pairs:
-            return
+            return 0
         if not hasattr(self, "_frozen_adaln"):
             self._frozen_adaln = {}
         self._frozen_adaln[role] = pairs
         logger.info(f"[{role}] {len(pairs)} AdaLN rows injected at run time")
         self._patch_adaln(dit, ("adapter", "context"))
+        return len(pairs)
 
     def _patch_adaln(self, dit, roles, extra=()):
         """One patch for the union of the active frozen files' AdaLN rows (a patch replaces the module forward

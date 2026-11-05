@@ -194,6 +194,44 @@ def test_flux3_batch_matches_one_at_a_time(monkeypatch):
         assert abs(b - s) <= 1e-5 * abs(s), (mask is None, b, s)
 
 
+def test_h3_batch_matches_one_at_a_time(monkeypatch):
+    """H3 packs the pictures one after another (attention over each picture's own rows) - the silence rows its forward
+    draws come from torch's own stream, so both sides start that stream from the same seed."""
+    from fizgig.families.registry import get as get_family
+    from fizgig.minimax import driver as HD
+    from fizgig.minimax.model import MiniMaxH3Config, MiniMaxH3DiT
+    monkeypatch.setattr(HD, "DTYPE", torch.float32)
+    torch.manual_seed(0)
+    dit = MiniMaxH3DiT(MiniMaxH3Config(hidden_size=128, num_layers=2, token_refiner_num_layers=1, num_attention_heads=1,
+                                       attention_head_dim=128, ffn_hidden_size=128, text_dim=24,
+                                       time_embed_hidden_size=64, time_embed_dim=32)).float().eval()
+    drv = get_family("minimax").load_driver()
+    g = torch.Generator().manual_seed(1)
+    conds = [{"hidden_states": torch.randn(1, n, 24, generator=g)} for n in (5, 11, 3)]
+    lat = torch.randn(3, 24, 8, 6, generator=g)
+    for mask in (None, torch.rand(3, 1, 8, 6, generator=g)):
+        torch.manual_seed(5)
+        with torch.no_grad():
+            b, _ = drv.training_loss_batch(dit, lat, drv.stack_conds(conds), torch.Generator().manual_seed(7),
+                                           loss_mask=mask)
+        torch.manual_seed(5)
+        g7 = torch.Generator().manual_seed(7)
+        with torch.no_grad():
+            s = sum(float(drv.training_loss(dit, lat[i:i + 1], conds[i], g7,
+                                            loss_mask=None if mask is None else mask[i:i + 1])[0]) for i in range(3)) / 3
+        assert abs(float(b) - s) <= 1e-5 * abs(s), (mask is None, float(b), s)
+
+
+def test_h3_reference_distillation_trains_one_picture_a_step():
+    from fizgig.families import form, launch
+    from fizgig.families.registry import get as get_family
+    h3 = get_family("minimax")
+    on = {**form.DEFAULTS, "H3_DISTILL": True}
+    assert "Learn identity from my dataset (reference distillation)" in form.batch_blockers(h3, on)
+    st = launch.option_tokens(h3, {"BATCH_SIZE": "2", "FAMILY_OPTIONS": {"H3_DISTILL": True}})[0]
+    assert not any("distill" in str(a) for a in st), st
+
+
 def test_krea2_batch_matches_one_at_a_time(monkeypatch):
     from fizgig.families.registry import get as get_family
     from fizgig.krea2 import driver as KD

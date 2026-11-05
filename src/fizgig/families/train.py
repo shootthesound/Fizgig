@@ -916,7 +916,7 @@ class _CheckpointPreviews:
 def _largest_bucket_mp(group):
     """Megapixels of the run's largest actual bucket (what sets activation memory), or None."""
     try:
-        return max(w * h / 1e6 for ds in group.datasets for (w, h) in ds.batch_manager.bucket_resos)
+        return max(k[-2] * k[-1] / 1e6 for ds in group.datasets for k in ds.batch_manager.bucket_resos)
     except Exception:
         return None
 
@@ -1386,7 +1386,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     cb = str(compile_blocks or "off").lower()
     if desc.compiles and cb != "off":
         try:
-            mp_max = max(w * h / 1e6 for ds in group.datasets for (w, h) in ds.batch_manager.bucket_resos)
+            mp_max = max(k[-2] * k[-1] / 1e6 for ds in group.datasets for k in ds.batch_manager.bucket_resos)
         except Exception:
             mp_max = 0.25
         do_compile, why = driver.compile_plan(cb, group.num_train_items * max_train_epochs, precision,

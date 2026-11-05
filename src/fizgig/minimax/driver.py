@@ -113,6 +113,14 @@ class MiniMaxDriver(FamilyDriver):
                                                  training_adapter_path=run.get("training_adapter"),
                                                  context_lora_path=run.get("context_lora_path"),
                                                  ema_decay=run.get("ema_decay") or 0.0)
+        bsz = max(int(getattr(ds, "batch_size", 1) or 1) for ds in group.datasets)
+        if bsz > 1:                   # Batch size: each picture past the first's measured cost (planned on any clip too)
+            from fizgig.families import quant
+            stills = [k[-2] * k[-1] / 1e6 for ds in group.datasets for k in ds.batch_manager.bucket_resos
+                      if k[0] not in ("clip", "audio")]
+            more = quant.batch_extra(self.description, max(stills or [0.0]), bsz)
+            logger.info(f"[vram] {bsz} pictures a step: +{more:.1f} GB planned for the pictures past the first")
+            adapter += more
         if precision == "auto" and blocks_to_swap >= 0:
             # a hand-set swap skips the planner: the precision is the file's own, as in the old trainer
             mode, n = ("int8" if pruned else "nf4"), blocks_to_swap
@@ -486,6 +494,56 @@ class MiniMaxDriver(FamilyDriver):
             from fizgig.minimax.common import MINIMAX_LOWNOISE_SIGMA
             info["lr_mult"] = hn if float(s) >= MINIMAX_LOWNOISE_SIGMA else 1.0
         return loss, info
+
+    def stack_conds(self, conds):
+        """Batch Size above 1: the pictures' own conditioning, for forward_packed to pack one after another (captions of
+        any length, nothing padded)."""
+        return {"items": conds}
+
+    def training_loss_batch(self, dit, latents, cond, generator, *, min_t=0.0, max_t=1.0, loss_mask=None):
+        """Batch Size above 1 - pictures (a clip or a voice trains on its own step, the dataset's rule): each picture's
+        sigma and noise drawn as training_loss draws them, picture by picture, then one forward_packed over them. The
+        loss is the pictures' mean, each at its own noise band's LR share (highnoise_lr) as its own step would be."""
+        import torch.nn.functional as F
+        from fizgig.minimax.common import MINIMAX_LOWNOISE_SIGMA, sample_sigmas
+        if getattr(self, "_distill", False):
+            raise RuntimeError("Reference distillation trains one picture a step: set Batch size to 1")
+        n = latents.shape[0]
+        _pt, ph, pw = getattr(dit, "patch_size", (1, 2, 2))
+        shift = self._shift()
+        hn = float(self.options.get("highnoise_lr") or 1.0)
+        if self.options.get("highnoise_lr_pct") not in (None, ""):
+            hn = max(0.0, min(1.0, float(str(self.options["highnoise_lr_pct"]).rstrip("%")) / 100.0))
+        self._mask_step_note(loss_mask, None)
+        items, parts = [], []
+        for i, c in enumerate(cond["items"]):
+            if c.get("audio_only") or c.get("audio_latent") is not None:
+                raise RuntimeError("H3 batches pictures: a clip or a voice trains on its own step")
+            lat = latents[i:i + 1]
+            lat = lat if lat.dim() == 5 else lat.unsqueeze(2)                    # (1, 24, 1, H, W)
+            sigma = sample_sigmas(1, "cpu", shift=shift, generator=generator,
+                                  image_tokens=(lat.shape[-2] // ph) * (lat.shape[-1] // pw))
+            if min_t > 0.0 or max_t < 1.0:
+                sigma = min_t + (max_t - min_t) * sigma
+            noise = torch.randn(lat.shape, generator=generator, dtype=torch.float32)
+            # compute_loss's step: the latent cropped to the patch grid, noised at sigma
+            hc, wc = (lat.shape[-2] // ph) * ph, (lat.shape[-1] // pw) * pw
+            x0 = lat.to(DTYPE).float()[..., :hc, :wc].contiguous()
+            noise = noise.to(device=x0.device)[..., :hc, :wc]
+            sigma = sigma.to(x0.device)
+            s = sigma.reshape(1, 1, 1, 1, 1).to(torch.float32)
+            items.append((((1.0 - s) * x0 + s * noise).to(DTYPE), (1.0 - sigma).to(x0.device),
+                          c["hidden_states"].to(DTYPE)))
+            mw = None if loss_mask is None else loss_mask[i:i + 1].float().to(x0.device)[..., :hc, :wc]
+            parts.append((x0, noise, mw, float(sigma.reshape(-1)[0])))
+        preds = dit.forward_packed(items)
+        loss = 0.0
+        for pred, (x0, noise, mw, s) in zip(preds, parts):
+            target = (x0 - noise).to(pred.dtype).float()
+            one = F.mse_loss(pred.float(), target) if mw is None else \
+                weighted_loss((pred.float() - target).pow(2).mean(dim=1), mw)
+            loss = loss + one * (hn if hn != 1.0 and s >= MINIMAX_LOWNOISE_SIGMA else 1.0)
+        return loss / n, {"t": sum(p[3] for p in parts) / n}
 
     # ---- sliders (families/train.py): image / clip pairs through training_loss's diff_ref, prompt pairs through
     #      noise_latents / predict. compute_loss's still / clip path, video only (a pole's sound is not the dial) ----

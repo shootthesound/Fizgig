@@ -897,7 +897,13 @@ def batch_blockers(desc, values):
                            (str(values.get("STAGE_MP") or "Off") != "Off", "Start at a smaller size"),
                            (values.get("MASKED_TRAINING") and str(values.get("MASK_PRIOR") or "Off") != "Off",
                             "keeping the model's own picture outside the mask")) if on]
-    return out
+    return out + [o.label.strip() for o in desc.options if getattr(o, "batch_off", False) and _on(values, o)]
+
+
+def _on(values, o):
+    """A family check's value in the Training-tab values, its default when unset."""
+    v = values.get(o.key, (values.get("FAMILY_OPTIONS") or {}).get(o.key, getattr(o, "default", "")))
+    return v not in (None, "", False, "0", 0)
 
 
 SUBFOLDERS_HINT = ("Off: only the pictures directly in the training folder are used.\nOn: the pictures in its "
@@ -1288,6 +1294,7 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         elif str(values.get("BATCH_SIZE") or "1") not in ("", "1"):
             off = {"KREA2_LOSS_WATCH", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK", "KREA2_AUTO_RECAPTION", "STAGE_MP",
                    "STAGE_UNTIL", "MASK_PRIOR"}
+            off |= {o.key for o in desc.options if getattr(o, "batch_off", False)}
             disabled |= off
             for k in off:
                 notes.setdefault(k, BATCH_OFF)

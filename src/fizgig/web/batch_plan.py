@@ -21,7 +21,7 @@ def request(desc, values):
     plans nothing here (both chosen by hand, a batch of 1, or a family that doesn't batch)."""
     from fizgig.families import launch
     batch = launch.batch_size(desc, values)
-    if batch <= 1:
+    if batch <= 1 or not desc.train_memory:          # no figures (H3 plans in its own driver): no note
         return None
     precision = launch.precision_key(desc, values.get("FAMILY_PRECISION")) if len(desc.precisions) > 1 else "bf16"
     swap = launch.swap_blocks(values.get("BLOCKS_SWAP"))
@@ -102,6 +102,8 @@ def fit(desc, values, env):
     """The largest Batch size this card trains the run at with no more block swap than batch 1 and the same
     precision (a run moved to a pod that batches: worked out there, on its own card), 1 when none does or Auto
     plans nothing here. Blocks up to two minutes (the subprocess)."""
+    if not desc.train_memory:                        # no figures to fit a batch by (H3 plans in its own driver)
+        return 1
     from fizgig.families import launch
     if launch.batch_size(desc, {**values, "BATCH_SIZE": launch.BATCH_SIZES[-1]}) <= 1:
         return 1

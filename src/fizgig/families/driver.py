@@ -489,7 +489,7 @@ class FamilyDriver:
         description.train_memory_nogc[precision], any other reads [f"{precision}:{kind}"]. Default: the largest
         bucket, as stills."""
         try:
-            return "", max(w * h / 1e6 for ds in group.datasets for (w, h) in ds.batch_manager.bucket_resos)
+            return "", max(k[-2] * k[-1] / 1e6 for ds in group.datasets for k in ds.batch_manager.bucket_resos)
         except Exception:
             return "", 1.0
 

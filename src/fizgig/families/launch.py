@@ -758,6 +758,8 @@ def option_tokens(desc, inputs, missing=None):
     vals = inputs.get("FAMILY_OPTIONS") or {}
     if multi_person_on(desc, inputs):   # checks that can't run beside Fizgig LoRA Isolation (H3 reference distillation)
         vals = {**vals, **{o.key: "" for o in desc.options if getattr(o, "isolation_off", False)}}
+    if batch_size(desc, inputs) > 1:    # checks that read one picture a step (H3 reference distillation)
+        vals = {**vals, **{o.key: "" for o in desc.options if getattr(o, "batch_off", False)}}
     models = inputs.get("models") or {}
 
     def path(v):

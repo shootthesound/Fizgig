@@ -259,6 +259,7 @@ class FamilyOption:
     show_if_media: str = ""           # shown only when the dataset holds this media kind ("clip", "voice")
     mixed_only: bool = False          # shown only when the dataset mixes voice with photos or clips
     isolation_off: bool = False       # a check that can't run with Fizgig LoRA Isolation: off and greyed while it's on
+    batch_off: bool = False           # a check that reads one picture a step: off and greyed while Batch size is above 1
     requires: str = ""                # shown (and sent) only while this check is ticked ("KEY") or this choice is
     #                                   picked ("KEY=LABEL", matched as pick() matches)
     suggestions: tuple = ()           # entry: ready-made values offered in an editable dropdown ("6-49 · why")

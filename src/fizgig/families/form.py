@@ -103,12 +103,8 @@ DEFAULTS = {
 }
 
 
-BATCH_HINT = ("Pictures trained together in each step, from the same size bucket. Above 1 an epoch is quicker "
-              "when blocks are swapped (each swap serves every picture in the batch) and on smaller models, and it "
-              "uses more memory: Auto plans for it. The "
-              "per-image loss watch, Start at a smaller size and keeping the model's own picture outside the mask "
-              "need 1, as do sliders, edits, fine-tunes, DOP and Fizgig LoRA Isolation. Each picture still counts "
-              "the same.")
+BATCH_HINT = ("How many pictures train together each step. Faster when blocks are swapped, and on smaller models "
+              "like SDXL and Anima. Uses more memory (Auto allows for it). Settings that need 1 grey out.")
 BATCH_OFF = "Off while Batch size is above 1: it reads one picture a step."
 
 TRAINING_ORDER = ("model", "output", "params", "edit", "slider", "finetune", "memory", "optimizer", "other")

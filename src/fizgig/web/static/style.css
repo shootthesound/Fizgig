@@ -2765,3 +2765,53 @@ a.google-pill:visited { color: var(--text-primary); }
 .tm-legend-end { color: var(--text-secondary); font-size: 8.5pt; }
 .tm-opacity { width: 110px; }
 .tm-auto { color: var(--text-secondary); font-size: 9pt; display: inline-flex; align-items: center; gap: 4px; }
+
+/* Include sub-folders under the Start tab's training folder: a plain tick, its explanation on hover */
+#folderOptions .form-row { margin-top: 8px; }
+#folderOptions .form-row .field-hint { padding-left: 24px; }
+.tip-mark { cursor: help; color: var(--text-secondary); font-weight: 400; }
+label[title]:has(.tip-mark) { cursor: help; }
+/* Body-part and watermark detectors: one compact row per model (no new colours: theme text colours only) */
+.det-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.det-table td { padding: 4px 6px; vertical-align: middle; border-top: 1px solid var(--border, rgba(127,127,127,.25)); }
+.det-table .det-name { font-weight: 600; white-space: nowrap; }
+.det-table .det-state { white-space: nowrap; }
+.det-table .det-acts { white-space: nowrap; text-align: right; }
+.det-table .det-acts .btn { margin-left: 4px; }
+.det-box > summary { cursor: pointer; }
+.det-table tr.det-off td:not(:first-child) { opacity: .55; }
+.det-table .det-remove.det-confirm { color: var(--danger-text); border-color: var(--danger); }
+.det-add { flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+/* Cosmic Pigeon and Deep Space only: buttons glow and lift, progress and meter bars shimmer.
+   Cheap to draw (transform, opacity, background-position) and off under reduced motion. */
+:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"] {
+  --fx-glow: color-mix(in srgb, var(--accent) 45%, transparent);
+  --fx-bar: linear-gradient(90deg, #7C4DEA, #A855F7 45%, #E879C6 80%, #7C4DEA);
+}
+:root[data-theme="deep-space"] { --fx-glow: color-mix(in srgb, var(--accent) 35%, transparent);
+  --fx-bar: linear-gradient(90deg, #6D4FD6, #7A5AE0 40%, #4CC6DB 80%, #6D4FD6); }
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.btn, .runpod-btn, .theme-pick button) {
+  transition: background .15s, border-color .15s, box-shadow .2s ease, transform .15s ease; }
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.btn, .runpod-btn, .theme-pick button):not(:disabled):hover {
+  transform: translateY(-1px); box-shadow: 0 2px 12px var(--fx-glow); }
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.btn, .runpod-btn, .theme-pick button):not(:disabled):active {
+  transform: translateY(0) scale(.98); box-shadow: 0 0 4px var(--fx-glow); transition-duration: .05s; }
+/* the bars: the theme's gradient sliding along, plus a soft light sweeping across (paused, done and failed bars stay plain) */
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.run-bar:not([data-state="paused"]):not([data-state="pausing"]):not([data-state="completed"]):not([data-state="failed"]):not([data-state="stopped"]) > span, .meter:not(.warn) .meter-bar > span, .fetch-bar > div) {
+  position: relative; overflow: hidden; background: var(--fx-bar); background-size: 200% 100%;
+  animation: fx-drift 6s linear infinite; box-shadow: 0 0 6px var(--fx-glow); }
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.run-bar:not([data-state="paused"]):not([data-state="pausing"]):not([data-state="completed"]):not([data-state="failed"]):not([data-state="stopped"]) > span, .meter:not(.warn) .meter-bar > span, .fetch-bar > div)::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; will-change: transform;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent); transform: translateX(-100%);
+  animation: fx-sweep 2.4s ease-in-out infinite; }
+/* Cosmic Pigeon's faint twinkle: the sweep fades in and out */
+:root[data-theme="cosmic-pigeon"] :is(.run-bar > span, .meter-bar > span, .fetch-bar > div)::after { animation: fx-sweep 2.4s ease-in-out infinite, fx-twinkle 1.2s ease-in-out infinite alternate; }
+@keyframes fx-drift { to { background-position: -200% 0; } }
+@keyframes fx-sweep { 0% { transform: translateX(-100%); } 60%, 100% { transform: translateX(100%); } }
+@keyframes fx-twinkle { from { opacity: .45; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  :is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.run-bar > span, .meter-bar > span, .fetch-bar > div) { animation: none; }
+  :is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.run-bar > span, .meter-bar > span, .fetch-bar > div)::after { display: none; }
+  :is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.btn, .runpod-btn, .theme-pick button) { transition: none; transform: none !important; }
+}

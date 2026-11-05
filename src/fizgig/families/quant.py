@@ -207,10 +207,10 @@ def plan(desc, driver, precision="auto", blocks_to_swap=-1, free_gb=None, margin
     small one: swapping int8 instead cost 4.4x the step time and 4x the CPU on a 16 GB card (#216; measured July
     2026). Only if nothing fits does it swap (int8, the smaller swappable base). An explicit precision with auto swap
     gets the fewest blocks that fit. pictures: a batched step's (Batch size), each past the first adding
-    desc.batch_gb_per_mp x megapixels. Returns (precision, blocks_to_swap, reason)."""
+    desc.batch_gb's figure at megapixels. Returns (precision, blocks_to_swap, reason)."""
     if free_gb is None:
         free_gb = free_vram_gb()
-    extra = max(0, int(pictures) - 1) * float(megapixels) * float(getattr(desc, "batch_gb_per_mp", 0.0) or 0.0)
+    extra = batch_extra(desc, megapixels, pictures)
     mem = {p: (_peak(v, megapixels) + extra, v[1]) for p, v in (desc.train_memory or {}).items()}
     offered = [p for p in PRECISIONS if p in desc.precisions]
     if precision == "auto" and getattr(desc, "auto_precisions", ()):
@@ -251,13 +251,20 @@ def plan(desc, driver, precision="auto", blocks_to_swap=-1, free_gb=None, margin
     return precision, blocks_to_swap, "as set"
 
 
+def batch_extra(desc, megapixels=1.0, pictures=1):
+    """GB a batched step needs past one picture's: desc.batch_gb (fixed, per megapixel) for each picture after the
+    first."""
+    fixed, per_mp = getattr(desc, "batch_gb", None) or (0.0, 0.0)
+    return max(0, int(pictures) - 1) * (float(fixed) + float(per_mp) * float(megapixels))
+
+
 def fits(desc, precision, blocks_to_swap, free_gb, megapixels=1.0, pictures=1, margin_gb=1.5):
     """Whether `precision` with `blocks_to_swap` swapped fits free_gb by the description's figures (as plan() weighs
     them); True when there is no figure for it."""
     if precision not in (desc.train_memory or {}):
         return True
     v = desc.train_memory[precision]
-    extra = max(0, int(pictures) - 1) * float(megapixels) * float(getattr(desc, "batch_gb_per_mp", 0.0) or 0.0)
+    extra = batch_extra(desc, megapixels, pictures)
     return _peak(v, megapixels) + extra - max(0, blocks_to_swap) * v[1] <= free_gb - margin_gb
 
 

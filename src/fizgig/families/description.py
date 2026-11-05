@@ -547,11 +547,12 @@ class FamilyDescription:
     # one forward. Opt in only when it is exact - each picture's loss as its own step would give - for captions of
     # one shape (families/train.py runs each caption shape's pictures as their own group, never padding them)
     batch_training: bool = False
-    # what each picture past the first adds to a batched step's peak, in GB per megapixel (gradient checkpointing on,
-    # as a batch always trains): Auto and the Batch size note plan train_memory's peak + this x megapixels x (pictures
-    # - 1). Measured from peak VRAM at batch 1, 2 and 3 - train_memory's own curve is the preview's peak on some
-    # families (flat across sizes), so it says nothing about a training step's pictures
-    batch_gb_per_mp: float = 0.0
+    # what each picture past the first adds to a batched step's peak (gradient checkpointing on, as a batch always
+    # trains): (GB a picture, GB a picture per megapixel). Auto and the Batch size note plan train_memory's peak +
+    # (fixed + per_mp x megapixels) x (pictures - 1). Measured from peak VRAM at batch 1 and 3 at 0.25 and 1 MP -
+    # train_memory's own curve is the preview's peak on some families (flat across sizes), so it says nothing about
+    # a training step's pictures
+    batch_gb: tuple = (0.0, 0.0)
     # the learning rates the Start checks call usual (launch.start_checks): ((kind, low, high), ...) for "lora",
     # "finetune" and "slider" - a third of the lowest shipped preset to three times the highest; a rate outside is a
     # warning at Start, never a block. A kind left out has no rule (an optimizer that sets its own rate has none)

@@ -217,12 +217,12 @@ def test_krea2_batch_matches_one_at_a_time(monkeypatch):
 
 
 def test_auto_plans_each_extra_picture_from_its_measured_cost():
-    """A batch's plan adds batch_gb_per_mp x megapixels for each picture past the first - train_memory's own curve
+    """A batch's plan adds batch_gb's (fixed + per megapixel) for each picture past the first - train_memory's own curve
     can be flat across sizes (its peak is the preview's), so stretching it by the batch would plan nothing more."""
     from types import SimpleNamespace
     from fizgig.families import quant
     desc = SimpleNamespace(train_memory={"bf16": (((0.25, 10.0), (1.0, 10.0)), 0.5)}, precisions=("bf16",),
-                           auto_precisions=(), batch_gb_per_mp=3.0, display_name="t")
+                           auto_precisions=(), batch_gb=(1.0, 2.0), display_name="t")
     driver = SimpleNamespace(max_blocks_to_swap=lambda: 20)
     assert quant.plan(desc, driver, "bf16", -1, free_gb=12.0, megapixels=1.0)[:2] == ("bf16", 0)
     p, n, _ = quant.plan(desc, driver, "bf16", -1, free_gb=12.0, megapixels=1.0, pictures=3)   # 16 GB needed

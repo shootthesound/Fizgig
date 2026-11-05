@@ -32,6 +32,7 @@ SDXL = FamilyDescription(
     start_lr_bands=(("lora", 1.7e-5, 1.5e-4), ("finetune", 1e-6, 3e-5), ("slider", 1.7e-5, 1.5e-4)),
     masked_training=True,
     batch_training=True,              # Batch size (Other Options): training_loss_batch, exact per picture
+    batch_gb=(0.1, 0.55),           # GB each extra picture takes: fixed, per MP (batch 1 vs 3)
     arch_id="sdxl",
     display_name="SDXL",
     gui_label="SDXL (any checkpoint)",

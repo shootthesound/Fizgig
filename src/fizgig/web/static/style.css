@@ -82,6 +82,7 @@
   --swatch-light-orange-bg: #FFFFFF; --swatch-light-orange-accent: #F25C05;
   --swatch-seventies-bg: #2B1D14; --swatch-seventies-accent: #D9661A;
   --swatch-synthwave-bg: #140B24; --swatch-synthwave-accent: #FF2E97;
+  --swatch-cosmic-pigeon-bg: #0D0B1E; --swatch-cosmic-pigeon-accent: #7C4DEA;
   --swatch-graphite-bg: #161616; --swatch-graphite-accent: #0D9488;
   --swatch-colour-safe-bg: #12161D; --swatch-colour-safe-accent: #E69F00;
   --swatch-high-contrast-bg: #000000; --swatch-high-contrast-accent: #FFD400;
@@ -2621,6 +2622,21 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   --danger-text: #FF9AA4; --gold: #FFD23F;
   --special-strong: #0891B2; --special: #22D3EE; --special-soft: #67D8EA; --special-text: #A5F3FC; --special-light: #CFFAFE;
   --data-blue: #4D8DFF; --data-teal: #22D3EE; --data-green: #2EE6A6; --data-olive: #E6D04D; --data-orange: #FF8A3D;
+}
+
+/* Cosmic Pigeon: deep space navy, nebula purple, iridescent pigeon-neck green, soft pigeon greys, a touch of starlight pink */
+:root[data-theme="cosmic-pigeon"] {
+  --bg-deep: #0D0B1E; --bg-side: #090816; --bg-surface: #15122B; --bg-raised: #1D1938; --bg-hover: #262046;
+  --bg-inset: #0A0918; --overlay: #070612; --shadow: #000000;
+  --text-primary: #E8E6F0; --text-secondary: #A9A6BC; --text-explain: #CCC9DA; --text-muted: #8A86A2;
+  --text-on-color: #FFFFFF; --text-on-light: #0D0B1E;
+  --accent: #7C4DEA; --accent-hover: #8B5CF6; --accent-subtle: #2E1F5C; --accent-text: #C4B0FF; --accent-text-hover: #DDD0FF;
+  --border: #2B2648; --border-strong: #8A87A0;
+  --success: #5FB88A; --success-text: #9EE0BC; --warning: #F0B44C; --warning-strong: #D4962E;
+  --warning-text: #F7CF85; --warning-text-soft: #FADDA8; --danger: #F0566A; --danger-strong: #D63A4F;
+  --danger-text: #FF9CA9; --gold: #F5D06B;
+  --special-strong: #C0368A; --special: #E879C6; --special-soft: #EE9AD4; --special-text: #F6C2E6; --special-light: #FBE0F2;
+  --data-blue: #6E8BFF; --data-teal: #4FC9B8; --data-green: #5FB88A; --data-olive: #D8C86A; --data-orange: #F29A5C;
 }
 
 /* Graphite: plain neutral greys, a teal accent */

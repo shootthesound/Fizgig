@@ -88,7 +88,7 @@ Open Fizgig in your phone's browser (your computer's address, or a pod's) and us
 
 ## Themes
 
-**Preferences → Theme** changes how Fizgig looks: Fizgig (dark blue, the default), Light n’ Orange, Seventies, Synthwave, Graphite, and three for eyes: **Colour-blind safe** (red-green colour blindness: good, bad and middling are blue, vermilion and yellow, never red against green), **High contrast** (low vision: black, white text, a yellow accent, underlined links) and **Dim** (light sensitivity or migraine: low glare, soft warm greys, no white). Each device keeps its own: a phone can use a different theme from the computer. Your pictures, masks and previews look the same in every theme.
+**Preferences → Theme** changes how Fizgig looks: Fizgig (dark blue, the default), Light n’ Orange, Seventies, Synthwave, Cosmic Pigeon (space navy, nebula purple, pigeon-neck green), Graphite, and three for eyes: **Colour-blind safe** (red-green colour blindness: good, bad and middling are blue, vermilion and yellow, never red against green), **High contrast** (low vision: black, white text, a yellow accent, underlined links) and **Dim** (light sensitivity or migraine: low glare, soft warm greys, no white). Each device keeps its own: a phone can use a different theme from the computer. Your pictures, masks and previews look the same in every theme.
 
 <p align="center"><img src="assets/screenshots/theme_seventies.png" alt="Preferences, Theme: a tile per theme, here Seventies" width="800"></p>
 

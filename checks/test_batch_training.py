@@ -214,3 +214,27 @@ def test_krea2_batch_matches_one_at_a_time(monkeypatch):
     for mask in (None, torch.rand(3, 1, 8, 8, generator=g)):
         b, s = _driver_parity(drv, dit, lat, conds, mask)
         assert abs(b - s) <= 1e-5 * abs(s), (mask is None, b, s)
+
+
+def test_auto_plans_each_extra_picture_from_its_measured_cost():
+    """A batch's plan adds batch_gb_per_mp x megapixels for each picture past the first - train_memory's own curve
+    can be flat across sizes (its peak is the preview's), so stretching it by the batch would plan nothing more."""
+    from types import SimpleNamespace
+    from fizgig.families import quant
+    desc = SimpleNamespace(train_memory={"bf16": (((0.25, 10.0), (1.0, 10.0)), 0.5)}, precisions=("bf16",),
+                           auto_precisions=(), batch_gb_per_mp=3.0, display_name="t")
+    driver = SimpleNamespace(max_blocks_to_swap=lambda: 20)
+    assert quant.plan(desc, driver, "bf16", -1, free_gb=12.0, megapixels=1.0)[:2] == ("bf16", 0)
+    p, n, _ = quant.plan(desc, driver, "bf16", -1, free_gb=12.0, megapixels=1.0, pictures=3)   # 16 GB needed
+    assert (p, n) == ("bf16", 11) and quant.fits(desc, "bf16", 11, 12.0, 1.0, 3)
+    assert not quant.fits(desc, "bf16", 0, 12.0, 1.0, 3) and quant.fits(desc, "bf16", 0, 12.0, 1.0, 1)
+
+
+def test_batch_blockers_name_what_trains_one_picture_a_step():
+    from fizgig.families import form
+    from fizgig.families.registry import get as get_family
+    moss = get_family("moss_image")
+    assert form.batch_blockers(moss, dict(form.DEFAULTS)) == []
+    assert form.batch_blockers(moss, {**form.DEFAULTS, "KREA2_LOSS_WATCH": True}) == ["the per-image loss watch"]
+    assert form.batch_blockers(moss, {**form.DEFAULTS, "STAGE_MP": "0.25"}) == ["Start at a smaller size"]
+    assert form.batch_blockers(get_family("acestep15xl"), dict(form.DEFAULTS)) == ["this model trains one picture a step"]

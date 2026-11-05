@@ -198,7 +198,7 @@ def _peak(entry, megapixels):
 TIGHT_MARGIN_GB = 0.5      # nf4 with no swap beats a swapped int8 base down to this much headroom
 
 
-def plan(desc, driver, precision="auto", blocks_to_swap=-1, free_gb=None, margin_gb=1.5, megapixels=1.0):
+def plan(desc, driver, precision="auto", blocks_to_swap=-1, free_gb=None, margin_gb=1.5, megapixels=1.0, pictures=1):
     """Resolve 'auto' precision and/or block swap (-1) from free VRAM and the description's measured training
     memory (desc.train_memory: {precision: (peak GB at no swap, GB saved per swapped block)}).
 
@@ -206,10 +206,12 @@ def plan(desc, driver, precision="auto", blocks_to_swap=-1, free_gb=None, margin
     far more speed than quantisation. If none fits with the full margin, nf4 still goes first when it fits with a
     small one: swapping int8 instead cost 4.4x the step time and 4x the CPU on a 16 GB card (#216; measured July
     2026). Only if nothing fits does it swap (int8, the smaller swappable base). An explicit precision with auto swap
-    gets the fewest blocks that fit. Returns (precision, blocks_to_swap, reason)."""
+    gets the fewest blocks that fit. pictures: a batched step's (Batch size), each past the first adding
+    desc.batch_gb_per_mp x megapixels. Returns (precision, blocks_to_swap, reason)."""
     if free_gb is None:
         free_gb = free_vram_gb()
-    mem = {p: (_peak(v, megapixels), v[1]) for p, v in (desc.train_memory or {}).items()}
+    extra = max(0, int(pictures) - 1) * float(megapixels) * float(getattr(desc, "batch_gb_per_mp", 0.0) or 0.0)
+    mem = {p: (_peak(v, megapixels) + extra, v[1]) for p, v in (desc.train_memory or {}).items()}
     offered = [p for p in PRECISIONS if p in desc.precisions]
     if precision == "auto" and getattr(desc, "auto_precisions", ()):
         offered = [p for p in desc.auto_precisions if p in desc.precisions]
@@ -247,6 +249,16 @@ def plan(desc, driver, precision="auto", blocks_to_swap=-1, free_gb=None, margin
         n = swap_for(precision)
         return precision, n, (f"{n} swapped blocks to fit {free_gb:.1f} GB" if n else f"fits {free_gb:.1f} GB")
     return precision, blocks_to_swap, "as set"
+
+
+def fits(desc, precision, blocks_to_swap, free_gb, megapixels=1.0, pictures=1, margin_gb=1.5):
+    """Whether `precision` with `blocks_to_swap` swapped fits free_gb by the description's figures (as plan() weighs
+    them); True when there is no figure for it."""
+    if precision not in (desc.train_memory or {}):
+        return True
+    v = desc.train_memory[precision]
+    extra = max(0, int(pictures) - 1) * float(megapixels) * float(getattr(desc, "batch_gb_per_mp", 0.0) or 0.0)
+    return _peak(v, megapixels) + extra - max(0, blocks_to_swap) * v[1] <= free_gb - margin_gb
 
 
 def share_shortfall(desc, driver, precision, blocks_to_swap, megapixels, free_gb=None, margin_gb=0.5):

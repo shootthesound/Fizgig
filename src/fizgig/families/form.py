@@ -884,6 +884,22 @@ def _kind(desc, values):
     return next((k for k, lab in kinds(desc) if lab == label or k == label), "standard")
 
 
+def batch_blockers(desc, values):
+    """What in a run's Training-tab values trains one picture a step (Batch size above 1 greys it out or keeps the run
+    at 1), in plain words; [] when the run can batch."""
+    if not desc.batch_training:
+        return ["this model trains one picture a step"]
+    kind = _kind(desc, values)
+    out = [w for on, w in ((kind == "edit", "an edit"), (kind == "slider", "a slider"), (kind == "finetune", "a fine-tune"),
+                           (values.get("FAMILY_DOP"), "DOP"), (values.get("FAMILY_MULTI_PERSON"), "Fizgig LoRA Isolation"),
+                           (any(values.get(k) for k in ("KREA2_LOSS_WATCH", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK",
+                                                        "KREA2_AUTO_RECAPTION")), "the per-image loss watch"),
+                           (str(values.get("STAGE_MP") or "Off") != "Off", "Start at a smaller size"),
+                           (values.get("MASKED_TRAINING") and str(values.get("MASK_PRIOR") or "Off") != "Off",
+                            "keeping the model's own picture outside the mask")) if on]
+    return out
+
+
 SUBFOLDERS_HINT = ("Off: only the pictures directly in the training folder are used.\nOn: the pictures in its "
                    "sub-folders are trained on too, at any depth, each sub-folder as its own set with its own captions "
                    "and cache, so a big dataset can stay organised. Every picture trains once an epoch, wherever it "

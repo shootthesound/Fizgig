@@ -1801,7 +1801,8 @@ function moveDraw(mv) {
       rm.state === "away" ? `Training on ${mv.to} (it isn't answering just now).` :
       rm.state === "login" ? `On ${mv.to}: its login ran out, so this computer can't see it. Add it again on the Helpers tab.` :
       rm.state === "running" || rm.state === "starting" ?
-        `Training on ${mv.to}` + (rm.epoch ? `: epoch ${rm.epoch} of ${rm.epochs}` : rm.stage ? `: ${rm.stage}` : "") +
+        `Training on ${mv.to}` + (mv.batch > 1 ? `, ${mv.batch} pictures a step` : "") +
+        (rm.epoch ? `: epoch ${rm.epoch} of ${rm.epochs}` : rm.stage ? `: ${rm.stage}` : "") +
         (rm.eta ? ` · ${rm.eta} left` : "") : `On ${mv.to}.`;
     if (mv.error) say += ` (${mv.error})`;
     if (mv.home_text) say += ` Coming home as they're saved: ${mv.home_text}.`;
@@ -1852,9 +1853,14 @@ async function moveOpen() {
   const pick = el("select", {class: "w-combo"}, ...ready.map((h) => el("option", {value: h.id,
     text: `${h.name}${h.gpu ? ` (${h.gpu}${h.vram ? `, ${h.vram} GB` : ""})` : ""}`})));
   const home = el("input", {type: "checkbox", checked: true});
+  // Batch size there: as many pictures a step as that computer's card fits, worked out there; back here it trains
+  // at this run's own Batch size again. Shown for a model that batches; greyed, with why, when the run can't
+  const why = (S.run && S.run.move_batch) || ["no run"];
+  const batchable = !why.includes("this model trains one picture a step") && !why.includes("no run");
+  const batch = el("input", {type: "checkbox", ...(why.length ? {disabled: true} : {})});
   const send = (now) => async () => {
     try {
-      await api("/api/helpers/move", {id: pick.value, now, home: home.checked});
+      await api("/api/helpers/move", {id: pick.value, now, home: home.checked, batch: batch.checked});
       S.moveOpen = false;
     } catch (e) { showProblems([e.message]); }
     pollRun();
@@ -1873,7 +1879,12 @@ async function moveOpen() {
       el("button", {class: "btn btn-sm", text: "Cancel", onclick: close})),
     el("label", {class: "checkbox-label", title: "Each checkpoint and preview comes back to this run's folder here as " +
       "it's saved there, one after another (a slow link just queues them), so bringing the run back only has the " +
-      "last few to fetch."}, home, " Bring its checkpoints and previews back here as they're saved"));
+      "last few to fetch."}, home, " Bring its checkpoints and previews back here as they're saved"),
+    ...(batchable ? [el("label", {class: "checkbox-label", title: why.length ?
+      `Not for this run: ${why.join(", ")} trains one picture a step.` :
+      "As many pictures a step as its card fits without more block swap: quicker epochs on a big card, each " +
+      "step averaging the batch, as Gradient Accumulation does. Brought back, it trains as it does here again."},
+      batch, " Train several pictures a step there, as many as its memory allows")] : []));
 }
 
 // ---- a prompt slider's live prompts: edited here while it trains, taken by the trainer at its next epoch boundary

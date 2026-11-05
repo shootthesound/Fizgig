@@ -1365,8 +1365,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         if own is not None:
             precision, blocks_to_swap, why = own
         else:
-            precision, blocks_to_swap, why = quant.plan(desc, driver, precision, blocks_to_swap,
-                                                         megapixels=mp * bsz if bsz > 1 else mp)
+            precision, blocks_to_swap, why = quant.plan(desc, driver, precision, blocks_to_swap, megapixels=mp,
+                                                         pictures=bsz)
             why += f" at {mp:.2f} MP" + (f" x {bsz} pictures a step" if bsz > 1 else "")
             if share_worker is not None:
                 # a helper's share trains at the lead's precision (the same base numbers): say so plainly, before the

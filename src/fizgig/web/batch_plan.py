@@ -134,11 +134,11 @@ if __name__ == "__main__":        # the subprocess: [family, precision, blocks_t
         p1, s1 = quant.plan(desc, driver, precision, int(swap), free_gb=free, megapixels=float(mp))[:2]
         best = 1
         for n in (int(b) for b in launch.BATCH_SIZES[1:]):
-            pn, sn = quant.plan(desc, driver, precision, int(swap), free_gb=free, megapixels=float(mp) * n)[:2]
-            if pn == p1 and sn <= s1:
+            pn, sn = quant.plan(desc, driver, precision, int(swap), free_gb=free, megapixels=float(mp), pictures=n)[:2]
+            if pn == p1 and sn <= s1 and quant.fits(desc, pn, sn, free, float(mp), n):
                 best = n
         print(json.dumps(best))
         raise SystemExit
-    plans = [quant.plan(desc, driver, precision, int(swap), free_gb=free, megapixels=float(mp) * n)[:2]
+    plans = [quant.plan(desc, driver, precision, int(swap), free_gb=free, megapixels=float(mp), pictures=n)[:2]
              for n in (1, int(batch))]
     print(json.dumps([[*plans[0], free], [*plans[1], free]]))

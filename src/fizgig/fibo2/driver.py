@@ -23,7 +23,7 @@ import torch
 import torch.nn.functional as F
 from safetensors.torch import load_file
 
-from fizgig.families.driver import Block, BlockGroup, FamilyDriver, prior_base, weighted_loss, with_prior
+from fizgig.families.driver import Block, BlockGroup, FamilyDriver, picture_losses, prior_base, weighted_loss, with_prior
 
 logger = logging.getLogger(__name__)
 
@@ -602,12 +602,11 @@ class Fibo2Driver(FamilyDriver):
         state = {k: torch.cat([s[k] for s in states]) for k in ("hidden_states", "timestep", "noise")}
         pred = self.predict(dit, state, cond).float()
         target = (state["noise"] - latents).float()
-        if loss_mask is None:
-            loss = F.mse_loss(pred, target)
-        else:
-            mw = loss_mask.float().to(latents.device).reshape(latents.shape[0], *latents.shape[-2:])
-            loss = weighted_loss((pred - target).pow(2).mean(dim=1), mw)
-        return loss, {"t": sum(s["t"] for s in states) / len(states)}
+        mw = None if loss_mask is None else \
+            loss_mask.float().to(latents.device).reshape(latents.shape[0], *latents.shape[-2:])
+        per = picture_losses((pred - target).pow(2).mean(dim=1), mw)
+        return per.mean(), {"t": sum(s["t"] for s in states) / len(states), "per": per,
+                            "ts": [float(s["t"]) for s in states]}
 
     @torch.no_grad()
     def initial_noise(self, seed, width, height):

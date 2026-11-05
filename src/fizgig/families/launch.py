@@ -942,8 +942,8 @@ def train_command(desc, inputs, plan):
         if cont.get("checkpoint"):
             cmd += ["--ft_start_window", str(int(cont.get("start_window", 0))),
                     "--ft_epochs_done", str(int(cont.get("epochs_done", 0)))]
-    # per-image loss watch (families/loss_watch.py), batch size 1 only
-    bs1 = batch_size(desc, st) <= 1
+    # per-image loss watch (families/loss_watch.py): at any Batch size, a batch's pictures weighed and recorded
+    # one by one
     lw = (st.get("loss_watch") or {}) if desc.loss_watch else {}
     if multi_person_on(desc, st):    # the side-by-sides are hard on purpose: no verdicts, per-image LR or look warm-up
         lw = {**lw, "detect": False, "per_image_lr": False, "warmup": False}
@@ -953,7 +953,7 @@ def train_command(desc, inputs, plan):
     can_recaption = can_recaption and not multi_person_on(desc, st)
     if can_recaption:
         watch.append(("recaption", "--auto_recaption"))
-    if bs1:
+    if lw:
         cmd += [flag for key, flag in watch if lw.get(key)]
         if can_recaption and lw.get("recaption"):
             cmd += ["--captioner", st.get("captioner", "")]
@@ -970,8 +970,6 @@ def train_command(desc, inputs, plan):
                                                       ("--recaption_instruction_detailed", "--recaption_task_detailed"))):
                 label, instr, edited = recaption_instruction(key, ovr, st.get("caption_concept") or "")
                 cmd += [flag, instr, task_flag, f'"{label}"' + (" (your edit)" if edited else " (as shipped)")]
-    elif any(lw.get(key) for key, _ in watch):
-        plan.console.append("[loss-watch] per-image features skipped - they need Batch Size 1.\n")
     if any(lw.get(key) for key, _ in watch) and "--text_encoder" not in cmd:
         cmd += ["--text_encoder", _model(st, desc, "text_encoder")]   # caption repair re-encodes
     if ("lokr" in desc.network_types and str(st.get("NETWORK_TYPE", "")).startswith("LoKR")

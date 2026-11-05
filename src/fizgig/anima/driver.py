@@ -20,7 +20,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from fizgig.families.driver import FamilyDriver, prior_base, weighted_loss, with_prior
+from fizgig.families.driver import FamilyDriver, picture_losses, prior_base, weighted_loss, with_prior
 
 DTYPE = torch.bfloat16
 HELPER = "circlestone-labs/Anima-Base-v1.0-Diffusers"   # tokenizers + the Qwen3 config (helper_files)
@@ -216,10 +216,9 @@ class AnimaDriver(FamilyDriver):
         mask = torch.zeros(xt.shape[0], 1, xt.shape[-2], xt.shape[-1], device=xt.device, dtype=DTYPE)
         pred = dit.forward_mini_train_dit(xt.to(DTYPE), t.to(xt.device, DTYPE)[:, None], ctx,
                                           padding_mask=mask).float()
-        if loss_mask is None:
-            return F.mse_loss(pred, noise - x0), {"t": float(t.mean())}
-        mw = loss_mask.float().to(x0.device).flatten(1)
-        return weighted_loss((pred - (noise - x0)).pow(2).mean(dim=1).flatten(1), mw), {"t": float(t.mean())}
+        mw = None if loss_mask is None else loss_mask.float().to(x0.device).flatten(1)
+        per = picture_losses((pred - (noise - x0)).pow(2).mean(dim=1).flatten(1), mw)
+        return per.mean(), {"t": float(t.mean()), "per": per, "ts": [float(v) for v in t]}
 
     def noise_latents(self, latents, generator, *, min_t=0.0, max_t=1.0):
         x0 = latents.float()

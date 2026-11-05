@@ -555,7 +555,7 @@ The non-obvious flags (`--help` lists them all):
   - `<output_dir>/loss_log/per_image_loss.jsonl` — the raw per-step log
   - `<output_dir>/loss_log/problem_images.json` — current verdicts + trends (the per-image loss view in Runs & outputs reads this; it's plain JSON, perfectly greppable headless)
   - a **plateau banner** in the console when ≤~5% of images are still improving, with a best-checkpoint epoch estimate — your "you're done" signal.
-- `--per_image_lr` — acts on the verdicts: stuck images get throttled (×0.5 → ×0.25 → ×0.125), mined-out images ease off (×0.6), the healthy cohort gets a gentle boost (×1.1). Batch size 1 makes this a true per-image learning rate.
+- `--per_image_lr` — acts on the verdicts: stuck images get throttled (×0.5 → ×0.25 → ×0.125), mined-out images ease off (×0.6), the healthy cohort gets a gentle boost (×1.1). It is a true per-image learning rate at any Batch size: in a batch, each picture's loss is weighed on its own.
 - `--auto_recaption` — between epochs, confirmed-stuck images get their captions rewritten by Qwen3-VL from what's actually visible, the text cache is re-encoded, and the image gets a fresh start. Two failed attempts and a still-stuck image is excluded from the run entirely. Requires `--text_encoder`. Pass `--trigger_word` so rewritten captions keep your trigger (appended as `, <trigger>`).
 - `--warmup_look_outliers` — curriculum entry (×0.4 LR ramping to ×1.0) for real-but-unusual images. Reads `<dataset>/fizgig_look_scores.json`, which is produced by the GUI's Look Consistency Filter scan — **GUI-only prerequisite**; without the file this flag logs a warning and disables itself.
 
@@ -866,7 +866,7 @@ It pays off most with block swap: each step's swap is spread over every picture 
 
 With no swap it helps the smaller models (Anima 2.6×, SDXL 2.3× on a 4090) and changes little for the larger ones. Each extra picture costs roughly 0.2–0.75 GB at 0.25 MP, more at larger sizes; gradient checkpointing stays on.
 
-Batch size above 1 isn't used with sliders, edit pairs, fine-tunes, DOP, Fizgig LoRA Isolation or MiniMax H3's reference distillation, and turns off the per-image loss watch, masked-training mask priors, Start at a smaller size, regularisation images and helper shares. The GUI greys those out; the trainer refuses a batch with them.
+Batch size above 1 isn't used with sliders, edit pairs, fine-tunes, DOP, Fizgig LoRA Isolation or MiniMax H3's reference distillation, and turns off masked-training mask priors, Start at a smaller size, regularisation images and helper shares. The GUI greys those out; the trainer refuses a batch with them. The per-image loss watch (problem images, per-image LR, the look warm-up, auto-recaption) works at any Batch size: each picture in a batch is weighed, excluded and recorded on its own, as its own step would be.
 
 ---
 

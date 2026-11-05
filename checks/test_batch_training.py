@@ -89,8 +89,8 @@ def test_batch_size_reaches_the_dataset_and_stands_down_what_reads_one_picture(t
 
     v, p = plan(BATCH_SIZE="3")
     train = " ".join(next(s.cmd for s in p.stages if "train.py" in " ".join(s.cmd)))
-    assert "batch_size = 3" in p.dataset_toml and "--log_per_image_loss" not in train
-    assert "KREA2_LOSS_WATCH" in form.state(moss, v, str(d))["disabled"]
+    assert "batch_size = 3" in p.dataset_toml and "--log_per_image_loss" in train     # weighed picture by picture
+    assert "KREA2_LOSS_WATCH" not in form.state(moss, v, str(d))["disabled"]
     v, p = plan(BATCH_SIZE="1")
     train = " ".join(next(s.cmd for s in p.stages if "train.py" in " ".join(s.cmd)))
     assert "batch_size = 1" in p.dataset_toml and "--log_per_image_loss" in train
@@ -165,16 +165,23 @@ def test_batch_plan_note_asks_what_start_sends(tmp_path):
 
 
 def _driver_parity(drv, dit, lat, conds, mask, autocast=None):
-    """The batched loss against the mean of the pictures' own, from the same generator."""
+    """The batched loss against the mean of the pictures' own, from the same generator - and each picture's loss in
+    the batch ("per", what the loss watch weighs and records) against its own step's, its t against its own."""
     import contextlib
     ctx = torch.autocast("cpu", dtype=autocast) if autocast else contextlib.nullcontext()
     with torch.no_grad(), ctx:
-        b, _ = drv.training_loss_batch(dit, lat, drv.stack_conds(conds), torch.Generator().manual_seed(7),
-                                       loss_mask=mask)
+        b, info = drv.training_loss_batch(dit, lat, drv.stack_conds(conds), torch.Generator().manual_seed(7),
+                                          loss_mask=mask)
         g = torch.Generator().manual_seed(7)
-        s = sum(drv.training_loss(dit, lat[i:i + 1], conds[i], g,
-                                  loss_mask=None if mask is None else mask[i:i + 1])[0] for i in range(len(conds)))
-    return float(b), float(s) / len(conds)
+        one = [drv.training_loss(dit, lat[i:i + 1], conds[i], g, loss_mask=None if mask is None else mask[i:i + 1])
+               for i in range(len(conds))]
+    s = sum(float(l) for l, _ in one)
+    per = [float(x) for x in info["per"]]
+    assert len(per) == len(one) and abs(sum(per) / len(per) - float(b)) <= 1e-6 * abs(float(b))
+    for p, (l, i1), t in zip(per, one, info["ts"]):
+        assert abs(p - float(l)) <= 5e-3 * abs(float(l)), (p, float(l))
+        assert abs(t - float(i1.get("t", t))) <= 1e-6, (t, i1.get("t"))
+    return float(b), s / len(conds)
 
 
 def test_fibo_batch_matches_one_at_a_time():
@@ -230,14 +237,17 @@ def test_h3_batch_matches_one_at_a_time(monkeypatch):
     for mask in (None, torch.rand(3, 1, 8, 6, generator=g)):
         torch.manual_seed(5)
         with torch.no_grad():
-            b, _ = drv.training_loss_batch(dit, lat, drv.stack_conds(conds), torch.Generator().manual_seed(7),
-                                           loss_mask=mask)
+            b, info = drv.training_loss_batch(dit, lat, drv.stack_conds(conds), torch.Generator().manual_seed(7),
+                                              loss_mask=mask)
         torch.manual_seed(5)
         g7 = torch.Generator().manual_seed(7)
         with torch.no_grad():
-            s = sum(float(drv.training_loss(dit, lat[i:i + 1], conds[i], g7,
-                                            loss_mask=None if mask is None else mask[i:i + 1])[0]) for i in range(3)) / 3
+            one = [float(drv.training_loss(dit, lat[i:i + 1], conds[i], g7,
+                                           loss_mask=None if mask is None else mask[i:i + 1])[0]) for i in range(3)]
+        s = sum(one) / 3
         assert abs(float(b) - s) <= 1e-5 * abs(s), (mask is None, float(b), s)
+        for p, o in zip(info["per_raw"], one):           # each picture's own loss, as the loss watch records it
+            assert abs(p - o) <= 1e-5 * abs(o), (p, o)
 
 
 def test_h3_reference_distillation_trains_one_picture_a_step():
@@ -291,7 +301,7 @@ def test_batch_blockers_name_what_trains_one_picture_a_step():
     from fizgig.families.registry import get as get_family
     moss = get_family("moss_image")
     assert form.batch_blockers(moss, dict(form.DEFAULTS)) == []
-    assert form.batch_blockers(moss, {**form.DEFAULTS, "KREA2_LOSS_WATCH": True}) == ["the per-image loss watch"]
+    assert form.batch_blockers(moss, {**form.DEFAULTS, "KREA2_LOSS_WATCH": True}) == []     # weighed per picture
     assert form.batch_blockers(moss, {**form.DEFAULTS, "STAGE_MP": "0.25"}) == ["Start at a smaller size"]
     assert form.batch_blockers(get_family("acestep15xl"), dict(form.DEFAULTS)) == ["this model trains one picture a step"]
 
@@ -323,3 +333,53 @@ def test_h3_batch_note_and_move_ask_its_own_planner(tmp_path, monkeypatch):
             assert (p2 == p1 and s2 >= s1) or (p1, p2) == ("int8", "nf4"), (free, plans)
     monkeypatch.setattr(device, "plannable_free_vram", lambda: 94.0)
     assert drv.plan_pictures("auto", -1, megapixels=1.0, pictures=8, run=run) == ("int8", 0)
+
+
+def test_picture_losses_average_to_the_batch_loss():
+    """Each picture's loss (what the loss watch weighs and records at Batch size above 1) averages to the batch's
+    loss, with and without per-cell weights."""
+    import torch.nn.functional as F
+    from fizgig.families.driver import picture_losses, weighted_loss
+    g = torch.Generator().manual_seed(3)
+    se, mw = torch.rand(4, 7, 9, generator=g), torch.rand(4, 7, 9, generator=g)
+    assert torch.allclose(picture_losses(se).mean(), se.mean())
+    assert torch.allclose(picture_losses(se, mw).mean(), weighted_loss(se, mw))
+    assert torch.allclose(picture_losses(se, mw)[1], weighted_loss(se[1:2], mw[1:2]))
+    a, b = torch.rand(3, 5, generator=g), torch.rand(3, 5, generator=g)
+    assert torch.allclose(picture_losses((a - b).pow(2)), torch.stack([F.mse_loss(a[i], b[i]) for i in range(3)]))
+
+
+def test_a_batch_weighs_and_records_each_picture_as_its_own_step(tmp_path):
+    """Batch size above 1 with the loss watch: each picture's loss at its own per-image LR, an excluded one at 0 and
+    out of the average and the records, a regularisation picture at its fixed multiplier, one record per picture."""
+    from fizgig.families.loss_watch import Watch
+
+    class Fake:
+        def __init__(self):
+            self.seen = []
+
+        def is_excluded(self, keys):
+            return keys == ["c"]
+
+        def multiplier(self, keys):
+            return {"a": 0.5, "b": 1.0}.get(keys[0], 1.0)
+
+        def observe(self, **kw):
+            self.seen.append((kw["item_keys"], kw["timestep"], kw["loss"]))
+
+    w = Watch.__new__(Watch)
+    w.watch = Fake()
+    per = torch.tensor([0.2, 0.4, 0.6, 0.8], requires_grad=True)
+    info = {"per": per, "ts": [0.1, 0.2, 0.3, 0.4]}
+    scaled, rec, kept = w.weigh(info, ["a", "b", "c", "r"], reg_keys={"r"}, reg_mult=2.0)
+    assert kept == [0, 1, 3]
+    assert abs(float(scaled) - (0.2 * 0.5 + 0.4 + 0.8 * 2.0) / 3) < 1e-6
+    assert abs(float(rec) - (0.2 + 0.4 + 0.8) / 3) < 1e-6        # the raw losses, as batch 1 records them
+    scaled.backward()
+    assert per.grad.tolist()[2] == 0.0                            # the excluded picture trains nothing
+    w.observe_each(1, 5, ["a", "b", "c", "r"], info["ts"], [0.2, 0.4, 0.6, 0.8], kept)
+    assert w.watch.seen == [(["a"], 0.1, 0.2), (["b"], 0.2, 0.4), (["r"], 0.4, 0.8)]
+    assert w.excluded({"item_keys": ["c", "c"]}) and not w.excluded({"item_keys": ["a", "c"]})
+    w.watch = None                                                # the watch off: the plain mean
+    scaled, rec, kept = w.weigh(info, ["a", "b", "c", "r"])
+    assert abs(float(scaled) - 0.5) < 1e-6 and kept == [0, 1, 2, 3]

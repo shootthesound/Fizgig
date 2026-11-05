@@ -1234,6 +1234,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             groups = [(ix, driver.stack_conds([conds[i] for i in ix])) for ix in shapes.values()]
         lm = _loss_mask(batch)
         total, ts = 0.0, []
+        per, raw, tpic = [None] * n, [None] * n, [None] * n      # each picture's own, in the batch's order
         for ix, cond in groups:
             sel = torch.tensor(ix, device=latents.device)
             l, info = driver.training_loss_batch(dit, latents.index_select(0, sel), cond, gen, min_t=min_timestep,
@@ -1241,7 +1242,16 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                                                  loss_mask=None if lm is None else lm.index_select(0, sel.to(lm.device)))
             total = total + l * (len(ix) / n)
             ts.append(float(info.get("t", 0.5)))
-        return total, {"t": sum(ts) / len(ts)}
+            if info.get("per") is not None:
+                for j, i in enumerate(ix):
+                    per[i] = info["per"][j]
+                    raw[i] = (info.get("per_raw") or [None] * len(ix))[j]
+                    tpic[i] = (info.get("ts") or [info.get("t", 0.5)] * len(ix))[j]
+        out = {"t": sum(ts) / len(ts)}
+        if all(p is not None for p in per):
+            out.update(per=torch.stack(per), ts=tpic,
+                       **({"per_raw": raw} if all(r is not None for r in raw) else {}))
+        return total, out
 
     def _loss_mask(batch):
         """The step's per-cell loss weights (masked training), or None: a picture without a mask trains as normal."""
@@ -1265,9 +1275,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     if bsz != 1:
         # Batch Size above 1 (Other Options): what reads one picture a step stays at batch 1
         blockers = [name for on, name in (
-            (slider, "a slider"), (finetune, "a fine-tune"), (bool(log_per_image_loss or per_image_lr or auto_recaption
-                                                                  or warmup_look_outliers), "the per-image loss watch"),
-            (bool(dop), "DOP"), (bool(mask_prior), "keeping the model's own picture outside the mask"),
+            (slider, "a slider"), (finetune, "a fine-tune"), (bool(dop), "DOP"),
+            (bool(mask_prior), "keeping the model's own picture outside the mask"),
             (bool(stage_dataset_config), "Start at a smaller size"), (share_worker is not None, "a helper's share"),
             (any(getattr(ds, "is_reg", False) for ds in group.datasets), "regularisation images")) if on]
         if blockers:
@@ -2697,11 +2706,15 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     lr_acc[-1] *= _info["lr_mult"]     # where the step landed (the H3 noise-band LR)
                 if pending == 0 and optimizer is not None:
                     optimizer.zero_grad(set_to_none=True)
-                if reg_keys and all(str(k) in reg_keys for k in batch.get("item_keys") or [None]):
-                    mult = reg_lr_multiplier       # a regularisation image: a fixed nudge, never the watch's
+                _wb = watch.weigh(_info, batch.get("item_keys"), reg_keys, reg_lr_multiplier) if bsz > 1 else None
+                if _wb is not None:                # a batch: each picture at its own weight (loss_watch.Watch.weigh)
+                    _scaled, loss, _kept = _wb
                 else:
-                    mult = watch.multiplier(batch)  # per-image LR (batch size 1): the raw loss is still what's recorded
-                _scaled = loss * mult if mult != 1.0 else loss
+                    if reg_keys and all(str(k) in reg_keys for k in batch.get("item_keys") or [None]):
+                        mult = reg_lr_multiplier       # a regularisation image: a fixed nudge, never the watch's
+                    else:
+                        mult = watch.multiplier(batch)  # per-image LR: the raw loss is still what's recorded
+                    _scaled = loss * mult if mult != 1.0 else loss
                 _dc = dop_cond_for(batch, cond) if dop_cond and global_step % dop_every == 0 else None
                 _dk = str((batch.get("item_te_paths") or [None])[0])
                 if _dc is not None and ftr is not None and dop_ft and _dk in dop_ft:
@@ -2739,7 +2752,12 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     _tp = time.time()
                     previews(epoch + 1)
                     progress.start_t += time.time() - _tp
-            watch.observe(epoch + 1, global_step, batch, _info.get("t", 0.5), loss.item())
+            if not slider and bsz > 1 and _wb is not None:      # a batch: one record per picture
+                watch.observe_each(epoch + 1, global_step, batch["item_keys"], _info["ts"],
+                                   _info.get("per_raw") or [float(x) for x in _info["per"].detach().float().cpu()],
+                                   _kept)
+            else:
+                watch.observe(epoch + 1, global_step, batch, _info.get("t", 0.5), loss.item())
             # the run card's Learning: loss, the step's learning rate (Adaptive LR's, Automagic's) and grad norm
             progress.set_postfix(avr_loss=f"{recorder.moving_average:.4f}",
                                  lr=f"{float(optimizer.param_groups[0]['lr']):.2e}" if optimizer is not None else "-",

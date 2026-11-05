@@ -17,7 +17,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from fizgig.families.driver import FamilyDriver, prior_base, weighted_loss, with_prior
+from fizgig.families.driver import FamilyDriver, picture_losses, prior_base, weighted_loss, with_prior
 from fizgig.qwen_image21 import sampling as S
 
 logger = logging.getLogger(__name__)
@@ -263,10 +263,9 @@ class QwenImage21Driver(FamilyDriver):
         img_mask = torch.cat([torch.zeros(L, dtype=torch.bool), torch.ones(n // 4, dtype=torch.bool)])[None].to(device)
         tt = torch.tensor(ts, device=device, dtype=torch.bfloat16)
         pred = dit(xt.to(torch.bfloat16), enc.to(torch.bfloat16), tt, [[(1, h, w)]], img_mask, enc_mask)[:, -n:]
-        if loss_mask is None:
-            return F.mse_loss(pred.float(), noise - x0), {"t": sum(ts) / len(ts)}
-        mw = S.pack(loss_mask.to(device).float()).mean(dim=-1)
-        return weighted_loss((pred.float() - (noise - x0)).pow(2).mean(dim=-1), mw), {"t": sum(ts) / len(ts)}
+        mw = None if loss_mask is None else S.pack(loss_mask.to(device).float()).mean(dim=-1)
+        per = picture_losses((pred.float() - (noise - x0)).pow(2).mean(dim=-1), mw)
+        return per.mean(), {"t": sum(ts) / len(ts), "per": per, "ts": [float(v) for v in ts]}
 
     def noise_latents(self, latents, generator, *, min_t=0.0, max_t=1.0):
         h, w = latents.shape[-2:]

@@ -17,7 +17,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from fizgig.families.driver import Block, BlockGroup, FamilyDriver, prior_base, weighted_loss, with_prior
+from fizgig.families.driver import Block, BlockGroup, FamilyDriver, picture_losses, prior_base, weighted_loss, with_prior
 
 CONFIG_REPO = "stabilityai/stable-diffusion-xl-base-1.0"
 DTYPE = torch.bfloat16
@@ -267,7 +267,9 @@ class SDXLDriver(FamilyDriver):
                 snr = float(ai / (1 - ai))
                 li = li * (min(snr, gamma) / ((snr + 1) if self._v_pred() else snr))
             losses.append(li)
-        return torch.stack(losses).mean(), {"t": sum(st["t"] for st in sts) / len(sts) / 999.0}
+        per = torch.stack(losses)
+        return per.mean(), {"t": sum(st["t"] for st in sts) / len(sts) / 999.0, "per": per,
+                            "ts": [float(st["t"]) / 999.0 for st in sts]}
 
     # ---- sampling -------------------------------------------------------------------------------
     @torch.no_grad()

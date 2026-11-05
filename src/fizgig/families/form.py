@@ -892,8 +892,6 @@ def batch_blockers(desc, values):
     kind = _kind(desc, values)
     out = [w for on, w in ((kind == "edit", "an edit"), (kind == "slider", "a slider"), (kind == "finetune", "a fine-tune"),
                            (values.get("FAMILY_DOP"), "DOP"), (values.get("FAMILY_MULTI_PERSON"), "Fizgig LoRA Isolation"),
-                           (any(values.get(k) for k in ("KREA2_LOSS_WATCH", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK",
-                                                        "KREA2_AUTO_RECAPTION")), "the per-image loss watch"),
                            (str(values.get("STAGE_MP") or "Off") != "Off", "Start at a smaller size"),
                            (values.get("MASKED_TRAINING") and str(values.get("MASK_PRIOR") or "Off") != "Off",
                             "keeping the model's own picture outside the mask")) if on]
@@ -1292,8 +1290,7 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             notes["BATCH_SIZE"] = ("Greyed out: sliders, edits, fine-tunes, DOP and Fizgig LoRA Isolation train one "
                                    "picture a step.")
         elif str(values.get("BATCH_SIZE") or "1") not in ("", "1"):
-            off = {"KREA2_LOSS_WATCH", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK", "KREA2_AUTO_RECAPTION", "STAGE_MP",
-                   "STAGE_UNTIL", "MASK_PRIOR"}
+            off = {"STAGE_MP", "STAGE_UNTIL", "MASK_PRIOR"}
             off |= {o.key for o in desc.options if getattr(o, "batch_off", False)}
             disabled |= off
             for k in off:

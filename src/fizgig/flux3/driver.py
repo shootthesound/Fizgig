@@ -15,7 +15,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from fizgig.families.driver import Block, BlockGroup, FamilyDriver, prior_base, weighted_loss, with_prior
+from fizgig.families.driver import Block, BlockGroup, FamilyDriver, picture_losses, prior_base, weighted_loss, with_prior
 from fizgig.flux3 import sampling as S
 
 logger = logging.getLogger(__name__)
@@ -241,12 +241,10 @@ class Flux3Driver(FamilyDriver):
                 raise RuntimeError("Flux 3 trains on the Base checkpoint, not the distilled one")
             pred = dit(packed)
         target = torch.cat([noise - x0 for x0, (_, noise) in zip(x0s, ts)])
-        if loss_mask is None:
-            loss = F.mse_loss(pred.float(), target)
-        else:
-            mw = torch.stack([S.to_tokens(loss_mask[i].float().to(device)).mean(dim=-1) for i in range(n)])
-            loss = weighted_loss((pred.float() - target).pow(2).mean(dim=-1).view(n, -1), mw)
-        return loss, {"t": sum(t for t, _ in ts) / n}
+        mw = None if loss_mask is None else \
+            torch.stack([S.to_tokens(loss_mask[i].float().to(device)).mean(dim=-1) for i in range(n)])
+        per = picture_losses((pred.float() - target).pow(2).mean(dim=-1).view(n, -1), mw)
+        return per.mean(), {"t": sum(t for t, _ in ts) / n, "per": per, "ts": [float(t) for t, _ in ts]}
 
     def noise_latents(self, latents, generator, *, min_t=0.0, max_t=1.0):
         h, w = latents.shape[-2:]

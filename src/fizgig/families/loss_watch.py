@@ -159,7 +159,13 @@ class Watch:
 
     # ---- per step --------------------------------------------------------------------------------------
     def excluded(self, batch):
-        return self.watch is not None and self.watch.is_excluded(batch.get("item_keys"))
+        """The step is skipped: its picture is excluded (a batch's: every one of them)."""
+        keys = batch.get("item_keys")
+        if self.watch is None:
+            return False
+        if isinstance(keys, (list, tuple)) and len(keys) > 1:
+            return all(self.watch.is_excluded([str(k)]) for k in keys)
+        return self.watch.is_excluded(keys)
 
     def multiplier(self, batch):
         return self.watch.multiplier(batch.get("item_keys")) if self.watch is not None else 1.0
@@ -167,6 +173,35 @@ class Watch:
     def observe(self, epoch, step, batch, t, loss):
         if self.watch is not None:
             self.watch.observe(epoch=epoch, step=step, item_keys=batch.get("item_keys"), timestep=t, loss=loss)
+
+    # ---- Batch Size above 1: each picture its own weight and record, as its own step would have them (the driver
+    # hands back each picture's loss, info["per"] - the idea from @Murf-Code's Fizgig Advanced) ------------------
+    def weigh(self, info, keys, reg_keys=(), reg_mult=1.0):
+        """(loss to backpropagate, the step's recorded loss, kept indices) for a batched step: each picture at its
+        per-image LR / look warm-up (a regularisation picture at reg_mult), an excluded one at 0 and left out of the
+        average and the records; None when the step has no per-picture losses."""
+        per = info.get("per") if isinstance(info, dict) else None
+        keys = [str(k) for k in keys or []]
+        if per is None or len(keys) < 2 or int(per.shape[0]) != len(keys):
+            return None
+        raw = info.get("per_raw") or [float(x) for x in per.detach().float().cpu()]
+        out = [self.watch is not None and self.watch.is_excluded([k]) for k in keys]
+        kept = [i for i, o in enumerate(out) if not o]
+        mult = [0.0 if out[i] else float(reg_mult) if reg_keys and k in reg_keys else
+                (self.watch.multiplier([k]) if self.watch is not None else 1.0) for i, k in enumerate(keys)]
+        if all(m == 1.0 for m in mult):
+            scaled = per.mean()
+        else:
+            scaled = (per * torch.tensor(mult, device=per.device, dtype=per.dtype)).sum() / max(1, len(kept))
+        return scaled, torch.tensor(sum(raw[i] for i in kept) / max(1, len(kept))), kept
+
+    def observe_each(self, epoch, step, keys, ts, raw, kept):
+        """One record per kept picture of a batched step, with its own t and raw loss."""
+        if self.watch is None:
+            return
+        for i in kept:
+            self.watch.observe(epoch=epoch, step=step, item_keys=[str(keys[i])], timestep=float(ts[i]),
+                               loss=float(raw[i]))
 
     # ---- epoch boundary --------------------------------------------------------------------------------
     def boundary(self, epoch, dit, device, parkable=True):

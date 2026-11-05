@@ -23,7 +23,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from fizgig.families.driver import Block, BlockGroup, FamilyDriver, prior_base, weighted_loss, with_prior
+from fizgig.families.driver import Block, BlockGroup, FamilyDriver, picture_losses, prior_base, weighted_loss, with_prior
 from fizgig.moss_image import sampling as S
 
 logger = logging.getLogger(__name__)
@@ -346,10 +346,9 @@ class MOSSImageDriver(FamilyDriver):
         tt = torch.tensor([v * S.TRAIN_STEPS for v in ts], device=x0.device)
         pred = dit.forward_batch(xt, tt, cond["hidden_states"].to(x0.device), cond["mask"]).float()
         target = noise - x0
-        if loss_mask is None:
-            return F.mse_loss(pred, target), {"t": sum(ts) / len(ts)}
-        mw = loss_mask.float().to(x0.device)[:, 0]
-        return weighted_loss((pred - target).pow(2).mean(dim=1), mw), {"t": sum(ts) / len(ts)}
+        mw = None if loss_mask is None else loss_mask.float().to(x0.device)[:, 0]
+        per = picture_losses((pred - target).pow(2).mean(dim=1), mw)
+        return per.mean(), {"t": sum(ts) / len(ts), "per": per, "ts": [float(v) for v in ts]}
 
     def noise_latents(self, latents, generator, *, min_t=0.0, max_t=1.0):
         x0 = latents.float()

@@ -19,7 +19,7 @@ import torch
 import torch.nn.functional as F
 from einops import rearrange
 
-from fizgig.families.driver import Block, BlockGroup, FamilyDriver, prior_base, weighted_loss, with_prior
+from fizgig.families.driver import Block, BlockGroup, FamilyDriver, picture_losses, prior_base, weighted_loss, with_prior
 
 DTYPE = torch.bfloat16
 _DOUBLE_MODULES = ("img_attn.qkv", "img_attn.proj", "img_mlp.0", "img_mlp.2",
@@ -198,9 +198,10 @@ class KleinDriver(FamilyDriver):
         return rearrange(pred[:, :n], "b (h w) c -> b c h w", h=h, w=w)
 
     def loss_at(self, dit, latents, noise, t, cond, *, refs=None, diff_ref=None, diff_weight=0.0, loss_mask=None,
-                prior=None):
+                prior=None, per=False):
         """The training loss for a given latent, noise and t - the old trainer's arithmetic in its dtype order.
-        training_loss draws noise and t; tests call this directly to compare with the old trainer."""
+        training_loss draws noise and t; tests call this directly to compare with the old trainer. per: each
+        picture's own loss, (B,) (training_loss_batch)."""
         t = t.to(latents.device)
         t_ = t.view(-1, 1, 1, 1)
         noise = noise.to(device=latents.device, dtype=latents.dtype)
@@ -218,6 +219,8 @@ class KleinDriver(FamilyDriver):
             wt = wt / wt.mean(dim=1, keepdim=True).clamp_min(1e-8)
             wt = torch.where(dm > 1e-6, wt, torch.ones_like(wt))
         mw = None if loss_mask is None else loss_mask.float().flatten(1)              # (1, N): one cell per token
+        if per:
+            return picture_losses((pred.float() - target).pow(2).mean(dim=1).flatten(1), wt, mw)
         if wt is None and mw is None:
             return F.mse_loss(pred.to(torch.float32), target)
         loss = weighted_loss((pred.float() - target).pow(2).mean(dim=1).flatten(1), wt, mw)
@@ -243,8 +246,8 @@ class KleinDriver(FamilyDriver):
             noises.append(torch.randn(latents[i:i + 1].shape, generator=generator))
             ts.append(self._sample_t(h * w, generator, min_t, max_t))
         t = torch.cat(ts)
-        loss = self.loss_at(dit, latents, torch.cat(noises), t, cond, loss_mask=loss_mask)
-        return loss, {"t": float(t.mean())}
+        per = self.loss_at(dit, latents, torch.cat(noises), t, cond, loss_mask=loss_mask, per=True)
+        return per.mean(), {"t": float(t.mean()), "per": per, "ts": [float(v) for v in t]}
 
     def noise_latents(self, latents, generator, *, min_t=0.0, max_t=1.0):
         h, w = latents.shape[-2:]

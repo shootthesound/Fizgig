@@ -18,7 +18,7 @@ import logging
 
 import torch
 
-from fizgig.families.driver import Block, BlockGroup, FamilyDriver, prior_base, weighted_loss, with_prior
+from fizgig.families.driver import Block, BlockGroup, FamilyDriver, picture_losses, prior_base, weighted_loss, with_prior
 
 logger = logging.getLogger(__name__)
 
@@ -551,13 +551,17 @@ class MiniMaxDriver(FamilyDriver):
             mw = None if loss_mask is None else loss_mask[i:i + 1].float().to(x0.device)[..., :hc, :wc]
             parts.append((x0, noise, mw, float(sigma.reshape(-1)[0])))
         preds = dit.forward_packed(items)
-        loss = 0.0
+        per, raw = [], []
         for pred, (x0, noise, mw, s) in zip(preds, parts):
             target = (x0 - noise).to(pred.dtype).float()
             one = F.mse_loss(pred.float(), target) if mw is None else \
                 weighted_loss((pred.float() - target).pow(2).mean(dim=1), mw)
-            loss = loss + one * (hn if hn != 1.0 and s >= MINIMAX_LOWNOISE_SIGMA else 1.0)
-        return loss / n, {"t": sum(p[3] for p in parts) / n}
+            raw.append(float(one.detach()))
+            per.append(one * (hn if hn != 1.0 and s >= MINIMAX_LOWNOISE_SIGMA else 1.0))
+        per = torch.stack(per)
+        # per: what each picture adds to the step (its noise band's LR share in it); per_raw: its loss as recorded
+        return per.sum() / n, {"t": sum(p[3] for p in parts) / n, "per": per, "per_raw": raw,
+                               "ts": [p[3] for p in parts]}
 
     # ---- sliders (families/train.py): image / clip pairs through training_loss's diff_ref, prompt pairs through
     #      noise_latents / predict. compute_loss's still / clip path, video only (a pole's sound is not the dial) ----

@@ -15,7 +15,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from fizgig.families.driver import FamilyDriver, prior_base, weighted_loss, with_prior
+from fizgig.families.driver import FamilyDriver, picture_losses, prior_base, weighted_loss, with_prior
 from fizgig.zimage import pipeline as P
 
 DTYPE = torch.bfloat16
@@ -203,10 +203,9 @@ class ZImageDriver(FamilyDriver):
         xt = (1 - sb) * x0 + sb * noise
         pred = self._velocity(dit, xt, sig, [_cap(c, 0) for c in cond["items"]])
         target = noise - x0
-        if loss_mask is None:
-            return F.mse_loss(pred, target), {"t": float(sig.mean())}
-        mw = loss_mask.float().to(x0.device).flatten(1)
-        return weighted_loss((pred - target).pow(2).mean(dim=1).flatten(1), mw), {"t": float(sig.mean())}
+        mw = None if loss_mask is None else loss_mask.float().to(x0.device).flatten(1)
+        per = picture_losses((pred - target).pow(2).mean(dim=1).flatten(1), mw)
+        return per.mean(), {"t": float(sig.mean()), "per": per, "ts": [float(v) for v in sig.reshape(-1)]}
 
     def noise_latents(self, latents, generator, *, min_t=0.0, max_t=1.0):
         x0 = latents.float()

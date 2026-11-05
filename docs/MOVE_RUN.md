@@ -20,6 +20,10 @@ Press **Now** instead of **At the end of this epoch**. It stops at once and move
 
 Start the pod from the **Pods** tab, add it on the **Helpers** tab, then use **Move to…** as above. A fresh pod downloads the model files first, and the run waits paused here while it does (about 10 minutes for Krea 2 in testing). See [A fresh pod](#a-fresh-pod).
 
+### …make it faster on a big pod?
+
+Tick **Train several pictures a step there** in **Move to…**. The pod works out the largest Batch size its card fits at the run's precision without swapping more blocks, and the run card says how many it took (Training on *pod*, 3 pictures a step). Each epoch makes fewer steps, each averaging that many pictures, as [Gradient Accumulation](CLI.md#batch-size) does. Brought back, the run carries on at this computer's own Batch size. The tick is greyed out for a run that trains one picture a step: an edit, a slider, a fine-tune, DOP, Fizgig LoRA Isolation, the per-image loss watch, Start at a smaller size, or keeping the model's own picture outside the mask.
+
 ### …see how it's doing over there?
 
 Watch the run card here: it shows the epoch and time left there. Press **Open** *(computer name)* to see that computer's Fizgig.

@@ -854,7 +854,7 @@ The log says when each part starts. In a Z-Image Turbo test, 0.25 MP for the fir
 
 ## Batch size
 
-`batch_size = 2` (or 3, 4, 6, 8) in the dataset TOML's `[general]` trains that many pictures a step, on Klein 9B, MOSS-Image, Qwen Image 2.1, Z-Image Turbo and Base, SDXL and Anima. A step's loss is the average of each picture's own loss, as gradient accumulation averages it. A batch holds pictures of one bucket size; captions of different lengths are padded where the model allows it, or the batch is split by caption length.
+`batch_size = 2` (or 3, 4, 6, 8) in the dataset TOML's `[general]` trains that many pictures a step, on Klein 9B, Krea 2, Flux 3 Image Klein, Fibo 2.0, MOSS-Image, Qwen Image 2.1, Z-Image Turbo and Base, SDXL and Anima. A step's loss is the average of each picture's own loss, as gradient accumulation averages it. A batch holds pictures of one bucket size; captions of different lengths are padded where the model allows it, or the batch is split by caption length.
 
 It pays off most with block swap: each step's swap is spread over every picture in the batch. Batch 3 against batch 1 with Gradient Accumulation 3, at 0.25 MP on an A40:
 

@@ -64,6 +64,10 @@
   --coffee-hover: #E5C700;
   --runpod: #7C3AED;
   --runpod-hover: #6D28D9;
+  --google-blue: #4285F4;
+  --google-red: #EA4335;
+  --google-yellow: #FBBC05;
+  --google-green: #34A853;
   --youtube: #CC0000;
   --youtube-hover: #990000;
   --win-close: #E81123;        /* The window's close button */
@@ -2682,3 +2686,15 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 .theme-pick small { grid-column: 2; font-size: 11px; color: var(--text-muted); line-height: 1.3; }
 .theme-swatch { width: 30px; height: 20px; border-radius: 3px; border: 1px solid var(--border-strong);
   background: linear-gradient(90deg, var(--sw-bg) 0 60%, var(--sw-accent) 60% 100%); }
+
+/* Rent a pod: a new RunPod user counts for Fizgig only when they sign up with Google (RunPod's referral rules) */
+.google-pill { display: inline-flex; align-items: center; gap: 9px; margin: 0 0 12px; padding: 7px 16px 7px 10px;
+  border-radius: 999px; background: var(--bg-surface); color: var(--text-primary); font-size: 13px;
+  border: 1px solid color-mix(in srgb, var(--google-blue) 45%, transparent);
+  box-shadow: 0 1px 6px color-mix(in srgb, var(--google-blue) 18%, transparent); }
+.google-pill svg { width: 17px; height: 17px; flex: 0 0 17px; }
+.google-pill b { color: var(--google-blue); font-weight: 700; }
+.google-pill .g-r { fill: var(--google-red); }
+.google-pill .g-b { fill: var(--google-blue); }
+.google-pill .g-y { fill: var(--google-yellow); }
+.google-pill .g-g { fill: var(--google-green); }

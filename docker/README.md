@@ -1,5 +1,7 @@
 # Running Fizgig on a rented GPU
 
+<a href="https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=bdrdew7hxw&ref=vkb387ep"><img src="https://img.shields.io/badge/New%20to%20RunPod%3F-Sign%20up%20with%20Google%20to%20support%20Fizgig-4285F4?style=flat&logo=google&logoColor=white" alt="New to RunPod? Sign up with Google to support Fizgig"></a>
+
 [**⚡ Deploy Fizgig on RunPod →**](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=bdrdew7hxw&ref=vkb387ep)
 
 > **Before you press Deploy Pod:** RunPod doesn't add a disk for you: on its page press **Add volume**, click **Volume disk** (it opens on Global volume, which doesn't work), keep **300 GB**, press **Add volume disk**, then **Deploy Pod**. [See an explanation with screenshots](#give-it-a-disk-on-runpods-deploy-page).

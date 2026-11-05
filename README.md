@@ -6,6 +6,9 @@
 </p>
 
 <p align="center">
+  <a href="https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=bdrdew7hxw&ref=vkb387ep"><img src="https://img.shields.io/badge/New%20to%20RunPod%3F-Sign%20up%20with%20Google%20to%20support%20Fizgig-4285F4?style=flat&logo=google&logoColor=white" alt="New to RunPod? Sign up with Google to support Fizgig"></a>
+</p>
+<p align="center">
   <a href="#install"><img src="https://img.shields.io/badge/⬇%20Install%20Fizgig-2EA043?style=for-the-badge&logoColor=white" alt="Jump to the install instructions"></a>
   <a href="https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=bdrdew7hxw&ref=vkb387ep"><img src="https://img.shields.io/badge/⚡%20Deploy%20on%20RunPod-673AB7?style=for-the-badge&logoColor=white" alt="Deploy Fizgig on RunPod"></a>
   <a href="https://buymeacoffee.com/lorasandlenses"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee"></a>

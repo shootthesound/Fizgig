@@ -340,7 +340,8 @@ MOSS_IMAGE = FamilyDescription(
                      hint="A LoRA or a fine-tune trains only attention (q, k, v, o), not the feed-forward layers. "
                           "Recommended on MOSS-Image SFT or a fine-tune of it, where training the feed-forward "
                           "layers breaks anatomy. Uses less VRAM, so a fine-tune fits a smaller card, but on Base "
-                          "it may cost quality or slow convergence.",
+                          "it may cost quality or slow convergence. Training on SFT isn't recommended: train on Base "
+                          "and use the LoRA on SFT.",
                      section="after", summary="attention only"),
         FamilyOption("MOSS_LOWNOISE_PCT", "Clean-end share", kind="entry", tokens="lownoise_pct={}", default=_LORA_SHARE,
                      width=8, suffix="% of steps",

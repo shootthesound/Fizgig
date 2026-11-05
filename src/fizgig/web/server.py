@@ -3358,6 +3358,8 @@ class Handler(BaseHTTPRequestHandler):
             r["resume"] = r.get("resume") if r["state"] == "paused" else ""
             from fizgig.web import helpers
             r["move"] = helpers.move_status()
+            _bd = get_family(r.get("family") or "")         # Move to...'s batch tick: why a batch can't go (or [])
+            r["move_batch"] = form.batch_blockers(_bd, r.get("values") or {}) if _bd is not None else ["no run"]
             r["web_queue"] = webqueue.status()
             from fizgig.web import pod_stop
             r["pod_stop"] = pod_stop.status()
@@ -3753,7 +3755,8 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/helper/share_start":
                     return self.json(helpers.share_start(b))
                 if path == "/api/helpers/move":           # this computer's run: carry on training on a helper
-                    return self.json(helpers.move_start(str(b.get("id") or ""), bool(b.get("now")), b.get("home", True) is not False))
+                    return self.json(helpers.move_start(str(b.get("id") or ""), bool(b.get("now")), b.get("home", True) is not False,
+                                                        bool(b.get("batch"))))
                 if path == "/api/helpers/move_back":      # a run moved to a helper: back here, to carry on training
                     return self.json(helpers.move_back(bool(b.get("now")), bool(b.get("delete"))))
                 if path == "/api/helpers/move_clear":
@@ -3833,7 +3836,8 @@ class Handler(BaseHTTPRequestHandler):
                     with _lock:
                         busy = _run["proc"] is not None and _run["proc"].poll() is None
                     bn, bpend = batch_plan.line(desc, vals, gpu_env(dict(os.environ, PYTHONPATH=os.path.join(
-                        BASE_DIR, "src")), prefs), busy=busy)
+                        BASE_DIR, "src")), prefs), busy=busy,
+                        files=batch_plan.models(desc, lambda k: pref_path(prefs, k)))
                     if bn:
                         st["notes"]["BATCH_SIZE"] = bn
                     st["pending"] = st.get("pending") or bpend

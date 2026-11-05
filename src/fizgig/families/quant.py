@@ -198,13 +198,6 @@ def _peak(entry, megapixels):
 TIGHT_MARGIN_GB = 0.5      # nf4 with no swap beats a swapped int8 base down to this much headroom
 
 
-def batch_extra(desc, megapixels=1.0, pictures=1):
-    """GB a batched step needs past one picture's: desc.batch_gb (fixed, per megapixel) for each picture after the
-    first."""
-    fixed, per_mp = getattr(desc, "batch_gb", None) or (0.0, 0.0)
-    return max(0, int(pictures) - 1) * (float(fixed) + float(per_mp) * float(megapixels))
-
-
 def plan(desc, driver, precision="auto", blocks_to_swap=-1, free_gb=None, margin_gb=1.5, megapixels=1.0, pictures=1):
     """Resolve 'auto' precision and/or block swap (-1) from free VRAM and the description's measured training
     memory (desc.train_memory: {precision: (peak GB at no swap, GB saved per swapped block)}).
@@ -256,6 +249,23 @@ def plan(desc, driver, precision="auto", blocks_to_swap=-1, free_gb=None, margin
         n = swap_for(precision)
         return precision, n, (f"{n} swapped blocks to fit {free_gb:.1f} GB" if n else f"fits {free_gb:.1f} GB")
     return precision, blocks_to_swap, "as set"
+
+
+def batch_extra(desc, megapixels=1.0, pictures=1):
+    """GB a batched step needs past one picture's: desc.batch_gb (fixed, per megapixel) for each picture after the
+    first."""
+    fixed, per_mp = getattr(desc, "batch_gb", None) or (0.0, 0.0)
+    return max(0, int(pictures) - 1) * (float(fixed) + float(per_mp) * float(megapixels))
+
+
+def fits(desc, precision, blocks_to_swap, free_gb, megapixels=1.0, pictures=1, margin_gb=1.5):
+    """Whether `precision` with `blocks_to_swap` swapped fits free_gb by the description's figures (as plan() weighs
+    them); True when there is no figure for it."""
+    if precision not in (desc.train_memory or {}):
+        return True
+    v = desc.train_memory[precision]
+    extra = batch_extra(desc, megapixels, pictures)
+    return _peak(v, megapixels) + extra - max(0, blocks_to_swap) * v[1] <= free_gb - margin_gb
 
 
 def share_shortfall(desc, driver, precision, blocks_to_swap, megapixels, free_gb=None, margin_gb=0.5):

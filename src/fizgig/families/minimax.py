@@ -137,7 +137,8 @@ OPTIONS = (
                  tokens="distill=1 aux:distill=1 --dit=pref:minimax_ref_dit",
                  hint="Experiment. Teaches the LoRA to reproduce identity the way H3 does from a reference photo. "
                       "Needs the ref2va model in Preferences.", summary="distill", setting="MINIMAX_DISTILL", section="other",
-                 isolation_off=True),     # the side-by-sides' block would hand two-person pictures in as references
+                 isolation_off=True,      # the side-by-sides' block would hand two-person pictures in as references
+                 batch_off=True),         # its teacher step is one picture's own reference sequence
     FamilyOption("H3_DISTILL_WEIGHT", "   teacher ", kind="entry", inline=True, always_shown=True, width=5,
                  suggestions=("0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1.0"), tokens="distill_weight={}", default="0.8",
                  requires="H3_DISTILL", summary="teacher {}", setting="MINIMAX_DISTILL_WEIGHT", section="other"),
@@ -320,6 +321,9 @@ MINIMAX = FamilyDescription(
     adaptive_lr=False,
     slider_training=True,             # prompt pairs, photo pairs and clip pairs (driver: _slider_loss / predict)
     loss_watch=False,
+    batch_training=True,              # Batch size (Other Options): pictures packed (forward_packed); clips one a step
+    own_plan=True,                    # the old trainer's planner (driver.plan_run): its own figures, not train_memory
+    batch_gb=(0.2, 0.8),              # GB each extra picture takes: fixed, per MP (batch 2 vs 3: batch 1 runs without checkpointing)
     masked_training=True,             # photos only: the dataset gives a mask to a still, never to a clip or a voice
     network_hint="LoRA recommended for MiniMax",
     ema_hint="A smoothed average of the weights, leading to better and more reliable previews.",

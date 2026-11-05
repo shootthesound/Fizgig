@@ -3849,7 +3849,7 @@ def _mv_client():
     return Client(_mv["url"], (h or {}).get("cookie", "") or _mv.get("cookie", ""))
 
 
-def move_start(hid, now=False, home=True):
+def move_start(hid, now=False, home=True, batch=False):
     if _mv.get("state") in ("moving", "back", "moved"):
         raise ValueError("This run is already moving, or training elsewhere.")
     h = next((x for x in _helpers() if x.get("id") == hid), None)
@@ -3883,8 +3883,10 @@ def move_start(hid, now=False, home=True):
     if now and running and not s.launch.latest_state(r["output_dir"], r["lora"]):
         raise ValueError("It hasn't saved yet, so it can't move now: move it at the end of this epoch instead.")
     _mv.clear()
+    batch = bool(batch) and not s.form.batch_blockers(desc, v)
     _mv.update(state="moving", hid=hid, to=h.get("name") or h["url"], url=h["url"], run=r["lora"],
-               out_dir=r["output_dir"], error="", text="Getting ready to move", progress=None, home=bool(home))
+               out_dir=r["output_dir"], error="", text="Getting ready to move", progress=None, home=bool(home),
+               batch=batch)
     threading.Thread(target=_move_work, args=(h, now), daemon=True, name="helpers-move").start()
     return {"ok": True}
 
@@ -4029,6 +4031,7 @@ def _move_work(h, now):
         body = {"tag": tag, "family": fam, "values": values, "run": name, "state": os.path.basename(state),
                 "folder": os.path.basename(os.path.normpath(folder)) or "images", "lead": socket.gethostname(),
                 "precision": setup.get("precision") or "", "files": pr.get("files") or {},
+                "batch": bool(_mv.get("batch")),
                 "dirs": {k: _dir_name(d) for k, d in _move_extras(values)[0].items()},
                 "extra_files": {k: os.path.basename(f) for k, f in _move_extras(values)[1].items()}}
         _mv_say(f"{to} is getting the run ready")
@@ -4050,14 +4053,14 @@ def _move_work(h, now):
         _write(os.path.join(out_dir, MOVED_FILE), {"url": _mv["url"], "to": to, "tag": tag, "run": name,
                                                    "remote_out": a.get("output_dir") or "", "at": time.time(),
                                                    "family": fam, "values": values, "image_folder": folder,
-                                                   "home": bool(_mv.get("home"))})
+                                                   "home": bool(_mv.get("home")), "batch": int(a.get("batch") or 1)})
         _moved_record(_mv["url"], name, a.get("output_dir") or "", out_dir)
         if _mv.get("home"):                  # its checkpoints and previews come home as they're saved, queued
             _home_for_move(_mv["url"], out_dir)
         with s._lock:
             s._run["state"] = "moved"
         _mv.update(state="moved", tag=tag, remote_out=a.get("output_dir") or "", remote=None, family=fam,
-                   values=values, image_folder=folder)
+                   values=values, image_folder=folder, batch=int(a.get("batch") or 1))
         _mv_say(f"Training on {to} now, from {os.path.basename(state)}. Bring it back from the run card when you "
                 f"want it here again")
         threading.Thread(target=_move_watch, daemon=True, name="helpers-move-watch").start()
@@ -4111,7 +4114,8 @@ def move_restore(out_dir, name):
     _mv.clear()
     _mv.update(state="moved", to=m.get("to"), url=m.get("url"), tag=m.get("tag"), run=name, out_dir=out_dir,
                remote_out=m.get("remote_out"), remote=None, text=f"Training on {m.get('to')}", progress=None,
-               family=m.get("family"), values=m.get("values") or {}, image_folder=m.get("image_folder") or "")
+               family=m.get("family"), values=m.get("values") or {}, image_folder=m.get("image_folder") or "",
+               batch=int(m.get("batch") or 1))
     threading.Thread(target=_move_watch, daemon=True, name="helpers-move-watch").start()
     return True
 
@@ -4160,7 +4164,7 @@ def move_in(body):
         raise ValueError("Bad tag.")
     rec = _mvin_load().get(tag)
     if rec and rec.get("started"):
-        return {"ok": True, "output_dir": rec["output_dir"], "run": rec["run"]}
+        return {"ok": True, "output_dir": rec["output_dir"], "run": rec["run"], "batch": rec.get("batch", 1)}
     with s._lock:
         busy = s._run["proc"] is not None and s._run["proc"].poll() is None or s._run["state"] in ("starting", "running")
         paused = s._run["state"] == "paused"
@@ -4238,6 +4242,19 @@ def move_in(body):
         v["CONTEXT_LORA_PATH"] = os.path.join(rec["base"], "context.safetensors")
         if not os.path.isfile(v["CONTEXT_LORA_PATH"]):
             raise ValueError("The run's context LoRA didn't arrive: move it again.")
+    rec["batch"] = 1
+    if body.get("batch") and not s.form.batch_blockers(desc, v):
+        # Batch size as this card fits at the run's precision with no more swap than one picture a step (the trainer
+        # carries the LR schedule on from its epochs; bringing it back resumes at home's own Batch size)
+        from fizgig.web import batch_plan
+        prefs = s.load_prefs()
+        sent = {f.pref_key: paths[st] for st, role in (("dit", "dit"), ("latents", "vae"), ("text", "text_encoder"))
+                for f in desc.model_files if f.role == role and paths.get(st)}     # the files the run came with
+        rec["batch"] = batch_plan.fit(desc, v, s.gpu_env(dict(os.environ, PYTHONPATH=os.path.join(s.BASE_DIR, "src")),
+                                                         prefs),
+                                      files=batch_plan.models(desc, lambda k: sent.get(k) or s.pref_path(prefs, k)))
+        if rec["batch"] > 1:
+            v["BATCH_SIZE"] = str(rec["batch"])
     over = {}
     for stage, role in (("dit", "dit"), ("latents", "vae"), ("text", "text_encoder")):
         f = next((mf for mf in desc.model_files if mf.role == role), None)
@@ -4250,8 +4267,9 @@ def move_in(body):
         raise ValueError(r.get("error") or "; ".join(r.get("problems") or ["it couldn't start"]))
     rec["started"] = True
     _mvin_save()
-    logger.info(f"[move] {rec['run']} moved here from {rec.get('lead')}: resuming from {os.path.basename(state)}")
-    return {"ok": True, "output_dir": rec["output_dir"], "run": rec["run"]}
+    logger.info(f"[move] {rec['run']} moved here from {rec.get('lead')}: resuming from {os.path.basename(state)}"
+                + (f", {rec['batch']} pictures a step" if rec["batch"] > 1 else ""))
+    return {"ok": True, "output_dir": rec["output_dir"], "run": rec["run"], "batch": rec["batch"]}
 
 
 def move_out(body):

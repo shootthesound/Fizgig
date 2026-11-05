@@ -259,6 +259,7 @@ class FamilyOption:
     show_if_media: str = ""           # shown only when the dataset holds this media kind ("clip", "voice")
     mixed_only: bool = False          # shown only when the dataset mixes voice with photos or clips
     isolation_off: bool = False       # a check that can't run with Fizgig LoRA Isolation: off and greyed while it's on
+    batch_off: bool = False           # a check that reads one picture a step: off and greyed while Batch size is above 1
     requires: str = ""                # shown (and sent) only while this check is ticked ("KEY") or this choice is
     #                                   picked ("KEY=LABEL", matched as pick() matches)
     suggestions: tuple = ()           # entry: ready-made values offered in an editable dropdown ("6-49 · why")
@@ -507,6 +508,7 @@ class FamilyDescription:
     # block)}; the peak may instead be ((megapixels, GB), ...) points, interpolated for the run's resolution.
     # {} = Auto just takes the first precision
     train_memory: dict = field(default_factory=dict)
+    own_plan: bool = False            # no train_memory: the driver plans precision + swap itself (plan_run, plan_pictures)
     # the same peak with gradient checkpointing OFF, compiled blocks, no swap: {precision: ((megapixels, GB), ...)}.
     # A compiled LoRA run with no swap trains without checkpointing (13-27% faster) when this fits with a margin;
     # a precision missing here (nf4: its dequantised weights stay alive for backward) always checkpoints

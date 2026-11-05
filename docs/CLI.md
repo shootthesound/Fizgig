@@ -854,7 +854,7 @@ The log says when each part starts. In a Z-Image Turbo test, 0.25 MP for the fir
 
 ## Batch size
 
-`batch_size = 2` (or 3, 4, 6, 8) in the dataset TOML's `[general]` trains that many pictures a step, on Klein 9B, MOSS-Image, Qwen Image 2.1, Z-Image Turbo and Base, SDXL and Anima. A step's loss is the average of each picture's own loss, as gradient accumulation averages it. A batch holds pictures of one bucket size; captions of different lengths are padded where the model allows it, or the batch is split by caption length.
+`batch_size = 2` (or 3, 4, 6, 8) in the dataset TOML's `[general]` trains that many pictures a step, on Klein 9B, Krea 2, Flux 3 Image Klein, Fibo 2.0, MOSS-Image, Qwen Image 2.1, Z-Image Turbo and Base, SDXL, Anima and MiniMax H3. On MiniMax H3 the batch is of pictures: a clip or a voice still trains on a step of its own. A step's loss is the average of each picture's own loss, as gradient accumulation averages it. A batch holds pictures of one bucket size; captions of different lengths are padded where the model allows it, or the batch is split by caption length.
 
 It pays off most with block swap: each step's swap is spread over every picture in the batch. Batch 3 against batch 1 with Gradient Accumulation 3, at 0.25 MP on an A40:
 
@@ -866,7 +866,7 @@ It pays off most with block swap: each step's swap is spread over every picture 
 
 With no swap it helps the smaller models (Anima 2.6×, SDXL 2.3× on a 4090) and changes little for the larger ones. Each extra picture costs roughly 0.2–0.75 GB at 0.25 MP, more at larger sizes; gradient checkpointing stays on.
 
-Batch size above 1 isn't used with sliders, edit pairs, fine-tunes, DOP or Fizgig LoRA Isolation, and turns off the per-image loss watch, masked-training mask priors, Start at a smaller size, regularisation images and helper shares. The GUI greys those out; the trainer refuses a batch with them.
+Batch size above 1 isn't used with sliders, edit pairs, fine-tunes, DOP, Fizgig LoRA Isolation or MiniMax H3's reference distillation, and turns off the per-image loss watch, masked-training mask priors, Start at a smaller size, regularisation images and helper shares. The GUI greys those out; the trainer refuses a batch with them.
 
 ---
 

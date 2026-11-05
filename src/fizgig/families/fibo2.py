@@ -212,6 +212,8 @@ _FIBO2 = FamilyDescription(
     # tensors (each part trains its own w1), so LoKR has no layout that loads in the fused build and is not offered.
     network_types=("lora",),
     masked_training=True,             # training_loss takes loss_mask (and the prior outside it)
+    batch_training=True,              # Batch size (Other Options): training_loss_batch, exact per picture
+    batch_gb=(0.9, 1.7),            # GB each extra picture takes: fixed, per MP (batch 1 vs 3)
     slider_training=True,             # photo pairs (training_loss diff weighting) or prompts (noise_latents / predict)
     # edit pairs as the pipeline edits: Qwen3-VL sees each before-image (encode_text_with_references) and the DiT
     # takes them as clean context latents (training_loss / generate refs)

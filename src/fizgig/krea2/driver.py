@@ -229,6 +229,20 @@ class Krea2Driver(FamilyDriver):
                             loss_mask=loss_mask, prior=prior)
         return loss, {"t": float(t.mean())}
 
+    def training_loss_batch(self, dit, latents, cond, generator, *, min_t=0.0, max_t=1.0, loss_mask=None):
+        """Batch Size above 1: each picture's noise and t drawn as training_loss draws them, picture by picture, then
+        one loss_at over the batch. Captions stack as encoded (512 tokens + validity mask each); _text gathers each
+        one's valid tokens and pads to the batch's longest with a mask, as the shared attention expects."""
+        patch = dit.config.patch
+        n_tokens = (latents.shape[-2] // patch) * (latents.shape[-1] // patch)
+        noises, ts = [], []
+        for i in range(latents.shape[0]):
+            noises.append(torch.randn(latents[i:i + 1].shape, generator=generator))
+            ts.append(self._sample_t(n_tokens, generator, min_t, max_t))
+        t = torch.cat(ts)
+        loss = self.loss_at(dit, latents, torch.cat(noises), t, cond, loss_mask=loss_mask)
+        return loss, {"t": float(t.mean())}
+
     def noise_latents(self, latents, generator, *, min_t=0.0, max_t=1.0):
         patch = 2
         n_tokens = (latents.shape[-2] // patch) * (latents.shape[-1] // patch)

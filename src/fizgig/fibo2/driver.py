@@ -585,6 +585,30 @@ class Fibo2Driver(FamilyDriver):
             loss = with_prior(loss, prior, base, (pred - base.float()).pow(2).mean(dim=1), mw, wgt)
         return loss, {"t": state["t"]}
 
+    def stack_conds(self, conds):
+        """Captions of different lengths pad to the longest with the mask off: the DiT reads each prompt's length
+        from its mask (its gist count, its cross-attention), as the pipeline batches prompts."""
+        n = max(c["tokens"].shape[-2] for c in conds)
+        tokens = [F.pad(c["tokens"], (0, 0, 0, n - c["tokens"].shape[-2])) for c in conds]
+        masks = [F.pad(c["mask"].bool(), (0, n - c["mask"].shape[-1])) for c in conds]
+        return {"tokens": torch.cat(tokens), "mask": torch.cat(masks)}
+
+    def training_loss_batch(self, dit, latents, cond, generator, *, min_t=0.0, max_t=1.0, loss_mask=None):
+        """Batch Size above 1: each picture's sigma and noise drawn as training_loss draws them, picture by picture,
+        then one forward over the batch. The loss is the pictures' mean: a mask weighs each picture on its own."""
+        latents = self._as4(latents)
+        states = [self.noise_latents(latents[i:i + 1], generator, min_t=min_t, max_t=max_t)
+                  for i in range(latents.shape[0])]
+        state = {k: torch.cat([s[k] for s in states]) for k in ("hidden_states", "timestep", "noise")}
+        pred = self.predict(dit, state, cond).float()
+        target = (state["noise"] - latents).float()
+        if loss_mask is None:
+            loss = F.mse_loss(pred, target)
+        else:
+            mw = loss_mask.float().to(latents.device).reshape(latents.shape[0], *latents.shape[-2:])
+            loss = weighted_loss((pred - target).pow(2).mean(dim=1), mw)
+        return loss, {"t": sum(s["t"] for s in states) / len(states)}
+
     @torch.no_grad()
     def initial_noise(self, seed, width, height):
         """The seed's starting noise, in the driver's latent layout (1, 32, H/8, W/8) - the form generate() draws

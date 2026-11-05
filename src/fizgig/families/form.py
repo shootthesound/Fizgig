@@ -103,8 +103,9 @@ DEFAULTS = {
 }
 
 
-BATCH_HINT = ("Pictures trained together in each step, from the same size bucket. Above 1 a step takes longer but "
-              "an epoch is quicker on a card with room to spare, and it uses more memory: Auto plans for it. The "
+BATCH_HINT = ("Pictures trained together in each step, from the same size bucket. Above 1 an epoch is quicker "
+              "when blocks are swapped (each swap serves every picture in the batch) and on smaller models, and it "
+              "uses more memory: Auto plans for it. The "
               "per-image loss watch, Start at a smaller size and keeping the model's own picture outside the mask "
               "need 1, as do sliders, edits, fine-tunes, DOP and Fizgig LoRA Isolation. Each picture still counts "
               "the same.")

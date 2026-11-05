@@ -44,8 +44,8 @@ FLUX3 = FamilyDescription(
 
     model_files=(
         ModelFile("flux3_dit", "Flux 3 Image Klein Base DiT", True, _COMFY,
-                  "diffusion_models/flux3_image_klein_bf16.safetensors", 11.08,
-                  "bf16 Base (undistilled) for training. Files with _sd_ in the name are the distilled model.",
+                  "diffusion_models/flux3-image-klein-base-bf16.safetensors", 11.08,
+                  "bf16 Base (undistilled) for training: the file with base in its name, not the distilled one.",
                   role="dit", gated=True),
         ModelFile("flux3_vae", "Flux 3 autoencoder", True, _COMFY, "vae/flux2-vae.safetensors", 0.34,
                   "The FLUX.2 autoencoder, as Klein 9B's.", role="vae", gated=True),
@@ -53,7 +53,7 @@ FLUX3 = FamilyDescription(
                   "text_encoders/qwen3vl_4b_bf16.safetensors", 8.88,
                   "Used for caching only, then unloaded.", role="text_encoder", gated=True),
         ModelFile("flux3_distilled_dit", "Flux 3 Image Klein (distilled, previews)", False, _COMFY,
-                  "diffusion_models/flux3_image_klein_sd_bf16.safetensors", 11.10,
+                  "diffusion_models/flux3-image-klein-bf16.safetensors", 11.10,
                   "16 steps, no CFG: fast previews and the workbench.", role="preview_dit", gated=True),
     ),
     # measured 21 Oct 2026 with scripts/check_te_builds.py against qwen3vl_4b_bf16 (the same weights as Krea 2's

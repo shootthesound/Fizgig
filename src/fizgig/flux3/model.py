@@ -5,7 +5,7 @@ the module names unchanged: LoRA keys come from named_modules(), and ComfyUI (co
 lora_unet_<path> onto these names, including q_proj / k_proj / v_proj on a file that fuses them into qkv.
 
 Fizgig additions: gradient checkpointing around each block, and a loader that accepts the reference package
-(model.safetensors) or Comfy-Org's single file (diffusion_models/flux3_image_klein*_bf16.safetensors).
+(model.safetensors) or Comfy-Org's single file (diffusion_models/flux3-image-klein*-bf16.safetensors).
 """
 import math
 from dataclasses import dataclass

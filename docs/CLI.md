@@ -79,8 +79,8 @@ Headless, there is no Preferences tab: **model locations are passed as flags on 
 
 | File | Download | Used for |
 |---|---|---|
-| Base DiT `flux3_image_klein_bf16.safetensors` | diffusion_models/ | training (`--dit`); quantised to INT8 or NF4 at load when `--precision` asks |
-| Distilled DiT `flux3_image_klein_sd_bf16.safetensors` | diffusion_models/ | 16-step previews (`--preview_checkpoint`) and the workbench tabs |
+| Base DiT `flux3-image-klein-base-bf16.safetensors` | diffusion_models/ | training (`--dit`); quantised to INT8 or NF4 at load when `--precision` asks |
+| Distilled DiT `flux3-image-klein-bf16.safetensors` | diffusion_models/ | 16-step previews (`--preview_checkpoint`) and the workbench tabs |
 | Autoencoder `flux2-vae.safetensors` | vae/ | `--vae` (cache step: `--model`) |
 | Text encoder `qwen3vl_4b_bf16.safetensors` | text_encoders/ | `--text_encoder` (cache step: `--model`) |
 
@@ -373,7 +373,7 @@ python src/fizgig/families/cache.py --family flux3 --stage text    --dataset_con
 python src/fizgig/families/train.py \
   --family flux3 \
   --dataset_config my_dataset.toml \
-  --dit /models/flux3_image_klein_bf16.safetensors \
+  --dit /models/flux3-image-klein-base-bf16.safetensors \
   --output_dir ./output_loras/my_subject \
   --output_name my_subject \
   --network_dim 16 --network_alpha 16 \
@@ -389,7 +389,7 @@ python src/fizgig/families/train.py \
   --save_state --save_state_on_train_end --keep_last_n_states 2 \
   --vae /models/flux2-vae.safetensors \
   --text_encoder /models/qwen3vl_4b_bf16.safetensors \
-  --preview_checkpoint /models/flux3_image_klein_sd_bf16.safetensors \
+  --preview_checkpoint /models/flux3-image-klein-bf16.safetensors \
   --sample_prompts sample_prompts.txt \
   --sample_every_n_epochs 1 --sample_at_first \
   --sample_width 1024 --sample_height 1024 --sample_seed 1234

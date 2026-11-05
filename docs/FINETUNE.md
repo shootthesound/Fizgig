@@ -48,7 +48,7 @@ Fine-tuning uses the same training bases as LoRA training; nothing new to downlo
 
 - **Krea 2** fine-tunes the **RAW bf16 model** (`krea2_raw_bf16.safetensors`, ~26 GB). The fp8 Turbo is the workbench preview model and can't be fine-tuned.
 - **Qwen Image 2.1** fine-tunes its **bf16 DiT** (`qwen_image_2.1_bf16.safetensors`); the training adapter stays on, as for LoRAs.
-- **Flux 3 Image Klein** fine-tunes its **bf16 Base** (`flux3_image_klein_bf16.safetensors`), every block's Linears; the distilled model can't be fine-tuned. It peaked at 12.6 GB at 0.25 MP and 14.0 GB at 1 MP, the whole model at once on a 32 GB card.
+- **Flux 3 Image Klein** fine-tunes its **bf16 Base** (`flux3-image-klein-base-bf16.safetensors`), every block's Linears; the distilled model can't be fine-tuned. It peaked at 12.6 GB at 0.25 MP and 14.0 GB at 1 MP, the whole model at once on a 32 GB card.
 - **Fibo 2.0** fine-tunes its **bf16 Dev DiT** (`fibo2_dev_bf16.safetensors`): the 44 main layers in five parts (attention, cross-attention and each FFN matrix), with the refiners, the Perceiver and the modulation frozen. The checkpoint is written in ComfyUI's layout and loads there in place of the Dev file. A 32 GB card trains it in two windows, a 24 GB card in three, and a 16 GB card streams the frozen layers from system RAM.
 - **MiniMax H3** fine-tunes the **pruned int8 checkpoint** (`minimax_h3_fl2va_pruned_int8_convrot.safetensors`, ~21 GB), the same file ComfyUI runs. The ~66 GB bf16 file works for LoRA training only; the trainer refuses it for fine-tuning with a clear message.
 

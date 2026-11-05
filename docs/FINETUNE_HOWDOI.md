@@ -296,7 +296,7 @@ The same training bases you already have — nothing new to download:
 - **Krea 2** fine-tunes the **RAW bf16 model** (`krea2_raw_bf16.safetensors`, ~26 GB).
   The fp8 Turbo is the workbench preview model and can't be fine-tuned.
 - **Qwen Image 2.1** fine-tunes its **bf16 DiT** (`qwen_image_2.1_bf16.safetensors`).
-- **Flux 3 Image Klein** fine-tunes its **bf16 Base** (`flux3_image_klein_bf16.safetensors`), not the
+- **Flux 3 Image Klein** fine-tunes its **bf16 Base** (`flux3-image-klein-base-bf16.safetensors`), not the
   distilled model.
 - **MiniMax H3** fine-tunes the **pruned int8 checkpoint**
   (`minimax_h3_fl2va_pruned_int8_convrot.safetensors`, ~21 GB) — the same file ComfyUI

@@ -3828,6 +3828,15 @@ class Handler(BaseHTTPRequestHandler):
                                               bool(vals.get("FAMILY_MULTI_PERSON")))
                     st["placeholders"] = mpn.pop("__placeholders", {})
                     st["notes"].update(mpn)
+                if desc.batch_training and "BATCH_SIZE" not in st["disabled"]:   # what the batch needs on this card
+                    from fizgig.web import batch_plan
+                    with _lock:
+                        busy = _run["proc"] is not None and _run["proc"].poll() is None
+                    bn, bpend = batch_plan.line(desc, vals, gpu_env(dict(os.environ, PYTHONPATH=os.path.join(
+                        BASE_DIR, "src")), prefs), busy=busy)
+                    if bn:
+                        st["notes"]["BATCH_SIZE"] = bn
+                    st["pending"] = st.get("pending") or bpend
                 if st["kind"] == "finetune" and desc.finetune:      # the fine-tune card's plan line (the desktop's)
                     from fizgig.web import ft_plan
                     st["notes"]["FAMILY_FT_ROTATIONS"], st["pending"] = ft_plan.line(

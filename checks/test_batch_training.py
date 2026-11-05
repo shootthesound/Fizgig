@@ -96,3 +96,51 @@ def test_batch_size_reaches_the_dataset_and_stands_down_what_reads_one_picture(t
     assert "batch_size = 1" in p.dataset_toml and "--log_per_image_loss" in train
     v = {**form.DEFAULTS, "BATCH_SIZE": "3", "FAMILY_KIND": "slider", "FAMILY_SLIDER": True}   # one pair a step
     assert launch.batch_size(moss, v) == 1 and "BATCH_SIZE" in form.state(moss, v, str(d))["disabled"]
+
+
+def test_batch_plan_note_asks_what_start_sends(tmp_path):
+    """The Batch size row's plan note asks the planner with the precision, swap and size Start hands the trainer, and
+    says when the batch would swap where batch 1 doesn't."""
+    import re
+    import sys
+    from PIL import Image
+    from fizgig.families import form, launch
+    from fizgig.families.registry import get as get_family
+    from fizgig.web import batch_plan
+    d = tmp_path / "imgs"
+    d.mkdir()
+    Image.new("RGB", (64, 64)).save(d / "p0.png")
+    (d / "p0.txt").write_text("x")
+    for fam in ("qwen_image21", "moss_image", "klein"):
+        desc = get_family(fam)
+        models = {}
+        for mf in desc.model_files:
+            f = tmp_path / f"{fam}_{mf.pref_key}.safetensors"
+            f.write_bytes(b"0")
+            models[mf.pref_key] = str(f)
+        labels = {**launch.PRECISION_LABELS, **desc.precision_labels}
+        for prec, swap, mp in (("auto", "Auto (detect from GPU)", "0.25"), ("bf16", "Auto (detect from GPU)", "1.0"),
+                               ("auto", "8", "0.5"), ("int8", "0", "0.25")):
+            v = {**form.DEFAULTS, "LORA_NAME": "t", "LORA_OUTPUT_DIR": str(tmp_path / "out"),
+                 "DATASET_CONFIG": str(tmp_path / "dataset.toml"), "BATCH_SIZE": "2",
+                 "FAMILY_PRECISION": labels[prec], "BLOCKS_SWAP": swap, "DATASET_MEGAPIXELS": mp}
+            inp = form.inputs(desc, v, models=models, python=sys.executable, repo_dir=str(tmp_path),
+                              image_folder=str(d), cache_root=str(tmp_path / "cache"),
+                              samples_dir=str(tmp_path / "out" / "sample"))
+            p = launch.plan(desc, inp)
+            train = next(s.cmd for s in p.stages if "train.py" in " ".join(s.cmd))
+            sent_prec = train[train.index("--precision") + 1] if "--precision" in train else "bf16"
+            sent_swap = int(train[train.index("--blocks_to_swap") + 1]) if "--blocks_to_swap" in train else 0
+            side = int(re.search(r"resolution = \[(\d+), \d+\]", p.dataset_toml).group(1))
+            req = batch_plan.request(desc, v)
+            if sent_prec != "auto" and sent_swap >= 0:
+                assert req is None, (fam, prec, swap)
+                continue
+            assert req == (sent_prec, sent_swap, side * side / 1e6, 2), (fam, prec, swap, mp, req)
+    assert batch_plan.request(get_family("moss_image"), {**form.DEFAULTS, "BATCH_SIZE": "1"}) is None
+    n = batch_plan.note(None, ("bf16", 0, 31.0), ("bf16", 6, 31.0), 2)
+    assert "6 blocks are swapped (batch 1: none)" in n and "Batch 1 is likely faster" in n
+    assert "still be quicker" in batch_plan.note(None, ("bf16", 8, 15.0), ("bf16", 16, 15.0), 3)
+    assert "About as quick" in batch_plan.note(None, ("bf16", 12, 15.0), ("bf16", 25, 15.0), 2)
+    assert "fits as batch 1 does" in batch_plan.note(None, ("int8", 0, 23.0), ("int8", 0, 23.0), 3)
+    assert "drops to 4-bit NF4 (batch 1: int8)" in batch_plan.note(None, ("int8", 0, 15.0), ("nf4", 0, 15.0), 2)

@@ -924,10 +924,7 @@ def train_command(desc, inputs, plan):
     except ValueError:
         pass
     if len(desc.precisions) > 1:
-        lab = str(st.get("FAMILY_PRECISION", "") or "")
-        labels = {**PRECISION_LABELS, **desc.precision_labels}
-        prec = next((k for k, v in labels.items() if v == lab), "auto")
-        cmd += ["--precision", prec if prec == "auto" or prec in desc.precisions else "auto"]
+        cmd += ["--precision", precision_key(desc, st.get("FAMILY_PRECISION"))]
     if ft_on(desc, st):
         # the length and cadence in whole rotations; a continuation starts from the paused run's checkpoint
         cmd += ["--finetune", "--ft_rotations", str(_ft_int(st, "FAMILY_FT_ROTATIONS", 10)),
@@ -978,13 +975,9 @@ def train_command(desc, inputs, plan):
     if ("lokr" in desc.network_types and str(st.get("NETWORK_TYPE", "")).startswith("LoKR")
             and not slider_on(desc, st)):        # a slider is always a plain LoRA
         cmd += ["--network_type", "lokr", "--lokr_factor", str(st.get("LOKR_FACTOR", 8))]
-    raw_swap = str(st.get("blocks_swap") or "").strip()
-    if raw_swap.lower().startswith("auto"):
-        cmd += ["--blocks_to_swap", "-1"]            # the trainer sizes it for the precision that runs
-    else:
-        m = re.match(r"\d+", raw_swap)
-        if m and int(m.group()) > 0:
-            cmd += ["--blocks_to_swap", m.group()]
+    swap = swap_blocks(st.get("blocks_swap"))
+    if swap:
+        cmd += ["--blocks_to_swap", str(swap)]       # -1: the trainer sizes it for the precision that runs
     if desc.ema_default:
         ema = str(st.get("FAMILY_EMA", "") or desc.ema_default).split(" ")[0]
         if ema != "Off":
@@ -1239,6 +1232,27 @@ STAGE_BLEND = 0.1      # the share of the run the change from the smaller size t
 BATCH_SIZES = ("1", "2", "3", "4", "6", "8")
 
 
+
+def precision_key(desc, label):
+    """The trainer's --precision for the Training tab's Base precision label ("auto" for anything it doesn't name)."""
+    labels = {**PRECISION_LABELS, **desc.precision_labels}
+    prec = next((k for k, v in labels.items() if v == str(label or "")), "auto")
+    return prec if prec == "auto" or prec in desc.precisions else "auto"
+
+
+def swap_blocks(text):
+    """The trainer's --blocks_to_swap for the Blocks Swap value: -1 for Auto, else the number (0 = none)."""
+    raw = str(text or "").strip()
+    if raw.lower().startswith("auto"):
+        return -1
+    m = re.match(r"\d+", raw)
+    return int(m.group()) if m else 0
+
+
+def train_side(mp):
+    """The square side the dataset TOML trains Target Megapixels at (that area on the 16-pixel grid)."""
+    return int((mp * 1_000_000) ** 0.5) // 16 * 16
+
 def batch_size(desc, inputs):
     """Pictures a step (Other Options' Batch size): 1 unless the family trains batches (description batch_training)
     and the run is a plain LoRA - an edit, a slider, a fine-tune, DOP and Fizgig LoRA Isolation read one picture a
@@ -1287,7 +1301,7 @@ def dataset_toml(desc, inputs, cache_suffix=""):
     mp = float(inputs.get("megapixels"))
     if mp <= 0:
         raise ValueError(f"Target Megapixels {mp}")
-    side = int((mp * 1_000_000) ** 0.5) // 16 * 16
+    side = train_side(mp)
     batch = batch_size(desc, inputs)      # 1 unless Other Options' Batch size is up and the family trains batches
     folder = _s(inputs.get("image_folder"))
     extra = [_s(f) for f in (inputs.get("extra_folders") or []) if _s(f)] if desc.multi_concept else []

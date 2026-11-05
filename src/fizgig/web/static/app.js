@@ -10033,6 +10033,17 @@ const THEMES = [{key: "", swatch: "fizgig", name: "Fizgig", say: "dark, blue"},
   {key: "colour-safe", swatch: "colour-safe", name: "Colour-blind safe", say: "red-green colour blindness: no red against green"},
   {key: "high-contrast", swatch: "high-contrast", name: "High contrast", say: "low vision: black, white, yellow"},
   {key: "dim", swatch: "dim", name: "Dim", say: "light sensitivity, migraine: low glare, soft warm greys"}];
+// the themed bar effects run on the page clock: a bar the status poll has just rebuilt picks up the same phase
+// (its animations start now, so a delay of minus the page time puts them where the old bar was)
+const FX_BARS = ".run-bar > span, .meter-bar > span, .fetch-bar > div";
+function fxSync(root) {
+  const t = -(document.timeline ? document.timeline.currentTime : performance.now()) + "ms";
+  if (root.matches && root.matches(FX_BARS)) root.style.setProperty("--fx-d", t);
+  if (root.querySelectorAll) for (const n of root.querySelectorAll(FX_BARS)) n.style.setProperty("--fx-d", t);
+}
+new MutationObserver((list) => { for (const m of list) for (const n of m.addedNodes) if (n.nodeType === 1) fxSync(n); })
+  .observe(document.documentElement, {childList: true, subtree: true});
+fxSync(document.documentElement);
 function applyTheme(key) {
   if (key) document.documentElement.dataset.theme = key;
   else delete document.documentElement.dataset.theme;

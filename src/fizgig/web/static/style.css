@@ -2827,3 +2827,7 @@ label[title]:has(.tip-mark) { cursor: help; }
   :is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.run-bar > span, .meter-bar > span, .fetch-bar > div)::after, :is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.run-bar > span, .meter-bar > span, .fetch-bar > div)::before { display: none; }
   :is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.btn, .runpod-btn, .theme-pick button) { transition: none; transform: none !important; }
 }
+/* the bars are rebuilt on every status poll; app.js gives each new one --fx-d = minus the page clock, so its
+   animations carry on from the same phase instead of starting over (a skip every poll) */
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.run-bar > span, .meter-bar > span, .fetch-bar > div, .run-bar > span::before, .meter-bar > span::before, .fetch-bar > div::before, .run-bar > span::after, .meter-bar > span::after, .fetch-bar > div::after) {
+  animation-delay: var(--fx-d, 0s) !important; }

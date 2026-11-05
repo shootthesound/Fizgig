@@ -55,6 +55,7 @@ class Weight:
         self.alt = None                          # the other build offered beside it (ModelFile.fetch_choice)
         self.switch_from = ""                    # picked over that build: a pref on it moves to this one
         self.same_as = ""                        # another family's pref for the same file (ModelFile.same_as)
+        self.signature = ()                      # (tensor, shape) only the right file has (ModelFile.signature)
 
 
 # The Captions tab captions ANY dataset with the Krea 2 Qwen3-VL text encoder — it follows an
@@ -170,6 +171,7 @@ def _described_families():
                        optional=f.fetch_is_optional, gated=f.gated, local_name=f.local_name or None,
                        replaces=f.replaces)
             w.same_as = f.same_as
+            w.signature = tuple(f.signature)
             if f.fetch_choice and f.alt_repo and f.alt_path:
                 w.alt = Weight(f.pref_key, f.alt_repo, f.alt_path, f.alt_size_gb or f.size_gb,
                                f"{f.label} — {f.fetch_choice[1]}", optional=w.optional, gated=f.gated,
@@ -318,6 +320,88 @@ def _download_with_progress(w, models_dir, token, log):
     return held["path"]
 
 
+def _header_shape(path, name):
+    """The shape of tensor `name` in a .safetensors header, or None (unreadable, or no such tensor)."""
+    try:
+        with open(path, "rb") as f:
+            n = struct.unpack("<Q", f.read(8))[0]
+            if n > 100_000_000:
+                return None
+            return tuple(json.loads(f.read(n)).get(name, {}).get("shape") or ()) or None
+    except (OSError, ValueError, struct.error):
+        return None
+
+
+def is_other_file(path, signature):
+    """True only when the header proves `path` is not the file `signature` describes (the tensor is there at
+    another shape); a file it can't read, or one without the tensor (another format), is never called wrong."""
+    if not signature:
+        return False
+    got = _header_shape(path, signature[0])
+    return got is not None and got != tuple(signature[1])
+
+
+def repair_links(prefs, models_dir, log=print):
+    """Prefs pointing at another model's file, found by ModelFile.signature: moved to the right file when one is
+    set for another model or sits in the models folder under this file's own name, else cleared so Download models
+    for me fetches it. A file in the models folder under one model's name holding another's goes to that one's name
+    when it is free, with the prefs on it, so the first model's download doesn't link it again. Klein 9B's FLUX.2 VAE
+    and Z-Image's FLUX.1 VAE were both saved as models/ae.safetensors before 9.0.5. Returns True when prefs changed."""
+    try:
+        sys.path.insert(0, os.path.join(REPO_DIR, "src"))
+        from fizgig.families.registry import FAMILIES as reg
+    except Exception:
+        return False
+    files = [f for d in reg.values() for f in d.model_files if getattr(f, "signature", ())]
+
+    def where(v):
+        v = str(v or "").strip()
+        return v if not v or os.path.isabs(v) else os.path.normpath(os.path.join(REPO_DIR, v))
+
+    def same(a, b):
+        return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+
+    def own(f):
+        return os.path.join(models_dir, f.local_name or os.path.basename(f.path))
+
+    changed = False
+    for f in files:                           # a models-folder file under this name holding another model's
+        p = own(f)
+        if not (os.path.isfile(p) and is_other_file(p, f.signature)):
+            continue
+        other = next((o for o in files if o.signature != f.signature and not is_other_file(p, o.signature)
+                      and _header_shape(p, o.signature[0]) is not None), None)
+        if other is None:
+            continue
+        if os.path.exists(own(other)):          # a second copy: its prefs go to the one under the right name, and
+            if is_other_file(own(other), other.signature):     # this model's download replaces it
+                continue
+            log(f"  [moved] {os.path.basename(p)} holds {other.label}'s file: its rows now use "
+                f"{os.path.basename(own(other))}")
+        else:
+            try:
+                os.replace(p, own(other))
+            except OSError:
+                continue
+            log(f"  [moved] {os.path.basename(p)} -> {os.path.basename(own(other))}: it is {other.label}'s file")
+        for k, v in list(prefs.items()):
+            if isinstance(v, str) and v.strip() and same(where(v), p):
+                prefs[k] = own(other)
+        changed = True
+    for f in files:                           # a pref on another model's file
+        p = where(prefs.get(f.pref_key))
+        if not (p and os.path.isfile(p) and is_other_file(p, f.signature)):
+            continue
+        cands = [own(f)] + [where(prefs.get(o.pref_key)) for o in files if o.signature == f.signature]
+        good = next((c for c in cands if c and os.path.isfile(c) and not is_other_file(c, f.signature)
+                     and _header_shape(c, f.signature[0]) is not None), "")
+        prefs[f.pref_key] = good
+        log(f"  [fixed] {f.pref_key} pointed at another model's file ({os.path.basename(p)}): "
+            + (f"now {os.path.basename(good)}" if good else "cleared, so Download models for me fetches it"))
+        changed = True
+    return changed
+
+
 def fetch_weight(w, models_dir, prefs, token=None, log=print, dry_run=False):
     """Download one weight if needed and point its pref at it. Returns True if usable."""
     dest = os.path.join(models_dir, w.filename)
@@ -357,7 +441,7 @@ def fetch_weight(w, models_dir, prefs, token=None, log=print, dry_run=False):
         prefs[w.pref_key] = other
         return True
 
-    if os.path.isfile(dest) and _valid_safetensors(dest, min_bytes):
+    if os.path.isfile(dest) and _valid_safetensors(dest, min_bytes) and not is_other_file(dest, w.signature):
         log(f"  [have] {w.filename} — on disk, linking into Preferences")
         prefs[w.pref_key] = dest
         return True
@@ -503,6 +587,8 @@ def fetch(families, models_dir=None, repo_dir=REPO_DIR, token=None, include_opti
         os.makedirs(models_dir, exist_ok=True)
     prefs = _load_prefs(prefs_file)
     prefs_before = json.dumps(prefs, sort_keys=True)
+    if not dry_run:
+        repair_links(prefs, models_dir, log=log)      # a pref on another model's file (Klein / Z-Image's VAE)
 
     planned = [_chosen(w, choices) for fam in families if fam in FAMILIES for w in FAMILIES[fam]
                if include_optional or not w.optional]

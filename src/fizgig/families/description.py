@@ -69,6 +69,10 @@ class ModelFile:
     # Turbo's): Download models for me links this row to that file when it is set and on disk, instead of fetching a
     # second copy into the models folder
     same_as: str = ""
+    # (tensor name, shape) that only the right file has, read from its header: a pref pointing at a file holding
+    # another model's (Klein's FLUX.2 VAE and Z-Image's FLUX.1 VAE, both once saved as models/ae.safetensors) is
+    # moved to the right one when Fizgig starts and before a download (fetch_models.repair_links)
+    signature: tuple = ()
 
     @property
     def fetch_is_optional(self) -> bool:

@@ -59,7 +59,7 @@ KLEIN = FamilyDescription(
                   download_note="~320MB  ·  get ae.safetensors from FLUX.2-dev root  ·  NOT "
                                 "vae/diffusion_pytorch_model.safetensors (Diffusers format, incompatible)",
                   # saved under Flux 3's and Fibo's name for the same file: Z-Image's ae.safetensors is another VAE
-                  local_name="flux2-vae.safetensors"),
+                  local_name="flux2-vae.safetensors", signature=("decoder.conv_in.weight", (512, 32, 3, 3))),
         ModelFile("text_encoder", "Text Encoder", True, "Comfy-Org/vae-text-encorder-for-flux-klein-9b",
                   "split_files/text_encoders/qwen_3_8b.safetensors", 15.0, role="text_encoder",
                   hint="Qwen3-8B text encoder (used by Klein 9B)",

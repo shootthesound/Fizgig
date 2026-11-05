@@ -459,6 +459,19 @@ def update_prefs(changes: dict):
         _write_json(PREFS_FILE, p)
 
 
+def _repair_model_links():
+    """A Preferences row pointing at another model's file (Klein 9B's and Z-Image's VAEs, both once saved as
+    ae.safetensors): moved to the right file, once at start (fetch_models.repair_links). Never stops the start."""
+    try:
+        from fizgig.scripts.fetch_models import repair_links
+        with _lock:
+            p = _read_json(PREFS_FILE)
+            if p and repair_links(p, user_data.MODELS_DIR, log=lambda m: logger.info("[models]%s", m[1:])):
+                _write_json(PREFS_FILE, p)
+    except Exception as e:
+        logger.warning(f"[models] couldn't check the model files' links: {e}")
+
+
 def pref_path(prefs, key) -> str:
     """A Preferences path as the desktop resolves it (a folder inside Fizgig is stored relative)."""
     v = str(prefs.get(key) or "").strip()
@@ -5014,6 +5027,7 @@ def main(argv=None):
         from fizgig.web import pod_version
         pod_version.boot()
     user_data.migrate()                       # Fizgig 7's loose files into user_data, before anything reads them
+    _repair_model_links()
     # a pod: its VNC_PASSWORD, the remote desktop's, so one password opens both. Elsewhere VNC_PASSWORD is ignored (a
     # stray one would open the web UI to the network while Preferences says no password).
     saved = str(load_prefs().get("web_password") or "").strip()

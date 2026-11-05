@@ -83,6 +83,7 @@
   --swatch-seventies-bg: #2B1D14; --swatch-seventies-accent: #D9661A;
   --swatch-synthwave-bg: #140B24; --swatch-synthwave-accent: #FF2E97;
   --swatch-cosmic-pigeon-bg: #0D0B1E; --swatch-cosmic-pigeon-accent: #7C4DEA;
+  --swatch-deep-space-bg: #07070D; --swatch-deep-space-accent: #7A5AE0;
   --swatch-graphite-bg: #161616; --swatch-graphite-accent: #0D9488;
   --swatch-colour-safe-bg: #12161D; --swatch-colour-safe-accent: #E69F00;
   --swatch-high-contrast-bg: #000000; --swatch-high-contrast-accent: #FFD400;
@@ -2637,6 +2638,21 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   --danger-text: #FF9CA9; --gold: #F5D06B;
   --special-strong: #C0368A; --special: #E879C6; --special-soft: #EE9AD4; --special-text: #F6C2E6; --special-light: #FBE0F2;
   --data-blue: #6E8BFF; --data-teal: #4FC9B8; --data-green: #5FB88A; --data-olive: #D8C86A; --data-orange: #F29A5C;
+}
+
+/* Deep Space: Graphite's restraint, near-black with a faint blue-violet tint, a sparing nebula violet, a faint star-glow cyan */
+:root[data-theme="deep-space"] {
+  --bg-deep: #07070D; --bg-side: #050509; --bg-surface: #0E0D18; --bg-raised: #15141F; --bg-hover: #1C1A29;
+  --bg-inset: #0A0912; --overlay: #040408; --shadow: #000000;
+  --text-primary: #E4E3EC; --text-secondary: #A2A1AF; --text-explain: #C8C7D3; --text-muted: #858496;
+  --text-on-color: #FFFFFF; --text-on-light: #07070D;
+  --accent: #6D4FD6; --accent-hover: #7A5AE0; --accent-subtle: #1F1838; --accent-text: #B6A6F2; --accent-text-hover: #D2C8F8;
+  --border: #23212F; --border-strong: #7F7D8E;
+  --success: #3FA88A; --success-text: #8AD6BF; --warning: #D9A441; --warning-strong: #B88828;
+  --warning-text: #EAC77E; --warning-text-soft: #F0D6A2; --danger: #D9536A; --danger-strong: #B83A50;
+  --danger-text: #F09AA8; --gold: #E3C565;
+  --special-strong: #0E8FA8; --special: #4CC6DB; --special-soft: #7BD3E2; --special-text: #A9E4EE; --special-light: #D3F2F7;
+  --data-blue: #6A86E8; --data-teal: #4CC6DB; --data-green: #5DB08A; --data-olive: #C9BC66; --data-orange: #E0915A;
 }
 
 /* Graphite: plain neutral greys, a teal accent */

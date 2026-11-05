@@ -109,6 +109,6 @@ if __name__ == "__main__":        # the subprocess: [family, precision, blocks_t
     desc = get(fam)
     driver = desc.load_driver()
     free = quant.free_vram_gb()
-    plans = [quant.plan(desc, driver, precision, int(swap), free_gb=free, megapixels=float(mp) * n)[:2]
+    plans = [quant.plan(desc, driver, precision, int(swap), free_gb=free, megapixels=float(mp), pictures=n)[:2]
              for n in (1, int(batch))]
     print(json.dumps([[*plans[0], free], [*plans[1], free]]))

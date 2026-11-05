@@ -98,6 +98,24 @@ def test_batch_size_reaches_the_dataset_and_stands_down_what_reads_one_picture(t
     assert launch.batch_size(moss, v) == 1 and "BATCH_SIZE" in form.state(moss, v, str(d))["disabled"]
 
 
+def test_auto_plans_each_extra_picture_from_its_measured_cost():
+    """A batch's plan adds batch_gb's (fixed + per megapixel) for each picture past the first - train_memory's own
+    curve can be flat across sizes (its peak is the preview's), so stretching it by the batch would plan nothing more."""
+    from types import SimpleNamespace
+    from fizgig.families import quant
+    desc = SimpleNamespace(train_memory={"bf16": (((0.25, 10.0), (1.0, 10.0)), 0.5)}, precisions=("bf16",),
+                           auto_precisions=(), batch_gb=(1.0, 2.0), display_name="t")
+    driver = SimpleNamespace(max_blocks_to_swap=lambda: 20)
+    assert quant.plan(desc, driver, "bf16", -1, free_gb=12.0, megapixels=1.0)[:2] == ("bf16", 0)
+    assert quant.plan(desc, driver, "bf16", -1, free_gb=12.0, megapixels=1.0, pictures=3)[:2] == ("bf16", 11)
+
+
+def test_every_batching_family_has_its_extra_picture_cost():
+    from fizgig.families.registry import training_families
+    missing = [d.key for d in training_families() if d.batch_training and not any(d.batch_gb)]
+    assert not missing, missing
+
+
 def test_batch_plan_note_asks_what_start_sends(tmp_path):
     """The Batch size row's plan note asks the planner with the precision, swap and size Start hands the trainer, and
     says when the batch would swap where batch 1 doesn't."""

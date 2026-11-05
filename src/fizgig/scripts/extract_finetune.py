@@ -21,6 +21,8 @@ def main(argv=None):
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--name", default="extracted")
     ap.add_argument("--ranks", default="32,64")
+    ap.add_argument("--identity", action="store_true",
+                    help="Identity mode: the model's identity blocks keep 4x each rank (MOSS-Image, Qwen Image 2.1)")
     a = ap.parse_args(argv)
     from fizgig.extraction.model_diff import extract_diff_loras
     last = [-1]
@@ -32,7 +34,8 @@ def main(argv=None):
             print(f"SVD: {done}/{total}", flush=True)
 
     paths = extract_diff_loras(a.base, a.tuned, a.out_dir, [int(r) for r in a.ranks.split(",") if r.strip()],
-                               name=a.name, progress=progress, log=lambda m: print(m, flush=True))
+                               name=a.name, progress=progress, log=lambda m: print(m, flush=True),
+                               identity=a.identity)
     for p in paths:
         print("@@OUT " + json.dumps(p), flush=True)
     return 0 if paths else 1

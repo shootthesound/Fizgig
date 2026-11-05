@@ -992,7 +992,7 @@ python src/fizgig/scripts/extract_lora.py --family klein \
   --source big_r32.safetensors --output small_r8.safetensors --rank 8
 ```
 
-`--preset` keeps one of the family's block groups — Klein: `Identity` (single 1-16), `Style+Composition` (double 0-7 + single 0-1, single 2 at half strength), `Details` (single 12-23) — and `--blocks single_1,single_2,...` picks blocks by id. The Extract tab does the same with a Custom block picker.
+`--identity` keeps 4x the rank in the model's identity blocks (MOSS-Image blocks 24-35, Qwen Image 2.1 blocks 10-14), so a character LoRA keeps its likeness at a small rank; the Extract tab's Identity mode tick does the same. `--preset` keeps one of the family's block groups — Klein: `Identity` (single 1-16), `Style+Composition` (double 0-7 + single 0-1, single 2 at half strength), `Details` (single 12-23) — and `--blocks single_1,single_2,...` picks blocks by id. The Extract tab does the same with a Custom block picker.
 
 ---
 
@@ -1039,6 +1039,8 @@ The GUI's caption tasks (person or character, object or product, style, concept)
 python -m fizgig.scripts.extract_finetune --base /models/base.safetensors --tuned ./output/my_finetune.safetensors \
   --out-dir ./output_loras --name my_finetune --ranks 32,64
 ```
+
+`--identity` gives the model's identity blocks 4x each rank (MOSS-Image blocks 24-35, Qwen Image 2.1 blocks 10-14; `_id` in the file name), which keeps a character's likeness in a smaller LoRA.
 
 **Model files** — `python -m fizgig.scripts.fetch_models --family <key> --include-optional` downloads a family's files (`--all` for every family, `--dry-run` to list them first, `--token` for gated repos, `--models-dir` to save somewhere other than `user_data/models`, `--choose PREF=alt` for a file offered in a second build).
 

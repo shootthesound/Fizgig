@@ -10,6 +10,11 @@ import time
 import torch
 
 
+# Identity mode (Extract, both cards; Peter, 5 Nov 2026, #301): a model's identity blocks (description.identity_blocks)
+# keep this many times the rank, so a character's likeness survives a small file
+IDENTITY_RANK = 4
+
+
 @torch.no_grad()
 def reduce_pair(A, B, scale, rank):
     """(A [r, in], B [out, r], scale) -> (down [k, in], up [out, k], kept energy fraction), k = min(rank, r)."""
@@ -25,9 +30,10 @@ def reduce_pair(A, B, scale, rank):
     return down, up, energy
 
 
-def extract_weight_only(desc, source, output, rank, dtype=torch.bfloat16, progress=None, blocks=None):
+def extract_weight_only(desc, source, output, rank, dtype=torch.bfloat16, progress=None, blocks=None, identity=False):
     """Write `output` at `rank`. blocks: {block id: multiplier} - only modules in those blocks are kept, each delta
-    scaled by its block's multiplier (None = every module at 1). Returns a summary dict (layers, skipped, dropped
+    scaled by its block's multiplier (None = every module at 1). identity: the model's identity blocks keep
+    IDENTITY_RANK x the rank (never more than the source has). Returns a summary dict (layers, skipped, dropped
     (outside `blocks`), mean kept energy, seconds, params)."""
     from safetensors import safe_open
     from safetensors.torch import save_file
@@ -35,7 +41,11 @@ def extract_weight_only(desc, source, output, rank, dtype=torch.bfloat16, progre
                                           lora_pairs)
     t0 = time.time()
     sd, energies, skipped, params, dropped = {}, [], 0, 0, 0
-    block_of = desc.load_driver().block_of if blocks else None
+    ids = set(desc.identity_blocks) if identity else set()
+    block_of = desc.load_driver().block_of if blocks or ids else None
+
+    def rank_of(mod):
+        return rank * IDENTITY_RANK if ids and block_of(mod) in ids else rank
 
     def mult(mod):
         """The module's multiplier, or None when its block is not kept."""
@@ -57,7 +67,7 @@ def extract_weight_only(desc, source, output, rank, dtype=torch.bfloat16, progre
                 continue
             A, B = f.get_tensor(dk), get_up(f, uk)
             alpha = float(f.get_tensor(ak).item()) if ak else float(A.shape[0])
-            down, up, e = reduce_pair(A, B, m * alpha / A.shape[0], rank)
+            down, up, e = reduce_pair(A, B, m * alpha / A.shape[0], rank_of(mod))
             kd, ku, ka = family_keys(desc, mod)
             sd[kd] = down.to(dtype).contiguous()
             sd[ku] = up.to(dtype).contiguous()
@@ -84,7 +94,7 @@ def extract_weight_only(desc, source, output, rank, dtype=torch.bfloat16, progre
             else:
                 dW = loha_delta(f, stem).to(dev) * m
             U, S, Vh = torch.linalg.svd(dW, full_matrices=False)
-            k = min(rank, S.numel())
+            k = min(rank_of(mod), S.numel())
             root = S[:k].sqrt()
             down, up = (root[:, None] * Vh[:k]).cpu(), (U[:, :k] * root).cpu()
             kd, ku, ka = family_keys(desc, mod)
@@ -101,7 +111,8 @@ def extract_weight_only(desc, source, output, rank, dtype=torch.bfloat16, progre
         metadata.pop(stale, None)
     metadata.update({"ss_network_dim": str(rank), "ss_network_alpha": str(float(rank)),
                      "ss_fizgig_extract": f"weight-only SVD to rank {rank}"
-                                          + (f" over {len(blocks)} blocks" if blocks else "")})
+                                          + (f" over {len(blocks)} blocks" if blocks else "")
+                                          + (f", identity blocks at rank {rank * IDENTITY_RANK}" if ids else "")})
     if desc.lora.save_fused:
         sd = desc.load_driver().export_lora_state_dict(sd)
     save_file(sd, output, metadata=metadata)

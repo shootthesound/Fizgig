@@ -3561,6 +3561,7 @@ function exRemember() {
   try { localStorage.setItem(EX_KEY, JSON.stringify({family: $("exFamily").value, source: $("exSource").value,
     rank: $("exRank").value, preset: $("exPreset").value, mode: S.ex.mode, ftBase: $("exFtBase").value,
     ftTuned: $("exFtTuned").value, ftName: $("exFtName").value, ftOut: $("exFtOut").value,
+    id: $("exId").checked, ftId: $("exFtId").checked,
     ftRanks: [...$("exFtRanks").querySelectorAll("input:checked")].map((c) => Number(c.value))})); } catch (e) { /* private */ }
 }
 function exMode(mode) {
@@ -3586,6 +3587,7 @@ async function extractOpen() {
     if (sv.source) $("exSource").value = sv.source;
     if (sv.rank) $("exRank").value = sv.rank;
     exRankShow();
+    $("exId").checked = !!sv.id; $("exFtId").checked = !!sv.ftId;
     const on = new Set(sv.ftRanks || [32, 64]);
     $("exFtRanks").replaceChildren(...EX_FT_RANKS.map((r) => { const c = el("input", {type: "checkbox", value: r, onchange: exRemember});
       c.checked = on.has(r); return el("label", {class: "checkbox-label"}, c, " " + r); }));
@@ -3606,6 +3608,10 @@ async function extractFamily(key, preset) {
   $("exFamily").replaceChildren(...r.families.map((f) => el("option", {value: f.key, text: f.name})));
   $("exFamily").value = r.family;
   $("exOutDir").value = r.out_dir;
+  // Identity mode: a model with identity blocks keeps 4x the rank there
+  $("exIdRow").style.display = r.identity ? "" : "none";
+  $("exIdHint").textContent = r.identity ? `For a person or character: ${r.identity} (the identity blocks) keep 4x ` +
+    "the target rank (up to the LoRA's own), so the likeness survives a small file. Saved with _id in the name." : "";
   const names = r.presets.map((p) => p.name).concat(r.presets.length ? ["Custom"] : []);
   $("exPresetCard").style.display = names.length ? "" : "none";
   $("exPreset").replaceChildren(...names.map((n) => el("option", {value: n, text: n})));
@@ -3640,7 +3646,8 @@ function extractName() {
   if (!src) return;
   const base = src.split(/[\\/]/).pop().replace(/\.safetensors$/i, "");
   const slug = ($("exPreset").value || "all_blocks").toLowerCase().replace(/\+/g, "_").replace(/ /g, "_");
-  $("exName").value = `${base}_${slug}_r${$("exRank").value}.safetensors`;
+  const id = S.ex.info && S.ex.info.identity && $("exId").checked ? "_id" : "";
+  $("exName").value = `${base}_${slug}_r${$("exRank").value}${id}.safetensors`;
 }
 
 async function extractSource(p) {
@@ -3658,7 +3665,7 @@ async function extractRun() {
     const ranks = [...$("exFtRanks").querySelectorAll("input:checked")].map((c) => Number(c.value));
     try {
       await api("/api/extract/finetune", {base: $("exFtBase").value.trim(), tuned: $("exFtTuned").value.trim(),
-        out_dir: $("exFtOut").value.trim(), name: $("exFtName").value.trim(), ranks});
+        out_dir: $("exFtOut").value.trim(), name: $("exFtName").value.trim(), ranks, identity: $("exFtId").checked});
       $("exStatus").textContent = "Extracting…";
       $("exDone").replaceChildren();
       exRemember();
@@ -3674,7 +3681,8 @@ async function extractRun() {
   try {
     const r = await api("/api/extract/run", {family: $("exFamily").value, source: $("exSource").value.trim(),
       name: $("exName").value.trim(), out_dir: $("exOutDir").value.trim(), rank,
-      preset: custom || !(S.ex.info.presets || []).length ? "" : $("exPreset").value, blocks});
+      preset: custom || !(S.ex.info.presets || []).length ? "" : $("exPreset").value, blocks,
+      identity: !!S.ex.info.identity && $("exId").checked});
     $("exStatus").textContent = `Extracting to ${r.output}…`;
     $("exDone").replaceChildren();
     extractPoll();
@@ -3711,6 +3719,8 @@ function wireExtract() {
   $("exFamily").addEventListener("change", () => { extractFamily($("exFamily").value, $("exPreset").value); exRemember(); });
   $("exPreset").addEventListener("change", extractPresetChanged);
   for (const ev of ["change", "input"]) $("exRank").addEventListener(ev, () => { extractName(); exRemember(); });
+  $("exId").addEventListener("change", () => { extractName(); exRemember(); });
+  $("exFtId").addEventListener("change", exRemember);
   $("exRankPick").addEventListener("change", () => {      // a listed rank, or Other… and a box for any number
     const other = $("exRankPick").value === "__other";
     if (!other) $("exRank").value = $("exRankPick").value;

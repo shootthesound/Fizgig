@@ -1510,6 +1510,10 @@
               <div class="field-row"><span class="field-label">Trained checkpoint:</span>
                 <input type="text" id="exFtTuned" class="w-path" placeholder="the fine-tune's checkpoint"><span id="exFtTunedBtns"></span></div>
               <div class="field-row"><span class="field-label">Ranks:</span><span id="exFtRanks" class="st-inline"></span></div>
+              <div class="field-row"><label class="checkbox-label"><input type="checkbox" id="exFtId"> Identity mode</label>
+                <span class="field-hint">For a person or character: the identity blocks keep 4x the rank, so the
+                  likeness survives a smaller file (MOSS-Image blocks 24-35, Qwen Image 2.1 blocks 10-14; other models
+                  extract as normal). Saved with _id in the name.</span></div>
               <div class="field-hint ex-ft-hint">One LoRA per ticked rank, all from a single SVD pass - four ranks cost about what one
                 does. Higher ranks stay closer to the fine-tune and make bigger files; on a three-subject Krea 2 run, 64 was
                 indistinguishable from the fine-tune. It runs on the GPU: free it first if a training run or a Studio preview is
@@ -1552,6 +1556,8 @@
                   <option selected>4</option><option>8</option><option>16</option><option>32</option><option>64</option>
                   <option>128</option><option value="__other">Other…</option></select>
                 <input id="exRank" type="number" min="1" step="1" value="4" class="ex-rank" placeholder="Rank"></div>
+              <div class="field-row" id="exIdRow"><label class="checkbox-label"><input type="checkbox" id="exId"> Identity mode</label>
+                <span class="field-hint" id="exIdHint"></span></div>
             </div>
           </div>
           <div class="section-card">

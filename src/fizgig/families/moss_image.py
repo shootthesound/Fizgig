@@ -198,6 +198,17 @@ MOSS_IMAGE = FamilyDescription(
     compile_payback_steps={"bf16": 200, "int8": 200, "nf4": 400},
     # int8_attention left off: the model routes attention through int8_attention.attend(), but the speed-up isn't
     # measured yet (ABILITIES.md: keep it where it measures faster)
+    # Identity in blocks 24-35 (5 Nov 2026): Peter's eye on the Profiler's group renders of a character LoRA
+    # (Nicola, epoch 21), and its numbers - 24-29 alone changed the picture most (0.54, twice any other group) and
+    # 30-35 left out nearly as much (0.50); the largest weights sit in 29, 24, 30 and 28. Not yet scored with subject
+    # photos (ArcFace). Used by Extract's identity mode, Fast Identity Mode and Studio's identity / look colours.
+    block_categories=tuple((f"block_{i}", "identity" if 24 <= i <= 35 else "look") for i in range(42)),
+    identity_blocks=tuple(f"block_{i}" for i in range(24, 36)),
+    repair_presets=(
+        ("✨Identity only", tuple((f"block_{i}", 1.0 if 24 <= i <= 35 else 0.0) for i in range(42))),
+        ("✨Look only (no identity)", tuple((f"block_{i}", 0.0) for i in range(24, 36))),
+        ("✨Identity ×0.5", tuple((f"block_{i}", 0.5) for i in range(24, 36))),
+    ),
     finetune=True,                    # driver.ft_spec: every block's six Linears on an NF4 trunk
     ft_learning_rate=1e-5,            # FINETUNE.md's default; the report's pretraining LR was 5e-5 (Muon + AdamW)
     kind_values=(("finetune", (("MOSS_LOWNOISE_PCT", _FT_SHARE),)), ("standard", (("MOSS_LOWNOISE_PCT", _LORA_SHARE),)),

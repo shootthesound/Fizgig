@@ -169,6 +169,28 @@ def model_prefix(keys) -> str:
     return best if counts.get(best, 0) else ""
 
 
+def identity_layout(base_keys, prefix=""):
+    """(model name, block numbers, pattern) for a checkpoint laid out as a model with identity blocks
+    (description.identity_blocks): its block list under its fine-tune spec's name, as many blocks as its block map;
+    the pattern's group 1 is a key's block number. None when no such model matches."""
+    import re
+    try:
+        from fizgig.families.registry import training_families
+        fams = [d for d in training_families() if d.finetune and d.identity_blocks and d.block_categories]
+    except Exception:
+        return None
+    for d in fams:
+        try:
+            blocks = d.load_driver().ft_spec(None).blocks
+        except Exception:
+            continue
+        pat = re.compile(rf"^{re.escape(prefix)}{re.escape(blocks)}\.(\d+)\.")
+        found = {int(m.group(1)) for m in (pat.match(k) for k in base_keys) if m}
+        if found and len(found) == len(d.block_categories):
+            return d.display_name, {int(b.rsplit("_", 1)[1]) for b in d.identity_blocks}, pat
+    return None
+
+
 def factor_multi(delta: torch.Tensor, ranks: Iterable[int]) -> dict:
     """One SVD, sliced to every requested rank. Returns {rank: (up, down)} in fp16/CPU.
 
@@ -205,8 +227,10 @@ def extract_diff_loras(
     progress: Optional[Callable[[int, int, str], None]] = None,
     log: Optional[Callable[[str], None]] = None,
     should_stop: Optional[Callable[[], bool]] = None,
+    identity: bool = False,
 ) -> list:
-    """Diff two checkpoints and write one LoRA per rank. Returns the paths written.
+    """Diff two checkpoints and write one LoRA per rank. Returns the paths written. identity: a model's identity
+    blocks keep IDENTITY_RANK x each rank (families.extract; Extract's identity mode, #301).
 
     Streams tensor-by-tensor, so peak memory is a couple of layers regardless of how big
     the checkpoints are.
@@ -243,6 +267,19 @@ def extract_diff_loras(
     if fmt is not None:
         say(f"{fam.display_name}: writing its own LoRA names ({fmt.file_prefix}<path>.{fmt.down})")
 
+    ident = identity_layout(base_keys, prefix) if identity else None
+    if identity:
+        from fizgig.families.extract import IDENTITY_RANK
+        if ident is None:
+            say("identity mode: this model has no identity blocks (MOSS-Image, Qwen Image 2.1 have) - every block at "
+                "the rank asked")
+        else:
+            say(f"identity mode: {ident[0]} blocks {min(ident[1])}-{max(ident[1])} at {IDENTITY_RANK}x the rank")
+
+    def times(k):
+        m = ident[2].match(k) if ident else None
+        return IDENTITY_RANK if m and int(m.group(1)) in ident[1] else 1
+
     sd = {r: {} for r in ranks}
     changed = skipped = 0
     total_norm = 0.0
@@ -268,11 +305,14 @@ def extract_diff_loras(
         else:
             lk = lora_key(k, prefix)
             dn, upn, ak = f"{lk}.lora_down.weight", f"{lk}.lora_up.weight", f"{lk}.alpha"
-        for r, (up, down) in factor_multi(d, ranks).items():
+        x = times(k)
+        facs = factor_multi(d, [r * x for r in ranks])
+        for r in ranks:
+            up, down = facs[r * x]
             sd[r][upn] = up
             sd[r][dn] = down
             # alpha == rank -> scale 1.0, so up @ down reproduces the delta as-is.
-            sd[r][ak] = torch.tensor(float(min(r, min(d.shape))))
+            sd[r][ak] = torch.tensor(float(up.shape[1]))
         changed += 1
         del d
         if progress:
@@ -285,7 +325,7 @@ def extract_diff_loras(
     stamp = time.strftime("%Y%m%d_%H%M%S")
     written = []
     for r in ranks:
-        path = os.path.join(output_dir, f"{name}_{stamp}_r{r}.safetensors")
+        path = os.path.join(output_dir, f"{name}_{stamp}_r{r}{'_id' if ident else ''}.safetensors")
         meta = {
             "ss_network_module": "networks.lora",
             "ss_network_dim": str(r),
@@ -297,6 +337,10 @@ def extract_diff_loras(
             "fizgig_source_tuned": os.path.basename(tuned_path),
             "fizgig_source_layers": str(changed),
         }
+        if ident:
+            from fizgig.families.extract import IDENTITY_RANK
+            meta["fizgig_extraction_identity"] = (f"{ident[0]} blocks {min(ident[1])}-{max(ident[1])} at rank "
+                                                  f"{r * IDENTITY_RANK}")
         if fam is not None and getattr(fam, "modelspec_arch", ""):
             meta["modelspec.architecture"] = fam.modelspec_arch
         save_file(sd[r], path, metadata=meta)

@@ -33,8 +33,10 @@ def families(kind="extract"):
 def info(desc, out_dir):
     groups = [{"label": g.label, "blocks": [{"id": b.id, "label": b.label} for b in g.blocks]}
               for g in desc.load_driver().block_map()] if desc.extract_presets else []
+    ids = desc.identity_blocks
     return {"family": desc.key, "presets": [{"name": n, "blocks": sorted(dict(b))} for n, b in desc.extract_presets],
-            "groups": groups, "out_dir": out_dir}
+            "groups": groups, "out_dir": out_dir,
+            "identity": f"{ids[0].replace('_', ' ')}-{ids[-1].rsplit('_', 1)[1]}" if ids else ""}
 
 
 def free_name(path):
@@ -146,7 +148,7 @@ def stop(kind):
 
 
 # ---- Extract ----------------------------------------------------------------------------------------------------
-def run(desc, source, output, rank, preset="", blocks=None):
+def run(desc, source, output, rank, preset="", blocks=None, identity=False):
     if not source or not os.path.isfile(source):
         raise ValueError("Choose a source LoRA (that file isn't there).")
     os.makedirs(os.path.dirname(output), exist_ok=True)
@@ -157,11 +159,13 @@ def run(desc, source, output, rank, preset="", blocks=None):
         cmd += ["--blocks", ",".join(blocks)]
     elif preset:
         cmd += ["--preset", preset]
+    if identity and desc.identity_blocks:
+        cmd.append("--identity")
     _start("extract", cmd, f"Extracting {os.path.basename(source)} at rank {rank} -> {output}", output)
     return output
 
 
-def run_finetune(base, tuned, out_dir, name, ranks):
+def run_finetune(base, tuned, out_dir, name, ranks, identity=False):
     """A full fine-tune as ordinary LoRAs: its difference from the base it started from, one file per rank from one
     SVD pass (scripts/extract_finetune.py, the old Checkpoint to LoRA app's job). Never over a file: each name carries
     the time."""
@@ -176,7 +180,7 @@ def run_finetune(base, tuned, out_dir, name, ranks):
     os.makedirs(out_dir, exist_ok=True)
     name = re.sub(r'[\\/:*?"<>|]+', "_", (name or "").strip()) or "extracted"
     cmd = [sys.executable, "-m", "fizgig.scripts.extract_finetune", "--base", base, "--tuned", tuned, "--out-dir", out_dir,
-           "--name", name, "--ranks", ",".join(map(str, ranks))]
+           "--name", name, "--ranks", ",".join(map(str, ranks))] + (["--identity"] if identity else [])
     _start("extract", cmd, f"Extracting {os.path.basename(tuned)} against {os.path.basename(base)} at rank "
                            f"{', '.join(map(str, ranks))} -> {out_dir}")
 

@@ -26,6 +26,8 @@ def main():
                         help="One of the family's extract presets (its block groups); default all blocks")
     parser.add_argument("--blocks", type=str, default="",
                         help="Comma-separated block ids to keep, at full strength (instead of a preset)")
+    parser.add_argument("--identity", action="store_true",
+                        help="Identity mode: the model's identity blocks keep 4x the rank (MOSS-Image, Qwen Image 2.1)")
     args = parser.parse_args()
 
     from fizgig.families.extract import extract_weight_only
@@ -38,7 +40,9 @@ def main():
         if args.preset not in presets:
             parser.error(f"{desc.display_name} presets: {', '.join(presets) or 'none (all blocks only)'}")
         blocks = dict(presets[args.preset]) or None
-    r = extract_weight_only(desc, args.source, args.output, args.rank, blocks=blocks,
+    if args.identity and not desc.identity_blocks:
+        print(f"{desc.display_name} has no identity blocks: identity mode is off", flush=True)
+    r = extract_weight_only(desc, args.source, args.output, args.rank, blocks=blocks, identity=args.identity,
                             progress=lambda stage, i, n: print(f"\r{stage}: {i + 1}/{n}", end="", flush=True))
     print(f"\nWrote {r['output']}: {r['layers']} layers at rank {args.rank}, "
           f"{100 * r['energy']:.1f}% of the change kept (mean), {r['seconds']:.1f}s")

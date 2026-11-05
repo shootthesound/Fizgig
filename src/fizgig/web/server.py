@@ -4731,7 +4731,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("A training run is using the GPU. Extract can run when it finishes.")
                 tools.run_finetune(str(b.get("base") or "").strip(), str(b.get("tuned") or "").strip(),
                                    str(b.get("out_dir") or "").strip() or default_output_dir(),
-                                   str(b.get("name") or ""), b.get("ranks") or [])
+                                   str(b.get("name") or ""), b.get("ranks") or [], identity=bool(b.get("identity")))
                 return self.json({"ok": True})
             if path == "/api/extract/run":
                 from fizgig.web import tools
@@ -4745,7 +4745,8 @@ class Handler(BaseHTTPRequestHandler):
                     name += ".safetensors"
                 folder = str(b.get("out_dir") or "").strip() or default_output_dir()
                 out = tools.run(desc, str(b.get("source") or "").strip(), os.path.join(folder, os.path.basename(name)),
-                                int(b.get("rank") or 4), str(b.get("preset") or ""), [str(x) for x in (b.get("blocks") or [])])
+                                int(b.get("rank") or 4), str(b.get("preset") or ""), [str(x) for x in (b.get("blocks") or [])],
+                                identity=bool(b.get("identity")))
                 return self.json({"ok": True, "output": out})
             if path == "/api/metadata/save":         # the header rewritten, every tensor byte as it was
                 from fizgig.utils.st_meta import write_metadata

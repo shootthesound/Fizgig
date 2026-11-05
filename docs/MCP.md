@@ -56,7 +56,21 @@ Affinity's scripts can only reach the Desktop, so pictures cross through a folde
 
 Any model server with tool calling that speaks the OpenAI API works: llama.cpp's `llama-server` (start it with `--jinja`), LM Studio, Ollama. Put its address on the tab (for example `http://127.0.0.1:38088/v1`), press **Detect**, and pick the model. A model that can see pictures (a vision model) can look at renders and at your Affinity document.
 
-**Free the GPU for Fizgig** (on by default): when the model and Fizgig's models don't fit on the card together, the model steps off the GPU before a render, captioning or training, and comes back after. With llama.cpp's router mode (`--models-preset`) that happens automatically; other servers reload on the next message. The line under the conversation shows how many handovers there were and what they cost. On a machine with memory for both (a large unified-memory system), untick it: nothing swaps.
+**Free the GPU for Fizgig** (on by default): when the model and Fizgig's models don't fit on the card together, the model steps off the GPU before a render, captioning or training, and comes back after. That needs llama.cpp in router mode (`--models-preset`), which Fizgig can ask to unload and reload the model; other servers (LM Studio, Ollama, llama.cpp started with `-m`) can't be asked, so their model stays on the card beside Fizgig's. The line under the conversation shows how many handovers there were and what they cost. On a machine with memory for both (a large unified-memory system), untick it: nothing swaps. Router mode takes a presets file naming the model:
+
+```ini
+; presets.ini - the section name is the model's name in the Assistant tab
+[my-model]
+model = C:\models\Qwen3.8-27B-UD-Q4_K_XL.gguf
+mmproj = C:\models\mmproj-F16.gguf
+n-gpu-layers = all
+ctx-size = 32768
+```
+
+```
+llama-server --models-preset presets.ini --models-max 1 --jinja --port 38088
+```
+
 
 Things to try:
 

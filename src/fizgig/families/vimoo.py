@@ -30,8 +30,8 @@ OPTIONS = (
     FamilyOption("VIMOO_GLYPH", "", kind="fixed", tokens="glyph=pref:vimoo_glyph aux:glyph=pref:vimoo_glyph"),
     FamilyOption("VIMOO_SIGLIP", "", kind="fixed", tokens="siglip=pref:vimoo_siglip"),
     FamilyOption("VIMOO_SAMPLE_FRAMES", "Sample length", tab="samples",
-                 choices=(("Still (1 frame)", "sample_frames=1"), ("1 second (25 frames)", "sample_frames=25"),
-                          ("2 seconds (49 frames)", "sample_frames=49"), ("3 seconds (73 frames)", "sample_frames=73"),
+                 choices=(("2 seconds (49 frames)", "sample_frames=49"), ("Still (1 frame)", "sample_frames=1"),
+                          ("1 second (25 frames)", "sample_frames=25"), ("3 seconds (73 frames)", "sample_frames=73"),
                           ("5 seconds (121 frames)", "sample_frames=121")),
                  hint="Training previews render as clips of this length at 24 fps (a still is quickest)."),
 )

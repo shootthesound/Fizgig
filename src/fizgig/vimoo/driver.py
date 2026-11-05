@@ -360,9 +360,7 @@ class VimooDriver(FamilyDriver):
         Image-to-video (refs = the start picture's latent): the first frame anchored and its flow held at zero; with
         CFG, the reference's three branches - unreferenced, negative, positive - mixed at reference scale 3 and the text
         scale. Returns {"latent": (1, 48, T, h, w)}."""
-        device = next(p for p in dit.parameters() if p.device.type != "meta").device
-        if device.type == "cpu" and torch.cuda.is_available():
-            device = torch.device("cuda")
+        device = dit.img_in.proj.weight.device          # the input layers stay resident under block swap
         frames = int(frames or self._frames)
         x = (noise if noise is not None else self.initial_noise(seed, width, height, frames)).to(device,
                                                                                                  torch.bfloat16)
@@ -414,6 +412,80 @@ class VimooDriver(FamilyDriver):
                 v[:, :, :1] = 0
             x = (x.float() + v * (s_next - s)).to(torch.bfloat16)
         return {"latent": x.float()}
+
+    # ---- memory plan: a clip counts as its token load ---------------------------------------------------------
+    def _heaviest_item(self, group):
+        """(effective MP, latent frames) of the dataset's heaviest cached item: a still's area, a clip's area x its
+        latent frames (one sequence of tokens either way). Header-only: the cache keys carry the shapes."""
+        from safetensors import safe_open
+        suffix = f"_{self.description.arch_id}.safetensors"
+        best, best_t = 0.0, 1
+        for ds in getattr(group, "datasets", []):
+            d = getattr(ds, "cache_directory", None)
+            if not d or not os.path.isdir(d):
+                continue
+            for name in os.listdir(d):
+                if not name.endswith(suffix):
+                    continue
+                try:
+                    with safe_open(os.path.join(d, name), framework="pt") as f:
+                        for k in f.keys():
+                            if k.startswith("latent_") and not k.startswith("latent_control_"):
+                                dims = [int(x) for x in k[len("latent_"):].split("x")]
+                                t = dims[0] if len(dims) == 3 else 1
+                                mp = t * dims[-2] * 16 * dims[-1] * 16 / 1e6
+                                if mp > best:
+                                    best, best_t = mp, t
+                except Exception:
+                    continue
+        return best, best_t
+
+    def plan_run(self, precision, blocks_to_swap, *, group, run):
+        """The shared Auto plan (description train_memory), asked at the heaviest item's token load: a 49-frame clip at
+        0.4 MP is 13 latent frames x 0.4 = 5.2 MP of tokens, which is what its activations scale with."""
+        from fizgig.families import quant
+        mp = 0.25
+        try:
+            mp = max(k[-2] * k[-1] / 1e6 for ds in group.datasets for k in ds.batch_manager.bucket_resos)
+        except Exception:
+            pass
+        eff, t = self._heaviest_item(group)
+        if t > 1:
+            logger.info(f"[vram] the heaviest item is a {t}-latent-frame clip: planning at its {eff:.2f} MP of tokens")
+        return quant.plan(self.description, self, precision, blocks_to_swap, megapixels=max(mp, eff), pictures=1)
+
+    # ---- prompt travel ---------------------------------------------------------------------------------------------
+    def pad_conditioning(self, conds):
+        """Prompts zero-padded to one length, each with a mask of its own tokens (the model drops masked keys and
+        takes the refiner's mean over the real ones), so each waypoint renders as its own prompt."""
+        def pad(c, key, mkey, n):
+            x = c.get(key)
+            if x is None:
+                return None, None
+            x = x if x.dim() == 2 else x[0]
+            m = c.get(mkey)
+            m = torch.ones(x.shape[0], dtype=torch.int64) if m is None else (m if m.dim() == 1 else m[0]).long()
+            p = n - x.shape[0]
+            return (torch.cat([x, x.new_zeros(p, x.shape[1])]) if p else x,
+                    torch.cat([m, m.new_zeros(p)]) if p else m)
+        n_text = max((c["text"] if c["text"].dim() == 2 else c["text"][0]).shape[0] for c in conds)
+        glyphs = [c["glyph"] if c["glyph"].dim() == 2 else c["glyph"][0] for c in conds if c.get("glyph") is not None]
+        n_glyph = max((g.shape[0] for g in glyphs), default=0)
+        g_dim = glyphs[0].shape[1] if glyphs else 0
+        out = []
+        for c in conds:
+            t, tm = pad(c, "text", "text_mask", n_text)
+            o = {"text": t, "text_mask": tm}
+            if n_glyph:
+                g, gm = pad(c, "glyph", "glyph_mask", n_glyph)
+                if g is None:
+                    g = torch.zeros(n_glyph, g_dim, dtype=t.dtype)
+                    gm = torch.zeros(n_glyph, dtype=torch.int64)
+                o["glyph"], o["glyph_mask"] = g, gm
+            if c.get("vision") is not None:
+                o["vision"] = c["vision"]
+            out.append(o)
+        return out
 
     # ---- LoRA files ------------------------------------------------------------------------------------------------
     _DIFFUSERS = {"attn.to_out.0.projection": "img_attn.proj", "attn.to_add_out.projection": "txt_attn.proj",

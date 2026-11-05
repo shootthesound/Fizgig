@@ -45,8 +45,8 @@ SYSTEM = (
 class LLM:
     """An OpenAI-compatible chat endpoint."""
 
-    def __init__(self, base=DEFAULT_LLM, model="", key="local"):
-        self.base, self.model, self.key = base.rstrip("/"), model, key
+    def __init__(self, base=DEFAULT_LLM, model="", key="local", think=False):
+        self.base, self.model, self.key, self.think = base.rstrip("/"), model, key, think
 
     def _req(self, path, body=None, timeout=900, method=None):
         req = urllib.request.Request(self.base + path, data=json.dumps(body).encode() if body is not None else None,
@@ -73,6 +73,8 @@ class LLM:
     def chat(self, messages, tools):
         body = {"model": self.pick_model(), "messages": messages, "tools": tools, "tool_choice": "auto",
                 "temperature": 0.6}
+        if not self.think:      # a thinking model (Qwen3.x) reasons for thousands of tokens before each tool step
+            body["chat_template_kwargs"] = {"enable_thinking": False}
         r = self._req("/chat/completions", body)
         return r["choices"][0]["message"], r.get("usage") or {}
 

@@ -8775,10 +8775,12 @@ function asOpen() {
     $("asModel").addEventListener("change", () => save({model: $("asModel").value}));
     $("asFree").addEventListener("change", () => save({free_gpu: $("asFree").checked}));
     $("asVision").addEventListener("change", () => save({vision: $("asVision").checked}));
+    $("asThink").addEventListener("change", () => save({think: $("asThink").checked}));
     $("asDetect").addEventListener("click", asDetect);
     api("/api/assistant").then((r) => {
       const s = r.settings || {};
       $("asUrl").value = s.url || ""; $("asFree").checked = !!s.free_gpu; $("asVision").checked = !!s.vision;
+      $("asThink").checked = !!s.think;
       asDetect(s.model);
     }).catch(() => {});
   }

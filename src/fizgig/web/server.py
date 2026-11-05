@@ -4259,7 +4259,7 @@ class Handler(BaseHTTPRequestHandler):
                         upd["assistant_llm_url"] = str(b["url"] or "").strip()
                     if "model" in b:
                         upd["assistant_llm_model"] = str(b["model"] or "").strip()
-                    for k in ("free_gpu", "vision"):
+                    for k in ("free_gpu", "vision", "think"):
                         if k in b:
                             upd["assistant_" + k] = "1" if b[k] in (True, "1", 1) else "0"
                     update_prefs(upd)

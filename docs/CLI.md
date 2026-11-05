@@ -864,7 +864,7 @@ It pays off most with block swap: each step's swap is spread over every picture 
 | Qwen Image 2.1, 16 blocks swapped | 9.5 s | 3.5 s (2.7×) |
 | MOSS-Image int8, 8 blocks swapped | 2.5 s | 1.4 s (1.8×) |
 
-With no swap it helps the smaller models (Anima 2.6×, SDXL 2.3× on a 4090) and changes little for the larger ones. Each extra picture costs roughly 0.2–0.75 GB at 0.25 MP, more at larger sizes; gradient checkpointing stays on.
+With no swap it helps the smaller models (Anima 2.6×, SDXL 2.3× on a 4090) and changes little for the larger ones. These speed-ups were measured at 0.25 MP; at 1 MP the gain is smaller unless blocks are swapping. Each extra picture costs roughly 0.2–0.75 GB at 0.25 MP, more at larger sizes; gradient checkpointing stays on.
 
 Batch size above 1 isn't used with sliders, edit pairs, DOP, Fizgig LoRA Isolation or MiniMax H3's reference distillation, and turns off masked-training mask priors, Start at a smaller size and helper shares. The GUI greys those out; the trainer refuses a batch with them. The per-image loss watch (problem images, per-image LR, the look warm-up, auto-recaption) works at any Batch size: each picture in a batch is weighed, excluded and recorded on its own, as its own step would be. Full fine-tunes batch too: each picture past the first is planned off the free memory before the windows are sized, and a regularisation picture keeps its own LR multiplier.
 

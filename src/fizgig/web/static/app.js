@@ -8826,6 +8826,11 @@ const AS_TOOL_NAMES = {
   stop_training: "Stopped the run", list_runs: "Listed the runs", list_loras: "Listed the LoRAs", list_previews: "Listed the previews",
   render: "Rendered", affinity_status: "Checked Affinity", affinity_documents: "Read Affinity's documents",
   affinity_to_training_folder: "Exported layers from Affinity", affinity_place: "Placed it in Affinity", affinity_view: "Looked at the Affinity document",
+  affinity_new_document: "Made an Affinity document", affinity_add_shape: "Drew a shape in Affinity",
+  affinity_add_text: "Wrote text in Affinity", affinity_hide_layer: "Hid a layer in Affinity",
+  affinity_save: "Saved the Affinity document", score_pictures: "Scored the pictures",
+  cloud_train: "Started training on a rented GPU", cloud_status: "Checked the rented GPU", cloud_cancel: "Stopped the rented GPU",
+  release_gpu: "Freed the GPU",
 };
 
 function asPoll() {

@@ -459,9 +459,12 @@ def view(doc_id="", spread=0):
         if not doc_id:
             raise ToolError("No document is open in Affinity.")
     else:                                       # a title works too
-        t = doc_id.lower().removesuffix(".af")
-        doc_id = next((d["id"] for d in documents() if doc_id == d["id"] or t == d["title"].lower().removesuffix(".af")),
-                      doc_id)
+        t, docs = doc_id.lower().removesuffix(".af"), documents()
+        found = next((d["id"] for d in docs if doc_id == d["id"] or t == d["title"].lower().removesuffix(".af")), "")
+        if not found:
+            raise ToolError(f"No open Affinity document is called or has the id {doc_id!r}. Open: " + (
+                "; ".join(f"{d['title']} (id {d['id']})" for d in docs) or "none") + ".")
+        doc_id = found
     with _Use() as c:
         content, bad = c.call_tool("render_spread", {"document_session_uuid": doc_id, "spread_index": int(spread)})
     if bad:

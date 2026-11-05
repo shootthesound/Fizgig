@@ -114,7 +114,9 @@ def build(ctx) -> Server:
                                                    for x in d.get("datasets", [])]}
 
     @tool("create_training_folder", "Make a new training folder in Fizgig's training data folder and copy pictures "
-                                    "(and same-named caption .txt files) into it.",
+                                    "(and same-named caption .txt files) into it. Only when the user asks for a new "
+                                    "folder or a copy, or the folder they gave is unsuitable; otherwise use their "
+                                    "folder where it is.",
           {"name": S, "pictures": {"type": "array", "items": S, "description": "picture files to copy in"}},
           ["name"])
     def _create(name, pictures=None):
@@ -528,9 +530,20 @@ def _newest_lora(out_dir, name):
     return best[1] if best else ""
 
 
+def _expand(paths):
+    """Picture paths, with a folder among them standing for its own pictures (not its sub-folders')."""
+    out = []
+    for p in paths or []:
+        if os.path.isdir(p):
+            out += sorted(os.path.join(p, f) for f in os.listdir(p) if os.path.splitext(f)[1].lower() in PICTURES)
+        elif os.path.isfile(p):
+            out.append(p)
+    return out
+
+
 def _copy_pictures(paths, folder):
     n = 0
-    for p in paths:
+    for p in _expand(paths):
         if not os.path.isfile(p) or os.path.splitext(p)[1].lower() not in PICTURES:
             continue
         dest = os.path.join(folder, os.path.basename(p))

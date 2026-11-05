@@ -20,12 +20,18 @@ import urllib.request
 logger = logging.getLogger(__name__)
 
 GPU_TOOLS = {"render", "start_training", "caption_folder", "make_masks"}
+# tools that only look: the same look asked a third time, with nothing done in between, gets the same answer, so it
+# isn't run again - the model is told to act on what it has or say what's missing (a model can loop on these)
+LOOKS = {"fizgig_status", "list_models", "list_training_folders", "list_pictures", "look_at_picture", "list_runs",
+         "list_loras", "list_previews", "affinity_status", "affinity_documents", "affinity_view"}
 DEFAULT_LLM = "http://127.0.0.1:38088/v1"
 SYSTEM = (
     "You are Fizgig's assistant, on the user's own computer. You drive Fizgig (it trains LoRAs for image models and "
     "renders with them) and Affinity by Canva (the user's design app) through tools. Work in small steps: look before "
     "you act (fizgig_status, affinity_documents, list_pictures), then do what was asked, then check the result (look "
-    "at the picture, affinity_view). Say what you did in a few plain sentences: folders, files, what to look at. Never "
+    "at the picture, affinity_view). The tools are all you can use: you can't run code, scripts or other programs. "
+    "When no tool does a step the user asked for, don't promise it or try a way round: do the steps you can and say "
+    "plainly which one you couldn't, so they can do it themselves. A folder the user gives by its path is the training folder: use it where it is (set_training_folder), unless it's unsuitable - its pictures are mixed in with other files or other people, they sit in sub-folders, or the folder can't be written to - then copy what's needed into a new training folder and say why in one line. Work on the exact folder the user gave: a training folder elsewhere with the same name is a different folder, never a stand-in for theirs. Use the file and folder names tools return; don't guess them. A trigger word the user gives is the one to use, exactly as given. Say what you did in a few plain sentences: folders, files, what to look at. Never "
     "stop, delete or overwrite anything the user didn't ask about. A training run takes minutes to hours: start it, "
     "say where to watch it, and stop there. Pictures go into Affinity as new layers; nothing in the user's documents "
     "is changed otherwise. With a LoRA of a person, say who they are in every prompt after the trigger word ('gwelt, "
@@ -282,6 +288,7 @@ class Agent:
         """One user turn: the model calls tools until it answers. Its answer."""
         self.messages.append({"role": "user", "content": text})
         functions = self._functions()
+        looked = {}                           # each look (name + arguments) since the last tool that did something
         for _step in range(self.max_steps):
             if self._off_gpu:                 # back on the card after a handover: the time that costs, measured
                 r0 = time.time()
@@ -327,7 +334,19 @@ class Agent:
                         self.on_event("gpu", {"text": "The model stepped off the GPU so Fizgig can use it."})
                 self.on_event("tool", {"name": name, "args": args})
                 t1 = time.time()
-                content, bad = self.tools.call(name, args)
+                key = name + json.dumps(args, sort_keys=True)
+                if name in LOOKS:
+                    looked[key] = looked.get(key, 0) + 1
+                else:
+                    looked.clear()
+                if looked.get(key, 0) > 2:
+                    content, bad = [{"type": "text", "text": (
+                        f"Not run: {name} with these arguments was already called twice since anything changed, and "
+                        "would give the same answer. Use what it said: carry on with the next step, or if a tool you "
+                        "need doesn't exist or keeps failing, stop and tell the user plainly what you couldn't do.")}], \
+                        True
+                else:
+                    content, bad = self.tools.call(name, args)
                 texts = "\n".join(x.get("text", "") for x in content if x.get("type") == "text")
                 if name == "start_training" and not bad and self.free_gpu and '"started": true' in texts:
                     # a training run holds the card: the language model can't come back beside it, so the agent
@@ -344,8 +363,11 @@ class Agent:
                 self.on_event("result", {"name": name, "error": bad, "text": texts[:1500], "images": len(imgs),
                                          "pictures": imgs[:4]})
                 self.messages.append({"role": "tool", "tool_call_id": c.get("id", name), "name": name,
-                                      "content": (texts or "(done)")[:12000] + (f"\n[{len(imgs)} picture(s) attached]"
-                                                                                if imgs and self.vision else "")})
+                                      "content": (texts or "(done)")[:12000] + (
+                                          (f"\n[{len(imgs)} picture(s) attached]" if self.vision else
+                                           f"\n[{len(imgs)} picture(s) not shown: seeing pictures is off in the "
+                                           "Assistant's settings - don't look again, carry on without]")
+                                          if imgs else "")})
                 pictures += [(name, i) for i in imgs]
             if pictures and self.vision:      # a tool's pictures, for a model that can see
                 self.messages.append({"role": "user", "content": [{"type": "text", "text": "The pictures the tools "

@@ -2806,12 +2806,23 @@ label[title]:has(.tip-mark) { cursor: help; }
   background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent); transform: translateX(-100%);
   animation: fx-sweep 2.4s ease-in-out infinite; }
 /* Cosmic Pigeon's faint twinkle: the sweep fades in and out */
-:root[data-theme="cosmic-pigeon"] :is(.run-bar > span, .meter-bar > span, .fetch-bar > div)::after { animation: fx-sweep 2.4s ease-in-out infinite, fx-twinkle 1.2s ease-in-out infinite alternate; }
+:root[data-theme="cosmic-pigeon"] :is(.run-bar:not([data-state="paused"]):not([data-state="pausing"]):not([data-state="completed"]):not([data-state="failed"]):not([data-state="stopped"]) > span, .meter:not(.warn) .meter-bar > span, .fetch-bar > div)::after { animation: fx-sweep 2.4s ease-in-out infinite, fx-twinkle 1.2s ease-in-out infinite alternate; }
+/* tiny star specks drifting along the active bars, each twinkling */
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.run-bar:not([data-state="paused"]):not([data-state="pausing"]):not([data-state="completed"]):not([data-state="failed"]):not([data-state="stopped"]) > span, .meter:not(.warn) .meter-bar > span, .fetch-bar > div)::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; will-change: background-position, opacity;
+  background-image: radial-gradient(circle at 12% 30%, #fff 0 0.6px, transparent 1px),
+    radial-gradient(circle at 37% 70%, #fff 0 0.5px, transparent 1px),
+    radial-gradient(circle at 63% 40%, #fff 0 0.6px, transparent 1px),
+    radial-gradient(circle at 86% 65%, #fff 0 0.5px, transparent 1px);
+  background-size: 46px 100%, 61px 100%, 53px 100%, 71px 100%; background-repeat: repeat-x;
+  animation: fx-stars 9s linear infinite, fx-twinkle 1.6s ease-in-out infinite alternate; }
+:root[data-theme="deep-space"] :is(.run-bar:not([data-state="paused"]):not([data-state="pausing"]):not([data-state="completed"]):not([data-state="failed"]):not([data-state="stopped"]) > span, .meter:not(.warn) .meter-bar > span, .fetch-bar > div)::before { opacity: .8; animation-duration: 12s, 2.1s; }
+@keyframes fx-stars { to { background-position: 46px 0, 122px 0, 53px 0, 142px 0; } }
 @keyframes fx-drift { to { background-position: -200% 0; } }
 @keyframes fx-sweep { 0% { transform: translateX(-100%); } 60%, 100% { transform: translateX(100%); } }
 @keyframes fx-twinkle { from { opacity: .45; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   :is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.run-bar > span, .meter-bar > span, .fetch-bar > div) { animation: none; }
-  :is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.run-bar > span, .meter-bar > span, .fetch-bar > div)::after { display: none; }
+  :is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.run-bar > span, .meter-bar > span, .fetch-bar > div)::after, :is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.run-bar > span, .meter-bar > span, .fetch-bar > div)::before { display: none; }
   :is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.btn, .runpod-btn, .theme-pick button) { transition: none; transform: none !important; }
 }

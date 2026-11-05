@@ -20,12 +20,12 @@ python -m fizgig.scripts.fetch_models --family flux3 --include-optional
 
 | Model | File | Size |
 |---|---|---|
-| Base DiT (training) | `flux3_image_klein_bf16.safetensors` | 11.1 GB |
-| Distilled DiT (previews, workbench) | `flux3_image_klein_sd_bf16.safetensors` | 11.1 GB |
+| Base DiT (training) | `flux3-image-klein-base-bf16.safetensors` | 11.1 GB |
+| Distilled DiT (previews, workbench) | `flux3-image-klein-bf16.safetensors` | 11.1 GB |
 | Autoencoder | `flux2-vae.safetensors` | 0.3 GB |
 | Text encoder | `qwen3vl_4b_bf16.safetensors` | 8.9 GB |
 
-All four come from [black-forest-labs/flux-3-image-klein-comfy](https://huggingface.co/black-forest-labs/flux-3-image-klein-comfy). Files with `_sd_` in the name are the distilled model; train on the one without.
+All four come from [black-forest-labs/flux-3-image-klein-comfy](https://huggingface.co/black-forest-labs/flux-3-image-klein-comfy). Train on the file with `base` in its name; the other is the distilled model.
 
 ## Presets
 

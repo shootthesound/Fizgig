@@ -173,8 +173,8 @@ All files live in [black-forest-labs/flux-3-image-klein-comfy](https://huggingfa
 
 | Model | File | Size |
 |---|---|---|
-| **Base DiT (bf16) — training** | `flux3_image_klein_bf16.safetensors` | ~11.1 GB |
-| **Distilled DiT (bf16) — previews and workbench** | `flux3_image_klein_sd_bf16.safetensors` | ~11.1 GB |
+| **Base DiT (bf16) — training** | `flux3-image-klein-base-bf16.safetensors` | ~11.1 GB |
+| **Distilled DiT (bf16) — previews and workbench** | `flux3-image-klein-bf16.safetensors` | ~11.1 GB |
 | Autoencoder | `flux2-vae.safetensors` | ~340 MB |
 | Text Encoder | `qwen3vl_4b_bf16.safetensors` | ~8.9 GB |
 
@@ -189,7 +189,7 @@ All files live in [Comfy-Org/Fibo-2.0](https://huggingface.co/Comfy-Org/Fibo-2.0
 | Text Encoder | `qwen3vl_4b_bf16.safetensors` | ~8.9 GB |
 | Turbo LoRA — previews | `fibo_2.0_turbo_lora_avg_rank_270_bf16.safetensors` | ~2.0 GB |
 
-Files with `_sd_` in the name are the distilled model; train on the one without. More in [FLUX3.md](FLUX3.md).
+Train on the file with `base` in its name; the other is the distilled model. More in [FLUX3.md](FLUX3.md).
 
 ### Krea 2
 

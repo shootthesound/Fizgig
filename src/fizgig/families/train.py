@@ -1799,6 +1799,12 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                                                      untagged_own=desc.resumes_untagged_states, driver=driver)
         if global_step is None:
             global_step = start_epoch * steps_per_epoch
+        elif int(meta.get("batch_size", 1)) != bsz:
+            # it trained at another Batch size (moved to or from a pod that batches): a state is an epoch end, so the
+            # steps so far are its epochs at this run's steps per epoch - the LR schedule carries on from there
+            logger.info(f"[resume] it trained {meta.get('batch_size', 1)} picture(s) a step and goes on at {bsz}: "
+                        f"step {global_step} -> {start_epoch * steps_per_epoch}")
+            global_step = start_epoch * steps_per_epoch
         if adaptive:
             adaptive.load_state_dict(meta.get("adaptive_lr_state"))
         if (optimizer is not None and meta.get("own_state") and not meta.get("fresh_optimizer")
@@ -2252,7 +2258,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 _save_state(output_dir, output_name, net, optimizer, epoch=epoch, global_step=global_step,
                             arch_id=arch, ema=ema,
                             extra={"learning_rate": box_learning_rate,
-                                   **({"adaptive_lr_state": adaptive.state_dict()} if adaptive else {})})
+                                   **({"adaptive_lr_state": adaptive.state_dict()} if adaptive else {}),
+                                   **({"batch_size": bsz} if bsz > 1 else {})})
                 return True
             except (OSError, RuntimeError) as e:
                 if attempt == 2 and required:

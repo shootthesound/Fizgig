@@ -98,17 +98,47 @@ def line(desc, values, env, busy=False):
     return note(desc, tuple(got[0]), tuple(got[1]), req[3]), False
 
 
+def fit(desc, values, env):
+    """The largest Batch size this card trains the run at with no more block swap than batch 1 and the same
+    precision (a run moved to a pod that batches: worked out there, on its own card), 1 when none does or Auto
+    plans nothing here. Blocks up to two minutes (the subprocess)."""
+    from fizgig.families import launch
+    if launch.batch_size(desc, {**values, "BATCH_SIZE": launch.BATCH_SIZES[-1]}) <= 1:
+        return 1
+    req = request(desc, {**values, "BATCH_SIZE": "2", "BLOCKS_SWAP": "Auto"})
+    if req is None:
+        return 1
+    precision, swap, mp, _ = req
+    try:
+        r = subprocess.run([sys.executable, "-m", "fizgig.web.batch_plan", "fit", desc.key, precision, str(swap),
+                            str(mp)], capture_output=True, text=True, timeout=120, cwd=BASE_DIR, env=env,
+                           **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}))
+        return max(1, int(json.loads((r.stdout.strip().splitlines() or ["1"])[-1]) or 1))
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+        return 1
+
+
 if __name__ == "__main__":        # the subprocess: [family, precision, blocks_to_swap, megapixels, batch]
-    import torch
-    from fizgig.families import quant
+    import torch                  # or ["fit", family, precision, blocks_to_swap, megapixels]: the largest batch
+    from fizgig.families import launch, quant
     from fizgig.families.registry import get
-    fam, precision, swap, mp, batch = sys.argv[1:6]
+    fitting = sys.argv[1] == "fit"
+    fam, precision, swap, mp, batch = (sys.argv[2:6] + ["1"]) if fitting else sys.argv[1:6]
     if not torch.cuda.is_available():
         print("null")
         raise SystemExit
     desc = get(fam)
     driver = desc.load_driver()
     free = quant.free_vram_gb()
+    if fitting:
+        p1, s1 = quant.plan(desc, driver, precision, int(swap), free_gb=free, megapixels=float(mp))[:2]
+        best = 1
+        for n in (int(b) for b in launch.BATCH_SIZES[1:]):
+            pn, sn = quant.plan(desc, driver, precision, int(swap), free_gb=free, megapixels=float(mp) * n)[:2]
+            if pn == p1 and sn <= s1:
+                best = n
+        print(json.dumps(best))
+        raise SystemExit
     plans = [quant.plan(desc, driver, precision, int(swap), free_gb=free, megapixels=float(mp) * n)[:2]
              for n in (1, int(batch))]
     print(json.dumps([[*plans[0], free], [*plans[1], free]]))

@@ -124,6 +124,15 @@ VIMOO = FamilyDescription(
     ema_default="0.98",
     precisions=("int8", "nf4", "bf16"),
     auto_precisions=("int8", "nf4"),
+    # Measured 5 Nov 2026 on an RTX 5090 (rank 8, AdamW, eager, checkpointed, no swap, 2 epochs, the default 2-second
+    # 832x480 distilled preview after each). The preview sets every peak: training alone is bf16 18.9 / 19.3, INT8
+    # 10.5 / 11.0, NF4 7.1 / 7.5 GB at 0.25 / 1 MP stills, and a 49-frame clip (13 latent frames) INT8 12.2 / 13.4, NF4
+    # 8.6 / 9.7 GB at 0.25 / 0.4 MP. Clips sit on the same axis as stills at their token load - latent frames x area
+    # (driver.plan_run): 13 x 0.4 MP = 5.2. The per-block saving is a double block's own parameter bytes (227M:
+    # 0.42 GiB bf16, 0.21 INT8); NF4 never streams.
+    train_memory={"bf16": (((0.25, 28.0), (1.0, 28.0)), 0.42),
+                  "int8": (((0.25, 19.5), (1.0, 19.5), (5.2, 19.7)), 0.21),
+                  "nf4": (((0.25, 15.9), (1.0, 15.9), (5.2, 16.0)), 0.0)},
     optimizers=("adamw", "adamw8bit", "automagic3"),
     network_types=("lora", "lokr"),
     batch_training=False,

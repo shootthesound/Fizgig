@@ -144,3 +144,73 @@ def test_batch_plan_note_asks_what_start_sends(tmp_path):
     assert "About as quick" in batch_plan.note(None, ("bf16", 12, 15.0), ("bf16", 25, 15.0), 2)
     assert "fits as batch 1 does" in batch_plan.note(None, ("int8", 0, 23.0), ("int8", 0, 23.0), 3)
     assert "drops to 4-bit NF4 (batch 1: int8)" in batch_plan.note(None, ("int8", 0, 15.0), ("nf4", 0, 15.0), 2)
+
+
+def _driver_parity(drv, dit, lat, conds, mask, autocast=None):
+    """The batched loss against the mean of the pictures' own, from the same generator."""
+    import contextlib
+    ctx = torch.autocast("cpu", dtype=autocast) if autocast else contextlib.nullcontext()
+    with torch.no_grad(), ctx:
+        b, _ = drv.training_loss_batch(dit, lat, drv.stack_conds(conds), torch.Generator().manual_seed(7),
+                                       loss_mask=mask)
+        g = torch.Generator().manual_seed(7)
+        s = sum(drv.training_loss(dit, lat[i:i + 1], conds[i], g,
+                                  loss_mask=None if mask is None else mask[i:i + 1])[0] for i in range(len(conds)))
+    return float(b), float(s) / len(conds)
+
+
+def test_fibo_batch_matches_one_at_a_time():
+    from fizgig.families.registry import get as get_family
+    from fizgig.fibo2.model import Fibo2DiT
+    torch.manual_seed(0)
+    dit = Fibo2DiT(dim=64, n_layers=5, n_refiner_layers=1, n_heads=4, cap_feat_dim=24,
+                   injection_layer_ids=(0, 1, 2, 3, 4), perceiver_num_layers=1, min_num_gist_tokens=4,
+                   max_num_gist_tokens=8, gist_step=2, gist_min_text_len=2, gist_max_text_len=12, axes_dims=(4, 6, 6),
+                   axes_lens=(64, 32, 32)).float().eval()
+    drv = get_family("fibo2").load_driver()
+    g = torch.Generator().manual_seed(1)
+    conds = [{"tokens": torch.randn(1, 1, 6, n, 24, generator=g), "mask": torch.ones(1, 1, n, dtype=torch.bool)}
+             for n in (5, 11, 3)]                       # three gist counts: the batch pads the gist tokens too
+    lat = torch.randn(3, 32, 8, 8, generator=g)
+    for mask in (None, torch.rand(3, 1, 8, 8, generator=g)):
+        b, s = _driver_parity(drv, dit, lat, conds, mask)
+        assert abs(b - s) <= 1e-5 * abs(s), (mask is None, b, s)
+
+
+def test_flux3_batch_matches_one_at_a_time(monkeypatch):
+    from fizgig.families.registry import get as get_family
+    from fizgig.flux3 import model as M
+    for k, v in (("HIDDEN", 64), ("HEADS", 4), ("DEPTH", 1), ("DEPTH_SINGLE", 2), ("AXES_DIM", (4, 4, 4, 4))):
+        monkeypatch.setattr(M, k, v)
+    monkeypatch.setitem(M.IN_CHANNELS, "text", 24)
+    torch.manual_seed(0)
+    dit = M.Flux3DiT().float().eval()
+    drv = get_family("flux3").load_driver()
+    g = torch.Generator().manual_seed(1)
+    conds = [{"tokens": torch.randn(1, n, 24, generator=g)} for n in (5, 11, 3)]
+    lat = torch.randn(3, 128, 4, 6, generator=g)
+    for mask in (None, torch.rand(3, 1, 4, 6, generator=g)):
+        b, s = _driver_parity(drv, dit, lat, conds, mask, autocast=torch.bfloat16)
+        assert abs(b - s) <= 1e-5 * abs(s), (mask is None, b, s)
+
+
+def test_krea2_batch_matches_one_at_a_time(monkeypatch):
+    from fizgig.families.registry import get as get_family
+    from fizgig.krea2 import driver as KD
+    from fizgig.krea2.model import SingleMMDiTConfig, SingleStreamDiT
+    monkeypatch.setattr(KD, "DTYPE", torch.float32)
+    torch.manual_seed(0)
+    dit = SingleStreamDiT(SingleMMDiTConfig(features=64, tdim=32, txtdim=24, heads=4, multiplier=2, layers=2, patch=2,
+                                            channels=16, txtlayers=3, txtheads=4, txtkvheads=4)).float().eval()
+    drv = get_family("krea2").load_driver()
+    g = torch.Generator().manual_seed(1)
+    conds = []
+    for n in (5, 11, 3):                                # the encoder's layout: prompt, padding, template suffix
+        m = torch.zeros(1, 20, dtype=torch.bool)
+        m[0, :n] = True
+        m[0, -2:] = True
+        conds.append({"hidden_states": torch.randn(1, 20, 3, 24, generator=g), "attention_mask": m})
+    lat = torch.randn(3, 16, 8, 8, generator=g)
+    for mask in (None, torch.rand(3, 1, 8, 8, generator=g)):
+        b, s = _driver_parity(drv, dit, lat, conds, mask)
+        assert abs(b - s) <= 1e-5 * abs(s), (mask is None, b, s)

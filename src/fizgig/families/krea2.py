@@ -33,6 +33,7 @@ KREA2 = FamilyDescription(
     key="krea2",
     start_lr_bands=(("lora", 3e-5, 3e-4), ("slider", 7e-5, 6e-4)),
     masked_training=True,
+    batch_training=True,              # Batch size (Other Options): training_loss_batch, exact per picture
     arch_id="krea2drv",
     display_name="Krea 2",
     gui_label="Krea 2",

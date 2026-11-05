@@ -1255,7 +1255,7 @@ def train_side(mp):
 
 def batch_size(desc, inputs):
     """Pictures a step (Other Options' Batch size): 1 unless the family trains batches (description batch_training)
-    and the run is a plain LoRA - an edit, a slider, a fine-tune, DOP and Fizgig LoRA Isolation read one picture a
+    and the run is a LoRA or a fine-tune - an edit, a slider, DOP and Fizgig LoRA Isolation read one picture a
     step."""
     try:
         n = int(str(_s(inputs.get("BATCH_SIZE")) or 1).strip())
@@ -1263,7 +1263,7 @@ def batch_size(desc, inputs):
         return 1
     if n <= 1 or not desc.batch_training:
         return 1
-    if edit_on(desc, inputs) or slider_on(desc, inputs) or ft_on(desc, inputs) or dop_on(desc, inputs) \
+    if edit_on(desc, inputs) or slider_on(desc, inputs) or dop_on(desc, inputs) \
             or multi_person_on(desc, inputs):
         return 1
     return n

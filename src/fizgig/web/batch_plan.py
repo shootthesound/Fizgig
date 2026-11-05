@@ -24,6 +24,8 @@ def request(desc, values):
     batch = launch.batch_size(desc, values)
     if batch <= 1 or not (desc.train_memory or desc.own_plan):     # no figures: no note
         return None
+    if launch.ft_on(desc, values):        # a fine-tune plans its windows (the fine-tune card's line), not this
+        return None
     precision = launch.precision_key(desc, values.get("FAMILY_PRECISION")) if len(desc.precisions) > 1 else "bf16"
     swap = launch.swap_blocks(values.get("BLOCKS_SWAP"))
     if precision != "auto" and swap >= 0:
@@ -133,10 +135,12 @@ def fit(desc, values, env, files=None):
     precision (a run moved to a pod that batches: worked out there, on its own card), 1 when none does or Auto
     plans nothing here. files: models(desc, ...), for an own_plan family. Blocks up to two minutes (the
     subprocess)."""
-    if not (desc.train_memory or desc.own_plan):     # no figures to fit a batch by
-        return 1
     from fizgig.families import launch
     if launch.batch_size(desc, {**values, "BATCH_SIZE": launch.BATCH_SIZES[-1]}) <= 1:
+        return 1
+    if launch.ft_on(desc, values):
+        return _ft_fit(desc, values, env, files)
+    if not (desc.train_memory or desc.own_plan):     # no figures to fit a batch by
         return 1
     req = request(desc, {**values, "BATCH_SIZE": "2", "BLOCKS_SWAP": "Auto"})
     if req is None:
@@ -147,11 +151,55 @@ def fit(desc, values, env, files=None):
         return 1
     try:
         r = subprocess.run([sys.executable, "-m", "fizgig.web.batch_plan", "fit", desc.key, precision, str(swap),
-                            str(mp)] + ([json.dumps(run)] if run else []), capture_output=True, text=True, timeout=120, cwd=BASE_DIR, env=env,
+                            str(mp)] + ([json.dumps(run)] if run else []), capture_output=True, text=True,
+                           timeout=120, cwd=BASE_DIR, env=env,
                            **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}))
         return max(1, int(json.loads((r.stdout.strip().splitlines() or ["1"])[-1]) or 1))
     except (OSError, ValueError, TypeError, subprocess.SubprocessError):
         return 1
+
+
+def _ft_fit(desc, values, env, files):
+    """A fine-tune moved to a pod: the largest Batch size whose window plan on this card is batch 1's (the same
+    windows, nothing newly streamed), each picture past the first planned off the free memory as the trainer does."""
+    from fizgig.families import launch
+    from fizgig.web import ft_plan
+    dit = desc.model_path("dit", (files or {}).get)
+    if not dit or not os.path.isfile(dit):
+        return 1
+    try:
+        mp = float(str(values.get("DATASET_MEGAPIXELS") or "").split()[0])
+    except (ValueError, IndexError):
+        mp = 0.25
+    cap = launch.ft_max_parts({"FAMILY_FT_MAX_PARTS": values.get("FAMILY_FT_MAX_PARTS", "")})
+    try:
+        r = subprocess.run([sys.executable, "-m", "fizgig.web.batch_plan", "ftfit", desc.key, dit, str(mp),
+                            json.dumps(ft_plan._options(desc, values)), str(cap)], capture_output=True, text=True,
+                           timeout=180, cwd=BASE_DIR, env=env,
+                           **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}))
+        return max(1, int(json.loads((r.stdout.strip().splitlines() or ["1"])[-1]) or 1))
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+        return 1
+
+
+if __name__ == "__main__" and sys.argv[1] == "ftfit":      # [ftfit, family, model path, megapixels, options, cap]
+    from fizgig.families import launch, quant
+    from fizgig.families.registry import get
+    from fizgig.utils.device import plannable_free_vram
+    fam, path, mp, opts, cap = sys.argv[2:7]
+    desc = get(fam)
+    driver, free = desc.load_driver(), plannable_free_vram()
+
+    def ft_plan_at(n):
+        p = driver.ft_card_plan(path, free - quant.batch_extra(desc, float(mp), n), mp=float(mp),
+                                options=json.loads(opts), max_parts=int(cap or 0))
+        return json.dumps([[list(w) if isinstance(w, tuple) else w for w in p[0]], bool(p[1])]) if p and p[0] else None
+    one, best = ft_plan_at(1), 1
+    for n in (int(b) for b in launch.BATCH_SIZES[1:]):
+        if one is not None and ft_plan_at(n) == one:
+            best = n
+    print(json.dumps(best))
+    raise SystemExit
 
 
 if __name__ == "__main__":        # the subprocess: [family, precision, blocks_to_swap, megapixels, batch, run?]

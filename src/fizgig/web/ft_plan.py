@@ -32,10 +32,10 @@ def _options(desc, values):
     return out
 
 
-def _run(key, family, path, mp, options, max_parts, env):
+def _run(key, family, path, mp, options, max_parts, env, batch_gb=0.0):
     try:
         r = subprocess.run([sys.executable, "-m", "fizgig.web.ft_plan", family, path, str(mp or ""),
-                            json.dumps(options), str(max_parts)], capture_output=True, text=True, timeout=120,
+                            json.dumps(options), str(max_parts), f"{batch_gb:g}"], capture_output=True, text=True, timeout=120,
                            cwd=BASE_DIR, env=env,
                            **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}))
         got = json.loads((r.stdout.strip().splitlines() or ["null"])[-1])
@@ -62,12 +62,16 @@ def line(desc, values, model_path, env):
         mp = None
     options = _options(desc, values)
     cap = ft_max_parts({"FAMILY_FT_MAX_PARTS": values.get("FAMILY_FT_MAX_PARTS", "")})
-    key = (desc.key, model_path, mp, tuple(sorted(options.items())), cap)
+    from fizgig.families.launch import batch_size
+    fixed, per_mp = getattr(desc, "batch_gb", None) or (0.0, 0.0)      # quant.batch_extra (no torch in the server)
+    extra = max(0, batch_size(desc, values) - 1) * (float(fixed) + float(per_mp) * float(mp or 0.25))
+    key = (desc.key, model_path, mp, tuple(sorted(options.items())), cap, round(extra, 2))
     with _lock:
         plan = _cache.get(key, "new")
         if plan == "new":
             _cache[key] = "running"
-            threading.Thread(target=_run, args=(key, desc.key, model_path, mp, options, cap, env), daemon=True).start()
+            threading.Thread(target=_run, args=(key, desc.key, model_path, mp, options, cap, env, extra),
+                             daemon=True).start()
     if plan in ("new", "running"):
         return "Working out how a rotation splits on this card…", True
     if not plan or not plan[0]:
@@ -93,13 +97,14 @@ def line(desc, values, model_path, env):
             + (f" (~{gb:.0f} GB each)" if gb else "") + ". The log confirms the plan at Start."), False
 
 
-if __name__ == "__main__":        # the subprocess: [family, model path, megapixels, options json, max parts]
+if __name__ == "__main__":        # the subprocess: [family, model path, megapixels, options json, max parts, batch GB]
     from fizgig.families.registry import get
     from fizgig.utils.device import plannable_free_vram
     fam, path, mp, opts, cap = sys.argv[1:6]
     free = plannable_free_vram()
-    plan = get(fam).load_driver().ft_card_plan(path, free, mp=float(mp) if mp else None, options=json.loads(opts),
-                                               max_parts=int(cap or 0))
+    extra = float(sys.argv[6]) if len(sys.argv) > 6 else 0.0      # Batch size: the pictures past the first
+    plan = get(fam).load_driver().ft_card_plan(path, free - extra, mp=float(mp) if mp else None,
+                                               options=json.loads(opts), max_parts=int(cap or 0))
     # a depth split (prefix, lo, hi) stays apart from a list of whole parts: JSON would make both lists
     wins = [{"split": list(w)} if isinstance(w, tuple) else w for w in plan[0]] if plan and plan[0] else None
     print(json.dumps([wins, plan[1], free] if wins else None))

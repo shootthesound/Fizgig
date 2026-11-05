@@ -890,7 +890,7 @@ def batch_blockers(desc, values):
     if not desc.batch_training:
         return ["this model trains one picture a step"]
     kind = _kind(desc, values)
-    out = [w for on, w in ((kind == "edit", "an edit"), (kind == "slider", "a slider"), (kind == "finetune", "a fine-tune"),
+    out = [w for on, w in ((kind == "edit", "an edit"), (kind == "slider", "a slider"),
                            (values.get("FAMILY_DOP"), "DOP"), (values.get("FAMILY_MULTI_PERSON"), "Fizgig LoRA Isolation"),
                            (str(values.get("STAGE_MP") or "Off") != "Off", "Start at a smaller size"),
                            (values.get("MASKED_TRAINING") and str(values.get("MASK_PRIOR") or "Off") != "Off",
@@ -1283,12 +1283,12 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             elif state == "done":
                 notes["FAMILY_PREVIEW_LOOK"] = "Downloaded: previews use it from the next one."
     if desc.batch_training:
-        one_a_step = kind in ("edit", "slider", "finetune") or values.get("FAMILY_DOP") or \
+        one_a_step = kind in ("edit", "slider") or values.get("FAMILY_DOP") or \
             values.get("FAMILY_MULTI_PERSON")
         if one_a_step:
             disabled.add("BATCH_SIZE")
-            notes["BATCH_SIZE"] = ("Greyed out: sliders, edits, fine-tunes, DOP and Fizgig LoRA Isolation train one "
-                                   "picture a step.")
+            notes["BATCH_SIZE"] = ("Greyed out: sliders, edits, DOP and Fizgig LoRA Isolation train one picture a "
+                                   "step.")
         elif str(values.get("BATCH_SIZE") or "1") not in ("", "1"):
             off = {"STAGE_MP", "STAGE_UNTIL", "MASK_PRIOR"}
             off |= {o.key for o in desc.options if getattr(o, "batch_off", False)}

@@ -94,6 +94,11 @@ def test_batch_size_reaches_the_dataset_and_stands_down_what_reads_one_picture(t
     v, p = plan(BATCH_SIZE="1")
     train = " ".join(next(s.cmd for s in p.stages if "train.py" in " ".join(s.cmd)))
     assert "batch_size = 1" in p.dataset_toml and "--log_per_image_loss" in train
+    v, p = plan(BATCH_SIZE="3", FAMILY_KIND="finetune", FAMILY_FT=True)          # a fine-tune batches too
+    assert "batch_size = 3" in p.dataset_toml and launch.batch_size(moss, v) == 3
+    assert "BATCH_SIZE" not in form.state(moss, v, str(d))["disabled"] and form.batch_blockers(moss, v) == []
+    from fizgig.web import batch_plan
+    assert batch_plan.request(moss, v) is None          # its windows are planned by the fine-tune card's line
     v = {**form.DEFAULTS, "BATCH_SIZE": "3", "FAMILY_KIND": "slider", "FAMILY_SLIDER": True}   # one pair a step
     assert launch.batch_size(moss, v) == 1 and "BATCH_SIZE" in form.state(moss, v, str(d))["disabled"]
 

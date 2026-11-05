@@ -25,6 +25,8 @@ GUIDANCE_RESCALE = 0.85                   # inference_defaults.json, common
 FPS = 24.0
 COND_CHANNELS = 49                        # reference latent (48) + mask (1)
 PEFT_SCALE = 0.5                          # Vimoo's adapters: lora_alpha = r / 2
+ANCHOR_TAU = 0.001                        # image-to-video: the first frame's noise share (i2v_anchor_tau)
+REF_GUIDANCE = 3.0                        # image-to-video: the reference scale with CFG (Lite i2v defaults)
 
 
 def lognorm_sigmas(steps):
@@ -196,12 +198,25 @@ class VimooDriver(FamilyDriver):
         return out + [path]
 
     # ---- the encoders ---------------------------------------------------------------------------------------------
+    # A reference picture is image-to-video's first frame: SigLIP reads it beside the prompt (encode_text_with_references)
+    # and its latent anchors the clip's first latent frame (generate / training_loss refs=). Edit-pair datasets train
+    # image-to-video the same way: the "before" picture is the clip's start.
+    supports_references = True
+
     def load_text_encoder(self, path, device):
         from fizgig.vimoo.text import GlyphByT5, QwenText
         glyph = GlyphByT5(self._glyph_path) if self._glyph_path and os.path.isfile(self._glyph_path) else None
         if glyph is None:
             logger.warning("Vimoo: no Glyph-ByT5 file set - quoted text in prompts won't be read as lettering")
         return {"qwen": QwenText(path, device), "glyph": glyph}
+
+    def load_reference_text_encoder(self, path, device):
+        from fizgig.vimoo.text import SigLIP
+        if not (self._siglip_path and os.path.isfile(self._siglip_path)):
+            raise ValueError("Vimoo image-to-video needs SigLIP (Preferences: SigLIP so400m) for its reference picture")
+        te = self.load_text_encoder(path, device)
+        te["siglip"] = SigLIP(self._siglip_path, device)
+        return te
 
     def unload_text_encoder(self, te):
         if isinstance(te, dict):
@@ -225,9 +240,20 @@ class VimooDriver(FamilyDriver):
             out.append(c)
         return out
 
+    def encode_text_with_references(self, te, captions, references):
+        """The prompt as encode_text, plus SigLIP's 729 tokens of each caption's first reference picture (its start
+        frame, already at the clip's size)."""
+        from PIL import Image
+        out = self.encode_text(te, captions)
+        for c, refs in zip(out, references):
+            if refs:
+                im = Image.fromarray(np.asarray(refs[0])[..., :3])
+                c["vision"] = te["siglip"].encode(im, im.width, im.height).to(torch.float16)
+        return out
+
     @staticmethod
     def _cond(cond, device):
-        """A cached / encoded dict -> the model's text arguments, batched."""
+        """A cached / encoded dict -> the model's text and vision arguments, batched."""
         text = cond["text"]
         text = text.unsqueeze(0) if text.dim() == 2 else text
         mask = cond.get("text_mask")
@@ -239,8 +265,31 @@ class VimooDriver(FamilyDriver):
             if gmask is None:
                 gmask = torch.ones(glyph.shape[:2], dtype=torch.int64)
             glyph, gmask = glyph.to(device), gmask.to(device)
+        vision = cond.get("vision")
+        if vision is not None:
+            vision = (vision.unsqueeze(0) if vision.dim() == 2 else vision).to(device, torch.bfloat16)
         return dict(text=text.to(device), text_mask=None if mask is None else mask.to(device), glyph=glyph,
-                    glyph_mask=gmask)
+                    glyph_mask=gmask, vision=vision)
+
+    # ---- image-to-video: the first frame --------------------------------------------------------------------------
+    @staticmethod
+    def _ref5(ref, device):
+        r = ref if ref.dim() == 5 else ref.unsqueeze(2)                    # (1, 48, 1, h, w)
+        return r[:, :, :1].to(device, torch.bfloat16)
+
+    @staticmethod
+    def _condition(ref, frames):
+        """The 49 conditioning channels: the reference latent in the first frame, zeros after, and the mask."""
+        b, c, _, h, w = ref.shape
+        cond = ref.new_zeros(b, c + 1, frames, h, w)
+        cond[:, :c, :1] = ref
+        cond[:, c, :1] = 1.0
+        return cond
+
+    @staticmethod
+    def _anchor(ref, first_noise):
+        """The first frame held almost clean: (1 - tau) reference + tau noise, the coefficient kept in FP32."""
+        return ((1.0 - ANCHOR_TAU) * ref.float() + ANCHOR_TAU * first_noise.float()).to(ref.dtype)
 
     # ---- training ------------------------------------------------------------------------------------------------------
     def _sample_t(self, generator, min_t, max_t):
@@ -252,7 +301,9 @@ class VimooDriver(FamilyDriver):
     def _as5(latents):
         return latents.unsqueeze(2) if latents.dim() == 4 else latents
 
-    def _model_input(self, x):
+    def _model_input(self, x, condition=None):
+        if condition is not None:
+            return torch.cat([x, condition.to(x.dtype)], dim=1)
         b, _, t, h, w = x.shape
         return torch.cat([x, x.new_zeros(b, COND_CHANNELS, t, h, w)], dim=1)
 
@@ -273,6 +324,19 @@ class VimooDriver(FamilyDriver):
                       diff_weight=0.0, loss_mask=None, prior=None):
         lat = self._as5(latents)
         state = self.noise_latents(lat, generator, min_t=min_t, max_t=max_t)
+        if refs and lat.shape[2] > 1:
+            # image-to-video: the pair's picture is the clip's start - anchored almost clean in the first latent frame,
+            # read through the conditioning channels and SigLIP, modulated at its own near-zero time; the loss is the
+            # frames after it (the pipeline holds the first frame's flow at zero)
+            device = lat.device
+            ref = self._ref5(refs[0], device)
+            x = state["hidden_states"].to(torch.bfloat16)
+            x[:, :, :1] = self._anchor(ref, state["noise"][:, :, :1].to(torch.bfloat16))
+            xin = self._model_input(x, self._condition(ref, lat.shape[2]))
+            pred = dit(xin, state["timestep"].float() * 1000.0, fps=FPS, observed_t=torch.tensor([ANCHOR_TAU * 1000.0]),
+                       **self._cond(cond, device)).float()
+            target = (state["noise"] - lat).float()
+            return F.mse_loss(pred[:, :, 1:], target[:, :, 1:]), {"t": state["t"]}
         pred = self.predict(dit, state, cond).float()
         target = (state["noise"] - lat).float()
         return F.mse_loss(pred, target), {"t": state["t"]}
@@ -291,9 +355,11 @@ class VimooDriver(FamilyDriver):
     @torch.no_grad()
     def generate(self, dit, cond, width, height, *, steps, seed, cfg=1.0, neg_cond=None, sigmas=None, options=(),
                  noise=None, on_step=None, refs=None, frames=None, audio=False, **kw):
-        """Text-to-video: Euler on Lite's lognormal grid (or the distilled LoRA's own timesteps), CFG with guidance
-        rescale when cfg > 1 and a negative is given, the state rounded to bf16 after each step as the pipeline does.
-        Returns the latent (1, 48, T, h, w)."""
+        """Euler on Lite's lognormal grid (or the distilled LoRA's own timesteps), the state rounded to bf16 after each
+        step as the pipeline does. Text-to-video: CFG with guidance rescale when cfg > 1 and a negative is given.
+        Image-to-video (refs = the start picture's latent): the first frame anchored and its flow held at zero; with
+        CFG, the reference's three branches - unreferenced, negative, positive - mixed at reference scale 3 and the text
+        scale. Returns {"latent": (1, 48, T, h, w)}."""
         device = next(p for p in dit.parameters() if p.device.type != "meta").device
         if device.type == "cpu" and torch.cuda.is_available():
             device = torch.device("cuda")
@@ -304,20 +370,50 @@ class VimooDriver(FamilyDriver):
         pos = self._cond(cond, device)
         guided = cfg > 1.0 and neg_cond is not None
         neg = self._cond(neg_cond, device) if guided else None
+        i2v = bool(refs) and x.shape[2] > 1
+        extra, cond_ch, anchor = {}, None, None
+        if i2v:
+            ref = self._ref5(refs[0], device)
+            first_noise = x[:, :, :1].clone()
+            anchor = self._anchor(ref, first_noise)
+            cond_ch = self._condition(ref, x.shape[2])
+            extra = {"observed_t": torch.tensor([ANCHOR_TAU * 1000.0], device=device)}
+            if neg is not None and neg.get("vision") is None:
+                neg["vision"] = pos.get("vision")
         n = len(sched) - 1
         for i in range(n):
             if on_step is not None:
                 on_step(i, n)
             s, s_next = float(sched[i]), float(sched[i + 1])
             t = torch.full((1,), s * 1000.0, device=device)
-            xin = self._model_input(x)
-            v = dit(xin, t, fps=FPS, **pos).float()
+            if i2v:
+                x[:, :, :1] = anchor
+            xin = self._model_input(x, cond_ch)
+            v = dit(xin, t, fps=FPS, **pos, **extra).float()
             if guided:
-                u = dit(xin, t, fps=FPS, **neg).float()
-                g = u + cfg * (v - u)
-                v = rescale_cfg(g, v, GUIDANCE_RESCALE) if GUIDANCE_RESCALE > 0 else g
+                u = dit(xin, t, fps=FPS, **neg, **extra).float()
+                if i2v and REF_GUIDANCE != 1.0:
+                    # the unreferenced branch: no picture anywhere - its first frame noise, no conditioning channels,
+                    # the first frame's time at 1000, SigLIP's tokens masked out
+                    xu = self._model_input(x, torch.zeros_like(cond_ch))
+                    xu[:, :48, :1] = first_noise
+                    un = dict(neg)
+                    vis = pos.get("vision")
+                    if vis is not None:
+                        un["vision"] = torch.zeros_like(vis)
+                        un["vision_mask"] = torch.zeros(vis.shape[:2], dtype=torch.bool, device=device)
+                    u0 = dit(xu, t, fps=FPS, observed_t=torch.tensor([1000.0], device=device), **un).float()
+                    g = u0 + REF_GUIDANCE * (u - u0) + max(cfg, 1.0) * (v - u)
+                else:
+                    g = u + cfg * (v - u)
+                if GUIDANCE_RESCALE > 0:
+                    st = 1 if i2v else 0
+                    g[:, :, st:] = rescale_cfg(g[:, :, st:], v[:, :, st:], GUIDANCE_RESCALE)
+                v = g
+            if i2v:
+                v[:, :, :1] = 0
             x = (x.float() + v * (s_next - s)).to(torch.bfloat16)
-        return x.float()
+        return {"latent": x.float()}
 
     # ---- LoRA files ------------------------------------------------------------------------------------------------
     _DIFFUSERS = {"attn.to_out.0.projection": "img_attn.proj", "attn.to_add_out.projection": "txt_attn.proj",

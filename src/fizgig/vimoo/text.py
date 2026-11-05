@@ -167,9 +167,8 @@ class SigLIP:
         from transformers import AutoConfig, SiglipVisionModel
         cfg = _cached(AutoConfig, SIGLIP_REPO)
         vcfg = getattr(cfg, "vision_config", cfg)
-        with torch.device("meta"):
-            model = SiglipVisionModel(vcfg)
-        missing, unexpected = model.load_state_dict(_load_file(path), strict=False, assign=True)
+        model = SiglipVisionModel(vcfg)              # built for real (0.4B): its position-id buffer comes with it
+        missing, unexpected = model.load_state_dict(_load_file(path), strict=False)
         if missing or unexpected:
             raise ValueError(f"{path} isn't SigLIP so400m: missing {missing[:3]}, unexpected {unexpected[:3]}")
         self.model = model.eval().requires_grad_(False).to(device)

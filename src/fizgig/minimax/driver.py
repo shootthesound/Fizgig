@@ -88,10 +88,6 @@ class MiniMaxDriver(FamilyDriver):
         plan up front: a streamed plan leaves ~4 GB, so clips start at 22 frames; a 16 GB-class card caps them at
         768x640 / 22 frames."""
         from fizgig.minimax import common as T
-        from fizgig.utils.device import plannable_free_vram
-        path = run["dit_path"]
-        free = plannable_free_vram()
-        pruned = T.is_pruned_checkpoint(path)
         mp = 0.25
         try:
             mp = max(k[-2] * k[-1] / 1e6 for ds in group.datasets for k in ds.batch_manager.bucket_resos)
@@ -103,6 +99,25 @@ class MiniMaxDriver(FamilyDriver):
         if clip_t > 1:
             logger.info(f"[vram] the heaviest item is a {clip_t}-latent-frame clip - planning against its effective "
                         f"{mp:.2f} MP (spatial size x frames).")
+        bsz = max(int(getattr(ds, "batch_size", 1) or 1) for ds in group.datasets)
+        stills = [k[-2] * k[-1] / 1e6 for ds in group.datasets for k in ds.batch_manager.bucket_resos
+                  if k[0] not in ("clip", "audio")]
+        mode, n, why = self._plan(precision, blocks_to_swap, run, mp, max(stills or [0.0]), bsz)
+        self._plan_previews(n)
+        return mode, n, why
+
+    def plan_pictures(self, precision, blocks_to_swap, *, megapixels, pictures, run):
+        """plan_run's choice for pictures of `megapixels`, `pictures` a step, with no dataset (web/batch_plan: the
+        Batch size note, and the batch a moved run takes on a pod)."""
+        return self._plan(precision, blocks_to_swap, run, megapixels, megapixels, pictures, quiet=True)[:2]
+
+    def _plan(self, precision, blocks_to_swap, run, mp, still_mp, bsz, quiet=False):
+        """(precision, blocks_to_swap, why) for the heaviest item at mp and `bsz` pictures a step at still_mp."""
+        from fizgig.minimax import common as T
+        from fizgig.utils.device import plannable_free_vram
+        path = run["dit_path"]
+        free = plannable_free_vram()
+        pruned = T.is_pruned_checkpoint(path)
         pats = [x for x in T.DEFAULT_INCLUDE_PATTERNS
                 if "token_refiner" not in x or self.options.get("train_token_refiner") == "1"]
         params = T.adapter_param_count(path, pats,
@@ -113,13 +128,11 @@ class MiniMaxDriver(FamilyDriver):
                                                  training_adapter_path=run.get("training_adapter"),
                                                  context_lora_path=run.get("context_lora_path"),
                                                  ema_decay=run.get("ema_decay") or 0.0)
-        bsz = max(int(getattr(ds, "batch_size", 1) or 1) for ds in group.datasets)
         if bsz > 1:                   # Batch size: each picture past the first's measured cost (planned on any clip too)
             from fizgig.families import quant
-            stills = [k[-2] * k[-1] / 1e6 for ds in group.datasets for k in ds.batch_manager.bucket_resos
-                      if k[0] not in ("clip", "audio")]
-            more = quant.batch_extra(self.description, max(stills or [0.0]), bsz)
-            logger.info(f"[vram] {bsz} pictures a step: +{more:.1f} GB planned for the pictures past the first")
+            more = quant.batch_extra(self.description, still_mp, bsz)
+            if not quiet:
+                logger.info(f"[vram] {bsz} pictures a step: +{more:.1f} GB planned for the pictures past the first")
             adapter += more
         if precision == "auto" and blocks_to_swap >= 0:
             # a hand-set swap skips the planner: the precision is the file's own, as in the old trainer
@@ -136,6 +149,8 @@ class MiniMaxDriver(FamilyDriver):
             n, _ckpt = T.plan_vram(free, mp=mp, resident_gb=resident,
                                    transient_gb=T._INT8_TRANSIENT_GB if mode == "int8" else 0.0, adapter_gb=adapter)
             why = f"base precision pinned to {mode} by the user"
+        if quiet:
+            return mode, n, why
         extra = (f" +{frozen:.2f} GB frozen LoRAs" if frozen else "") + (f" +{ema:.2f} GB EMA shadow" if ema else "")
         logger.info(f"[vram] auto plan: free {free:.1f} GB, largest item {mp:.2f} MP, adapter ~{adapter:.1f} GB "
                     f"({params / 1e6:.0f} M params){extra} -> {mode}, blocks_to_swap={n}")
@@ -145,7 +160,6 @@ class MiniMaxDriver(FamilyDriver):
                            "quantization error that will NOT exist at inference. To force the accurate base, set Base "
                            "Precision to int8 - expect block swap and a slower run - or close other GPU apps and "
                            "re-launch.")
-        self._plan_previews(n)
         return mode, n, why
 
     def _plan_previews(self, n_swap):

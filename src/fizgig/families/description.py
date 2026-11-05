@@ -508,6 +508,7 @@ class FamilyDescription:
     # block)}; the peak may instead be ((megapixels, GB), ...) points, interpolated for the run's resolution.
     # {} = Auto just takes the first precision
     train_memory: dict = field(default_factory=dict)
+    own_plan: bool = False            # no train_memory: the driver plans precision + swap itself (plan_run, plan_pictures)
     # the same peak with gradient checkpointing OFF, compiled blocks, no swap: {precision: ((megapixels, GB), ...)}.
     # A compiled LoRA run with no swap trains without checkpointing (13-27% faster) when this fits with a margin;
     # a precision missing here (nf4: its dequantised weights stay alive for backward) always checkpoints

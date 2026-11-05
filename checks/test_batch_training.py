@@ -276,3 +276,32 @@ def test_batch_blockers_name_what_trains_one_picture_a_step():
     assert form.batch_blockers(moss, {**form.DEFAULTS, "KREA2_LOSS_WATCH": True}) == ["the per-image loss watch"]
     assert form.batch_blockers(moss, {**form.DEFAULTS, "STAGE_MP": "0.25"}) == ["Start at a smaller size"]
     assert form.batch_blockers(get_family("acestep15xl"), dict(form.DEFAULTS)) == ["this model trains one picture a step"]
+
+
+def test_h3_batch_note_and_move_ask_its_own_planner(tmp_path, monkeypatch):
+    """H3 has no train_memory figures: the Batch size note and a moved run's batch ask its driver's planner (the one
+    Start runs) with the run's DiT file, and a bigger batch never plans less memory."""
+    import json
+    import struct
+    from fizgig.families import form
+    from fizgig.families.registry import get as get_family
+    from fizgig.utils import device
+    from fizgig.web import batch_plan
+    h3 = get_family("minimax")
+    hdr = json.dumps({"adaln_t_table": {"dtype": "F32", "shape": [1], "data_offsets": [0, 4]}}).encode()
+    dit = tmp_path / "h3.safetensors"
+    dit.write_bytes(struct.pack("<Q", len(hdr)) + hdr + b"\0" * 4)
+    v = {**form.DEFAULTS, "BATCH_SIZE": "4", "DATASET_MEGAPIXELS": "1.0", "BLOCKS_SWAP": "Auto (detect from GPU)"}
+    assert batch_plan.request(h3, v) is not None
+    assert batch_plan.run_for(h3, v, {}) is None                       # no DiT file here: no note, a move stays at 1
+    run = batch_plan.run_for(h3, v, batch_plan.models(h3, {"minimax_dit": str(dit)}.get))
+    assert run and run["dit_path"] == str(dit)
+    drv = h3.load_driver()
+    for free in (94.0, 30.0, 18.0):
+        monkeypatch.setattr(device, "plannable_free_vram", lambda free=free: free)
+        plans = [drv.plan_pictures("auto", -1, megapixels=1.0, pictures=n, run=run) for n in (1, 2, 4, 8)]
+        assert all(p in ("int8", "nf4") for p, _ in plans), plans
+        for (p1, s1), (p2, s2) in zip(plans, plans[1:]):            # more pictures: more swap, or a smaller base
+            assert (p2 == p1 and s2 >= s1) or (p1, p2) == ("int8", "nf4"), (free, plans)
+    monkeypatch.setattr(device, "plannable_free_vram", lambda: 94.0)
+    assert drv.plan_pictures("auto", -1, megapixels=1.0, pictures=8, run=run) == ("int8", 0)

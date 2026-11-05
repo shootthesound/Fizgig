@@ -3836,7 +3836,8 @@ class Handler(BaseHTTPRequestHandler):
                     with _lock:
                         busy = _run["proc"] is not None and _run["proc"].poll() is None
                     bn, bpend = batch_plan.line(desc, vals, gpu_env(dict(os.environ, PYTHONPATH=os.path.join(
-                        BASE_DIR, "src")), prefs), busy=busy)
+                        BASE_DIR, "src")), prefs), busy=busy,
+                        files=batch_plan.models(desc, lambda k: pref_path(prefs, k)))
                     if bn:
                         st["notes"]["BATCH_SIZE"] = bn
                     st["pending"] = st.get("pending") or bpend

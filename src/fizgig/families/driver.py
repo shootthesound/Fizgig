@@ -484,6 +484,13 @@ class FamilyDriver:
         why)."""
         return None
 
+    def plan_pictures(self, precision: str, blocks_to_swap: int, *, megapixels: float, pictures: int,
+                      run: dict) -> Optional[tuple]:
+        """A family with its own Auto plan (plan_run): that plan for pictures of `megapixels`, `pictures` a step,
+        with no dataset - (precision, blocks_to_swap) - for the Batch size note and a moved run's batch
+        (web/batch_plan). None: the shared plan over the description's train_memory."""
+        return None
+
     def nogc_load(self, group) -> tuple:
         """What the checkpointing-off figures are read at: (kind, megapixels). kind "" reads
         description.train_memory_nogc[precision], any other reads [f"{precision}:{kind}"]. Default: the largest

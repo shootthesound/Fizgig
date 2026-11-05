@@ -4247,8 +4247,12 @@ def move_in(body):
         # Batch size as this card fits at the run's precision with no more swap than one picture a step (the trainer
         # carries the LR schedule on from its epochs; bringing it back resumes at home's own Batch size)
         from fizgig.web import batch_plan
+        prefs = s.load_prefs()
+        sent = {f.pref_key: paths[st] for st, role in (("dit", "dit"), ("latents", "vae"), ("text", "text_encoder"))
+                for f in desc.model_files if f.role == role and paths.get(st)}     # the files the run came with
         rec["batch"] = batch_plan.fit(desc, v, s.gpu_env(dict(os.environ, PYTHONPATH=os.path.join(s.BASE_DIR, "src")),
-                                                         s.load_prefs()))
+                                                         prefs),
+                                      files=batch_plan.models(desc, lambda k: sent.get(k) or s.pref_path(prefs, k)))
         if rec["batch"] > 1:
             v["BATCH_SIZE"] = str(rec["batch"])
     over = {}

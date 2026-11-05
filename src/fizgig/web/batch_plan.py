@@ -1,6 +1,7 @@
 """The Batch size row's plan note: what Auto would pick on this card at Batch size 1 and at the batch asked, from the
 same planner the trainer runs at Start (quant.plan over the family's measured training memory, the free VRAM now,
-Target Megapixels x pictures a step). The planner imports torch and reads the card, so it runs in a short subprocess
+Target Megapixels x pictures a step; a family with its own planner, description.own_plan, is asked through its driver's
+plan_pictures with the run's model file and adapter settings). The planner imports torch and reads the card, so it runs in a short subprocess
 (`python -m fizgig.web.batch_plan ...`), never in the web server, as the fine-tune card's plan line does; answers are
 kept a minute per setup, and line() says "working it out" until one is in."""
 import json
@@ -21,7 +22,7 @@ def request(desc, values):
     plans nothing here (both chosen by hand, a batch of 1, or a family that doesn't batch)."""
     from fizgig.families import launch
     batch = launch.batch_size(desc, values)
-    if batch <= 1 or not desc.train_memory:          # no figures (H3 plans in its own driver): no note
+    if batch <= 1 or not (desc.train_memory or desc.own_plan):     # no figures: no note
         return None
     precision = launch.precision_key(desc, values.get("FAMILY_PRECISION")) if len(desc.precisions) > 1 else "bf16"
     swap = launch.swap_blocks(values.get("BLOCKS_SWAP"))
@@ -35,6 +36,34 @@ def request(desc, values):
         return None
     side = launch.train_side(mp)
     return precision, swap, side * side / 1e6, batch
+
+
+def models(desc, lookup):
+    """{pref key: path} of the family's model files and training adapter, from lookup(pref key)."""
+    keys = [f.pref_key for f in desc.model_files] + ([desc.training_adapter] if desc.training_adapter else [])
+    return {k: lookup(k) or "" for k in keys}
+
+
+def run_for(desc, values, files):
+    """What an own_plan family's planner weighs (train.py's `run` for plan_run): the DiT file and the adapter's size
+    settings as Start would send them; None for a family the shared figures plan, or when the DiT file isn't here."""
+    if not desc.own_plan:
+        return None
+    dit = desc.model_path("dit", (files or {}).get)
+    if not dit or not os.path.isfile(dit):
+        return None
+    ema = str(values.get("FAMILY_EMA", "") or desc.ema_default).split(" ")[0] if desc.ema_default else "Off"
+    try:
+        ema = 0.0 if ema in ("", "Off") else 0.98 if ema.lower().startswith("short") else float(ema)
+    except ValueError:
+        ema = 0.0
+    lokr = "lokr" in desc.network_types and str(values.get("NETWORK_TYPE", "")).startswith("LoKR")
+    adapter = desc.training_adapter and values.get("FAMILY_TRAINING_ADAPTER", True)
+    return {"dit_path": dit, "network_type": "lokr" if lokr else "lora",
+            "network_dim": int(values.get("NETWORK_DIM") or 16), "lokr_factor": int(values.get("LOKR_FACTOR") or 8),
+            "optimizer_type": str(values.get("OPTIMIZER_TYPE") or "").strip(),
+            "training_adapter": (files or {}).get(desc.training_adapter, "") if adapter else "",
+            "context_lora_path": str(values.get("CONTEXT_LORA_PATH") or "").strip(), "ema_decay": ema}
 
 
 def note(desc, one, many, batch):
@@ -64,11 +93,11 @@ def note(desc, one, many, batch):
     return text
 
 
-def _run(key, family, req, env):
+def _run(key, family, req, env, run=None):
     precision, swap, mp, batch = req
     try:
         r = subprocess.run([sys.executable, "-m", "fizgig.web.batch_plan", family, precision, str(swap), str(mp),
-                            str(batch)], capture_output=True, text=True, timeout=120, cwd=BASE_DIR, env=env,
+                            str(batch)] + ([json.dumps(run)] if run else []), capture_output=True, text=True, timeout=120, cwd=BASE_DIR, env=env,
                            **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}))
         got = json.loads((r.stdout.strip().splitlines() or ["null"])[-1])
     except (OSError, ValueError, subprocess.SubprocessError):
@@ -77,18 +106,19 @@ def _run(key, family, req, env):
         _cache[key] = (time.time(), got)
 
 
-def line(desc, values, env, busy=False):
+def line(desc, values, env, busy=False, files=None):
     """(note or "", pending) for the Batch size row. busy: a run is training on this card now, so its free memory
-    says nothing about an empty card's - no note."""
+    says nothing about an empty card's - no note. files: models(desc, ...), for an own_plan family."""
     req = None if busy else request(desc, values)
-    if req is None:
+    run = run_for(desc, values, files) if req else None
+    if req is None or (desc.own_plan and run is None):
         return "", False
-    key = (desc.key,) + req
+    key = (desc.key,) + req + ((json.dumps(run, sort_keys=True),) if run else ())
     with _lock:
         at, got = _cache.get(key, (0, "new"))
         if got == "new" or (got != "running" and time.time() - at > KEEP_S):
             _cache[key] = (time.time(), "running")
-            threading.Thread(target=_run, args=(key, desc.key, req, env), daemon=True).start()
+            threading.Thread(target=_run, args=(key, desc.key, req, env, run), daemon=True).start()
             if got == "new":
                 got = "running"
     if got == "running":
@@ -98,11 +128,12 @@ def line(desc, values, env, busy=False):
     return note(desc, tuple(got[0]), tuple(got[1]), req[3]), False
 
 
-def fit(desc, values, env):
+def fit(desc, values, env, files=None):
     """The largest Batch size this card trains the run at with no more block swap than batch 1 and the same
     precision (a run moved to a pod that batches: worked out there, on its own card), 1 when none does or Auto
-    plans nothing here. Blocks up to two minutes (the subprocess)."""
-    if not desc.train_memory:                        # no figures to fit a batch by (H3 plans in its own driver)
+    plans nothing here. files: models(desc, ...), for an own_plan family. Blocks up to two minutes (the
+    subprocess)."""
+    if not (desc.train_memory or desc.own_plan):     # no figures to fit a batch by
         return 1
     from fizgig.families import launch
     if launch.batch_size(desc, {**values, "BATCH_SIZE": launch.BATCH_SIZES[-1]}) <= 1:
@@ -111,36 +142,46 @@ def fit(desc, values, env):
     if req is None:
         return 1
     precision, swap, mp, _ = req
+    run = run_for(desc, values, files)
+    if desc.own_plan and run is None:
+        return 1
     try:
         r = subprocess.run([sys.executable, "-m", "fizgig.web.batch_plan", "fit", desc.key, precision, str(swap),
-                            str(mp)], capture_output=True, text=True, timeout=120, cwd=BASE_DIR, env=env,
+                            str(mp)] + ([json.dumps(run)] if run else []), capture_output=True, text=True, timeout=120, cwd=BASE_DIR, env=env,
                            **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}))
         return max(1, int(json.loads((r.stdout.strip().splitlines() or ["1"])[-1]) or 1))
     except (OSError, ValueError, TypeError, subprocess.SubprocessError):
         return 1
 
 
-if __name__ == "__main__":        # the subprocess: [family, precision, blocks_to_swap, megapixels, batch]
-    import torch                  # or ["fit", family, precision, blocks_to_swap, megapixels]: the largest batch
+if __name__ == "__main__":        # the subprocess: [family, precision, blocks_to_swap, megapixels, batch, run?]
+    import torch                  # or ["fit", family, precision, blocks_to_swap, megapixels, run?]: the largest batch
     from fizgig.families import launch, quant
     from fizgig.families.registry import get
     fitting = sys.argv[1] == "fit"
     fam, precision, swap, mp, batch = (sys.argv[2:6] + ["1"]) if fitting else sys.argv[1:6]
+    run = json.loads(sys.argv[6]) if len(sys.argv) > 6 else None      # an own_plan family's run_for()
     if not torch.cuda.is_available():
         print("null")
         raise SystemExit
     desc = get(fam)
     driver = desc.load_driver()
     free = quant.free_vram_gb()
+
+    def plan(n):
+        if run is not None:
+            return tuple(driver.plan_pictures(precision, int(swap), megapixels=float(mp), pictures=n, run=run))
+        return tuple(quant.plan(desc, driver, precision, int(swap), free_gb=free, megapixels=float(mp),
+                                pictures=n)[:2])
+
     if fitting:
-        p1, s1 = quant.plan(desc, driver, precision, int(swap), free_gb=free, megapixels=float(mp))[:2]
+        p1, s1 = plan(1)
         best = 1
         for n in (int(b) for b in launch.BATCH_SIZES[1:]):
-            pn, sn = quant.plan(desc, driver, precision, int(swap), free_gb=free, megapixels=float(mp), pictures=n)[:2]
+            pn, sn = plan(n)
             if pn == p1 and sn <= s1 and quant.fits(desc, pn, sn, free, float(mp), n):
                 best = n
         print(json.dumps(best))
         raise SystemExit
-    plans = [quant.plan(desc, driver, precision, int(swap), free_gb=free, megapixels=float(mp), pictures=n)[:2]
-             for n in (1, int(batch))]
+    plans = [plan(n) for n in (1, int(batch))]
     print(json.dumps([[*plans[0], free], [*plans[1], free]]))

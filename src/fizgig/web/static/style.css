@@ -2803,10 +2803,10 @@ label[title]:has(.tip-mark) { cursor: help; }
   animation: fx-drift 6s linear infinite; box-shadow: 0 0 6px var(--fx-glow); }
 :is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.run-bar:not([data-state="paused"]):not([data-state="pausing"]):not([data-state="completed"]):not([data-state="failed"]):not([data-state="stopped"]) > span, .meter:not(.warn) .meter-bar > span, .fetch-bar > div)::after {
   content: ""; position: absolute; inset: 0; pointer-events: none; will-change: background-position, opacity;
-  background: linear-gradient(90deg, transparent 0 40%, rgba(255,255,255,.35) 50%, transparent 60% 100%) 0 0 / 480px 100% repeat-x;
-  animation: fx-sweep 3s linear infinite; }
+  background: linear-gradient(90deg, transparent 0, rgba(255,255,255,.35) 70px, transparent 140px, transparent 100%) -140px 0 / 2000px 100% repeat-x;
+  animation: fx-sweep 6s linear infinite; }
 /* Cosmic Pigeon's faint twinkle: the sweep fades in and out */
-:root[data-theme="cosmic-pigeon"] :is(.run-bar:not([data-state="paused"]):not([data-state="pausing"]):not([data-state="completed"]):not([data-state="failed"]):not([data-state="stopped"]) > span, .meter:not(.warn) .meter-bar > span, .fetch-bar > div)::after { animation: fx-sweep 3s linear infinite, fx-twinkle 1.5s ease-in-out infinite alternate; }
+:root[data-theme="cosmic-pigeon"] :is(.run-bar:not([data-state="paused"]):not([data-state="pausing"]):not([data-state="completed"]):not([data-state="failed"]):not([data-state="stopped"]) > span, .meter:not(.warn) .meter-bar > span, .fetch-bar > div)::after { animation: fx-sweep 6s linear infinite, fx-twinkle 1.5s ease-in-out infinite alternate; }
 /* tiny star specks drifting along the active bars, each twinkling */
 :is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.run-bar:not([data-state="paused"]):not([data-state="pausing"]):not([data-state="completed"]):not([data-state="failed"]):not([data-state="stopped"]) > span, .meter:not(.warn) .meter-bar > span, .fetch-bar > div)::before {
   content: ""; position: absolute; inset: 0; pointer-events: none; will-change: background-position, opacity;
@@ -2820,7 +2820,8 @@ label[title]:has(.tip-mark) { cursor: help; }
 @keyframes fx-stars { from { background-position: 0 0, 0 0, 0 0, 0 0; } to { background-position: 46px 0, 122px 0, 53px 0, 142px 0; } }
 /* every layer is a fixed px tile moved by exactly whole tiles, so it loops without a jump and a bar's width changing never shifts it */
 @keyframes fx-drift { from { background-position: 0 0; } to { background-position: -240px 0; } }
-@keyframes fx-sweep { from { background-position: 0 0; } to { background-position: 480px 0; } }
+/* the sweep: one 140px band per 2000px tile, so it crosses even a full-width bar in one go at a steady ~330px/s */
+@keyframes fx-sweep { from { background-position: -140px 0; } to { background-position: 1860px 0; } }
 @keyframes fx-twinkle { from { opacity: .45; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   :is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.run-bar > span, .meter-bar > span, .fetch-bar > div) { animation: none; }
@@ -2829,5 +2830,12 @@ label[title]:has(.tip-mark) { cursor: help; }
 }
 /* the bars are rebuilt on every status poll; app.js gives each new one --fx-d = minus the page clock, so its
    animations carry on from the same phase instead of starting over (a skip every poll) */
-:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.run-bar > span, .meter-bar > span, .fetch-bar > div, .run-bar > span::before, .meter-bar > span::before, .fetch-bar > div::before, .run-bar > span::after, .meter-bar > span::after, .fetch-bar > div::after) {
+/* (pseudo-elements can't go inside :is(), so the star and sweep layers are listed on their own) */
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.run-bar > span, .meter-bar > span, .fetch-bar > div),
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) .run-bar > span::before,
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) .meter-bar > span::before,
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) .fetch-bar > div::before,
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) .run-bar > span::after,
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) .meter-bar > span::after,
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) .fetch-bar > div::after {
   animation-delay: var(--fx-d, 0s) !important; }

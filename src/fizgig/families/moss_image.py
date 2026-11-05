@@ -200,8 +200,9 @@ MOSS_IMAGE = FamilyDescription(
     # measured yet (ABILITIES.md: keep it where it measures faster)
     # Identity in blocks 24-35 (5 Nov 2026): Peter's eye on the Profiler's group renders of a character LoRA
     # (Nicola, epoch 21), and its numbers - 24-29 alone changed the picture most (0.54, twice any other group) and
-    # 30-35 left out nearly as much (0.50); the largest weights sit in 29, 24, 30 and 28. Not yet scored with subject
-    # photos (ArcFace). Used by Extract's identity mode, Fast Identity Mode and Studio's identity / look colours.
+    # 30-35 left out nearly as much (0.50); the largest weights sit in 29, 24, 30 and 28. Confirmed the same day: a Fast
+    # Identity Mode run (24-35 only) gave superb likeness (Peter). Used by Extract's identity mode, Fast Identity Mode
+    # and Studio's identity / look colours.
     block_categories=tuple((f"block_{i}", "identity" if 24 <= i <= 35 else "look") for i in range(42)),
     identity_blocks=tuple(f"block_{i}" for i in range(24, 36)),
     repair_presets=(

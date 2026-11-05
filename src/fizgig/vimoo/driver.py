@@ -29,6 +29,29 @@ ANCHOR_TAU = 0.001                        # image-to-video: the first frame's no
 REF_GUIDANCE = 3.0                        # image-to-video: the reference scale with CFG (Lite i2v defaults)
 
 
+# Cards under 20 GB, measured 5 Nov 2026 on an RTX 4090 Laptop GPU (16 GB; rank 8, AdamW, no swap, 6 photos + a
+# 33-frame clip at 0.25 MP - the clip, 9 latent frames, is the heaviest item at 2.2 MP of tokens - with the default
+# 2-second 832x480 distilled preview, the model parked for its decode): INT8 peaked 13.1 GB (3.8 s a step), NF4 9.6 GB
+# (3.0 s a step - quicker than INT8 on that card). The 5090's clip runs add +1.2 GB from 0.25 to 0.4 MP (3.2 to 5.2 MP
+# of tokens), carried onto the 5.2 points.
+SMALL_CARD_MEMORY = {"int8": (((0.25, 13.1), (2.2, 13.1), (5.2, 14.3)), 0.21),
+                     "nf4": (((0.25, 9.6), (2.2, 9.6), (5.2, 10.8)), 0.0)}
+
+
+def _small_card():
+    """The trainer's rule for the low-memory preview treatment (train._small_card_previews): a card under 20 GB."""
+    import os as _os
+    ov = _os.environ.get("FIZGIG_PREVIEW_LOWMEM", "").strip()
+    if ov in ("0", "1"):
+        return ov == "1"
+    try:
+        sim = _os.environ.get("FIZGIG_SIM_VRAM_GB", "").strip()
+        total = float(sim) if sim else torch.cuda.get_device_properties(0).total_memory / 1e9
+        return total < 20.0
+    except Exception:
+        return False
+
+
 def lognorm_sigmas(steps):
     """Lite's schedule: the quantiles of sigmoid(ln shift + std z) from 1 to 0, FP64 then rounded to FP32, the ends
     pinned (VimooTI2VFlowMatchEulerDiscreteScheduler.set_timesteps)."""
@@ -452,7 +475,13 @@ class VimooDriver(FamilyDriver):
         eff, t = self._heaviest_item(group)
         if t > 1:
             logger.info(f"[vram] the heaviest item is a {t}-latent-frame clip: planning at its {eff:.2f} MP of tokens")
-        return quant.plan(self.description, self, precision, blocks_to_swap, megapixels=max(mp, eff), pictures=1)
+        desc = self.description
+        if _small_card():
+            # under 20 GB the trainer parks the model for each preview's decode (train._small_card_previews), so the
+            # 5090's decode-beside-the-model peak doesn't apply: the small-card figures, measured on a 16 GB card
+            import dataclasses
+            desc = dataclasses.replace(desc, train_memory=SMALL_CARD_MEMORY)
+        return quant.plan(desc, self, precision, blocks_to_swap, megapixels=max(mp, eff), pictures=1)
 
     # ---- prompt travel ---------------------------------------------------------------------------------------------
     def pad_conditioning(self, conds):

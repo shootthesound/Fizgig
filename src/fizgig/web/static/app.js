@@ -2406,7 +2406,7 @@ async function likenessPicker() {
 }
 // the 3-photo picker, for the Samples gallery (exactly 3, from the training images) or LoRA Royale (1-3, any folder)
 async function likGridShow(folder, picked) {
-  const royale = S.lik.mode === "royale";
+  const royale = S.lik.mode !== "gallery";     // Royale's or the Profiler's subject photos: any folder, up to 3
   S.lik.folder = folder; S.lik.paths = {};
   $("likTitle").textContent = `Likeness: pick ${royale ? "up to " : ""}3 photos of your subject`;
   $("likFrom").textContent = royale ? "this folder" : "the training images";
@@ -2441,7 +2441,7 @@ function likenessMarks() {
     f.querySelector(".lik-num")?.remove();
     if (i >= 0) f.append(el("span", {class: "lik-num", text: String(i + 1)}));
   }
-  $("likStart").disabled = S.lik.mode === "royale" ? !S.lik.picked.length : S.lik.picked.length !== 3;
+  $("likStart").disabled = S.lik.mode !== "gallery" ? !S.lik.picked.length : S.lik.picked.length !== 3;
   $("likPickStatus").textContent = `${S.lik.picked.length}/3 selected`;
 }
 async function likenessSet(names) {
@@ -3481,7 +3481,6 @@ function pfPhotosDraw() {
     el("img", {src: `/api/thumb?path=${encodeURIComponent(p)}&t=${encodeURIComponent(TOKEN)}`, alt: ""}),
     el("button", {class: "btn btn-sm", text: "×", onclick: () => { S.pf.photos.splice(i, 1); pfPhotosDraw(); pfRemember(); }}))));
   if (!S.pf.photos.length) $("pfPhotos").append(el("span", {class: "field-hint", text: "None (picture change only)"}));
-  $("pfPhotoBtns").style.display = S.pf.photos.length >= 3 ? "none" : "";
 }
 
 async function pfLora(p, fresh) {
@@ -3541,8 +3540,13 @@ function wireProfiler() {
     pick($("pfLora").value || loraStart(), false, (p) => pfLora(p, true))}), up.btn, up.status);
   const addPhoto = (p) => { if (S.pf.photos.length < 3 && !S.pf.photos.includes(p)) S.pf.photos.push(p); pfPhotosDraw(); pfRemember(); };
   const pup = uploadButton({kind: "path", key: "PROFILER_PHOTO"}, el("input", {type: "text"}), addPhoto);
-  $("pfPhotoBtns").replaceChildren(el("button", {class: "btn btn-sm", text: "Add photo…", onclick: () => pick(S.imageFolder, false, addPhoto)}),
-    pup.btn, pup.status);
+  $("pfPhotoBtns").replaceChildren(el("button", {class: "btn btn-sm", text: "Choose…", onclick: () => {
+    // the Samples gallery's picker (as LoRA Royale's), from the photos' folder; Choose folder… points it anywhere
+    const dir = (p) => p.replace(/[\\/][^\\/]*$/, "");
+    const folder = S.pf.photos.length ? dir(S.pf.photos[0]) : S.imageFolder || refStart() || "";
+    S.lik.mode = "profiler";
+    likGridShow(folder, S.pf.photos.filter((p) => dir(p) === folder).map((p) => p.split(/[\\/]/).pop()));
+  }}), pup.btn, pup.status);
   $("pfPhotosClear").addEventListener("click", () => { S.pf.photos = []; pfPhotosDraw(); pfRemember(); });
   $("pfRun").addEventListener("click", profilerRun);
   $("pfStop").addEventListener("click", () => api("/api/profile/stop", {}).then(profilerPoll));
@@ -9420,9 +9424,10 @@ function wire() {
   new MutationObserver(() => { if (!$("rvModal").classList.contains("active")) rvStop(); })
     .observe($("rvModal"), {attributes: true, attributeFilter: ["class"]});
   $("likStart").addEventListener("click", held($("likStart"), async () => {
-    if (S.lik.mode !== "royale") return likenessSet(S.lik.picked);
-    S.ry.likeRefs = S.lik.picked.map((n) => S.lik.paths[n]).filter(Boolean);
-    ryLikeShow(); ryRemember();
+    if (S.lik.mode === "gallery") return likenessSet(S.lik.picked);
+    const refs = S.lik.picked.map((n) => S.lik.paths[n]).filter(Boolean);
+    if (S.lik.mode === "profiler") { S.pf.photos = refs; pfPhotosDraw(); pfRemember(); }
+    else { S.ry.likeRefs = refs; ryLikeShow(); ryRemember(); }
     $("likModal").classList.remove("active");
   }));
   $("likFolderPick").addEventListener("click", () => pick(S.lik.folder || refStart(), true, (p) => likGridShow(p, [])));

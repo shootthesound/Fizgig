@@ -2692,6 +2692,10 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   border-radius: 999px; background: var(--bg-surface); color: var(--text-primary); font-size: 13px;
   border: 1px solid color-mix(in srgb, var(--google-blue) 45%, transparent);
   box-shadow: 0 1px 6px color-mix(in srgb, var(--google-blue) 18%, transparent); }
+a.google-pill { text-decoration: none; transition: transform .12s, box-shadow .12s; }
+a.google-pill:hover { color: var(--text-primary); transform: translateY(-1px);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--google-blue) 30%, transparent); }
+a.google-pill:visited { color: var(--text-primary); }
 .google-pill svg { width: 17px; height: 17px; flex: 0 0 17px; }
 .google-pill b { color: var(--google-blue); font-weight: 700; }
 .google-pill .g-r { fill: var(--google-red); }

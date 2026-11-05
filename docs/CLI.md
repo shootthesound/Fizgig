@@ -44,6 +44,7 @@ Every script supports `--help` for the full argument list. This document covers 
 - [ACE-Step training (songs)](#ace-step-training-songs)
 - [Masked training](#masked-training)
 - [Start at a smaller size](#start-at-a-smaller-size)
+- [Batch size](#batch-size)
 - [Caption dropout](#caption-dropout)
 - [Detail crops (style LoRAs)](#detail-crops-style-loras)
 - [Keeping a subject to its trigger (DOP)](#keeping-a-subject-to-its-trigger-dop)
@@ -253,7 +254,7 @@ cache_directory = "/data/my_subject/cache"
 Field notes:
 
 - **`resolution`** — `[width, height]`. With bucketing enabled this is the *area* target: each image is assigned to the nearest aspect-ratio bucket of roughly `width × height` pixels, so mixed portrait/landscape/square datasets train at their natural aspect ratios. `[1024, 1024]` ≈ 1 MP is the sweet spot for both Klein and Krea 2; `[768, 768]` trains faster on smaller cards at some quality cost.
-- **`batch_size`** — keep it at 1: Fizgig trains one image a step. For a larger effective batch, pass `--gradient_accumulation_steps N` to the trainer: the same averaged gradient, at the memory of batch 1.
+- **`batch_size`** — 1 trains one picture a step, the default. Families that support it take more; see [Batch size](#batch-size). For a larger effective batch at the memory of batch 1, keep 1 and pass `--gradient_accumulation_steps N` to the trainer.
 - **`num_repeats`** — multiplies how often each image appears per epoch. Leave at 1 and train more epochs instead, unless you're balancing multiple `[[datasets]]` blocks against each other.
 - **`cache_directory`** — where latents and text embeddings are stored. **Give every dataset its own cache directory.** The training set is built from the cache, and a shared cache directory can mix a previous dataset's images into your run. (Fizgig cross-checks the cache against `image_directory` and skips orphans with a warning, but a dedicated directory per dataset is the clean way.)
 - **Multiple `[[datasets]]` blocks** are supported — each with its own `image_directory`, `cache_directory`, and optional per-dataset overrides of any `[general]` key (e.g. a different `num_repeats` to weight one folder more heavily).
@@ -848,6 +849,24 @@ Standard LoRAs on every picture family (not edits, sliders, fine-tunes or MiniMa
 | `--stage_blend 0.1` | the share of the run the change blends over (default 0.1) |
 
 The log says when each part starts. In a Z-Image Turbo test, 0.25 MP for the first 30% of a 1 MP run took about a fifth less time, with likeness arriving a little later.
+
+---
+
+## Batch size
+
+`batch_size = 2` (or 3, 4, 6, 8) in the dataset TOML's `[general]` trains that many pictures a step, on Klein 9B, MOSS-Image, Qwen Image 2.1, Z-Image Turbo and Base, SDXL and Anima. A step's loss is the average of each picture's own loss, as gradient accumulation averages it. A batch holds pictures of one bucket size; captions of different lengths are padded where the model allows it, or the batch is split by caption length.
+
+It pays off most with block swap: each step's swap is spread over every picture in the batch. Batch 3 against batch 1 with Gradient Accumulation 3, at 0.25 MP on an A40:
+
+| | 1 picture a step | Batch 3 |
+|---|---|---|
+| Qwen Image 2.1, 8 blocks swapped | 5.0 s a picture | 1.9 s (2.7× faster) |
+| Qwen Image 2.1, 16 blocks swapped | 9.5 s | 3.5 s (2.7×) |
+| MOSS-Image int8, 8 blocks swapped | 2.5 s | 1.4 s (1.8×) |
+
+With no swap it helps the smaller models (Anima 2.6×, SDXL 2.3× on a 4090) and changes little for the larger ones. Each extra picture costs roughly 0.2–0.75 GB at 0.25 MP, more at larger sizes; gradient checkpointing stays on.
+
+Batch size above 1 isn't used with sliders, edit pairs, fine-tunes, DOP or Fizgig LoRA Isolation, and turns off the per-image loss watch, masked-training mask priors, Start at a smaller size, regularisation images and helper shares. The GUI greys those out; the trainer refuses a batch with them.
 
 ---
 

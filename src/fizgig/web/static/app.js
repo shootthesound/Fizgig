@@ -5293,9 +5293,9 @@ function studioSlots() {
     };
     // a new photo: place its crop (Cancel keeps what was there); Re-crop moves the box of the one there
     const set = (p) => {
-      if (!p) { delete S.st.kf[slot]; delete S.st.kfRect[slot]; show(); studioH3Remember(); studioSchedule(); return; }
+      if (!p) { delete S.st.kf[slot]; delete S.st.kfRect[slot]; show(); studioH3Remember(); studioPending(); return; }
       studioCrop(p, p === S.st.kf[slot] ? S.st.kfRect[slot] : null, (rect) => {
-        S.st.kf[slot] = p; S.st.kfRect[slot] = rect; show(); studioH3Remember(); studioSchedule();
+        S.st.kf[slot] = p; S.st.kfRect[slot] = rect; show(); studioH3Remember(); studioPending();
       }, show);
     };
     input.addEventListener("change", () => set(input.value.trim()));
@@ -5598,7 +5598,7 @@ function songRegion(r) {
   S.st.region = r;
   if (r) $("stSongLoop").checked = true;
   studioAceRemember();
-  if ($("stSrcOn").checked && $("stSrcMode").value === "repaint") studioSchedule();   // Repaint remakes the new section
+  if ($("stSrcOn").checked && $("stSrcMode").value === "repaint") studioPending();    // Repaint remakes it at Update
   if (songPlaying()) songPlay(S.song.side, r ? r[0] : undefined);
   else if (r) S.song.pos = r[0];
   for (const s of Object.keys(SONG_SIDES)) songPlayer(s).loop = $("stSongLoop").checked && !r;
@@ -5778,7 +5778,7 @@ function studioRecordButton(input, set) {
 }
 
 function wireStudioAce() {
-  const change = () => { studioAceLayout(); studioAceRemember(); studioRegionDraw(); studioSchedule(); };
+  const change = () => { studioAceLayout(); studioAceRemember(); studioRegionDraw(); studioPending(); };
   for (const id of ["stPbOn", "stSrcOn", "stSndOn", "stSrcMode", "stPbKeep", "stPbBlend", "stSrcFollow", "stSrcDenoise", "stSrcStrength"])
     $(id).addEventListener("change", change);
   for (const id of ["stPbBlend"]) $(id).addEventListener("input", studioAceLayout);
@@ -5786,7 +5786,7 @@ function wireStudioAce() {
   const typed = () => { studioAceRemember(); if (S.st.ready) $("stStart").textContent = "Update"; };
   for (const id of ["stPromptB", "stSrcPath", "stSndPath"]) $(id).addEventListener("input", typed);
   for (const [id, host] of [["stSrcPath", "stSrcBtns"], ["stSndPath", "stSndBtns"]]) {
-    const input = $(id), set = (p) => { input.value = p; studioAceRemember(); studioSchedule(); };
+    const input = $(id), set = (p) => { input.value = p; studioAceRemember(); studioPending(); };
     const up = uploadButton({kind: "path", key: "STUDIO_" + id}, input, set);
     $(host).replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () => pick(input.value || S.imageFolder, false, set)}),
       up.btn, studioRecordButton(input, set), up.status);
@@ -5803,7 +5803,7 @@ function wireStudioAce() {
       studioAceLayout(); studioAceRemember(); studioRegionDraw();
       $("stStatus").textContent = "The Tweaked song is now the source: drag across the waveform to choose the section to repaint" +
         (S.st.region ? " (or keep this one)." : ".");
-      if (S.st.region) studioSchedule();
+      if (S.st.region) studioPending();
     } catch (e) { $("stStatus").textContent = e.message; }
   });
 }
@@ -5855,7 +5855,7 @@ function studioEq(role, on, restore = true) {
     if (S.st.ready) $("stStart").textContent = "Update";
   } else {
     $(pathId).value = prev;
-    if (S.st.ready) api("/api/studio/donor", {path: prev}).then(() => { studioPoll(); studioSchedule(); });
+    if (S.st.ready) api("/api/studio/donor", {path: prev}).then(() => { studioPoll(); studioPending(); });
   }
   stRemember();
 }
@@ -5934,12 +5934,12 @@ function studioMixRows() {
     const val = el("span", {class: "field-hint", text: Number(amount).toFixed(2)});
     const range = el("input", {type: "range", min: "-1", max: "2", step: "0.05", value: String(amount)});
     range.addEventListener("input", () => { val.textContent = Number(range.value).toFixed(2); });
-    range.addEventListener("change", () => { S.st.mix.rows[i][1] = snap05(range.value); studioSchedule(); });
+    range.addEventListener("change", () => { S.st.mix.rows[i][1] = snap05(range.value); studioPending(); });
     host.append(el("div", {class: "field-row"}, el("span", {class: "field-label"}), el("div", {class: "st-mixrow"},
       el("span", {class: "st-mixname", title: path, text: (i === 0 ? "★ " : "") + name}), range, val,
       i === 0 ? el("span", {class: "field-hint", text: "(the primary)"}) :
         el("button", {class: "btn btn-sm", text: "✕", title: "Take it out of the mix", onclick: () => {
-          S.st.mix.rows.splice(i, 1); studioMixRows(); studioSchedule(); }}))));
+          S.st.mix.rows.splice(i, 1); studioMixRows(); studioPending(); }}))));
   });
 }
 
@@ -5961,7 +5961,7 @@ async function studioMixMode(mode) {
   }
   if (m.mode === "off") $("stMixInfo").textContent = "Off: the primary file alone.";
   studioMixLayout();
-  studioSchedule();
+  studioPending();
 }
 
 function studioMixExtra() {
@@ -5981,13 +5981,13 @@ function wireStudioMix() {
   document.querySelectorAll('input[name="stMixMode"]').forEach((r) => r.addEventListener("change", () => studioMixMode(r.value)));
   for (const p of ["stMix", "stDmix"]) for (const id of [p + "Upto", p + "Hist"]) {
     $(id).addEventListener("input", studioMixLayout);
-    $(id).addEventListener("change", () => { studioMixLayout(); studioSchedule(); });
+    $(id).addEventListener("change", () => { studioMixLayout(); studioPending(); });
   }
   $("stDmixOn").addEventListener("change", async () => {
     S.st.dmix.on = $("stDmixOn").checked;
     if (S.st.dmix.on && !(await studioMixEpochs("donor"))) { S.st.dmix.on = false; $("stDmixOn").checked = false; }
     if (!S.st.dmix.on) $("stDmixInfo").textContent = "Off: the donor file alone.";
-    studioMixLayout(); studioSchedule();
+    studioMixLayout(); studioPending();
   });
   $("stMixAdd").addEventListener("click", () => pick($("stPrimary").value.trim(), false, async (p) => {
     if (S.st.mix.rows.some((r) => r[0].toLowerCase() === p.toLowerCase())) return;
@@ -5998,7 +5998,7 @@ function wireStudioMix() {
         return;
       }
     } catch (e) { /* unreadable: the render says so */ }
-    S.st.mix.rows.push([p, 0.5]); studioMixRows(); studioSchedule();
+    S.st.mix.rows.push([p, 0.5]); studioMixRows(); studioPending();
   }));
 }
 
@@ -6605,6 +6605,14 @@ function studioState() {
     donor_scale: num("stDScale", 1)};
 }
 
+// a setting changed (size, length, steps, seed, a LoRA's strength, the negative, a reference...): nothing renders until
+// Update, so several can change first - only the block sliders render as they move
+function studioPending() {
+  if (!S.st.ready) return;
+  $("stStart").textContent = "Update";
+  $("stStatus").textContent = "Changed - press Update to render.";
+}
+
 function studioSchedule(live) {
   if (!S.st.ready) return;
   clearTimeout(S.st.timer);
@@ -6920,9 +6928,9 @@ function wireStudio() {
   new MutationObserver(studioDockPlay).observe($("stPlayBoth"), {attributes: true, attributeFilter: ["style"]});
   window.addEventListener("resize", debounce(() => { const d = $("stDock"); if (d && d.classList.contains("floating")) studioDockClamp(d); }, 150));
   $("stFamily").addEventListener("change", () => { studioFamily(); stRemember(); });
-  // H3: a length / size / steps / sound change renders; Model and Base take effect at the next Start
+  // the clip row: length / size / steps / speed LoRA / sound wait for Update, as Model and Base do
   for (const id of ["stH3Len", "stH3W", "stH3H", "stH3Steps", "stH3Turbo", "stH3Sound", "stH3Boost"])
-    $(id).addEventListener("change", () => { studioH3Remember(); studioSchedule(); });
+    $(id).addEventListener("change", () => { studioH3Remember(); studioPending(); });
   $("stH3Early").addEventListener("change", studioH3Remember);
   $("stH3Model").addEventListener("change", () => { studioH3Remember(); studioSlots(); $("stStart").textContent = "Update"; });
   $("stH3Base").addEventListener("change", () => { studioH3Remember(); $("stStart").textContent = "Update"; });
@@ -6945,19 +6953,20 @@ function wireStudio() {
     studioDmixOff();
     if (S.st.ready) api("/api/studio/donor", {path: p}).then(studioPoll).catch((e) => { $("stStatus").textContent = e.message; }); }));
   $("stDonorUnload").addEventListener("click", () => { $("stDonor").value = ""; stRemember(); studioDmixOff();
-    if (S.st.ready) api("/api/studio/donor", {path: ""}).then(() => { studioPoll(); studioSchedule(); }); });
-  $("stRefPick").addEventListener("click", () => pick($("stRef").value || refStart(), false, (p) => { $("stRef").value = p; stRemember(); studioSchedule(); }));
-  $("stRefClear").addEventListener("click", () => { $("stRef").value = ""; stRemember(); studioSchedule(); });
-  $("stSeedNew").addEventListener("click", () => { $("stSeed").value = 1 + Math.floor(Math.random() * 99999); stRemember(); studioSchedule(); });
+    if (S.st.ready) api("/api/studio/donor", {path: ""}).then(() => { studioPoll(); studioPending(); }); });
+  $("stRefPick").addEventListener("click", () => pick($("stRef").value || refStart(), false, (p) => { $("stRef").value = p; stRemember(); studioPending(); }));
+  $("stRefClear").addEventListener("click", () => { $("stRef").value = ""; stRemember(); studioPending(); });
+  $("stSeedNew").addEventListener("click", () => { $("stSeed").value = 1 + Math.floor(Math.random() * 99999); stRemember(); studioPending(); });
   for (const id of ["stSeed", "stRes", "stW", "stH", "stRefMp", "stRefStr", "stPScale", "stDScale"])
-    $(id).addEventListener("change", () => { stRemember(); studioSchedule(); });
+    $(id).addEventListener("change", () => { stRemember(); studioPending(); });
   for (const id of ["stPrompt", "stPrimary", "stDonor", "stLuckyLo", "stLuckyHi"]) $(id).addEventListener("input", stRemember);
+  for (const id of ["stPrompt", "stPrimary", "stDonor"]) $(id).addEventListener("change", studioPending);
   $("stLuckyWho").addEventListener("change", () => { stRemember(); studioFreezeState(); });
   $("stLuckyCount").addEventListener("change", stRemember);
   $("stFreeze").addEventListener("click", () => studioFreeze(true));
   $("stUnfreeze").addEventListener("click", () => studioFreeze(false));
   $("stNeg").addEventListener("change", () => { stRemember();
-    if (S.st.ready) api("/api/studio/settings", {family: S.st.layout.key, negative: $("stNeg").value.trim()}).then(() => studioSchedule()); });
+    if (S.st.ready) api("/api/studio/settings", {family: S.st.layout.key, negative: $("stNeg").value.trim()}).then(studioPending); });
   $("stTurbo").addEventListener("change", () => { stRemember(); if (S.st.ready) api("/api/studio/settings", {family: S.st.layout.key, turbo: $("stTurbo").checked}); });
   $("stH3Turbo").addEventListener("input", () => { studioNegRow(); studioClipNote(); });
   $("stH3Steps").addEventListener("input", studioClipNote);

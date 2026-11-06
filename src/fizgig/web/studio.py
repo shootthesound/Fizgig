@@ -788,6 +788,9 @@ def plan_video(desc, prefs, pref_path, checkpoint="", base="", refmod=False):
           "turbo_lora_strength": (desc.preview_speed_defaults() or (0, 0.75))[1],
           "te_cache_dir": os.path.join(cache, "te_prompts") if cache else "",
           "audio_vae_path": audio if audio and os.path.exists(audio) else "", "base_mode": base_mode}
+    # Preferences' INT8 fast inference, for a model on the shared video engine (H3's engine has its own Base picker)
+    if _shared_clip_engine(desc) and "int8" in desc.precisions and             str(prefs.get("inference_int8", "")).strip() in ("1", "True", "true"):
+        kw["precision"] = "int8"
     # the description's fixed family options that name model files (Vimoo's glyph encoder and SigLIP), as the
     # trainer gets them; an engine that plans its own files (H3's) ignores them
     fo = {}

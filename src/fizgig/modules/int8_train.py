@@ -32,6 +32,7 @@ import logging
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +134,14 @@ class _Int8FrozenLinear(torch.autograd.Function):
 
         grad_bias = g2d.sum(dim=0).to(grad_out.dtype) if ctx.needs_bias_grad else None
         return grad_x.reshape(*ctx.orig_shape), None, None, grad_bias, None
+
+
+def int8_weight_only_forward(self: nn.Linear, x: torch.Tensor) -> torch.Tensor:
+    """Weight-only INT8: the int8 weight (and its per-channel scale) back to the activations' dtype for a plain matmul -
+    the activations are never quantised. The memory of INT8 without its per-token activation rounding, for a model whose
+    activations carry outliers that rounding crushes (Vimoo: mottled, flickering backgrounds). Slower than _int_mm."""
+    w = self.weight.data.to(x.dtype) * self._int8_wscale.reshape(-1, 1).to(x.dtype)
+    return F.linear(x, w, None if self.bias is None else self.bias.to(x.dtype))
 
 
 def int8_train_forward(self: nn.Linear, x: torch.Tensor) -> torch.Tensor:

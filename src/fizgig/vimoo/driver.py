@@ -49,6 +49,9 @@ def rescale_cfg(cfg_pred, pos, rescale):
 
 class VimooDriver(FamilyDriver):
     keep_vae_resident = False
+    # INT8 is weight-only for Vimoo: per-token activation rounding (the shared W8A8 path) mottled plain backgrounds,
+    # flickering frame to frame (6 Nov 2026); weight-only keeps INT8's memory with bf16 activations
+    int8_weight_only = True
 
     def __init__(self):
         super().__init__()

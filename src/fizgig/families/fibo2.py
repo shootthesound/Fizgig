@@ -164,9 +164,11 @@ _FIBO2 = FamilyDescription(
     train_memory={"bf16": (((0.25, 26.6), (1.0, 27.8)), 0.314), "int8": (((0.25, 18.7), (1.0, 20.5)), 0.157),
                   "nf4": (((0.25, 15.5), (1.0, 17.5)), 0.0)},
     # under 20 GB the trainer parks the model for each preview's decode and renders at 768, so the 1024 preview's
-    # peak above doesn't apply: training's own peak from the same 5090 runs (int8 10.6 / 14.1, nf4 8.3 / 11.2 at
-    # 0.25 / 1 MP). Without it Auto put a 16 GB card on INT8 with ~34 blocks swapped.
-    train_memory_small={"int8": (((0.25, 10.6), (1.0, 14.1)), 0.157), "nf4": (((0.25, 8.3), (1.0, 11.2)), 0.0)},
+    # peak above doesn't apply. Measured 6 Nov 2026 on a 16 GB RTX 4090 Laptop GPU (rank 32, automagic3, EMA, 16
+    # photos at 0.25 MP, a 768 Turbo preview each epoch): INT8 with no swap peaked 12.4 GB reserved, 2.09 s a step
+    # (the old plan, INT8 + 35 swapped blocks: 3.38 s). That is training's own 5090 peak (10.6) + 1.8 GB for the
+    # preview; the other points carry the same +1.8 (5090 training-only: int8 14.1 at 1 MP, nf4 8.3 / 11.2).
+    train_memory_small={"int8": (((0.25, 12.4), (1.0, 15.9)), 0.157), "nf4": (((0.25, 10.1), (1.0, 13.0)), 0.0)},
     # Big cards (40 GB and up), re-measured 4 Nov 2026 on an RTX PRO 6000 (96 GB): compiled, rank 32, AdamW, accum 1,
     # no swap, a 1024 preview after each of 2 epochs, 16 photos at 0.25 MP and 8 above 1 MP (buckets 1248x832,
     # 1360x768). Reserved peaks, previews included, with gradient checkpointing on / off:

@@ -21,10 +21,16 @@ class VimooWorkbenchEngine(VideoWorkbenchEngine):
 
     def ensure_pipeline(self, *a, precision="auto", **kw):
         """Auto on a card under 20 GB loads NF4 (as training's Auto there): the room it leaves matters more on the
-        smaller machines this model is expected to run on than INT8's slightly closer preview."""
+        smaller machines this model is expected to run on than INT8's slightly closer preview. Up to 32 GB it loads
+        INT8: bf16 (19.3 GB) plus a clip's decode filled a 32 GB card (31.4 GB at 768x768 x 49), leaving nothing for
+        the page to play the clip with. bf16 from 40 GB up."""
+        from fizgig.families import quant
         from fizgig.families.train import _small_card_previews
-        if precision == "auto" and self.pipeline is None and _small_card_previews():
-            precision = "nf4"
+        if precision == "auto" and self.pipeline is None:
+            if _small_card_previews():
+                precision = "nf4"
+            elif quant.card_gb() < quant.NOGC_MIN_CARD_GB:
+                precision = "int8"
         return super().ensure_pipeline(*a, precision=precision, **kw)
 
     @torch.no_grad()

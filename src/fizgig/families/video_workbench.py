@@ -303,8 +303,11 @@ class VideoWorkbenchEngine(ClipContract, WorkbenchEngine):
         super().ensure_pipeline(dit_path, vae_path, text_encoder_path, speed_lora_path=speed_lora_path, device=device,
                                 lowmem=lowmem, precision=precision, blocks_to_swap=blocks_to_swap,
                                 preview_sampling=preview_sampling)
-        # a card with room keeps the decoders on the GPU between renders (moving a video VAE each time costs seconds)
-        self.driver.keep_vae_resident = not self.lowmem
+        # a big card (40 GB+) keeps the decoders on the GPU between renders (moving a video VAE each time costs
+        # seconds); on 32 GB and below they go back to the CPU after each decode, so the card isn't left full while the
+        # page plays the clip (Vimoo bf16 at 768x768 x 49 held 31.4 of 32 GB, 6 Nov 2026)
+        from fizgig.families import quant
+        self.driver.keep_vae_resident = not self.lowmem and quant.card_gb() >= quant.NOGC_MIN_CARD_GB
         self._speed_strength = self.speed.strength if self.speed is not None else None
 
     # ---- hooks -------------------------------------------------------------------------------------------------

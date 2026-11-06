@@ -337,15 +337,17 @@ def lycoris_scale_from_keys(mod_keys: Dict[str, torch.Tensor]) -> float:
         r1 = int(mod_keys["hada_w1_a"].shape[1])
         r2 = int(mod_keys["hada_w2_a"].shape[1])
         return alpha / max(1, min(r1, r2))
-    # LoKR: dim = min of the decomposition ranks that are actually in use;
-    # a full-matrix LoKR (no w1_a/w2_a factors) has dim 1 → scale = alpha.
+    # LoKR: dim = min of the decomposition ranks that are actually in use. A full-matrix LoKR (no w1_a/w2_a factors)
+    # has no rank to normalise, so its scale is 1 and the stored alpha is ignored, as LyCORIS (which writes the
+    # network dim there) and ComfyUI do (#304, @Nessa2026691). Fizgig's own LoKRs are full-matrix with alpha 1: the same.
     dims = []
     if mod_keys.get("lokr_w1_a") is not None:
         dims.append(int(mod_keys["lokr_w1_a"].shape[1]))
     if mod_keys.get("lokr_w2_a") is not None:
         dims.append(int(mod_keys["lokr_w2_a"].shape[1]))
-    dim = max(1, min(dims)) if dims else 1
-    return alpha / dim
+    if not dims:
+        return 1.0
+    return alpha / max(1, min(dims))
 
 
 def _lokr_forward_update(x: torch.Tensor, w1: torch.Tensor, w2: torch.Tensor,
@@ -508,10 +510,11 @@ class LoKRInfModule(torch.nn.Module):
             if self.w2_decomposed and k2 is not None:
                 dim_candidates.append(k2)
             if not dim_candidates:
-                # No decomposition — use a safe dim of 1 so scale = alpha (LyCORIS default).
-                dim_candidates.append(1)
-            dim = max(1, min(dim_candidates))
-            self.scale = float(alpha) / dim
+                # No decomposition: full matrices have no rank to normalise, so scale = 1 and the stored alpha is
+                # ignored, as LyCORIS and ComfyUI do (#304)
+                self.scale = 1.0
+            else:
+                self.scale = float(alpha) / max(1, min(dim_candidates))
 
         self.multiplier = float(multiplier)
         self.enabled = True

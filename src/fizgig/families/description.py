@@ -513,6 +513,12 @@ class FamilyDescription:
     # {} = Auto just takes the first precision
     train_memory: dict = field(default_factory=dict)
     own_plan: bool = False            # no train_memory: the driver plans precision + swap itself (plan_run, plan_pictures)
+    # the same figures for a card under 20 GB, where the trainer parks the model for each preview's decode and caps the
+    # preview at 768 px (train._small_card_previews) - so train_memory's big-card preview peak doesn't apply there.
+    # Measured on a small card, or training's own peak without the preview. {} = train_memory everywhere.
+    train_memory_small: dict = field(default_factory=dict)
+    # Auto's precision order on such a card, when it differs from auto_precisions (Vimoo: NF4 first)
+    auto_precisions_small: tuple = ()
     # the same peak with gradient checkpointing OFF, compiled blocks, no swap: {precision: ((megapixels, GB), ...)}.
     # A compiled LoRA run with no swap trains without checkpointing (13-27% faster) when this fits with a margin;
     # a precision missing here (nf4: its dequantised weights stay alive for backward) always checkpoints

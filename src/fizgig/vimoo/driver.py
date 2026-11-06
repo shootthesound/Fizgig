@@ -565,8 +565,9 @@ class VimooDriver(FamilyDriver):
         vision projections and the final layer stay frozen, as for a LoRA. Memory, measured 6 Nov 2026 on a 16 GB RTX
         4090 Laptop GPU at 0.25 MP (one window per part, no streaming, NF4 trunk): peaks 9.0-9.9 GB, 6.3 GB allocated
         at planning, so overhead = 9.9 - 6.3 + the 4.9 GB 4-bit trunk - the 3.0 GB bf16 window = 5.5 -> 6.0 with slack.
-        act_gb_per_mp stays the shared cautious 4.0 until a 1 MP run measures it. A rotation at learning rate 1e-30 saved
-        a file equal to the source, all 1031 tensors."""
+        With it the 16 GB card plans 3 windows of 2 parts: they peaked 11.7-12.5 GB (1.0-1.1 s a step). act_gb_per_mp
+        stays the shared cautious 4.0 until a 1 MP run measures it. A rotation at learning rate 1e-30 saved a file equal
+        to the source, all 1031 tensors (both plans)."""
         from fizgig.families.ft import FTSpec
         return FTSpec(blocks="double_blocks",
                       components=("img_attn", "img_mlp.0", "img_mlp.2", "txt_attn", "txt_mlp.0", "txt_mlp.2"),

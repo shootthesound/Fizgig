@@ -5242,7 +5242,7 @@ function studioKind(L, sv) {
   $("stH3Steps").value = h3.steps || V.steps || $("stH3Steps").defaultValue;
   $("stH3Turbo").value = h3.turbo != null ? h3.turbo : (V.speed_strength != null ? V.speed_strength
     : $("stH3Turbo").defaultValue);
-  $("stH3TurboLabel").textContent = V.speed_label || "Turbo";
+  $("stH3TurboLabel").textContent = `${V.speed_label || "Turbo"} LoRA`;      // the speed LoRA's strength box
   {   // the two boxes' tooltips, in this model's own terms
     const sp = V.speed_label || "speed", fast = V.steps || $("stH3Steps").defaultValue, at = V.speed_strength != null ?
       V.speed_strength : 1, full = V.base_steps ? `about ${V.base_steps}` : "many more";
@@ -5421,7 +5421,8 @@ function studioExtra() {
   return {video: {frames: V.length_frames[$("stH3Len").value] || 22, width: w, height: h,
     steps: Math.max(1, Math.min(40, parseInt($("stH3Steps").value, 10) || 4)),
     turbo: Math.max(0, Math.min(1.5, Number($("stH3Turbo").value) || 0)), sound: $("stH3Sound").checked,
-    speed_boost: !!V.speed_boost && $("stH3Boost").checked, early: $("stH3Early").checked},
+    speed_boost: !!V.speed_boost && $("stH3Boost").checked, early: $("stH3Early").checked,
+    negative: $("stNeg").value.trim()},
     keyframes: slots.filter((s) => S.st.kf[s]).map((s) => ({slot: s, path: S.st.kf[s], rect: S.st.kfRect[s] || null})),
     ref_mode: ref};
 }
@@ -6238,7 +6239,9 @@ function studioNegRow() {
   const L = S.st.layout;
   if (!L) return;
   const fast = (document.querySelector('input[name="stDit"]:checked') || {}).value !== "full";
-  const cfg = L.follows_samples ? (L.follow_ck ? L.cfg_fast : L.follow_cfg) : fast && L.dit_fast ? L.cfg_fast : L.cfg_full;   // Samples-tab models: theirs
+  let cfg = L.follows_samples ? (L.follow_ck ? L.cfg_fast : L.follow_cfg) : fast && L.dit_fast ? L.cfg_fast : L.cfg_full;   // Samples-tab models: theirs
+  if (L.kind === "video" && L.video && L.video.speed_label)      // a clip runs with CFG when its speed LoRA box is 0
+    cfg = Number($("stH3Turbo").value) > 0 ? L.cfg_fast : L.cfg_full;
   $("stNegRow").style.display = L.negative_default != null && cfg > 1 ? "" : "none";
 }
 
@@ -6935,7 +6938,18 @@ function wireStudio() {
   $("stNeg").addEventListener("change", () => { stRemember();
     if (S.st.ready) api("/api/studio/settings", {family: S.st.layout.key, negative: $("stNeg").value.trim()}).then(() => studioSchedule()); });
   $("stTurbo").addEventListener("change", () => { stRemember(); if (S.st.ready) api("/api/studio/settings", {family: S.st.layout.key, turbo: $("stTurbo").checked}); });
-  document.querySelectorAll('input[name="stDit"]').forEach((r) => r.addEventListener("change", studioNegRow));
+  $("stH3Turbo").addEventListener("input", studioNegRow);
+  document.querySelectorAll('input[name="stDit"]').forEach((r) => r.addEventListener("change", () => {
+    studioNegRow();
+    // a video model renders from the clip row's Steps and speed-LoRA boxes: Preview with sets them - the fast loop
+    // (its steps at its strength) or the full model (its own steps, the speed LoRA off, so CFG and the negative apply)
+    const L = S.st.layout, V = L && L.kind === "video" ? L.video : null;
+    if (!V) return;
+    const full = r.value === "full" && r.checked;
+    if (full && V.base_steps) { $("stH3Steps").value = V.base_steps; $("stH3Turbo").value = 0; }
+    else if (!full && V.steps) { $("stH3Steps").value = V.steps; $("stH3Turbo").value = V.speed_strength ?? 1; }
+    studioH3Remember();
+  }));
   document.querySelectorAll('input[name="stTarget"]').forEach((r) => r.addEventListener("change", studioMastersFollow));
   document.querySelectorAll("[data-bulk]").forEach((b) => b.addEventListener("click", () => studioBulk(b.dataset.bulk)));
   $("stPreset").addEventListener("change", () => { if ($("stPreset").value) studioPresetApply($("stPreset").value); });

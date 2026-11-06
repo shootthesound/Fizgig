@@ -817,8 +817,9 @@ def layout(desc, prefs, pref_path, samples=None):
     look = lambda k: pref_path(prefs, k)
     have = lambda k: bool(k and look(k) and os.path.exists(look(k)))
     ck, sp = desc.preview_checkpoint(), desc.preview_speed()
-    fast = (f"{ck[1].name} ({ck[1].steps}-step, default)" if ck is not None and have(ck[0].pref_key) else
-            f"{sp.name} ({sp.settings.steps}-step, default)" if sp is not None and have(sp.pref_key) else "")
+    bare = lambda n: re.sub(r" [(]?[0-9]+-step[)]?$", "", n)     # a name that carries its own step count
+    fast = (f"{bare(ck[1].name)} ({ck[1].steps}-step, default)" if ck is not None and have(ck[0].pref_key) else
+            f"{bare(sp.name)} ({sp.settings.steps}-step, default)" if sp is not None and have(sp.pref_key) else "")
     ds = desc.default_sampling()
     kind = "video" if desc.video_workbench else "audio" if desc.audio_workbench else "stills"
     audio_vae = desc.model_path("audio_vae", look) if kind == "video" else ""

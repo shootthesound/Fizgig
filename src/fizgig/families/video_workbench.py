@@ -366,7 +366,10 @@ class VideoWorkbenchEngine(ClipContract, WorkbenchEngine):
                 cfg, sigmas, options = ds.cfg, None, ds.options
         neg = None
         if cfg > 1.0:
-            neg = self.encode([self.desc.preview_negative or ""], size=(width, height))[0]
+            # the page's Negative (sent with each clip render), else the model's own default
+            text = getattr(self, "clip_negative", None)
+            text = self.desc.preview_negative if text is None else text
+            neg = self.encode([text or ""], size=(width, height))[0]
             extra["neg_cond"] = self._cond_to_device(neg)
         names = [n for n in (PRIMARY, DONOR) if self.net.has(n)] if no_lora else []
         for n in names:

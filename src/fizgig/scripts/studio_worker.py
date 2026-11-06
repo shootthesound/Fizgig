@@ -268,6 +268,7 @@ def _render_clips(eng, desc, st, c, out, gen):
     st.preview_width, st.preview_height, st.preview_frames = width, height, frames
     st.keyframes, st.references = _cond(eng, c, width, height, frames)
     eng.speed_boost = bool(v.get("speed_boost"))      # the Studio's H3 tick: the first half of the steps at half size
+    eng.clip_negative = v.get("negative")             # the page's Negative (used when the render runs with CFG)
     opts = dict(frames=frames, regime="custom", steps=int(v.get("steps") or 4),
                 turbo_strength=float(v.get("turbo") if v.get("turbo") not in (None, "") else 1.0),
                 with_audio=bool(v.get("sound", True)))

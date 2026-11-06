@@ -172,6 +172,10 @@ def _render(c):
                     emit(ev="nolora", gen=gen, **nolora())
                 except Exception as e:           # a newer edit took the engine (or it failed: say so)
                     emit(ev="nolora", gen=gen, aborted=_aborted(e), msg="" if _aborted(e) else str(e))
+            # every model (pictures and songs as clips): the render's cached memory goes back to the card between
+            # renders, the model staying loaded - room for whatever else runs beside Studio
+            import torch
+            torch.cuda.empty_cache()
     except Exception as e:
         if _aborted(e):
             emit(ev="aborted", gen=gen)

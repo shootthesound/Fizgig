@@ -33,6 +33,13 @@ SDXL = FamilyDescription(
     masked_training=True,
     batch_training=True,              # Batch size (Other Options): training_loss_batch, exact per picture
     batch_gb=(0.1, 0.55),           # GB each extra picture takes: fixed, per MP (batch 1 vs 3)
+    # Batch x checkpointing sweep, 6 Nov 2026 (RTX PRO 6000, 8 pictures, 2 epochs, uncompiled, previews off - so the
+    # no-checkpointing peaks below are the larger of that run's and train_memory's preview peak; uncompiled sits
+    # above a compiled run, the safe side). Desktop\Fizgig batch tests\bsgc\MORNING_REPORT.md
+    batch_auto=((0.25, 8), (1.0, 4)),          # 7.3x / 3.3x a picture over batch 1 with checkpointing off
+    batch_gb_nogc=((0.25, 2.3), (1.0, 5.5)),
+    nogc_uncompiled=True,
+    train_memory_nogc={"bf16": ((0.25, 10.3), (1.0, 11.8))},   # 1.9x / 2.3x faster than checkpointed
     arch_id="sdxl",
     display_name="SDXL",
     gui_label="SDXL (any checkpoint)",

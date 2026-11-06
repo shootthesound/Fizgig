@@ -104,7 +104,8 @@ DEFAULTS = {
 
 
 BATCH_HINT = ("How many pictures train together each step. Faster when blocks are swapped, and on smaller models "
-              "like SDXL and Anima. Uses more memory (Auto allows for it). Settings that need 1 grey out.")
+              "like SDXL and Anima. Uses more memory (Auto allows for it). Settings that need 1 grey out. Auto (where "
+              "offered): the batch measured fastest for this model at your size, on a 40 GB+ card; 1 elsewhere.")
 BATCH_OFF = "Off while Batch size is above 1: it reads one picture a step."
 
 TRAINING_ORDER = ("model", "output", "params", "edit", "slider", "finetune", "memory", "optimizer", "other")
@@ -645,7 +646,7 @@ def form(desc):
         _row("LR_WARMUP_STEPS", "Warmup steps"),
         _row("CAPTION_DROPOUT", "Caption dropout", "choice", CAPTION_DROPOUT_HINT, CAPTION_DROPOUTS,
              default=CAPTION_DROPOUTS[0]) if desc.caption_dropout and pictures else None,
-        _row("BATCH_SIZE", "Batch size", "choice", BATCH_HINT, launch.BATCH_SIZES)
+        _row("BATCH_SIZE", "Batch size", "choice", BATCH_HINT, launch.batch_choices(desc))
         if desc.batch_training and pictures else None,
         *by_section("training", "other", "lora"),
         _row("METADATA_TITLE", "Title"), _row("METADATA_AUTHOR", "Author"),
@@ -1289,6 +1290,8 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             disabled.add("BATCH_SIZE")
             notes["BATCH_SIZE"] = ("Greyed out: sliders, edits, DOP and Fizgig LoRA Isolation train one picture a "
                                    "step.")
+        elif str(values.get("BATCH_SIZE") or "").strip().lower() == "auto":
+            notes["BATCH_SIZE"] = launch.batch_auto_note(desc, values.get("DATASET_MEGAPIXELS") or 1.0)
         elif str(values.get("BATCH_SIZE") or "1") not in ("", "1"):
             off = {"STAGE_MP", "STAGE_UNTIL", "MASK_PRIOR"}
             off |= {o.key for o in desc.options if getattr(o, "batch_off", False)}

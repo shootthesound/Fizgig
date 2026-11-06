@@ -324,6 +324,11 @@ MINIMAX = FamilyDescription(
     batch_training=True,              # Batch size (Other Options): pictures packed (forward_packed); clips one a step
     own_plan=True,                    # the old trainer's planner (driver.plan_run): its own figures, not train_memory
     batch_gb=(0.2, 0.8),              # GB each extra picture takes: fixed, per MP (batch 2 vs 3: batch 1 runs without checkpointing)
+    # Batch x checkpointing sweep, 6 Nov 2026 (RTX PRO 6000, 8 pictures, 2 epochs, uncompiled, previews off - so the
+    # no-checkpointing peaks below are the larger of that run's and train_memory's preview peak; uncompiled sits
+    # above a compiled run, the safe side). Desktop\Fizgig batch tests\bsgc\MORNING_REPORT.md
+    batch_auto=((0.25, 4), (1.0, 4)),          # 2.7x / 1.8x a picture over batch 1 (pictures; clips stay 1)
+    batch_gb_nogc=((0.25, 2.4), (1.0, 5.9)),
     masked_training=True,             # photos only: the dataset gives a mask to a still, never to a clip or a voice
     network_hint="LoRA recommended for MiniMax",
     ema_hint="A smoothed average of the weights, leading to better and more reliable previews.",

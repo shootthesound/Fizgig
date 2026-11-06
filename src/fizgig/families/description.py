@@ -526,6 +526,16 @@ class FamilyDescription:
     # partial checkpointing on a big card where full off doesn't fit: {precision: (blocks, ((megapixels, GB with every
     # block checkpointed, GB per block without it), ...))}, compiled with the checkpoint outside the graph, previews on
     train_memory_partial: dict = field(default_factory=dict)
+    # Batch size Auto, on 40 GB+ cards (quant.NOGC_MIN_CARD_GB): the batch that measured fastest per picture at each
+    # size, ((megapixels, batch), ...) - the first point at or above the run's size counts; past the last, batch 1.
+    # () = the family never batches on Auto (the big DiTs: one picture already fills the GPU)
+    batch_auto: tuple = ()
+    # train_memory_nogc measured UNCOMPILED (uncompiled blocks without checkpointing take more than compiled ones), so
+    # an uncompiled run may go without checkpointing on them too; False = compiled figures, compiled runs only
+    nogc_uncompiled: bool = False
+    # GB each picture past the first takes with gradient checkpointing OFF, ((megapixels, GB), ...): what lets Auto
+    # turn checkpointing off for a batch (batch_gb is the checkpointed figure, a tenth or less of this)
+    batch_gb_nogc: tuple = ()
     optimizers: tuple = ("adamw8bit", "adamw")
     # optimizer settings a family's own trainer applied (only when Optimizer Args doesn't set them): an Adam-family
     # weight decay, and the 8-bit Adam eps floor of 1e-6 (training/optimizers.create_optimizer eps_floor_8bit - H3's
@@ -720,6 +730,12 @@ class FamilyDescription:
         drv = getattr(importlib.import_module(mod), cls)()
         drv.description = self
         return drv
+
+    def auto_batch(self, megapixels):
+        """Batch size Auto's batch at this size (batch_auto), before any memory check: the first measured point at
+        or above it; 1 past the last, or for a family with none. Torch-free: the Training tab's note reads it."""
+        at = [p for p in (self.batch_auto or ()) if p[0] + 0.01 >= float(megapixels)]
+        return int(min(at)[1]) if at else 1
 
     def workbench_engine_class(self):
         """The class make_workbench_engine builds - read for its capabilities (supports_keyframes, ...) before any

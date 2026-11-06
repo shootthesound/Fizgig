@@ -32,6 +32,14 @@ KLEIN = FamilyDescription(
     masked_training=True,
     batch_training=True,              # Batch size (Other Options): training_loss_batch, exact per picture
     batch_gb=(0.8, 1.1),            # GB each extra picture takes: fixed, per MP (batch 1 vs 3)
+    # Batch x checkpointing sweep, 6 Nov 2026 (RTX PRO 6000, 8 pictures, 2 epochs, uncompiled, previews off - so the
+    # no-checkpointing peaks below are the larger of that run's and train_memory's preview peak; uncompiled sits
+    # above a compiled run, the safe side). Desktop\Fizgig batch tests\bsgc\MORNING_REPORT.md
+    # no batch_auto: batching measured no faster a picture (one already fills the GPU)
+    # measured on the bf16 file (uncompiled Auto trains the file as it is); a compiled INT8 run takes less, so the same
+    # figure stands for it on the safe side
+    nogc_uncompiled=True,
+    train_memory_nogc={"bf16": ((0.25, 19.4), (1.0, 28.4)), "int8": ((0.25, 19.4), (1.0, 28.4))},   # 1.41x / 1.30x
     arch_id="klein9bdrv",
     display_name="Klein 9B",
     gui_label="Flux 2 Klein Base 9B",

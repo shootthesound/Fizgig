@@ -915,6 +915,8 @@ def train_command(desc, inputs, plan):
             cmd += ["--compile_blocks", cb]
     if st.get("keep_checkpointing"):
         cmd += ["--gradient_checkpointing", "on"]
+    if batch_auto(desc, st):
+        cmd += ["--batch_size_auto"]
     try:
         if int(float(str(st.get("GRADIENT_ACCUMULATION", "") or 1))) > 1:
             cmd += ["--gradient_accumulation_steps", str(int(float(st["GRADIENT_ACCUMULATION"])))]
@@ -1230,6 +1232,41 @@ STAGE_BLEND = 0.1      # the share of the run the change from the smaller size t
 
 
 BATCH_SIZES = ("1", "2", "3", "4", "6", "8")
+BATCH_AUTO = "Auto"
+
+
+def batch_choices(desc):
+    """The Batch size row's choices: Auto (after 1) for a family with a measured sweet spot (description batch_auto)."""
+    return (BATCH_SIZES[0], BATCH_AUTO) + BATCH_SIZES[1:] if desc.batch_auto else BATCH_SIZES
+
+
+def batch_auto(desc, inputs):
+    """Batch size Auto: the trainer picks the family's measured fastest batch on a 40 GB+ card (--batch_size_auto); the
+    dataset config says 1 (batch_size() reads Auto as 1) and the trainer raises it before the dataset is built."""
+    if str(_s(inputs.get("BATCH_SIZE")) or "").strip().lower() != "auto" or not (desc.batch_training and desc.batch_auto):
+        return False
+    return not (edit_on(desc, inputs) or slider_on(desc, inputs) or dop_on(desc, inputs)
+                or multi_person_on(desc, inputs))
+
+
+BATCH_AUTO_MIN_CARD_GB = 38.0   # quant.NOGC_MIN_CARD_GB (a 40 GB card reports ~39.4 GiB), without importing torch here
+
+
+def batch_auto_note(desc, megapixels, card_gb=None):
+    """What Auto picks at this size, for the row's note - on this card when its size is known (card_gb, GiB)."""
+    try:
+        mp = float(megapixels)
+        n = desc.auto_batch(mp)
+    except (TypeError, ValueError):
+        return ""
+    if n <= 1:
+        return f"Auto: 1 at {mp:g} MP - {desc.display_name} measured fastest a picture at a time there."
+    if card_gb and card_gb < BATCH_AUTO_MIN_CARD_GB:
+        return (f"Auto: 1 picture a step on this {card_gb:.0f} GB card. Auto batches on 40 GB+ cards, where "
+                f"{n} at {mp:g} MP measured fastest for {desc.display_name}.")
+    where = f"this {card_gb:.0f} GB card" if card_gb else "a 40 GB+ card"
+    return (f"Auto: {n} pictures a step at {mp:g} MP on {where} - the fastest measured for {desc.display_name}. "
+            f"1 when a setting reads one picture a step.")
 
 
 

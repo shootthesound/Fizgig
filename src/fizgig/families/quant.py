@@ -310,7 +310,25 @@ def card_gb():
     return torch.cuda.get_device_properties(0).total_memory / 1024 ** 3
 
 
-def plan_checkpointing(desc, precision, blocks_to_swap, megapixels, free_gb=None, compiled=True, kind="", rank=8):
+def auto_batch(desc, megapixels):
+    """Batch size Auto's batch for this size (desc.batch_auto), before the memory check: 1 when the family has none,
+    or the run is past its measured sizes."""
+    return desc.auto_batch(megapixels)
+
+
+def nogc_batch_gb(desc, megapixels, pictures):
+    """GB the pictures past the first add with checkpointing off (desc.batch_gb_nogc), or None when unmeasured at
+    this size."""
+    if pictures <= 1:
+        return 0.0
+    pts = getattr(desc, "batch_gb_nogc", None) or ()
+    if not pts or megapixels > max(p[0] for p in pts) + 0.01:
+        return None
+    return _peak((pts, 0.0), max(megapixels, min(p[0] for p in pts))) * (pictures - 1)
+
+
+def plan_checkpointing(desc, precision, blocks_to_swap, megapixels, free_gb=None, compiled=True, kind="", rank=8,
+                       pictures=1):
     """Gradient checkpointing on or off: (on, reason). Off only on a big card (NOGC_MIN_CARD_GB+), for a compiled run with no block swap whose measured
     no-checkpointing peak (desc.train_memory_nogc, at the largest bucket) fits free VRAM with NOGC_MARGIN_GB to spare.
     The figures are compiled runs - uncompiled blocks without checkpointing take more - and a swapped block's weights
@@ -321,8 +339,8 @@ def plan_checkpointing(desc, precision, blocks_to_swap, megapixels, free_gb=None
         return True, f"no measured figure for {key} without it"
     if blocks_to_swap > 0:
         return True, "blocks are swapped"
-    if not compiled and desc.compiles:       # a family that never compiles was measured uncompiled
-        return True, "the blocks aren't compiled this run"
+    if not compiled and desc.compiles and not getattr(desc, "nogc_uncompiled", False):
+        return True, "the blocks aren't compiled this run"     # (a family that never compiles was measured uncompiled)
     if card_gb() < NOGC_MIN_CARD_GB:
         return True, f"a {card_gb():.0f} GB card (only {NOGC_MIN_CARD_GB:.0f} GB+ cards go without it)"
     if rank > NOGC_MAX_RANK:
@@ -332,9 +350,14 @@ def plan_checkpointing(desc, precision, blocks_to_swap, megapixels, free_gb=None
     if megapixels > max(p[0] for p in pts) + 0.01:
         return True, f"on: {megapixels:.2f} MP is past the measured sizes"
     need = _peak((pts, 0.0), max(megapixels, min(p[0] for p in pts)))    # below the first point: that point's peak
+    more = nogc_batch_gb(desc, megapixels, pictures)
+    if more is None:
+        return True, f"on: no measured figure for {pictures} pictures a step without it at {megapixels:.2f} MP"
+    need += more
+    at = f"{megapixels:.2f} MP" + (f" x {pictures} pictures" if pictures > 1 else "")
     if need + NOGC_MARGIN_GB <= free_gb:
-        return False, f"off: needs ~{need:.1f} GB at {megapixels:.2f} MP, {free_gb:.1f} GB free"
-    return True, f"on: off would need ~{need + NOGC_MARGIN_GB:.1f} GB at {megapixels:.2f} MP, {free_gb:.1f} GB free"
+        return False, f"off: needs ~{need:.1f} GB at {at}, {free_gb:.1f} GB free"
+    return True, f"on: off would need ~{need + NOGC_MARGIN_GB:.1f} GB at {at}, {free_gb:.1f} GB free"
 
 
 def plan_partial_checkpointing(desc, precision, blocks_to_swap, megapixels, free_gb=None, compiled=True, kind="",

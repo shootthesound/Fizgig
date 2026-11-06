@@ -160,12 +160,14 @@ def _render(c):
                 paths, nolora = _render_songs(eng, st, c, out, gen)
             else:
                 base = eng.generate_baseline(st)
-                tweak = base if eng.same_as_baseline(st) else eng.generate_preview(st)   # nothing moved: one render
-                paths = {}
-                for name, img in (("baseline", base), ("tweaked", tweak)):
-                    p = os.path.join(out, f"{name}_{gen}.png")
-                    img.save(p)
-                    paths[name] = p
+                paths = {"baseline": os.path.join(out, f"baseline_{gen}.png")}
+                base.save(paths["baseline"])
+                same = eng.same_as_baseline(st)                 # nothing moved: one render for both panes
+                if not same:                                    # the Baseline shows while the Tweaked one renders
+                    emit(ev="baseline_ready", gen=gen, baseline=paths["baseline"])
+                tweak = base if same else eng.generate_preview(st)
+                paths["tweaked"] = os.path.join(out, f"tweaked_{gen}.png")
+                tweak.save(paths["tweaked"])
             emit(ev="rendered", gen=gen, nolora_pending=nolora is not None, notes=S.get("notes"), **paths)
             _tidy(out, gen)
             if nolora is not None:               # as the desktop: the pair first, then the base model's own
@@ -292,17 +294,20 @@ def _render_clips(eng, desc, st, c, out, gen):
             img.save(p)
             emit(ev="early", gen=gen, png=p, step=step, n=n)
         early = dict(early_step=2, on_early=on_early)
-    if tweak is None:
+    paths = {}
+    png = os.path.join(out, f"baseline_{gen}.png")
+    paths["baseline"], paths["baseline_media"] = png, _write_clip(base, png, os.path.join(out, f"baseline_{gen}.mp4"),
+                                                                  fps, rate)
+    if tweak is None:                                   # the Baseline plays while the Tweaked clip renders
+        emit(ev="baseline_ready", gen=gen, baseline=paths["baseline"], baseline_media=paths["baseline_media"])
         tweak = eng.render_clip(st, cache=None, **opts, **early)
     print(f"[studio] clip {width}x{height} x{frames}, {len(st.keyframes or [])} keyframe(s), "
           f"{len(st.references or [])} reference(s): peak {torch.cuda.max_memory_allocated() / 2**30:.2f} GB allocated, "
           f"{torch.cuda.max_memory_reserved() / 2**30:.2f} GB reserved, from {rest:.2f} GB at rest "
           f"(base {getattr(eng, 'base_plan', None)})", flush=True)
-    paths = {}
-    for name, clip in (("baseline", base), ("tweaked", tweak)):
-        png = os.path.join(out, f"{name}_{gen}.png")
-        mp4 = _write_clip(clip, png, os.path.join(out, f"{name}_{gen}.mp4"), fps, rate)
-        paths[name], paths[name + "_media"] = png, mp4
+    png = os.path.join(out, f"tweaked_{gen}.png")
+    paths["tweaked"], paths["tweaked_media"] = png, _write_clip(tweak, png, os.path.join(out, f"tweaked_{gen}.mp4"),
+                                                                fps, rate)
 
     # hand the render's cached memory back (the model stays loaded): the page plays these clips next, and a card the
     # worker leaves full - Vimoo bf16 + the decode's cache held 30.5 of 32 GB - gives the video decode and the desktop

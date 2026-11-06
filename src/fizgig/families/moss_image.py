@@ -196,6 +196,7 @@ MOSS_IMAGE = FamilyDescription(
     # 13 s slower (compiling) = paid back in ~35 steps; 200 leaves room for runs with several bucket shapes.
     # INT8 / NF4 not measured yet: bf16's figure, and Klein's NF4 one, so Auto compiles the default INT8 base.
     compile_payback_steps={"bf16": 200, "int8": 200, "nf4": 400},
+    not_offered={"int8_attention": "routed through attend(), but the speed-up isn't measured yet"},
     # int8_attention left off: the model routes attention through int8_attention.attend(), but the speed-up isn't
     # measured yet (ABILITIES.md: keep it where it measures faster)
     # Identity in blocks 24-35 (5 Nov 2026): Peter's eye on the Profiler's group renders of a character LoRA

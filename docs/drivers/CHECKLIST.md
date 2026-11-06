@@ -56,7 +56,9 @@ Most people train on 12–24 GB cards, so a family isn't finished until it has b
 
 ## Abilities: every one the model can support
 
-Switch on every ability the model can support, and test each one below. Leave one out only when the model can't do it or a measurement shows it hurts, and say why in a comment beside the description field. [ABILITIES.md](ABILITIES.md) lists what each one asks of the driver.
+Switch on every ability the model can support, and test each one below. Leave one out only when the model can't do it or a measurement shows it hurts, and name it in the description's `not_offered` with the reason. [ABILITIES.md](ABILITIES.md) lists what each one asks of the driver.
+
+`checks/test_family_abilities.py` enforces this: a picture family that lacks an ability at least half the picture families have, without a `not_offered` entry, fails the checks. Run them before calling a family done.
 
 - [ ] **LoKR** (`network_types`), or a comment saying why not.
 - [ ] **Masked training** (`masked_training`): a run with masks and the prior outside them trains and previews.

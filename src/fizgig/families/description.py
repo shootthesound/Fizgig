@@ -556,6 +556,11 @@ class FamilyDescription:
     adaptive_lr_clip_signal: bool = False
     adaptive_lr: bool = True          # the Adaptive LR control (off: hidden, never sent - MiniMax H3)
     loss_watch: bool = True           # the per-image loss watch toggles (off: hidden, never sent - MiniMax H3)
+    # Abilities this family leaves out, each with its reason: {field name: why}. checks/test_family_abilities.py
+    # fails when a picture family lacks an ability most picture families have (masked training, sliders, fine-tune,
+    # Turbo Preview, INT8 attention, Adaptive LR, the loss watch, caption dropout, batching, Detail crops, Start at
+    # a smaller size) and doesn't name it here - so a missing ability is a decision written down, never an oversight
+    not_offered: dict = field(default_factory=dict)
     # masked training (fizgig/dataset/masks.py): the driver's training_loss takes loss_mask; opt in, so a family added
     # later never gets a tick its driver can't honour
     masked_training: bool = False

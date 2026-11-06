@@ -18,7 +18,7 @@ _TEMPLATE = "Comfy-Org workflow_templates templates/image_qwen_image_2_1_t2i.jso
 _REDDIT = "r/StableDiffusion 'Qwen Image 2.1 4 Steps Turbo Lora is here by Viggle' (community, Sep 2026)"
 
 def _preset(rank, lr=1e-4, adaptive=None, epochs=30, edit=False, slider=False):
-    # 0.5 MP, adamw, 30 epochs saved every epoch. adaptive=(min, max) turns Adaptive LR on (the run starts at
+    # 0.5 MP, adamw8bit, 30 epochs saved every epoch. adaptive=(min, max) turns Adaptive LR on (the run starts at
     # the geometric midpoint and the LR box is ignored); None trains flat at lr. Detection runs; per-image LR is
     # off, as in the runs these were measured on.
     lo, hi = adaptive or ("2e-4", "4e-4")
@@ -27,8 +27,7 @@ def _preset(rank, lr=1e-4, adaptive=None, epochs=30, edit=False, slider=False):
         "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 42, "FAMILY_EDIT": edit,
         "FAMILY_SLIDER": slider,
         "ADAPTIVE_LR": adaptive is not None, "ADAPTIVE_LR_MIN": lo, "ADAPTIVE_LR_MAX": hi,
-        # AdamW, not AdamW8bit (6 Nov A/B on an RTX PRO 6000: 14% faster a step; full-precision state, +0.25 GB at rank 16)
-        "OPTIMIZER_TYPE": "adamw", "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
+        "OPTIMIZER_TYPE": "adamw8bit", "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
         "DATASET_MEGAPIXELS": "0.5", "BLOCKS_SWAP": "Auto (detect from GPU)",
         "FAMILY_PRECISION": "Auto (fits your free VRAM)", "FAMILY_TRAINING_ADAPTER": True,
         "FAMILY_EMA": "0.98 (recommended)",

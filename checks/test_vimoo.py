@@ -157,14 +157,13 @@ def test_small_card_auto_prefers_nf4(monkeypatch):
     from types import SimpleNamespace
 
     from fizgig.families import quant
-    from fizgig.vimoo import driver as D
     drv = get("vimoo").load_driver()
     drv._heaviest_item = lambda group: (0.25, 1)
     group = SimpleNamespace(datasets=[])
     monkeypatch.setattr(quant, "free_vram_gb", lambda: 15.0)
-    monkeypatch.setenv("FIZGIG_SIM_VRAM_GB", "16")
+    monkeypatch.setenv("FIZGIG_PREVIEW_LOWMEM", "1")
     assert drv.plan_run("auto", -1, group=group, run=None)[0] == "nf4"
     assert drv.plan_run("int8", -1, group=group, run=None)[:2] == ("int8", 0)
-    monkeypatch.setenv("FIZGIG_SIM_VRAM_GB", "32")
+    monkeypatch.setenv("FIZGIG_PREVIEW_LOWMEM", "0")
     monkeypatch.setattr(quant, "free_vram_gb", lambda: 30.0)
     assert drv.plan_run("auto", -1, group=group, run=None)[0] == "int8"

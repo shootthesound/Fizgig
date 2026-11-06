@@ -139,6 +139,15 @@ VIMOO = FamilyDescription(
     train_memory={"bf16": (((0.25, 28.0), (1.0, 28.0)), 0.42),
                   "int8": (((0.25, 19.5), (1.0, 19.5), (5.2, 19.7)), 0.21),
                   "nf4": (((0.25, 15.9), (1.0, 15.9), (5.2, 16.0)), 0.0)},
+    # under 20 GB the trainer parks the model for each preview's decode, so the 5090's decode-beside-the-model peak
+    # doesn't apply. Measured 5 Nov 2026 on an RTX 4090 Laptop GPU (16 GB; rank 8, AdamW, no swap, 6 photos + a
+    # 33-frame clip at 0.25 MP - the clip, 9 latent frames, the heaviest item at 2.2 MP of tokens - with the default
+    # 2-second 832x480 distilled preview): INT8 13.1 GB (3.8 s a step), NF4 9.6 GB (3.0 s). The 5090's clip runs add
+    # +1.2 GB from 3.2 to 5.2 MP of tokens, carried onto the 5.2 points. NF4 first there: it leaves a 16 GB card room and steps faster (3.0 s against 3.8), and lower-memory
+    # machines are where this model is expected to be used most (Peter, 6 Nov)
+    train_memory_small={"int8": (((0.25, 13.1), (2.2, 13.1), (5.2, 14.3)), 0.21),
+                        "nf4": (((0.25, 9.6), (2.2, 9.6), (5.2, 10.8)), 0.0)},
+    auto_precisions_small=("nf4", "int8"),
     optimizers=("adamw", "adamw8bit", "automagic3"),
     network_types=("lora", "lokr"),
     batch_training=False,

@@ -839,6 +839,7 @@ def layout(desc, prefs, pref_path, samples=None):
                       "speed_label": (desc.preview_speed().name.split(" LoRA")[0].split(" (")[0].split()[-1]
                                       if desc.preview_speed() is not None else ""),
                       "show_early": bool(getattr(desc.workbench_engine_class(), "supports_show_early", False)),
+                      "base_steps": desc.default_sampling().steps if desc.default_sampling() else None,
                       "bases": [n for n, _ in vc.bases], "speed_boost": bool(vc.speed_boost),
                       "sound": bool(audio_vae and os.path.exists(audio_vae))} if kind == "video" and vc else None,
             "song_lengths": SONG_LENGTHS if kind == "audio" else None,

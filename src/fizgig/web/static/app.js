@@ -5243,6 +5243,15 @@ function studioKind(L, sv) {
   $("stH3Turbo").value = h3.turbo != null ? h3.turbo : (V.speed_strength != null ? V.speed_strength
     : $("stH3Turbo").defaultValue);
   $("stH3TurboLabel").textContent = V.speed_label || "Turbo";
+  {   // the two boxes' tooltips, in this model's own terms
+    const sp = V.speed_label || "speed", fast = V.steps || $("stH3Steps").defaultValue, at = V.speed_strength != null ?
+      V.speed_strength : 1, full = V.base_steps ? `about ${V.base_steps}` : "many more";
+    $("stH3Steps").title = `Sampling steps for the clip. With ${sp} at ${at}, ${fast} steps is the fast loop; with ` +
+      `${sp} at 0 (the base model alone) it needs ${full}.`;
+    $("stH3Turbo").title = `Strength of the built-in ${sp} LoRA: ${at} for the fast previews. 0 switches it off - the ` +
+      `render is the base model plus your LoRAs at the steps set (raise Steps to ${full}). That is also how you edit a ` +
+      `${sp} LoRA: load it as the primary and set this to 0.`;
+  }
   $("stH3TurboLabel").style.display = $("stH3Turbo").style.display = V.speed_label ? "" : "none";
   $("stH3Sound").checked = V.sound && h3.sound !== false;
   $("stH3Sound").disabled = !V.sound;

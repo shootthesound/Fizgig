@@ -246,6 +246,9 @@ def _write_clip(clip, path_png, path_mp4, fps, rate):
     arr = np.stack([np.asarray(f.convert("RGB")) for f in frames])
     ten = torch.from_numpy(arr).permute(3, 0, 1, 2).float() / 255.0
     wav = clip.get("wav")
+    if not rate:                    # a model with no sound (Vimoo: audio_rate 0): a silent MP4, no track
+        write_preview_mp4(path_mp4, ten, None, fps=fps)
+        return path_mp4
     wav_path = os.path.join(tempfile.gettempdir(), f"fizgig_studio_{os.getpid()}.wav")
     write_wav(wav_path, wav if wav is not None else torch.zeros(2, int(rate * len(frames) / fps)), sample_rate=rate)
     write_preview_mp4(path_mp4, ten, wav_path, fps=fps)

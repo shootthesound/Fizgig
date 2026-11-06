@@ -33,14 +33,14 @@ _FT_SHARE = "11:4:30:8:2"
 
 def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="1.0", slider=False, ft=False):
     # Not yet trained on MOSS-Image (the driver was built without a GPU): Flux 3's preset shape (Krea 2's values,
-    # families/flux3.py), at 1 MP (the last pretraining stage's area), with fused AdamW as CHECKLIST.md asks for LoRA presets. EMA 0.98, the
+    # families/flux3.py), at 1 MP (the last pretraining stage's area), on AdamW8bit (Peter, 6 Nov: higher likeness at the same epochs than AdamW in his tests). EMA 0.98, the
     # per-image loss watch off, saved every epoch. adaptive=(min, max) turns Adaptive LR on.
     lo, hi = adaptive or ("1e-4", "4e-4")
     return {
         "NETWORK_DIM": rank, "NETWORK_ALPHA": rank, "NETWORK_TYPE": "LoRA (standard)", "LEARNING_RATE": lr,
         "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 42,
         "ADAPTIVE_LR": adaptive is not None, "ADAPTIVE_LR_MIN": lo, "ADAPTIVE_LR_MAX": hi,
-        "OPTIMIZER_TYPE": "adamw", "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
+        "OPTIMIZER_TYPE": "adamw8bit", "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
         "DATASET_MEGAPIXELS": mp, "BLOCKS_SWAP": "Auto (detect from GPU)",
         "FAMILY_PRECISION": "Auto (fits your free VRAM)", "FAMILY_EMA": "0.98 (recommended)",
         "KREA2_LOSS_WATCH": False, "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False,

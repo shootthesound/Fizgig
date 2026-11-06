@@ -34,7 +34,7 @@ A LoRA trained on Turbo the usual way undoes the distillation that makes it fast
 
 ## Presets
 
-Every preset trains 30 epochs with AdamW, EMA 0.98 and the per-image loss watch, saving every epoch:
+Every preset trains 30 epochs with Muon, EMA 0.98 and the per-image loss watch, saving every epoch:
 
 | Preset | Rank | Learning rate | Size | For |
 |---|---|---|---|---|

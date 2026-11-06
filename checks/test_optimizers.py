@@ -31,8 +31,8 @@ def test_new_optimizers_listed():
         assert name in opts
 
 
-# presets that pick a new optimizer by decision: Qwen Image 2.1 on Muon (Peter, 6 Nov 2026 - source-matching detail)
-CHOSEN = {"qwen_image21": "muon"}
+# presets that pick a new optimizer by decision (Peter, 6 Nov 2026 - Muon's source-matching detail)
+CHOSEN = {k: "muon" for k in ("qwen_image21", "krea2", "moss_image", "vimoo", "zimage", "zimage_base")}
 
 
 def test_no_preset_picks_a_new_optimizer():

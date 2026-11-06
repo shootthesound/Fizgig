@@ -5,6 +5,7 @@ Trains on photos and clips (24 fps, 4n + 1 frames) from the single files Vimoo s
 text, SigLIP for image-to-video, Wan 2.2's TI2V VAE and the distilled LoRA that renders in 12 steps. The model code is
 in fizgig/vimoo/ (a port of Vimoo's diffusers fork with the ComfyUI file's names, so the LoRA loads in ComfyUI).
 """
+from fizgig.training.optimizers import MUON_DEFAULT_ARGS
 from fizgig.families.description import (
     ClipSpec,
     FamilyDescription,
@@ -42,12 +43,13 @@ OPTIONS = (
 )
 
 
-def _preset(rank, lr=1e-4, epochs=40, mp="0.25", optimizer="adamw8bit", slider=False, ft=False):
+def _preset(rank, lr=1e-4, epochs=40, mp="0.25", optimizer="muon", slider=False, ft=False):
     return {
         "FAMILY_SLIDER": slider, "FAMILY_SLIDER_GUIDANCE": "3", "FAMILY_FT": ft,
         "NETWORK_DIM": rank, "NETWORK_ALPHA": rank, "NETWORK_TYPE": "LoRA (standard)",
         "LEARNING_RATE": lr, "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 42,
-        "OPTIMIZER_TYPE": optimizer, "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
+        "OPTIMIZER_TYPE": optimizer, "OPTIMIZER_ARGS": MUON_DEFAULT_ARGS if optimizer == "muon" else "",
+        "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
         "DATASET_MEGAPIXELS": mp, "FAMILY_EMA": "0.98 (recommended)", "COMPILE_BLOCKS": "Off",
         "BLOCKS_SWAP": "Auto (detect from GPU)", "FAMILY_PRECISION": "Auto (fits your free VRAM)",
     }

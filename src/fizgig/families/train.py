@@ -1308,7 +1308,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             logger.info("[slider] previews use the pairs' caption: '%s'", shared)
     if slider:
         driver.slider_setup(group)           # e.g. H3: still previews unless the pairs are clips
-    bsz = max(int(getattr(ds, "batch_size", 1) or 1) for ds in group.datasets)
+    bsz = max((int(getattr(ds, "batch_size", 1) or 1) for ds in group.datasets), default=1)   # a prompt slider has none
     if bsz != 1 and not desc.batch_training:
         raise RuntimeError("Fizgig trains one image at a time: set batch_size = 1 in the dataset config. For a "
                            "larger effective batch use --gradient_accumulation_steps (the same averaged "

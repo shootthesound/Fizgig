@@ -130,7 +130,7 @@ class MyModelDriver(FamilyDriver):
     def generate(self, dit, cond, width, height, *, steps, seed, cfg=1.0, neg_cond=None, sigmas=None,
                  options=(), noise=None, on_step=None, refs=None):
         """Denoise one image -> latents (your layout). Call on_step(i, steps) before every step and let it raise:
-        that is how a render is cancelled, and how Turbo Preview knows which step it's on. noise, when given,
+        that is how a render is cancelled, and how Reuse unchanged blocks knows which step it's on. noise, when given,
         replaces the seed's start. sigmas / options come from a speed LoRA's settings; ignore what you don't use."""
 
     @torch.no_grad()
@@ -243,6 +243,6 @@ The dataset TOML is the same format every family uses ([CLI.md](../CLI.md)). Whe
 
 ## Next
 
-- [ABILITIES.md](ABILITIES.md): switch on edit training, sliders, fine-tuning, Turbo Preview, compile and more, one field at a time.
+- [ABILITIES.md](ABILITIES.md): switch on edit training, sliders, fine-tuning, Reuse unchanged blocks, compile and more, one field at a time.
 - [FINETUNE.md](FINETUNE.md): full fine-tuning, if you want it now. It's optional and can come later.
 - [VIDEO.md](VIDEO.md): if your model also trains on clips.

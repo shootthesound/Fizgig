@@ -317,7 +317,7 @@ MINIMAX = FamilyDescription(
     detail_crops=False,                      # clips: a crop of a frame isn't a clip
     multi_concept_hint="See the MiniMax section of the README.",
     int8_attention=True,              # workbench renders: comfy-kitchen's INT8 attention
-    activation_cache=True,            # Turbo Preview: step-1 replay, identical to a full render
+    activation_cache=True,            # Reuse unchanged blocks: step-1 replay, identical to a full render
     adaptive_lr=False,
     not_offered={
         "adaptive_lr": "retired for H3 by decision (its LR is set by the adapter ramp)",

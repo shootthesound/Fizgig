@@ -558,7 +558,7 @@ class FamilyDescription:
     loss_watch: bool = True           # the per-image loss watch toggles (off: hidden, never sent - MiniMax H3)
     # Abilities this family leaves out, each with its reason: {field name: why}. checks/test_family_abilities.py
     # fails when a picture family lacks an ability most picture families have (masked training, sliders, fine-tune,
-    # Turbo Preview, INT8 attention, Adaptive LR, the loss watch, caption dropout, batching, Detail crops, Start at
+    # Reuse unchanged blocks, INT8 attention, Adaptive LR, the loss watch, caption dropout, batching, Detail crops, Start at
     # a smaller size) and doesn't name it here - so a missing ability is a decision written down, never an oversight
     not_offered: dict = field(default_factory=dict)
     # masked training (fizgig/dataset/masks.py): the driver's training_loss takes loss_mask; opt in, so a family added
@@ -634,7 +634,7 @@ class FamilyDescription:
     # Repair Studio / Royale renders take comfy-kitchen's INT8 attention (fizgig/modules/int8_attention.py:
     # the family's attention calls attend() first). Inference only; the Profiler keeps exact attention
     int8_attention: bool = False
-    # Repair Studio's Turbo Preview tick (families/act_cache.py): a slider change replays the unchanged blocks on
+    # Repair Studio's Reuse unchanged blocks tick (families/act_cache.py): a slider change replays the unchanged blocks on
     # step 1 - the same picture as a full render
     activation_cache: bool = False
     # the text cache's padding is dropped before every step (only the tokens its <name>__attention_mask marks are

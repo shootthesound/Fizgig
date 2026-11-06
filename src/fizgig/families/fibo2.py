@@ -231,7 +231,7 @@ _FIBO2 = FamilyDescription(
     edit_training=True,
     edit_references=10,
     edit_note=("Pairs of an original and its edited version, the same crop and shape. The caption is the edit instruction ('make it night'), or a JSON caption of the result with an edit_instruction key."),
-    activation_cache=True,            # Turbo Preview: step-1 replay over layers / refiners / Perceiver layers
+    activation_cache=True,            # Reuse unchanged blocks: step-1 replay over layers / refiners / Perceiver layers
     # int8/nf4: offered with measured peaks and the attention measurement.
     precisions=("int8", "nf4", "bf16"),
     # Auto plans from the measured figures.

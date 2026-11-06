@@ -173,7 +173,7 @@ class H3RepairEngine(ClipContract):
         # The community Turbo LoRA (6-step previews). Applied ONCE at ensure_pipeline and left
         # enabled — it conditions every render identically, so baseline-vs-tweaked comparisons
         # are apples to apples. (This is the ~780 MB preview accelerator, not Phase C's
-        # activation-cache "Turbo Preview".)
+        # activation-cache "Turbo Preview", now "Reuse unchanged blocks".)
         self._turbo_net = None
         self._turbo_adaln = []
         self._steps = 20               # 6 when the Turbo LoRA loads
@@ -1293,7 +1293,7 @@ class H3RepairEngine(ClipContract):
             except sampling.PreviewAborted:
                 raise
             except Exception:
-                logger.exception("Turbo Preview failed — falling back to a full forward")
+                logger.exception("Reuse unchanged blocks failed — falling back to a full forward")
                 self._invalidate_activation_cache()
                 lat = _render(None)
         else:

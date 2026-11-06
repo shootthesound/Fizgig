@@ -2,7 +2,7 @@
 
 [← Back to the README](../README.md)
 
-Fibo 2.0 Dev is BRIA's 8.2B model for text-to-image and editing, trained on long structured captions. Fizgig trains LoRAs, edit LoRAs, slider LoRAs and full fine-tunes on it, from a 12 GB card. Training previews render in 4 steps with Comfy-Org's Turbo LoRA. Every workbench tool works on it: Studio with Turbo Preview, LoRA Royale (epochs, seed and prompt travel), the Profiler and Extract. Saved LoRAs and fine-tunes load in ComfyUI as they are.
+Fibo 2.0 Dev is BRIA's 8.2B model for text-to-image and editing, trained on long structured captions. Fizgig trains LoRAs, edit LoRAs, slider LoRAs and full fine-tunes on it, from a 12 GB card. Training previews render in 4 steps with Comfy-Org's Turbo LoRA. Every workbench tool works on it: Studio with Reuse unchanged blocks, LoRA Royale (epochs, seed and prompt travel), the Profiler and Extract. Saved LoRAs and fine-tunes load in ComfyUI as they are.
 
 Thanks to @spaghettified26, who brought Fibo 2.0 to Fizgig.
 

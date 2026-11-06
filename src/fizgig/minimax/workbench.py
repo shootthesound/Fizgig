@@ -53,7 +53,7 @@ class H3WorkbenchEngine(H3RepairEngine):
         self.resume_enabled = self.turbo_preview          # the load turns the resume on; the tick has the last word
         return out
 
-    # ---- Turbo Preview: the tick is the H3 engine's exact pass-1 resume (resume_enabled) ----------------------------
+    # ---- Reuse unchanged blocks: the tick is the H3 engine's exact pass-1 resume (resume_enabled) ----------------------------
     @property
     def turbo_preview(self):
         return bool(getattr(self, "_turbo_wanted", True))

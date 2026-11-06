@@ -141,7 +141,7 @@ ZIMAGE = FamilyDescription(
                   "Triton and, on Windows, a C++ compiler (VS Build Tools) - both located automatically. Never used "
                   "with Blocks Swap, since swapping moves weights and compiled graphs assume they stay put."),
     int8_attention=True,              # workbench renders through attend(); speed-up to be measured
-    activation_cache=True,            # Turbo Preview: the 30 layers sit in one ModuleList, on_step every step
+    activation_cache=True,            # Reuse unchanged blocks: the 30 layers sit in one ModuleList, on_step every step
     helper_files=(("Tongyi-MAI/Z-Image-Turbo", ("tokenizer/*", "vae/config.json")),),
 
     sampling=(

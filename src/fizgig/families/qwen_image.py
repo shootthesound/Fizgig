@@ -197,7 +197,7 @@ QWEN_IMAGE_21 = FamilyDescription(
         note="Qwen-Image-2.1-Turbo: 8 steps, CFG 1, its own sigmas with no shift.",
         source=f"https://huggingface.co/{_TURBO} (model_index.json, scheduler_config.json)"),
     int8_attention=True,              # workbench renders: comfy-kitchen's INT8 attention
-    activation_cache=True,            # Turbo Preview: step-1 replay, identical to a full render
+    activation_cache=True,            # Reuse unchanged blocks: step-1 replay, identical to a full render
     finetune=True,                  # the driver's ft_spec (families/ft.py)
     # measured 28 Sep 2026: 40-48 pairs learned a grade on held-out photos in 6-8 epochs at 0.5 MP
     edit_note=("About 40 pairs (20 at least; more if your photos vary a lot). Each photo 1 MP or larger, e.g. "

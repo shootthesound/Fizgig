@@ -103,7 +103,7 @@ def training_loss(self, dit, latents, cond, generator, *, min_t=0.0, max_t=1.0, 
 
 ### Sampling
 
-An explicit sigma schedule (a speed LoRA's) applies only at its own step count, and the negative only above CFG 1. `on_step` is passed through to the sampler, which calls it before every step: that is how a render is cancelled and how Turbo Preview knows the step.
+An explicit sigma schedule (a speed LoRA's) applies only at its own step count, and the negative only above CFG 1. `on_step` is passed through to the sampler, which calls it before every step: that is how a render is cancelled and how Reuse unchanged blocks knows the step.
 
 <!-- excerpt: qwen_image21/driver.py QwenImage21Driver.generate -->
 ```python

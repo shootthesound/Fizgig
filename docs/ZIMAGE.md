@@ -2,7 +2,7 @@
 
 [← Back to the README](../README.md)
 
-Z-Image Turbo is Tongyi-MAI's 6B photo model: 8 steps, no CFG, and one of the most-used image models in ComfyUI. Fizgig trains on Turbo itself, the model you generate with, with Fizgig's own training adapter keeping its 8-step look intact while your LoRA learns: LoRAs, LoKRs and slider LoRAs from a 12 GB card, and full fine-tunes from 16 GB. Every workbench tool works on it: Studio with Turbo Preview, LoRA Royale, the Profiler and Extract. Saved LoRAs load in ComfyUI's standard LoRA loader.
+Z-Image Turbo is Tongyi-MAI's 6B photo model: 8 steps, no CFG, and one of the most-used image models in ComfyUI. Fizgig trains on Turbo itself, the model you generate with, with Fizgig's own training adapter keeping its 8-step look intact while your LoRA learns: LoRAs, LoKRs and slider LoRAs from a 12 GB card, and full fine-tunes from 16 GB. Every workbench tool works on it: Studio with Reuse unchanged blocks, LoRA Royale, the Profiler and Extract. Saved LoRAs load in ComfyUI's standard LoRA loader.
 
 Z-Image Turbo support is marked experimental.
 
@@ -66,7 +66,7 @@ The **text encoder** only runs while captions cache, before training starts. Wit
 
 ## Previews
 
-Previews render on Turbo itself: 8 steps, no CFG, shift 3, as the reference does. The Samples tab hides CFG and the negative prompt for Z-Image, since they do nothing without CFG. Studio and LoRA Royale follow the Samples tab's settings; Studio starts at 768, its default size, and **Turbo Preview** makes late-block tweaks near-instant.
+Previews render on Turbo itself: 8 steps, no CFG, shift 3, as the reference does. The Samples tab hides CFG and the negative prompt for Z-Image, since they do nothing without CFG. Studio and LoRA Royale follow the Samples tab's settings; Studio starts at 768, its default size, and **Reuse unchanged blocks** makes late-block tweaks near-instant.
 
 ## Slider LoRAs
 

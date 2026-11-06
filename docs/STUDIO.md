@@ -21,7 +21,7 @@ Every image and video model has Studio; ACE-Step (songs) has it too, with a song
 
 Click either picture to see both full size (← → switches between them). **⧉ Keep in view** puts the pair in a panel that stays on screen while you scroll down to the sliders.
 
-**Turbo Preview** (on by default where the model has it) keeps the unchanged blocks' results in VRAM and replays them, so a change to a late block renders almost at once. It is the same picture as a full render. Turn it off if VRAM is tight.
+**Reuse unchanged blocks** (on by default where the model has it) keeps the unchanged blocks' results in VRAM and replays them, so a change to a late block renders almost at once. It is the same picture as a full render. Turn it off if VRAM is tight.
 
 Studio can't load while a training run is using the GPU.
 

@@ -851,7 +851,7 @@
                 <label class="checkbox-label" id="stTurboRow" title="It keeps the unchanged blocks' results in VRAM to replay them: turn it off if VRAM is tight."><input type="checkbox" id="stTurbo" checked> Turbo Preview
                   (late-block changes render almost at once; the same picture as a full render)</label></div>
               <div id="stVideoRows" style="display:none">
-                <div class="field-row"><span class="field-label">Model:</span><select id="stH3Model" class="w-combo st-small-select" title="The Reference model takes up to two photos (Frames below): say &lt;Picture 1&gt; / &lt;Picture 2&gt; in the prompt for them. Switching reloads the model at the next Start / Update (about 25 s)."></select>
+                <div class="field-row" id="stH3ModelRow"><span class="field-label">Model:</span><select id="stH3Model" class="w-combo st-small-select" title="The Reference model takes up to two photos (Frames below): say &lt;Picture 1&gt; / &lt;Picture 2&gt; in the prompt for them. Switching reloads the model at the next Start / Update (about 25 s)."></select>
                   <span class="field-label">Base:</span><select id="stH3Base" class="w-combo st-small-select"></select></div>
                 <div class="field-row"><span class="field-label">Clip:</span>
                   <span class="st-inline"><select id="stH3Len" class="w-combo st-small-select"></select>
@@ -859,10 +859,10 @@
                     <span class="field-hint">H</span><select id="stH3H" class="w-combo st-small-select"></select></span></div>
                 <div class="field-row"><span class="field-label"></span>
                   <span class="st-inline"><span class="field-hint">Steps</span><input type="text" id="stH3Steps" value="4" title="Sampling steps for the clip. With Turbo at 1.0, 4 steps is the fast loop; Turbo 0 needs about 20.">
-                    <span class="field-hint">Turbo</span><input type="text" id="stH3Turbo" value="1" title="Strength of the built-in Turbo LoRA: 1.0 for the fast loop, 0.75 matches the in-training previews. 0 switches it off - the render is the base plus your LoRAs at the steps set. That is how you edit a Turbo LoRA: load it as the primary and set this to 0.">
-                    <label class="checkbox-label"><input type="checkbox" id="stH3Sound" checked> Sound</label>
+                    <span class="field-hint" id="stH3TurboLabel">Turbo</span><input type="text" id="stH3Turbo" value="1" title="Strength of the built-in Turbo LoRA: 1.0 for the fast loop, 0.75 matches the in-training previews. 0 switches it off - the render is the base plus your LoRAs at the steps set. That is how you edit a Turbo LoRA: load it as the primary and set this to 0.">
+                    <label class="checkbox-label" id="stH3SoundBox"><input type="checkbox" id="stH3Sound" checked> Sound</label>
                     <label class="checkbox-label" title="The first half of the steps (rounded down: 7 steps gives 3) render at half size, then the clip grows to full size for the rest - a faster render. The layout is worked out at half size, so a seed frames differently with it on. From Fizgig's H3 Speed Boost node (SPEED, Xiao et al. 2026, via LC Speed Boost)."><input type="checkbox" id="stH3Boost" checked> Speed Boost</label>
-                    <label class="checkbox-label" title="Put up the pass-2 estimate in the Tweaked pane while the remaining passes run"><input type="checkbox" id="stH3Early" checked> Show early</label></span></div>
+                    <label class="checkbox-label" id="stH3EarlyBox" title="Put up the pass-2 estimate in the Tweaked pane while the remaining passes run"><input type="checkbox" id="stH3Early" checked> Show early</label></span></div>
               </div>
               <div class="field-row" id="stNegRow"><span class="field-label">Negative:</span>
                 <textarea id="stNeg" rows="2" spellcheck="false"></textarea></div>

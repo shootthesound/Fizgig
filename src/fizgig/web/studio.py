@@ -831,6 +831,14 @@ def layout(desc, prefs, pref_path, samples=None):
                       "models": [c.label for c in vc.checkpoints],
                       "references": {c.label: c.references for c in vc.checkpoints},
                       "frame_slots": list(getattr(desc.workbench_engine_class(), "keyframe_slots", ("first", "last"))),
+                      # the clip row's own defaults and labels: the confirm regime's steps and speed-LoRA strength,
+                      # the speed LoRA's short name ("Turbo", "Distilled"), and Show early where the engine has it
+                      "steps": next((int(st) for n, st, _tu in (desc.clip_regimes or ()) if n == "confirm"), None),
+                      "speed_strength": next((float(tu) for n, _st, tu in (desc.clip_regimes or ()) if n == "confirm"),
+                                             None),
+                      "speed_label": (desc.preview_speed().name.split(" LoRA")[0].split(" (")[0].split()[-1]
+                                      if desc.preview_speed() is not None else ""),
+                      "show_early": bool(getattr(desc.workbench_engine_class(), "supports_show_early", False)),
                       "bases": [n for n, _ in vc.bases], "speed_boost": bool(vc.speed_boost),
                       "sound": bool(audio_vae and os.path.exists(audio_vae))} if kind == "video" and vc else None,
             "song_lengths": SONG_LENGTHS if kind == "audio" else None,

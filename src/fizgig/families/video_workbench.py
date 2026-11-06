@@ -39,6 +39,7 @@ class ClipContract:
     # and base-mode picker, the render library's block banks
     supports_keyframes = False
     keyframe_slots = ("first", "last")       # the frames a keyframe can pin (Vimoo: the first only)
+    supports_show_early = False              # render_clip(on_early=) puts up a mid-render estimate (H3's engine)
     supports_base_modes = False
     supports_banks = False
 

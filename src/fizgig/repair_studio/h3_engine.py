@@ -1562,6 +1562,7 @@ class H3RepairEngine(ClipContract):
     # the shared video contract (families/video_workbench.py ClipContract); these are H3's hooks.
     default_clip_frames = H3_PREVIEW_FRAMES
     supports_keyframes = supports_base_modes = supports_banks = True
+    supports_show_early = True
 
     def _clip_regimes(self):
         from fizgig.families.minimax import MINIMAX

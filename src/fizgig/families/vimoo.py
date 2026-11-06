@@ -151,7 +151,7 @@ VIMOO = FamilyDescription(
     optimizers=("adamw", "adamw8bit", "automagic3"),
     network_types=("lora", "lokr"),
     batch_training=False,
-    masked_training=False,
+    masked_training=True,             # photos only: the dataset gives a mask to a still, never to a clip (as H3)
     loss_watch=True,
 
     sampling=(

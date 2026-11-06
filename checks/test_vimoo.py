@@ -167,3 +167,29 @@ def test_small_card_auto_prefers_nf4(monkeypatch):
     monkeypatch.setenv("FIZGIG_PREVIEW_LOWMEM", "0")
     monkeypatch.setattr(quant, "free_vram_gb", lambda: 30.0)
     assert drv.plan_run("auto", -1, group=group, run=None)[0] == "int8"
+
+
+def test_masked_training_weights_stills_only():
+    """Masked training (as H3): a still's loss is weighted per latent cell by its mask - only the white half counts
+    here - while a clip is never masked."""
+    drv = get("vimoo").load_driver()
+    assert get("vimoo").masked_training
+    zero_noise = {"hidden_states": None, "timestep": torch.zeros(1), "t": 0.5}
+
+    def fake_state(lat, generator, min_t=0.0, max_t=1.0):
+        return {**zero_noise, "hidden_states": lat, "noise": torch.zeros_like(lat)}
+
+    drv.noise_latents = fake_state
+    lat = torch.ones(1, 48, 1, 4, 4)
+    pred = torch.zeros(1, 48, 1, 4, 4)
+    pred[..., :, 2:] = 5.0                       # wrong only on the right half
+    drv.predict = lambda dit, state, cond: pred
+    mask = torch.zeros(1, 1, 4, 4)
+    mask[..., :2] = 1.0                          # white on the left half
+    masked, _ = drv.training_loss(None, lat, {}, None, loss_mask=mask)
+    plain, _ = drv.training_loss(None, lat, {}, None)
+    assert abs(float(masked) - 1.0) < 1e-6        # left half: (0 - (0 - 1))^2 = 1
+    assert float(plain) > float(masked)
+    clip = torch.ones(1, 48, 3, 4, 4)
+    drv.predict = lambda dit, state, cond: torch.zeros_like(clip)
+    assert abs(float(drv.training_loss(None, clip, {}, None, loss_mask=mask)[0]) - 1.0) < 1e-6

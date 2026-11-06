@@ -378,9 +378,29 @@ class VimooDriver(FamilyDriver):
                        **self._cond(cond, device)).float()
             target = (state["noise"] - lat).float()
             return F.mse_loss(pred[:, :, 1:], target[:, :, 1:]), {"t": state["t"]}
-        pred = self.predict(dit, state, cond).float()
         target = (state["noise"] - lat).float()
-        return F.mse_loss(pred, target), {"t": state["t"]}
+        if loss_mask is None or lat.shape[2] > 1:
+            # a clip is never masked (the dataset gives masks to stills only, as H3's)
+            pred = self.predict(dit, state, cond).float()
+            return F.mse_loss(pred, target), {"t": state["t"]}
+        # masked training: one weight per latent cell (the dataset sizes the mask from the cached latent); the prior's
+        # LoRA-off forward runs first, and not at all for an all-white mask (nothing outside it to keep)
+        from fizgig.families.driver import prior_base, weighted_loss, with_prior
+        h, w = lat.shape[-2:]
+        mw = loss_mask.float().reshape(loss_mask.shape[-2], loss_mask.shape[-1])[:h, :w].to(lat.device)
+        if prior is not None and float(mw.min()) >= 1.0:
+            prior = None
+        if not getattr(self, "_mask_logged", False):
+            self._mask_logged = True
+            logger.info("[masks] Vimoo weighting this step per cell: mask on %s, x%.2f..x%.2f, prior %s",
+                        tuple(mw.shape), float(mw.min()), float(mw.max()),
+                        f"x{float(prior.weight):g}" if prior is not None else "off")
+        base = prior_base(prior, mw, lambda: self.predict(dit, state, cond).float())
+        pred = self.predict(dit, state, cond).float()
+        loss = weighted_loss((pred - target).pow(2).mean(dim=1)[0, 0], mw)
+        if base is not None:
+            loss = with_prior(loss, prior, base, (pred - base).pow(2).mean(dim=1)[0, 0], mw)
+        return loss, {"t": state["t"]}
 
     # ---- rendering ---------------------------------------------------------------------------------------------------
     def _latent_shape(self, width, height, frames):

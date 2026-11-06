@@ -19,7 +19,7 @@ Fizgig's adapter is trained at a higher resolution than the existing Qwen 2.1 tr
 
 Qwen renders very sharp images. A LoRA pulls fine detail such as skin texture toward your dataset, so a long run on softer photos trades Qwen's sharpness for theirs. Training faster keeps more of it, and in our testing **0.5 MP is the sweet spot**: quicker than 1 MP, and it keeps more sharpness than 0.25 MP.
 
-All three presets train at 0.5 MP with adamw8bit, EMA 0.98 and the training adapter, for 30 epochs with every epoch saved:
+All three presets train at 0.5 MP with Muon, EMA 0.98 and the training adapter, for 30 epochs with every epoch saved:
 
 | Preset | Rank | Learning rate | For |
 |---|---|---|---|

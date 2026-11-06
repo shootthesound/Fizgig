@@ -31,10 +31,22 @@ def test_new_optimizers_listed():
         assert name in opts
 
 
+# presets that pick a new optimizer by decision: Qwen Image 2.1 on Muon (Peter, 6 Nov 2026 - source-matching detail)
+CHOSEN = {"qwen_image21": "muon"}
+
+
 def test_no_preset_picks_a_new_optimizer():
+    """No preset picks a new optimizer, except the families in CHOSEN, whose presets all use their chosen one with
+    its default arguments."""
     for desc in registry.training_families():
         for name, p in desc.presets or ():
-            assert str(p.get("OPTIMIZER_TYPE") or "").lower() not in NEW, (desc.key, name)
+            opt = str(p.get("OPTIMIZER_TYPE") or "").lower()
+            if desc.key in CHOSEN:
+                assert opt == CHOSEN[desc.key], (desc.key, name)
+                if opt == "muon":
+                    assert p.get("OPTIMIZER_ARGS") == MUON_DEFAULT_ARGS, (desc.key, name)
+            else:
+                assert opt not in NEW, (desc.key, name)
 
 
 def test_prodigy_is_the_vendored_copy_with_its_defaults():

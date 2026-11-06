@@ -55,6 +55,47 @@ def block_modules(driver, dit):
     return out
 
 
+# what a render needs left on the card after the cache: the rest of step 1, the later steps and the decode. A stored block
+# output that would cut into it goes to system RAM instead (a 1280x720 x 121 Vimoo clip stores ~7 GB: on the card it ran a
+# 32 GB card out of memory, 6 Nov 2026) and comes back to the card when replayed - H3's engine does the same
+# (_resume_cache_device)
+KEEP_FREE_GB = 8.0
+
+
+def _free_gb():
+    try:
+        return torch.cuda.mem_get_info()[0] / 2 ** 30
+    except Exception:
+        return float("inf")
+
+
+def _store(x):
+    """A block output to keep: a copy on the card while the card keeps KEEP_FREE_GB free past it, else in system RAM."""
+    if torch.is_tensor(x) and x.is_cuda and _free_gb() - _nbytes(x) / 2 ** 30 < KEEP_FREE_GB:
+        return x.to("cpu", copy=True)
+    if isinstance(x, (tuple, list)):
+        out = [_store(v) for v in x]
+        return tuple(out) if isinstance(x, tuple) else out
+    return x.clone() if torch.is_tensor(x) else x
+
+
+def _back(x, device):
+    """A stored output for replay, on the device the block runs on."""
+    if torch.is_tensor(x):
+        return x.to(device, copy=True) if x.device != device else x.clone()
+    if isinstance(x, (tuple, list)):
+        out = [_back(v, device) for v in x]
+        return tuple(out) if isinstance(x, tuple) else out
+    return x
+
+
+def _arg_device(a, k):
+    for v in list(a) + list(k.values()):
+        if torch.is_tensor(v):
+            return v.device
+    return None
+
+
 def _clone(x):
     if torch.is_tensor(x):
         return x.clone()
@@ -138,12 +179,13 @@ class ActivationCache:
                 if bid in replay:
                     hit = self.out.get(at)
                     if hit is not None:
-                        return _clone(hit)
+                        dev = _arg_device(a, k)
+                        return _back(hit, dev) if dev is not None else _clone(hit)
                 y = orig(*a, **k)
                 if order is not None and at[:2] == (0, 0):
                     order.append(bid)
                 try:
-                    self.out[at] = _clone(y)
+                    self.out[at] = _store(y)
                 except torch.OutOfMemoryError as e:
                     _fail(e)
                 return y

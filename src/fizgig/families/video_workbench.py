@@ -307,7 +307,11 @@ class VideoWorkbenchEngine(ClipContract, WorkbenchEngine):
         # seconds); on 32 GB and below they go back to the CPU after each decode, so the card isn't left full while the
         # page plays the clip (Vimoo bf16 at 768x768 x 49 held 31.4 of 32 GB, 6 Nov 2026)
         from fizgig.families import quant
-        self.driver.keep_vae_resident = not self.lowmem and quant.card_gb() >= quant.NOGC_MIN_CARD_GB
+        big = quant.card_gb() >= quant.NOGC_MIN_CARD_GB
+        self.driver.keep_vae_resident = not self.lowmem and big
+        # and the model steps off the card for each decode there: a clip's decode beside a bf16 model peaked 30.6 GB on
+        # a 32 GB card, which Windows pages into system RAM (a 768x768 x 49 pair took 286 s instead of ~45)
+        self.park_for_decode = self.lowmem or not big
         self._speed_strength = self.speed.strength if self.speed is not None else None
 
     # ---- hooks -------------------------------------------------------------------------------------------------
@@ -443,12 +447,13 @@ class VideoWorkbenchEngine(ClipContract, WorkbenchEngine):
         return self.decode_middle_frame_image(lat)
 
     def _decode(self, lat):
-        if self.lowmem:
+        park = getattr(self, "park_for_decode", self.lowmem)
+        if park:
             self._park_dit("cpu")
         try:
             return self.driver.decode(self.vae, {"latent": lat, "audio": None}, None, None)
         finally:
-            if self.lowmem:
+            if park:
                 self._park_dit(self.device)
 
     @torch.no_grad()

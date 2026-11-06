@@ -81,7 +81,8 @@ def cmd_load(c):
         S["mix_files"] = {}
         eng.turbo_preview = bool(c.get("turbo", True))
         if getattr(desc, "video_workbench", False):
-            eng.int8_attention = True                # as the desktop's Repair Studio (comfy-kitchen where it exists)
+            # comfy-kitchen's INT8 attention where the model takes it (its description; H3 yes, Vimoo no)
+            eng.int8_attention = bool(getattr(desc, "int8_attention", False))
             eng.on_status = lambda text: emit(ev="status", text=str(text))
             S["kf"] = {}                             # keyframe / reference latents, per slot, photo, crop and canvas
         if c.get("preview_settings") is not None:
@@ -527,7 +528,7 @@ def _engine_for(c, status_ev="royale_status"):
         eng = desc.make_workbench_engine()
     S["engine"], S["desc"], S["plan_sig"] = eng, desc, sig
     if getattr(desc, "video_workbench", False):
-        eng.int8_attention = True
+        eng.int8_attention = bool(getattr(desc, "int8_attention", False))
         eng.on_status = lambda text: emit(ev=status_ev, text=str(text))
         if c.get("canvas"):
             eng.plan_canvas = tuple(c["canvas"])  # H3 Auto: room for the clip about to render

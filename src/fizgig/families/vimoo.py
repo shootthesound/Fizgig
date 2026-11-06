@@ -154,13 +154,14 @@ VIMOO = FamilyDescription(
     batch_training=False,
     not_offered={
         "batch_training": "clips train one a step; stills batching not measured for Vimoo",
+        "int8_attention": "measured 6 Nov 2026: mottles plain backgrounds (frame-to-frame flicker +13%, the clip 15% "
+                          "away from plain attention) for ~2 s a render",
         "detail_crops": "a crop of a clip's frame isn't a clip",
         "resolution_stages": "clips train at their own size: not measured with stages",
     },
     masked_training=True,
     slider_training=True,             # photo / clip pairs (training_loss diff weighting) or prompts (noise_latents / predict)
     activation_cache=True,            # Turbo Preview: step-1 replay; generate calls on_step before every step
-    int8_attention=True,              # workbench renders: _attention tries int8_attention.attend() first
     preview_park_optimizer=True,      # the optimizer state waits on CPU while previews render (room on 16 GB cards)
     ema_short_run=True,
     finetune=True,                    # the 40 double blocks in six ~3 GB parts (driver ft_spec); clips plan at token load

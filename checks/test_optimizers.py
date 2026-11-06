@@ -32,7 +32,8 @@ def test_new_optimizers_listed():
 
 
 # presets that pick a new optimizer by decision (Peter, 6 Nov 2026 - Muon's source-matching detail)
-CHOSEN = {k: "muon" for k in ("qwen_image21", "krea2", "moss_image", "vimoo", "zimage", "zimage_base")}
+CHOSEN = {k: "muon" for k in ("qwen_image21", "krea2", "moss_image", "vimoo", "zimage", "zimage_base",
+                                    "klein", "sdxl", "flux3", "anima", "fibo2")}
 
 
 def test_no_preset_picks_a_new_optimizer():

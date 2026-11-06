@@ -29,7 +29,7 @@ All four come from [black-forest-labs/flux-3-image-klein-comfy](https://huggingf
 
 ## Presets
 
-Every LoRA preset trains at 0.25 MP with adamw8bit, EMA 0.98 and the per-image loss watch, saving every epoch:
+Every LoRA preset trains at 0.25 MP with Muon, EMA 0.98 and the per-image loss watch, saving every epoch:
 
 | Preset | Rank | Learning rate | Epochs |
 |---|---|---|---|

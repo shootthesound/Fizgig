@@ -30,12 +30,12 @@ All of them come from [Comfy-Org/Fibo-2.0](https://huggingface.co/Comfy-Org/Fibo
 
 | Preset | Rank | Learning rate | Epochs |
 |---|---|---|---|
-| **Fibo 2.0 (rank 32, full model)** | 32 | Automagic, from 1e-6 | 40 |
-| **Fibo 2.0 Edit** | 16 | AdamW 1e-4 | 6 |
+| **Fibo 2.0 (rank 32, full model)** | 32 | Muon 1e-4 | 40 |
+| **Fibo 2.0 Edit** | 16 | Muon 1e-4 | 6 |
 | **Fibo 2.0 Fine-tune** | — | 1e-5, 3 rotations | 2 a part |
-| **Fibo 2.0 Slider** | 8 | AdamW 2e-4, at 0.5 MP | 20 |
+| **Fibo 2.0 Slider** | 8 | Muon 2e-4, at 0.5 MP | 20 |
 
-The LoRA presets train at 0.25 MP with EMA 0.98, saving every epoch. Automagic sets its own rate from its 1e-6 start: it rose to about 1e-4 within ten epochs on a 16-photo likeness set and reached likeness sooner than AdamW at a flat 1e-4, with epoch 40 the best by eye. Starting Automagic at 1e-4 overcooks the LoRA. Scrub the epochs in LoRA Royale to pick the best one.
+The LoRA presets train at 0.25 MP with Muon and EMA 0.98, saving every epoch. Muon's steps match AdamW's in size, so its rates are AdamW's. Automagic v3 is still in the Optimizer Type row: it sets its own rate from a 1e-6 start (rising to about 1e-4 within ten epochs on a 16-photo likeness set); starting it at 1e-4 overcooks the LoRA. Scrub the epochs in LoRA Royale to pick the best one.
 
 The LoRA trains the whole model, every Linear, as Bria's own trainer does.
 

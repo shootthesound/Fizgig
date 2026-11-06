@@ -2,6 +2,7 @@
 Pony, RealVis and the rest load the same way). The checkpoint carries the UNet, VAE and both CLIP text encoders, so
 the VAE and text-encoder rows are optional overrides (ModelFile.inside). Driver: sdxl/driver.py.
 """
+from fizgig.training.optimizers import MUON_DEFAULT_ARGS
 from fizgig.families.description import FamilyDescription, FamilyOption, LoRAFormat, ModelFile, SamplingSettings
 
 _JUGG = "RunDiffusion/Juggernaut-XL-v9"
@@ -18,7 +19,7 @@ def _preset(rank, lr=1e-4, adaptive=None, epochs=20, mp="1.0", alpha=None, slide
         "LEARNING_RATE": lr, "FAMILY_SLIDER": slider, "FAMILY_FT": False,
         "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 42,
         "ADAPTIVE_LR": adaptive is not None, "ADAPTIVE_LR_MIN": lo, "ADAPTIVE_LR_MAX": hi,
-        "OPTIMIZER_TYPE": "adamw", "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
+        "OPTIMIZER_TYPE": "muon", "OPTIMIZER_ARGS": MUON_DEFAULT_ARGS, "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
         "DATASET_MEGAPIXELS": mp, "BLOCKS_SWAP": "Auto (detect from GPU)",
         "FAMILY_PRECISION": "Auto (fits your free VRAM)", "FAMILY_EMA": "0.98 (recommended)",
         # the loss watch with per-image LR and auto-recaption on, except for sliders (Peter, 5 Oct 2026)

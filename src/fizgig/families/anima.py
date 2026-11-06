@@ -4,6 +4,7 @@ adapter, Qwen3 0.6B text encoder, Qwen-Image VAE. Driver: anima/driver.py.
 Facts from the model card, ComfyUI's implementation and the trainers that support it (diffusion-pipe, sd-scripts,
 AI-Toolkit, OneTrainer), and community reports (Hugging Face discussions, note.com, the Japanese wikis), Oct 2026.
 """
+from fizgig.training.optimizers import MUON_DEFAULT_ARGS
 from fizgig.families.description import FamilyDescription, LoRAFormat, ModelFile, SamplingSettings, SpeedLoRA
 
 _REPO = "circlestone-labs/Anima"
@@ -16,7 +17,7 @@ def _preset(rank, lr, epochs=30, mp="1.0", slider=False):
     return {
         "NETWORK_DIM": rank, "NETWORK_ALPHA": rank, "NETWORK_TYPE": "LoRA (standard)", "LEARNING_RATE": lr,
         "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 42, "ADAPTIVE_LR": False,
-        "OPTIMIZER_TYPE": "adamw", "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
+        "OPTIMIZER_TYPE": "muon", "OPTIMIZER_ARGS": MUON_DEFAULT_ARGS, "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
         "DATASET_MEGAPIXELS": mp, "BLOCKS_SWAP": "Auto (detect from GPU)",
         "FAMILY_PRECISION": "Auto (fits your free VRAM)", "FAMILY_EMA": "0.98 (recommended)",
         "KREA2_LOSS_WATCH": True, "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False,

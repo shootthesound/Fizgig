@@ -4,6 +4,7 @@ and Preferences keys, ComfyUI-compatible kohya keys like the original's, and its
 a fresh cache, never mixed with the original's). Facts are the original trainer's (training/trainer.py,
 klein/model_utils.py, networks/lora_klein.py), cited per value.
 """
+from fizgig.training.optimizers import MUON_DEFAULT_ARGS
 from fizgig.families.description import GENERAL_NEGATIVE, FamilyDescription, LoRAFormat, ModelFile, SamplingSettings
 
 _BFL = "black-forest-labs"
@@ -18,7 +19,7 @@ def _preset(rank, lr, epochs, area, adaptive, ts=("", "")):
         "NETWORK_DIM": rank, "NETWORK_ALPHA": rank, "NETWORK_TYPE": "LoRA (standard)", "LEARNING_RATE": lr,
         "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 42,
         "ADAPTIVE_LR": True, "ADAPTIVE_LR_MIN": adaptive[0], "ADAPTIVE_LR_MAX": adaptive[1],
-        "TARGET_LAYERS": area, "MIN_TIMESTEP": ts[0], "MAX_TIMESTEP": ts[1], "OPTIMIZER_TYPE": "adamw8bit",
+        "TARGET_LAYERS": area, "MIN_TIMESTEP": ts[0], "MAX_TIMESTEP": ts[1], "OPTIMIZER_TYPE": "muon", "OPTIMIZER_ARGS": MUON_DEFAULT_ARGS,
         "FAMILY_PRECISION": "Auto (fits your free VRAM)", "BLOCKS_SWAP": "Auto (detect from GPU)",
         "FAMILY_EMA": "Off",
     }

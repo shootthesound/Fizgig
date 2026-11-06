@@ -29,7 +29,7 @@ A LoRA works best on the checkpoint it was trained on: train on the one you gene
 
 ## Presets
 
-Every preset trains at 1 MP with AdamW, EMA 0.98, a flat learning rate and the per-image loss watch, saving every epoch. Strong and Standard also have per-image learning rates and auto-recaption on:
+Every preset trains at 1 MP with Muon, EMA 0.98, a flat learning rate and the per-image loss watch, saving every epoch. Strong and Standard also have per-image learning rates and auto-recaption on:
 
 | Preset | Rank / alpha | Learning rate | Epochs |
 |---|---|---|---|

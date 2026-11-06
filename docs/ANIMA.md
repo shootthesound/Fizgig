@@ -30,7 +30,7 @@ The first three come from [circlestone-labs/Anima](https://huggingface.co/circle
 
 ## Presets
 
-Every preset trains at 1 MP with AdamW, EMA 0.98, a flat learning rate and the per-image loss watch, saving every epoch:
+Every preset trains at 1 MP with Muon, EMA 0.98, a flat learning rate and the per-image loss watch, saving every epoch:
 
 | Preset | Rank | Learning rate | Epochs |
 |---|---|---|---|

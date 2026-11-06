@@ -49,7 +49,7 @@ The LoRA trains the whole model, every Linear, as Bria's own trainer does.
 | INT8 | 18.7 GB | 20.5 GB |
 | NF4 | 15.5 GB | 17.5 GB |
 
-The 1024 preview sets these peaks; training alone takes about 8 GB less. On cards under 20 GB the previews render at 768 with the model parked for the decode, so Auto plans those cards from training's own peak: a 16 GB card trains INT8 with no block swap at 0.25 MP (about 11 GB) and NF4 at 1 MP (about 11 GB), and a 12 GB card trains NF4 (about 8 GB at 0.25 MP). **Compile Blocks** speeds training up on longer runs (INT8 at 0.25 MP: 0.82 → 0.47 s a step). On cards of 40 GB and up, Auto trains without gradient checkpointing when it fits.
+The 1024 preview sets these peaks; training alone takes about 8 GB less. On cards under 20 GB the previews render at 768 with the model parked for the decode, so Auto plans those cards from training's own peak: a 16 GB card trains INT8 with no block swap at 0.25 MP (12.4 GB measured on an RTX 4090 Laptop GPU, 2.1 s a step) and NF4 at 1 MP (about 13 GB), and a 12 GB card trains NF4 (about 10 GB at 0.25 MP). **Compile Blocks** speeds training up on longer runs (INT8 at 0.25 MP: 0.82 → 0.47 s a step). On cards of 40 GB and up, Auto trains without gradient checkpointing when it fits.
 
 A **full fine-tune** trains the 44 main layers. It fits a 16 GB card, streaming the frozen layers from system RAM; a 24 GB card trains it in three windows, and a 32 GB card in two. See [Full fine-tuning](FINETUNE.md).
 

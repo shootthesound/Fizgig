@@ -26,6 +26,25 @@ import torch.nn.functional as F
 logger = logging.getLogger(__name__)
 
 TOKENIZER_REPO = "OpenMOSS-Team/MOSS-Image-Base"
+
+
+def ensure_chat_template(tokenizer):
+    """The tokenizer with its chat template. The template is its own file (tokenizer/chat_template.jinja): a cached copy
+    of the folder missing it - an interrupted download - loads without error but has no template, and every caption then
+    fails (#305). Fetched on its own here; if it still can't be had, a plain message names the folder to delete."""
+    if getattr(tokenizer, "chat_template", None):
+        return tokenizer
+    try:
+        from huggingface_hub import hf_hub_download
+        with open(hf_hub_download(TOKENIZER_REPO, "tokenizer/chat_template.jinja"), encoding="utf-8") as f:
+            tokenizer.chat_template = f.read()
+        logger.info("MOSS-Image: the tokenizer's chat template was missing from the download - fetched it")
+    except Exception as e:
+        raise RuntimeError(
+            "MOSS-Image's tokenizer was only partly downloaded (its chat template is missing) and the template couldn't "
+            f"be fetched ({e}). Delete the folder models--OpenMOSS-Team--MOSS-Image-Base in your Hugging Face cache "
+            "(usually .cache/huggingface/hub in your user folder) and start again: it downloads whole.") from None
+    return tokenizer
 MAX_LENGTH = 4096                    # pipeline_moss_image.py encode_prompt max_sequence_length
 
 # OpenMOSS-Team/MOSS-Image-Base text_encoder/config.json text_config, spelled out (STILLS.md: a config written for a
@@ -418,7 +437,7 @@ class MOSSTextEncoder:
             from transformers import AutoTokenizer
             from fizgig.utils.hf_cache import from_pretrained_cache_first
             tokenizer = from_pretrained_cache_first(AutoTokenizer, TOKENIZER_REPO, subfolder="tokenizer")
-        self.tokenizer = tokenizer
+        self.tokenizer = ensure_chat_template(tokenizer)
 
     def unload(self):
         self.model = None

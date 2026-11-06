@@ -122,10 +122,36 @@ class VimooDriver(FamilyDriver):
         """Stills -> (48, h, w); clips -> (48, T, h, w) (the cache's two layouts)."""
         from fizgig.vimoo import vae as V
         out = []
-        for item in images:
-            z = V.encode(vae, self._pixels(item))[0].cpu()                   # 48, T, h, w
-            out.append(z[:, 0] if not isinstance(item, (list, tuple)) else z)
+        # on the GPU, as decode() runs: a VAE decode() parked back on the CPU (a card under 20 GB) would otherwise
+        # encode in fp32 on the CPU - a prompt slider's practice pictures took tens of minutes each (6 Nov 2026)
+        p = next(vae.parameters())
+        moved = p.device.type == "cpu" and torch.cuda.is_available()
+        if moved:
+            vae.to("cuda")
+        try:
+            for item in images:
+                z = V.encode(vae, self._pixels(item))[0].cpu()                   # 48, T, h, w
+                out.append(z[:, 0] if not isinstance(item, (list, tuple)) else z)
+        finally:
+            if moved:
+                vae.to("cpu")
+                torch.cuda.empty_cache()
         return out
+
+    def still_renders(self):
+        """generate() renders stills inside: a prompt slider's practice pictures are stills, whatever the previews'
+        length (as H3's)."""
+        import contextlib
+
+        @contextlib.contextmanager
+        def _stills():
+            had = self._frames
+            self._frames = 1
+            try:
+                yield
+            finally:
+                self._frames = had
+        return _stills()
 
     def cache_stage(self, stage, datasets, args, device, aux):
         """Latents: the shared loop's, with a clip encoded whole (the shared one takes a still's first item). Text:

@@ -31,6 +31,15 @@ python -m fizgig.scripts.fetch_models --family moss_image
   - SFT has a known flaw a LoRA trained on it can pick up: evenly spaced vertical colour stripes across smooth areas (one community measurement: 24 on SFT against 4 on Base).
   - A LoRA trained on Base already runs well on SFT, so training on SFT gains nothing you can't get the recommended way.
 - **Autoencoder:** Flux 3's or Klein 9B's full FLUX.2 autoencoder also works, with the same latents, but the small decoder avoids spots in the pictures.
+- **Optional repaired Base:** [KBlueLeaf/MOSS-Image-heal](https://huggingface.co/KBlueLeaf/MOSS-Image-heal)
+  provides `comfyui/moss_image_heal_bf16.safetensors` in the Comfy-Org single-file layout. The Base DiT row in
+  Preferences offers **Download Heal bf16** as an alternative; the normal download remains the official Base.
+  Heal is derived from Base, not SFT: leave **Train attention only** off for ordinary Base LoRA training.
+  Reuse the same Qwen3.5-9B encoder and FLUX.2 small VAE. To judge a Heal-trained LoRA on Heal, untick
+  **Use the SFT model for samples** and leave Turbo / SFT-look LoRAs off for the initial comparison.
+  Keep existing Base/SFT checkpoints and resume a run with its original model; validate older LoRAs on Heal
+  separately. The author's reduced outlier measurements are not a Fizgig speed or VRAM benchmark.
+
 - **Text encoder alternatives:** Comfy-Org's `qwen3.5_9b_int8_convrot.safetensors` (9.7 GB) also works. So do the official diffusers folders (OpenMOSS-Team/MOSS-Image-Base `transformer/` and `text_encoder/`): give the path of any shard.
 - **Optional Turbo LoRA:** the Turbo LoRA row in Preferences downloads lodestones' 8-step LoRA, distilled from MOSS-Image Base. It works on previews of your Base, not on SFT: untick **Use the SFT model for samples** on the Samples tab to use it. Then set **Turbo LoRA strength** to 1: Steps move to 12 and CFG to 1 (12 looked much better than the card's 8).
 

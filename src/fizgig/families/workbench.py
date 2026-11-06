@@ -20,7 +20,7 @@ Model EQ: a LoRA made from the model's own weights (scripts/extract_model_lora.p
 each block's slider s to (s - 1) x its gain - 1.0 and an unticked block are the stock model. Primary, donor or in a
 mix alike; a save bakes the mapped strengths into an ordinary LoRA without the marker.
 
-Turbo Preview (description.activation_cache, switched by the tab's tick through `turbo_preview`): a slider-only change
+Reuse unchanged blocks (description.activation_cache, switched by the tab's tick through `turbo_preview`): a slider-only change
 replays the blocks before the earliest changed one from the last render (families/act_cache.py).
 
 A LoRA's load strength (state.primary_scale / donor_scale) scales the whole file and every block slider is relative
@@ -142,7 +142,7 @@ class WorkbenchEngine:
         self._cancel_event = threading.Event()
         self.on_step = None                 # (done, total) per denoising step, from the render thread
         self._baseline_key = self._baseline_img = None
-        # Turbo Preview: the activation cache (families/act_cache.py) when the description offers one and the tab's
+        # Reuse unchanged blocks: the activation cache (families/act_cache.py) when the description offers one and the tab's
         # tick is on
         self._turbo_enabled = False
         self._act = None
@@ -496,7 +496,7 @@ class WorkbenchEngine:
     def mark_blocks_changed(self, blocks):
         pass                                # the activation cache compares slider values itself
 
-    # ---- Turbo Preview ------------------------------------------------------------------------------
+    # ---- Reuse unchanged blocks ------------------------------------------------------------------------------
     @property
     def turbo_preview(self):
         return bool(self._turbo_enabled and getattr(self.desc, "activation_cache", False))
@@ -797,7 +797,7 @@ class WorkbenchEngine:
                         lat = _generate()
                 except torch.OutOfMemoryError:
                     # the cache's share of the card was the difference: give it back and render plainly
-                    logger.warning("Turbo Preview: out of memory with the cache - rendering without it")
+                    logger.warning("Reuse unchanged blocks: out of memory with the cache - rendering without it")
                     self._invalidate_activation_cache()
                     act = None
                     lat = _generate()
@@ -814,7 +814,7 @@ class WorkbenchEngine:
             except torch.OutOfMemoryError:
                 if self._act is None or not self._act.out:
                     raise
-                logger.warning("Turbo Preview: out of memory decoding beside the cache - cache dropped")
+                logger.warning("Reuse unchanged blocks: out of memory decoding beside the cache - cache dropped")
                 self._invalidate_activation_cache()
                 out = self.driver.decode(self.vae, lat, width, height)
             if source is not None and self.source_repaint is not None:

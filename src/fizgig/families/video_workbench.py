@@ -273,7 +273,7 @@ class ClipContract:
 
 
 class VideoWorkbenchEngine(ClipContract, WorkbenchEngine):
-    """The generic video engine: the stills engine (loading, sliders, prompts, cancel, Turbo Preview, bake) plus
+    """The generic video engine: the stills engine (loading, sliders, prompts, cancel, Reuse unchanged blocks, bake) plus
     clips, rendered and decoded by the family's driver. The driver's generate(frames=, audio=) returns
     {"latent", "audio"} and its decode turns that into {"frames": [3, F, H, W] in 0-1, "image": middle frame,
     "wave": [2, L] or None} for a clip (a PIL image for a still)."""
@@ -376,7 +376,7 @@ class VideoWorkbenchEngine(ClipContract, WorkbenchEngine):
         names = [n for n in (PRIMARY, DONOR) if self.net.has(n)] if no_lora else []
         for n in names:
             self.net.set_enabled(n, False)
-        # Turbo Preview: the same setup key generate_preview builds, plus the clip's length and speed strength
+        # Reuse unchanged blocks: the same setup key generate_preview builds, plus the clip's length and speed strength
         self._act_ctx = None
         if not no_lora and not self._act_bypass and override_ctx is None and noise is None:
             self._act_ctx = ((id(self.dit), self.primary_path, self.primary_hash, self.donor_path, self._speed_path,

@@ -82,7 +82,7 @@ Repair Studio and Royale share one engine (`WorkbenchEngine`):
 - **Load:** the same base-model load as training (forward only), `load_vae`, the LoRA over `lora_target_names`, and the preview speed LoRA if the family has one.
 - **Sliders:** one per block in `block_map(dit)`; `block_of(module)` maps each LoRA module to its slider.
 - **Prompts:** `load_text_encoder` → `encode_text` (or `encode_text_with_image` / `encode_text_with_references`, by the family's reference kind) → `unload_text_encoder`. Encodings are cached per prompt.
-- **Render:** `generate(dit, cond, w, h, steps=, seed=, cfg=, sigmas=, options=, noise=, on_step=)` → `decode(...)`. `on_step(done, total)` must be called before every step; it raises to cancel and drives Turbo Preview.
+- **Render:** `generate(dit, cond, w, h, steps=, seed=, cfg=, sigmas=, options=, noise=, on_step=)` → `decode(...)`. `on_step(done, total)` must be called before every step; it raises to cancel and drives Reuse unchanged blocks.
 - **Seed travel** blends two `initial_noise(seed, w, h)` starts. **Prompt travel** needs `pad_conditioning(conds)`; without it the family simply has no prompt travel.
 - **Save Repaired** bakes the live sliders into a new LoRA in your key format.
 

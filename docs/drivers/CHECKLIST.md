@@ -52,7 +52,7 @@ Most people train on 12–24 GB cards, so a family isn't finished until it has b
 
 - [ ] Each tab named in `workbench` loads the family and renders: Repair Studio (I'm feeling lucky included), the Profiler (a quick profile writes its report), Extract (a rank-reduced file), LoRA Royale (two checkpoints, seed travel, and prompt travel - it needs `pad_conditioning`, and without it Royale quietly offers no prompt travel).
 - [ ] **Save Repaired is faithful:** a LoRA saved with some blocks switched off renders the same as the live preview it was saved from.
-- [ ] With `activation_cache`: a slider change renders the **same picture** with Turbo Preview on as with it off.
+- [ ] With `activation_cache`: a slider change renders the **same picture** with Reuse unchanged blocks on as with it off.
 
 ## Abilities: every one the model can support
 
@@ -65,7 +65,7 @@ Switch on every ability the model can support, and test each one below. Leave on
 - [ ] **Slider LoRAs** (`slider_training`), from photo pairs and from prompts, with a rank-8 Slider preset.
 - [ ] **Edit LoRAs** (`edit_training`) wherever the model takes reference images, with an Edit preset.
 - [ ] **Fast previews:** a speed LoRA, distilled model or preview checkpoint wherever one is published.
-- [ ] **Turbo Preview** (`activation_cache`).
+- [ ] **Reuse unchanged blocks** (`activation_cache`).
 - [ ] **Prompt travel** (`pad_conditioning`) and seed travel in LoRA Royale.
 - [ ] **Compile** and **INT8 attention** where they measure faster.
 - [ ] **EMA**, **Adaptive LR**, the **per-image loss watch**, **caption dropout** and **Multi Concept**, unless the model has a reason against.
@@ -121,7 +121,7 @@ The abilities that need more than a run to check:
 
 The checks above prove the family works. These make it good, and every family should have them unless it has a measured reason not to. Most are one field in the description.
 
-**Every ability your model can support.** People expect the same tools on every model, so switch on each ability the model is able to do, not only the one you came for. Most cost a field or two: slider LoRAs (`slider_training`: photo pairs need nothing more, prompt sliders two short methods), LoKR in `network_types`, EMA (`ema_default`), the per-image loss watch, a speed LoRA for fast previews, Turbo Preview in Repair Studio (`activation_cache`), every workbench tab, compile and INT8 attention where they measure faster, edit training if the model takes reference images, and full fine-tuning (which can also come later). Leave one out only when the model can't support it or a measurement shows it hurts, and say why in a comment beside the description. [ABILITIES.md](ABILITIES.md) lists them all.
+**Every ability your model can support.** People expect the same tools on every model, so switch on each ability the model is able to do, not only the one you came for. Most cost a field or two: slider LoRAs (`slider_training`: photo pairs need nothing more, prompt sliders two short methods), LoKR in `network_types`, EMA (`ema_default`), the per-image loss watch, a speed LoRA for fast previews, Reuse unchanged blocks in Repair Studio (`activation_cache`), every workbench tab, compile and INT8 attention where they measure faster, edit training if the model takes reference images, and full fine-tuning (which can also come later). Leave one out only when the model can't support it or a measurement shows it hurts, and say why in a comment beside the description. [ABILITIES.md](ABILITIES.md) lists them all.
 
 **Research before presets.** Before writing presets or sampling defaults, find what the model's users actually settled on, not only the model card: the sampler, scheduler, steps and CFG; the learning rate, rank and alpha, epochs or steps per dataset size, and optimizer; and which layers must never be trained (Anima's LLM adapter, for example). Cite the sources in comments beside the values.
 

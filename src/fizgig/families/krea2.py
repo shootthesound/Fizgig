@@ -129,7 +129,7 @@ KREA2 = FamilyDescription(
         note="The distilled Turbo: CFG-free, mu pinned at 1.15, as the original workbench.",
         source="the original Krea 2 workbench engine (removed with the original family)"),
     int8_attention=True,              # workbench renders: comfy-kitchen's INT8 attention
-    activation_cache=True,            # Turbo Preview: step-1 replay, identical to a full render
+    activation_cache=True,            # Reuse unchanged blocks: step-1 replay, identical to a full render
     finetune=True,
     workbench=("repair", "profiler", "extract", "royale"),
     # the text-fusion boosts (15 Sep 2026, #137): the four text-fusion blocks at x2 / x3, everything else untouched.

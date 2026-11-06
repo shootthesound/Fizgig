@@ -1,4 +1,4 @@
-"""Turbo Preview: the Repair Studio's activation cache for the standard-layer families.
+"""Reuse unchanged blocks: the Repair Studio's activation cache for the standard-layer families.
 
 For one render the DiT's blocks (each block-map id whose Linears sit under one ModuleList entry) are wrapped. A
 render records every block's output; the next render with the same setup (LoRAs, prompt, seed, canvas, sampling)
@@ -8,7 +8,7 @@ extra; a changed id with no single module (Krea 2's "Input and output") means a 
 
 Step 1 only (both DiT calls when CFG is on): every block before the change sees the input it saw last time, so the
 picture is identical to a full render; later steps run in full, their latent already carrying the change. Replaying
-every step (old Klein's Turbo Preview) was measured on 4 Oct 2026 (768², one tweak, Klein / Krea 2 / Qwen Image 2.1):
+every step (old Klein's Turbo Preview, as it was called) was measured on 4 Oct 2026 (768², one tweak, Klein / Krea 2 / Qwen Image 2.1):
 the preview showed only 6-33% of the tweak's visible effect, so it is not offered.
 Any failure (out of memory included) drops the cache and the render carries on without it. The workbench marks each
 step (`step(i)`, from the sampler's on_step, which every driver calls before a step's DiT calls).
@@ -163,7 +163,7 @@ class ActivationCache:
         def _fail(e):
             st["ok"] = False
             self.out.clear()
-            logger.warning("Turbo Preview: cache dropped (%s: %s) - full renders until it fits", type(e).__name__, e)
+            logger.warning("Reuse unchanged blocks: cache dropped (%s: %s) - full renders until it fits", type(e).__name__, e)
 
         def wrap_call(orig):
             def fwd(*a, **k):

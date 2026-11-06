@@ -161,7 +161,7 @@ FLUX3 = FamilyDescription(
         ("✨ Flux 3 Fine-tune (5e-5)", _preset(16, lr=5e-5, ft=True)),
     ),
     workbench=("repair", "profiler", "extract", "royale"),
-    activation_cache=True,            # Turbo Preview: step-1 replay, identical to a full render
+    activation_cache=True,            # Reuse unchanged blocks: step-1 replay, identical to a full render
 
     notes=(
         ("Text conditioning keeps the padding: prompts are padded to a multiple of 80 tokens and the DiT attends "

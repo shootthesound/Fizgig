@@ -2,7 +2,7 @@
 # weights, md5 ba68f9308b1d9ad9bb90ae9755b2e3b7, 16 Oct 2026). Copyright 2026 OpenMOSS. Licensed under the Apache
 # License, Version 2.0 (LICENSE beside this file).
 # Changes for Fizgig: plain torch modules (no diffusers mixins), the forward split so the shared block offloader,
-# gradient checkpointing, torch.compile and Turbo Preview wrap the 42 blocks, attention through Fizgig's INT8 hook
+# gradient checkpointing, torch.compile and Reuse unchanged blocks wrap the 42 blocks, attention through Fizgig's INT8 hook
 # (fizgig/modules/int8_attention) before torch SDPA, and a loader for the ComfyUI single file (fused q/k/v), the
 # diffusers shards and ComfyUI's int8 ConvRot repack. The maths of every module is the reference's, line for line.
 """MOSS-Image DiT: 5B single-stream transformer, 42 blocks at width 3072 (24 heads x 128), shared modulation, a

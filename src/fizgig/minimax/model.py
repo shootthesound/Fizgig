@@ -1126,7 +1126,7 @@ class MiniMaxH3DiT(nn.Module):
                        return_audio: bool = False, *,
                        resume_from=None, cached=None, new_cache=None,
                        cache_device: str = "cpu", keyframes=None):
-        """Inference forward with per-block activation caching (Repair Studio Turbo Preview).
+        """Inference forward with per-block activation caching (Studio's Reuse unchanged blocks).
 
         `resume_from` = the earliest changed main-block index (or None for a full pass). When
         resuming with a valid `cached`, the pre-block setup (token refiner, patchify, audio

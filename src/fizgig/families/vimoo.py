@@ -161,7 +161,7 @@ VIMOO = FamilyDescription(
     },
     masked_training=True,
     slider_training=True,             # photo / clip pairs (training_loss diff weighting) or prompts (noise_latents / predict)
-    activation_cache=True,            # Turbo Preview: step-1 replay; generate calls on_step before every step
+    activation_cache=True,            # Reuse unchanged blocks: step-1 replay; generate calls on_step before every step
     preview_park_optimizer=True,      # the optimizer state waits on CPU while previews render (room on 16 GB cards)
     ema_short_run=True,
     finetune=True,                    # the 40 double blocks in six ~3 GB parts (driver ft_spec); clips plan at token load

@@ -27,7 +27,7 @@ from fizgig.krea2.attention import AttentionParams, attention as common_attentio
 @dataclass
 class KreaActivationCacheEntry:
     """Cached intermediate state for one denoising step's forward pass, so a later call can
-    resume from a changed block (Repair Studio Turbo Preview). `block_inputs[k]` is the input
+    resume from a changed block (Studio's Reuse unchanged blocks). `block_inputs[k]` is the input
     to main block k; the pre-block setup (tvec / t_emb / freqs / attn_params / imglen) is
     reused unchanged when resuming, since it depends only on img/context/pos/t (constant across
     a slider tweak). Tensors may live on CPU — the engine moves them to GPU on use."""
@@ -509,7 +509,7 @@ class SingleStreamDiT(nn.Module):
         cached: "KreaActivationCacheEntry | None" = None,
         new_cache: "KreaActivationCacheEntry | None" = None,
     ) -> Tensor:
-        """Inference forward with per-block activation caching (Repair Studio Turbo Preview).
+        """Inference forward with per-block activation caching (Studio's Reuse unchanged blocks).
 
         `resume_from` = the earliest changed main-block index (or None for a full pass). When
         resuming with a valid `cached`, the pre-block setup (first / txtfusion / posemb) and the

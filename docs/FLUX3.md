@@ -2,7 +2,7 @@
 
 [← Back to the README](../README.md)
 
-Flux 3 Image Klein is Black Forest Labs' 5.6B model for text-to-image and editing, released 15 October 2026. Fizgig trains it from day one: LoRAs, LoKRs, edit LoRAs and slider LoRAs from an 8 GB card, and full fine-tunes from 16 GB. Training runs on the **Base** model; the **distilled** model (16 steps, no CFG) renders the training previews and the workbench. Every workbench tool works on it: Studio with Turbo Preview, LoRA Royale (epochs, seed and prompt travel, edit chains), the Profiler and Extract. Saved LoRAs load in ComfyUI's standard LoRA loader.
+Flux 3 Image Klein is Black Forest Labs' 5.6B model for text-to-image and editing, released 15 October 2026. Fizgig trains it from day one: LoRAs, LoKRs, edit LoRAs and slider LoRAs from an 8 GB card, and full fine-tunes from 16 GB. Training runs on the **Base** model; the **distilled** model (16 steps, no CFG) renders the training previews and the workbench. Every workbench tool works on it: Studio with Reuse unchanged blocks, LoRA Royale (epochs, seed and prompt travel, edit chains), the Profiler and Extract. Saved LoRAs load in ComfyUI's standard LoRA loader.
 
 Flux 3 support is new and marked experimental: the presets start from Krea 2's proven settings and haven't yet been tuned on Flux 3 itself.
 

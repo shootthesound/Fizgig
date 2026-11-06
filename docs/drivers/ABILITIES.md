@@ -66,7 +66,7 @@ Set each band from your shipped presets: a third of the lowest preset's learning
 | Field | What users get | Driver |
 |---|---|---|
 | `workbench` | Which tabs offer the family: any of `"repair"`, `"profiler"`, `"extract"`, `"royale"`. | — |
-| `activation_cache` | Repair Studio's Turbo Preview tick: a slider change replays the unchanged blocks on step 1, the same picture as a full render. | `generate` calls `on_step(i, steps)` before every step, and your blocks sit in a `ModuleList` the block map points into. |
+| `activation_cache` | Repair Studio's Reuse unchanged blocks tick: a slider change replays the unchanged blocks on step 1, the same picture as a full render. | `generate` calls `on_step(i, steps)` before every step, and your blocks sit in a `ModuleList` the block map points into. |
 | `repair_presets`, `block_categories`, `category_masters` | Repair Studio presets, category colours, and master sliders per category. | — |
 | `extract_presets` | Extract's block presets (`(name, ((block id, multiplier), ...))`), beside Custom. | — |
 | `preview_image` | A reference picture conditions previews through the text encoder's vision path. | `encode_text_with_image`. |

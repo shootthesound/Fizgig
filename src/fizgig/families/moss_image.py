@@ -221,7 +221,7 @@ MOSS_IMAGE = FamilyDescription(
     # ... reference-image variants"). The RoPE keeps a reference-index axis for a later release.
     workbench_follows_samples=True,
     workbench_checkpoint_follows_tick=True,   # Repair Studio / Royale render on SFT only while the Samples tick is on   # CFG 3 needs the Samples tab's negative (empty = the reference's default)
-    activation_cache=True,            # Turbo Preview: step-1 replay; generate calls on_step before every step
+    activation_cache=True,            # Reuse unchanged blocks: step-1 replay; generate calls on_step before every step
     repair_size=1024,                 # a 1 MP model (CHECKLIST.md Workbench)
 
     sampling=(

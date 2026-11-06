@@ -4,7 +4,7 @@
 
 MOSS-Image is OpenMOSS's 5B single-stream model for text-to-image, released 16 October 2026 under Apache-2.0. It renders text well (English and Chinese), and takes prompts of up to 4,096 tokens as well as JSON layout prompts that place text and objects.
 
-Fizgig trains it on the **Base** model, the checkpoint OpenMOSS recommend for training. It offers LoRAs, LoKRs, slider LoRAs, full fine-tunes, Multi Concept, DOP and Fizgig LoRA Isolation. Every workbench tool works with it: Repair Studio with Turbo Preview, LoRA Royale with seed and prompt travel, the Profiler and Extract. Saved LoRAs load in ComfyUI's standard LoRA loader. MOSS-Image came to Fizgig through @Murf-Code's pull request.
+Fizgig trains it on the **Base** model, the checkpoint OpenMOSS recommend for training. It offers LoRAs, LoKRs, slider LoRAs, full fine-tunes, Multi Concept, DOP and Fizgig LoRA Isolation. Every workbench tool works with it: Repair Studio with Reuse unchanged blocks, LoRA Royale with seed and prompt travel, the Profiler and Extract. Saved LoRAs load in ComfyUI's standard LoRA loader. MOSS-Image came to Fizgig through @Murf-Code's pull request.
 
 **No edit LoRAs:** the released model is text-to-image only. Its technical report says it "does not directly condition on reference images or support image editing". The "layout editing" it shows is regenerating from an edited layout prompt.
 

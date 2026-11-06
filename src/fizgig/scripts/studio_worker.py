@@ -262,6 +262,20 @@ def _write_clip(clip, path_png, path_mp4, fps, rate):
     return path_mp4
 
 
+def _clip_same_as_baseline(eng, st):
+    """The tweaked clip would be the baseline (the picture engines' same_as_baseline rule): every primary block on at
+    1.0, and no donor contributing - none loaded, its strength 0, or each of its blocks off or at 0. The donor sliders
+    count only when a donor is loaded: the page starts them at 1, so judging them without one never matched."""
+    if any(not bs.primary_enabled or float(bs.primary_strength) != 1.0 for bs in st.blocks.values()):
+        return False
+    if getattr(eng, "donor_network", None) is None and not getattr(eng, "donor_path", None):
+        return True
+    if float(getattr(st, "donor_scale", 1.0)) == 0.0:
+        return True
+    donors = getattr(eng, "donor_block_ids", None) or set(st.blocks)
+    return not any(bs.donor_enabled and float(bs.donor_strength) != 0.0 for b, bs in st.blocks.items() if b in donors)
+
+
 def _render_clips(eng, desc, st, c, out, gen):
     """H3: the baseline and tweaked clips, as the desktop renders them (baseline_clip, then render_clip)."""
     v = c.get("video") or {}
@@ -280,10 +294,8 @@ def _render_clips(eng, desc, st, c, out, gen):
     torch.cuda.reset_peak_memory_stats()
     rest = torch.cuda.memory_allocated() / 2**30
     base = eng.baseline_clip(st, cache=None, **opts)
-    from fizgig.repair_studio.h3_render_cache import BASE_SIG, signature
-    if signature(st) == BASE_SIG:
-        # nothing moved: the tweaked clip IS the baseline (every row at its default) - one render for both panes, as
-        # the picture path does (it rendered the same clip twice)
+    if _clip_same_as_baseline(eng, st):
+        # nothing moved: the tweaked clip IS the baseline - one render for both panes, as the picture path does
         tweak = base
     else:
         tweak = None

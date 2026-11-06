@@ -128,7 +128,7 @@ The checks above prove the family works. These make it good, and every family sh
 **Parity with the reference.** Measure your text conditioning, one model prediction and the sigma schedule against the reference implementation, from identical inputs. If your model code isn't the reference's own code, compare in fp32. A config file written for a newer library can be misread silently; spell such values out in the driver.
 
 **Presets.**
-- Use `adamw` (fused AdamW), not `adamw8bit`, for LoRA presets. 8-bit AdamW steps each LoRA tensor separately, and on a model with hundreds of LoRA'd layers that costs a large share of every step (0.3 s per step on SDXL). Exception (Peter, 6 Nov 2026): Krea 2, Qwen Image 2.1, MOSS-Image and Vimoo presets stay on `adamw8bit`, which gave higher likeness at the same epochs in his tests.
+- Use `adamw8bit` for LoRA presets (Peter, 6 Nov 2026): it gave higher likeness than plain AdamW at the same epochs in his tests (Krea 2, Qwen Image 2.1, MOSS-Image, Vimoo). Plain `adamw` (fused) is faster a step (10-14% on Krea 2 / Qwen 2.1 on an RTX PRO 6000, 0.3 s a step on SDXL, where 8-bit steps each LoRA tensor separately), so it is a choice in the optimizer list, not the default. If a model's LoRAs melt on 8-bit (some tensors stepping far past the learning rate, as on MiniMax H3), set the description's `optimizer_eps_floor_8bit` or use `adamw` for that preset, and say why in the description.
 - Set `ema_default="0.98"`, as every other family does.
 - Use a flat learning rate where the per-epoch loss is noisy, and set `adaptive_lr=False` if the plateau detector would only react to noise (SDXL).
 - Set epoch counts from the community's step targets for a typical dataset, and save every epoch.

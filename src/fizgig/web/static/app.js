@@ -6654,6 +6654,16 @@ async function studioPoll() {
     const donorOn = st.donor && Object.values(S.st.blocks).some((b) => b.de);
     S.st.autoOut = $("stOut").value = stem(st.primary) + (donorOn ? "_with_" + stem(st.donor.split(/[\\/]/).pop()) : "_repaired") + ".safetensors";
   }
+  if (st.baseline_early && st.baseline_early !== S.st.baseEarlyShown && st.baseline_early !== S.st.shown) {
+    // the Baseline landed first: it shows (and plays) while the Tweaked one is still rendering
+    S.st.baseEarlyShown = st.baseline_early;
+    const q = (w) => `/api/studio/image?which=${w}&gen=${st.baseline_early}&t=${encodeURIComponent(TOKEN)}`;
+    const kind = S.st.layout && S.st.layout.kind, has = st.media && st.media.baseline;
+    $("stBase").src = q("baseline");
+    $("stBaseVid").style.display = kind === "video" && has ? "" : "none";
+    $("stBase").style.display = kind === "video" && has ? "none" : "";
+    if (kind === "video" && has) { $("stBaseVid").poster = q("baseline"); $("stBaseVid").src = q("baseline_media"); }
+  }
   if (st.early && st.early !== S.st.earlyShown) {        // H3 Show early: the unfinished look, until the clip lands
     S.st.earlyShown = st.early;
     $("stTweakVid").style.display = "none"; $("stTweak").style.display = "";
@@ -6662,10 +6672,13 @@ async function studioPoll() {
   if (st.shown && st.shown !== S.st.shown) {
     S.st.shown = st.shown;
     const q = (w) => `/api/studio/image?which=${w}&gen=${st.shown}&t=${encodeURIComponent(TOKEN)}`;
-    $("stBase").src = q("baseline"); $("stTweak").src = q("tweaked");
+    const keepBase = S.st.baseEarlyShown === st.shown;      // the Baseline already showed (and plays): left alone
+    if (!keepBase) $("stBase").src = q("baseline");
+    $("stTweak").src = q("tweaked");
     // a clip plays in its pane (the picture its poster); a song gets its player under the waveform
     const kind = S.st.layout && S.st.layout.kind;
     for (const [w, img, vid, aud] of [["baseline", "stBase", "stBaseVid", "stBaseAud"], ["tweaked", "stTweak", "stTweakVid", "stTweakAud"]]) {
+      if (w === "baseline" && keepBase) continue;
       const has = st.media && st.media[w];
       $(vid).style.display = kind === "video" && has ? "" : "none";
       $(aud).style.display = "none";

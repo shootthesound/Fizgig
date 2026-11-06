@@ -154,6 +154,9 @@ def _event(ev):
         elif kind == "early" and _S.get("rendering"):     # H3's Show early: the tweaked pane's unfinished look
             _S.update(early=ev.get("png", ""), early_gen=ev.get("gen", 0),
                       status=f"Tweaked: pass {ev.get('step')} of {ev.get('n')}, unfinished - rendering the rest…")
+        elif kind == "baseline_ready" and _S.get("rendering"):   # the Baseline, while the Tweaked one renders
+            _S.update(baseline=ev.get("baseline", ""), baseline_media=ev.get("baseline_media", ""),
+                      baseline_gen=ev.get("gen", 0), status="Baseline ready - rendering Tweaked…")
         elif kind == "rendered":
             _S.update(rendering=False, progress=None, baseline=ev.get("baseline", ""), tweaked=ev.get("tweaked", ""),
                       early="",
@@ -684,6 +687,7 @@ def status():
         d["nolora_gen"], d["nolora_busy"] = _S.get("nolora_gen", 0), bool(_S.get("nolora_busy"))
         d["pending"] = _S["pending"] is not None
         d["early"] = _S.get("early_gen", 0) if _S.get("early") and _S.get("rendering") else 0
+        d["baseline_early"] = _S.get("baseline_gen", 0) if _S.get("rendering") else 0
         d["log"] = _S["log"][-12:]                 # the worker's own lines (the engine's log), for when it goes wrong
     return d
 

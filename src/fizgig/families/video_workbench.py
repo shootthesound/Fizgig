@@ -336,7 +336,7 @@ class VideoWorkbenchEngine(ClipContract, WorkbenchEngine):
     # ---- primitives --------------------------------------------------------------------------------------------
     @torch.no_grad()
     def render_latent(self, state, *, seed=None, prompt=None, width=None, height=None, frames=None, steps=None,
-                      turbo_strength=None, on_denoised=None, no_lora=False, **_ignored):
+                      turbo_strength=None, on_denoised=None, no_lora=False, override_ctx=None, noise=None, **_ignored):
         """Apply the slider state and sample one clip through the driver -> (latent, audio rows), on CPU. no_lora:
         the base model alone for this render (the speed LoRA stays: it is the sampler, not the LoRA under test).
         on_denoised (show early) needs a driver hook the shared contract doesn't have yet, so it is not called."""
@@ -348,7 +348,7 @@ class VideoWorkbenchEngine(ClipContract, WorkbenchEngine):
         frames = self._clip_frames(state, frames)
         steps = int(steps or self._plain_steps())
         self._set_speed_strength(turbo_strength)
-        cond = self.encode([prompt], size=(width, height))[0]
+        cond = override_ctx if override_ctx is not None else self.encode([prompt], size=(width, height))[0]
         cond, extra = self._clip_conditioning(state, cond, width, height, frames)
         _d_steps, cfg, sigmas, options = self.sampling()
         if self._speed_loaded() and not self._speed_strength:
@@ -365,7 +365,7 @@ class VideoWorkbenchEngine(ClipContract, WorkbenchEngine):
             self.net.set_enabled(n, False)
         # Turbo Preview: the same setup key generate_preview builds, plus the clip's length and speed strength
         self._act_ctx = None
-        if not no_lora and not self._act_bypass:
+        if not no_lora and not self._act_bypass and override_ctx is None and noise is None:
             self._act_ctx = ((id(self.dit), self.primary_path, self.primary_hash, self.donor_path, self._speed_path,
                               round(float(getattr(state, "primary_scale", 1.0)), 4),
                               round(float(getattr(state, "donor_scale", 1.0)), 4), prompt, int(seed), width, height,
@@ -394,7 +394,8 @@ class VideoWorkbenchEngine(ClipContract, WorkbenchEngine):
             with _i8a.renders(self.int8_attention):
                 return self.driver.generate(self.dit, self._cond_to_device(cond), width, height, steps=steps,
                                             seed=int(seed), cfg=cfg, sigmas=sigmas, options=options, on_step=_step,
-                                            frames=frames, audio=True, **extra)
+                                            frames=frames, audio=True, **extra,
+                                            **({"noise": noise} if noise is not None else {}))
         try:
             if act is None:
                 out = _generate()
@@ -410,6 +411,32 @@ class VideoWorkbenchEngine(ClipContract, WorkbenchEngine):
         lat = out["latent"].detach().float().cpu()
         aud = out.get("audio")
         return lat, (aud.detach().float().cpu() if aud is not None else None)
+
+    def _preview_clip_frames(self):
+        """The shortest clip the family offers (a still is not a clip): what a picture render stands on."""
+        vc = getattr(self.desc, "video_controls", None)
+        clips = sorted(int(n) for _l, n in (vc.lengths if vc else ()) if int(n) > 1)
+        return clips[0] if clips else self.default_clip_frames
+
+    @torch.no_grad()
+    def generate_preview(self, state, *, seed=None, prompt=None, width=None, height=None, steps=None,
+                         num_frames=None, override_ctx=None, seed_b=None, travel_t=0.0, **_ignored):
+        """The picture tabs' render call (Profiler, LoRA Royale, Studio's stills paths), answered as H3's engine
+        answers it: a short clip at the confirm regime, its middle frame. override_ctx (prompt travel) is the clip's
+        conditioning; seed_b / travel_t (seed travel) slerp the two seeds' starting noise; a chained previous frame
+        has no clip wiring and is ignored, as on H3."""
+        from fizgig.families.workbench import _slerp
+        frames = int(num_frames or self._preview_clip_frames())
+        st, strength = self.regime_params("confirm", steps, None)
+        noise = None
+        if seed_b is not None:
+            seed0 = state.seed if seed is None else seed
+            w, h = int(width or state.preview_width), int(height or state.preview_height)
+            noise = _slerp(float(travel_t or 0.0), self.driver.initial_noise(seed0, w, h, frames),
+                           self.driver.initial_noise(seed_b, w, h, frames))
+        lat, _aud = self.render_latent(state, seed=seed, prompt=prompt, width=width, height=height, frames=frames,
+                                       steps=st, turbo_strength=strength, override_ctx=override_ctx, noise=noise)
+        return self.decode_middle_frame_image(lat)
 
     def _decode(self, lat):
         if self.lowmem:

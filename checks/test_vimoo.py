@@ -136,3 +136,15 @@ def test_studio_start_frame_conditioning():
     assert cond["vision"] is hit["vision"] and extra["refs"][0] is hit["latent"]
     assert eng._clip_conditioning(st, {"text": 1}, 64, 64, 1) == ({"text": 1}, {})
     assert VimooWorkbenchEngine.keyframe_signature(st)
+
+
+def test_travel_masks_stay_hard():
+    """Prompt travel blends padded masks into weights; the driver keeps any token either side has and batches a
+    one-prompt mask, as the model takes masks as kept / dropped."""
+    drv = get("vimoo").load_driver()
+    a = {"text": torch.ones(3, 8), "text_mask": torch.tensor([True, True, False])}
+    c = drv._cond({**a, "text_mask": torch.tensor([1.0, 0.5, 0.0])}, "cpu")
+    assert c["text_mask"].tolist() == [[1, 1, 0]] and c["text"].shape == (1, 3, 8)
+    assert drv._cond(a, "cpu")["text_mask"].tolist() == [[1, 1, 0]]
+    padded = drv.pad_conditioning([{"text": torch.ones(2, 8)}, {"text": torch.ones(4, 8)}])
+    assert padded[0]["text_mask"].dtype == torch.bool and padded[0]["text_mask"].tolist() == [True, True, False, False]

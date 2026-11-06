@@ -303,14 +303,21 @@ class VimooDriver(FamilyDriver):
     @staticmethod
     def _cond(cond, device):
         """A cached / encoded dict -> the model's text and vision arguments, batched."""
+        def hard(m):
+            # a travel blend's mask is a weight per token (0..1): a token either side has stays in - its states are
+            # already blended toward the zero padding - since the model takes masks as kept / dropped
+            if m is None:
+                return None
+            m = (m > 0) if m.is_floating_point() else m
+            return (m.unsqueeze(0) if m.dim() == 1 else m).to(torch.int64)
         text = cond["text"]
         text = text.unsqueeze(0) if text.dim() == 2 else text
-        mask = cond.get("text_mask")
+        mask = hard(cond.get("text_mask"))
         glyph = cond.get("glyph")
         gmask = None
         if glyph is not None:
             glyph = glyph.unsqueeze(0) if glyph.dim() == 2 else glyph
-            gmask = cond.get("glyph_mask")
+            gmask = hard(cond.get("glyph_mask"))
             if gmask is None:
                 gmask = torch.ones(glyph.shape[:2], dtype=torch.int64)
             glyph, gmask = glyph.to(device), gmask.to(device)
@@ -527,7 +534,7 @@ class VimooDriver(FamilyDriver):
                 return None, None
             x = x if x.dim() == 2 else x[0]
             m = c.get(mkey)
-            m = torch.ones(x.shape[0], dtype=torch.int64) if m is None else (m if m.dim() == 1 else m[0]).long()
+            m = torch.ones(x.shape[0], dtype=torch.bool) if m is None else (m if m.dim() == 1 else m[0]).bool()
             p = n - x.shape[0]
             return (torch.cat([x, x.new_zeros(p, x.shape[1])]) if p else x,
                     torch.cat([m, m.new_zeros(p)]) if p else m)

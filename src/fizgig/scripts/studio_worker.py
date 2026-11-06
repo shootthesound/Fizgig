@@ -290,6 +290,10 @@ def _render_clips(eng, desc, st, c, out, gen):
         mp4 = _write_clip(clip, png, os.path.join(out, f"{name}_{gen}.mp4"), fps, rate)
         paths[name], paths[name + "_media"] = png, mp4
 
+    # hand the render's cached memory back (the model stays loaded): the page plays these clips next, and a card the
+    # worker leaves full - Vimoo bf16 + the decode's cache held 30.5 of 32 GB - gives the video decode and the desktop
+    # compositor nothing, which with Windows' DWM over-committed froze the whole PC on play (6 Nov 2026)
+    torch.cuda.empty_cache()
     return paths, None                  # no No-LoRA clip: a third H3 render was too slow (ACE-Step's song keeps one)
 
 

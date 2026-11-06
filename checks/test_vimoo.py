@@ -193,3 +193,24 @@ def test_masked_training_weights_stills_only():
     clip = torch.ones(1, 48, 3, 4, 4)
     drv.predict = lambda dit, state, cond: torch.zeros_like(clip)
     assert abs(float(drv.training_loss(None, clip, {}, None, loss_mask=mask)[0]) - 1.0) < 1e-6
+
+
+def test_pair_slider_weights_what_the_poles_change():
+    """A photo-pair slider weights each latent cell by how much the two ends differ there (Krea 2's rule): an error
+    where the ends differ counts more than the same error where they agree."""
+    drv = get("vimoo").load_driver()
+    assert get("vimoo").slider_training and dict(get("vimoo").presets).get("✨ Vimoo 1.0 Lite Slider (rank 8, 2e-4)")
+    drv.noise_latents = lambda lat, g, min_t=0.0, max_t=1.0: {"hidden_states": lat, "timestep": torch.zeros(1),
+                                                              "t": 0.5, "noise": torch.zeros_like(lat)}
+    lat = torch.zeros(1, 48, 1, 4, 4)
+    ref = lat.clone()
+    ref[..., 2:] = 1.0                            # the ends differ on the right half only
+    err_right = torch.full_like(lat, -0.0)
+    err_right[..., 2:] = 1.0
+    err_left = torch.zeros_like(lat)
+    err_left[..., :2] = 1.0
+    drv.predict = lambda dit, state, cond: err_right
+    right, _ = drv.training_loss(None, lat, {}, None, diff_ref=ref, diff_weight=1.0)
+    drv.predict = lambda dit, state, cond: err_left
+    left, _ = drv.training_loss(None, lat, {}, None, diff_ref=ref, diff_weight=1.0)
+    assert float(right) > float(left)

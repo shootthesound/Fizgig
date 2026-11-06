@@ -378,28 +378,41 @@ class VimooDriver(FamilyDriver):
                        **self._cond(cond, device)).float()
             target = (state["noise"] - lat).float()
             return F.mse_loss(pred[:, :, 1:], target[:, :, 1:]), {"t": state["t"]}
+        from fizgig.families.driver import prior_base, weighted_loss, with_prior
         target = (state["noise"] - lat).float()
-        if loss_mask is None or lat.shape[2] > 1:
-            # a clip is never masked (the dataset gives masks to stills only, as H3's)
+        wgt = None
+        if diff_ref is not None and diff_weight > 0.0:
+            # photo- or clip-pair sliders (Krea 2's weighting, per latent cell): each cell's error weighted by how much
+            # the two poles differ there, so the slider learns what changes between them, not what they share
+            ref = self._as5(diff_ref).float().to(lat.device)[:, :, :lat.shape[2], :lat.shape[3], :lat.shape[4]]
+            d = (lat.float() - ref).abs().mean(dim=1)                          # (1, T, h, w)
+            dm = d.mean().clamp_min(1e-8)
+            wgt = (1.0 - float(diff_weight)) + float(diff_weight) * (d / dm).clamp(max=8.0)
+            wgt = torch.ones_like(d) if float(dm) <= 1e-6 else wgt / wgt.mean().clamp_min(1e-8)
+        mw = None
+        if loss_mask is not None and lat.shape[2] == 1:
+            # masked training (a clip is never masked - the dataset gives masks to stills only, as H3's): one weight
+            # per latent cell, the mask sized from the cached latent; the prior's LoRA-off forward runs first, and not
+            # at all for an all-white mask (nothing outside it to keep)
+            h, w = lat.shape[-2:]
+            mw = loss_mask.float().reshape(loss_mask.shape[-2], loss_mask.shape[-1])[:h, :w].to(lat.device)[None, None]
+            if prior is not None and float(mw.min()) >= 1.0:
+                prior = None
+            if not getattr(self, "_mask_logged", False):
+                self._mask_logged = True
+                logger.info("[masks] Vimoo weighting this step per cell: mask on %s, x%.2f..x%.2f, prior %s",
+                            tuple(mw.shape[-2:]), float(mw.min()), float(mw.max()),
+                            f"x{float(prior.weight):g}" if prior is not None else "off")
+        else:
+            prior = None
+        if wgt is None and mw is None:
             pred = self.predict(dit, state, cond).float()
             return F.mse_loss(pred, target), {"t": state["t"]}
-        # masked training: one weight per latent cell (the dataset sizes the mask from the cached latent); the prior's
-        # LoRA-off forward runs first, and not at all for an all-white mask (nothing outside it to keep)
-        from fizgig.families.driver import prior_base, weighted_loss, with_prior
-        h, w = lat.shape[-2:]
-        mw = loss_mask.float().reshape(loss_mask.shape[-2], loss_mask.shape[-1])[:h, :w].to(lat.device)
-        if prior is not None and float(mw.min()) >= 1.0:
-            prior = None
-        if not getattr(self, "_mask_logged", False):
-            self._mask_logged = True
-            logger.info("[masks] Vimoo weighting this step per cell: mask on %s, x%.2f..x%.2f, prior %s",
-                        tuple(mw.shape), float(mw.min()), float(mw.max()),
-                        f"x{float(prior.weight):g}" if prior is not None else "off")
         base = prior_base(prior, mw, lambda: self.predict(dit, state, cond).float())
         pred = self.predict(dit, state, cond).float()
-        loss = weighted_loss((pred - target).pow(2).mean(dim=1)[0, 0], mw)
+        loss = weighted_loss((pred - target).pow(2).mean(dim=1), wgt, mw)
         if base is not None:
-            loss = with_prior(loss, prior, base, (pred - base).pow(2).mean(dim=1)[0, 0], mw)
+            loss = with_prior(loss, prior, base, (pred - base).pow(2).mean(dim=1), mw, wgt)
         return loss, {"t": state["t"]}
 
     # ---- rendering ---------------------------------------------------------------------------------------------------
@@ -514,6 +527,22 @@ class VimooDriver(FamilyDriver):
         if t > 1:
             logger.info(f"[vram] the heaviest item is a {t}-latent-frame clip: planning at its {eff:.2f} MP of tokens")
         return quant.plan(self.description, self, precision, blocks_to_swap, megapixels=max(mp, eff), pictures=1)
+
+    # ---- full fine-tune ---------------------------------------------------------------------------------------------
+    def ft_spec(self, dit):
+        """The 40 double blocks' Linears in six parts of ~3 GB each in bf16 across the depth (image and text attention,
+        qkv + proj; each MLP's up and down halves). The rank-16 modulations, embedders, the text refiner, the glyph and
+        vision projections and the final layer stay frozen, as for a LoRA. Memory: the shared cautious figures until
+        measured."""
+        from fizgig.families.ft import FTSpec
+        return FTSpec(blocks="double_blocks",
+                      components=("img_attn", "img_mlp.0", "img_mlp.2", "txt_attn", "txt_mlp.0", "txt_mlp.2"))
+
+    def ft_load_mp(self, group):
+        """A clip plans at its token load (latent frames x megapixels), as plan_run does."""
+        mp = super().ft_load_mp(group) or 0.25
+        eff, _t = self._heaviest_item(group)
+        return max(mp, eff)
 
     # ---- prompt travel ---------------------------------------------------------------------------------------------
     def pad_conditioning(self, conds):

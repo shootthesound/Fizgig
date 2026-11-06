@@ -42,8 +42,9 @@ OPTIONS = (
 )
 
 
-def _preset(rank, lr=1e-4, epochs=40, mp="0.25", optimizer="adamw"):
+def _preset(rank, lr=1e-4, epochs=40, mp="0.25", optimizer="adamw", slider=False, ft=False):
     return {
+        "FAMILY_SLIDER": slider, "FAMILY_SLIDER_GUIDANCE": "3", "FAMILY_FT": ft,
         "NETWORK_DIM": rank, "NETWORK_ALPHA": rank, "NETWORK_TYPE": "LoRA (standard)",
         "LEARNING_RATE": lr, "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 42,
         "OPTIMIZER_TYPE": optimizer, "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
@@ -152,15 +153,18 @@ VIMOO = FamilyDescription(
     network_types=("lora", "lokr"),
     batch_training=False,
     not_offered={
-        "slider_training": "being built (6 Nov 2026)",
-        "finetune": "being built (6 Nov 2026)",
-        "activation_cache": "being built (6 Nov 2026)",
-        "int8_attention": "being built (6 Nov 2026)",
         "batch_training": "clips train one a step; stills batching not measured for Vimoo",
         "detail_crops": "a crop of a clip's frame isn't a clip",
         "resolution_stages": "clips train at their own size: not measured with stages",
     },
-    masked_training=True,             # photos only: the dataset gives a mask to a still, never to a clip (as H3)
+    masked_training=True,
+    slider_training=True,             # photo / clip pairs (training_loss diff weighting) or prompts (noise_latents / predict)
+    activation_cache=True,            # Turbo Preview: step-1 replay; generate calls on_step before every step
+    int8_attention=True,              # workbench renders: _attention tries int8_attention.attend() first
+    preview_park_optimizer=True,      # the optimizer state waits on CPU while previews render (room on 16 GB cards)
+    ema_short_run=True,
+    finetune=True,                    # the 40 double blocks in six ~3 GB parts (driver ft_spec); clips plan at token load
+    ft_learning_rate=1e-5,               # the EMA dropdown's "Short run" (decay sized to the run, as H3's)             # photos only: the dataset gives a mask to a still, never to a clip (as H3)
     loss_watch=True,
 
     sampling=(
@@ -192,5 +196,9 @@ VIMOO = FamilyDescription(
     preview_width=832,
     preview_height=480,
     workbench=("repair", "profiler", "extract", "royale"),
-    presets=(("✨ Vimoo 1.0 Lite (rank 16)", _preset(16)),),
+    presets=(("✨ Vimoo 1.0 Lite (rank 16)", _preset(16)),
+             ("✨ Vimoo 1.0 Lite Slider (rank 8, 2e-4)", _preset(8, lr=2e-4, epochs=16, optimizer="adamw8bit",
+                                                                slider=True)),
+             ("✨ Vimoo 1.0 Lite Fine-tune (1e-5)", _preset(16, lr=1e-5, epochs=10, ft=True))),
+    start_lr_bands=(("lora", 3.3e-5, 3e-4), ("finetune", 3.3e-6, 3e-5), ("slider", 6.7e-5, 6e-4)),
 )

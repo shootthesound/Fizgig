@@ -156,7 +156,11 @@ def rope_table(grid, latent_hw, fps, cfg, device):
 def _attention(q, k, v, key_mask=None):
     """[B, N, H, D] -> [B, N, H * D]; key_mask [B, L] bool (False = padding) or None."""
     from fizgig.modules.sdpa import sdpa_backend_ctx
+    from fizgig.modules import int8_attention as _i8a
     q, k, v = (t.transpose(1, 2) for t in (q, k, v))
+    out = _i8a.attend(q, k, v, key_mask)         # workbench renders: the INT8 kernel when it's switched on, no padding
+    if out is not None:
+        return out.transpose(1, 2).flatten(2)
     mask = key_mask[:, None, None, :] if key_mask is not None else None
     with sdpa_backend_ctx():
         out = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)

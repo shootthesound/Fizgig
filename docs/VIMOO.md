@@ -23,7 +23,7 @@ All of them come from [Vimoo-AI/Vimoo-1.0-Lite-ComfyUI](https://huggingface.co/V
 ## Training data
 
 - **Photos** train as one-frame clips.
-- **Clips** must be 24 fps, with a frame count of 4n + 1 (17, 25, 33, 49 ... 121, up to 241), and width and height in multiples of 32. Fizgig refuses a clip off that grid rather than resample it; Gizmo prepares clips to the spec.
+- **Clips** must be 24 fps, with a frame count of 4n + 1 (17, 25, 33, 49 ... 121, up to 241), and width and height in multiples of 32. Fizgig refuses a clip off that grid rather than resample it. Gizmo prepares clips to the spec: pick Vimoo 1.0 Lite when it opens and its lengths, sizes and memory notes follow Vimoo (no sound options - Vimoo trains picture only).
 - **Captions** in plain English. Text in "double quotes" is read by the glyph encoder as lettering in the frame (a sign, a title).
 
 ## Memory

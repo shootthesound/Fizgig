@@ -521,7 +521,9 @@ class VimooDriver(FamilyDriver):
             # under 20 GB the trainer parks the model for each preview's decode (train._small_card_previews), so the
             # 5090's decode-beside-the-model peak doesn't apply: the small-card figures, measured on a 16 GB card
             import dataclasses
-            desc = dataclasses.replace(desc, train_memory=SMALL_CARD_MEMORY)
+            # and NF4 first: it leaves a 16 GB card room (9.6 GB against INT8's 13.1) and steps faster there (3.0 s
+            # against 3.8), and lower-memory machines are where this model is expected to be used most (Peter, 6 Nov)
+            desc = dataclasses.replace(desc, train_memory=SMALL_CARD_MEMORY, auto_precisions=("nf4", "int8"))
         return quant.plan(desc, self, precision, blocks_to_swap, megapixels=max(mp, eff), pictures=1)
 
     # ---- prompt travel ---------------------------------------------------------------------------------------------

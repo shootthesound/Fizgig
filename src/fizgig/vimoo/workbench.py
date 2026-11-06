@@ -19,6 +19,14 @@ class VimooWorkbenchEngine(VideoWorkbenchEngine):
         super().__init__(*a, **kw)
         self._siglip = None
 
+    def ensure_pipeline(self, *a, precision="auto", **kw):
+        """Auto on a card under 20 GB loads NF4 (as training's Auto there): the room it leaves matters more on the
+        smaller machines this model is expected to run on than INT8's slightly closer preview."""
+        from fizgig.vimoo.driver import _small_card
+        if precision == "auto" and self.pipeline is None and _small_card():
+            precision = "nf4"
+        return super().ensure_pipeline(*a, precision=precision, **kw)
+
     @torch.no_grad()
     def encode_keyframe(self, image, width, height):
         """A cropped PIL picture -> {"latent": (1, 48, 1, h, w), "vision": (729, 1152)} at the clip's canvas, on CPU."""

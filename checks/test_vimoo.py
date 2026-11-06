@@ -148,3 +148,23 @@ def test_travel_masks_stay_hard():
     assert drv._cond(a, "cpu")["text_mask"].tolist() == [[1, 1, 0]]
     padded = drv.pad_conditioning([{"text": torch.ones(2, 8)}, {"text": torch.ones(4, 8)}])
     assert padded[0]["text_mask"].dtype == torch.bool and padded[0]["text_mask"].tolist() == [True, True, False, False]
+
+
+def test_small_card_auto_prefers_nf4(monkeypatch):
+    """Under 20 GB, Auto trains Vimoo in NF4 (it fits a 16 GB card with room and steps faster there); an INT8 pick
+    is still planned from the small-card figures, and a big card's Auto stays INT8."""
+    import dataclasses
+    from types import SimpleNamespace
+
+    from fizgig.families import quant
+    from fizgig.vimoo import driver as D
+    drv = get("vimoo").load_driver()
+    drv._heaviest_item = lambda group: (0.25, 1)
+    group = SimpleNamespace(datasets=[])
+    monkeypatch.setattr(quant, "free_vram_gb", lambda: 15.0)
+    monkeypatch.setenv("FIZGIG_SIM_VRAM_GB", "16")
+    assert drv.plan_run("auto", -1, group=group, run=None)[0] == "nf4"
+    assert drv.plan_run("int8", -1, group=group, run=None)[:2] == ("int8", 0)
+    monkeypatch.setenv("FIZGIG_SIM_VRAM_GB", "32")
+    monkeypatch.setattr(quant, "free_vram_gb", lambda: 30.0)
+    assert drv.plan_run("auto", -1, group=group, run=None)[0] == "int8"

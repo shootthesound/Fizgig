@@ -36,7 +36,7 @@ All of them come from [Vimoo-AI/Vimoo-1.0-Lite-ComfyUI](https://huggingface.co/V
 | INT8 | 11.0 GB | 13.4 GB | 19.5 GB |
 | NF4 | 7.5 GB | 9.7 GB | 15.9 GB |
 
-The previews set these peaks. On cards under 20 GB the model steps off the card for each preview's decode, so a 16 GB card trains INT8 with no block swap (13.1 GB) or NF4 (9.6 GB): measured on an RTX 4090 Laptop GPU with photos and a 33-frame clip, 3.8 and 3.0 s a step. Auto plans from the card's size. Speed on the 5090, INT8: 0.87 s a step for 1 MP photos, 3.2 s for a 49-frame clip at 0.4 MP. A clip costs memory by its token load (frames x area), so long clips at full 720p need a big card.
+The previews set these peaks. On cards under 20 GB the model steps off the card for each preview's decode, so a 16 GB card trains NF4 (9.6 GB) or INT8 with no block swap (13.1 GB): measured on an RTX 4090 Laptop GPU with photos and a 33-frame clip, 3.0 and 3.8 s a step. On a card under 20 GB, Auto picks NF4, in training and in Studio, for the room it leaves; pick INT8 yourself for the closer base. Speed on the 5090, INT8: 0.87 s a step for 1 MP photos, 3.2 s for a 49-frame clip at 0.4 MP. A clip costs memory by its token load (frames x area), so long clips at full 720p need a big card.
 
 ## Previews
 

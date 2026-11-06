@@ -61,8 +61,10 @@ def test_no_checkpointing_figures(key):
         mp = pts[0][0]
         assert quant.plan_checkpointing(d, p, 0, mp, free_gb=1000, kind=kind)[0] is False
         assert quant.plan_checkpointing(d, p, 4, mp, free_gb=1000, kind=kind)[0] is True
-        # uncompiled: on for a family that compiles (its figures are compiled runs), off for one that never does (H3)
-        assert quant.plan_checkpointing(d, p, 0, mp, free_gb=1000, compiled=False, kind=kind)[0] is bool(d.compiles)
+        # uncompiled: on for a family whose figures are compiled runs; off for one that never compiles (H3) or whose
+        # figures were measured uncompiled (nogc_uncompiled)
+        assert quant.plan_checkpointing(d, p, 0, mp, free_gb=1000, compiled=False, kind=kind)[0] is \
+            bool(d.compiles and not d.nogc_uncompiled)
         assert quant.plan_checkpointing(d, p, 0, mp, free_gb=pts[0][1], kind=kind)[0] is True
         assert quant.plan_checkpointing(d, p, 0, pts[-1][0] + 0.5, free_gb=1000, kind=kind)[0] is True   # past the figures
     if d.compiles:          # Krea 2's nf4 keeps its dequantised weights for backward: never without checkpointing

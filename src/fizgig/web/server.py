@@ -154,6 +154,22 @@ def list_gpus():
     return [row] if row else []
 
 
+_CARD_GB = {}
+
+
+def _card_total_gb(prefs):
+    """The training card's size in GiB (Preferences' cuda_device, else the first), kept 5 minutes - the Training tab
+    asks on every change and the card doesn't change. None when there's no GPU to read."""
+    want = str((prefs or {}).get("cuda_device") or "")
+    hit = _CARD_GB.get(want)
+    if hit and time.time() - hit[0] < 300:
+        return hit[1]
+    row = _chosen_gpu(list_gpus(), want)
+    total = row["total_gb"] if row else None
+    _CARD_GB[want] = (time.time(), total)
+    return total
+
+
 def _chosen_gpu(rows, want):
     """The row for Preferences' cuda_device (an index or a GPU-… uuid), else the first card."""
     want = str(want or os.environ.get("CUDA_VISIBLE_DEVICES") or "").split(",")[0].strip()
@@ -3854,6 +3870,9 @@ class Handler(BaseHTTPRequestHandler):
                     if bn:
                         st["notes"]["BATCH_SIZE"] = bn
                     st["pending"] = st.get("pending") or bpend
+                    if str(vals.get("BATCH_SIZE") or "").strip().lower() == "auto":   # Auto: what it does on this card
+                        st["notes"]["BATCH_SIZE"] = launch.batch_auto_note(
+                            desc, vals.get("DATASET_MEGAPIXELS") or 1.0, _card_total_gb(prefs))
                 if st["kind"] == "finetune" and desc.finetune:      # the fine-tune card's plan line (the desktop's)
                     from fizgig.web import ft_plan
                     st["notes"]["FAMILY_FT_ROTATIONS"], st["pending"] = ft_plan.line(

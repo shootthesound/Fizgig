@@ -590,6 +590,34 @@ def _prompt_slider_step(driver, dit, net, latents, enc, gen, *, guidance, min_t,
     return total, state["t"], a_total
 
 
+def _apply_auto_batch(desc, driver, user_config, precision, blocks_to_swap, run):
+    """Batch size Auto: on a 40 GB+ card, the family's measured sweet spot for the run's size (batch_auto) when
+    nothing in the run reads one picture a step and the base still plans with no block swap at that batch; else 1.
+    Written into the dataset config before the dataset is built (its buckets batch at that size)."""
+    res = user_config.get("general", {}).get("resolution") or [1024, 1024]
+    mp = (res[0] * res[1] if isinstance(res, (list, tuple)) else res * res) / 1e6
+    n, why = quant.auto_batch(desc, mp), ""
+    blockers = [k for k in ("slider", "finetune", "dop", "share", "stage", "mask_prior", "paired", "accumulation")
+                if run.get(k)] + ([] if run.get("lora") else ["not a standard LoRA"])
+    if not desc.batch_training or n <= 1:
+        n, why = 1, f"{desc.display_name} trains fastest a picture at a time at {mp:.2f} MP"
+    elif quant.card_gb() < quant.NOGC_MIN_CARD_GB:
+        n, why = 1, f"a {quant.card_gb():.0f} GB card (Auto batches on {quant.NOGC_MIN_CARD_GB + 2:.0f} GB+ cards)"
+    elif blockers:
+        n, why = 1, f"this run reads one picture a step ({', '.join(blockers)})"
+    elif not desc.own_plan:
+        p, swap, _w = quant.plan(desc, driver, precision, blocks_to_swap, megapixels=mp, pictures=n)
+        if swap > 0:
+            n, why = 1, f"{n} pictures a step would need block swap on this card"
+    if n > 1:
+        why = f"{n} pictures a step - the fastest per picture measured for {desc.display_name} at {mp:.2f} MP"
+        for d in user_config.get("datasets", []):
+            d["batch_size"] = n
+        user_config.setdefault("general", {})["batch_size"] = n
+    logger.info(f"[batch] Auto: {why}")
+    return n
+
+
 def _dop_pairs(triggers, classes):
     """--dop_trigger "zwxem, qrtpl" + --dop_class "woman, man" -> [(trigger, class), ...]: one class for every
     trigger when only one is given, nothing (the trigger dropped) when none."""
@@ -728,6 +756,10 @@ def _render_previews(driver, dit, net, vae, encoded, out_dir, epoch, *, output_n
     os.makedirs(out_dir, exist_ok=True)
     ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
     device = next(iter(dit.parameters())).device
+    if torch.cuda.is_available():
+        # the step's activations are freed but still cached (a batch with checkpointing off leaves ~18 GB reserved on
+        # SDXL x 8): handed back first, the preview peaks at the larger of training and itself, not their sum
+        torch.cuda.empty_cache()
     _preview_vram("preview start", reset_peak=True)
     paths = []
     was_training = dit.training
@@ -1066,7 +1098,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  preview_checkpoint_cache="auto", preview_int8=False, family_options=None,
                  dop=False, dop_trigger=None, dop_class="", dop_weight=1.0, dop_every=1, dop_ft_samples=8,
                  lr_boost=None, share_worker=None, masked_training=False, mask_floor=0.1, mask_prior=0.0,
-                 caption_dropout=0.0, stage_dataset_config=None, stage_until=0.3, stage_blend=0.1):
+                 caption_dropout=0.0, stage_dataset_config=None, stage_until=0.3, stage_blend=0.1,
+                 batch_size_auto=False):
     desc = get_family(family)
     if desc is None or not desc.training_ready:
         raise RuntimeError(f"unknown or untrainable family {family!r}")
@@ -1182,6 +1215,12 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         if not dataset_config:
             raise RuntimeError("--dataset_config is required (only a prompt-pair slider trains without a dataset)")
         user_config = load_user_config(dataset_config)
+        if batch_size_auto:
+            _apply_auto_batch(desc, driver, user_config, precision, blocks_to_swap, dict(
+                slider=slider, finetune=finetune, dop=bool(dop), share=share_worker is not None,
+                stage=bool(stage_dataset_config), mask_prior=bool(masked_training and mask_prior),
+                lora=str(network_type).lower() == "lora", accumulation=int(gradient_accumulation_steps or 1) > 1,
+                paired=any(d.get("control_directory") for d in user_config.get("datasets", []))))
         blueprint = BlueprintGenerator(ConfigSanitizer()).generate(user_config, argparse.Namespace(),
                                                                    architecture=arch)
         if masked_training:
@@ -1423,15 +1462,16 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         paired = any(d.get("control_directory") for d in user_config.get("datasets", []))
         if (quant.card_gb() < quant.NOGC_MIN_CARD_GB or finetune or slider or paired or auto_recaption
                 or str(network_type).lower() != "lora"
-                or gradient_accumulation_steps > 1 or bsz > 1):     # a batch: the figures are for one picture
+                or gradient_accumulation_steps > 1):
             gradient_checkpointing = True
         else:
             kind, mp_ck = driver.nogc_load(group)
+            # a batch: one picture's figure + the measured cost of each picture past it (batch_gb_nogc)
             gradient_checkpointing, why = quant.plan_checkpointing(
                 desc, precision, max(0, blocks_to_swap) if precision != "nf4" else 0, mp_ck, compiled=bool(do_compile),
-                kind=kind, rank=int(network_dim))
+                kind=kind, rank=int(network_dim), pictures=bsz)
             logger.info(f"[checkpointing] gradient checkpointing {why}")
-            if gradient_checkpointing:
+            if gradient_checkpointing and bsz == 1:     # the partial figures are one picture's
                 gc_off_blocks, why = quant.plan_partial_checkpointing(
                     desc, precision, max(0, blocks_to_swap) if precision != "nf4" else 0, mp_ck,
                     compiled=bool(do_compile), kind=kind, rank=int(network_dim))
@@ -3016,6 +3056,8 @@ def setup_parser():
                    help="step each weight as its gradient lands and free it (less VRAM; no clipping or accumulation)")
     p.add_argument("--reg_lr_multiplier", type=float, default=0.2,
                    help="fine-tune: LR multiplier for images in a dataset block marked is_reg = true")
+    p.add_argument("--batch_size_auto", action="store_true",
+                   help="Batch size Auto: the family's measured fastest batch on a 40 GB+ card (description batch_auto)")
     p.add_argument("--gradient_checkpointing", default="auto", choices=("auto", "on"),
                    help="auto: off for a compiled LoRA run with no block swap when the measured peak fits free VRAM")
     p.add_argument("--compile_blocks", default="auto", choices=("auto", "on", "outside", "off"),
@@ -3114,6 +3156,7 @@ def main():
         lr_scheduler_num_cycles=a.lr_scheduler_num_cycles, lr_scheduler_power=a.lr_scheduler_power,
         gradient_accumulation_steps=a.gradient_accumulation_steps, compile_blocks=a.compile_blocks,
         gradient_checkpointing=True if a.gradient_checkpointing == "on" else "auto",
+        batch_size_auto=a.batch_size_auto,
         finetune=a.finetune, ft_rotations=a.ft_rotations, ft_save_every_rotations=a.ft_save_every_rotations,
         ft_rotate_every=a.ft_rotate_every, ft_max_parts=a.ft_max_parts, ft_start_window=a.ft_start_window, ft_epochs_done=a.ft_epochs_done,
         ft_fused_backward=a.ft_fused_backward, reg_lr_multiplier=a.reg_lr_multiplier,

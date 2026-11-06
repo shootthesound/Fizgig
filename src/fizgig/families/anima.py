@@ -30,6 +30,13 @@ ANIMA = FamilyDescription(
     masked_training=True,
     batch_training=True,              # Batch size (Other Options): training_loss_batch, exact per picture
     batch_gb=(0.25, 0.65),          # GB each extra picture takes: fixed, per MP (batch 1 vs 3)
+    # Batch x checkpointing sweep, 6 Nov 2026 (RTX PRO 6000, 8 pictures, 2 epochs, uncompiled, previews off - so the
+    # no-checkpointing peaks below are the larger of that run's and train_memory's preview peak; uncompiled sits
+    # above a compiled run, the safe side). Desktop\Fizgig batch tests\bsgc\MORNING_REPORT.md
+    batch_auto=((0.25, 4), (1.0, 1)),          # 2.3x a picture at 0.25 MP; nothing gained at 1 MP
+    batch_gb_nogc=((0.25, 5.1), (1.0, 10.7)),       # 0.25: 24.2 GB at batch 4 on a 5090, previews on (6 Nov)
+    nogc_uncompiled=True,
+    train_memory_nogc={"bf16": ((0.25, 9.1), (1.0, 15.1))},    # 1.6x faster than checkpointed
     arch_id="anima",
     display_name="Anima",
     gui_label="Anima",

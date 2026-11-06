@@ -864,7 +864,9 @@ It pays off most with block swap: each step's swap is spread over every picture 
 | Qwen Image 2.1, 16 blocks swapped | 9.5 s | 3.5 s (2.7×) |
 | MOSS-Image int8, 8 blocks swapped | 2.5 s | 1.4 s (1.8×) |
 
-With no swap it helps the smaller models (Anima 2.6×, SDXL 2.3× on a 4090) and changes little for the larger ones. These speed-ups were measured at 0.25 MP; at 1 MP the gain is smaller unless blocks are swapping. Each extra picture costs roughly 0.2–0.75 GB at 0.25 MP, more at larger sizes; gradient checkpointing stays on.
+With no swap it helps the smaller models (Anima 2.6×, SDXL 2.3× on a 4090) and changes little for the larger ones. These speed-ups were measured at 0.25 MP; at 1 MP the gain is smaller unless blocks are swapping. Each extra picture costs roughly 0.2–0.75 GB at 0.25 MP, more at larger sizes with gradient checkpointing on.
+
+**Batch size Auto** (the GUI's Auto choice, `--batch_size_auto` to the trainer with `batch_size = 1` in the TOML) picks the batch measured fastest per picture for the model at the run's size, on a 40 GB+ card: SDXL 8 at 0.25 MP and 4 at 1 MP, MiniMax H3 4, Anima 4, Flux 3 4 and Fibo 2.0 2 at 0.25 MP, otherwise 1. It stays at 1 on smaller cards, when a setting reads one picture a step, or when the batch would need block swap. Measured on an RTX PRO 6000 with checkpointing off, against batch 1 with it off: SDXL 7.3× / 3.3× faster a picture, H3 2.7× / 1.8×, Anima 2.3×, Fibo 1.7×, Flux 3 1.45×. Klein, Z-Image, MOSS-Image, Qwen Image 2.1 and Krea 2 aren't offered Auto: with no swap one picture already fills the GPU, and batching measured no faster. With checkpointing off each extra picture costs far more (SDXL 2.3 / 5.5 GB at 0.25 / 1 MP, H3 2.4 / 5.9, Anima 5.1, Flux 3 5.7, Fibo 22), so `--gradient_checkpointing auto` turns it off for a batch only when one picture's figure plus those fits.
 
 Batch size above 1 isn't used with sliders, edit pairs, DOP, Fizgig LoRA Isolation or MiniMax H3's reference distillation, and turns off masked-training mask priors, Start at a smaller size and helper shares. The GUI greys those out; the trainer refuses a batch with them. The per-image loss watch (problem images, per-image LR, the look warm-up, auto-recaption) works at any Batch size: each picture in a batch is weighed, excluded and recorded on its own, as its own step would be. Full fine-tunes batch too: each picture past the first is planned off the free memory before the windows are sized, and a regularisation picture keeps its own LR multiplier.
 
@@ -1048,7 +1050,7 @@ python -m fizgig.scripts.extract_finetune --base /models/base.safetensors --tune
 
 ## Other training flags
 
-- `--gradient_checkpointing auto|on` — `auto` (default) turns it off for a compiled LoRA run with no block swap when the measured peak fits free VRAM, as on most 40 GB+ cards (13–27% faster per step); where it doesn't all fit, the last blocks go without it. `on` keeps it everywhere.
+- `--gradient_checkpointing auto|on` — `auto` (default) turns it off for a compiled LoRA run with no block swap when the measured peak fits free VRAM, on 40 GB+ cards only (13–27% faster per step; SDXL, Anima, Flux 3 and Klein measured 1.3–2.3× faster); at a Batch size above 1, when that peak plus each extra picture's measured cost fits. Where it doesn't all fit, the last blocks go without it (batch 1). `on` keeps it everywhere.
 - `--training_adapter_strength S` — the training adapter's strength (default 1.0), for the families that use one.
 - `--sample_strengths 0.5` — also render each preview at these LoRA strengths, comma-separated.
 - `--preview_int8` — INT8 matmuls on the preview checkpoint, for smaller cards.

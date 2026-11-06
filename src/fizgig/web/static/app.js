@@ -6947,15 +6947,16 @@ function wireStudio() {
   $("stTurbo").addEventListener("change", () => { stRemember(); if (S.st.ready) api("/api/studio/settings", {family: S.st.layout.key, turbo: $("stTurbo").checked}); });
   $("stH3Turbo").addEventListener("input", studioNegRow);
   document.querySelectorAll('input[name="stDit"]').forEach((r) => r.addEventListener("change", () => {
-    studioNegRow();
     // a video model renders from the clip row's Steps and speed-LoRA boxes: Preview with sets them - the fast loop
     // (its steps at its strength) or the full model (its own steps, the speed LoRA off, so CFG and the negative apply)
     const L = S.st.layout, V = L && L.kind === "video" ? L.video : null;
-    if (!V) return;
-    const full = r.value === "full" && r.checked;
-    if (full && V.base_steps) { $("stH3Steps").value = V.base_steps; $("stH3Turbo").value = 0; }
-    else if (!full && V.steps) { $("stH3Steps").value = V.steps; $("stH3Turbo").value = V.speed_strength ?? 1; }
-    studioH3Remember();
+    if (V) {
+      const full = r.value === "full" && r.checked;
+      if (full && V.base_steps) { $("stH3Steps").value = V.base_steps; $("stH3Turbo").value = 0; }
+      else if (!full && V.steps) { $("stH3Steps").value = V.steps; $("stH3Turbo").value = V.speed_strength ?? 1; }
+      studioH3Remember();
+    }
+    studioNegRow();        // after the boxes: a clip's Negative shows when its speed LoRA box is 0 (CFG on)
   }));
   document.querySelectorAll('input[name="stTarget"]').forEach((r) => r.addEventListener("change", studioMastersFollow));
   document.querySelectorAll("[data-bulk]").forEach((b) => b.addEventListener("click", () => studioBulk(b.dataset.bulk)));

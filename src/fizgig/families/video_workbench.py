@@ -371,6 +371,8 @@ class VideoWorkbenchEngine(ClipContract, WorkbenchEngine):
             text = self.desc.preview_negative if text is None else text
             neg = self.encode([text or ""], size=(width, height))[0]
             extra["neg_cond"] = self._cond_to_device(neg)
+        logger.info("[clip] %d steps, CFG %g%s, speed LoRA %s", steps, cfg, " with the negative" if neg is not None else "",
+                    f"at {self._speed_strength:g}" if self._speed_loaded() and self._speed_strength else "off")
         names = [n for n in (PRIMARY, DONOR) if self.net.has(n)] if no_lora else []
         for n in names:
             self.net.set_enabled(n, False)

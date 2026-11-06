@@ -28,7 +28,12 @@ _DISTILLED_SIGMAS = (1.0, 0.9983, 0.9965, 0.9947, 0.9910, 0.9839, 0.9730, 0.9524
 OPTIONS = (
     # the glyph encoder and SigLIP reach the trainer (previews) and the text cache by path, as H3's audio VAE does
     FamilyOption("VIMOO_GLYPH", "", kind="fixed", tokens="glyph=pref:vimoo_glyph aux:glyph=pref:vimoo_glyph"),
-    FamilyOption("VIMOO_SIGLIP", "", kind="fixed", tokens="siglip=pref:vimoo_siglip"),
+    FamilyOption("VIMOO_SIGLIP", "", kind="fixed", tokens="siglip=pref:vimoo_siglip aux:siglip=pref:vimoo_siglip"),
+    FamilyOption("VIMOO_I2V_SHARE", "Image-to-video share",
+                 choices=(("Off", ""), ("25% of clip steps", "i2v_share=0.25"), ("50% of clip steps", "i2v_share=0.5")),
+                 hint="That share of clip steps trains image-to-video: the clip starts on its own first frame, as "
+                      "Vimoo trained text- and image-to-video together. Helps a LoRA meant for image-to-video renders.",
+                 show_if_media="clip"),
     FamilyOption("VIMOO_SAMPLE_FRAMES", "Sample length", tab="samples",
                  choices=(("2 seconds (49 frames)", "sample_frames=49"), ("Still (1 frame)", "sample_frames=1"),
                           ("1 second (25 frames)", "sample_frames=25"), ("3 seconds (73 frames)", "sample_frames=73"),

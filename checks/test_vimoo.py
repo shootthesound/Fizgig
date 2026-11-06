@@ -100,3 +100,22 @@ def test_image_to_video_keeps_the_first_frame_and_moves_the_rest():
     anchor = drv._anchor(drv._ref5(ref, "cpu"), drv.initial_noise(7, 64, 64, 9)[:, :, :1].to(torch.bfloat16))
     assert torch.allclose(out[:, :, :1], anchor.float(), atol=1e-2)
     assert (out[:, :, 1:] - out[:, :, :1]).abs().mean() > 0.1
+
+
+def test_the_image_to_video_share_trains_a_clip_from_its_own_first_frame():
+    """With i2v_share on, a clip step conditions on its own first latent frame and the cached SigLIP tokens, and scores
+    only the frames after it; off, it trains text-to-video on every frame."""
+    drv = get("vimoo").load_driver()
+    m = _tiny(in_channels=48, vision_dim=1152, text_dim=3584, byt5_dim=1472)
+    calls = []
+    real = m.forward
+    m.forward = lambda x, t, *a, **kw: (calls.append((x[:, 48:].abs().sum().item(), kw.get("observed_t") is not None,
+                                                      kw.get("vision") is not None)), real(x, t, *a, **kw))[1]
+    lat = torch.randn(1, 48, 3, 4, 4)
+    cond = {"text": torch.randn(1, 6, 3584), "first_vision": torch.randn(1, 729, 1152)}
+    drv.set_options({"i2v_share": "1"})
+    loss, _ = drv.training_loss(m, lat, cond, torch.Generator().manual_seed(0))
+    assert calls[-1][0] > 0 and calls[-1][1] and calls[-1][2] and torch.isfinite(loss)
+    drv.set_options({})
+    drv.training_loss(m, lat, cond, torch.Generator().manual_seed(0))
+    assert calls[-1] == (0.0, False, False)

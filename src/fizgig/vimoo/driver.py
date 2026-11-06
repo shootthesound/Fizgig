@@ -159,16 +159,42 @@ class VimooDriver(FamilyDriver):
         from fizgig.families.cache import save_latents
         from fizgig.scripts.cache_latents import encode_datasets
         vae = self.load_vae(args.model, device)
-        args.needs_reencode = lambda path: False
         args.keep_alpha = False
+        siglip = None
+        sp = aux.get("siglip", "") or self._siglip_path
+
+        def needs_reencode(path):
+            """A clip cached before SigLIP was set (no first-frame tokens) re-encodes once when it is."""
+            if not (sp and os.path.isfile(sp)):
+                return False
+            from safetensors import safe_open
+            try:
+                with safe_open(path, framework="pt") as f:
+                    keys = list(f.keys())
+            except Exception:
+                return True
+            clip = any(k.startswith("latent_") and k.count("x") == 2 for k in keys)
+            return clip and "cond__first_vision" not in keys
+        args.needs_reencode = needs_reencode
+        if sp and os.path.isfile(sp):
+            # each clip's first frame through SigLIP, stored beside its latent: the image-to-video share trains a clip
+            # from its own start (its first latent frame is that frame encoded alone - the VAE is causal)
+            from fizgig.vimoo.text import SigLIP
+            siglip = SigLIP(sp, device)
 
         def encode(batch):
+            from PIL import Image
             for it in batch:
                 c = it.content
-                item = c if isinstance(c, list) and len(c) > 1 else (c[0] if isinstance(c, list) else c)
+                clip = isinstance(c, list) and len(c) > 1
+                item = c if clip else (c[0] if isinstance(c, list) else c)
                 z = self.encode_images(vae, [item])[0]
-                logger.info(f"latent cache: {it.item_key} -> {tuple(z.shape)}")
-                save_latents(self.description, it, z)
+                extra = None
+                if clip and siglip is not None:
+                    f0 = c[0] if hasattr(c[0], "convert") else Image.fromarray(np.asarray(c[0])[..., :3])
+                    extra = {"cond__first_vision": siglip.encode(f0, f0.width, f0.height).to(torch.float16)}
+                logger.info(f"latent cache: {it.item_key} -> {tuple(z.shape)}" + (" + first-frame SigLIP" if extra else ""))
+                save_latents(self.description, it, z, extra=extra)
         encode_datasets(datasets, encode, args)
         return True
 
@@ -289,6 +315,8 @@ class VimooDriver(FamilyDriver):
                 gmask = torch.ones(glyph.shape[:2], dtype=torch.int64)
             glyph, gmask = glyph.to(device), gmask.to(device)
         vision = cond.get("vision")
+        if vision is not None and not torch.is_tensor(vision):
+            vision = None
         if vision is not None:
             vision = (vision.unsqueeze(0) if vision.dim() == 2 else vision).to(device, torch.bfloat16)
         return dict(text=text.to(device), text_mask=None if mask is None else mask.to(device), glyph=glyph,
@@ -347,6 +375,12 @@ class VimooDriver(FamilyDriver):
                       diff_weight=0.0, loss_mask=None, prior=None):
         lat = self._as5(latents)
         state = self.noise_latents(lat, generator, min_t=min_t, max_t=max_t)
+        share = float(self.options.get("i2v_share") or 0)
+        if not refs and share > 0 and lat.shape[2] > 1 and cond.get("first_vision") is not None                 and float(torch.rand((), generator=generator)) < share:
+            # the image-to-video share: the clip's own first latent frame is its start picture, SigLIP's tokens of
+            # that frame (cached) read beside the prompt - as Vimoo trained text- and image-to-video together
+            refs = [lat[:, :, :1]]
+            cond = {**cond, "vision": cond["first_vision"]}
         if refs and lat.shape[2] > 1:
             # image-to-video: the pair's picture is the clip's start - anchored almost clean in the first latent frame,
             # read through the conditioning channels and SigLIP, modulated at its own near-zero time; the loss is the

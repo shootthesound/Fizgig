@@ -38,6 +38,8 @@ All of them come from [Vimoo-AI/Vimoo-1.0-Lite-ComfyUI](https://huggingface.co/V
 
 The previews set these peaks. On cards under 20 GB the model steps off the card for each preview's decode, so a 16 GB card trains NF4 (9.6 GB) or INT8 with no block swap (13.1 GB): measured on an RTX 4090 Laptop GPU with photos and a 33-frame clip, 3.0 and 3.8 s a step. On a card under 20 GB, Auto picks NF4, in training and in Studio, for the room it leaves; pick INT8 yourself for the closer base. Speed on the 5090, INT8: 0.87 s a step for 1 MP photos, 3.2 s for a 49-frame clip at 0.4 MP. A clip costs memory by its token load (frames x area), so long clips at full 720p need a big card.
 
+Vimoo's INT8 is weight-only: the weights are stored in 8 bits and turned back to bf16 for each multiply, and the activations stay bf16. The faster INT8 the other models use also rounds the activations, and on Vimoo that showed as mottled, flickering backgrounds. INT8 attention is off for Vimoo for the same reason. The INT8 speeds above were measured before this change.
+
 ## Previews
 
 Training previews render with the distilled LoRA: 12 steps at CFG 1, a 2-second 832x480 clip in about 20 seconds on a 5090, decode included (Samples tab: **Sample length** sets the clip length, or a still). Set the distilled LoRA's strength to 0 to render on the base model instead: 50 steps at CFG 4 against the negative prompt, as Vimoo's pipeline does, about six times slower.

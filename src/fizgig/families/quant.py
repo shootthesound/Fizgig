@@ -198,6 +198,15 @@ def _peak(entry, megapixels):
 TIGHT_MARGIN_GB = 0.5      # nf4 with no swap beats a swapped int8 base down to this much headroom
 
 
+def small_card_figures(desc) -> bool:
+    """Whether the Auto plan reads desc.train_memory_small: the family has small-card figures and this card gets the
+    trainer's small-card preview treatment (under 20 GB)."""
+    if not getattr(desc, "train_memory_small", None):
+        return False
+    from fizgig.families.train import _small_card_previews
+    return _small_card_previews()
+
+
 def plan(desc, driver, precision="auto", blocks_to_swap=-1, free_gb=None, margin_gb=1.5, megapixels=1.0, pictures=1):
     """Resolve 'auto' precision and/or block swap (-1) from free VRAM and the description's measured training
     memory (desc.train_memory: {precision: (peak GB at no swap, GB saved per swapped block)}).
@@ -211,10 +220,13 @@ def plan(desc, driver, precision="auto", blocks_to_swap=-1, free_gb=None, margin
     if free_gb is None:
         free_gb = free_vram_gb()
     extra = batch_extra(desc, megapixels, pictures)
-    mem = {p: (_peak(v, megapixels) + extra, v[1]) for p, v in (desc.train_memory or {}).items()}
+    small = small_card_figures(desc)
+    table = desc.train_memory_small if small else desc.train_memory
+    mem = {p: (_peak(v, megapixels) + extra, v[1]) for p, v in (table or {}).items()}
     offered = [p for p in PRECISIONS if p in desc.precisions]
-    if precision == "auto" and getattr(desc, "auto_precisions", ()):
-        offered = [p for p in desc.auto_precisions if p in desc.precisions]
+    order = (getattr(desc, "auto_precisions_small", ()) if small else ()) or getattr(desc, "auto_precisions", ())
+    if precision == "auto" and order:
+        offered = [p for p in order if p in desc.precisions]
     cap = driver.max_blocks_to_swap()
     budget = free_gb - margin_gb
 

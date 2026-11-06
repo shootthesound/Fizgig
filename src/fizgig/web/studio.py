@@ -784,6 +784,21 @@ def plan_video(desc, prefs, pref_path, checkpoint="", base="", refmod=False):
           "turbo_lora_strength": (desc.preview_speed_defaults() or (0, 0.75))[1],
           "te_cache_dir": os.path.join(cache, "te_prompts") if cache else "",
           "audio_vae_path": audio if audio and os.path.exists(audio) else "", "base_mode": base_mode}
+    # the description's fixed family options that name model files (Vimoo's glyph encoder and SigLIP), as the
+    # trainer gets them; an engine that plans its own files (H3's) ignores them
+    fo = {}
+    for opt in desc.options:
+        if opt.kind != "fixed":
+            continue
+        for tok in opt.tokens.split():
+            k, eq, v = tok.partition("=")
+            if not eq or tok.startswith(("aux:", "--")) or not v.startswith("pref:"):
+                continue
+            v = look(v[len("pref:"):])
+            if v and os.path.exists(v):
+                fo[k] = v
+    if fo:
+        kw["family_options"] = fo
     return kw, f"Loading {desc.display_name} (the base takes a minute)…", problems
 
 
@@ -815,6 +830,7 @@ def layout(desc, prefs, pref_path, samples=None):
                       "scales": [n for n, _ in vc.scales], "scale_of": dict(vc.scales),
                       "models": [c.label for c in vc.checkpoints],
                       "references": {c.label: c.references for c in vc.checkpoints},
+                      "frame_slots": list(getattr(desc.workbench_engine_class(), "keyframe_slots", ("first", "last"))),
                       "bases": [n for n, _ in vc.bases], "speed_boost": bool(vc.speed_boost),
                       "sound": bool(audio_vae and os.path.exists(audio_vae))} if kind == "video" and vc else None,
             "song_lengths": SONG_LENGTHS if kind == "audio" else None,

@@ -38,10 +38,16 @@ class ClipContract:
     # first / last frame keyframes and reference pictures (encode_keyframe / encode_reference_image), a base-model
     # and base-mode picker, the render library's block banks
     supports_keyframes = False
+    keyframe_slots = ("first", "last")       # the frames a keyframe can pin (Vimoo: the first only)
     supports_base_modes = False
     supports_banks = False
 
     # ---- hooks -------------------------------------------------------------------------------------------------
+    def _clip_conditioning(self, state, cond, width, height, frames):
+        """(cond, extra generate() arguments) for one clip: a family's engine adds what its keyframes or references
+        need here (Vimoo: a start picture's latent and SigLIP tokens). Default: the prompt alone."""
+        return cond, {}
+
     def _clip_regimes(self) -> dict:
         """{name: (steps, speed strength)}: the description's clip_regimes."""
         desc = getattr(self, "desc", None)
@@ -90,7 +96,7 @@ class ClipContract:
             return ()
         sig = []
         for idx, lat in kf:
-            t = lat.float()
+            t = (lat["latent"] if isinstance(lat, dict) else lat).float()
             sig.append((int(idx), tuple(t.shape), round(float(t.sum()), 3), round(float(t.abs().mean()), 5)))
         for i, (_img, lat) in enumerate(refs):
             t = lat.float()
@@ -343,7 +349,17 @@ class VideoWorkbenchEngine(ClipContract, WorkbenchEngine):
         steps = int(steps or self._plain_steps())
         self._set_speed_strength(turbo_strength)
         cond = self.encode([prompt], size=(width, height))[0]
+        cond, extra = self._clip_conditioning(state, cond, width, height, frames)
         _d_steps, cfg, sigmas, options = self.sampling()
+        if self._speed_loaded() and not self._speed_strength:
+            # the speed LoRA off for this render: the base model's own guidance and schedule
+            ds = self.desc.default_sampling()
+            if ds is not None:
+                cfg, sigmas, options = ds.cfg, None, ds.options
+        neg = None
+        if cfg > 1.0:
+            neg = self.encode([self.desc.preview_negative or ""], size=(width, height))[0]
+            extra["neg_cond"] = self._cond_to_device(neg)
         names = [n for n in (PRIMARY, DONOR) if self.net.has(n)] if no_lora else []
         for n in names:
             self.net.set_enabled(n, False)
@@ -353,7 +369,7 @@ class VideoWorkbenchEngine(ClipContract, WorkbenchEngine):
             self._act_ctx = ((id(self.dit), self.primary_path, self.primary_hash, self.donor_path, self._speed_path,
                               round(float(getattr(state, "primary_scale", 1.0)), 4),
                               round(float(getattr(state, "donor_scale", 1.0)), 4), prompt, int(seed), width, height,
-                              frames, turbo_strength), self._cache_sig(state))
+                              frames, turbo_strength, self.keyframe_signature(state)), self._cache_sig(state))
         act = self._act_for_render()
         key = None
         if act is not None:
@@ -378,7 +394,7 @@ class VideoWorkbenchEngine(ClipContract, WorkbenchEngine):
             with _i8a.renders(self.int8_attention):
                 return self.driver.generate(self.dit, self._cond_to_device(cond), width, height, steps=steps,
                                             seed=int(seed), cfg=cfg, sigmas=sigmas, options=options, on_step=_step,
-                                            frames=frames, audio=True)
+                                            frames=frames, audio=True, **extra)
         try:
             if act is None:
                 out = _generate()

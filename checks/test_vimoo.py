@@ -119,3 +119,20 @@ def test_the_image_to_video_share_trains_a_clip_from_its_own_first_frame():
     drv.set_options({})
     drv.training_loss(m, lat, cond, torch.Generator().manual_seed(0))
     assert calls[-1] == (0.0, False, False)
+
+
+def test_studio_start_frame_conditioning():
+    """Studio's First frame reaches generate() as Vimoo's image-to-video: the latent as refs, SigLIP's tokens in
+    the prompt's conditioning; no last-frame slot is offered, and a still ignores the start frame."""
+    from types import SimpleNamespace
+
+    from fizgig.vimoo.workbench import VimooWorkbenchEngine
+    assert VimooWorkbenchEngine.keyframe_slots == ("first",)
+    assert get("vimoo").workbench_engine_class() is VimooWorkbenchEngine
+    hit = {"latent": torch.zeros(1, 48, 1, 4, 4), "vision": torch.ones(729, 1152)}
+    st = SimpleNamespace(keyframes=[(0, hit)])
+    eng = VimooWorkbenchEngine.__new__(VimooWorkbenchEngine)
+    cond, extra = eng._clip_conditioning(st, {"text": torch.zeros(3, 8)}, 64, 64, 33)
+    assert cond["vision"] is hit["vision"] and extra["refs"][0] is hit["latent"]
+    assert eng._clip_conditioning(st, {"text": 1}, 64, 64, 1) == ({"text": 1}, {})
+    assert VimooWorkbenchEngine.keyframe_signature(st)

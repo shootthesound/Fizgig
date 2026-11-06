@@ -5251,15 +5251,19 @@ function studioKind(L, sv) {
 
 function studioSlots() {
   const ref = !!S.st.layout.video.references[$("stH3Model").value];
-  $("stFramesTitle").textContent = ref ? "Reference Images" : "First / Last Frame";
+  const lastToo = (S.st.layout.video.frame_slots || ["first", "last"]).includes("last");
+  $("stFramesTitle").textContent = ref ? "Reference Images" : lastToo ? "First / Last Frame" : "Start Frame";
   $("stFramesDesc").textContent = ref ? "Optional: up to two photos the clip should look like (this checkpoint's " +
     "references), each cropped to the clip's shape - you place the crop when you pick one. Say <Picture 1> and " +
     "<Picture 2> in the prompt for them, e.g. \"the woman in <Picture 1> walks along the beach in <Picture 2>\"." :
-    "Optional: photos the clip starts and ends on (a still uses the first only), each cropped to the clip's shape - " +
-    "you place the crop when you pick one.";
+    lastToo ? "Optional: photos the clip starts and ends on (a still uses the first only), each cropped to the clip's " +
+    "shape - you place the crop when you pick one." : "Optional: a photo the clip starts on (image-to-video; a still " +
+    "ignores it), cropped to the clip's shape - you place the crop when you pick one.";
   const host = $("stFrameSlots");
   host.innerHTML = "";
-  const slots = ref ? [["ref1", "Reference 1"], ["ref2", "Reference 2"]] : [["first", "First frame"], ["last", "Last frame"]];
+  const fs = S.st.layout.video.frame_slots || ["first", "last"];
+  const slots = ref ? [["ref1", "Reference 1"], ["ref2", "Reference 2"]] :
+    [["first", "First frame"], ["last", "Last frame"]].filter(([s]) => fs.includes(s));
   for (const [slot, label] of slots) {
     const input = el("input", {type: "text", class: "w-path", value: (S.st.kf[slot] || ""), placeholder: "a photo (optional)"});
     const thumb = el("canvas", {width: 1, height: 1});
@@ -5396,7 +5400,7 @@ function studioExtra() {
   const V = L.video;
   const w = Number($("stH3W").value) || 640, h = Number($("stH3H").value) || 768;     // the clip at its Width x Height
   const ref = !!V.references[$("stH3Model").value];
-  const slots = ref ? ["ref1", "ref2"] : ["first", "last"];
+  const slots = ref ? ["ref1", "ref2"] : (V.frame_slots || ["first", "last"]);
   return {video: {frames: V.length_frames[$("stH3Len").value] || 22, width: w, height: h,
     steps: Math.max(1, Math.min(40, parseInt($("stH3Steps").value, 10) || 4)),
     turbo: Math.max(0, Math.min(1.5, Number($("stH3Turbo").value) || 0)), sound: $("stH3Sound").checked,

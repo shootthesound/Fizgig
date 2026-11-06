@@ -90,6 +90,7 @@ VIMOO = FamilyDescription(
     options=OPTIONS,
 
     media=("photo", "clip"),
+    workbench_engine="fizgig.vimoo.workbench:VimooWorkbenchEngine",
     clip_spec=ClipSpec(fps=24, frame_step=4, frame_offset=1, max_frames=241, edge_multiple=32, audio_rate=0,
                        audio_channels=0, note="vimoo/vae.py: frames 4n + 1 (TEMPORAL 4), edges /16 x the 2x2 merge"),
     clip_regimes=(("dial", 12, 1.0), ("confirm", 12, 1.0)),

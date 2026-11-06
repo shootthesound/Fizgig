@@ -16,9 +16,9 @@ Fizgig supports Lite in full: LoRA and LoKR from photos and clips, slider LoRAs,
 - **Turbo Preview** is now called **Reuse unchanged blocks**, which is what it does. It moves its stored results to system RAM when the card is tight, so long clips no longer run out of memory with it on.
 
 **Fixes**
-- Block swap with a LoRA on some blocks only (Fast Identity Mode, a Model Area) no longer crashes on the second step with "mat2 is on cpu" (#302).
+- Block swap with a LoRA on some blocks only (Fast Identity Mode, a Model Area) no longer crashes on the second step with "mat2 is on cpu" (#302, thanks @spinolover).
 - A LoKR from LyCORIS loads at the right strength. Fizgig multiplied a full-matrix LoKR by the alpha stored in the file, and LyCORIS stores the network dim there, so a Context LoRA played many times too strong and samples came out as static (#304, thanks @Nessa2026691). LoKRs trained in Fizgig are unaffected.
-- MOSS-Image: an interrupted tokenizer download no longer stops caching (#305).
+- MOSS-Image: an interrupted tokenizer download no longer stops caching (#305, thanks @MrB4000).
 - Prompt sliders train again on every model (a "max() iterable argument is empty" error at the start since 9.0.5).
 - MiniMax H3's Slider preset trains on AdamW instead of AdamW8bit, which measured clearly better on H3 LoRAs.
 - Fibo 2.0 on a 16 GB card trains INT8 with no block swap at 0.25 MP, 2.1 s a step instead of 3.4 s.

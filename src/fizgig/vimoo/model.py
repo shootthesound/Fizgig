@@ -246,11 +246,10 @@ class TextRefiner(nn.Module):
 
     def forward(self, x, t, mask):
         t_rep = self.t_embedder(t)
-        if mask is None:
-            ctx = x.mean(dim=1)
-        else:
-            mf = mask.to(x.dtype).unsqueeze(-1)
-            ctx = (x * mf).sum(dim=1) / mf.sum(dim=1)
+        # the prompt's mean state, summed and divided in the stream's dtype as the reference does (always through its
+        # mask) - x.mean() accumulates in higher precision and rounds differently, which every refiner gate then carries
+        mf = (mask if mask is not None else torch.ones(x.shape[:2], device=x.device)).to(x.dtype).unsqueeze(-1)
+        ctx = (x * mf).sum(dim=1) / mf.sum(dim=1)
         c = t_rep + self.c_embedder(ctx.to(x.dtype))
         x = self.input_embedder(x)
         key_mask = None

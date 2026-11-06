@@ -21,14 +21,22 @@ class VimooWorkbenchEngine(VideoWorkbenchEngine):
 
     def ensure_pipeline(self, *a, precision="auto", **kw):
         """Auto on a card under 20 GB loads NF4 (as training's Auto there): the room it leaves matters more on the
-        smaller machines this model is expected to run on than INT8's slightly closer preview. From 20 GB up the
-        shared rule loads bf16 where the file fits with room: INT8 mottles plain backgrounds (measured 6 Nov 2026), and
-        with the VAE parked after each decode and the render's cache handed back, a 32 GB card keeps room for playing
-        the clips."""
+        smaller machines this model is expected to run on than INT8's slightly closer preview. Up to 32 GB it loads
+        INT8 (a 768x768 x 49 pair in 44 s against bf16's 66 s on a 5090; bf16 + a clip's decode leaves a 32 GB card
+        little room). INT8 adds a little background flicker (measured 6 Nov 2026) - kept for the speed by Peter's
+        choice, his eye on Studio renders to decide. bf16 from 40 GB up."""
+        from fizgig.families import quant
         from fizgig.families.train import _small_card_previews
-        if precision == "auto" and self.pipeline is None and _small_card_previews():
-            precision = "nf4"
-        return super().ensure_pipeline(*a, precision=precision, **kw)
+        if precision == "auto" and self.pipeline is None:
+            if _small_card_previews():
+                precision = "nf4"
+            elif quant.card_gb() < quant.NOGC_MIN_CARD_GB:
+                precision = "int8"
+        out = super().ensure_pipeline(*a, precision=precision, **kw)
+        # the model steps off the card for a decode only where it must: a small card, or bf16 on 32 GB (INT8 + the
+        # decode peaked 25.8 GB there)
+        self.park_for_decode = self.lowmem or str(getattr(self, "precision", "")) == "bf16" and             quant.card_gb() < quant.NOGC_MIN_CARD_GB
+        return out
 
     @torch.no_grad()
     def encode_keyframe(self, image, width, height):

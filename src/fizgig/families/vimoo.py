@@ -198,8 +198,7 @@ VIMOO = FamilyDescription(
     preview_height=480,
     workbench=("repair", "profiler", "extract", "royale"),
     presets=(("✨ Vimoo 1.0 Lite (rank 16)", _preset(16)),
-             ("✨ Vimoo 1.0 Lite Slider (rank 8, 2e-4)", _preset(8, lr=2e-4, epochs=16, optimizer="adamw8bit",
-                                                                slider=True)),
+             ("✨ Vimoo 1.0 Lite Slider (rank 8, 2e-4)", _preset(8, lr=2e-4, epochs=16, slider=True)),   # AdamW, as H3's
              ("✨ Vimoo 1.0 Lite Fine-tune (1e-5)", _preset(16, lr=1e-5, epochs=10, ft=True))),
     start_lr_bands=(("lora", 3.3e-5, 3e-4), ("finetune", 3.3e-6, 3e-5), ("slider", 6.7e-5, 6e-4)),
 )

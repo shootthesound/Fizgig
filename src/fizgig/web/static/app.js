@@ -1760,8 +1760,8 @@ function renderChoiceDraw(id, L) {
         "previews are on your Base"),
     opt("samples", "Follow Samples tab settings", "Renders as the Samples tab's previews do: your Base" +
         (rc.look ? ", with the SFT look LoRA" : "") + ", at the Samples tab's steps and CFG"),
-    el("span", {class: "field-hint", text: "Applies from Studio's next Load, and the next Royale or Profiler render " +
-      "(the model reloads, so that one takes longer)"}));
+    el("span", {class: "field-hint", text: "Applies at Studio's next Start or Update, and the next Royale or Profiler " +
+      "render (the model reloads, so that one takes longer)"}));
 }
 
 // every tab's box (and Studio's note) after a change, or a tab's model changing
@@ -6608,10 +6608,17 @@ async function studioStart() {
   const L = S.st.layout;
   try {
     const st = await api("/api/studio/status");
+    // what the model loads with as of now - Render with, the Samples tab's checkpoint tick, look LoRA and Turbo may have
+    // changed on another tab since Studio drew: any of them is a reload, not a re-render on the old model
+    const rc = await api("/api/studio/render_choice?family=" + encodeURIComponent(L.key)).catch(() => null);
+    if (rc && rc.key === L.key) Object.assign(L, rc);
     const fast = (document.querySelector('input[name="stDit"]:checked') || {}).value !== "full";
-    const key = [L.key, $("stPrimary").value.trim(), fast, L.kind === "video" ? $("stH3Model").value + $("stH3Base").value : ""].join("|");
+    const key = [L.key, $("stPrimary").value.trim(), fast, L.kind === "video" ? $("stH3Model").value + $("stH3Base").value : "",
+      (L.render_choice || {}).value || "", L.follow_ck || "", L.follow_look || "", L.follow_turbo || ""].join("|");
     if (st.state === "ready" && S.st.loadedKey === key) {     // the same LoRA: the donor may change, then a render
       if ($("stDonor").value.trim() !== (st.donor || "")) await api("/api/studio/donor", {path: $("stDonor").value.trim()});
+      // the Samples tab's steps and CFG (a model that follows it) apply without a reload: sent before each render
+      if (L.follows_samples) await api("/api/studio/settings", {family: L.key, negative: $("stNeg").value.trim()});
       studioRender();
       return;
     }

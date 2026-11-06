@@ -67,3 +67,24 @@ def test_note_says_what_this_card_does():
     assert launch.batch_auto_note(sdxl, 0.25, 23.5).startswith("Auto: 1 picture a step on this 24 GB card")
     assert launch.batch_auto_note(sdxl, 0.25, 79.2).startswith("Auto: 8 pictures a step at 0.25 MP on this 79 GB card")
     assert "40 GB+ card" in launch.batch_auto_note(sdxl, 1.0)          # no card read (no GPU here): the rule
+
+
+def test_clip_studio_reuses_the_baseline_when_nothing_moved():
+    """Studio's clip pair: the page starts every block's donor slider at 1, so with no donor loaded the default state
+    is the baseline - one render for both panes; a moved block, or a donor that's loaded and on, renders the Tweaked
+    clip."""
+    from types import SimpleNamespace
+    from fizgig.repair_studio.state import BlockState, SliderState
+    from fizgig.scripts.studio_worker import _clip_same_as_baseline
+    st = SliderState(prompt="x", seed=1)
+    for b in ("double_blocks_0", "double_blocks_1"):
+        st.blocks[b] = BlockState(primary_enabled=True, primary_strength=1.0, donor_enabled=True, donor_strength=1.0)
+    no_donor = SimpleNamespace(donor_network=None, donor_path=None, donor_block_ids=set())
+    assert _clip_same_as_baseline(no_donor, st)
+    with_donor = SimpleNamespace(donor_network=object(), donor_path="d.safetensors",
+                                 donor_block_ids={"double_blocks_0"})
+    assert not _clip_same_as_baseline(with_donor, st)
+    st.donor_scale = 0.0
+    assert _clip_same_as_baseline(with_donor, st)
+    st.blocks["double_blocks_1"].primary_strength = 0.5
+    assert not _clip_same_as_baseline(no_donor, st)

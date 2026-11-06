@@ -214,3 +214,27 @@ def test_pair_slider_weights_what_the_poles_change():
     drv.predict = lambda dit, state, cond: err_left
     left, _ = drv.training_loss(None, lat, {}, None, diff_ref=ref, diff_weight=1.0)
     assert float(right) > float(left)
+
+
+def test_steps_count_with_the_distilled_schedule():
+    """The distilled LoRA's own 12-timestep schedule is used at 12 steps; asked for another count, the sampler runs that
+    many steps on Lite's own grid (it used to run the 12 regardless)."""
+    from types import SimpleNamespace
+    drv = get("vimoo").load_driver()
+    sp = get("vimoo").preview_speed().settings
+    seen = []
+
+    class Fake:
+        img_in = SimpleNamespace(proj=SimpleNamespace(weight=torch.zeros(1)))
+
+        def __call__(self, x, t, **kw):
+            seen.append(float(t[0]))
+            return torch.zeros(x.shape[0], 48, *x.shape[2:])
+    cond = {"text": torch.zeros(4, 8)}
+    for steps, want in ((12, 12), (15, 15)):
+        seen.clear()
+        drv.generate(Fake(), cond, 64, 64, steps=steps, seed=1, cfg=1.0, sigmas=sp.sigmas, frames=1)
+        assert len(seen) == want
+    seen.clear()
+    drv.generate(Fake(), cond, 64, 64, steps=12, seed=1, cfg=1.0, sigmas=sp.sigmas, frames=1)
+    assert [round(t, 1) for t in seen[:3]] == [round(s * 1000, 1) for s in sp.sigmas[:3]]

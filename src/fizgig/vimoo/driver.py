@@ -464,6 +464,10 @@ class VimooDriver(FamilyDriver):
         frames = int(frames or self._frames)
         x = (noise if noise is not None else self.initial_noise(seed, width, height, frames)).to(device,
                                                                                                  torch.bfloat16)
+        # a schedule made for another step count (the distilled LoRA's 12 timesteps, asked for 15) gives way to Lite's own
+        # grid at the steps asked for - before, the steps were silently ignored while the LoRA was on
+        if sigmas is not None and len(sigmas) != int(steps) + 1:
+            sigmas = None
         sched = torch.tensor(sigmas, dtype=torch.float32) if sigmas is not None else lognorm_sigmas(steps)
         pos = self._cond(cond, device)
         guided = cfg > 1.0 and neg_cond is not None
@@ -558,11 +562,15 @@ class VimooDriver(FamilyDriver):
     def ft_spec(self, dit):
         """The 40 double blocks' Linears in six parts of ~3 GB each in bf16 across the depth (image and text attention,
         qkv + proj; each MLP's up and down halves). The rank-16 modulations, embedders, the text refiner, the glyph and
-        vision projections and the final layer stay frozen, as for a LoRA. Memory: the shared cautious figures until
-        measured."""
+        vision projections and the final layer stay frozen, as for a LoRA. Memory, measured 6 Nov 2026 on a 16 GB RTX
+        4090 Laptop GPU at 0.25 MP (one window per part, no streaming, NF4 trunk): peaks 9.0-9.9 GB, 6.3 GB allocated
+        at planning, so overhead = 9.9 - 6.3 + the 4.9 GB 4-bit trunk - the 3.0 GB bf16 window = 5.5 -> 6.0 with slack.
+        act_gb_per_mp stays the shared cautious 4.0 until a 1 MP run measures it. A rotation at learning rate 1e-30 saved
+        a file equal to the source, all 1031 tensors."""
         from fizgig.families.ft import FTSpec
         return FTSpec(blocks="double_blocks",
-                      components=("img_attn", "img_mlp.0", "img_mlp.2", "txt_attn", "txt_mlp.0", "txt_mlp.2"))
+                      components=("img_attn", "img_mlp.0", "img_mlp.2", "txt_attn", "txt_mlp.0", "txt_mlp.2"),
+                      overhead_gb=6.0, calib_mp=0.25)
 
     def ft_load_mp(self, group):
         """A clip plans at its token load (latent frames x megapixels), as plan_run does."""

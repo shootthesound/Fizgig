@@ -802,6 +802,16 @@ def plan_video(desc, prefs, pref_path, checkpoint="", base="", refmod=False):
     return kw, f"Loading {desc.display_name} (the base takes a minute)…", problems
 
 
+def _shared_clip_engine(desc):
+    """Whether the family's Studio engine is the shared video engine (or built on it): its clip sampling is the one the
+    clip row's note describes (H3's own engine samples its own way)."""
+    try:
+        from fizgig.families.video_workbench import VideoWorkbenchEngine
+        return issubclass(desc.workbench_engine_class(), VideoWorkbenchEngine)
+    except Exception:
+        return False
+
+
 def layout(desc, prefs, pref_path, samples=None):
     cats = dict(desc.block_categories or ())
     groups = []
@@ -841,6 +851,8 @@ def layout(desc, prefs, pref_path, samples=None):
                                       if desc.preview_speed() is not None else ""),
                       "show_early": bool(getattr(desc.workbench_engine_class(), "supports_show_early", False)),
                       "base_steps": desc.default_sampling().steps if desc.default_sampling() else None,
+                      # the clip row's line on what Steps and the speed LoRA give: for the shared video engine's sampling
+                      "clip_note": _shared_clip_engine(desc),
                       "bases": [n for n, _ in vc.bases], "speed_boost": bool(vc.speed_boost),
                       "sound": bool(audio_vae and os.path.exists(audio_vae))} if kind == "video" and vc else None,
             "song_lengths": SONG_LENGTHS if kind == "audio" else None,

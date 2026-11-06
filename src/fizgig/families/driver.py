@@ -430,6 +430,14 @@ class FamilyDriver:
         from fizgig.families.ft import source_unfit_reason
         return source_unfit_reason(path)
 
+    def ft_load_mp(self, group):
+        """Megapixels the fine-tune plans its activations at: the run's largest bucket. A video family whose clips
+        cost by their token load (frames x area) returns that instead."""
+        try:
+            return max(k[-2] * k[-1] / 1e6 for ds in group.datasets for k in ds.batch_manager.bucket_resos)
+        except Exception:
+            return None
+
     def install_ft_streamer(self, dit, streamer) -> None:
         """Hand the fine-tune's block streamer to the model: it implements the block-swap interface the forward
         already calls (wait_for_block / submit_move_blocks_forward). The default suits the common

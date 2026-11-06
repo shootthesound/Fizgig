@@ -81,7 +81,8 @@ def cmd_load(c):
         S["mix_files"] = {}
         eng.turbo_preview = bool(c.get("turbo", True))
         if getattr(desc, "video_workbench", False):
-            eng.int8_attention = True                # as the desktop's Repair Studio (comfy-kitchen where it exists)
+            # comfy-kitchen's INT8 attention where the model takes it (its description; H3 yes, Vimoo no)
+            eng.int8_attention = bool(getattr(desc, "int8_attention", False))
             eng.on_status = lambda text: emit(ev="status", text=str(text))
             S["kf"] = {}                             # keyframe / reference latents, per slot, photo, crop and canvas
         if c.get("preview_settings") is not None:
@@ -252,6 +253,9 @@ def _write_clip(clip, path_png, path_mp4, fps, rate):
     arr = np.stack([np.asarray(f.convert("RGB")) for f in frames])
     ten = torch.from_numpy(arr).permute(3, 0, 1, 2).float() / 255.0
     wav = clip.get("wav")
+    if not rate:                    # a model with no sound (Vimoo: audio_rate 0): a silent MP4, no track
+        write_preview_mp4(path_mp4, ten, None, fps=fps)
+        return path_mp4
     wav_path = os.path.join(tempfile.gettempdir(), f"fizgig_studio_{os.getpid()}.wav")
     write_wav(wav_path, wav if wav is not None else torch.zeros(2, int(rate * len(frames) / fps)), sample_rate=rate)
     write_preview_mp4(path_mp4, ten, wav_path, fps=fps)
@@ -280,6 +284,7 @@ def _render_clips(eng, desc, st, c, out, gen):
     st.preview_width, st.preview_height, st.preview_frames = width, height, frames
     st.keyframes, st.references = _cond(eng, c, width, height, frames)
     eng.speed_boost = bool(v.get("speed_boost"))      # the Studio's H3 tick: the first half of the steps at half size
+    eng.clip_negative = v.get("negative")             # the page's Negative (used when the render runs with CFG)
     opts = dict(frames=frames, regime="custom", steps=int(v.get("steps") or 4),
                 turbo_strength=float(v.get("turbo") if v.get("turbo") not in (None, "") else 1.0),
                 with_audio=bool(v.get("sound", True)))
@@ -549,7 +554,7 @@ def _engine_for(c, status_ev="royale_status"):
         eng = desc.make_workbench_engine()
     S["engine"], S["desc"], S["plan_sig"] = eng, desc, sig
     if getattr(desc, "video_workbench", False):
-        eng.int8_attention = True
+        eng.int8_attention = bool(getattr(desc, "int8_attention", False))
         eng.on_status = lambda text: emit(ev=status_ev, text=str(text))
         if c.get("canvas"):
             eng.plan_canvas = tuple(c["canvas"])  # H3 Auto: room for the clip about to render

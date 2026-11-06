@@ -1,7 +1,9 @@
 """Gizmo — the clip prep tool for Fizgig.
 
-MiniMax H3 trains on video clips, and clips have to be exactly right: 24 fps, a frame count on
-H3's 17n+5 grid, dimensions on a multiple of 32, audio at 32 kHz stereo. Fizgig refuses anything
+Video models train on clips, and clips have to be exactly right: for MiniMax H3, 24 fps, a frame
+count on H3's 17n+5 grid, dimensions on a multiple of 32, audio at 32 kHz stereo; for Vimoo 1.0
+Lite, 24 fps, 4n+1 frames, multiples of 32, no sound. Gizmo asks which model when it opens
+(MODELS below) and the lengths, sizes, sound and tabs follow it. Fizgig refuses anything
 off-spec rather than quietly fixing it, because a training app that silently transcodes footage
 makes two identical-looking datasets train differently and nobody can tell why.
 
@@ -94,6 +96,98 @@ MUTE_SUFFIX = "_mute"
 AUDIO_EXTS = (".wav", ".mp3", ".flac", ".m4a", ".ogg")
 AUDIO_HOP = 800                                # the audio VAE's samples-per-latent
 AUDIO_GRID_FRAMES = (22, 39, 56, 73, 90, 107, 124)
+
+# --- the model the clips are for ----------------------------------------------------------------
+# Gizmo asks on open which model it is cutting for, and everything model-shaped follows: the frame
+# grid, what a length costs, whether a clip's sound is training data, which tabs exist. The
+# numbers are mirrored from each family's description (src/fizgig/families/<key>.py: clip_spec,
+# train_memory), not imported, for the same no-torch reason as above.
+H3_CLIP_VRAM = CLIP_VRAM
+VIMOO_TOKEN_MP = 5.2      # measured: latent frames x megapixels up to this trains on a 16 GB card
+
+
+def _vimoo_note(frames):
+    """Vimoo's per-length line, from its measured memory (flat to 5.2 MP of tokens on a 16 GB RTX 4090 Laptop GPU -
+    INT8 13.1-14.3 GB, NF4 9.6-10.8 GB - and on a 5090); nothing past it claimed. -> (text, warn)."""
+    lat = (frames - 1) // 4 + 1
+    mp = VIMOO_TOKEN_MP / lat
+    return (f"Measured to train on a 16 GB card up to {mp:.2f} MP at this length ({lat} latent frames; a clip's "
+            f"latent frames x its megapixels was measured up to {VIMOO_TOKEN_MP:g}). Bigger is not refused, just "
+            f"not measured yet.", mp < 0.25)
+
+
+MODELS = {
+    "h3": {"name": "MiniMax H3", "short": "H3", "tabs": ("video", "voice"), "sound": True,
+           "grid": (5, 22, 39, 56, 73, 90, 107, 124), "latent": lambda f, g: 5 * g.index(f) + 2,
+           "default": 22, "vram": H3_CLIP_VRAM, "note": None,
+           "what": "Video clips with their sound, and voice segments.",
+           "grid_tip": "Not a free choice: H3's VAE encodes video in groups of 17, so the only lengths that exist "
+                       "are 5, 22, 39, 56, 73, 90, 107 and 124.\n\n22 is the shortest that shows real movement."},
+    "vimoo": {"name": "Vimoo 1.0 Lite", "short": "Vimoo", "tabs": ("video",), "sound": False,
+              "grid": (17, 25, 33, 49, 73, 97, 121, 241), "latent": lambda f, g: (f - 1) // 4 + 1,
+              "default": 49, "vram": None, "note": _vimoo_note,
+              "what": "Video clips - Vimoo trains picture only, no sound.",
+              "grid_tip": "Not a free choice: Vimoo's VAE encodes the first frame alone and the rest in groups of "
+                          "4, so a length is 4n+1 - these are the useful ones up to its 10-second maximum.\n\n"
+                          "49 frames (2 s) is a good default."},
+    "acestep": {"name": "ACE-Step", "short": "ACE-Step", "tabs": ("music",), "sound": True,
+                "grid": (5, 22, 39, 56, 73, 90, 107, 124), "latent": lambda f, g: 5 * g.index(f) + 2,
+                "default": 22, "vram": H3_CLIP_VRAM, "note": None, "what": "Song sections, captioned.",
+                "grid_tip": ""},
+}
+MODEL = MODELS["h3"]
+
+
+def use_model(key):
+    """Point the module's clip constants at one model - before the window builds."""
+    global MODEL, GRID_FRAMES, LATENT_FRAMES, CLIP_VRAM
+    MODEL = MODELS.get(key) or MODELS["h3"]
+    GRID_FRAMES = MODEL["grid"]
+    LATENT_FRAMES = {f: MODEL["latent"](f, GRID_FRAMES) for f in GRID_FRAMES}
+    CLIP_VRAM = MODEL["vram"] or {}
+    return MODEL
+
+
+def choose_model(root, last):
+    """The model picker shown when Gizmo opens: a button per model, the last choice focused (Enter or a click takes
+    one). None when the picker is closed."""
+    win = tk.Toplevel(root)
+    win.title("Gizmo - which model are these for?")
+    win.configure(bg=COLORS["bg_deep"])
+    win.resizable(False, False)
+    pick = {"key": None}
+    tk.Label(win, text="Which model are you preparing for?", font=(FONT_FAMILY, 14, "bold"),
+             bg=COLORS["bg_deep"], fg=COLORS["text_primary"]).pack(anchor="w", padx=20, pady=(18, 4))
+    tk.Label(win, text="Lengths, sizes and sound follow the model. Change it later from the top of the window.",
+             font=(FONT_FAMILY, 10), bg=COLORS["bg_deep"], fg=COLORS["text_secondary"]).pack(anchor="w", padx=20)
+    focus = None
+    for key, m in MODELS.items():
+        def take(k=key):
+            pick["key"] = k
+            win.destroy()
+        row = tk.Frame(win, bg=COLORS["bg_deep"])
+        row.pack(fill=tk.X, padx=20, pady=(10, 0))
+        b = tk.Button(row, text=m["name"], width=18, command=take, font=(FONT_FAMILY, 11, "bold"),
+                      bg=COLORS["accent"] if key == last else COLORS["bg_surface"], fg=COLORS["text_primary"],
+                      activebackground=COLORS["accent"], activeforeground=COLORS["text_primary"], relief=tk.FLAT,
+                      cursor="hand2", pady=6)
+        b.pack(side=tk.LEFT)
+        b.bind("<Return>", lambda _e, k=key: take(k))
+        tk.Label(row, text=m["what"], font=(FONT_FAMILY, 10), bg=COLORS["bg_deep"],
+                 fg=COLORS["text_secondary"]).pack(side=tk.LEFT, padx=(12, 0))
+        if focus is None or key == last:
+            focus = b
+    tk.Frame(win, bg=COLORS["bg_deep"], height=18).pack()
+    win.update_idletasks()
+    win.geometry(f"+{root.winfo_screenwidth() // 2 - win.winfo_width() // 2}"
+                 f"+{root.winfo_screenheight() // 3 - win.winfo_height() // 2}")
+    win.bind("<Escape>", lambda _e: win.destroy())
+    win.lift()
+    win.focus_force()
+    focus.focus_set()
+    root.wait_window(win)
+    return pick["key"]
+
 
 # --- music mode (ACE-Step) ---------------------------------------------------------------------
 # ACE-Step has no length grid: a song section of any length trains, and the trainer cuts anything
@@ -654,7 +748,8 @@ SETTINGS_DEFAULTS = {"microphone": "", "whisper_language": "Auto detect",
                      "random_delivery": True, "trim_takes": True, "free_speech": False,
                      "trigger_word": "", "clip_out_dir": "", "voice_out_dir": "",
                      "music_trigger_word": "", "music_words": "", "music_out_dir": "",
-                     "music_fade_in": "0.1", "music_fade_out": "1.5"}
+                     "music_fade_in": "0.1", "music_fade_out": "1.5",
+                     "last_model": "h3"}
 
 
 def load_settings():
@@ -1297,7 +1392,7 @@ class ToolTip:
 class Gizmo:
     def __init__(self, root):
         self.root = root
-        root.title("Gizmo — clip, voice and music prep for Fizgig")
+        root.title(f"Gizmo — prep for {MODEL['name']}")
         root.configure(bg=COLORS["bg_deep"])
         # Wide enough that the vertical scrollbar never eats into the content (which measures
         # ~985 px), tall enough for two cards at a time. The rest scrolls.
@@ -1394,11 +1489,23 @@ class Gizmo:
                     pass
             self.root.destroy()
         self.root.protocol("WM_DELETE_WINDOW", _quit)
+        self.root.bind("<<GizmoQuit>>", lambda _e: _quit())
         if not self.ffmpeg:
             messagebox.showerror(
                 "Gizmo — no ffmpeg",
                 "Gizmo needs ffmpeg, which normally arrives with Fizgig's install.\n\n"
                 "Run install_fizgig.bat to restore it, or put ffmpeg on your PATH.")
+
+    def change_model(self):
+        """Reopen Gizmo on the picker: the grid, tabs and sound rows are built for one model."""
+        if (self.queue or any(self._audio_queues.values())) and not messagebox.askyesno(
+                "Gizmo", "Changing the model reopens Gizmo, and the clips waiting in the queue are not saved. "
+                         "Carry on?"):
+            return
+        self.settings["last_model"] = next(k for k, m in MODELS.items() if m is MODEL)
+        save_settings(self.settings)
+        subprocess.Popen([sys.executable, os.path.abspath(__file__)])
+        self.root.event_generate("<<GizmoQuit>>")
 
     @property
     def audio_queue(self):
@@ -1565,6 +1672,9 @@ class Gizmo:
         self._button(head, "⚙", self.open_settings, pad=10,
                      tip="Settings — microphone for the recorder, default Whisper language. "
                          "Saved beside gizmo.py, kept between sessions.").pack(side=tk.RIGHT)
+        self._button(head, f"{MODEL['name']} ▾", self.change_model, pad=10,
+                     tip="The model these clips are for: lengths, sizes and sound follow it. Click to "
+                         "pick another (Gizmo reopens with it).").pack(side=tk.RIGHT, padx=(0, 8))
         self._button(head, "Open Fizgig", self.open_fizgig, kind="accent",
                      tip="Open the Fizgig app (it uses the one already running if there is one), to caption "
                          "and train on what you cut here.").pack(side=tk.RIGHT, padx=(0, 8))
@@ -1587,6 +1697,7 @@ class Gizmo:
         self.notebook.add(audio_tab, text="Voice / audio")
         self.notebook.add(music_tab, text="Music (ACE-Step)")
         self._video_tab, self._audio_tab, self._music_tab = video_tab, audio_tab, music_tab
+        self._model_tabs = {"video": video_tab, "voice": audio_tab, "music": music_tab}
 
         # Settings come BEFORE finding the moment, because the last-frame preview is only
         # meaningful once the length and the motion are settled — scrub first and it shows the
@@ -1605,6 +1716,12 @@ class Gizmo:
         self._audio_editor.pack(in_=audio_tab, fill=tk.BOTH, expand=True)
         self._build_audio_tab(self._audio_editor)
         self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed, add="+")
+        # the model's own tabs only; selecting the first one shown moves the shared audio editor there
+        for kind, tab in self._model_tabs.items():
+            if kind not in MODEL["tabs"]:
+                self.notebook.hide(tab)
+        self.notebook.select(self._model_tabs[MODEL["tabs"][0]])
+        self._on_tab_changed()
 
         self._bind_keys()
         self._set_enabled(False)
@@ -1772,10 +1889,7 @@ class Gizmo:
             ToolTip(lbl, tip)
             return lbl
 
-        LEN_TIP = ("How many frames the clip is.\n\n"
-                   "Not a free choice: H3's VAE encodes video in groups of 17, so the only "
-                   "lengths that exist are 5, 22, 39, 56, 73, 90, 107 and 124.\n\n"
-                   "22 is the shortest that shows real movement. Beyond that the cost climbs "
+        LEN_TIP = ("How many frames the clip is.\n\n" + MODEL["grid_tip"] + " Beyond that the cost climbs "
                    "hard — attention scales with the square of the token count — so the line "
                    "below says what each length can be trained at on 16, 24 and 32 GB. Longer is "
                    "offered rather than withheld: whether it is affordable depends on the card "
@@ -1785,7 +1899,7 @@ class Gizmo:
         self.len_box = ttk.Combobox(grid, textvariable=self.len_var, state="readonly",
                                     style="G.TCombobox", width=46,
                                     values=[self._length_label(f) for f in GRID_FRAMES])
-        self.len_box.current(1)
+        self.len_box.current(GRID_FRAMES.index(MODEL["default"]))
         self.len_box.grid(row=0, column=1, sticky="w", pady=5)
         self.len_box.bind("<<ComboboxSelected>>", lambda _e: self._on_length_changed())
         ToolTip(self.len_box, LEN_TIP)
@@ -1800,7 +1914,7 @@ class Gizmo:
                     "away here: Fizgig resizes clips down to the Target Megapixels on its "
                     "Training tab, so cutting large keeps that decision open, and cutting small "
                     "cannot be undone without re-cutting the set.\n\n"
-                    "Both sides land on a multiple of 32, which is what H3 needs, and the shape "
+                    f"Both sides land on a multiple of 32, which is what {MODEL['short']} needs, and the shape "
                     "is kept — nothing is ever scaled up.")
         label(2, "Size:", SIZE_TIP)
         self.size_label = tk.Label(grid, text="", font=(FONT_FAMILY, 10),
@@ -1853,7 +1967,7 @@ class Gizmo:
         self.crop_clear_btn.pack(side=tk.LEFT)
 
         SHAPE_TIP = ("Lock the crop to a shape while you drag it.\n\n"
-                     "H3 does not care — any shape trains, as long as both sides land on a "
+                     f"{MODEL['short']} does not care — any shape trains, as long as both sides land on a "
                      "multiple of 32, which Gizmo handles. This is for consistency: thirty "
                      "hand-drawn rectangles are thirty slightly different framings, and one "
                      "shape across the set is usually what you meant.\n\n"
@@ -1931,6 +2045,10 @@ class Gizmo:
                                    wraplength=820, bg=COLORS["bg_surface"],
                                    fg=COLORS["text_explain"])
         self.sound_note.grid(row=9, column=1, sticky="w")
+        if not MODEL["sound"]:
+            for r in (7, 8, 9):
+                for w in grid.grid_slaves(row=r):
+                    w.grid_remove()
 
         OUT_TIP = ("Where the clips land.\n\n"
                    "Point it at your Fizgig training folder and the clips are ready to caption "
@@ -2030,7 +2148,7 @@ class Gizmo:
         return f"{frames} frames — {frames / FPS:.2f} s"
 
     def _frames(self):
-        return GRID_FRAMES[self.len_box.current()] if self.len_box.current() >= 0 else 22
+        return GRID_FRAMES[self.len_box.current()] if self.len_box.current() >= 0 else MODEL["default"]
 
     def _size(self):
         """The export size: the crop at its own resolution, or the whole frame at its own.
@@ -2256,7 +2374,11 @@ class Gizmo:
         # An audio file goes to the Voice tab wherever you are. A VIDEO follows the tab you are
         # on: dropped while the Voice tab is up, it is an audio source (you asked for its sound
         # by being here) — anywhere else it opens as footage, as before.
-        if is_audio_file(path) or self._audio_tab_active():
+        if is_audio_file(path) and not set(MODEL["tabs"]) & {"voice", "music"}:
+            messagebox.showinfo("Gizmo", f"{MODEL['name']} trains on video, not sound alone - open a video, "
+                                         f"or pick another model at the top of the window.")
+            return
+        if is_audio_file(path) or self._audio_tab_active() or "video" not in MODEL["tabs"]:
             self.notebook.select(self._audio_host_tab())
             try:
                 self.load_audio(path)
@@ -2311,7 +2433,7 @@ class Gizmo:
         if info["fps"] < FPS - 0.1:
             self.src_info.configure(
                 text=facts + f"\n⚠ Under {FPS} fps: reaching {FPS} means duplicating frames, so "
-                             f"some of what H3 learns about motion will be 'nothing happened'. "
+                             f"some of what {MODEL['short']} learns about motion will be 'nothing happened'. "
                              f"Fine for animation you want that way; not what you want from "
                              f"under-cranked live footage.",
                 fg=COLORS["warning"])
@@ -4525,6 +4647,10 @@ class Gizmo:
         """What this length can be trained at, per card. The number people actually need is not
         the token count — it is whether their own card can run it."""
         frames = self._frames()
+        if MODEL.get("note"):
+            text, warn = MODEL["note"](frames)
+            self.len_note.configure(text=text, fg=COLORS["warning"] if warn else COLORS["text_explain"])
+            return
         by_card = CLIP_VRAM.get(frames, {})
         parts = []
         for gb in (16, 24, 32):
@@ -5698,6 +5824,16 @@ def _scaled(win, w, h):
 def main():
     _dpi_aware()
     root = tk.Tk()
+    root.withdraw()
+    settings = load_settings()
+    key = choose_model(root, settings.get("last_model") or "h3")
+    if key is None:
+        root.destroy()
+        return
+    settings["last_model"] = key
+    save_settings(settings)
+    use_model(key)
+    root.deiconify()
     app = Gizmo(root)
     # A path on the command line, which is what Windows hands over when a video is dropped onto
     # the launcher or opened with Gizmo from Explorer.

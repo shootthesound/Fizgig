@@ -46,11 +46,18 @@ def quantize(dit, driver, precision, compute_device, store_device=None):
         dit._nf4_quantized = True
     gc.collect()
     torch.cuda.empty_cache()
-    logger.info(f"[precision] {precision}: {len(targets)} block Linears quantised; everything else stays bf16")
+    logger.info(f"[precision] {precision}{_int8_kind(driver, precision)}: {len(targets)} block Linears quantised; everything else stays bf16")
     return len(targets)
 
 
 @torch.no_grad()
+def _int8_kind(driver, precision):
+    """The log's word on which INT8: weight-only (activations stay bf16) or the default, activations rounded too."""
+    if precision != "int8":
+        return ""
+    return " (weight-only, activations bf16)" if getattr(driver, "int8_weight_only", False) else " (weights and activations)"
+
+
 def _quantize_one(m, driver, precision, compute_device, store_device=None):
     """One block-map Linear to `precision` ("int8" or "nf4"), in place - the step quantize() takes for each."""
     from fizgig.modules.nf4 import _dequantize_source_weight
@@ -66,7 +73,11 @@ def _quantize_one(m, driver, precision, compute_device, store_device=None):
         m.register_buffer("_int8_wscale", scale.reshape(1, -1).to(torch.float32), persistent=False)
         m._is_int8 = True
         m._int8_grad_mode = "bf16"
-        m.forward = int8_train_forward.__get__(m, type(m))
+        if getattr(driver, "int8_weight_only", False):    # the activations stay bf16 (description: why)
+            from fizgig.modules.int8_train import int8_weight_only_forward
+            m.forward = int8_weight_only_forward.__get__(m, type(m))
+        else:
+            m.forward = int8_train_forward.__get__(m, type(m))
         del w
     else:
         from bitsandbytes.functional import quantize_nf4
@@ -105,7 +116,7 @@ def _stream_load(driver, path, device, precision, swap):
     dit.eval().requires_grad_(False)
     gc.collect()
     torch.cuda.empty_cache()
-    logger.info(f"[precision] {precision}: {len(_targets(dit, driver))} block Linears quantised; everything else stays bf16")
+    logger.info(f"[precision] {precision}{_int8_kind(driver, precision)}: {len(_targets(dit, driver))} block Linears quantised; everything else stays bf16")
     return dit
 
 

@@ -1710,7 +1710,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         ftr = _FineTune(driver, desc, dit, net, dit_path, device, max_train_epochs=None, rotations=ft_rotations,
                         save_every_rotations=ft_save_every_rotations, rotate_every=ft_rotate_every,
                         start_window=ft_start_window, epochs_done=ft_epochs_done, fused=ft_fused_backward,
-                        lr=learning_rate, master_dir=output_dir, mp=_largest_bucket_mp(group), group=group,
+                        lr=learning_rate, master_dir=output_dir, mp=driver.ft_load_mp(group), group=group,
                         max_parts=ft_max_parts, held_grads=bool(dop_cond),
                         batch_gb=quant.batch_extra(desc, _largest_bucket_mp(group) or 0.25, bsz))
         max_train_epochs, save_every_n_epochs = ftr.epochs, ftr.save_every

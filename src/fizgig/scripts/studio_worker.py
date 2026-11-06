@@ -278,6 +278,13 @@ def _render_clips(eng, desc, st, c, out, gen):
     torch.cuda.reset_peak_memory_stats()
     rest = torch.cuda.memory_allocated() / 2**30
     base = eng.baseline_clip(st, cache=None, **opts)
+    from fizgig.repair_studio.h3_render_cache import BASE_SIG, signature
+    if signature(st) == BASE_SIG:
+        # nothing moved: the tweaked clip IS the baseline (every row at its default) - one render for both panes, as
+        # the picture path does (it rendered the same clip twice)
+        tweak = base
+    else:
+        tweak = None
     early = {}
     if v.get("early") and opts["steps"] > 2:     # Show early: the pass-2 estimate while the rest runs (the desktop's)
         def on_early(img, step, n):
@@ -285,7 +292,8 @@ def _render_clips(eng, desc, st, c, out, gen):
             img.save(p)
             emit(ev="early", gen=gen, png=p, step=step, n=n)
         early = dict(early_step=2, on_early=on_early)
-    tweak = eng.render_clip(st, cache=None, **opts, **early)
+    if tweak is None:
+        tweak = eng.render_clip(st, cache=None, **opts, **early)
     print(f"[studio] clip {width}x{height} x{frames}, {len(st.keyframes or [])} keyframe(s), "
           f"{len(st.references or [])} reference(s): peak {torch.cuda.max_memory_allocated() / 2**30:.2f} GB allocated, "
           f"{torch.cuda.max_memory_reserved() / 2**30:.2f} GB reserved, from {rest:.2f} GB at rest "

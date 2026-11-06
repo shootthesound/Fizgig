@@ -23,7 +23,8 @@ _STRUCTURE = (
 
 def _preset(rank, epochs, clip_still=True, slider=False, lr=1e-6, optimizer="automagic3"):
     """The old H3 built-ins (lora_trainer_gui.py MINIMAX_BUILT_IN_PRESETS), values unchanged, in the standard layer's
-    keys and this family's option keys; slider=True the Slider preset (adamw8bit, as every slider trains)."""
+    keys and this family's option keys; slider=True the Slider preset (AdamW: full-precision state measured clearly
+    better than AdamW8bit on H3 LoRAs; a rank-8 slider's state is tens of MB, 6 Nov 2026)."""
     return {
         "NETWORK_DIM": rank, "NETWORK_ALPHA": rank, "NETWORK_TYPE": "LoRA (standard)", "LOKR_FACTOR": 8,
         "LEARNING_RATE": lr, "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 42,
@@ -47,7 +48,7 @@ PRESETS = (
     # Slider (3 Oct): rank 8 (Peter) at 2e-4 for ~160 steps; a prompt smile slider at push 2
     # was clear by epoch 5 of 10 (16 practice pictures an epoch)
     ("✨ MiniMax H3 Slider (rank 8, 2e-4)", _preset(8, 16, clip_still=False, slider=True, lr=2e-4,
-                                                     optimizer="adamw8bit")),
+                                                     optimizer="adamw")),
 )
 
 OPTIONS = (

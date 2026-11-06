@@ -151,6 +151,15 @@ VIMOO = FamilyDescription(
     optimizers=("adamw", "adamw8bit", "automagic3"),
     network_types=("lora", "lokr"),
     batch_training=False,
+    not_offered={
+        "slider_training": "being built (6 Nov 2026)",
+        "finetune": "being built (6 Nov 2026)",
+        "activation_cache": "being built (6 Nov 2026)",
+        "int8_attention": "being built (6 Nov 2026)",
+        "batch_training": "clips train one a step; stills batching not measured for Vimoo",
+        "detail_crops": "a crop of a clip's frame isn't a clip",
+        "resolution_stages": "clips train at their own size: not measured with stages",
+    },
     masked_training=True,             # photos only: the dataset gives a mask to a still, never to a clip (as H3)
     loss_watch=True,
 

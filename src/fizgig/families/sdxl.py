@@ -132,6 +132,12 @@ SDXL = FamilyDescription(
     # SDXL's per-epoch loss swings with its uniform timesteps, so Adaptive LR's plateau detector reacts to noise:
     # hidden and never sent (Peter, 5 Oct 2026)
     adaptive_lr=False,
+    not_offered={
+        "adaptive_lr": "SDXL's per-epoch loss swings with its uniform timesteps, so the plateau detector reacts to "
+                       "noise (Peter, 5 Oct 2026)",
+        "activation_cache": "not built yet (6 Nov 2026 ability audit): the UNet's blocks need the step-1 replay hook",
+        "int8_attention": "not built yet (6 Nov 2026 ability audit): SDXL's attention doesn't go through attend()",
+    },
     # Slider LoRAs (prompt pairs, or before/after photo pairs): epsilon prediction works as Concept Sliders' SDXL
     # recipe does - the target is built from the UNet's own predictions (families/train.py)
     slider_training=True,

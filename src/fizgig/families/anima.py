@@ -29,6 +29,7 @@ ANIMA = FamilyDescription(
     start_lr_bands=(("lora", 7e-6, 3e-4), ("finetune", 3e-7, 3e-5), ("slider", 7e-5, 6e-4)),
     masked_training=True,
     batch_training=True,              # Batch size (Other Options): training_loss_batch, exact per picture
+    not_offered={"activation_cache": "not built yet (6 Nov 2026 ability audit)"},
     batch_gb=(0.25, 0.65),          # GB each extra picture takes: fixed, per MP (batch 1 vs 3)
     # Batch x checkpointing sweep, 6 Nov 2026 (RTX PRO 6000, 8 pictures, 2 epochs, uncompiled, previews off - so the
     # no-checkpointing peaks below are the larger of that run's and train_memory's preview peak; uncompiled sits

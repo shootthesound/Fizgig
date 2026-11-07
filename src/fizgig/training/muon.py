@@ -46,6 +46,74 @@ def _zeropower_via_newtonschulz(
     return ortho_grad
 
 
+def _zeropower_batched(x: Tensor, ns_coefficients: tuple[float, float, float], ns_steps: int, eps: float) -> Tensor:
+    """_zeropower_via_newtonschulz for a stack of same-shaped matrices (B, m, n) at once: each matrix gets the same
+    maths (its own norm, the same iterations), in a few batched multiplies instead of 3 * ns_steps per matrix. A LoRA
+    is hundreds of small matrices, so the per-matrix loop was a third of a MOSS step (#221)."""
+    a, b, c = ns_coefficients
+    x = x.bfloat16()
+    tall = x.size(-2) > x.size(-1)
+    if tall:
+        x = x.transpose(-2, -1)
+    x = x / x.norm(dim=(-2, -1), keepdim=True).clamp(min=eps)
+    for _ in range(ns_steps):
+        gram = x @ x.transpose(-2, -1)
+        upd = torch.baddbmm(gram, gram, gram, beta=b, alpha=c)
+        x = torch.baddbmm(x, upd, x, beta=a)
+    return x.transpose(-2, -1) if tall else x
+
+
+class BatchedMuon(torch.optim.Optimizer):
+    """torch.optim.Muon's update (same momentum, Newton-Schulz and adjust_lr rules) for all-2D parameter lists, with
+    the per-parameter work batched: momentum and weight decay as foreach ops, Newton-Schulz once per group of
+    same-shaped matrices."""
+
+    def __init__(self, params, lr: float = 1e-3, weight_decay: float = 0.1, momentum: float = 0.95,
+                 nesterov: bool = True, ns_coefficients: tuple[float, float, float] = (DEFAULT_A, DEFAULT_B, DEFAULT_C),
+                 eps: float = EPS, ns_steps: int = DEFAULT_NS_STEPS, adjust_lr_fn: str | None = None) -> None:
+        if adjust_lr_fn is not None and adjust_lr_fn not in ("original", "match_rms_adamw", "spectral_unclamped"):
+            raise ValueError(f"Adjust learning rate function {adjust_lr_fn} is not supported")
+        super().__init__(params, dict(lr=lr, weight_decay=weight_decay, momentum=momentum, nesterov=nesterov,
+                                      ns_coefficients=ns_coefficients, eps=eps, ns_steps=ns_steps,
+                                      adjust_lr_fn=adjust_lr_fn))
+        for group in self.param_groups:
+            for p in group["params"]:
+                if p.ndim != 2:
+                    raise ValueError(f"BatchedMuon takes 2D parameters only, got {tuple(p.shape)}")
+
+    @torch.no_grad()
+    def step(self, closure=None):
+        loss = None
+        if closure is not None:
+            with torch.enable_grad():
+                loss = closure()
+        for group in self.param_groups:
+            lr, wd, mom = float(group["lr"]), float(group["weight_decay"]), float(group["momentum"])
+            ps = [p for p in group["params"] if p.grad is not None]
+            if not ps:
+                continue
+            grads = [p.grad for p in ps]
+            bufs = []
+            for p, g in zip(ps, grads):
+                st = self.state[p]
+                if "momentum_buffer" not in st:
+                    st["momentum_buffer"] = torch.zeros_like(g, memory_format=torch.preserve_format)
+                bufs.append(st["momentum_buffer"])
+            torch._foreach_lerp_(bufs, grads, 1.0 - mom)
+            ups = [g.lerp(b_, mom) for g, b_ in zip(grads, bufs)] if group["nesterov"] else bufs
+            if wd != 0.0:
+                torch._foreach_mul_(ps, 1.0 - lr * wd)
+            by_shape = {}
+            for i, p in enumerate(ps):
+                by_shape.setdefault((tuple(p.shape), p.device, p.dtype), []).append(i)
+            for (shape, _dev, dtype), idx in by_shape.items():
+                ortho = _zeropower_batched(torch.stack([ups[i] for i in idx]), group["ns_coefficients"],
+                                           int(group["ns_steps"]), float(group["eps"]))
+                alr = _adjust_lr(lr, group["adjust_lr_fn"], shape)
+                torch._foreach_add_([ps[i] for i in idx], list(ortho.to(dtype).unbind(0)), alpha=-alr)
+        return loss
+
+
 def _adjust_lr(lr: float, adjust_lr_fn: str | None, param_shape: tuple[int, int]) -> float:
     A, B = param_shape[:2]
     if adjust_lr_fn is None or adjust_lr_fn == "original":

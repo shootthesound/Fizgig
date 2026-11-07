@@ -166,3 +166,79 @@ def test_lr_band_check_skips_prodigy_lora():
         pytest.skip("no bands")
     st = {**form.DEFAULTS, "OPTIMIZER_TYPE": "prodigy", "LEARNING_RATE": "1.0", "ADAPTIVE_LR": False}
     assert launch.prodigy(st) and not launch.ft_on(krea, st)
+
+
+# BatchedMuon (#221): torch.optim.Muon's update with the per-matrix work batched - a LoRA's hundreds of small matrices
+# made the per-parameter loop a third of a MOSS step. It must stay the same maths.
+import copy  # noqa: E402
+
+from fizgig.training.muon import BatchedMuon  # noqa: E402
+
+_SHAPES = [(16, 64), (64, 16), (16, 64), (48, 16), (8, 8), (16, 96), (96, 16)]
+
+
+def _params(seed):
+    g = torch.Generator().manual_seed(seed)
+    return [nn.Parameter(torch.randn(s, generator=g) * 0.02) for s in _SHAPES]
+
+
+def _grads(step):
+    g = torch.Generator().manual_seed(1000 + step)
+    return [torch.randn(s, generator=g) for s in _SHAPES]
+
+
+def test_muon_is_batched_for_lora_matrices():
+    opt, _ = create_optimizer("muon", _params(0), 1e-4)
+    assert isinstance(opt, BatchedMuon)
+
+
+@pytest.mark.skipif(not hasattr(torch.optim, "Muon"), reason="needs torch.optim.Muon")
+@pytest.mark.parametrize("kw", [dict(nesterov=True, weight_decay=0.01, adjust_lr_fn="match_rms_adamw"),
+                                dict(nesterov=False, weight_decay=0.0, adjust_lr_fn="original"),
+                                dict(nesterov=True, weight_decay=0.1, adjust_lr_fn=None)])
+def test_batched_muon_matches_torch_muon(kw):
+    pa, pb = _params(1), _params(1)
+    oa = torch.optim.Muon(pa, lr=1e-3, momentum=0.95, ns_steps=5, **kw)
+    ob = BatchedMuon(pb, lr=1e-3, momentum=0.95, ns_steps=5, **kw)
+    for step in range(6):
+        for p, q, g in zip(pa, pb, _grads(step)):
+            p.grad, q.grad = g.clone(), g.clone()
+        oa.step()
+        ob.step()
+    for a, b in zip(pa, pb):
+        assert (a - b).abs().max() <= 1e-3 * a.abs().max(), (tuple(a.shape), (a - b).abs().max().item())
+
+
+@pytest.mark.skipif(not hasattr(torch.optim, "Muon"), reason="needs torch.optim.Muon")
+def test_batched_muon_resumes_a_torch_muon_state():
+    """A run paused on torch.optim.Muon goes on under BatchedMuon as it would have on torch's."""
+    pa, pb = _params(2), _params(2)
+    kw = dict(lr=1e-3, momentum=0.95, nesterov=True, ns_steps=5, weight_decay=0.01, adjust_lr_fn="match_rms_adamw")
+    oa = torch.optim.Muon(pa, **kw)
+    for step in range(3):
+        for p, g in zip(pa, _grads(step)):
+            p.grad = g.clone()
+        oa.step()
+    with torch.no_grad():
+        for p, q in zip(pa, pb):
+            q.copy_(p)
+    ob = BatchedMuon(pb, **kw)
+    ob.load_state_dict(copy.deepcopy(oa.state_dict()))   # as a resume loads it from a file: nothing shared
+    for step in range(3, 6):
+        for p, q, g in zip(pa, pb, _grads(step)):
+            p.grad, q.grad = g.clone(), g.clone()
+        oa.step()
+        ob.step()
+    for a, b in zip(pa, pb):
+        assert (a - b).abs().max() <= 1e-3 * a.abs().max()
+
+
+def test_batched_muon_leaves_params_without_a_grad_alone():
+    ps = _params(3)
+    opt = BatchedMuon(ps, lr=1e-3, weight_decay=0.01)
+    before = [p.detach().clone() for p in ps]
+    for i, (p, g) in enumerate(zip(ps, _grads(0))):
+        p.grad = g if i % 2 == 0 else None
+    opt.step()
+    for i, (p, b) in enumerate(zip(ps, before)):
+        assert torch.equal(p, b) == (i % 2 == 1)

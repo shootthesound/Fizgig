@@ -6969,7 +6969,11 @@ function wireStudio() {
     if (S.st.ready) api("/api/studio/donor", {path: ""}).then(() => { studioPoll(); studioPending(); }); });
   $("stRefPick").addEventListener("click", () => pick($("stRef").value || refStart(), false, (p) => { $("stRef").value = p; stRemember(); studioPending(); }));
   $("stRefClear").addEventListener("click", () => { $("stRef").value = ""; stRemember(); studioPending(); });
-  $("stSeedNew").addEventListener("click", () => { $("stSeed").value = 1 + Math.floor(Math.random() * 99999); stRemember(); studioPending(); });
+  // ↻ New seed renders at once, as Update would (with any other change still waiting); typing a seed still waits
+  $("stSeedNew").addEventListener("click", () => {
+    $("stSeed").value = 1 + Math.floor(Math.random() * 99999); stRemember();
+    if (S.st.ready) studioStart();
+  });
   for (const id of ["stSeed", "stRes", "stW", "stH", "stRefMp", "stRefStr", "stPScale", "stDScale"])
     $(id).addEventListener("change", () => { stRemember(); studioPending(); });
   for (const id of ["stPrompt", "stPrimary", "stDonor", "stLuckyLo", "stLuckyHi"]) $(id).addEventListener("input", stRemember);

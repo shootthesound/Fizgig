@@ -8,7 +8,7 @@
 
 **Also:** onnxruntime's and Hugging Face's telemetry is off, Adaptive LR learns a ceiling, and MiniMax H3's Show early uses a tiny preview decoder.
 
-**Your NVIDIA driver must support CUDA 13** (version 580 or newer). The update downloads PyTorch 2.15 (about 3 GB); if Fizgig won't start afterwards, run the updater again and press R to rebuild its Python environment. AMD installs keep their own PyTorch. Restart your pods to pick up 9.2. [Fizgig v9.2.0 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.2.0)
+**Your NVIDIA driver must support CUDA 13** (version 580 or newer). The update downloads PyTorch 2.15 (about 3 GB); if Fizgig won't start afterwards, run the updater again and press R to rebuild its Python environment. AMD installs keep their own PyTorch. Restart your pods to pick up 9.2. [Fizgig v9.2.1 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.2.1)
 
 ## 6 Nov 2026: Muon for every picture model
 

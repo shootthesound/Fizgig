@@ -356,13 +356,15 @@ def _lokr_forward_update(x: torch.Tensor, w1: torch.Tensor, w2: torch.Tensor,
        kron(A, B) @ vec(X) = vec(B @ X @ A.T)   (column-major vec)
 
     Shapes:  x (..., N=b·d)  →  out (..., M=a·c)
+
+    Run as two large GEMMs over all tokens at once, (T·b, d) @ w2ᵀ then (T·c, b) @ w1ᵀ, not one small (c, d) @ (d, b)
+    matmul per token: 4-6x faster forward + backward at Klein sizes on a 5090 (12288x4096 Linear, w1 8x8: 10.6 ->
+    2.7 ms), same result (#307: a LoKR Context LoRA made training 5x slower).
     """
     orig = x.shape[:-1]
-    # x viewed as column-major vec(X) with X of shape (d, b).
-    # Row-major x.reshape(b, d) gives X.T; transpose gives X of shape (d, b).
-    X = x.reshape(*orig, b, d).transpose(-1, -2)              # (..., d, b)
-    Y = w2 @ X @ w1.transpose(-1, -2)                          # (..., c, a)
-    return Y.transpose(-1, -2).reshape(*orig, a * c)           # (..., M=a·c)
+    y = x.reshape(-1, b, d) @ w2.transpose(0, 1)                         # (T, b, c)
+    z = y.transpose(1, 2).reshape(-1, b) @ w1.transpose(0, 1)            # (T·c, a)
+    return z.view(-1, c, a).transpose(1, 2).reshape(*orig, a * c)        # (..., M=a·c)
 
 
 def factorization(n: int, factor: int) -> tuple:

@@ -161,7 +161,7 @@ class ClipContract:
             def _on_denoised(step, n, x0):
                 if on_early is None or step != int(early_step):
                     return
-                on_early(self.decode_middle_frame_image(x0), step, n)
+                on_early(self.early_frame_image(x0), step, n)
 
             lat, aud = self.render_latent(state, frames=frames, steps=steps, turbo_strength=strength,
                                           on_denoised=_on_denoised if early_step > 0 else None, no_lora=no_lora)
@@ -477,6 +477,10 @@ class VideoWorkbenchEngine(ClipContract, WorkbenchEngine):
         return self.driver.decode_audio(self.vae, audio_rows)
 
     @torch.no_grad()
+    def early_frame_image(self, latent):
+        """Show early's mid-render look; None skips it (a model whose decode won't fit beside the render)."""
+        return self.decode_middle_frame_image(latent)
+
     def decode_middle_frame_image(self, latent):
         out = self._decode(latent)
         return out["image"] if isinstance(out, dict) else out

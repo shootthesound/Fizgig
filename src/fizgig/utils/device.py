@@ -31,6 +31,20 @@ def fp8_scaled_mm_supported(device: Optional[Union[str, torch.device]] = None) -
     return (major, minor) >= (8, 9)
 
 
+def card_free_vram_gb(index: int = 0) -> Optional[float]:
+    """Free VRAM on the whole card in GB, as the NVIDIA driver counts it - including what other apps and the desktop
+    hold, which this process's own CUDA view can't see on Windows (WDDM virtualizes memory per process). None when
+    NVML isn't there. Matched to this process's CUDA device by UUID, so CUDA_VISIBLE_DEVICES is honoured."""
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        uuid = str(torch.cuda.get_device_properties(index).uuid)
+        h = pynvml.nvmlDeviceGetHandleByUUID(uuid if uuid.startswith("GPU-") else "GPU-" + uuid)
+        return pynvml.nvmlDeviceGetMemoryInfo(h).free / 2**30
+    except Exception:
+        return None
+
+
 def plannable_free_vram(device: Optional[Union[str, torch.device]] = None) -> float:
     """Free VRAM in GB for PLANNING decisions — honouring the small-card simulator.
 

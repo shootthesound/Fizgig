@@ -320,6 +320,10 @@ def _render_clips(eng, desc, st, c, out, gen):
     early = {}
     if v.get("early") and opts["steps"] > 2:     # Show early: the pass-2 estimate while the rest runs (the desktop's)
         def on_early(img, step, n):
+            if img is None:
+                emit(ev="status", text=f"Show early skipped this time: not enough free VRAM on the card for its decode "
+                                       f"(~{getattr(eng, 'early_skipped_gb', 5):.0f} GB) - the clip renders on.")
+                return
             p = os.path.join(out, f"early_{gen}.png")
             img.save(p)
             emit(ev="early", gen=gen, png=p, step=step, n=n)
@@ -870,6 +874,8 @@ def cmd_refmod(c):
                           turbo_strength=float(job["turbo"]))
 
                 def early(img, step, n_, gen=gen):
+                    if img is None:                  # Show early skipped (not enough free VRAM for its decode)
+                        return
                     p = os.path.join(out, f"rm_{gen}_early.png")
                     img.save(p)
                     emit(ev="rm_early", gen=gen, png=p, step=step, n=n_)

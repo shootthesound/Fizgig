@@ -72,7 +72,6 @@ def _quantize_one(m, driver, precision, compute_device, store_device=None):
         m.weight.data = q if store_device is None else q.to(store_device)
         m.register_buffer("_int8_wscale", scale.reshape(1, -1).to(torch.float32), persistent=False)
         m._is_int8 = True
-        m._int8_grad_mode = "bf16"
         if getattr(driver, "int8_weight_only", False):    # the activations stay bf16 (description: why)
             from fizgig.modules.int8_train import int8_weight_only_forward
             m.forward = int8_weight_only_forward.__get__(m, type(m))

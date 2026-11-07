@@ -12,15 +12,9 @@ Two things make this cheaper and safer here than a general W8A8 implementation:
    forward, once recomputed inside backward). An int8 forward therefore covers two thirds of
    the matmul work even if the backward stays in bf16.
 
-Hence `grad_mode`:
-    "bf16"  – int8 forward, bf16 backward. Gradients are exact; ~2/3 of the win. Default.
-    "int8"  – both quantised (what OneTrainer does). Faster, and the accuracy question is real:
-              gradients have a far wider dynamic range than weights, and small updates are
-              exactly what per-image LR and fine-tuning depend on.
-
-The backward's weight scale is per-output-channel, and the backward reduces OVER that axis, so
-it cannot be factored out after the matmul. It is folded into grad_output *before* quantising
-instead — cheap, and exact.
+The backward is bf16 (exact gradients, the weight dequantised in the compute dtype). An INT8 backward was
+measured and removed (#221): rounding each gradient row to INT8 lets its outliers set the scale and rounds most
+of the row to zero, so a LoRA's gradients came out at cosine 0.2-0.6 to the exact ones and likeness lagged.
 
 Measured at Krea 2's main shape (M=1024, K=N=6144), RTX 5090:
     dequant + bf16 matmul (current)   0.767 ms
@@ -50,7 +44,7 @@ class _Int8FrozenLinear(torch.autograd.Function):
     """y = (x @ W) with W frozen int8. Only grad_input is produced — the base never trains."""
 
     @staticmethod
-    def forward(ctx, x, w_i8_nk, w_scale_1n, bias, grad_mode):
+    def forward(ctx, x, w_i8_nk, w_scale_1n, bias):
         orig_shape = x.shape
         x2d = x.reshape(-1, orig_shape[-1])
         a_i8, a_scale = _quant_per_token(x2d)
@@ -96,7 +90,6 @@ class _Int8FrozenLinear(torch.autograd.Function):
         if bias is not None:
             out = out + bias
         ctx.save_for_backward(w_i8_nk, w_scale_1n)
-        ctx.grad_mode = grad_mode
         ctx.orig_shape = orig_shape
         ctx.needs_bias_grad = bias is not None and bias.requires_grad
         return out.reshape(*orig_shape[:-1], -1)
@@ -105,35 +98,12 @@ class _Int8FrozenLinear(torch.autograd.Function):
     def backward(ctx, grad_out):
         w_i8_nk, w_scale_1n = ctx.saved_tensors
         g2d = grad_out.reshape(-1, grad_out.shape[-1])
-
-        # grad_x[m,k] = sum_n grad_out[m,n] * w[k,n],  w[k,n] = w_i8[k,n] * w_scale[n].
-        # The reduction runs over n, which is exactly the axis w_scale varies along, so the
-        # scale cannot be applied after the matmul — fold it in first.
-        if ctx.grad_mode == "int8" and not ctx._fell_back:
-            gs = g2d * w_scale_1n.to(g2d.dtype)
-            g_i8, g_scale = _quant_per_token(gs)
-            try:
-                # (M,N)@(N,K): w_i8_nk is already (N,K) contiguous — no transpose needed.
-                # Same M > 16 row padding as the forward, for the same reason.
-                m = g2d.shape[0]
-                pad_rows = 17 - m if m <= 16 else 0
-                if pad_rows:
-                    g_i8 = torch.nn.functional.pad(g_i8, (0, 0, 0, pad_rows))
-                acc = torch._int_mm(g_i8, w_i8_nk)                     # (M,K) int32
-                if pad_rows:
-                    acc = acc[:m]
-                grad_x = acc.to(grad_out.dtype) * g_scale.to(grad_out.dtype)
-            except Exception:
-                w = w_i8_nk.to(grad_out.dtype) * w_scale_1n.reshape(-1, 1).to(grad_out.dtype)
-                grad_x = g2d @ w
-        else:
-            # bf16 backward: exact gradients. Dequantise in the COMPUTE dtype — an fp32 (K,N)
-            # copy of a 6144x6144 weight is 150 MB and made this path slower than dense bf16.
-            w = w_i8_nk.to(grad_out.dtype) * w_scale_1n.reshape(-1, 1).to(grad_out.dtype)  # (N,K)
-            grad_x = g2d @ w
-
+        # bf16 backward: exact gradients. Dequantise in the COMPUTE dtype - an fp32 (K,N) copy of a 6144x6144 weight
+        # is 150 MB and made this path slower than dense bf16.
+        w = w_i8_nk.to(grad_out.dtype) * w_scale_1n.reshape(-1, 1).to(grad_out.dtype)  # (N,K)
+        grad_x = g2d @ w
         grad_bias = g2d.sum(dim=0).to(grad_out.dtype) if ctx.needs_bias_grad else None
-        return grad_x.reshape(*ctx.orig_shape), None, None, grad_bias, None
+        return grad_x.reshape(*ctx.orig_shape), None, None, grad_bias
 
 
 def int8_weight_only_forward(self: nn.Linear, x: torch.Tensor) -> torch.Tensor:
@@ -145,50 +115,4 @@ def int8_weight_only_forward(self: nn.Linear, x: torch.Tensor) -> torch.Tensor:
 
 
 def int8_train_forward(self: nn.Linear, x: torch.Tensor) -> torch.Tensor:
-    return _Int8FrozenLinear.apply(x, self.weight.data, self._int8_wscale, self.bias,
-                                   getattr(self, "_int8_grad_mode", "bf16"))
-
-
-def apply_int8_training(model: nn.Module, target_keys=("blocks.",), exclude_keys=(),
-                        compute_device: torch.device = torch.device("cuda"),
-                        grad_mode: str = "bf16") -> int:
-    """Quantise target Linears to int8 and patch them onto the differentiable path.
-
-    The int8 weight lives in `.weight.data` in the natural (N,K) orientation, so block swap
-    streams it exactly as before and `.weight.shape` stays meaningful.
-    """
-    from fizgig.modules.nf4 import _dequantize_source_weight
-
-    if grad_mode not in ("bf16", "int8"):
-        raise ValueError(f"grad_mode must be 'bf16' or 'int8', got {grad_mode!r}")
-
-    compute_device = torch.device(compute_device)
-    count = 0
-    for name, module in model.named_modules():
-        if not (isinstance(module, nn.Linear) and getattr(module, "weight", None) is not None):
-            continue
-        if not any(t in name for t in target_keys) or any(e in name for e in exclude_keys):
-            continue
-
-        w = _dequantize_source_weight(module).to(compute_device).contiguous()      # (N,K)
-        w_scale = w.abs().amax(dim=-1, keepdim=True).clamp_min(1e-8) / 127.0        # (N,1)
-        w_i8 = (w / w_scale).round_().clamp_(-127, 127).to(torch.int8)              # (N,K)
-
-        module.weight.requires_grad_(False)     # must clear before .data can hold int8
-        # Store (N,K) CONTIGUOUS — the natural nn.Linear orientation — and pass .t() to
-        # _int_mm. That transpose is a free view, and the resulting column-major layout is
-        # what the int8 tensor cores want: 0.131 ms vs 0.452 ms for a (K,N)-contiguous
-        # weight at 6144x6144. Storing "pre-transposed to avoid a transpose" is 3.4x SLOWER.
-        module.weight.data = w_i8.contiguous()                                      # (N,K)
-        module.register_buffer("_int8_wscale", w_scale.reshape(1, -1).to(torch.float32),
-                               persistent=False)
-        module._is_int8 = True
-        module._int8_grad_mode = grad_mode
-        module.forward = int8_train_forward.__get__(module, type(module))
-        del w, w_i8
-        count += 1
-
-    if count:
-        model._int8_quantized = True
-    logger.info("INT8 training path: %d Linears -> W8A8 (grad_mode=%s)", count, grad_mode)
-    return count
+    return _Int8FrozenLinear.apply(x, self.weight.data, self._int8_wscale, self.bias)

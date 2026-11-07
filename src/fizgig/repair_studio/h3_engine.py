@@ -1635,7 +1635,23 @@ class H3RepairEngine(ClipContract):
         the render's own memory is still in use, and the decoder's weights are 4.5 GB: on a 32 GB card a 25 GB render
         plus the desktop plus those weights filled it, and Windows' driver then spilled the model to system RAM - the
         rest of the render crawled at "pass 2 of 6" (7 Nov 2026). So: only when the whole card (other apps counted)
-        has the room, and the decoder goes back off the card straight after, the render still running."""
+        has the room, and the decoder goes back off the card straight after, the render still running.
+        First choice is taeh3 (22.7 MB, 11x faster, fizgig/minimax/taeh3.py): until it's downloaded - or if it fails -
+        the full decoder below is the fallback."""
+        tae = getattr(self, "_taeh3", None)
+        if tae is None:
+            try:
+                from fizgig.minimax import taeh3
+                tae = self._taeh3 = taeh3.load(self.device)       # None until downloaded (a background fetch starts)
+            except Exception:
+                logger.exception("[h3-workbench] taeh3 didn't load - Show early uses the full decoder")
+                tae = None
+        if tae is not None:
+            try:
+                from fizgig.minimax import taeh3
+                return taeh3.middle_frame(tae, latent)
+            except Exception:
+                logger.exception("[h3-workbench] taeh3 decode failed - Show early uses the full decoder")
         dec = self._ensure_decoder()
         on_card = next(dec.parameters()).device.type == "cuda"
         need = (0.0 if on_card else sum(p.numel() * p.element_size() for p in dec.parameters()) / 2**30) + 1.0

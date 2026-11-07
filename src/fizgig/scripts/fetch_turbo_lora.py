@@ -208,6 +208,21 @@ def qwen_turbo_dit_hint(repo_dir: str = REPO_DIR, log=print):
         pass
 
 
+def ensure_taeh3(repo_dir: str = REPO_DIR, log=print):
+    """MiniMax H3's quick-preview decoder (taeh3, 22.7 MB) for an install with H3 set up - so updating users get it
+    here, before the first preview wants it. Never raises; without a connection the previews use the full decoder."""
+    try:
+        prefs = _load_prefs(_prefs_file(repo_dir))
+        if not str(prefs.get("minimax_dit") or "").strip():
+            return None
+        from fizgig.minimax import taeh3
+        return taeh3.fetch(os.path.join(repo_dir, "user_data", "models"), log=log)
+    except Exception as e:
+        log(f"H3 quick-preview decoder: skipped ({type(e).__name__}: {e})")
+        return None
+
+
 if __name__ == "__main__":
     ensure_all()
+    ensure_taeh3()
     qwen_turbo_dit_hint()

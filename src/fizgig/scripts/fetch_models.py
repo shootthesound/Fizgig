@@ -672,6 +672,12 @@ def main():
     choices = dict(c.split("=", 1) for c in a.choose if "=" in c)
     ok = fetch(families, models_dir=a.models_dir, token=a.token,
                include_optional=a.include_optional, dry_run=a.dry_run, choices=choices)
+    if "minimax" in families and not a.dry_run:      # H3's quick-preview decoder (taeh3) comes with its models
+        try:
+            from fizgig.minimax import taeh3
+            taeh3.fetch(os.path.abspath(a.models_dir) if a.models_dir else None, log=print)
+        except Exception as e:
+            print(f"H3 quick-preview decoder: skipped ({type(e).__name__}: {e})")
     sys.exit(0 if ok else 1)
 
 

@@ -1049,6 +1049,13 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             notes["OPTIMIZER_TYPE"] = ("prodigy finds its own learning rate: the Learning Rate box is a multiplier, "
                                        "locked to 1.0, and Adaptive LR and the look warm-up are off. Per-image LR "
                                        "still works, as a weight on each picture's loss.")
+    if opt not in ("prodigy", "muon"):
+        # switched away from Muon / Prodigy (every picture preset is on Muon): their default args left in the box made
+        # AdamW / AdamW8bit fail to build and fall back to plain, unfused AdamW, with only a log warning. Exactly their
+        # defaults are cleared; anything typed by hand stays.
+        from fizgig.training.optimizers import MUON_DEFAULT_ARGS, PRODIGY_DEFAULT_ARGS
+        if str(values.get("OPTIMIZER_ARGS") or "").strip() in (MUON_DEFAULT_ARGS, PRODIGY_DEFAULT_ARGS):
+            force["OPTIMIZER_ARGS"] = ""
     hidden |= {s for s, k in (("edit", "edit"), ("slider", "slider"), ("finetune", "finetune")) if k != kind}
     if kind == "finetune":
         disabled |= {"MAX_TRAIN_EPOCHS", "SAVE_EVERY_N_EPOCHS"}

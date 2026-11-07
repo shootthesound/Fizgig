@@ -229,6 +229,11 @@ def create_optimizer(name: str, params, lr: float, args_str: str = "",
     MiniMax H3 workaround and every other family keeps the library default. See the note below.
     """
     name = (name or DEFAULT_OPTIMIZER).strip()
+    if name.lower() not in ("muon", "prodigy") and (args_str or "").strip() in (MUON_DEFAULT_ARGS, PRODIGY_DEFAULT_ARGS):
+        # Muon's / Prodigy's own default args left over from a preset (every picture preset is on Muon): they'd make
+        # this optimizer fail to build and fall back to plain AdamW - they don't belong to it, so they're dropped
+        logger.info("[optimizer] %s: ignoring the Optimizer Args left from Muon / Prodigy (%s)", name, args_str.strip())
+        args_str = ""
     kwargs = parse_optimizer_args(args_str)
     key = name.lower()
     _warn_lr(key, lr)

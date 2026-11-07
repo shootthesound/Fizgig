@@ -142,6 +142,23 @@ def test_form_prodigy_and_muon():
     assert "ADAPTIVE_LR" not in mu["disabled"]
 
 
+def test_switching_off_muon_clears_its_args():
+    """Every picture preset is on Muon: switching to AdamW / AdamW8bit must not keep Muon's args (they made the new
+    optimizer fail and fall back to plain, unfused AdamW)."""
+    krea = registry.get("krea2")
+    for opt in ("adamw", "adamw8bit"):
+        st = form.state(krea, {**form.DEFAULTS, "OPTIMIZER_TYPE": opt, "OPTIMIZER_ARGS": MUON_DEFAULT_ARGS})
+        assert st["force"].get("OPTIMIZER_ARGS") == ""
+    typed = form.state(krea, {**form.DEFAULTS, "OPTIMIZER_TYPE": "adamw", "OPTIMIZER_ARGS": "weight_decay=0.05"})
+    assert "OPTIMIZER_ARGS" not in typed["force"]                            # typed args stay
+
+
+def test_create_optimizer_drops_leftover_muon_args():
+    p = [nn.Parameter(torch.randn(16, 64))]
+    opt, label = create_optimizer("adamw", p, 1e-4, MUON_DEFAULT_ARGS)
+    assert isinstance(opt, torch.optim.AdamW) and "fallback" not in label
+
+
 def test_fine_tune_with_prodigy_keeps_its_rate():
     moss = registry.get("moss_image")
     st = form.state(moss, {**form.DEFAULTS, "FAMILY_KIND": "finetune", "OPTIMIZER_TYPE": "prodigy",

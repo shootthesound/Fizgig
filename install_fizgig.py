@@ -27,7 +27,7 @@ import time
 from pathlib import Path
 
 # Minimum Python version required
-MIN_PYTHON_VERSION = (3, 10)
+MIN_PYTHON_VERSION = (3, 11)   # PyTorch 2.15 has no Python 3.10 wheels
 
 # Directory paths
 SCRIPT_DIR = Path(__file__).parent.absolute()

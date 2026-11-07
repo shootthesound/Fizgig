@@ -18,7 +18,7 @@
 # ---------------------------------------------------------------------------- builder
 # Compiles what needs compiling (insightface ships no manylinux wheel) and resolves the whole
 # dependency tree into a self-contained venv. None of the toolchain reaches the final image.
-FROM ubuntu:22.04 AS builder
+FROM ubuntu:24.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive PIP_NO_CACHE_DIR=1
 
@@ -40,7 +40,7 @@ RUN pip install --upgrade pip uv \
     && rm -rf /root/.cache /tmp/requirements.txt /tmp/uv_install_deps.py
 
 # ---------------------------------------------------------------------------- runtime
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \

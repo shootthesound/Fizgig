@@ -18,7 +18,7 @@ Fizgig ships as a ready-made cloud image: the whole app in a browser tab, not a 
 - **NVIDIA driver** — 555+ on Windows, 550+ on Linux (CUDA 12.8 wheels).
 - **AMD ROCm** — **Windows:** `install_fizgig_rocm.bat` (supported path; launcher and installer improvements by [@scryptio](https://github.com/scryptio)). **Linux:** `./install_fizgig_rocm.sh`, **highly experimental**: newer gfx such as RDNA4, a desktop compositor sharing the training GPU, and driver resets are common. Use Windows ROCm or NVIDIA Linux for production training. Optional system `amdrocm-amdsmi` gives accurate status-bar VRAM via `amd-smi`.
 - **OS** — Windows 10 / 11 or Linux. macOS handles captioning and image prep; training needs CUDA or ROCm.
-- **Python** — 3.10 – 3.13.
+- **Python** — 3.11 – 3.13 (PyTorch 2.15 has no Python 3.10 build).
 - **System RAM** — 32 GB recommended; see [System RAM](#system-ram).
 - **Disk** — ~10 GB for the venv, plus ~40 GB for model files.
 - **Full fine-tuning** (experimental, every model; Flux 3 Image Klein, Krea 2 and MiniMax H3 in the guides) — see [Full fine-tuning](#full-fine-tuning).

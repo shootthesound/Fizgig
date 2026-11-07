@@ -83,6 +83,17 @@ def cuda_deps():
         print()
         print(f"  Use instead:  {ROCM_UPDATER}")
         sys.exit(1)
+    if sys.version_info < (3, 11):
+        # PyTorch 2.15 has no Python 3.10 wheels, so the install below can't resolve: say what to do instead.
+        print()
+        print(f"ERROR: Fizgig now needs Python 3.11 or newer; this install's Python is {sys.version_info[0]}."
+              f"{sys.version_info[1]}.")
+        print()
+        print("  1. Install Python 3.12 from https://www.python.org/downloads/")
+        print("     (on Windows, tick \"Add Python to PATH\").")
+        print("  2. Run install_fizgig.bat (Linux: python3.12 install_fizgig.py). It rebuilds Fizgig's")
+        print("     Python environment on 3.12. Your models, datasets, LoRAs and settings are kept.")
+        sys.exit(1)
     ensure_uv()
     if run([PY, "uv_install_deps.py", "requirements.txt", "venv"]) != 0:
         fail("Failed to install/update dependencies using uv. See output above.")

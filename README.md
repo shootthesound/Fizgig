@@ -153,7 +153,7 @@ Setup (which face model to use and how to get it), numbers and limitations are i
 
 ## Install
 
-Needs an NVIDIA RTX 30/40/50-series or an AMD Radeon with ROCm, Windows 10/11 or Linux, Python 3.10–3.13, and 32 GB of system RAM recommended. Full requirements, AMD ROCm and model downloads: [docs/INSTALL.md](docs/INSTALL.md).
+Needs an NVIDIA RTX 30/40/50-series or an AMD Radeon with ROCm, Windows 10/11 or Linux, Python 3.11–3.13, and 32 GB of system RAM recommended. Full requirements, AMD ROCm and model downloads: [docs/INSTALL.md](docs/INSTALL.md).
 
 Clone the repo rather than downloading the ZIP (the updater pulls with git):
 

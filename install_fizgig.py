@@ -397,11 +397,17 @@ def download_insightface_models():
     download_script = '''
 import os
 import sys
+os.environ.setdefault("ORT_DISABLE_TELEMETRY", "1")   # no onnxruntime telemetry (Linux builds 1.29+)
 
 # Suppress TensorFlow warnings
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 try:
+    try:
+        import onnxruntime
+        onnxruntime.disable_telemetry_events()        # the Windows builds' switch
+    except Exception:
+        pass
     from insightface.app import FaceAnalysis
 
     print("Initializing FaceAnalysis (this downloads models)...")

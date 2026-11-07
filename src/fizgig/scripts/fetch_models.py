@@ -519,6 +519,8 @@ def fetch_tool(spec, log=print, dry_run=False):
         if model_id.startswith("insightface:"):
             # No public download API — instantiating is what actually populates ~/.insightface,
             # and it proves onnxruntime can load the model rather than just that bytes arrived.
+            from fizgig.utils import ort_telemetry
+            ort_telemetry.off()
             from insightface.app import FaceAnalysis
             app = FaceAnalysis(name=model_id.split(":", 1)[1],
                                allowed_modules=["detection", "genderage"],

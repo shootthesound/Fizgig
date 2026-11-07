@@ -60,6 +60,7 @@ def main(argv=None):
         shutil.move(exported, out)              # os.replace fails across drives
     try:
         import onnxruntime as ort
+        ort.disable_telemetry_events()
         sess = ort.InferenceSession(out, providers=["CPUExecutionProvider"])
         print(f"[convert] check: input {sess.get_inputs()[0].shape}, outputs "
               f"{[o.shape for o in sess.get_outputs()]}")

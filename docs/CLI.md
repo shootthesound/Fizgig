@@ -336,7 +336,7 @@ Checkpoints land as `output_loras/my_subject/my_subject-000001.safetensors` (epo
 
 **LoRA shape** — `--network_dim` / `--network_alpha` (the GUI presets use matched pairs: 4/4 style and details, 8/8, 16/16 identity); `--network_type lokr --lokr_factor 8` for LoKR.
 
-**Learning rate** — `--learning_rate`, or `--adaptive_lr` (the bi-directional plateau tracker: probes LR up on steady descent, cuts it with weight rollback on plateau or instability). Bounds via `--adaptive_lr_min` (5e-5 for single-subject sets, 1e-4 for noisy multi-subject sets) and `--adaptive_lr_max` (4e-4 is the empirical ceiling). **`--learning_rate` is ignored while adaptive is on**: the run starts at the geometric midpoint of the window and the watcher owns the LR from there. Without it, `--lr_scheduler` / `--lr_warmup_steps` apply.
+**Learning rate** — `--learning_rate`, or `--adaptive_lr` (the bi-directional plateau tracker: probes LR up on steady descent, cuts it with weight rollback on plateau or instability). Bounds via `--adaptive_lr_min` (5e-5 for single-subject sets, 1e-4 for noisy multi-subject sets) and `--adaptive_lr_max` (4e-4 is the empirical ceiling). **`--learning_rate` is ignored while adaptive is on**: the run starts at the geometric midpoint of the window and the watcher owns the LR from there. If it has to cut the rate within three epochs of raising it, the raised rate counts as too high for that run: later raises stop one step below it (the log says "ceiling … learned"), and a resume keeps it. Without it, `--lr_scheduler` / `--lr_warmup_steps` apply.
 
 **Training only part of the model** (the GUI's Model Area) — `--train_blocks` takes block ids (`double_0`-`double_7`, `single_0`-`single_23`) and `--min_timestep` / `--max_timestep` (0-1000) the noise range:
 

@@ -1,5 +1,15 @@
 # Fizgig news
 
+## 7 Nov 2026: Fizgig 9.2, faster training on PyTorch 2.15
+
+**Training is much faster, uses far less memory, and likeness is unchanged.** On an RTX 5090, a MOSS-Image LoRA at batch 1 (94 pictures, Muon, 70 epochs) takes about 20 minutes instead of 49. At batch 3, MOSS-Image now matches OneTrainer's speed on the same card in less memory (1.07 s a step in 6.9 GB, against 1.07 s in 7.4 GB). Thanks to @tsk5cb-cmyk, whose logs in #221 showed where the time was going.
+
+**What makes it faster.** PyTorch 2.15 keeps far less in memory with gradient checkpointing on (Krea 2 22.9 → 14.9 GB). Muon's step handles a LoRA's matrices together: 12× faster, same results. Batches with captions of different lengths no longer slow attention down. LoKR runs 4–6× faster on every model, including as a Context LoRA (thanks @Nessa2026691, #307).
+
+**Also:** onnxruntime's and Hugging Face's telemetry is off, Adaptive LR learns a ceiling, and MiniMax H3's Show early uses a tiny preview decoder.
+
+**Your NVIDIA driver must support CUDA 13** (version 580 or newer). The update downloads PyTorch 2.15 (about 3 GB); if Fizgig won't start afterwards, run the updater again and press R to rebuild its Python environment. AMD installs keep their own PyTorch. Restart your pods to pick up 9.2. [Fizgig v9.2.0 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.2.0)
+
 ## 6 Nov 2026: Muon for every picture model
 
 **Improved likeness and training performance across most of the models, thanks to the Muon optimizer.** Every picture model's built-in presets now train on Muon: Klein 9B, Flux 3 Image Klein, Fibo 2.0, Krea 2, Qwen Image 2.1, MOSS-Image, Z-Image Turbo and Base, SDXL, Anima and Vimoo 1.0 Lite.

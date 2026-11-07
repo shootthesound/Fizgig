@@ -5,6 +5,32 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 
 NEWS = [
     {
+        "date": "6 Nov 2026",
+        "title": "Muon for every picture model",
+        "body": (
+            "Improved likeness and training performance across most of the models, thanks to the Muon optimizer. "
+            "Every picture model's built-in presets now train on it, from Klein and Krea 2 to MOSS-Image, Z-Image, "
+            "SDXL and Vimoo.\n\n"
+            "Muon evens out each update, so fine detail (skin texture, hair, fabric) learns as fast as the broad "
+            "shapes. The presets keep their learning rates, and it uses less memory than AdamW. Load a preset again "
+            "to get it: your saved presets keep the optimizer they had."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#6-nov-2026-muon-for-every-picture-model"}],
+    },
+    {
+        "date": "6 Nov 2026",
+        "title": "Vimoo 1.0 Lite",
+        "body": (
+            "Fizgig trains Vimoo-AI's 9.5B Apache 2.0 video model from photos and clips: LoRAs, LoKR, sliders, full "
+            "fine-tunes and masked training, with 12-step clip previews and image-to-video in Studio, on a 16 GB card. "
+            "In our tests it sits closer to Wan 2.2 5B than to the newer video models.\n\n"
+            "We support Lite because it's light: if your card can run the full Vimoo 1.0, there are probably better "
+            "video models for it."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#6-nov-2026-vimoo-10-lite"},
+                  {"text": "The guide", "href": "https://github.com/shootthesound/Fizgig/blob/master/docs/VIMOO.md"}],
+    },
+    {
         "date": "25 Oct 2026",
         "title": "Masks from words with SAM 3.1",
         "body": (

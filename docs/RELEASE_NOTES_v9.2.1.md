@@ -1,5 +1,13 @@
 # Fizgig v9.2.1: Python 3.11 or newer, for large speed gains on PyTorch 2.15
 
+**Fizgig now needs Python 3.11 or newer.** PyTorch 2.15, which 9.2 moved to, has no Python 3.10 build, so updating an install made with Python 3.10 couldn't install it. Installs on Python 3.11, 3.12 or 3.13 aren't affected, and AMD ROCm installs keep their own PyTorch.
+
+**If your install uses Python 3.10,** the updater now says so and stops before changing anything. To fix it:
+1. Install Python 3.12 from https://www.python.org/downloads/ (on Windows, tick "Add Python to PATH").
+2. Run `install_fizgig.bat` (Linux: `python3.12 install_fizgig.py`). It rebuilds Fizgig's Python environment on 3.12. Your models, datasets, LoRAs and settings are kept.
+
+If the 9.2 update stopped with "Failed to install/update dependencies", this is why: follow the two steps above.
+
 **Training is much faster, uses far less memory, and likeness is unchanged.** On an RTX 5090, a MOSS-Image LoRA at batch 1 (94 pictures, Muon, 70 epochs) now takes about 20 minutes instead of 49. On batch training, Fizgig now matches OneTrainer's speed on the same card with less memory: MOSS-Image at batch 3 runs at 1.07 s a step in 6.9 GB, against OneTrainer's 1.07 s in 7.4 GB. Likeness comes out the same as 9.0.8 or better. Thanks to @tsk5cb-cmyk, whose logs and OneTrainer settings in #221 showed where the time was going.
 
 **What changes for you**
@@ -9,7 +17,7 @@
 - **LoKR is 4–6× faster** on every model: training with a LoKR Context LoRA (which made training about 5× slower), LoKR training, and LoKR files in Studio and the other tools. Same results. Thanks to @Nessa2026691 for tracking it down (#307).
 
 **Requirements**
-- **Python 3.11 or newer.** PyTorch 2.15 has no Python 3.10 build. Installs on 3.11, 3.12 or 3.13 aren't affected; see Updating if yours uses 3.10.
+- **Python 3.11 or newer** (see the top of these notes).
 - **An NVIDIA driver that supports CUDA 13** (version 580 or newer). If Fizgig can't see your GPU after the update, update the driver. RunPod pods are picked to match.
 - AMD ROCm installs keep their own PyTorch, so nothing changes there.
 
@@ -31,9 +39,5 @@
 That pod time was paid for by the community: when you rent a pod through Fizgig's RunPod template, my RunPod account gets usage credits, and those credits funded all of this testing. Thank you.
 
 **Updating:** run the updater as usual. It now checks your Python environment first and shows a 10-second countdown: press Space (or wait) to update as normal. This update downloads PyTorch 2.15 (about 3 GB) and the updater says so. If Fizgig won't start or train afterwards, run the updater again and press **R**: it deletes the Python environment and installs it fresh. Your models, datasets, LoRAs and settings are kept.
-
-**If your install uses Python 3.10,** the update stops with "Failed to install/update dependencies" (or, from 9.2.1 on, a message saying Python 3.11 is needed) before changing anything. To fix it:
-1. Install Python 3.12 from https://www.python.org/downloads/ (on Windows, tick "Add Python to PATH").
-2. Run `install_fizgig.bat` (Linux: `python3.12 install_fizgig.py`). It rebuilds Fizgig's Python environment on 3.12. Your models, datasets, LoRAs and settings are kept.
 
 **Pods:** the pod image moves to Ubuntu 24.04 (Python 3.12) to carry PyTorch 2.15. Restart your pods to pick up 9.2.

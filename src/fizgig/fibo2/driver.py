@@ -586,9 +586,11 @@ class Fibo2Driver(FamilyDriver):
         return loss, {"t": state["t"]}
 
     def stack_conds(self, conds):
-        """Captions of different lengths pad to the longest with the mask off: the DiT reads each prompt's length
-        from its mask (its gist count, its cross-attention), as the pipeline batches prompts."""
+        """Captions of different lengths pad to the longest, rounded up to a multiple of 16 (few shapes for cuDNN's
+        attention plans, #221), with the mask off: the DiT reads each prompt's length from its mask (its gist count,
+        its cross-attention), as the pipeline batches prompts."""
         n = max(c["tokens"].shape[-2] for c in conds)
+        n += -n % 16
         tokens = [F.pad(c["tokens"], (0, 0, 0, n - c["tokens"].shape[-2])) for c in conds]
         masks = [F.pad(c["mask"].bool(), (0, n - c["mask"].shape[-1])) for c in conds]
         return {"tokens": torch.cat(tokens), "mask": torch.cat(masks)}

@@ -14,6 +14,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.attention import SDPBackend, sdpa_kernel
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.checkpoint import checkpoint
 
@@ -85,6 +86,9 @@ def _mask_or_none(mask):
     return None if bool(mask.all()) else mask
 
 
+_MASKED_BACKENDS = [SDPBackend.CUDNN_ATTENTION, SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH]
+
+
 def _pad_len(n):
     return n + (-n) % SEQ_MULTI_OF
 
@@ -139,7 +143,12 @@ class ZImageAttention(nn.Module):
             mask = mask.to(q.dtype)
         q, k, v = q.transpose(1, 2), k.to(dtype).transpose(1, 2), v.transpose(1, 2)
         out = attend(q, k, v) if mask is None else None       # workbench renders: INT8 attention when switched on
-        if out is None:
+        if out is None and mask is not None:
+            # a batch's padded captions: PyTorch's default choice falls back to its memory-efficient kernel with a mask,
+            # and cuDNN takes one at almost no cost (#221, measured on MOSS-Image); a preference, falling back down the list
+            with sdpa_kernel(_MASKED_BACKENDS, set_priority=True):
+                out = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+        elif out is None:
             out = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
         return self.to_out[0](out.transpose(1, 2).flatten(2, 3).to(dtype))
 

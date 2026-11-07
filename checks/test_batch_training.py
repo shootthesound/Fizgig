@@ -388,3 +388,48 @@ def test_a_batch_weighs_and_records_each_picture_as_its_own_step(tmp_path):
     w.watch = None                                                # the watch off: the plain mean
     scaled, rec, kept = w.weigh(info, ["a", "b", "c", "r"])
     assert abs(float(scaled) - 0.5) < 1e-6 and kept == [0, 1, 2, 3]
+
+
+def test_moss_batch_runs_each_picture_alone():
+    """#221: MOSS's batch runs each picture through the DiT alone at its own caption length (as OneTrainer does) - no
+    padding, no mask - so the batched loss is the pictures' own losses, mask or not."""
+    from fizgig.families.registry import get as get_family
+    torch.manual_seed(0)
+    dit = MOSSImageDiT(dim=64, ffn_dim=96, num_heads=4, num_layers=2, text_dim=24, freq_dim=32,
+                       latent_channels=8).float().eval()
+    drv = get_family("moss_image").load_driver()
+    g = torch.Generator().manual_seed(2)
+    conds = [{"hidden_states": torch.randn(1, n, 24, generator=g)} for n in (5, 9, 3)]
+    assert "items" in drv.stack_conds(conds)
+    lat = torch.randn(3, 8, 4, 6, generator=g)
+    for mask in (None, torch.rand(3, 1, 4, 6, generator=g)):
+        b, s = _driver_parity(drv, dit, lat, conds, mask)
+        assert abs(b - s) <= 1e-5 * abs(s), (mask is None, b, s)
+
+def test_qwen_padding_to_16_matches_one_at_a_time():
+    """#221: Qwen Image 2.1's batches pad captions to a multiple of 16 too; the extra keys are masked, so each picture
+    still gets what it gets alone (on the GPU too, through the cuDNN path)."""
+    from fizgig.qwen_image21.driver import QwenImage21Driver
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    torch.manual_seed(0)
+    dit = QwenImage21DiT(num_layers=2, attention_head_dim=16, num_attention_heads=2, context_in_dim=24,
+                         axes_dims_rope=(4, 6, 6)).float().eval().to(dev)
+    h = w = 4
+    n = h * w
+    caps = [c.to(dev) for c in _captions((5, 9, 3), 24, seed=3)]
+    x = torch.randn(3, n, 64, device=dev)
+    t = torch.tensor([0.15, 0.6, 0.93], device=dev)
+    with torch.no_grad():
+        one = []
+        for i, c in enumerate(caps):
+            L = c.shape[0]
+            img_mask = torch.cat([torch.zeros(L, dtype=torch.bool), torch.ones(n // 4, dtype=torch.bool)])[None].to(dev)
+            one.append(dit(x[i:i + 1], c[None], t[i:i + 1], [[(1, h, w)]], img_mask,
+                           torch.ones(1, L, dtype=torch.bool, device=dev))[:, -n:])
+        one = torch.cat(one)
+        cond = QwenImage21Driver.stack_conds(None, [{"hidden_states": c[None]} for c in caps])
+        enc, mask = cond["hidden_states"], cond["mask"]
+        assert enc.shape[1] == 16
+        img_mask = torch.cat([torch.zeros(16, dtype=torch.bool), torch.ones(n // 4, dtype=torch.bool)])[None].to(dev)
+        both = dit(x, enc, t, [[(1, h, w)]], img_mask, mask)[:, -n:]
+    assert torch.allclose(one, both, atol=1e-4, rtol=1e-3), (one - both).abs().max()

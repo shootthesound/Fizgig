@@ -143,6 +143,7 @@ class AttentionParams:
 # fizgig.modules.sdpa so every attention site in the app makes the same decision — this one,
 # Klein's DiT, and both VAEs. See that module for the measurements behind it.
 from fizgig.modules.sdpa import note_shape as _note_shape  # noqa: E402
+from fizgig.modules.sdpa import masked_ctx as _masked_ctx  # noqa: E402
 from fizgig.modules.sdpa import sdpa_backend_ctx as _sdpa_backend_ctx
 from fizgig.modules import int8_attention as _int8_attention  # noqa: E402
 
@@ -268,7 +269,7 @@ def attention(
                 v = v.repeat_interleave(g, dim=1)
             x = _int8_attention.attend(q, k, v, attn_params.attention_mask)   # an opted-in render only
             if x is None:
-                with _sdpa_backend_ctx():
+                with _masked_ctx(attn_params.attention_mask):
                     x = torch.nn.functional.scaled_dot_product_attention(
                         q, k, v, attn_mask=attn_params.attention_mask, dropout_p=drop_rate)
             q, k, v = None, None, None

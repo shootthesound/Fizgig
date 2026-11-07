@@ -234,13 +234,14 @@ class QwenImage21Driver(FamilyDriver):
         return loss, {"t": t}
 
     def stack_conds(self, conds):
-        """Batch Size above 1: the captions zero-padded to the longest with a mask of each one's real tokens. The DiT
-        drops the padded keys and places each picture's image after its own real tokens, as its unpadded caption
-        would (QwenImage21DiT.forward)."""
+        """Batch Size above 1: the captions zero-padded to the longest, rounded up to a multiple of 16 (few shapes for
+        cuDNN's attention plans, #221), with a mask of each one's real tokens. The DiT drops the padded keys and places
+        each picture's image after its own real tokens, as its unpadded caption would (QwenImage21DiT.forward)."""
         if any("ref_mask" in c for c in conds):
             return None                     # an edit's before-images: batch 1
         hs = [c["hidden_states"][0] for c in conds]
         L = max(h.shape[0] for h in hs)
+        L += -L % 16
         return {"hidden_states": torch.stack([torch.cat([h, h.new_zeros(L - h.shape[0], h.shape[1])]) for h in hs]),
                 "mask": torch.stack([torch.arange(L, device=h.device) < h.shape[0] for h in hs])}
 

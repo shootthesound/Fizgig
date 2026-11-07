@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.attention import SDPBackend, sdpa_kernel
 from torch.utils.checkpoint import checkpoint
 
 from fizgig.modules import int8_attention as _i8a
@@ -94,6 +95,11 @@ def edit_prompt(prompt, num_images):
     return json.dumps(edit, separators=(",", ":"), ensure_ascii=False)
 
 
+# A masked attention (a training batch's padded captions): PyTorch's default choice falls back to its memory-efficient
+# kernel with a mask, and cuDNN takes one at almost no cost (#221, measured on MOSS-Image). A preference, falling back.
+_MASKED_BACKENDS = [SDPBackend.CUDNN_ATTENTION, SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH]
+
+
 def attention(query, key, value, attn_mask=None):
     """[B, S, H, D] in and out. A render past INT8_MIN_TOKENS keys takes the INT8 kernel when the workbench has it
     on (attend() refuses a live grad, a mask that drops tokens, or no kernel); everything else is torch SDPA."""
@@ -102,6 +108,9 @@ def attention(query, key, value, attn_mask=None):
         out = _i8a.attend(q, k, v, attn_mask)
         if out is not None:
             return out.transpose(1, 2)
+    if attn_mask is not None:
+        with sdpa_kernel(_MASKED_BACKENDS, set_priority=True):
+            return F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask).transpose(1, 2)
     return F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask).transpose(1, 2)
 
 

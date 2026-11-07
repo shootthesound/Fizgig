@@ -9,7 +9,7 @@ from typing import Optional, Union
 import torch
 
 from fizgig.modules import int8_attention as _int8_attention
-from fizgig.modules.sdpa import sdpa_backend_ctx
+from fizgig.modules.sdpa import masked_ctx, sdpa_backend_ctx
 
 try:
     import flash_attn
@@ -179,7 +179,7 @@ def attention(
         else:
             x = _int8_attention.attend(q, k, v, attn_params.attention_mask)   # an opted-in render only
             if x is None:
-                with sdpa_backend_ctx():
+                with masked_ctx(attn_params.attention_mask):
                     x = torch.nn.functional.scaled_dot_product_attention(
                         q, k, v, attn_mask=attn_params.attention_mask, dropout_p=drop_rate
                     )

@@ -109,6 +109,29 @@ class _MeterSlot:
 METER = _MeterSlot()
 
 
+
+class _LoraLowp(torch.autograd.Function):
+    """A trainable LoRA as OneTrainer computes it (#221): the weights stay fp32 (the optimizer's copy), the multiplies run
+    in the activations' bf16, and the backward keeps the layer's input once in bf16 (plus the rank-r intermediate), not
+    an fp32 copy - what made the checkpoint-inside-compile placement double MOSS's peak."""
+
+    @staticmethod
+    def forward(ctx, x, wd, wu, scale):
+        xd = torch.nn.functional.linear(x, wd.to(x.dtype))
+        out = torch.nn.functional.linear(xd, wu.to(x.dtype)) * scale
+        ctx.save_for_backward(x, xd, wd, wu)
+        ctx.scale = scale
+        return out
+
+    @staticmethod
+    def backward(ctx, g):
+        x, xd, wd, wu = ctx.saved_tensors
+        g = g.to(x.dtype) * ctx.scale
+        gxd = g @ wu.to(x.dtype)
+        g2, xd2, gxd2, x2 = (a.reshape(-1, a.shape[-1]) for a in (g, xd, gxd, x))
+        return (gxd @ wd.to(x.dtype), (gxd2.t() @ x2).to(wd.dtype), (g2.t() @ xd2).to(wu.dtype), None)
+
+
 class LoRALinear(nn.Module):
     def __init__(self, base: nn.Linear):
         super().__init__()
@@ -163,6 +186,10 @@ class LoRALinear(nn.Module):
             if s:
                 if isinstance(ad, (LoKR, LoHa)):
                     out = out + (s * ad(x)).to(out.dtype)
+                    continue
+                if ad[0].weight.requires_grad and ad[0].weight.dtype != x.dtype and x.dtype in (torch.bfloat16, torch.float16):
+                    # fp32 weights (the optimizer's copy), bf16 multiplies, the input kept once in bf16 for the backward (#221)
+                    out = out + _LoraLowp.apply(x, ad[0].weight, ad[1].weight, float(s)).to(out.dtype)
                     continue
                 lx = ad(x.to(ad[0].weight.dtype))
                 if lx.dtype == out.dtype:

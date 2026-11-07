@@ -192,7 +192,7 @@ MOSS_IMAGE = FamilyDescription(
     network_types=("lora", "lokr"),
     ema_default="0.98",
     compiles=True,                    # driver.compile_targets: the 42 blocks
-    compile_boundary="outside",       # as Qwen 2.1's and Flux 3's: the checkpoint wraps the compiled block
+    compile_boundary="inside",        # the checkpoint inside the compiled block, as Qwen 2.1's and Flux 3's (#221; on torch 2.15 it costs no extra memory)
     # measured 17 Oct 2026, 5090, bf16, 1 MP, one bucket: 1.45 -> 1.07 s/step compiled (-26%), the first epoch
     # 13 s slower (compiling) = paid back in ~35 steps; 200 leaves room for runs with several bucket shapes.
     # INT8 / NF4 not measured yet: bf16's figure, and Klein's NF4 one, so Auto compiles the default INT8 base.

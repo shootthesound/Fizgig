@@ -109,6 +109,17 @@ def consider_training_backend(steps_remaining: int):
     return None
 
 
+def masked_ctx(mask):
+    """A MASKED attention in training (a batch's padded captions): cuDNN first. With a mask, PyTorch's default choice
+    falls back to its memory-efficient kernel, and cuDNN takes the mask at almost no cost - MOSS-Image batch 3 went
+    1.60 -> 1.31 s a step on an A6000 (#221) with the captions padded to a multiple of 16, so cuDNN plans only a few
+    shapes. Unmasked attention keeps sdpa_backend_ctx's rule. A preference: a shape cuDNN can't take falls back."""
+    if mask is None or not mask.is_cuda or os.environ.get("FIZGIG_SDPA_BACKEND", "auto").lower() in ("default", "off", "none"):
+        return sdpa_backend_ctx()
+    from torch.nn.attention import SDPBackend, sdpa_kernel
+    return sdpa_kernel([SDPBackend.CUDNN_ATTENTION, SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH], set_priority=True)
+
+
 def sdpa_backend_ctx():
     """cuDNN SDPA for inference; PyTorch's default when gradients are being recorded."""
     choice = os.environ.get("FIZGIG_SDPA_BACKEND", "auto").lower()

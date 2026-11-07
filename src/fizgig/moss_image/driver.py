@@ -324,16 +324,17 @@ class MOSSImageDriver(FamilyDriver):
         return loss, {"t": t}
 
     def stack_conds(self, conds):
-        """Batch Size above 1: the captions zero-padded to the longest with a mask of each one's real tokens; the
-        DiT's forward_batch drops the padded keys and positions each picture by its own caption length."""
-        hs = [c["hidden_states"][0] if c["hidden_states"].dim() == 3 else c["hidden_states"] for c in conds]
-        L = max(h.shape[0] for h in hs)
-        return {"hidden_states": torch.stack([torch.cat([h, h.new_zeros(L - h.shape[0], h.shape[1])]) for h in hs]),
-                "mask": torch.stack([torch.arange(L, device=h.device) < h.shape[0] for h in hs])}
+        """Batch Size above 1: each picture keeps its own caption, unpadded - training_loss_batch runs the pictures
+        through the DiT one at a time at their own caption lengths, as OneTrainer's MOSS trainer does (#221): no
+        padding, no attention mask, each picture's pass exactly its batch-1 pass."""
+        return {"items": conds}
 
     def training_loss_batch(self, dit, latents, cond, generator, *, min_t=0.0, max_t=1.0, loss_mask=None):
-        """Batch Size above 1: each picture's noise and t drawn as training_loss draws them, picture by picture, one
-        forward_batch for them all; the MSE (and a mask's per-picture weights) is the pictures' mean."""
+        """Batch Size above 1: each picture's noise and t drawn as training_loss draws them, picture by picture, then
+        each picture through the DiT alone (its own caption length, no padding or mask) and ONE backward over the
+        pictures' mean MSE (a mask weighs each picture on its own). OneTrainer's MOSS forward loops the same way; with
+        a padded batch the masked attention fell back to PyTorch's slow kernel and every picture paid for the longest
+        caption (#221)."""
         x0 = latents.float()
         mu = self._t_mu()
         noises, ts = [], []
@@ -343,8 +344,7 @@ class MOSSImageDriver(FamilyDriver):
         noise = torch.cat(noises).to(x0.device)
         t = torch.tensor(ts, device=x0.device, dtype=torch.float32).view(-1, 1, 1, 1)
         xt = (1 - t) * x0 + t * noise
-        tt = torch.tensor([v * S.TRAIN_STEPS for v in ts], device=x0.device)
-        pred = dit.forward_batch(xt, tt, cond["hidden_states"].to(x0.device), cond["mask"]).float()
+        pred = torch.cat([self._forward(dit, xt[i:i + 1], ts[i], c) for i, c in enumerate(cond["items"])]).float()
         target = noise - x0
         mw = None if loss_mask is None else loss_mask.float().to(x0.device)[:, 0]
         per = picture_losses((pred - target).pow(2).mean(dim=1), mw)

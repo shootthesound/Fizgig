@@ -11,6 +11,7 @@ two-block text adapter over Qwen3.5-9B's final hidden states, FLUX.2 latents 2x2
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.attention import SDPBackend, sdpa_kernel
 from torch.utils.checkpoint import checkpoint
 
 # transformer/config.json (OpenMOSS-Team/MOSS-Image-Base) - the only configuration released
@@ -42,6 +43,13 @@ def _rotate(x, rope):
     return x * cos + torch.cat((-b, a), -1) * sin
 
 
+# A training batch's padded captions need a key mask, and with one PyTorch's default choice falls back to its
+# memory-efficient kernel; cuDNN takes the mask at almost no cost (#221: batch 3 at 0.25 MP 1.60 -> 1.31 s/step on an
+# A6000, with stack_conds padding the captions to a multiple of 16 so cuDNN plans only a few shapes). A preference,
+# not a demand: a GPU or shape cuDNN can't take falls back down the list.
+_MASKED_BACKENDS = [SDPBackend.CUDNN_ATTENTION, SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH]
+
+
 def _attention(q, k, v, rope, heads, key_mask=None):
     shape = (*q.shape[:2], heads, q.shape[-1] // heads)
     q = _rotate(q.reshape(shape), rope).transpose(1, 2)
@@ -49,7 +57,9 @@ def _attention(q, k, v, rope, heads, key_mask=None):
     v = v.reshape(shape).transpose(1, 2)
     q, k = q.to(v.dtype), k.to(v.dtype)
     if key_mask is not None:            # a training batch (forward_batch): each picture's padded caption tokens dropped
-        return F.scaled_dot_product_attention(q, k, v, attn_mask=key_mask[:, None, None, :]).transpose(1, 2).flatten(2)
+        with sdpa_kernel(_MASKED_BACKENDS, set_priority=True):
+            out = F.scaled_dot_product_attention(q, k, v, attn_mask=key_mask[:, None, None, :])
+        return out.transpose(1, 2).flatten(2)
     from fizgig.modules import int8_attention as _i8a      # workbench renders only, when opted in; else None
     out = _i8a.attend(q, k, v)
     if out is None:

@@ -138,6 +138,24 @@ def _aborted(e):
 
 
 def _render(c):
+    """A render, with a watchdog: while it runs longer than a minute, every thread's stack goes to the log once a
+    minute (user_data/logs/studio_worker.log), so a render that stalls says where."""
+    import faulthandler
+    try:
+        sys.stdout.flush()
+        faulthandler.dump_traceback_later(60, repeat=True, file=sys.stdout)
+    except Exception:
+        pass
+    try:
+        _render_inner(c)
+    finally:
+        try:
+            faulthandler.cancel_dump_traceback_later()
+        except Exception:
+            pass
+
+
+def _render_inner(c):
     gen = c["gen"]
     eng = S["engine"]
     try:

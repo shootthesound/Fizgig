@@ -54,8 +54,25 @@ _M = {"state": "idle", "gen": 0, "kind": "", "status": "", "error": "", "progres
 RM_HISTORY = 12
 
 
+def _worker_log():
+    """user_data/logs/studio_worker.log, started fresh for each worker: everything it prints, with the time, so a
+    stuck or failed render can be read afterwards (the in-memory copy goes with the worker)."""
+    try:
+        d = os.path.join(os.path.dirname(user_file("x")), "logs")
+        os.makedirs(d, exist_ok=True)
+        return open(os.path.join(d, "studio_worker.log"), "w", encoding="utf-8", buffering=1)
+    except OSError:
+        return None
+
+
 def _reader(proc):
+    flog = _worker_log()
     for line in proc.stdout:
+        if flog is not None:
+            try:
+                flog.write(time.strftime("%H:%M:%S ") + (line if len(line) < 4000 else line[:4000] + "…\n"))
+            except (OSError, ValueError):
+                flog = None
         if not line.startswith(EV):
             with _lock:
                 _S["log"] = (_S["log"] + [line.rstrip()])[-200:]

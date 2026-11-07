@@ -12,7 +12,7 @@
 #                           are far larger than it is worth pulling as an image layer. Preferences >
 #                           Download models fetches them on demand.
 #
-# No CUDA base image: the torch cu128 wheels bundle their own CUDA runtime, so a plain Ubuntu
+# No CUDA base image: the torch cu134 wheels bundle their own CUDA runtime, so a plain Ubuntu
 # base plus the host's driver is all that's needed, and it keeps the image several GB smaller.
 
 # ---------------------------------------------------------------------------- builder

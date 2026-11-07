@@ -38,6 +38,7 @@ _TRITON_FOR_TORCH = {
     "2.10": ("3.5", "3.6"),
     "2.11": ("3.6", "3.7"),
     "2.12": ("3.7", "3.8"),
+    "2.15": ("3.7", "3.9"),   # Linux wheel: triton 3.9; Windows: triton-windows 3.7.0.post26
 }
 
 

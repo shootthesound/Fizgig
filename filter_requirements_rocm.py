@@ -4,7 +4,7 @@
 Leaves requirements.txt untouched (CUDA path). Skips packages the AMD installers
 install separately (torch / torchvision / bitsandbytes), NVIDIA-only deps
 (nvidia-ml-py — ROCm uses amd-smi / rocm-smi fallbacks), and the CUDA
---extra-index-url line so a ROCm torch install is not replaced by cu128 wheels.
+--extra-index-url line so a ROCm torch install is not replaced by cu134 wheels.
 
 Fails loudly if the number of stripped lines does not match what the CUDA
 requirements.txt is known to contain — e.g. a second --extra-index-url would
@@ -26,7 +26,7 @@ SKIP_PACKAGES = frozenset({"torch", "torchvision", "bitsandbytes", "nvidia-ml-py
 # Exact shape of today's requirements.txt CUDA/NVIDIA block. Bump deliberately when
 # upstream changes that block — silent drift is how AMD installs go weird.
 EXPECTED_SKIPPED_PACKAGES = frozenset({"torch", "torchvision", "bitsandbytes", "nvidia-ml-py", "comfy-kitchen"})
-EXPECTED_CUDA_INDEX_LINES = 1  # --extra-index-url …/whl/cu128
+EXPECTED_CUDA_INDEX_LINES = 1  # --extra-index-url …/whl/cu134
 
 
 def _package_name(line: str) -> str | None:

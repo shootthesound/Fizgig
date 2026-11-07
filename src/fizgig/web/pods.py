@@ -25,7 +25,7 @@ def deploy_url(gpu="RTX 5090", count=1) -> str:
         {"type": "GPU", "gpu": gpu, "count": int(count or 1), "template": TEMPLATE, "ref": REF})
 
 
-MIN_CUDA = "12.8"                   # the pod image's PyTorch (cu128) needs a driver this new: stock on such hosts only
+MIN_CUDA = "13.0"                   # the pod image's PyTorch (cu134) needs a CUDA 13 driver: stock on such hosts only
 
 
 DEPLOY = deploy_url()

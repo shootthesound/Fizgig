@@ -79,7 +79,9 @@ MOSS_IMAGE = FamilyDescription(
                        "not recommended to train on: in our test a LoRA on it began to overbake after about 750 "
                        "steps.)",
                   # Kromoss was briefly offered on this row (19 Oct 2026): Download models for me moves it back
-                  replaces=("kromoss_bf16.safetensors", "kromoss_int8_convrot.safetensors")),
+                  replaces=("kromoss_bf16.safetensors", "kromoss_int8_convrot.safetensors"),
+                  alt_repo="KBlueLeaf/MOSS-Image-heal", alt_path="comfyui/moss_image_heal_bf16.safetensors",
+                  alt_label="Download Heal bf16", alt_note="~10.2 GB - optional repaired Base; preview on itself"),
         ModelFile("moss_image_vae", "FLUX.2 autoencoder (small decoder)", True, _COMFY,
                   "vae/flux2-vae_small.safetensors", 0.25,
                   "The FLUX.2 autoencoder with BFL's small decoder, the decoder MOSS-Image ships with.",

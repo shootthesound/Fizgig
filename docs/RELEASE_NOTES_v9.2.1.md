@@ -1,4 +1,4 @@
-# Fizgig v9.2.1: large speed gains on PyTorch 2.15, with less memory
+# Fizgig v9.2.1: Python 3.11 or newer, for large speed gains on PyTorch 2.15
 
 **Training is much faster, uses far less memory, and likeness is unchanged.** On an RTX 5090, a MOSS-Image LoRA at batch 1 (94 pictures, Muon, 70 epochs) now takes about 20 minutes instead of 49. On batch training, Fizgig now matches OneTrainer's speed on the same card with less memory: MOSS-Image at batch 3 runs at 1.07 s a step in 6.9 GB, against OneTrainer's 1.07 s in 7.4 GB. Likeness comes out the same as 9.0.8 or better. Thanks to @tsk5cb-cmyk, whose logs and OneTrainer settings in #221 showed where the time was going.
 

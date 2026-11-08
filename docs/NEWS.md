@@ -4,7 +4,7 @@
 
 **Training is much faster, uses far less memory, and likeness is unchanged.** On an RTX 5090, a MOSS-Image LoRA at batch 1 (94 pictures, Muon, 70 epochs) takes about 20 minutes instead of 49. At batch 3, MOSS-Image now matches OneTrainer's speed on the same card in less memory (1.07 s a step in 6.9 GB, against 1.07 s in 7.4 GB). Thanks to @tsk5cb-cmyk, whose logs in #221 showed where the time was going.
 
-**Quick MOSS-Image previews that still look right.** Previews now render on the Base with the Turbo LoRA at 0.6, 8 steps, CFG 2 and the SFT look LoRA: much quicker than full-quality previews, and a good read of how the LoRA looks. Both LoRAs download with the models. Set Turbo LoRA strength to 0 for full-quality previews.
+**Quick MOSS-Image previews that still look right.** Previews now render on the Base with the Turbo LoRA at 0.6, 8 steps, CFG 2 and the SFT look LoRA: much quicker than full-quality previews, and a good read of how the LoRA looks. Both LoRAs download with the models. Untick Use the Turbo LoRA for full-quality previews.
 
 **A faster Studio.** Studio, LoRA Royale and the Profiler follow the Samples tab, so on MOSS-Image they render with the same quick recipe. On MiniMax H3, Show early's mid-render look takes a third of a second instead of a second and a half.
 

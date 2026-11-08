@@ -613,6 +613,9 @@ def _studio_samples(desc):
     turbo = v.get("FAMILY_TURBO_STRENGTH")
     if blank(turbo):
         turbo = spd[1] if spd else 0
+    from fizgig.families.form import turbo_ticked_off
+    if turbo_ticked_off(desc, v):                 # the Use the Turbo LoRA tick off (MOSS-Image)
+        turbo = 0
     f = pref_path(load_prefs(), sp.pref_key) if sp is not None and sp.pref_key else ""
     try:
         live = bool(f and os.path.isfile(f) and float(turbo) > 0)
@@ -1091,7 +1094,7 @@ _SIZE_KEYS = ("DATASET_MEGAPIXELS", "CLIP_MEGAPIXELS")
 # are the same), the save schedule (when checkpoints are written) and the learning rate (the run trains on at the
 # new one, logged); the rest trains on as it was
 _RESUME_SAMPLE_KEYS = ("SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS",
-                       "SAMPLE_CFG_SCALE", "FAMILY_TURBO_STRENGTH", "SAMPLE_CHECKPOINT",   # + previews on the checkpoint
+                       "SAMPLE_CFG_SCALE", "FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_ON", "SAMPLE_CHECKPOINT",
                        "FAMILY_PREVIEW_LOOK",                                              # + the SFT look tick
                        "SAMPLE_EVERY_N_EPOCHS", "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH", "SAMPLE_EVERY_AFTER",
                        "BLOCKS_SWAP", "SAVE_EVERY_N_EPOCHS", "SAVE_LATER", "SAVE_UNTIL_EPOCH", "SAVE_EVERY_AFTER",

@@ -762,7 +762,7 @@ function onValue(r, val) {
   if (r.key === "OPTIMIZER_TYPE" && prev !== val) optimizerPicked(String(prev || ""), String(val || ""));
   if (r.key === "__SAMPLE_LIVE" || (S.values.__SAMPLE_LIVE &&
       ["SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS", "SAMPLE_CFG_SCALE",
-       "FAMILY_TURBO_STRENGTH", "SAMPLE_EVERY_N_EPOCHS", "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH",
+       "FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_ON", "SAMPLE_EVERY_N_EPOCHS", "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH",
        "SAMPLE_EVERY_AFTER", "FAMILY_PREVIEW_LOOK", "SAMPLE_CHECKPOINT"].includes(r.key))) sampleLiveSoon();
   if (r.key === "CAPTION_TRIGGER_WORD") { S.trigger = String(val).trim(); $("capTrigger").value = S.trigger; saveTriggerSoon(S.trigger); }
   const extra = r.sets && r.sets[val];            // a kind of training that also sets others (Fine-tune's LR)
@@ -899,7 +899,7 @@ function turboFollow() {
     if (pass === "turbo") {
       const raw = S.values.FAMILY_TURBO_STRENGTH;
       const strength = parseFloat(raw === undefined || raw === "" ? row.default : raw);
-      live = !!S.state.turbo_file && strength > 0; flags.__turbo_live = live;
+      live = !!S.state.turbo_file && strength > 0 && S.values.FAMILY_TURBO_ON !== false; flags.__turbo_live = live;
     } else {
       const v = S.values[row.key];
       live = !!S.state.checkpoint_file && !!(v === undefined ? row.default : v); flags["__follow_" + row.key] = live;
@@ -1628,7 +1628,7 @@ async function start(path, body) {
 const SIZE_KEYS = {DATASET_MEGAPIXELS: "Target Megapixels", CLIP_MEGAPIXELS: "Clip Megapixels"};
 // what Resume takes from the form as it is now (server.py _RESUME_SAMPLE_KEYS); the rest trains on as the run began
 const RESUME_KEYS = ["SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS", "SAMPLE_CFG_SCALE",
-  "FAMILY_TURBO_STRENGTH", "SAMPLE_CHECKPOINT", "BLOCKS_SWAP", "FAMILY_PREVIEW_LOOK",
+  "FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_ON", "SAMPLE_CHECKPOINT", "BLOCKS_SWAP", "FAMILY_PREVIEW_LOOK",
   "SAMPLE_EVERY_N_EPOCHS", "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH", "SAMPLE_EVERY_AFTER",
   "SAVE_EVERY_N_EPOCHS", "SAVE_LATER", "SAVE_UNTIL_EPOCH", "SAVE_EVERY_AFTER",
   "LEARNING_RATE", "ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX"];
@@ -4110,7 +4110,8 @@ const sampleLiveSoon = debounce(async () => {
   try {
     const r = await api("/api/run/sample_override", {on: !!v.__SAMPLE_LIVE, prompts: v.SAMPLE_PROMPT || "",
       seed: v.SAMPLE_SEED, width: v.SAMPLE_WIDTH, height: v.SAMPLE_HEIGHT, steps: v.SAMPLE_STEPS,
-      cfg: v.SAMPLE_CFG_SCALE, turbo: v.FAMILY_TURBO_STRENGTH, every: v.SAMPLE_EVERY_N_EPOCHS,
+      cfg: v.SAMPLE_CFG_SCALE, turbo: v.FAMILY_TURBO_ON === false ? "0" : v.FAMILY_TURBO_STRENGTH,
+      every: v.SAMPLE_EVERY_N_EPOCHS,
       until: v.SAMPLE_LATER ? v.SAMPLE_UNTIL_EPOCH : 0, after: v.SAMPLE_LATER ? v.SAMPLE_EVERY_AFTER : 0,
       look: !!v.FAMILY_PREVIEW_LOOK, checkpoint: !!valueOrDefault("SAMPLE_CHECKPOINT")});
     if (note) note.textContent = r.on ? "Sent: the run's next previews use these." : "The run is back on its own prompts.";

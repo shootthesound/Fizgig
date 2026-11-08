@@ -601,6 +601,9 @@ class FamilyDescription:
     # the Samples tab's "Turbo preview: N steps at M% strength" row (MiniMax H3) instead of the Turbo strength box:
     # the Steps box is the plain-model count, the row the turbo's
     samples_turbo_pace: bool = False
+    # the Samples tab's Turbo as a "Use the Turbo LoRA" tick (on by default) with its strength box beside it, the
+    # box keeping its value while the tick is off (MOSS-Image). Off: the strength box alone (0 = off)
+    samples_turbo_tick: bool = False
     edit_training: bool = False       # Edit LoRA from before/after pairs (the driver's supports_references)
     edit_note: str = ""               # the Edit LoRA section's "What you need" line: pair count and photo size
     # the most before-images an edited photo may have (photo.png, then photo_1.png, photo_2.png ... in the Originals

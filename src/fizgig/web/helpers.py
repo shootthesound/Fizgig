@@ -4186,7 +4186,8 @@ def move_in(body):
                 return {"models": wait}
             paths[stage] = got
     try:
-        turbo = float(str(v.get("FAMILY_TURBO_STRENGTH") or 0).strip() or 0)
+        from fizgig.families.form import turbo_ticked_off
+        turbo = 0.0 if turbo_ticked_off(desc, v) else float(str(v.get("FAMILY_TURBO_STRENGTH") or 0).strip() or 0)
     except ValueError:
         turbo = 0.0
     m = models(desc.key, {"conds": "text" in paths, "turbo": turbo, "look": 1 if v.get("FAMILY_PREVIEW_LOOK") else 0},

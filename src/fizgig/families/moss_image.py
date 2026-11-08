@@ -282,6 +282,7 @@ MOSS_IMAGE = FamilyDescription(
         ),
     ),
     preview_speed_lora="MOSS-Image Turbo LoRA",      # used only when its Preferences row is set (empty by default)
+    samples_turbo_tick=True,          # a Use the Turbo LoRA tick, strength box beside it (Peter, 8 Nov 2026)
     preview_speed_strength=0.6,       # Fizgig's preview recipe: Turbo 0.6, 8 steps, CFG 2, SFT look on (Peter, 8 Nov
     #                                   2026); 0 = full-quality previews (30 steps, CFG 4)
     preview_steps=30,                 # res_multistep 30 at CFG 4: the best of the side-by-side (Peter, 18 Oct)

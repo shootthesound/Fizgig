@@ -690,6 +690,16 @@ def form(desc):
                      if desc.train_preview_checkpoint else "")
                   + (" Default " + f"{spd[1]:g}." if spd[1] else "")),
             turbo={"on": live, "off": plain})]
+        if desc.samples_turbo_tick:
+            turbo_rows = [
+                _row("FAMILY_TURBO_ON", f"Use the {sp.name} for previews", "check", default=True,
+                     hint=f"On: previews render in {spd[0]} steps{cfg_on} with the {sp.name} at the strength beside "
+                          f"it ({spd[1]:g} is Fizgig's recommended setting). Off: full-quality previews "
+                          f"({desc.preview_steps} steps{cfg_off}), slower. Steps and CFG switch with it. Previews "
+                          "only, never the saved LoRA. It works on previews of your Base, not on SFT."),
+                dict(turbo_rows[0], label="Strength",
+                     hint=f"The {sp.name}'s strength while the tick is on. {spd[1]:g} is Fizgig's recommended "
+                          "setting.")]
     if sp is not None and sp.pref_key:
         turbo_rows.append(_row("TURBO_MISSING", "", "note",
                                f"Set the {sp.name} in Preferences for fast Turbo previews; without it previews use "
@@ -782,7 +792,16 @@ def form(desc):
 
 # what a preset never carries (the desktop's): the Samples tab and the Turbo boxes are the model's own, a resume path
 # is one run's
-NOT_IN_PRESETS = ("FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE", "CACHE_SAMPLE_MODEL",
+def turbo_ticked_off(desc, values):
+    """The Samples tab's Use the Turbo LoRA tick (description.samples_turbo_tick) unticked: previews without the Turbo,
+    whatever its strength box says. A form that never saved the tick has it on."""
+    if not getattr(desc, "samples_turbo_tick", False):
+        return False
+    on = (values or {}).get("FAMILY_TURBO_ON")
+    return on is False or str(on).strip().lower() in ("false", "0", "no", "off")
+
+
+NOT_IN_PRESETS = ("FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_ON", "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE", "CACHE_SAMPLE_MODEL",
                   "FAMILY_PREVIEW_LOOK",
                   "RESUME_TRAINING", "CAPTION_TRIGGER_WORD")     # the trigger word is the training folder's
 # boxes a preset can't put an unknown value in (the desktop's _STRICT_COMBO_KEYS): the current choice stays
@@ -973,7 +992,7 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     poll = False                                  # something is under way (a download): the page asks again soon
     ck_turbo = False                              # previews on a preview checkpoint that takes the Turbo LoRA
     hidden |= ({"TURBO_MISSING"} if speed_file else
-               {"FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE"})
+               {"FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE", "FAMILY_TURBO_ON"})
     if speed_file and desc.samples_turbo_pace:     # H3 with its Turbo on renders at the Turbo row's steps
         try:
             pace = float(str(values.get("FAMILY_TURBO_PACE", "") or round(100 * desc.preview_speed_defaults()[1])))
@@ -1263,12 +1282,14 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             ck_turbo = True                       # Kromoss as the preview model: the Turbo LoRA joins it
         elif speed_file and desc.preview_speed() is not None and not desc.samples_turbo_pace:
             # previews on this checkpoint never take the speed LoRA (it joins previews on the training model)
-            disabled.add("FAMILY_TURBO_STRENGTH")
+            disabled |= {"FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_ON"}
             notes["FAMILY_TURBO_STRENGTH"] = (
                 f"Greyed out: the {desc.preview_speed().name} doesn't work with this preview model. Set Kromoss as the "
                 "preview model in Preferences to use it." if desc.checkpoint_speed_except else
                 f"The {desc.preview_speed().name} applies to previews on the training model: untick "
                 f"\"{desc.preview_checkpoint_tick.split(' (')[0]}\" to use it.")
+    if turbo_ticked_off(desc, values):
+        disabled.add("FAMILY_TURBO_STRENGTH")
     if desc.preview_look() is not None:
         # the preview look LoRA (MOSS-Image's SFT look, Z-Image Base's Turbo look): on previews of the training model
         # only; its file comes down the first time it's ticked (look_fetch: that download's state)
@@ -1463,7 +1484,8 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
             "FAMILY_TRAIN_BLOCKS": [k for k, on in (v.get("TRAINING_BLOCKS") or {}).items() if on]}
            if desc.train_areas else {}),
         FAMILY_TRAINING_ADAPTER=b("FAMILY_TRAINING_ADAPTER"),
-        FAMILY_TURBO_STRENGTH=s("FAMILY_TURBO_STRENGTH"), FAMILY_TURBO_STEPS=s("FAMILY_TURBO_STEPS"),
+        FAMILY_TURBO_STRENGTH="0" if turbo_ticked_off(desc, v) else s("FAMILY_TURBO_STRENGTH"),
+        FAMILY_TURBO_STEPS=s("FAMILY_TURBO_STEPS"),
         FAMILY_TURBO_PACE=s("FAMILY_TURBO_PACE"), FAMILY_PREVIEW_LOOK=b("FAMILY_PREVIEW_LOOK"),
         CAPTION_DROPOUT=caption_dropout_share(s("CAPTION_DROPOUT")) if desc.caption_dropout else 0.0,
         MASKED_TRAINING=b("MASKED_TRAINING") and desc.masked_training, MASK_FLOOR=s("MASK_FLOOR"),

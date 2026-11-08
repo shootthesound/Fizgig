@@ -32,7 +32,7 @@ python -m fizgig.scripts.fetch_models --family moss_image
   - A LoRA trained on Base already runs well on SFT, so training on SFT gains nothing you can't get the recommended way.
 - **Autoencoder:** Flux 3's or Klein 9B's full FLUX.2 autoencoder also works, with the same latents, but the small decoder avoids spots in the pictures.
 - **Text encoder alternatives:** Comfy-Org's `qwen3.5_9b_int8_convrot.safetensors` (9.7 GB) also works. So do the official diffusers folders (OpenMOSS-Team/MOSS-Image-Base `transformer/` and `text_encoder/`): give the path of any shard.
-- **Optional Turbo LoRA:** the Turbo LoRA row in Preferences downloads lodestones' 8-step LoRA, distilled from MOSS-Image Base. It works on previews of your Base, not on SFT: untick **Use the SFT model for samples** on the Samples tab to use it. Then set **Turbo LoRA strength** to 1: Steps move to 12 and CFG to 1 (12 looked much better than the card's 8).
+- **Turbo LoRA:** lodestones' 8-step LoRA, distilled from MOSS-Image Base, downloads with the other models. Fizgig's previews use it at 0.6 with the SFT look LoRA (see Previews). It works on previews of your Base, not on SFT.
 
 ## Presets
 
@@ -85,10 +85,11 @@ Fizgig never trains the text encoder or the model's text adapter, as OpenMOSS ad
 
 ## Previews
 
-- **Samples render on MOSS-Image SFT** so you see your LoRA where you'll use it. Untick the box on the Samples tab to preview on the Base model being trained. Repair Studio, LoRA Royale and the other workbench tabs render on SFT too.
-- **SFT look on Base previews:** with the SFT tick off, tick **Give Base previews the SFT look** to put Fizgig's SFT look LoRA on the previews. It gives previews of your Base much of SFT's look. It's not as good as SFT itself, but it's a really good indicator, and previews are much quicker with no model swap. It's used for previews only, never in training, and it's downloaded for you the first time you tick it (about 2.1 GB; offline, use the Download link on its Preferences row once you're back online). The SFT look LoRA needs about 2.1 GB more VRAM while a preview renders, and the same in RAM between previews. **We still recommend not using the Turbo LoRA for previews.**
+- **Fizgig's recommended previews:** the Base you train, with the Turbo LoRA at 0.6, 8 steps, CFG 2 and the SFT look LoRA on. It's the default on the Samples tab, and quick. Studio, LoRA Royale and the other workbench tabs follow the Samples tab's settings.
+- **Full-quality previews:** set Turbo LoRA strength to 0 (Steps and CFG move to 30 and 4), or tick **Use the SFT model for samples** to preview on MOSS-Image SFT itself, slower.
+- **SFT look on Base previews:** with the SFT tick off, **Give Base previews the SFT look** (on by default) puts Fizgig's SFT look LoRA on the previews. It gives previews of your Base much of SFT's look. It's not as good as SFT itself, but it's a really good indicator, and previews are much quicker with no model swap. It's used for previews only, never in training, and it downloads with the other models, or the first time a preview needs it (about 2.1 GB; offline, use the Download link on its Preferences row once you're back online). The SFT look LoRA needs about 2.1 GB more VRAM while a preview renders, and the same in RAM between previews.
 - **With any other Base DiT** (a fine-tune of Base, or SFT itself), samples render on that model instead, the one you'll use the LoRA on: the SFT samples tick turns off by itself once when you set such a Base, and you can tick it back on.
-- **Sampler:** previews render as ComfyUI does with the settings below: res_multistep on the simple schedule (shift 5) for 30 steps at CFG 4, with block 22 left out of the negative branch for the first half of the steps (ComfyUI's SLG switch on). That beat OpenMOSS's own recipe, Euler at 50 steps, CFG 3, in side-by-side tests.
+- **Sampler (full quality):** previews without the Turbo LoRA render as ComfyUI does with the settings below: res_multistep on the simple schedule (shift 5) for 30 steps at CFG 4, with block 22 left out of the negative branch for the first half of the steps (ComfyUI's SLG switch on). That beat OpenMOSS's own recipe, Euler at 50 steps, CFG 3, in side-by-side tests.
 - **Negative:** the default is `worst quality, bad anatomy, watermark, jpeg artifact`.
 
 ## In ComfyUI

@@ -490,6 +490,7 @@ class FamilyDescription:
     # LoRA was on). Empty = no line (a family opts in)
     preview_labels: tuple = ()
     preview_look_strength: float = 1.0
+    preview_look_on: bool = False     # the Samples tab's look tick starts ticked
     # the workbench tabs' choice while the Samples tab previews on the training model (its preview-checkpoint tick
     # off): render on the preview checkpoint (the default: what most people generate with) or follow the Samples tab,
     # its preview look LoRA included. One choice per family, kept in prefs (workbench_render_<key>). Needs

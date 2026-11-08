@@ -726,7 +726,8 @@ def form(desc):
                                "off": {"SAMPLE_STEPS": str(desc.preview_steps),
                                        "SAMPLE_CFG_SCALE": f"{desc.preview_cfg:g}"}}}
                    if desc.preview_checkpoint_sampling else {}))] if desc.train_preview_checkpoint else []),
-        _row("FAMILY_PREVIEW_LOOK", desc.preview_look_tick, "check", desc.preview_look_hint, default=False,
+        _row("FAMILY_PREVIEW_LOOK", desc.preview_look_tick, "check", desc.preview_look_hint,
+             default=desc.preview_look_on,
              **({"bold": desc.preview_look_bold} if desc.preview_look_bold else {}))
         if desc.preview_look() is not None else None,
         _row("SAMPLE_STRENGTHS", "Also preview at strength " + ", ".join(f"{x:g}" for x in desc.preview_strengths),

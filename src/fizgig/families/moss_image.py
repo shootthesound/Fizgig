@@ -92,13 +92,15 @@ MOSS_IMAGE = FamilyDescription(
                   hint="FLUX.2's encoder with the small decoder MOSS-Image was released with. Flux 3's or Klein's "
                        "full autoencoder also works (same latents), but the small decoder avoids spots in the "
                        "pictures."),
-        ModelFile("moss_image_turbo_lora", "Turbo LoRA (optional)", False, _TURBO, "8-steps-dmd-lora.safetensors", 1.19,
-                  "Optional speed LoRA for previews; leave empty to preview at full quality.", role="speed_lora",
-                  bulk_fetch=False,           # its own Download link only: soft on Base today (Peter, 18 Oct 2026)
-                  hint="Optional. lodestones' 8-step Turbo LoRA, distilled from MOSS-Image Base: fast previews on "
-                       "your Base (untick the SFT samples tick; previews on SFT never take a Turbo LoRA). Leave it "
-                       "empty for full-quality previews. With one set, set its strength, steps and CFG on the Samples "
-                       "tab; the workbench follows."),
+        # a default download since 8 Nov 2026: Fizgig's MOSS preview recipe is this LoRA at 0.6, 8 steps, CFG 2, with
+        # the SFT look LoRA (Peter)
+        ModelFile("moss_image_turbo_lora", "Turbo LoRA", False, _TURBO, "8-steps-dmd-lora.safetensors", 1.19,
+                  "Speed LoRA for previews (Fizgig's recipe: strength 0.6, 8 steps, CFG 2, with the SFT look LoRA).",
+                  role="speed_lora", fetch_optional=False,
+                  hint="lodestones' 8-step Turbo LoRA, distilled from MOSS-Image Base: fast previews on your Base. "
+                       "Fizgig's recommended previews use it at 0.6 (8 steps, CFG 2) with the SFT look LoRA. Previews "
+                       "on SFT never take it. Its strength, steps and CFG are on the Samples tab; the workbench "
+                       "follows."),
         ModelFile("moss_image_text_encoder", "Qwen3.5-9B text encoder", True, "Comfy-Org/Qwen3.5",
                   "text_encoders/qwen3.5_9b_bf16.safetensors", 19.31,
                   "Used for caching only, then unloaded. Loads text-only (about 15 GB), or 8-bit (about 9 GB) on "
@@ -128,8 +130,9 @@ MOSS_IMAGE = FamilyDescription(
         # about 32% of the difference overall, 51-61% of the late blocks. At 1.5 on Base it gave previews much of
         # SFT's look (Peter, 20 Oct 2026). Downloaded the first time the Samples tick is on (fetch_on_use), not by
         # Download models for me
-        ModelFile("moss_image_sft_look_lora", "SFT look LoRA (optional)", False, _LOOK,
-                  "moss_image_sft_look_lora.safetensors", 2.07, role="look_lora", bulk_fetch=False, fetch_on_use=True,
+        ModelFile("moss_image_sft_look_lora", "SFT look LoRA", False, _LOOK,
+                  "moss_image_sft_look_lora.safetensors", 2.07, role="look_lora", fetch_optional=False,
+                  fetch_on_use=True,
                   hint="Optional. Fizgig's SFT look LoRA: previews on your Base get much of SFT's look without "
                        "loading SFT, so they're much quicker. Downloaded for you the first time you tick \"Give "
                        "Base previews the SFT look\" on the Samples tab. Previews only, never training.",
@@ -259,9 +262,13 @@ MOSS_IMAGE = FamilyDescription(
             pairs_with="MOSS-Image Base",
             strength=1.0,             # the Kromoss card: strength 1
             # 12 steps, not the card's 8: previews looked much better at 12 (Peter, 19 Oct 2026)
-            settings=SamplingSettings("Turbo 12-step", steps=12, cfg=1.0, sampler="euler", scheduler="simple",
+            # Fizgig's MOSS preview recipe (Peter, 8 Nov 2026): strength 0.6 (preview_speed_strength), 8 steps, CFG 2,
+            # with the SFT look LoRA; replaced 12 steps at strength 1, CFG 1
+            settings=SamplingSettings("Turbo 8-step", steps=8, cfg=2.0, sampler="euler", scheduler="simple",
                                       options=(("shift", 5.0), ("uncond_skip", ()), ("sampler", "euler")),
-                                      note="12 steps, no CFG, the reference's shift-5 grid.",
+                                      negative_prompt=True,
+                                      note="8 steps at CFG 2 with the Turbo LoRA at 0.6 and the SFT look LoRA, the "
+                                           "reference's shift-5 grid.",
                                       source=f"https://huggingface.co/{_TURBO} (load in ComfyUI's LoRA loader)"),
             load_unmerged=True,       # an fp32 rank-128 adapter: its delta is below bf16's rounding step
             pref_key="moss_image_turbo_lora",
@@ -269,14 +276,14 @@ MOSS_IMAGE = FamilyDescription(
             # SFT and soft on Base, while Fizgig's Turbo previews only ever run on the training model (Base)
             caveats=("Distilled from MOSS-Image Base (Kromoss card: Base 27.19 -> 27.53 CLIP with it, Kromoss 27.82).",),
             # people judged likeness on Turbo previews and found it lacking (Peter, 20 Oct 2026)
-            gallery_note="MOSS-Image Turbo LoRAs aren't mature yet: they can reduce likeness a lot in previews, so "
+            gallery_note="MOSS-Image Turbo LoRAs aren't mature yet: they can reduce likeness in previews, so "
                          "judge likeness on full-quality previews.",
             source=f"https://huggingface.co/{_TURBO}",
         ),
     ),
     preview_speed_lora="MOSS-Image Turbo LoRA",      # used only when its Preferences row is set (empty by default)
-    preview_speed_strength=0.0,       # the Samples tab's Turbo LoRA strength starts at 0 (full-quality previews);
-    #                                   raise it with the Steps / CFG boxes set for the turbo (1 at 12 steps, CFG 1)
+    preview_speed_strength=0.6,       # Fizgig's preview recipe: Turbo 0.6, 8 steps, CFG 2, SFT look on (Peter, 8 Nov
+    #                                   2026); 0 = full-quality previews (30 steps, CFG 4)
     preview_steps=30,                 # res_multistep 30 at CFG 4: the best of the side-by-side (Peter, 18 Oct)
     preview_cfg=4.0,                  # USERGUIDE.md: 3-6 recommended; 4 won the side-by-side
     preview_negative=_NEGATIVE,
@@ -299,21 +306,27 @@ MOSS_IMAGE = FamilyDescription(
                       "look. Not as good as SFT itself, but a really good indicator, and previews are much quicker "
                       "with no model swap. Previews only, never training. Downloaded for you the first time (about "
                       "2.1 GB).",
-    preview_look_bold="We still recommend not using the Turbo LoRA for previews.",
+    preview_look_on=True,             # part of the preview recipe (Peter, 8 Nov 2026)
     preview_look_strength=1.5,
-    workbench_render_choice=True,             # Studio / Royale / Profiler: SFT, or the Samples tab's Base and look
+    # Studio / Royale / Profiler follow the Samples tab only (SFT while its tick is on): no separate SFT choice
+    # (Peter, 8 Nov 2026)
     # over an enlarged preview in the gallery: how it was made, and what gives a better read of quality (Peter, 20 Oct)
     preview_labels=(("checkpoint", "Previewed on MOSS-Image SFT."),
                     ("look", "Previewed on the Base with the SFT look LoRA. For maximum quality, look at it in ComfyUI."),
                     ("base", "Previewed on the Base model. For a better read of quality, tick Give Base previews the "
                              "SFT look, or preview on SFT (slower)."),
-                    ("turbo", "⚡ Turbo LoRA in use: not full quality. We recommend leaving it off.")),        # Peter's test, 20 Oct 2026, as a context LoRA: 1.5 worked very well
-    preview_checkpoint_on=True,       # samples on the SFT model by default: where most people use a MOSS LoRA (Peter)
+                    ("turbo", "⚡ Turbo LoRA in use: quick previews, not full quality.")),        # Peter's test, 20 Oct 2026, as a context LoRA: 1.5 worked very well
+    preview_checkpoint_on=False,      # previews on the Base with the Turbo + SFT look recipe by default (Peter, 8 Nov
+    #                                   2026; was SFT)
     # the released Base's last-block norm (measured 19 Oct 2026: Base 3658.7021484375, SFT bf16 and int8 3658.7646484375,
     # Kromoss 3658.6904296875); any other Base DiT previews on itself
     standard_base=("layers.41.norm2.weight", 3658.7021484375),
     value_moves=(("MOSS_LOWNOISE_PCT", "60", "30"),     # 8.7.0 defaulted to 60, 8.7.1 to 30 (saved forms kept 60)
-                 ("SAMPLE_STEPS", "8", "12", "FAMILY_TURBO_STRENGTH")),   # the Turbo's 8 steps became 12 (8.7.4)
+                 ("SAMPLE_STEPS", "8", "12", "FAMILY_TURBO_STRENGTH"),
+                 # the preview recipe (9.2.2): saved forms still on the old defaults move to it once; the Steps / CFG
+                 # boxes follow the Turbo on their own
+                 ("FAMILY_TURBO_STRENGTH", "0", "0.6"), ("SAMPLE_CHECKPOINT", "True", False),
+                 ("FAMILY_PREVIEW_LOOK", "False", True)),   # the Turbo's 8 steps became 12 (8.7.4)
     preview_checkpoint_steps_note="Base samples only - the SFT samples use their own 30 steps, CFG 4",
     preview_checkpoint_sampling=SamplingSettings(
         "MOSS-Image SFT", steps=30, cfg=4.0, sampler="res_multistep", scheduler="simple",

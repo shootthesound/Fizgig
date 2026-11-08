@@ -222,7 +222,29 @@ def ensure_taeh3(repo_dir: str = REPO_DIR, log=print):
         return None
 
 
+def ensure_moss_previews(repo_dir: str = REPO_DIR, log=print):
+    """MOSS-Image's preview recipe (Turbo LoRA at 0.6 with the SFT look LoRA) for an install with MOSS-Image set up,
+    so updating users' previews use it from the start. Never raises; without them previews render at full quality."""
+    try:
+        if not str(_load_prefs(_prefs_file(repo_dir)).get("moss_image_dit") or "").strip():
+            return None
+        hf = "https://huggingface.co/{}/resolve/main/{}"
+        return [ensure_lora("moss_image_turbo_lora", "8-steps-dmd-lora.safetensors",
+                            hf.format("lodestones/Kromoss", "8-steps-dmd-lora.safetensors"),
+                            "diffusion_model.layers.0.proj.ffn_down.alpha", 1_000_000_000,
+                            "MOSS-Image Turbo LoRA (previews)", repo_dir=repo_dir, log=log),
+                ensure_lora("moss_image_sft_look_lora", "moss_image_sft_look_lora.safetensors",
+                            hf.format("ShootTheSound/Fizgig-MOSS-Image-SFT-Look-LoRA",
+                                      "moss_image_sft_look_lora.safetensors"),
+                            "lora_unet_final_linear_video.alpha", 2_000_000_000,
+                            "MOSS-Image SFT look LoRA (previews)", repo_dir=repo_dir, log=log)]
+    except Exception as e:
+        log(f"MOSS-Image preview LoRAs: skipped ({type(e).__name__}: {e})")
+        return None
+
+
 if __name__ == "__main__":
     ensure_all()
     ensure_taeh3()
+    ensure_moss_previews()
     qwen_turbo_dit_hint()

@@ -5,6 +5,20 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 
 NEWS = [
     {
+        "date": "8 Nov 2026",
+        "title": "Faster MOSS-Image training and previews, faster training on every model, and a faster Studio",
+        "body": (
+            "Training is much faster on every model, uses far less memory, and likeness is unchanged. On an RTX 5090, "
+            "a MOSS-Image LoRA at batch 1 takes about 20 minutes instead of 49, and at batch 3 Fizgig matches "
+            "OneTrainer's speed in less memory. Muon is 12\u00d7 faster and LoKR 4-6\u00d7 faster.\n\n"
+            "MOSS-Image previews now use the Turbo LoRA at 0.6, 8 steps, CFG 2, with the SFT look LoRA: much quicker, "
+            "and still a good read of your LoRA. Studio follows the Samples tab, so it renders that quickly too.\n\n"
+            "Fizgig 9.2 needs an NVIDIA driver with CUDA 13 (580 or newer) and Python 3.11 or newer."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#8-nov-2026-faster-moss-image-training-and-previews-faster-training-on-every-model-and-a-faster-studio"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.2.1"}],
+    },
+    {
         "date": "6 Nov 2026",
         "title": "Muon for every picture model",
         "body": (

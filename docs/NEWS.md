@@ -1,14 +1,18 @@
 # Fizgig news
 
-## 7 Nov 2026: Fizgig 9.2, faster training on PyTorch 2.15
+## 8 Nov 2026: Faster MOSS-Image training and previews, faster training on every model, and a faster Studio
 
 **Training is much faster, uses far less memory, and likeness is unchanged.** On an RTX 5090, a MOSS-Image LoRA at batch 1 (94 pictures, Muon, 70 epochs) takes about 20 minutes instead of 49. At batch 3, MOSS-Image now matches OneTrainer's speed on the same card in less memory (1.07 s a step in 6.9 GB, against 1.07 s in 7.4 GB). Thanks to @tsk5cb-cmyk, whose logs in #221 showed where the time was going.
 
-**What makes it faster.** PyTorch 2.15 keeps far less in memory with gradient checkpointing on (Krea 2 22.9 → 14.9 GB). Muon's step handles a LoRA's matrices together: 12× faster, same results. Batches with captions of different lengths no longer slow attention down. LoKR runs 4–6× faster on every model, including as a Context LoRA (thanks @Nessa2026691, #307).
+**Quick MOSS-Image previews that still look right.** Previews now render on the Base with the Turbo LoRA at 0.6, 8 steps, CFG 2 and the SFT look LoRA: much quicker than full-quality previews, and a good read of how the LoRA looks. Both LoRAs download with the models. Set Turbo LoRA strength to 0 for full-quality previews.
 
-**Also:** onnxruntime's and Hugging Face's telemetry is off, Adaptive LR learns a ceiling, and MiniMax H3's Show early uses a tiny preview decoder.
+**A faster Studio.** Studio, LoRA Royale and the Profiler follow the Samples tab, so on MOSS-Image they render with the same quick recipe. On MiniMax H3, Show early's mid-render look takes a third of a second instead of a second and a half.
 
-**Your NVIDIA driver must support CUDA 13** (version 580 or newer). The update downloads PyTorch 2.15 (about 3 GB); if Fizgig won't start afterwards, run the updater again and press R to rebuild its Python environment. AMD installs keep their own PyTorch. Restart your pods to pick up 9.2. [Fizgig v9.2.1 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.2.1)
+**What makes training faster.** PyTorch 2.15 keeps far less in memory with gradient checkpointing on (Krea 2 22.9 → 14.9 GB). Muon's step handles a LoRA's matrices together: 12× faster, same results. Batches with captions of different lengths no longer slow attention down. LoKR runs 4–6× faster on every model, including as a Context LoRA (thanks @Nessa2026691, #307).
+
+**Also:** onnxruntime's and Hugging Face's telemetry is off, and Adaptive LR learns a ceiling.
+
+**Your NVIDIA driver must support CUDA 13** (version 580 or newer). The update downloads PyTorch 2.15 (about 3 GB); if Fizgig won't start afterwards, run the updater again and press R to rebuild its Python environment. Fizgig now needs Python 3.11 or newer: the release notes say what to do if yours is on 3.10. AMD installs keep their own PyTorch. Restart your pods to pick up 9.2. [Fizgig v9.2.1 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.2.1)
 
 ## 6 Nov 2026: Muon for every picture model
 

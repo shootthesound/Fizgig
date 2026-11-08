@@ -653,6 +653,10 @@ class FamilyDescription:
     workbench_checkpoint_follows_tick: bool = False
     preview_cfg: float = 1.0
     preview_width: int = 1024
+    # on a card under 20 GB, the training previews' canvas is capped to this many px on its long side (Krea 2's
+    # memory, #123); 0 = never capped - a 1 MP model falls apart below its size (MOSS-Image, #309). The training
+    # DiT parks on CPU for the decode on every small card either way
+    preview_small_card_cap: int = 0
     preview_height: int = 1024
     repair_size: int = 768            # Repair Studio's starting preview size (its Res dropdown) for the family
     block_activity: bool = False      # Repair Studio lights each block's slider as the song plays (BlockMeter)

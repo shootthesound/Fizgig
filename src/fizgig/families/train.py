@@ -1128,10 +1128,14 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     sample_width = sample_width or desc.preview_width
     sample_height = sample_height or desc.preview_height
     lowmem = _small_card_previews()
-    if lowmem and max(sample_width, sample_height) > 768:
-        sample_width, sample_height = _cap_canvas(sample_width, sample_height)
+    canvas_cap = int(getattr(desc, "preview_small_card_cap", 0) or 0) if lowmem else 0   # Krea 2 only (#123, #309)
+    if canvas_cap and max(sample_width, sample_height) > canvas_cap:
+        sample_width, sample_height = _cap_canvas(sample_width, sample_height, canvas_cap)
         logger.info(f"[preview] card under 20 GB: preview canvas capped to {sample_width}x{sample_height} and the "
                     f"DiT parks on CPU for the decode (#123). FIZGIG_PREVIEW_LOWMEM=0 turns this off.")
+    elif lowmem:
+        logger.info("[preview] card under 20 GB: the DiT parks on CPU for the decode. FIZGIG_PREVIEW_LOWMEM=0 turns "
+                    "this off.")
     device = torch.device("cuda")
     quant.apply_vram_cap()          # FIZGIG_SIM_VRAM_GB: behave like a smaller card
     torch.manual_seed(seed)
@@ -2092,8 +2096,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                         strength_now = ov["turbo"]
                 if not ref_imgs:        # an edit keeps the reference's canvas: its latents are already encoded
                     w, h = ov["width"], ov["height"]
-                    if lowmem and max(w, h) > 768:
-                        w, h = _cap_canvas(w, h)
+                    if canvas_cap and max(w, h) > canvas_cap:
+                        w, h = _cap_canvas(w, h, canvas_cap)
             except Exception:
                 logger.exception("[sample override] could not encode the override prompt - using the configured ones")
                 conds = encoded

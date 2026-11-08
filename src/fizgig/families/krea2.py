@@ -191,6 +191,7 @@ KREA2 = FamilyDescription(
     ),
     preview_speed_lora="Krea 2 Turbo LoRA (8-step)",
     preview_speed_steps=10,
+    preview_small_card_cap=768,       # previews on a card under 20 GB: canvas capped to 768 px (#123)
     preview_speed_strength=0.7,       # Samples previews: Turbo 0.7, 10 steps, CFG 1 (Peter's setup)
     preview_steps=8,
     preview_cfg=1.0,

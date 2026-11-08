@@ -49,7 +49,7 @@ def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="1.0", slider=False, ft=
         "KREA2_LOSS_WATCH": False, "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False,
         "KREA2_WARMUP_LOOK": False, "FAMILY_FT": ft, "FAMILY_EDIT": False, "FAMILY_SLIDER": slider,
         "FAMILY_FAST_ID": False, "FAMILY_SLIDER_GUIDANCE": "3",
-        # the Clean-end share: Slide, 60% until epoch 7, 30% from epoch 8, then 60% with every 3rd at 30% (_LORA_SHARE);
+        # the Clean-end share: Slide, 30% until epoch 7, 60% from epoch 8, then 60% with every 3rd at 30% (_LORA_SHARE);
         # every preset sets it
         "MOSS_LOWNOISE_PCT": _FT_SHARE if ft else _LORA_SHARE,
         **({"FAMILY_FT_ROTATIONS": "10"} if ft else {}),
@@ -352,6 +352,9 @@ MOSS_IMAGE = FamilyDescription(
         # #195; Peter's runs agree that 1e-4 suits it). Adaptive LR stays on the Training tab, off by default
         # Fast first, so a first visit applies it (Peter, 27 Oct 2026)
         ("✨ MOSS-Image Fast (rank 16, 0.25 MP)", _preset(16, epochs=70, mp="0.25")),
+        # Fast with Adaptive LR (2e-4 to 4e-4) and the per-image loss watch + per-image LR (Peter, 8 Nov 2026)
+        ("✨ MOSS-Image Turbo Train (Experimental)", {**_preset(16, adaptive=("2e-4", "4e-4"), epochs=70, mp="0.25"),
+                                                     "KREA2_LOSS_WATCH": True, "KREA2_PER_IMAGE_LR": True}),
         ("✨ MOSS-Image Standard (rank 32, 1e-4)", _preset(32, epochs=70)),
         ("✨ MOSS-Image Style (rank 16, 5e-5)", {**_preset(16, lr=5e-5, epochs=50), "FAMILY_EMA": "Off"}),   # no EMA: a style at 5e-5 is slow enough
         ("✨ MOSS-Image Slider (rank 8, 2e-4)", _preset(8, lr=2e-4, epochs=20, slider=True)),

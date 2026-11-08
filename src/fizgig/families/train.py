@@ -2455,10 +2455,48 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             ema.update()                   # after the clipped step, so the average tracks what was applied
         pending = 0
 
-    # Warm-up reassurance: the first two epochs of a run start slowly (first-sight kernel planning, cuBLAS picks,
-    # allocator and cache warm-up, and on a compiled run the blocks compiling for each new shape) - a crawling bar
-    # looks like a hang, so a gentle note repeats every ~30 s while it lasts.
-    warmup_note = [0.0]
+    # Warm-up reassurance: a run's first steps are slow (first-sight kernel planning, cuBLAS picks, allocator and
+    # cache warm-up, and on a compiled run the blocks compiling once for each picture size - every size comes up in
+    # the first epoch) and speed up step by step, so a crawling bar can look like a hang. Measured, not assumed: the
+    # note only appears once the warm-up has run 30 s (a quick one says nothing), repeats every ~30 s with the speed
+    # now against the first steps', and ends with "Up to speed" once steps stop getting faster - or with epoch 3.
+    _sizes = len({tuple(k[-2:]) for ds in getattr(group, "datasets", [])
+                  for k in getattr(getattr(ds, "batch_manager", None), "bucket_resos", ())}) or 1
+    warm = {"start": time.time(), "said": 0.0, "prev": None, "dts": [], "done": False}
+
+    def _warmup_tick(ep):
+        if warm["done"]:
+            return
+        now = time.time()
+        if warm["prev"] is not None:
+            warm["dts"].append(now - warm["prev"])
+        warm["prev"] = now
+        dts = warm["dts"]
+        med = lambda xs: sorted(xs)[len(xs) // 2]
+        # steady: the last 10 steps no faster than the 10 before (within 10%), once every picture size has been
+        # met (the first epoch done) where a new size could still compile
+        steady = (len(dts) >= 20 and med(dts[-10:]) >= 0.9 * med(dts[-20:-10])
+                  and (ep >= 1 or _sizes <= 1 or not do_compile))
+        if ep >= 2 or steady:
+            warm["done"] = True
+            if warm["said"]:
+                logger.info(f"[warm-up] Up to speed: {med(dts[-10:]):.2f} s/step"
+                            + (f", from {med(dts[:3]):.1f} s at the start." if len(dts) >= 3 else "."))
+            return
+        if now - warm["start"] < 30.0 or now - warm["said"] < 30.0:
+            return
+        first = not warm["said"]
+        warm["said"] = now
+        if first:
+            logger.info("[warm-up] Speeding up: the first steps are slow while the GPU plans its kernels"
+                        + (f", compiles the blocks once for each of the run's {_sizes} picture sizes"
+                           if do_compile and _sizes > 1 else ", compiles the blocks" if do_compile else "")
+                        + " and fills its caches. Each step is quicker than the last until it settles"
+                        + (" within the first epoch or two" if steps_per_epoch > 1 else "")
+                        + ". Nothing is stuck.")
+        elif len(dts) >= 6:
+            logger.info(f"[warm-up] Still speeding up: {med(dts[-5:]):.2f} s/step now, from {med(dts[:3]):.1f} s "
+                        "at the start.")
     share_now = [None]       # this epoch's training share: {frac, epoch, ...} or None (this GPU trains every image)
     _share_keys = sorted({str(it.item_key) for ds in getattr(group, "datasets", [])
                           for b in getattr(getattr(ds, "batch_manager", None), "buckets", {}).values() for it in b})
@@ -2651,12 +2689,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         t0 = time.time()
         _theirs = (_share_split(seed, epoch + 1, _share_keys, share_now[0]["frac"]) if share_now[0] is not None
                    else None)                       # the helper's images this epoch (both sides draw the same)
+        warm["prev"] = None                  # an epoch's first step isn't timed against the last one's end
         for i, batch, _only in _epoch_batches(epoch):
-            if epoch - start_epoch < 2 and time.time() - warmup_note[0] > 30.0:
-                warmup_note[0] = time.time()
-                logger.info("[warm-up] Warm-up phase — the first two epochs start slowly while the GPU plans kernels"
-                            + (", compiles the blocks" if do_compile else "")
-                            + " and fills its caches. Nothing is stuck; full speed arrives from epoch 3.")
+            _warmup_tick(epoch - start_epoch)
             if _only is not None:              # a catch-up: the helper's images this GPU trains after all
                 pass
             elif share_now[0] is not None:

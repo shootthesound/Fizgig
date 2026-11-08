@@ -417,11 +417,12 @@ def pair_problems(after_dir, before_dir, caption_ext=".txt", exts=PAIR_EXTS):
     return uncaptioned, shapes
 
 
-def edit_instruction(inputs):
-    """The edit instruction for previews: the typed instruction, else the first edited photo's caption file."""
-    text = _s(inputs.get("edit_caption"))
-    if text:
-        return text
+def edit_instructions(inputs):
+    """The edit instructions for previews, one per line of the Edit instruction box (each renders on the test
+    photo), else the first edited photo's caption file."""
+    lines = [ln.strip() for ln in str(inputs.get("edit_caption") or "").splitlines() if ln.strip()]
+    if lines:
+        return lines
     folder = _s(inputs.get("image_folder"))
     ext = inputs.get("caption_ext") or ".txt"
     try:
@@ -432,10 +433,10 @@ def edit_instruction(inputs):
                 with open(cap, encoding="utf-8") as fh:
                     line = fh.read().strip().splitlines()
                 if line and line[0].strip():
-                    return line[0].strip()
+                    return [line[0].strip()]
     except OSError:
         pass
-    return ""
+    return []
 
 
 # the Training tab's window-size choice -> the planner's cap on parts per window (0 = as many as fit)
@@ -1076,11 +1077,11 @@ def _preview_flags(desc, st, plan, cmd):
     samples_dir = st.get("samples_dir") or os.path.join(_s(st.get("LORA_OUTPUT_DIR")), "sample")
     prompts = None
     if edit_on(desc, st):              # edit previews: the edit instruction, not the Samples-tab prompts
-        instr = edit_instruction(st)
+        instr = edit_instructions(st)
         if instr:
             prompts = os.path.join(samples_dir, f"{desc.key}_edit_prompt.txt")
             plan.dirs.append(samples_dir)
-            plan.files.append((prompts, instr + "\n"))
+            plan.files.append((prompts, "\n".join(instr) + "\n"))
     elif slider_on(desc, st):          # slider previews: the dial on its own picture, not the Samples tab
         own = (st.get("FAMILY_SLIDER_BASE") if slider_on(desc, st, "prompts")
                else st.get("FAMILY_SLIDER_CAPTION"))

@@ -401,20 +401,9 @@ function renderRow(r) {
     if (r.suffix) row.append(el("span", {class: "field-hint", text: r.suffix}));
     let actMsg = null;
     if (r.action === "write_captions") {          // the typed line as every photo's caption (Edit, Slider pairs)
-      actMsg = el("div", {class: "field-hint"});
-      const write = async (overwrite) => {
-        try {
-          const res = await api("/api/captions/write_all", {text: input.value, folder: S.imageFolder,
-            ext: S.values.DATASET_CAPTION_EXT || ".txt", overwrite});
-          if (res.exists) {
-            actMsg.replaceChildren(document.createTextNode(`${res.exists} of the ${res.total} photos already have a ` +
-              "caption. "), el("button", {class: "btn btn-sm btn-danger", text: "Replace them", onclick: () => write(true)}));
-            return;
-          }
-          actMsg.textContent = `Captions written for ${res.written} photos.`;
-        } catch (e) { actMsg.textContent = e.message; }
-      };
-      row.append(el("button", {class: "btn", text: "Write captions", onclick: () => write(false)}));
+      const w = writeCaptions(() => input.value);
+      actMsg = w.msg;
+      row.append(w.button);
     }
     wrap.append(row);
     if (actMsg) wrap.append(actMsg);
@@ -577,6 +566,25 @@ function splitRow(r, wrap) {
 }
 
 // a list of prompts, one numbered box each (the gallery's Prompt 1, 2, 3…), saved as the one-per-line text it always was
+// "Write captions": the box's first line saved as every photo's caption in the training folder (Edit, Slider pairs)
+function writeCaptions(getText) {
+  const msg = el("div", {class: "field-hint"});
+  const write = async (overwrite) => {
+    try {
+      const first = String(getText() || "").split("\n").map((t) => t.trim()).find(Boolean) || "";
+      const res = await api("/api/captions/write_all", {text: first, folder: S.imageFolder,
+        ext: S.values.DATASET_CAPTION_EXT || ".txt", overwrite});
+      if (res.exists) {
+        msg.replaceChildren(document.createTextNode(`${res.exists} of the ${res.total} photos already have a ` +
+          "caption. "), el("button", {class: "btn btn-sm btn-danger", text: "Replace them", onclick: () => write(true)}));
+        return;
+      }
+      msg.textContent = `Captions written for ${res.written} photos.`;
+    } catch (e) { msg.textContent = e.message; }
+  };
+  return {button: el("button", {class: "btn", text: "Write captions", onclick: () => write(false)}), msg};
+}
+
 function promptLines(r, wrap) {
   const list = el("div", {class: "prompt-lines"});
   const boxes = () => [...list.querySelectorAll("textarea")];
@@ -639,11 +647,16 @@ function promptLines(r, wrap) {
   }
   const sync = el("input", {type: "hidden", id: "f_" + r.key});    // syncInputs (a preset, Last Train) redraws it
   sync._sync = draw;
-  const add = el("button", {class: "btn btn-sm", text: "+ Add prompt", onclick: () => {
-    const last = list.lastElementChild;
-    line("", last).focus(); renumber(); save();
-  }});
+  const add = el("button", {class: "btn btn-sm", text: r.key === "SAMPLE_PROMPT" ? "+ Add prompt" : "+ Add a line",
+    onclick: () => {
+      const last = list.lastElementChild;
+      line("", last).focus(); renumber(); save();
+    }});
   wrap.append(el("span", {class: "field-label", text: r.label + ":"}), list, add, sync);
+  if (r.action === "write_captions") {            // the Edit instruction: its first line as the photos' caption
+    const w = writeCaptions(() => String(S.values[r.key] ?? ""));
+    wrap.append(w.button, w.msg);
+  }
   if (r.key === "SAMPLE_PROMPT") wrap.append(promptSetsBar(r, draw));
   if (r.hint) wrap.append(el("div", {class: "field-hint", text: r.hint}));
   wrap.append(el("div", {class: "field-hint row-note", id: "note_" + r.key}));

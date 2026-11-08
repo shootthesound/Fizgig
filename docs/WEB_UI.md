@@ -171,7 +171,7 @@ With a run training, captioning only starts if the card has room for it beside t
 
 ## Edit LoRA previews
 
-An Edit LoRA's previews come from the Training tab's Edit pairs card: each round applies your **Edit instruction** to the **Test photo**. Set a test photo the LoRA never trains on to see whether it learned the edit itself; with none set, the previews use your first original. To preview several instructions, for a LoRA trained on more than one kind of edit, start the run, then type them in the Samples tab's **Prompts**, one per line, with **Change the previews of the run going now** ticked. From the run's next preview, each instruction renders on the test photo.
+An Edit LoRA's previews come from the Training tab's Edit pairs card: each round applies your **Edit instruction** to the **Test photo**. Set a test photo the LoRA never trains on to see whether it learned the edit itself; with none set, the previews use your first original. To preview several instructions, for a LoRA trained on more than one kind of edit, put one per line in the **Edit instruction** box: each renders on the test photo every round. **Write captions** saves only the first line as the photos' caption. While a run trains, instructions typed in the Samples tab's **Prompts** with **Change the previews of the run going now** ticked replace its previews from the next one.
 
 ## Runs & outputs
 

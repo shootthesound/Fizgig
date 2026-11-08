@@ -282,6 +282,7 @@ MOSS_IMAGE = FamilyDescription(
         ),
     ),
     preview_speed_lora="MOSS-Image Turbo LoRA",      # used only when its Preferences row is set (empty by default)
+    preview_small_card_option=768,   # the Faster, smaller previews tick on cards under 20 GB (off: full size, #309)
     samples_turbo_tick=True,          # a Use the Turbo LoRA tick, strength box beside it (Peter, 8 Nov 2026)
     preview_speed_strength=0.6,       # Fizgig's preview recipe: Turbo 0.6, 8 steps, CFG 2, SFT look on (Peter, 8 Nov
     #                                   2026); 0 = full-quality previews (30 steps, CFG 4)

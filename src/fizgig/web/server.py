@@ -3857,6 +3857,10 @@ class Handler(BaseHTTPRequestHandler):
                                 base_file=pref_path(prefs, dit) if dit else "",
                                 checkpoint_path=ckf if ckf and os.path.isfile(ckf) else "",
                                 look_file=bool(lkf and os.path.isfile(lkf)), look_fetch=_look_fetch(desc, vals, lkf))
+                if getattr(desc, "preview_small_card_option", 0):   # Faster, smaller previews: cards under 20 GB
+                    vt = _stats["vram"][1]
+                    if vt and vt / 1e9 >= 20.0 and "FAMILY_PREVIEW_SMALL" not in st["hidden"]:
+                        st["hidden"] = sorted([*st["hidden"], "FAMILY_PREVIEW_SMALL"])
                 if st["kind"] in ("standard", "finetune"):     # the Subjects card: what each folder trains as
                     mpn = _multi_person_notes(vals, b.get("image_folder") or "",
                                               multi_person=st["kind"] == "standard" and

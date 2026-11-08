@@ -745,6 +745,12 @@ def form(desc):
              default=desc.preview_look_on,
              **({"bold": desc.preview_look_bold} if desc.preview_look_bold else {}))
         if desc.preview_look() is not None else None,
+        _row("FAMILY_PREVIEW_SMALL", f"Faster, smaller previews ({desc.preview_small_card_option} px)", "check",
+             f"For cards under 20 GB. Previews render at {desc.preview_small_card_option} px on the long side instead "
+             f"of full size, so they finish sooner. {desc.display_name} looks noticeably worse below its normal size "
+             "(softer, odd colours, faces can break), so use them to watch progress, not to judge how good the LoRA "
+             "is. Leave this off for full-size previews.", default=False)
+        if desc.preview_small_card_option else None,
         _row("SAMPLE_STRENGTHS", "Also preview at strength " + ", ".join(f"{x:g}" for x in desc.preview_strengths),
              "check", "Each preview is rendered again at that strength (same prompt and seed), beside the "
              "full-strength one: how the LoRA will look or sound the way you'll use it.", default=True)
@@ -806,7 +812,7 @@ def turbo_ticked_off(desc, values):
     return on is False or str(on).strip().lower() in ("false", "0", "no", "off")
 
 
-NOT_IN_PRESETS = ("FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_ON", "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE", "CACHE_SAMPLE_MODEL",
+NOT_IN_PRESETS = ("FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_ON", "FAMILY_PREVIEW_SMALL", "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE", "CACHE_SAMPLE_MODEL",
                   "FAMILY_PREVIEW_LOOK",
                   "RESUME_TRAINING", "CAPTION_TRIGGER_WORD")     # the trigger word is the training folder's
 # boxes a preset can't put an unknown value in (the desktop's _STRICT_COMBO_KEYS): the current choice stays
@@ -1491,7 +1497,7 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
         FAMILY_TRAINING_ADAPTER=b("FAMILY_TRAINING_ADAPTER"),
         FAMILY_TURBO_STRENGTH="0" if turbo_ticked_off(desc, v) else s("FAMILY_TURBO_STRENGTH"),
         FAMILY_TURBO_STEPS=s("FAMILY_TURBO_STEPS"),
-        FAMILY_TURBO_PACE=s("FAMILY_TURBO_PACE"), FAMILY_PREVIEW_LOOK=b("FAMILY_PREVIEW_LOOK"),
+        FAMILY_TURBO_PACE=s("FAMILY_TURBO_PACE"), FAMILY_PREVIEW_LOOK=b("FAMILY_PREVIEW_LOOK"), FAMILY_PREVIEW_SMALL=b("FAMILY_PREVIEW_SMALL"),
         CAPTION_DROPOUT=caption_dropout_share(s("CAPTION_DROPOUT")) if desc.caption_dropout else 0.0,
         MASKED_TRAINING=b("MASKED_TRAINING") and desc.masked_training, MASK_FLOOR=s("MASK_FLOOR"),
         MASK_PRIOR=s("MASK_PRIOR"),

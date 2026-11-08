@@ -1126,6 +1126,8 @@ def _preview_flags(desc, st, plan, cmd):
                 "--sample_height", str(sm.get("height") or "").strip() or str(desc.preview_height)]
         if turbo_steps and turbo_steps.isdigit():
             out += ["--sample_steps", turbo_steps]
+        if st.get("FAMILY_PREVIEW_SMALL") and getattr(desc, "preview_small_card_option", 0):
+            out += ["--preview_small_card_cap", str(desc.preview_small_card_option)]   # the trainer applies it <20 GB
         elif str(sm.get("steps") or "").strip():
             out += ["--sample_steps", str(sm["steps"]).strip()]
         try:

@@ -1069,6 +1069,7 @@ class _FineTune:
 
 
 def train_family(family, dit_path, dataset_config, output_dir, output_name, *, network_dim=32, network_alpha=32,
+                 preview_small_card_cap=0,
                  learning_rate=1e-4, max_train_epochs=16, save_every_n_epochs=1, save_until_epoch=0,
                  save_every_n_epochs_after=0, save_state=False,
                  save_state_on_train_end=False, keep_last_n_states=2, seed=42, precision="bf16",
@@ -1132,7 +1133,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     sample_width = sample_width or desc.preview_width
     sample_height = sample_height or desc.preview_height
     lowmem = _small_card_previews()
-    canvas_cap = int(getattr(desc, "preview_small_card_cap", 0) or 0) if lowmem else 0   # Krea 2 only (#123, #309)
+    # Krea 2 always (#123); another model only when its Faster, smaller previews tick asks (#309)
+    canvas_cap = int(getattr(desc, "preview_small_card_cap", 0) or preview_small_card_cap or 0) if lowmem else 0
     if canvas_cap and max(sample_width, sample_height) > canvas_cap:
         sample_width, sample_height = _cap_canvas(sample_width, sample_height, canvas_cap)
         logger.info(f"[preview] card under 20 GB: preview canvas capped to {sample_width}x{sample_height} and the "
@@ -3031,6 +3033,9 @@ def setup_parser():
     p.add_argument("--text_encoder", default=None)
     p.add_argument("--sample_prompts", default=None, help="One prompt per line")
     p.add_argument("--sample_every_n_epochs", type=int, default=0)
+    p.add_argument("--preview_small_card_cap", type=int, default=0,
+                   help="on a card under 20 GB, cap the previews' long side to this many px (the Faster, smaller "
+                        "previews tick)")
     p.add_argument("--sample_until_epoch", type=int, default=0,
                    help="With --sample_every_n_epochs_after: previews every --sample_every_n_epochs up to this epoch")
     p.add_argument("--sample_every_n_epochs_after", type=int, default=0,
@@ -3178,6 +3183,7 @@ def main():
         preview_lora_strength=a.preview_lora_strength,
         vae_path=a.vae, te_path=a.text_encoder,
         sample_prompts=prompts, sample_every_n_epochs=a.sample_every_n_epochs,
+        preview_small_card_cap=a.preview_small_card_cap,
         sample_until_epoch=a.sample_until_epoch, sample_every_n_epochs_after=a.sample_every_n_epochs_after,
         sample_width=a.sample_width,
         sample_height=a.sample_height, sample_steps=a.sample_steps, sample_cfg_scale=a.sample_cfg_scale,

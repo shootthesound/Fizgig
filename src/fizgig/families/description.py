@@ -657,6 +657,9 @@ class FamilyDescription:
     # memory, #123); 0 = never capped - a 1 MP model falls apart below its size (MOSS-Image, #309). The training
     # DiT parks on CPU for the decode on every small card either way
     preview_small_card_cap: int = 0
+    # an opt-in for cards under 20 GB: the Samples tab's "Faster, smaller previews" tick caps the training previews'
+    # long side to this many px (quicker, but a 1 MP model looks worse below its size: MOSS-Image). 0 = no tick
+    preview_small_card_option: int = 0
     preview_height: int = 1024
     repair_size: int = 768            # Repair Studio's starting preview size (its Res dropdown) for the family
     block_activity: bool = False      # Repair Studio lights each block's slider as the song plays (BlockMeter)

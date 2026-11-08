@@ -475,7 +475,7 @@ python src/fizgig/families/train.py \
   --optimizer_type adamw \
   --precision auto --compile_blocks auto \
   --ema_decay 0.98 \
-  --family_option lownoise_pct=60:7:30:8:3 \
+  --family_option lownoise_pct=30:7:60:8:3 \
   --save_state --save_state_on_train_end --keep_last_n_states 2 \
   --vae /models/flux2-vae_small.safetensors \
   --text_encoder /models/qwen3.5_9b_bf16.safetensors \

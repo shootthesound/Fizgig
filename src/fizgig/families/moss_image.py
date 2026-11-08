@@ -25,7 +25,9 @@ _NEGATIVE = "worst quality, bad anatomy, watermark, jpeg artifact"
 
 # a LoRA's: 60 until epoch 7, 30 from epoch 8, then 60 with every 3rd epoch at 30 (half LR) - led 60:7:30:15:2 by about
 # 0.05 ArcFace from epoch 9 to 20 on a 53-photo dataset (Peter's test1 / test3, 28 Oct 2026)
-_LORA_SHARE = "60:7:30:8:3"
+# 8 Nov 2026: reversed to 30 until epoch 7, 60 from epoch 8, then 60 with every 3rd epoch at 30 (half LR) - best with
+# Muon, now every preset's optimizer (Peter)
+_LORA_SHARE = "30:7:60:8:3"
 # a fine-tune's Clean-end share starts on the model's own schedule (about 11%) so the body and the model's knowledge
 # hold, then slides to 30: at 60 a fine-tune's plain "a woman" turned into the subject from epoch 10, even with DOP
 # (Peter, 28 Oct 2026, #223)
@@ -372,7 +374,7 @@ MOSS_IMAGE = FamilyDescription(
                      slide=tuple(_LORA_SHARE.split(":")),
                      single="40",             # one value for the whole run: 40 beat 30 (Peter, 20 Oct 2026)
                      slide_hint="Slide: one share until an epoch, then sliding a few points an epoch to another by a "
-                                "later epoch. 60 until epoch 7, then 30 from epoch 8, works well with datasets of up to "
+                                "later epoch. 30 until epoch 7, then 60 from epoch 8 (the default) works best with Muon on datasets of up to "
                                 "about 55 images; with many more, drop from 60 earlier. Ticked: after "
                                 "the slide, training runs at the higher of the two shares, which keeps likeness from "
                                 "fading on a small dataset, and every Nth epoch at the lower share, at half the "
@@ -385,7 +387,7 @@ MOSS_IMAGE = FamilyDescription(
     notes=(
         ("Training timesteps follow the released weights' last pretraining interval: sigma = 1 - sigmoid(Z), "
          "Z ~ N(-1.09, 0.95^2), truncated at 0.95 and rescaled onto the 1000-step grid, mixed with 1% uniform (Fizgig's "
-         "Clean-end share moves the curve's centre: by default 60% of steps below sigma 0.5 until epoch 7, 30% at epoch 8, then 60% with every 3rd epoch at 30%; the reference is about 11%); the "
+         "Clean-end share moves the curve's centre: by default 30% of steps below sigma 0.5 until epoch 7, 60% at epoch 8, then 60% with every 3rd epoch at 30%; the reference is about 11%); the "
          "DiT is told 1000 * sigma; loss is the unweighted per-token MSE on noise - x0.",
          f"{_REPORT} Appendix A.2, eq. 3-4, Table 6"),
         ("Text conditioning: Qwen3.5-9B's final hidden state through the chat template with an open <think> block, "

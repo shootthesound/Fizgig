@@ -509,7 +509,11 @@ def form(desc):
                  "with the same file names as the originals. It is the training folder on the Start tab: choosing it "
                  "here changes it there too.", sets_training_folder=True),
             _row("FAMILY_EDIT_CAPTION", "3. Edit instruction", hint="What the edit is, e.g. \"Apply my concert grade.\" "
-                 "Write captions saves it as the caption of every photo in the Edited folder.",
+                 "Write captions saves it as the caption of every photo in the Edited folder.\n"
+                 "Previews use this instruction on the test photo. To preview other instructions too (a LoRA "
+                 "trained on several kinds of edit), start the run, then type them in the Samples tab's Prompts, "
+                 "one per line, with Change the previews of the run going now ticked: from its next preview, each "
+                 "one renders on the test photo.",
                  action="write_captions"),
             _row("FAMILY_EDIT_REF", "4. Test photo (optional)", "path",
                  "Optional - you can leave this empty. A photo for the previews to edit, so you can watch the LoRA "
@@ -708,8 +712,10 @@ def form(desc):
         # an edit run's previews come from the Edit pairs card, not these prompts (shown only while Edit is picked)
         _row("_edit_samples_note", "Edit LoRA previews: each round makes one picture from your edit instruction and "
              "test photo (Training tab, Edit pairs" + (", with its extra pictures" if desc.edit_references > 1 else "")
-             + "). The prompts below are not used - to try other instructions while it trains, type them below "
-             "(one per line) and tick Change the previews of the run going now.", "note")
+             + "). The prompts below aren't used when the run starts. To preview more instructions (a LoRA "
+             "trained on several kinds of edit), start the run, then type them below, one per line, with Change the "
+             "previews of the run going now ticked: from its next preview, each renders on the test photo. With no "
+             "test photo set, previews use your first original.", "note")
         if desc.edit_training else None,
         _row("SAMPLE_ENABLED", "Make previews while training", "check"),
         _row("_prompts_note", " ".join(t for k, t in desc.samples_text if k == "prompts"), "note")

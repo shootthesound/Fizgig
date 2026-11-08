@@ -169,6 +169,10 @@ With a run training, captioning only starts if the card has room for it beside t
 
 <p align="center"><img src="assets/screenshots/captions.png" alt="Captions: every picture with its caption, to read and edit" width="800"></p>
 
+## Edit LoRA previews
+
+An Edit LoRA's previews come from the Training tab's Edit pairs card: each round applies your **Edit instruction** to the **Test photo**. Set a test photo the LoRA never trains on to see whether it learned the edit itself; with none set, the previews use your first original. To preview several instructions, for a LoRA trained on more than one kind of edit, start the run, then type them in the Samples tab's **Prompts**, one per line, with **Change the previews of the run going now** ticked. From the run's next preview, each instruction renders on the test photo.
+
 ## Runs & outputs
 
 **Runs** lists every training run, newest first (runs from the old desktop app too): how it ended (finished, failed, stopped, paused), the model and training folder, when it ran and for how long, and its last figures. **Continue** trains the run on from its newest save, with its own settings, into the same entry: pause one project, start another, and come back to the first whenever you like. It shows only while that save is still on disk, says which epoch it's at, and for a run that has trained all its epochs it asks how many to train to first (a fine-tune: how many rotations). Pressed while another run trains, it lines the run up on the queue instead. A stopped run continues from its last saved epoch. **Previews & checkpoints** opens that run's results; **Start again with these settings** loads its model, training folder and settings into the form (nothing starts until you press Start). **Loss graph** shows the run's loss at every step (as on the run card), and **Notes** keeps your own notes on the run, saved as you type. The history lives in `user_data/runs.json` in the Fizgig folder.

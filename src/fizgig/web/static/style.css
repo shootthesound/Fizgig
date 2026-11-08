@@ -2475,6 +2475,7 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 .run-helper .pod-dot { display: inline-block; vertical-align: -1px; }
 
 /* the sample prompts: one numbered box each, every other one dark grey, across the card */
+.prompt-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .prompt-lines { display: flex; flex-direction: column; gap: 0; width: 100%; margin: 4px 0 6px;
   border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
 .prompt-line { display: flex; align-items: flex-start; background: var(--bg-inset); }

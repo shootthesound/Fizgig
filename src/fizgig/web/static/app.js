@@ -582,7 +582,9 @@ function writeCaptions(getText) {
       msg.textContent = `Captions written for ${res.written} photos.`;
     } catch (e) { msg.textContent = e.message; }
   };
-  return {button: el("button", {class: "btn", text: "Write captions", onclick: () => write(false)}), msg};
+  return {button: el("button", {class: "btn", text: "Write captions", onclick: () => write(false),
+    title: "Saves the first line above as the caption (.txt) of every photo in the training folder, so every pair "
+         + "trains on it. Photos that already have a caption are left alone unless you choose to replace them."}), msg};
 }
 
 function promptLines(r, wrap) {
@@ -652,10 +654,12 @@ function promptLines(r, wrap) {
       const last = list.lastElementChild;
       line("", last).focus(); renumber(); save();
     }});
-  wrap.append(el("span", {class: "field-label", text: r.label + ":"}), list, add, sync);
+  const actions = el("div", {class: "prompt-actions"}, add);
+  wrap.append(el("span", {class: "field-label", text: r.label + ":"}), list, actions, sync);
   if (r.action === "write_captions") {            // the Edit instruction: its first line as the photos' caption
     const w = writeCaptions(() => String(S.values[r.key] ?? ""));
-    wrap.append(w.button, w.msg);
+    actions.append(w.button);
+    wrap.append(w.msg);
   }
   if (r.key === "SAMPLE_PROMPT") wrap.append(promptSetsBar(r, draw));
   if (r.hint) wrap.append(el("div", {class: "field-hint", text: r.hint}));

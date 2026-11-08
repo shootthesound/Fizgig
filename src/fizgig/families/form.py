@@ -749,7 +749,7 @@ def form(desc):
              f"For cards under 20 GB. Previews render at {desc.preview_small_card_option} px on the long side instead "
              f"of full size, so they finish sooner. {desc.display_name} looks noticeably worse below its normal size "
              "(softer, odd colours, faces can break), so use them to watch progress, not to judge how good the LoRA "
-             "is. Leave this off for full-size previews.", default=False)
+             "is. On by default on these cards until you choose; untick it for full-size previews.", default=False)
         if desc.preview_small_card_option else None,
         _row("SAMPLE_STRENGTHS", "Also preview at strength " + ", ".join(f"{x:g}" for x in desc.preview_strengths),
              "check", "Each preview is rendered again at that strength (same prompt and seed), beside the "

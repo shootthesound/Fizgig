@@ -3863,6 +3863,9 @@ class Handler(BaseHTTPRequestHandler):
                     vt = _stats["vram"][1]
                     if vt and vt / 1e9 >= 20.0 and "FAMILY_PREVIEW_SMALL" not in st["hidden"]:
                         st["hidden"] = sorted([*st["hidden"], "FAMILY_PREVIEW_SMALL"])
+                    elif (vt and vt / 1e9 < 20.0 and not vals.get("_chosen_FAMILY_PREVIEW_SMALL")
+                          and not vals.get("FAMILY_PREVIEW_SMALL")):
+                        st["force"]["FAMILY_PREVIEW_SMALL"] = True   # on for a card under 20 GB until they choose
                 if st["kind"] in ("standard", "finetune"):     # the Subjects card: what each folder trains as
                     mpn = _multi_person_notes(vals, b.get("image_folder") or "",
                                               multi_person=st["kind"] == "standard" and

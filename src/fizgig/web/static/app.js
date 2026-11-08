@@ -776,6 +776,7 @@ function optimizerPicked(prev, opt) {
 function onValue(r, val) {
   const prev = S.values[r.key];
   S.values[r.key] = val;
+  if (r.key === "FAMILY_PREVIEW_SMALL") S.values._chosen_FAMILY_PREVIEW_SMALL = true;   // the person's own choice: kept
   if (r.key === "OPTIMIZER_TYPE" && prev !== val) optimizerPicked(String(prev || ""), String(val || ""));
   if (r.key === "__SAMPLE_LIVE" || (S.values.__SAMPLE_LIVE &&
       ["SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS", "SAMPLE_CFG_SCALE",

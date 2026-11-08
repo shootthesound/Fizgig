@@ -2438,6 +2438,34 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     pass
 
     last_gn = [None]
+    # A step's numbers (its loss, each picture's loss, the grad norm) reach the CPU one step late: copied without
+    # waiting (the caching host allocator gives a pinned buffer) and read at the next step's record point, by when
+    # the GPU has finished them. Reading them at once (.item(), float()) made the CPU wait for the GPU at the end of
+    # every step, so the next step's loading and set-up couldn't overlap its work (#221, from OneTrainer's
+    # one-step-behind loss read). Flushed at the epoch's end, before anything reads the records.
+    lag = []
+
+    def _later(fn, **vals):
+        """Call fn(**vals as Python numbers / lists) one step from now, without waiting for the GPU now."""
+        cpu = {k: (v.detach().to("cpu", non_blocking=True) if torch.is_tensor(v) and v.is_cuda else v)
+               for k, v in vals.items()}
+        ev = None
+        if any(torch.is_tensor(v) and v.is_cuda for v in vals.values()):
+            ev = torch.cuda.Event()
+            ev.record()
+        lag.append((ev, fn, cpu))
+
+    def _flush():
+        while lag:
+            ev, fn, cpu = lag.pop(0)
+            if ev is not None:
+                ev.synchronize()
+            fn(**{k: (v.tolist() if torch.is_tensor(v) else v) for k, v in cpu.items()})
+
+    def _gn_done(gn, clip):
+        last_gn[0] = float(gn)             # the run card's Grad norm
+        if clip:
+            adaptive.record_clip(gn, max_grad_norm)
 
     def _update():
         nonlocal pending
@@ -2447,9 +2475,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             return
         if max_grad_norm:
             pre = torch.nn.utils.clip_grad_norm_(params, max_grad_norm)
-            last_gn[0] = float(pre)        # the run card's Grad norm
-            if adaptive is not None and adaptive.clip_signal:
-                adaptive.record_clip(pre, max_grad_norm)
+            _later(_gn_done, gn=pre, clip=bool(adaptive is not None and adaptive.clip_signal))   # read next step
         m = sum(lr_acc) / len(lr_acc) if lr_acc else 1.0
         lr_acc.clear()
         if optimizer.__class__.__name__ in ("Automagic3", "Automagic4"):
@@ -2835,10 +2861,21 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             if pending >= accum:
                 _update()
             global_step += 1
-            recorder.add(epoch=epoch, step=i, loss=loss.item())
-            steplog.add(step_off + global_step, epoch + 1 + (ftr.epochs_done if ftr is not None else 0), loss.item(),
-                        None if global_step % 20 else      # the rate now and then (Automagic's averages it)
-                        learning_rate if optimizer is None else optimizer_lr(optimizer))
+            _flush()                           # the last step's numbers: finished on the GPU by now
+
+            def _rec(lv, per=None, _e=epoch, _i=i, _g=global_step, _keys=batch.get("item_keys"), _ts=_info.get("ts"),
+                     _t=_info.get("t", 0.5), _kept=(_kept if not slider and bsz > 1 and _wb is not None else None),
+                     _rate=(None if global_step % 20 else      # the rate now and then (Automagic's averages it)
+                            learning_rate if optimizer is None else optimizer_lr(optimizer))):
+                recorder.add(epoch=_e, step=_i, loss=lv)
+                steplog.add(step_off + _g, _e + 1 + (ftr.epochs_done if ftr is not None else 0), lv, _rate)
+                if per is not None:            # a batch: one record per picture
+                    watch.observe_each(_e + 1, _g, _keys, _ts, per, _kept)
+                else:
+                    watch.observe(_e + 1, _g, {"item_keys": _keys}, _t, lv)
+            _per = (_info.get("per_raw") or _info["per"].detach().float()) \
+                if not slider and bsz > 1 and _wb is not None else None
+            _later(_rec, lv=loss.detach().float(), per=_per)
             if pending == 0 and ftr is None:   # the web UI's Sample now / Save now, between optimizer steps
                 if take_request(output_dir, "save"):
                     save_lora(os.path.join(output_dir, f"{output_name}-step{global_step:07d}.safetensors"), epoch + 1)
@@ -2848,12 +2885,6 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     _tp = time.time()
                     previews(epoch + 1)
                     progress.start_t += time.time() - _tp
-            if not slider and bsz > 1 and _wb is not None:      # a batch: one record per picture
-                watch.observe_each(epoch + 1, global_step, batch["item_keys"], _info["ts"],
-                                   _info.get("per_raw") or [float(x) for x in _info["per"].detach().float().cpu()],
-                                   _kept)
-            else:
-                watch.observe(epoch + 1, global_step, batch, _info.get("t", 0.5), loss.item())
             # the run card's Learning: loss, the step's learning rate (Adaptive LR's, Automagic's) and grad norm
             progress.set_postfix(avr_loss=f"{recorder.moving_average:.4f}",
                                  lr=f"{float(optimizer.param_groups[0]['lr']):.2e}" if optimizer is not None else "-",
@@ -2862,6 +2893,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
 
         if pending:                        # a partial group: settle the optimizer before the epoch-end work
             _update()
+        _flush()                           # the epoch's last numbers, before the epoch-end work reads the records
         between[0] = time.time()          # the epoch-end work starts: left out of the bar's s/it (above)
         _off = ftr.epochs_done if ftr is not None else 0
         logger.info(f"epoch {epoch + 1 + _off}/{max_train_epochs + _off}  avr_loss={recorder.moving_average:.4f}  "

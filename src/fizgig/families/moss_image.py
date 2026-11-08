@@ -352,13 +352,13 @@ MOSS_IMAGE = FamilyDescription(
         # #195; Peter's runs agree that 1e-4 suits it). Adaptive LR stays on the Training tab, off by default
         # Fast first, so a first visit applies it (Peter, 27 Oct 2026)
         ("✨ MOSS-Image Fast (rank 16, 0.25 MP)", _preset(16, epochs=70, mp="0.25")),
-        # Fast with Adaptive LR (2e-4 to 4e-4) and the per-image loss watch + per-image LR (Peter, 8 Nov 2026)
-        ("✨ MOSS-Image Turbo Train (Experimental)", {**_preset(16, adaptive=("2e-4", "4e-4"), epochs=70, mp="0.25"),
-                                                     "KREA2_LOSS_WATCH": True, "KREA2_PER_IMAGE_LR": True}),
         ("✨ MOSS-Image Standard (rank 32, 1e-4)", _preset(32, epochs=70)),
         ("✨ MOSS-Image Style (rank 16, 5e-5)", {**_preset(16, lr=5e-5, epochs=50), "FAMILY_EMA": "Off"}),   # no EMA: a style at 5e-5 is slow enough
         ("✨ MOSS-Image Slider (rank 8, 2e-4)", _preset(8, lr=2e-4, epochs=20, slider=True)),
         ("✨ MOSS-Image Fine-tune (1e-5)", _preset(16, lr=1e-5, ft=True)),
+        # Fast with Adaptive LR (2e-4 to 4e-4) and the per-image loss watch + per-image LR (Peter, 8 Nov 2026); last in the menu
+        ("✨ MOSS-Image Turbo Train (Experimental)", {**_preset(16, adaptive=("2e-4", "4e-4"), epochs=70, mp="0.25"),
+                                                     "KREA2_LOSS_WATCH": True, "KREA2_PER_IMAGE_LR": True}),
     ),
     options=(
         FamilyOption("MOSS_LORA_SFT", "Train attention only", kind="check", tokens="lora_sft=1",

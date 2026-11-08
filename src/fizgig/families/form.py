@@ -678,12 +678,12 @@ def form(desc):
         cfg_off = "" if desc.samples_cfg_free else f", CFG {desc.preview_cfg:g}"
         turbo_rows = [_row(
             "FAMILY_TURBO_STRENGTH", "Turbo LoRA strength", default=f"{spd[1]:g}", boxed=True,
-            hint=(f"0 = off: full-quality previews ({desc.preview_steps} steps{cfg_off}). "
-                  f"{(spd[1] or 1):g} = on: the {sp.name} renders previews in {spd[0]} steps{cfg_on}, much faster"
-                  + (", the recommended setting." if spd[1] else " but softer, so they undersell your LoRA.")
-                  + " Steps and CFG switch with it. Previews only, never the saved LoRA."
-                  + (" It works on previews of your Base (and with Kromoss as the preview model), not on SFT: while "
-                     f"\"{desc.preview_checkpoint_tick.split(' (')[0]}\" is ticked, this box is greyed out."
+            hint=(f"0 = off: full-quality previews ({desc.preview_steps} steps{cfg_off}). 1 = on: the {sp.name} "
+                  f"renders previews in {spd[0]} steps{cfg_on}, much faster but softer, so they undersell your LoRA. "
+                  "Steps and CFG switch with it. Previews only, never the saved LoRA."
+                  + (" It works with Kromoss as the preview model, and on previews of your Base, but not with SFT: "
+                     "with SFT as the preview model this box is greyed out. To use it, set Kromoss as the preview "
+                     "model in Preferences."
                      if desc.checkpoint_speed_except else
                      (" It works on previews of the training model only: untick "
                       f"\"{desc.preview_checkpoint_tick.split(' (')[0]}\" above to use it.")

@@ -2891,7 +2891,7 @@ async function loadRuns() {
       onclick: async () => {
         if (ilBox.style.display !== "none") { ilBox.style.display = "none"; return; }
         ilBox.style.display = ""; ilBox.textContent = "Loading…";
-        try { imageLossPanel(ilBox, await api("/api/runs/image_loss?id=" + encodeURIComponent(run.id)), run); }
+        try { const load = imageLossLoad(run.id); imageLossPanel(ilBox, await load(), run, load); }
         catch (e) { ilBox.replaceChildren(el("div", {class: "problems", text: e.message})); }
       }}) : null;
     host.append(el("div", {class: "run-row"},
@@ -2927,16 +2927,27 @@ const IL_ORDER = ["excluded", "stuck", "suspect", "watch", "warmup", "exhausted"
 const IL_PROBLEMS = new Set(["excluded", "stuck", "suspect", "watch"]);
 const IL_PAGE = 48;
 
-function imageLossPanel(box, d, run) {
-  const imgs = d.images || [], rep = d.report || {};
-  // one scale for every tile, so tiles compare: room for every image's recent level with a margin (a one-epoch
-  // spike past it is clipped; a consistently hard image keeps its shape)
-  const ymax = Math.max(1e-6, 1.25 * Math.max(...imgs.map((im) => Math.abs(im.recent)), 0));
-  const counts = {};
-  for (const im of imgs) counts[im.verdict || "mid"] = (counts[im.verdict || "mid"] || 0) + 1;
-  const tally = IL_ORDER.filter((v) => counts[v]).map((v) => `${counts[v]} ${v}`).join(" · ");
-  const head = [`${imgs.length} images · ${d.epochs.length} epochs`, rep.epoch ? `the watch's verdicts as of epoch ${rep.epoch}` : "",
-    tally].filter(Boolean).join(" · ");
+// the per-image loss of a run, fetched fresh each time (the panel's Refresh and its dropdowns call it again)
+const imageLossLoad = (id) => () => api("/api/runs/image_loss?id=" + encodeURIComponent(id));
+
+function imageLossPanel(box, d, run, load) {
+  let imgs, rep, ymax;
+  const headEl = el("div", {class: "field-hint"}), plateau = el("div", {class: "il-plateau"});
+  const take = (data) => {             // a fetch's results: the counts line, the plateau banner, the shared scale
+    d = data; imgs = d.images || []; rep = d.report || {};
+    // one scale for every tile, so tiles compare: room for every image's recent level with a margin (a one-epoch
+    // spike past it is clipped; a consistently hard image keeps its shape)
+    ymax = Math.max(1e-6, 1.25 * Math.max(...imgs.map((im) => Math.abs(im.recent)), 0));
+    const counts = {};
+    for (const im of imgs) counts[im.verdict || "mid"] = (counts[im.verdict || "mid"] || 0) + 1;
+    const tally = IL_ORDER.filter((v) => counts[v]).map((v) => `${counts[v]} ${v}`).join(" · ");
+    headEl.textContent = [`${imgs.length} images · ${d.epochs.length} epochs`,
+      rep.epoch ? `the watch's verdicts as of epoch ${rep.epoch}` : "", tally].filter(Boolean).join(" · ");
+    plateau.textContent = rep.plateaued && rep.best_epoch_estimate ? `The run plateaued: the best checkpoint is likely ` +
+      `around epoch ${rep.best_epoch_estimate} - compare a few epochs either side.` : "";
+    plateau.style.display = plateau.textContent ? "" : "none";
+  };
+  take(d);
   const sort = el("select", {class: "w-combo"}, ...[["hard", "Hardest now first"], ["easy", "Easiest now first"],
     ["verdict", "By verdict"], ["name", "By name"]].map(([v, t]) => el("option", {value: v, text: t})));
   const show = el("select", {class: "w-combo"}, el("option", {value: "all", text: "All images"}),
@@ -2958,17 +2969,26 @@ function imageLossPanel(box, d, run) {
       el("span", {class: "field-hint", text: `page ${page + 1} of ${pages}`}),
       el("button", {class: "btn btn-sm", text: "Next ›", disabled: page >= pages - 1, onclick: () => { page++; draw(); }})] : []));
   };
-  sort.addEventListener("change", () => { page = 0; draw(); });
-  show.addEventListener("change", () => { page = 0; draw(); });
+  // Refresh, and a change of either dropdown, fetch the latest results first (a run going on adds an epoch at a time)
+  const refreshBtn = el("button", {class: "btn btn-sm", text: "↻ Refresh", title: "Load the latest results"});
+  const refresh = async (keepPage) => {
+    if (!load) { if (!keepPage) page = 0; draw(); return; }
+    refreshBtn.disabled = true; refreshBtn.textContent = "Refreshing…";
+    try { take(await load()); } catch (e) { headEl.textContent = e.message; }
+    finally { refreshBtn.disabled = false; refreshBtn.textContent = "↻ Refresh"; }
+    if (!keepPage) page = 0;
+    draw();
+  };
+  refreshBtn.addEventListener("click", () => refresh(true));
+  sort.addEventListener("change", () => refresh(false));
+  show.addEventListener("change", () => refresh(false));
   box.replaceChildren(
-    el("div", {class: "field-hint", text: head}),
-    rep.plateaued && rep.best_epoch_estimate ? el("div", {class: "il-plateau",
-      text: `The run plateaued: the best checkpoint is likely around epoch ${rep.best_epoch_estimate} - compare a few epochs either side.`}) : "",      // (replaceChildren writes a null as the word)
+    headEl, plateau,
     el("div", {class: "field-hint", text: "Each line is one image's loss minus the dataset's average at the same noise level, " +
       "epoch by epoch. Above the dotted line it is harder than the rest; a line falling is the image being learned. " +
       "All tiles share one scale." + (d.live ? " Edit caption fixes one while the run goes: the trainer re-encodes it at " +
       "the next epoch and that image's history starts again - it should turn blue (learning) if the fix worked." : "")}),
-    el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Sort:"}), sort, show), grid, pager);
+    el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Sort:"}), sort, show, refreshBtn), grid, pager);
   draw();
 }
 
@@ -9381,7 +9401,7 @@ function wire() {
     if (!id || $("btnImageLoss").classList.contains("is-off")) return;
     if (box.style.display !== "none") { box.style.display = "none"; return; }
     box.style.display = ""; box.textContent = "Loading…";
-    try { imageLossPanel(box, await api("/api/runs/image_loss?id=" + encodeURIComponent(id)), {...S.run, id}); }
+    try { const load = imageLossLoad(id); imageLossPanel(box, await load(), {...S.run, id}, load); }
     catch (e) { box.replaceChildren(el("div", {class: "problems", text: e.message})); }
   });
   document.querySelectorAll(".tab-item").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));

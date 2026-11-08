@@ -285,7 +285,7 @@ MOSS_IMAGE = FamilyDescription(
     ),
     preview_speed_lora="MOSS-Image Turbo LoRA",      # used only when its Preferences row is set (empty by default)
     # the orange line under the Training tab's model picker (Peter, 8 Nov 2026)
-    status_note="8 Nov 2026: lots of changes recently. Start from a ✨ preset to train with Muon and the new "
+    status_note="8 Nov 2026: lots of changes recently. Start from a ✨ preset to train with the new Muon optimiser and the new "
                 "Clean-end share Slide defaults (30% until epoch 7, then 60%) for the best results.",
     preview_small_card_option=768,   # the Faster, smaller previews tick on cards under 20 GB (off: full size, #309)
     samples_turbo_tick=True,          # a Use the Turbo LoRA tick, strength box beside it (Peter, 8 Nov 2026)

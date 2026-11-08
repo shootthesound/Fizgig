@@ -2349,6 +2349,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     for _w in ("sample", "save"):          # a request left from an earlier run is not this one's
         take_request(output_dir, _w)
     progress = tqdm(total=steps_per_epoch * max_train_epochs, initial=global_step, desc="steps", smoothing=0)
+    between = [None]          # when the last epoch's steps ended: the time until the next epoch's is left out of s/it
     dit.train()
     pending = 0                            # micro-batches backpropagated since the last optimizer step
     lr_acc = []                            # this window's per-step LR multipliers (driver.step_policy)
@@ -2693,6 +2694,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 logger.info(f"[dop] fine-tune: {dop_ft_samples} of the original model's predictions for each of "
                             f"{len(dop_ft)} images ({mb:.0f} MB, {time.time() - _tp:.0f} s) - each DOP pass holds "
                             f"the model to one of them. Saved for a continued run: {os.path.basename(dop_ft_file)}")
+        if between[0] is not None:          # the last epoch's end work (saves, checks, previews, the next epoch's
+            progress.start_t += time.time() - between[0]   # set-up) out of the bar's s/it: training speed only
+            between[0] = None
         torch.cuda.reset_peak_memory_stats()
         t0 = time.time()
         _theirs = (_share_split(seed, epoch + 1, _share_keys, share_now[0]["frac"]) if share_now[0] is not None
@@ -2852,6 +2856,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
 
         if pending:                        # a partial group: settle the optimizer before the epoch-end work
             _update()
+        between[0] = time.time()          # the epoch-end work starts: left out of the bar's s/it (above)
         _off = ftr.epochs_done if ftr is not None else 0
         logger.info(f"epoch {epoch + 1 + _off}/{max_train_epochs + _off}  avr_loss={recorder.moving_average:.4f}  "
                     f"step={global_step}  {(time.time() - t0) / max(1, steps_per_epoch):.2f}s/step  "
@@ -2900,9 +2905,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 n_ep = done + ftr.epochs_done
                 save_lora(os.path.join(output_dir, f"{output_name}-{n_ep:06d}.safetensors"), done)
                 if cadence and sample_every_n_epochs:
-                    _tp = time.time()
                     previews(n_ep)
-                    progress.start_t += time.time() - _tp
                 if os.path.exists(pause_flag):
                     logger.info(f"[pause] requested - rotation complete at epoch {n_ep}, checkpoint saved; exiting "
                                 f"cleanly (continue from {output_name}-{n_ep:06d}.safetensors)")
@@ -2917,9 +2920,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             if state_saved:
                 prune_state_dirs(output_dir, output_name, keep_last_n_states)
         if sample_every_n_epochs and _preview_due(done):
-            _tp = time.time()
             previews(done)
-            progress.start_t += time.time() - _tp       # the bar's s/it is training speed, not previews
             # this epoch's checkpoint was saved before its preview existed, with the previous epoch's as its
             # thumbnail (#122): re-embed its own. An explicit --metadata_thumbnail (or "off") stays.
             if cadence and not (metadata_thumbnail or "").strip():
@@ -2940,9 +2941,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                         f"over {len(anchor_losses)} steps")
             anchor_losses.clear()
         if slider_prompts and done < max_train_epochs:
-            _tp = time.time()
             slider_live(done)
-            progress.start_t += time.time() - _tp       # the bar's s/it is training speed
 
     if share_worker:                     # a helper's share: the lead keeps the LoRA
         progress.close()

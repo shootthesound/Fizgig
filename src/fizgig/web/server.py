@@ -1990,6 +1990,8 @@ def preview_labels(mode) -> dict:
         line = words.get("checkpoint" if r.get("checkpoint") else "look" if r.get("look") else "base", "")
         if r.get("turbo") and words.get("turbo"):
             line = (words["turbo"] + " " + line).strip()
+        if r.get("small"):                       # Faster, smaller previews (a card under 20 GB)
+            line = (line + f" Rendered smaller ({r['small']}) to save time, so softer than full size.").strip()
         if r.get("helper"):                      # a helper rendered the round (web/helpers.py)
             line = (line.rstrip(".") + f" · rendered on {r['helper']}" if line else f"Rendered on {r['helper']}")
         if line:

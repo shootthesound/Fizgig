@@ -1135,7 +1135,10 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     lowmem = _small_card_previews()
     # Krea 2 always (#123); another model only when its Faster, smaller previews tick asks (#309)
     canvas_cap = int(getattr(desc, "preview_small_card_cap", 0) or preview_small_card_cap or 0) if lowmem else 0
+    small_from = None                 # the size asked for when the previews render smaller (the gallery says so)
     if canvas_cap and max(sample_width, sample_height) > canvas_cap:
+        if not getattr(desc, "preview_small_card_cap", 0):    # the tick's choice (MOSS-Image), not Krea 2's own cap
+            small_from = (sample_width, sample_height)
         sample_width, sample_height = _cap_canvas(sample_width, sample_height, canvas_cap)
         logger.info(f"[preview] card under 20 GB: preview canvas capped to {sample_width}x{sample_height} and the "
                     f"DiT parks on CPU for the decode (#123). FIZGIG_PREVIEW_LOWMEM=0 turns this off.")
@@ -2285,6 +2288,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             rounds = {}
         if epoch is not None:
             rounds[str(epoch)] = {"checkpoint": bool(mode.get("model")), "look": bool(look),
+                                  **({"small": f"{sample_width} × {sample_height}"} if small_from else {}),
                                   "turbo": bool(mode.get("turbo")), **({"helper": helper} if helper else {})}
         mode = {**mode, "family": desc.key, "rounds": rounds}
         try:

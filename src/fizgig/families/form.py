@@ -803,6 +803,16 @@ def form(desc):
 
 # what a preset never carries (the desktop's): the Samples tab and the Turbo boxes are the model's own, a resume path
 # is one run's
+def small_canvas(width, height, cap):
+    """A preview canvas with its long side capped to `cap` px, rounded down to multiples of 32 - the trainer's
+    _cap_canvas (Faster, smaller previews), here so the Samples tab can say the size before a run."""
+    long = max(width, height)
+    if long <= cap:
+        return width, height
+    s = cap / long
+    return max(64, int(width * s) // 32 * 32), max(64, int(height * s) // 32 * 32)
+
+
 def turbo_ticked_off(desc, values):
     """The Samples tab's Use the Turbo LoRA tick (description.samples_turbo_tick) unticked: previews without the Turbo,
     whatever its strength box says. A form that never saved the tick has it on."""
@@ -1301,6 +1311,20 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
                 f"\"{desc.preview_checkpoint_tick.split(' (')[0]}\" to use it.")
     if turbo_ticked_off(desc, values):
         disabled.add("FAMILY_TURBO_STRENGTH")
+    cap = int(getattr(desc, "preview_small_card_option", 0) or 0)
+    if cap:                                       # Faster, smaller previews: the size they will really render at
+        try:
+            w = int(str(values.get("SAMPLE_WIDTH") or desc.preview_width))
+            h = int(str(values.get("SAMPLE_HEIGHT") or desc.preview_height))
+        except ValueError:
+            w = h = 0
+        if w > 0 and h > 0:
+            cw, ch = small_canvas(w, h, cap)
+            on = bool(values.get("FAMILY_PREVIEW_SMALL"))
+            notes["FAMILY_PREVIEW_SMALL"] = (
+                f"Your previews are already {cap} px or smaller, so this changes nothing." if (cw, ch) == (w, h) else
+                f"Your {w} × {h} previews will render at {cw} × {ch}." if on else
+                f"Ticked, your {w} × {h} previews would render at {cw} × {ch}.")
     if desc.preview_look() is not None:
         # the preview look LoRA (MOSS-Image's SFT look, Z-Image Base's Turbo look): on previews of the training model
         # only; its file comes down the first time it's ticked (look_fetch: that download's state)

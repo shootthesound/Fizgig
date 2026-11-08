@@ -1116,6 +1116,10 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     if speed_lora and speed_desc is None:
         logger.warning(f"[sample] {desc.display_name} declares no preview speed LoRA - ignoring --speed_lora")
         speed_lora = None
+    # no strength given = the family's preview strength (launch.py leaves the flag out at that default: MOSS-Image 0.6,
+    # Krea 2 0.7), not the speed LoRA's own (1.0) - which previews used to get
+    if speed_desc is not None and speed_lora_strength is None:
+        speed_lora_strength = (desc.preview_speed_defaults() or (0, 0))[1] or speed_desc.strength
     # strength 0: previews render without it, and it loads at the first preview a live change asks it for
     speed_idle = speed_desc is not None and speed_lora_strength is not None and speed_lora_strength <= 0
     if speed_idle:

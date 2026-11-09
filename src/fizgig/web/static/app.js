@@ -2162,7 +2162,7 @@ function runSummary() {
     cell("Training", [v.MAX_TRAIN_EPOCHS ? `${v.MAX_TRAIN_EPOCHS} epochs` : "", p.total_steps ? `${p.total_steps} steps` : "",
       `batch ${v.BATCH_SIZE || 1}`, v.DATASET_MEGAPIXELS ? `${v.DATASET_MEGAPIXELS} MP` : "",
       v.STAGE_MP && v.STAGE_MP !== "Off" ? `${v.STAGE_MP} MP for the first ${v.STAGE_UNTIL || "30%"}` : ""].filter(Boolean).join(" · ")),
-    cell("Optimizer", [v.OPTIMIZER_TYPE, yes("ADAPTIVE_LR") ? `Adaptive LR ${v.ADAPTIVE_LR_MIN} to ${v.ADAPTIVE_LR_MAX}` :
+    cell("Optimizer", [yes("FAMILY_FT") ? "adafactor (fine-tune)" : v.OPTIMIZER_TYPE, yes("ADAPTIVE_LR") ? `Adaptive LR ${v.ADAPTIVE_LR_MIN} to ${v.ADAPTIVE_LR_MAX}` :
       v.LEARNING_RATE ? `from ${v.LEARNING_RATE}` : ""].filter(Boolean).join(" · ")),
     cell("Network", net.filter(Boolean).join(" · ")),
     cell("Memory", [v.BLOCKS_SWAP ? `block swap ${first(v.BLOCKS_SWAP)}` : "",

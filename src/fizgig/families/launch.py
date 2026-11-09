@@ -329,8 +329,8 @@ def start_checks(desc, st, image_folder):
         if lack:
             out.append(f"{len(lack)} detail crop caption{'s' if len(lack) != 1 else ''} in {rel} don't contain the "
                        f"trigger word '{trig}': those crops train without it.")
-    if (not st.get("ADAPTIVE_LR") and "automagic" not in _s(st.get("OPTIMIZER_TYPE")).lower()
-            and not (prodigy(st) and not ft_on(desc, st))):           # Prodigy's 1.0 is a multiplier
+    if (not st.get("ADAPTIVE_LR") and (ft_on(desc, st) or not (automagic(st) or prodigy(st)))):
+        # Automagic sets its own rate, Prodigy's 1.0 is a multiplier; a fine-tune runs Adafactor at the box's rate
         kind = "finetune" if ft_on(desc, st) else "slider" if slider_on(desc, st) else "lora"
         band = next(((lo, hi) for k, lo, hi in (desc.start_lr_bands or ()) if k == kind), None)
         try:
@@ -985,9 +985,13 @@ def train_command(desc, inputs, plan):
         ema = str(st.get("FAMILY_EMA", "") or desc.ema_default).split(" ")[0]
         if ema != "Off":
             cmd += ["--ema_decay", ema]
-    if str(st.get("OPTIMIZER_TYPE", "") or "").strip():
+    if ft_on(desc, st):                              # a fine-tune always runs Adafactor (ft.make_optimizer, #312)
+        pass
+    elif str(st.get("OPTIMIZER_TYPE", "") or "").strip():
         cmd += ["--optimizer_type", str(st["OPTIMIZER_TYPE"]).strip()]
-    if str(st.get("OPTIMIZER_ARGS", "") or "").strip():
+    if ft_on(desc, st):
+        pass
+    elif str(st.get("OPTIMIZER_ARGS", "") or "").strip():
         cmd += ["--optimizer_args", str(st["OPTIMIZER_ARGS"]).strip()]
     for key, flag in (("METADATA_TITLE", "--metadata_title"), ("METADATA_AUTHOR", "--metadata_author"),
                       ("METADATA_DESCRIPTION", "--metadata_description"),

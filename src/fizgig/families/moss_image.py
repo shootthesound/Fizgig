@@ -355,8 +355,10 @@ MOSS_IMAGE = FamilyDescription(
         ("✨ MOSS-Image Standard (rank 32, 1e-4)", _preset(32, epochs=70)),
         ("✨ MOSS-Image Style (rank 16, 5e-5)", {**_preset(16, lr=5e-5, epochs=50), "FAMILY_EMA": "Off"}),   # no EMA: a style at 5e-5 is slow enough
         ("✨ MOSS-Image Slider (rank 8, 2e-4)", _preset(8, lr=2e-4, epochs=20, slider=True)),
-        # Fast with Adaptive LR (2e-4 to 4e-4) and the per-image loss watch + per-image LR (Peter, 8 Nov 2026); just above Fine-tune
-        ("✨ MOSS-Image Turbo Train (Experimental)", {**_preset(16, adaptive=("2e-4", "4e-4"), epochs=70, mp="0.25"),
+        # Fast with Adaptive LR (2e-4 to 4e-4) and the per-image loss watch + per-image LR (Peter, 8 Nov 2026); rank 32
+        # alpha 16 (Peter, 9 Nov); just above Fine-tune
+        ("✨ MOSS-Image Turbo Train (Experimental)", {**_preset(32, adaptive=("2e-4", "4e-4"), epochs=70, mp="0.25"),
+                                                     "NETWORK_ALPHA": 16,
                                                      "KREA2_LOSS_WATCH": True, "KREA2_PER_IMAGE_LR": True}),
         ("✨ MOSS-Image Fine-tune (1e-5)", _preset(16, lr=1e-5, ft=True)),
     ),

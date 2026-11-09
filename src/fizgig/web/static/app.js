@@ -2978,7 +2978,9 @@ const tmSetPref = (k, v) => { try { localStorage.setItem("fizgig.tm." + k, v); }
 function trainMapsPanel(box, meta, run, load) {
   const st = {key: meta.keys[0], t: "all", kind: "learned",
               i: Math.max(0, meta.epochs.length - 1), timer: null, img: null,
-              bands: tmPref("scale", "bands") === "bands", grey: tmPref("picture", "grey") === "grey"};
+              bands: tmPref("scale", "bands") === "bands", grey: tmPref("picture", "grey") === "grey",
+              // the map's opacity, 1 = as designed; up to 1.5 stronger (capped at solid), down to 0 (hidden)
+              opacity: Math.max(0, Math.min(1.5, Number(tmPref("opacity", "1")) || 0))};
   const d = {...meta, epochs: []};
   const fetchOne = async () => {          // this picture + level's epochs (All levels: each level's, merged by epoch)
     const ts = st.t === "all" ? d.timesteps.map(String) : [st.t];
@@ -3092,7 +3094,7 @@ function trainMapsPanel(box, meta, run, load) {
         if (st.bands) { c = f < 0.5 ? c1 : f < 0.75 ? c2 : c3; a = f < 0.25 ? 0 : 0.85; }
         else { c = f < 0.5 ? mixc(c1, c2, f * 2) : mixc(c2, c3, (f - 0.5) * 2); a = f < 0.15 ? 0 : 0.3 + 0.6 * f; }
       }
-      px.data.set([c[0], c[1], c[2], Math.round(255 * a)], j * 4);
+      px.data.set([c[0], c[1], c[2], Math.round(255 * Math.min(1, a * st.opacity))], j * 4);
     }
     oc.putImageData(px, 0, 0);
     ctx.imageSmoothingEnabled = !st.bands;         // bands stay sharp cells: no in-between colours at their edges
@@ -3125,6 +3127,16 @@ function trainMapsPanel(box, meta, run, load) {
     return im;
   }));
   scrub.addEventListener("input", () => { st.i = Number(scrub.value); draw(); });
+  // the map's opacity over the picture: 100% is the designed look; double-click puts it back
+  const opVal = el("span", {class: "tm-legend-end"});
+  const opacity = el("input", {type: "range", class: "tm-opacity", min: "0", max: "150", step: "5",
+    value: String(Math.round(st.opacity * 100)), title: "How strongly the map shows over the picture (double-click: 100%)"});
+  const showOp = () => { opVal.textContent = `${Math.round(st.opacity * 100)}%`; };
+  opacity.addEventListener("input", () => { st.opacity = Number(opacity.value) / 100; showOp(); draw(); });
+  opacity.addEventListener("change", () => tmSetPref("opacity", String(st.opacity)));
+  opacity.addEventListener("dblclick", () => { st.opacity = 1; opacity.value = "100"; showOp(); draw(); tmSetPref("opacity", "1"); });
+  showOp();
+  const opacityRow = el("label", {class: "tm-auto"}, "Map opacity ", opacity, opVal);
   // click the picture for a big view over the page; arrows step the epochs, a click or Esc closes it
   const stage = el("div", {class: "tm-stage", title: "Click to enlarge"}, canvas, epochTag, bigHint);
   const step = (n) => { if (!d.epochs.length) return;
@@ -3190,7 +3202,8 @@ function trainMapsPanel(box, meta, run, load) {
         (v) => { st.bands = v === "bands"; tmSetPref("scale", v); }),
       chips([["grey", "Grey picture", "The photo in grey under the map, so only the map is in colour"],
              ["colour", "Colour picture", "The photo in its own colours under the map"]],
-        () => (st.grey ? "grey" : "colour"), (v) => { st.grey = v === "grey"; tmSetPref("picture", v); })),
+        () => (st.grey ? "grey" : "colour"), (v) => { st.grey = v === "grey"; tmSetPref("picture", v); }),
+      opacityRow),
     say);
   showPic();
   fetchOne().then(() => { if (!d.epochs.length) say.textContent = "No epochs yet: the first maps come before training starts."; arm(); })

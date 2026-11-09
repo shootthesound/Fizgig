@@ -33,7 +33,7 @@ Each picture is checked at three noise levels, always with the same noise, so on
 - Each map keeps one colour scale across all the epochs, so a colour fading really is the error falling.
 - The picture is shown as it trained: cropped to its bucket, so the map sits exactly on it.
 - Scrub or press **Play** to step through the epochs. Click the picture to see it full-window; the arrow keys step through the epochs, and a click or Esc closes it.
-- By default the photo is shown in grey under the map, and the map in a few clear colour bands. **Smooth** and **Colour picture** switch either back; the viewer remembers your choice.
+- By default the photo is shown in grey under the map, and the map in a few clear colour bands. **Smooth** and **Colour picture** switch either back, and **Map opacity** makes the map fainter or stronger (100% is the default; double-click the slider to put it back). The viewer remembers your choices.
 
 ## What to look for
 

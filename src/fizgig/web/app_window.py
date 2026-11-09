@@ -583,6 +583,74 @@ def _text_menu(sender):
         _log(f"[app] right-click menu not set up: {e}")
 
 
+def _remember_download_dir(path):
+    """The folder a Download was last saved in (prefs.json "app_download_dir"), so the next Save window opens there."""
+    folder = os.path.dirname(path or "")
+    if not folder or not os.path.isdir(folder):
+        return
+    p = _prefs()
+    p["app_download_dir"] = folder
+    tmp = PREFS_FILE + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(p, f, indent=2)
+        os.replace(tmp, PREFS_FILE)
+    except OSError:
+        pass
+
+
+def download_start_dir(fallback=""):
+    """Where the window's Save window opens: the folder the last Download went to while it's still there, else
+    fallback (Windows' Downloads folder)."""
+    last = _prefs().get("app_download_dir")
+    return last if isinstance(last, str) and last and os.path.isdir(last) else (fallback or "")
+
+
+def _downloads_remember_folder():
+    """pywebview's WebView2 window opens every Download's Save window in the Downloads folder, so saving several
+    epochs meant finding the same folder each time. Its handler is swapped for the same Save window opening in the
+    folder the last Download went to (remembered across launches)."""
+    if os.name != "nt":
+        return
+    try:
+        from webview.platforms import edgechromium as ec
+        WinForms, settings, winreg = ec.WinForms, ec.webview_settings, ec.winreg
+    except Exception:
+        return                                  # another pywebview layout: its own handler stays
+    own = getattr(ec.EdgeChrome, "on_download_starting", None)
+    if own is None or getattr(own, "_fizgig", False):
+        return
+
+    def on_download_starting(self, sender, args):
+        if not settings["ALLOW_DOWNLOADS"]:
+            args.Cancel = True
+            return
+        downloads = ""
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders") as k:
+                downloads = winreg.QueryValueEx(k, "{374DE290-123F-4565-9164-39C4925E467B}")[0]
+        except Exception:
+            pass
+        dialog = WinForms.SaveFileDialog()
+        start = download_start_dir(downloads)
+        if start:
+            dialog.InitialDirectory = start
+        try:
+            dialog.Filter = self.pywebview_window.localization["windows.fileFilter.allFiles"] + " (*.*)|*.*"
+        except Exception:
+            dialog.Filter = "All files (*.*)|*.*"
+        dialog.RestoreDirectory = True
+        dialog.FileName = os.path.basename(args.ResultFilePath)
+        if dialog.ShowDialog(self.form) == WinForms.DialogResult.OK:
+            args.ResultFilePath = dialog.FileName
+            _remember_download_dir(dialog.FileName)
+        else:
+            args.Cancel = True
+    on_download_starting._fizgig = True
+    ec.EdgeChrome.on_download_starting = on_download_starting
+
+
 _MUTEX = []
 
 
@@ -797,6 +865,7 @@ def main():
         if why:
             raise RuntimeError(why)
         _unhook_requests()
+        _downloads_remember_folder()
         # clips decode on the CPU in this window: the first clip played froze the window (pointer included) while
         # WebView2 brought up the GPU's video decoder, on more than one machine; Fizgig's previews are small clips
         # the CPU decodes with ease. (pywebview's own flag is kept: this variable stands in for its arguments.)

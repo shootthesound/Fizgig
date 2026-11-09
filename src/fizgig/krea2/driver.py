@@ -255,6 +255,12 @@ class Krea2Driver(FamilyDriver):
         t_ = t.view(-1, 1, 1, 1).to(DTYPE)
         return {"xt": (1.0 - t_) * latents.to(DTYPE) + t_ * noise, "t": t}
 
+    def map_target(self, latents, state):
+        """The target in predict()'s layout (training maps): noise - x0, patchified as loss_at does."""
+        from fizgig.krea2.sampling import patchify_block
+        t = state["t"].float().view(-1, 1, 1, 1).to(latents.device)
+        return patchify_block((state["xt"].float() - latents.float()) / t, 2)[0]
+
     def predict(self, dit, state, cond):
         return self._forward(dit, state["xt"], state["t"], cond)
 

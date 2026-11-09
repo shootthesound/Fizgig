@@ -88,6 +88,26 @@ def _grid(m):
     return {"w": int(w), "h": int(h), "v": [float(f"{x:.4g}") for x in m.flatten().tolist()]}
 
 
+def to_map(err, latents):
+    """A per-element error in predict()'s layout -> a (h, w) map: a latent grid (B, C, h, w) or with a frame axis
+    (B, C, T, h, w) averages its channels (first frame); tokens (B, N, D) or (N, D) average each token, laid out
+    row by row on the patch grid the latents make (N = (h / p) * (w / p))."""
+    if err.dim() == 4:
+        return err.mean(dim=1)[0]
+    if err.dim() == 5:
+        return err.mean(dim=1)[0, 0]
+    tok = err.mean(dim=-1).reshape(-1)
+    h, w = latents.shape[-2:]
+    n = tok.numel()
+    p = max(1, round((h * w / max(1, n)) ** 0.5))
+    gh, gw = -(-h // p), -(-w // p)
+    if gh * gw != n:
+        gh, gw = h // p, w // p
+    if gh * gw != n:
+        raise RuntimeError(f"can't lay {n} tokens on a {h}x{w} latent grid")
+    return tok.view(gh, gw)
+
+
 def _cpu(v):
     if torch.is_tensor(v):
         return v.detach().to("cpu", copy=True)
@@ -140,10 +160,10 @@ class TrainingMaps:
         t0 = time.time()
         try:
             out = self._run(driver, dit, net, device, swapped=swapped, ema=ema, epoch=epoch)
-        except Exception:
+        except Exception as e:
             self.failed = True
             logger.warning("[maps] the training maps failed this epoch, so they're off for the rest of this run. "
-                           "Training carries on.")
+                           f"Training carries on. ({type(e).__name__}: {str(e)[:200]})")
             logger.debug("[maps] error:", exc_info=True)
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -178,7 +198,7 @@ class TrainingMaps:
                         state = driver.noise_latents(latents, g, min_t=t, max_t=t)
                         target = driver.map_target(latents, state).float()
                         pred = driver.predict(dit, state, cond).float()
-                        loss = (pred - target).pow(2).mean(dim=1)[0]
+                        loss = to_map((pred - target).pow(2), latents)
                         maps = {"loss": _grid(loss)}
                         if epoch > 0 and hasattr(net, "set_trainable_multiplier"):
                             net.set_trainable_multiplier(0.0)
@@ -186,7 +206,7 @@ class TrainingMaps:
                                 base = driver.predict(dit, state, cond).float()
                             finally:
                                 net.set_trainable_multiplier(1.0)
-                            maps["effect"] = _grid((pred - base).abs().mean(dim=1)[0])
+                            maps["effect"] = _grid(to_map((pred - base).abs(), latents))
                         per[f"{t:g}"] = maps
                         del state, target, pred
                     out[k] = per

@@ -546,6 +546,10 @@ class Fibo2Driver(FamilyDriver):
                         f"Z mean {cached[1]:.2f} (the model's own centre is 0.5 to 1.15 by token count)")
         return cached[1]
 
+    def map_target(self, latents, state):
+        """The target at this state (training maps): noise - x0 (state keeps its noise)."""
+        return (state["noise"].float() - self._as4(latents).float().to(state["noise"].device))
+
     def noise_latents(self, latents, generator, *, min_t=0.0, max_t=1.0):
         latents = self._as4(latents)
         t = self._sample_sigma(generator, latents)

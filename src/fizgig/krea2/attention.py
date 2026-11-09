@@ -45,6 +45,8 @@ except ValueError:
         os.environ.get("FIZGIG_ATTN_TRIM_MULTIPLE"))
     _TRIM_MULTIPLE = 64
 
+COMPILED_BLOCKS = False      # the DiT's blocks are torch.compiled: attend the padded length, never trim (below)
+
 
 @dataclass
 class AttentionParams:
@@ -69,7 +71,12 @@ class AttentionParams:
         # plans or compiles per shape (cuDNN, torch.compile), so it needs to be measurable.
         self.uniform_seqlen = None
         self.uniform_exact = True     # False -> the trimmed window still contains padding
+        # Compiled blocks keep the padded length too (COMPILED_BLOCKS, set by the driver's compile_blocks): the trim
+        # length is a plain number, so every new one recompiled every block - with DOP's alternating passes (no
+        # gradients, the LoRA off, trigger-free captions) a run with many picture sizes kept rebuilding for minutes.
+        # Padded to a multiple of 256, the lengths are a handful; the mask keeps the padding out of the attention.
         if (self.seqlens is not None and self.attention_mask is not None and not self.split_attn
+                and not COMPILED_BLOCKS
                 and os.environ.get("FIZGIG_ATTN_TRIM", "1") != "0"
                 and self.attn_mode not in ("flash", "sageattn")):
             if bool(torch.all(self.seqlens == self.seqlens[0])):

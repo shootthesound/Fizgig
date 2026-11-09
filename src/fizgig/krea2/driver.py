@@ -49,6 +49,17 @@ class Krea2Driver(FamilyDriver):
     def compile_targets(self, dit):
         return dit.blocks
 
+    def compile_blocks(self, dit, boundary="inside", blocks_to_swap=0):
+        """The shared compile, then the attention stops trimming to each sequence's own length (it would recompile
+        every block for every new length; krea2/attention.py COMPILED_BLOCKS)."""
+        super().compile_blocks(dit, boundary=boundary, blocks_to_swap=blocks_to_swap)
+        import torch
+        from fizgig.krea2 import attention as _attn
+        if any(isinstance(b, torch._dynamo.eval_frame.OptimizedModule)
+               or isinstance(getattr(b, "block", None), torch._dynamo.eval_frame.OptimizedModule)
+               for b in self.compile_targets(dit)):
+            _attn.COMPILED_BLOCKS = True
+
     def compile_plan(self, mode, total_steps, precision, blocks_to_swap, mp=0.25):
         """Krea 2's own measured rule (utils/capabilities: should_compile / compile_boundary) - its compiled-memory
         figures place the checkpoint inside the graph where it fits and outside where it does not."""

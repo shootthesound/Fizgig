@@ -6660,16 +6660,22 @@ function studioSchedule(live) {
 
 async function studioRender() {
   if (!$("stPrompt").value.trim()) { $("stStatus").textContent = "Enter a prompt (include the LoRA's trigger word) to see previews."; return; }
-  // seed 0: a fresh random seed for each render (Baseline and Tweaked share it), as the training previews do
+  // seed 0: random, rolled by Update / Start (studioStart) and kept while sliders and the other controls render, so
+  // a tweak is judged on the same picture; Baseline and Tweaked share it
   const state = studioState();
-  if (state.seed === 0) state.seed = 1 + Math.floor(Math.random() * (2 ** 31 - 2));
-  S.st.seedUsed = state.seed;
+  if (state.seed === 0) {
+    if (!S.st.seedUsed) studioRollSeed();
+    state.seed = S.st.seedUsed;
+  }
   try { await api("/api/studio/render", {state, ...studioExtra(), ...studioMixExtra()}); studioPoll(); }
   catch (e) { $("stStatus").textContent = e.message; }
 }
 
+function studioRollSeed() { S.st.seedUsed = 1 + Math.floor(Math.random() * (2 ** 31 - 2)); }
+
 async function studioStart() {
   stRemember();
+  if (seedOf("stSeed") === 0) studioRollSeed();      // Update with seed 0: a new random picture
   const L = S.st.layout;
   try {
     const st = await api("/api/studio/status");

@@ -6412,7 +6412,9 @@ function studioMapsShow() {
     $("stMapOp").addEventListener("input", () => { S.st.map.op = Number($("stMapOp").value) / 100; stMapDraw(); });
     $("stMapOp").addEventListener("change", () => stMapSave({op: S.st.map.op}));
     $("stMapOp").addEventListener("dblclick", () => { S.st.map.op = 1; $("stMapOp").value = "100"; stMapDraw(); stMapSave({op: 1}); });
-    $("stMapTrig").addEventListener("change", () => { if (S.st.map.kind) studioMapRequest(); });
+    // the trigger word: Show (or Enter) makes the map for it - never just leaving the box
+    $("stMapGo").addEventListener("click", () => { if (S.st.map.kind) studioMapRequest(); });
+    $("stMapTrig").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("stMapGo").click(); } });
     $("stTweak").addEventListener("load", () => stMapDraw());
     window.addEventListener("resize", () => stMapDraw());
   }
@@ -6436,7 +6438,7 @@ function stMapChips() {
     $("stMapLevels").replaceChildren(...row(ST_MAP_LEVELS, m.level, (v) => { m.level = v; stMapSave({level: v}); stMapDraw(); }));
   }
   $("stMapOpts").style.display = m.kind ? "" : "none";
-  $("stMapTrigRow").style.display = m.kind === "attn" ? "" : "none";
+  $("stMapTrigRow").style.display = $("stMapGo").style.display = m.kind === "attn" ? "" : "none";
 }
 
 async function studioMapRequest() {
@@ -6445,16 +6447,22 @@ async function studioMapRequest() {
   const state = studioState();
   if (state.seed === 0 && S.st.seedUsed) state.seed = S.st.seedUsed;
   const want = (m.want = (m.want || 0) + 1);
-  $("stMapSay").textContent = "Making the maps…";
+  const busy = (on) => {                        // the Show button and the line say a map is on its way
+    $("stMapGo").disabled = on;
+    $("stMapGo").textContent = on ? "Making the map…" : "Show";
+  };
+  busy(true);
+  $("stMapSay").textContent = "Making the map… (a few seconds)";
   try {
     const r = await api("/api/studio/map", {state, trigger: $("stMapTrig").value.trim(), blocks: m.kind === "blocks"});
-    if (r.error) { $("stMapSay").textContent = r.error; return; }
+    if (r.error) { busy(false); $("stMapSay").textContent = r.error; return; }
     if (!$("stMapTrig").value.trim() && r.trigger) $("stMapTrig").placeholder = r.trigger;
     for (let i = 0; i < 240 && want === m.want; i++) {        // the worker answers in seconds; up to two minutes
       await new Promise((ok) => setTimeout(ok, 500));
       const d = await api("/api/studio/map");
       if (d.gen === r.gen && !d.busy) {
         if (want !== m.want) return;
+        busy(false);
         if (d.error) { $("stMapSay").textContent = d.error; return; }
         m.data = d;
         stMapChips();
@@ -6463,6 +6471,7 @@ async function studioMapRequest() {
       }
     }
   } catch (e) { $("stMapSay").textContent = e.message; }
+  if (want === m.want) busy(false);
 }
 
 // a new Tweaked render: the map on screen belonged to the last one - made again when a map is chosen

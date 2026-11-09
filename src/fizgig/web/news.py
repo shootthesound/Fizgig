@@ -6,6 +6,19 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 NEWS = [
     {
         "date": "9 Nov 2026",
+        "title": "Maps in Studio, for any LoRA",
+        "body": (
+            "Studio can now draw heatmaps over its preview for any LoRA, one you didn't train included: where the LoRA "
+            "acts, what your slider changes do, where the trigger word's attention goes, and where each group of its "
+            "blocks acts. Pick a map under the preview.\n\n"
+            "Also two new themes from @Murf-Code, Cosmic Pigeon and Deep Space, under Preferences."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#9-nov-2026-maps-in-studio-for-any-lora"},
+                  {"text": "Studio guide", "href": "https://github.com/shootthesound/Fizgig/blob/master/docs/STUDIO.md#maps"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.4.0"}],
+    },
+    {
+        "date": "9 Nov 2026",
         "title": "Training maps, and a much faster compile warm-up",
         "body": (
             "See what training does to your pictures, epoch by epoch. Tick Training maps under Training Parameters, "

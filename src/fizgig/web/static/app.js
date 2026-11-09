@@ -2994,6 +2994,7 @@ function trainMapsPanel(box, meta, run, load) {
     const atEnd = st.i >= d.epochs.length - 1;
     d.epochs = [...by.values()].sort((a, b) => a.epoch - b.epoch); d.live = rs.some((r) => r.live);
     scales.clear();
+    floors.clear();
     scrub.max = String(Math.max(0, d.epochs.length - 1));
     if (atEnd || st.i > d.epochs.length - 1) st.i = Math.max(0, d.epochs.length - 1);
     scrub.value = String(st.i);
@@ -3007,11 +3008,39 @@ function trainMapsPanel(box, meta, run, load) {
   const legendLo = el("span", {class: "tm-legend-end"}), legendHi = el("span", {class: "tm-legend-end"});
   const kindSay = el("div", {class: "tm-kind-say"});        // what the chosen map shows, above the picture
   const bigHint = el("span", {class: "tm-big-hint", text: "← → step through the epochs · click or Esc to close"});
+  const rawAttn = (e, t) => {                  // the trigger map as stored: all triggers, or one subject's
+    const g = (((d.epochs[e] || {}).maps || {})[st.key] || {})[tKey(t)];
+    if (!g) return null;
+    return st.trig ? (g.attn_by || {})[st.trig] || null : g.attn || null;
+  };
+  // The trigger map's floor for this picture + level: its quietest share across every epoch (2nd percentile). Some
+  // models spread a new word's attention almost evenly (SDXL's start token takes most of every row; Klein, Flux 3,
+  // Fibo, Anima lean that way too), so scaled from zero the whole picture showed one colour; from the floor up, the
+  // map shows where attention is higher than the rest.
+  const floors = new Map();
+  const attnFloor = (t) => {
+    const memo = `${st.key}|${t}|${st.trig}`;
+    if (floors.has(memo)) return floors.get(memo);
+    let lo = Infinity;
+    for (let e = 0; e < d.epochs.length; e++) {
+      const g = rawAttn(e, t);
+      if (!g) continue;
+      const vs = [...g.v].sort((a, b) => a - b);
+      lo = Math.min(lo, vs[Math.floor(0.02 * (vs.length - 1))]);
+    }
+    floors.set(memo, Number.isFinite(lo) ? lo : 0);
+    return floors.get(memo);
+  };
   const gridAt = (e, k, t) => {                // one level's map
     const m = ((d.epochs[e] || {}).maps || {})[st.key];
     const g = m && m[tKey(t)];
     if (!g) return null;
-    if (k === "attn" && st.trig) return (g.attn_by || {})[st.trig] || null;   // one subject's trigger, never all of them
+    if (k === "attn") {                        // one subject's trigger never shows as all of them
+      const a = rawAttn(e, t);
+      if (!a) return null;
+      const lo = attnFloor(t);
+      return {w: a.w, h: a.h, v: a.v.map((x) => Math.max(0, x - lo))};
+    }
     if (k !== "learned") return g[k] || null;
     const base = (((d.epochs[0] || {}).maps || {})[st.key] || {})[tKey(t)];
     if (!base || !base.loss || !g.loss || base.loss.v.length !== g.loss.v.length) return null;

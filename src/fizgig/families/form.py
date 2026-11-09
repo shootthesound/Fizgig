@@ -359,7 +359,7 @@ def form(desc):
                  "picture. Each image's progress, with its thumbnail and its caption to edit, is under Per-image loss "
                  "on the run card while it trains, and in Runs & outputs."),
             _row("KREA2_PER_IMAGE_LR", "Per-image adaptive LR (throttle stuck images, boost healthy learned ones)",
-                 "check", "Images that stay hard without improving train more gently (x0.7, then x0.5 down to x0.1); "
+                 "check", "Images that stay hard without improving train more gently (x0.7, then x0.5 down to x0.25); "
                  "mined-out ones ease off (x0.6) and healthy learned ones get a gentle boost (x1.1). Batch size 1."),
             _row("KREA2_WARMUP_LOOK", "Warm up look outliers (unusual angles ease in at low LR - needs a Look "
                  "Filter scan)", "check", "Person LoRAs: images the Image Prep Look Filter scored as look outliers (tight angles, "

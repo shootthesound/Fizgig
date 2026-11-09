@@ -182,7 +182,7 @@ class PerImageLossWatch:
                  improve_frac: float = 0.12, improve_floor: float = 0.02,
                  suspect_mult: float = 0.7, easy_from_epoch: int = 3,
                  exhausted_mult: float = 0.6, exhaust_drop_frac: float = 0.3, exhaust_on: int = 2,
-                 stuck_floor: float = 0.1, escalate_every: int = 2,
+                 stuck_floor: float = 0.25, escalate_every: int = 2,
                  dataset_dir: str = None, caption_ext: str = ".txt", healthy_min: int = 3,
                  plateau_patience: int = 2, plateau_min_epochs: int = 8, family: str = "", folders=None):
         self.apply_lr = apply_lr
@@ -224,6 +224,9 @@ class PerImageLossWatch:
         # epochs, floored at stuck_floor. A flat x0.5 forever still leaks half-strength poison all
         # run; near-zero from day one would deny a false conviction the gradient it needs to prove
         # itself and win release. Caption fixes reset history -> straight back to x1.0.
+        # Floor x0.25 (was x0.1 until 9 Nov 2026): replaying 39 real runs, images convicted stuck still got easier
+        # at full LR in runs without the throttle (by ~0.26 sd even among the fence's outliers) - x0.1 starved
+        # images that were learnable, and with auto-recaption off nothing ever resets them.
         self.stuck_floor = stuck_floor
         self.escalate_every = escalate_every
         self.output_dir = output_dir
@@ -627,6 +630,11 @@ class PerImageLossWatch:
                 # stuck when it sits above average by more than its own epoch-to-epoch noise
                 # (real caption poison clears this bar by an order of magnitude; validated by
                 # replaying the 2026-07 real-run logs through both detector versions).
+                # Outlier fence (9 Nov 2026): "hard" is also above median + 1.5 IQR (the suspect tier's ext_hi), not
+                # just the top third. Late in a run almost nothing passes the improve test, so "top third and not
+                # improving" had become "the hardest third": replaying 39 real runs convicted ~1/3 of every dataset,
+                # each one at the floor by epoch 11. With the fence, 1026 convictions became 249, and the ones kept
+                # are the least-improving of equally hard images.
                 # Look-filter warm-up: release on proof of improvement or ramp completion, and
                 # hold stuck/suspect votes until 2 epochs after the ramp ends — a deliberately
                 # muted image reads as high-flat (the stuck signature) precisely BECAUSE it is
@@ -636,7 +644,7 @@ class PerImageLossWatch:
                         self._warmup_released[key] = epoch
                 warm_hold = key in self._warmup and (
                     key not in self._warmup_released or epoch <= self._warmup_released[key] + 2)
-                votes_stuck = (s["trend_epochs"] >= 4 and s["mean_residual"] >= hi
+                votes_stuck = (s["trend_epochs"] >= 4 and s["mean_residual"] >= ext_hi
                                and s["mean_residual"] > s["se"]
                                and s["last"] > 0.0 and not improving and not good_run
                                and not warm_hold)
@@ -716,7 +724,7 @@ class PerImageLossWatch:
                                        f"caption to re-admit it, or remove it from the dataset.")
                         verdict, mult = "excluded", 0.0
                 elif key in self._confirmed_stuck:
-                    # Escalate with tenure: x0.5 -> x0.25 -> x0.125 -> floor. Staying confirmed is
+                    # Escalate with tenure: x0.5 -> x0.25 (the floor). Staying confirmed is
                     # accumulating evidence; the leak shrinks as certainty grows.
                     tenure = self._stuck_epochs.get(key, 1)
                     mult = max(self.stuck_floor,

@@ -555,7 +555,7 @@ The non-obvious flags (`--help` lists them all):
   - `<output_dir>/loss_log/per_image_loss.jsonl` — the raw per-step log
   - `<output_dir>/loss_log/problem_images.json` — current verdicts + trends (the per-image loss view in Runs & outputs reads this; it's plain JSON, perfectly greppable headless)
   - a **plateau banner** in the console when ≤~5% of images are still improving, with a best-checkpoint epoch estimate — your "you're done" signal.
-- `--per_image_lr` — acts on the verdicts: stuck images get throttled (×0.5 → ×0.25 → ×0.125), mined-out images ease off (×0.6), the healthy cohort gets a gentle boost (×1.1). It is a true per-image learning rate at any Batch size: in a batch, each picture's loss is weighed on its own.
+- `--per_image_lr` — acts on the verdicts: stuck images get throttled (×0.5, then ×0.25), mined-out images ease off (×0.6), the healthy cohort gets a gentle boost (×1.1). It is a true per-image learning rate at any Batch size: in a batch, each picture's loss is weighed on its own.
 - `--auto_recaption` — between epochs, confirmed-stuck images get their captions rewritten by Qwen3-VL from what's actually visible, the text cache is re-encoded, and the image gets a fresh start. Two failed attempts and a still-stuck image is excluded from the run entirely. Requires `--text_encoder`. Pass `--trigger_word` so rewritten captions keep your trigger (appended as `, <trigger>`).
 - `--warmup_look_outliers` — curriculum entry (×0.4 LR ramping to ×1.0) for real-but-unusual images. Reads `<dataset>/fizgig_look_scores.json`, which is produced by the GUI's Look Consistency Filter scan — **GUI-only prerequisite**; without the file this flag logs a warning and disables itself.
 

@@ -924,7 +924,31 @@ def cmd_reset(_c):
     emit(ev="reset")
 
 
-HANDLERS = {"load": cmd_load, "donor": cmd_donor, "settings": cmd_settings, "render": cmd_render,
+def cmd_map(c):
+    """Studio's maps over the Tweaked render on screen (engine.lora_map): stills only."""
+    gen = c.get("gen", 0)
+    eng = S["engine"]
+    try:
+        with _engine_lock:
+            if eng is None or eng.primary_network is None:
+                raise ValueError("Load a LoRA first.")
+            if getattr(S["desc"], "video_workbench", False) or getattr(S["desc"], "audio_workbench", False):
+                raise ValueError("Maps are for pictures.")
+            from PIL import Image
+            with Image.open(c["picture"]) as im:
+                pic = im.convert("RGB")
+            emit(ev="status", text="Making the maps…")
+            res = eng.lora_map(_state(c["state"]), pic, trigger=c.get("trigger") or "")
+            import torch
+            torch.cuda.empty_cache()
+        emit(ev="map", gen=gen, **res)
+        emit(ev="status", text="Ready.")
+    except Exception as e:
+        emit(ev="map", gen=gen, error=str(e) or type(e).__name__)
+        emit(ev="status", text="Ready.")
+
+
+HANDLERS = {"load": cmd_load, "donor": cmd_donor, "settings": cmd_settings, "render": cmd_render, "map": cmd_map,
             "cancel": cmd_cancel, "save": cmd_save, "reset": cmd_reset, "royale": cmd_royale,
             "royale_travel": cmd_royale_travel, "refmod": cmd_refmod}
 

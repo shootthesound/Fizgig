@@ -912,7 +912,7 @@
                 <figure class="gallery-item st-pane"><img id="stBase" alt=""><video id="stBaseVid" controls loop muted playsinline preload="auto"
                   style="display:none"></video><audio id="stBaseAud" controls style="display:none"></audio>
                   <figcaption id="stBaseCap">Baseline (LoRA at default 1.0)</figcaption></figure>
-                <figure class="gallery-item st-pane"><div class="st-region" id="stRegion"></div><img id="stTweak" alt=""><video id="stTweakVid" controls loop muted playsinline preload="auto"
+                <figure class="gallery-item st-pane st-tweak-pane"><div class="st-region" id="stRegion"></div><img id="stTweak" alt=""><canvas id="stMapCanvas" class="st-map-canvas" style="display:none"></canvas><video id="stTweakVid" controls loop muted playsinline preload="auto"
                   style="display:none"></video><audio id="stTweakAud" controls style="display:none"></audio>
                   <figcaption id="stTweakCap">Tweaked (current sliders)</figcaption></figure>
               </div>
@@ -922,6 +922,17 @@
                 <button class="btn btn-sm" id="stMetRefClear" title="No reference photo">✕</button>
                 <span class="st-chip" id="stMetLike"></span><span class="st-chip" id="stMetGrid"></span>
                 <span class="st-chip" id="stMetTex"></span><span class="st-chip" id="stMetClip"></span><span class="st-chip" id="stMetSat"></span>
+              </div>
+              <div class="st-maps" id="stMaps" style="display:none">
+                <div class="tm-row"><span class="st-maps-title"
+                  title="Heatmaps over the Tweaked picture, as Training maps draws them: the picture is noised at three levels and the model's prediction compared with and without the LoRA">Maps</span>
+                  <span id="stMapKinds" class="tm-row"></span></div>
+                <div class="tm-row" id="stMapOpts" style="display:none"><span id="stMapLevels" class="tm-row"></span>
+                  <label class="tm-auto" id="stMapTrigRow" style="display:none">Trigger word
+                    <input type="text" id="stMapTrig" class="st-map-trig" placeholder="from the LoRA" spellcheck="false"></label>
+                  <label class="tm-auto">Opacity <input type="range" id="stMapOp" class="tm-opacity" min="0" max="150" step="5" value="100"></label>
+                  <span class="tm-legend-end">less</span><span class="tm-legend" id="stMapLegend"></span><span class="tm-legend-end">more</span></div>
+                <div class="tm-kind-say" id="stMapSay"></div>
               </div>
               <div class="field-row" id="stPlayBoth" style="display:none"><button class="btn btn-sm" id="stPlayBothBtn">▶ Play together</button></div>
               <div class="field-row" id="stDownloads" style="display:none">

@@ -1096,6 +1096,84 @@ class WorkbenchEngine:
                 "strengths_baked": bool(blended)}
 
     # ---- teardown -----------------------------------------------------------------------------------
+    MAP_LEVELS = (0.25, 0.5, 0.75)
+
+    @torch.no_grad()
+    def lora_map(self, state, picture, trigger="", seed=1234):
+        """Studio's maps over a render (the training maps' method on any loaded LoRA): the picture encoded, noised at
+        three fixed levels with fixed noise, and the model's prediction compared -
+          "effect": the LoRA as tweaked against no LoRA - where the LoRA acts;
+          "tweak":  as tweaked against the baseline (every slider at 1.0) - where the slider changes act (absent when
+                    nothing moved);
+          "attn":   the trigger word's share of each picture area's attention (a family with trigger_attention and the
+                    trigger in the prompt).
+        -> {"levels": [...], "maps": {kind: {level: grid}}, "trigger": the word, "trigger_found": bool}. Stills only."""
+        import copy
+        import numpy as np
+        from fizgig.training import attn_probe
+        from fizgig.training.train_maps import _grid, to_map
+        self._sync_epochs()
+        if self.lowmem:
+            self._park_dit("cpu")
+            self.vae.to(self.device)
+        try:
+            z = self.driver.encode_images(self.vae, [np.asarray(picture.convert("RGB"))])[0]
+        finally:
+            if self.lowmem:
+                self.vae.to("cpu")
+                self._park_dit(self.device)
+        latents = z[None].to(self.device)
+        c = self.encode([state.prompt])[0]
+        cond = {k: (v[None].to(self.device) if torch.is_tensor(v) else v) for k, v in c.items()}
+        off = copy.deepcopy(state)
+        off.primary_scale, off.donor_scale = 0.0, 0.0
+        base = None
+        if not self.same_as_baseline(state):
+            base = self.default_state(state.preview_width, state.preview_height)
+            base.primary_scale, base.donor_scale = float(getattr(state, "primary_scale", 1.0)), 0.0
+            for bs in base.blocks.values():
+                bs.donor_enabled = False
+        word = str(trigger or "").strip()
+        pos = None
+        if word and getattr(self.desc, "trigger_attention", False):
+            try:
+                pos = self.driver.trigger_key_positions(state.prompt, word) or None
+            except Exception:
+                logger.debug("[maps] trigger positions", exc_info=True)
+        out = {"effect": {}, "tweak": {}, "attn": {}}
+        was = self.dit.training if isinstance(self.dit, torch.nn.Module) else None
+        if was:
+            self.dit.eval()
+        try:
+            for i, t in enumerate(self.MAP_LEVELS):
+                g = torch.Generator().manual_seed(int(seed) * 1000003 + i)
+                st = self.driver.noise_latents(latents, g, min_t=t, max_t=t)
+                self.apply_state(state)
+                if pos:
+                    stance = (torch.compiler.set_stance("force_eager") if hasattr(torch.compiler, "set_stance")
+                              else __import__("contextlib").nullcontext())
+                    with stance, self.driver.trigger_attention_hooks(self.dit), attn_probe.capturing(pos) as probe:
+                        pred = self.driver.predict(self.dit, st, cond).float()
+                    a = probe.result()
+                    if a is not None:
+                        out["attn"][f"{t:g}"] = _grid(to_map(a[""][None, :, None], latents))
+                else:
+                    pred = self.driver.predict(self.dit, st, cond).float()
+                self.apply_state(off)
+                p_off = self.driver.predict(self.dit, st, cond).float()
+                out["effect"][f"{t:g}"] = _grid(to_map((pred - p_off).abs(), latents))
+                if base is not None:
+                    self.apply_state(base)
+                    p_base = self.driver.predict(self.dit, st, cond).float()
+                    out["tweak"][f"{t:g}"] = _grid(to_map((pred - p_base).abs(), latents))
+                del st, pred, p_off
+        finally:
+            self.apply_state(state)                 # the sliders as they are, for the next render
+            if was:
+                self.dit.train()
+        return {"levels": [f"{t:g}" for t in self.MAP_LEVELS], "maps": {k: v for k, v in out.items() if v},
+                "trigger": word, "trigger_found": bool(pos)}
+
     def forget_prompts(self):
         """Drop the cached prompt conditioning (a new prompt was applied)."""
         self._prompt_cache.clear()

@@ -2839,3 +2839,10 @@ label[title]:has(.tip-mark) { cursor: help; }
 :is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) .meter-bar > span::after,
 :is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) .fetch-bar > div::after {
   animation-delay: var(--fx-d, 0s) !important; }
+
+/* Studio maps: a heatmap over the Tweaked picture (the training maps' bands), the Maps row under the preview */
+.st-tweak-pane { position: relative; }
+.st-map-canvas { position: absolute; pointer-events: none; }
+.st-maps { margin-top: 8px; }
+.st-maps-title { font-weight: 600; color: var(--text-secondary); margin-right: 4px; }
+.st-map-trig { width: 140px; }

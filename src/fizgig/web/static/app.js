@@ -6383,6 +6383,148 @@ function studioMetricsShow() {
   $("stMetRefName").textContent = ref ? ref.split(/[\\/]/).pop() : "(none)";
 }
 
+// ---- Studio maps: the training maps' heatmaps over the Tweaked picture, for any loaded LoRA -------------------------
+const ST_MAPS = [["", "Off", "No map"],
+  ["effect", "Where the LoRA acts", "Where the LoRA, as you've set it, changes the picture. Red = changes it most, " +
+    "yellow = some, blue = a little, no colour = barely. For a person LoRA it should gather on the face and body; if " +
+    "it spreads over clothes or the background, the LoRA changes those too."],
+  ["tweak", "What your tweaks change", "Where your slider changes move the picture away from the Baseline (every " +
+    "slider at 1.0), on the same colours: what each tweak touches."],
+  ["attn", "Trigger word", "How much of each area's attention goes to the trigger word inside the model, on the same " +
+    "colours. For a person it should settle on the face and body; on lettering (a logo, a watermark) or the background, " +
+    "the trigger is tied to those too. The prompt must contain the trigger word."]];
+const ST_MAP_LEVELS = [["all", "All levels"], ["0.25", "Low noise (detail)"], ["0.5", "Mid"], ["0.75", "High noise (layout)"]];
+
+function stMapPrefs() { try { return JSON.parse(localStorage.getItem("fizgig.stmap") || "{}"); } catch (e) { return {}; } }
+function stMapSave(p) { try { localStorage.setItem("fizgig.stmap", JSON.stringify({...stMapPrefs(), ...p})); } catch (e) { /* private */ } }
+
+function studioMapsShow() {
+  const L = S.st.layout, on = !!L && L.kind !== "audio" && L.kind !== "video";
+  $("stMaps").style.display = on ? "" : "none";
+  if (!on) { $("stMapCanvas").style.display = "none"; return; }
+  if (!S.st.map) {
+    const p = stMapPrefs();
+    S.st.map = {kind: "", level: p.level || "all", op: p.op != null ? p.op : 1, data: null, want: null};
+    $("stMapOp").value = String(Math.round(S.st.map.op * 100));
+    $("stMapOp").addEventListener("input", () => { S.st.map.op = Number($("stMapOp").value) / 100; stMapDraw(); });
+    $("stMapOp").addEventListener("change", () => stMapSave({op: S.st.map.op}));
+    $("stMapOp").addEventListener("dblclick", () => { S.st.map.op = 1; $("stMapOp").value = "100"; stMapDraw(); stMapSave({op: 1}); });
+    $("stMapTrig").addEventListener("change", () => { if (S.st.map.kind) studioMapRequest(); });
+    $("stTweak").addEventListener("load", () => stMapDraw());
+    window.addEventListener("resize", () => stMapDraw());
+  }
+  stMapChips();
+}
+
+function stMapChips() {
+  const m = S.st.map;
+  const row = (items, cur, set) => items.map(([v, label, tip]) => el("button", {class: "btn btn-sm" + (v === cur ? " btn-primary" : ""),
+    text: label, title: tip || "", onclick: () => { set(v); stMapChips(); }}));
+  $("stMapKinds").replaceChildren(...row(ST_MAPS, m.kind, (v) => {
+    m.kind = v;
+    if (!v) { $("stMapCanvas").style.display = "none"; $("stMapSay").textContent = ""; return; }
+    if (!m.data || m.data.gen !== S.st.shown) studioMapRequest(); else stMapDraw();
+  }));
+  $("stMapLevels").replaceChildren(...row(ST_MAP_LEVELS, m.level, (v) => { m.level = v; stMapSave({level: v}); stMapDraw(); }));
+  $("stMapOpts").style.display = m.kind ? "" : "none";
+  $("stMapTrigRow").style.display = m.kind === "attn" ? "" : "none";
+}
+
+async function studioMapRequest() {
+  const m = S.st.map;
+  if (!m || !m.kind || !S.st.shown) return;
+  const state = studioState();
+  if (state.seed === 0 && S.st.seedUsed) state.seed = S.st.seedUsed;
+  const want = (m.want = (m.want || 0) + 1);
+  $("stMapSay").textContent = "Making the maps…";
+  try {
+    const r = await api("/api/studio/map", {state, trigger: $("stMapTrig").value.trim()});
+    if (r.error) { $("stMapSay").textContent = r.error; return; }
+    if (!$("stMapTrig").value.trim() && r.trigger) $("stMapTrig").placeholder = r.trigger;
+    for (let i = 0; i < 240 && want === m.want; i++) {        // the worker answers in seconds; up to two minutes
+      await new Promise((ok) => setTimeout(ok, 500));
+      const d = await api("/api/studio/map");
+      if (d.gen === r.gen && !d.busy) {
+        if (want !== m.want) return;
+        if (d.error) { $("stMapSay").textContent = d.error; return; }
+        m.data = d;
+        stMapDraw();
+        return;
+      }
+    }
+  } catch (e) { $("stMapSay").textContent = e.message; }
+}
+
+// a new Tweaked render: the map on screen belonged to the last one - made again when a map is chosen
+function studioMapsAfterRender() {
+  const m = S.st.map;
+  if (!m) return;
+  m.data = null;
+  $("stMapCanvas").style.display = "none";
+  if (m.kind) studioMapRequest();
+}
+
+function stMapGrid() {                          // the chosen kind at the chosen level, or every level together
+  const m = S.st.map, maps = (m.data && m.data.maps) || {}, byLevel = maps[m.kind] || {};
+  // from the picture's quietest area up (2nd percentile) to its 98th: a LoRA that changes the whole picture a little
+  // drew all of it yellow from zero; from the floor, what stands out is where it acts most
+  const norm = (g) => {
+    const vs = [...g.v].sort((a, b) => a - b);
+    const lo = vs[Math.floor(0.02 * (vs.length - 1))];
+    const hi = (vs[Math.floor(0.98 * (vs.length - 1))] - lo) || 1;
+    return g.v.map((x) => Math.max(0, x - lo) / hi);
+  };
+  const levels = m.level === "all" ? Object.keys(byLevel) : [m.level].filter((l) => byLevel[l]);
+  if (!levels.length) return null;
+  const g0 = byLevel[levels[0]], acc = new Array(g0.v.length).fill(0);
+  for (const l of levels) norm(byLevel[l]).forEach((x, j) => { acc[j] += x / levels.length; });
+  if (m.level === "all") {                      // the average back to 0-1
+    const vs = [...acc].sort((a, b) => a - b), hi = vs[Math.floor(0.98 * (vs.length - 1))] || 1;
+    return {w: g0.w, h: g0.h, v: acc.map((x) => x / hi)};
+  }
+  return {w: g0.w, h: g0.h, v: acc};
+}
+
+function stMapDraw() {
+  const m = S.st.map, img = $("stTweak"), cv = $("stMapCanvas");
+  if (!m || !m.kind || !m.data || m.data.gen !== S.st.shown || !img.naturalWidth) { cv.style.display = "none"; return; }
+  const kind = ST_MAPS.find((k) => k[0] === m.kind);
+  const g = stMapGrid();
+  if (!g) {
+    cv.style.display = "none";
+    $("stMapSay").textContent = m.kind === "tweak" ? "No slider has moved: the Tweaked picture is the Baseline." :
+      m.kind === "attn" ? (m.data.trigger ? `"${m.data.trigger}" isn't in the prompt (or this model has no trigger map).` :
+        "Type the LoRA's trigger word: it isn't in the LoRA's own information.") : "No map for this one.";
+    return;
+  }
+  $("stMapSay").textContent = kind ? kind[2] : "";
+  // the picture's box inside the pane (object-fit: contain)
+  const bw = img.clientWidth, bh = img.clientHeight, ar = img.naturalWidth / img.naturalHeight;
+  const w = Math.min(bw, bh * ar), h = w / ar, x0 = img.offsetLeft + (bw - w) / 2, y0 = img.offsetTop + (bh - h) / 2;
+  Object.assign(cv.style, {display: "", left: `${x0}px`, top: `${y0}px`, width: `${w}px`, height: `${h}px`});
+  const dpr = window.devicePixelRatio || 1, W = Math.max(1, Math.round(w * dpr)), H = Math.max(1, Math.round(h * dpr));
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext("2d");
+  ctx.drawImage(img, 0, 0, W, H);
+  const im = ctx.getImageData(0, 0, W, H), p = im.data;          // the picture grey and dimmed under the map
+  for (let j = 0; j < p.length; j += 4) { const y = 0.55 * (0.299 * p[j] + 0.587 * p[j + 1] + 0.114 * p[j + 2]); p[j] = p[j + 1] = p[j + 2] = y; }
+  ctx.putImageData(im, 0, 0);
+  const rgb = (name) => { const q = /(\d+)\D+(\d+)\D+(\d+)/.exec(themeColor(name)); return q ? [+q[1], +q[2], +q[3]] : [0, 0, 0]; };
+  const [c1, c2, c3] = [rgb("--pic-heat-1"), rgb("--pic-heat-2"), rgb("--pic-heat-3")];
+  const off = document.createElement("canvas");
+  off.width = g.w; off.height = g.h;
+  const oc = off.getContext("2d"), px = oc.createImageData(g.w, g.h);
+  for (let j = 0; j < g.v.length; j++) {
+    const f = Math.max(0, Math.min(1, g.v[j])), c = f < 0.5 ? c1 : f < 0.75 ? c2 : c3;
+    px.data.set([c[0], c[1], c[2], Math.round(255 * Math.min(1, (f < 0.25 ? 0 : 0.85) * m.op))], j * 4);
+  }
+  oc.putImageData(px, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(off, 0, 0, W, H);
+  $("stMapLegend").style.background = "linear-gradient(90deg, transparent 0 25%, var(--pic-heat-1) 25% 50%, " +
+    "var(--pic-heat-2) 50% 75%, var(--pic-heat-3) 75% 100%)";
+}
+
 async function studioMetrics() {
   const L = S.st.layout;
   if (!L || L.kind === "audio" || !S.st.shown) return;
@@ -6412,7 +6554,7 @@ async function studioMetrics() {
 function wireStudioMetrics() {
   const setRef = (p) => {
     try { const d = stSaved(); d.metricsRef = p || ""; localStorage.setItem(ST_KEY, JSON.stringify(d)); } catch (e) { /* private window */ }
-    studioMetricsShow(); studioMetrics();
+    studioMetricsShow(); studioMetrics(); studioMapsShow();
   };
   $("stMetRefPick").addEventListener("click", () => pick(stSaved().metricsRef || refStart(), false, setRef));
   $("stMetRefClear").addEventListener("click", () => setRef(""));
@@ -7102,6 +7244,7 @@ async function studioPoll() {
       if (kind === "audio" && has) songLoad(w, q(w + "_media"), st.shown, st.act && st.act[w] ? q(w + "_act") : "");
     }
     studioMetrics();
+    studioMapsAfterRender();
     studioDownloads(st, q);
     const ps = Number($("stPScale").value) || 1;
     $("stBaseCap").textContent = (ps === 1 ? "Baseline (LoRA at default 1.0)" : `Baseline (LoRA at ${ps})`) +

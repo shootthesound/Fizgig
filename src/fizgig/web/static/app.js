@@ -5595,7 +5595,7 @@ function studioKind(L, sv) {
   studioAce(L, sv);
   studioEqButtons(L);
   studioMixShow(L);
-  studioMetricsShow();
+  studioMetricsShow(); studioMapsShow();
   if (!video) return;
   // the clip row's values are remembered per model (H3's under the old "h3" key), each starting from its own defaults
   const V = L.video, h3 = (sv.video || {})[L.key] || (L.key === "minimax" ? sv.h3 : null) || {};
@@ -6383,6 +6383,197 @@ function studioMetricsShow() {
   $("stMetRefName").textContent = ref ? ref.split(/[\\/]/).pop() : "(none)";
 }
 
+// ---- Studio maps: the training maps' heatmaps over the Tweaked picture, for any loaded LoRA -------------------------
+const ST_MAPS = [["", "Off", "No map"],
+  ["effect", "Where the LoRA acts", "Where the LoRA, as you've set it, changes the picture. Red = changes it most, " +
+    "yellow = some, blue = a little, no colour = barely. For a person LoRA it should gather on the face and body; if " +
+    "it spreads over clothes or the background, the LoRA changes those too."],
+  ["tweak", "What your tweaks change", "Move any slider (a block, a master slider or a LoRA's strength) and let the " +
+    "Tweaked picture render: this map then shows where your change acts, against the Baseline (every slider at 1.0). " +
+    "Red = your change moves that part most, yellow = some, blue = a little. It updates after every render."],
+  ["attn", "Trigger word", "How much of each area's attention goes to the trigger word inside the model, on the same " +
+    "colours. For a person it should settle on the face and body; on lettering (a logo, a watermark) or the background, " +
+    "the trigger is tied to those too. The prompt must contain the trigger word."],
+  ["blocks", "Blocks", "Where each group of the LoRA's blocks acts: the picture as tweaked against the same with that " +
+    "group switched off, at mid noise. Pick a group below. Red = it changes that part most; a group that lights up the " +
+    "background or clothes is the one to turn down there."]];
+const ST_MAP_LEVELS = [["all", "All levels"], ["0.25", "Low noise (detail)"], ["0.5", "Mid"], ["0.75", "High noise (layout)"]];
+
+function stMapPrefs() { try { return JSON.parse(localStorage.getItem("fizgig.stmap") || "{}"); } catch (e) { return {}; } }
+function stMapSave(p) { try { localStorage.setItem("fizgig.stmap", JSON.stringify({...stMapPrefs(), ...p})); } catch (e) { /* private */ } }
+
+function studioMapsShow() {
+  const L = S.st.layout, on = !!L && L.kind !== "audio" && L.kind !== "video";
+  $("stMaps").style.display = on ? "" : "none";
+  if (!on) { $("stMapCanvas").style.display = "none"; return; }
+  if (!S.st.map) {
+    const p = stMapPrefs();
+    S.st.map = {kind: "", level: p.level || "all", op: p.op != null ? p.op : 1, data: null, want: null, group: ""};
+    $("stMapOp").value = String(Math.round(S.st.map.op * 100));
+    $("stMapOp").addEventListener("input", () => { S.st.map.op = Number($("stMapOp").value) / 100; stMapDraw(); });
+    $("stMapOp").addEventListener("change", () => stMapSave({op: S.st.map.op}));
+    $("stMapOp").addEventListener("dblclick", () => { S.st.map.op = 1; $("stMapOp").value = "100"; stMapDraw(); stMapSave({op: 1}); });
+    // the trigger word: Show (or Enter) makes the map for it - never just leaving the box
+    $("stMapGo").addEventListener("click", () => { if (S.st.map.kind) studioMapRequest(); });
+    $("stMapTrig").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("stMapGo").click(); } });
+    $("stTweak").addEventListener("load", () => stMapDraw());
+    window.addEventListener("resize", () => stMapDraw());
+  }
+  stMapChips();
+}
+
+function stMapChips() {
+  const m = S.st.map;
+  const row = (items, cur, set) => items.map(([v, label, tip]) => el("button", {class: "btn btn-sm" + (v === cur ? " btn-primary" : ""),
+    text: label, title: tip || "", onclick: () => { set(v); stMapChips(); }}));
+  $("stMapKinds").replaceChildren(...row(ST_MAPS, m.kind, (v) => {
+    m.kind = v;
+    if (!v) { $("stMapCanvas").style.display = "none"; stMapNote(""); return; }
+    if (v === "tweak" && S.st.same) {            // nothing moved: nothing to calculate
+      $("stMapCanvas").style.display = "none";
+      stMapNote("Nothing to show yet: move a slider, and when the Tweaked picture has rendered, the map appears here.");
+      return;
+    }
+    if (!m.data || m.data.gen !== S.st.shown || (v === "blocks" && !m.data.with_blocks)) studioMapRequest(); else stMapDraw();
+  }));
+  const groups = (m.data && m.data.groups) || [];
+  if (m.kind === "blocks") {                    // a button per group, the first one chosen
+    if (!groups.includes(m.group)) m.group = groups[0] || "";
+    $("stMapLevels").replaceChildren(...row(groups.map((g) => [g, g, `Where ${g} acts`]), m.group, (v) => { m.group = v; stMapDraw(); }));
+  } else {
+    $("stMapLevels").replaceChildren(...row(ST_MAP_LEVELS, m.level, (v) => { m.level = v; stMapSave({level: v}); stMapDraw(); }));
+  }
+  $("stMapOpts").style.display = m.kind ? "" : "none";
+  // what the chosen map shows, right under its button, before the next row of controls
+  $("stMapKindSay").textContent = m.kind ? (ST_MAPS.find((k) => k[0] === m.kind) || [])[2] || "" : "";
+  $("stMapTrigRow").style.display = m.kind === "attn" ? "" : "none";
+}
+
+function stMapNote(text) {                     // the notice under the controls (empty: hidden)
+  $("stMapSay").textContent = text || "";
+  $("stMapSay").style.display = text ? "" : "none";
+}
+
+async function studioMapRequest() {
+  const m = S.st.map;
+  if (!m || !m.kind || !S.st.shown) return;
+  const state = studioState();
+  if (state.seed === 0 && S.st.seedUsed) state.seed = S.st.seedUsed;
+  const want = (m.want = (m.want || 0) + 1);
+  const busy = (on) => {                        // a pill by the title, a badge on the picture, the Show button
+    $("stMapGo").disabled = on;
+    $("stMapGo").textContent = on ? "Making the map…" : "Show";
+    $("stMapPill").style.display = $("stMapBadge").style.display = on ? "" : "none";
+  };
+  busy(true);
+  stMapNote("");
+  try {
+    const r = await api("/api/studio/map", {state, trigger: $("stMapTrig").value.trim(), blocks: m.kind === "blocks"});
+    if (r.error) { busy(false); stMapNote(r.error); return; }
+    if (!$("stMapTrig").value.trim() && r.trigger) $("stMapTrig").placeholder = r.trigger;
+    for (let i = 0; i < 240 && want === m.want; i++) {        // the worker answers in seconds; up to two minutes
+      await new Promise((ok) => setTimeout(ok, 500));
+      const d = await api("/api/studio/map");
+      if (d.rid === r.rid && !d.busy) {
+        if (want !== m.want) return;
+        busy(false);
+        if (d.error) { stMapNote(d.error); return; }
+        m.data = d;
+        stMapChips();
+        stMapDraw();
+        return;
+      }
+    }
+  } catch (e) { stMapNote(e.message); }
+  if (want === m.want) busy(false);
+}
+
+// a new Tweaked render: the map on screen belonged to the last one - made again when a map is chosen
+function studioMapsAfterRender(same) {
+  const m = S.st.map;
+  if (!m) return;
+  m.data = null;
+  $("stMapCanvas").style.display = "none";
+  // nothing moved (Reset All): What your tweaks change has nothing to show - the overlay goes, nothing is calculated
+  if (m.kind === "tweak" && same) {
+    stMapNote("Nothing to show yet: move a slider, and when the Tweaked picture has rendered, the map appears here.");
+    return;
+  }
+  if (m.kind) studioMapRequest();
+}
+
+function stMapGrid() {                          // the chosen kind at the chosen level, or every level together
+  const m = S.st.map, maps = (m.data && m.data.maps) || {};
+  // Blocks: the chosen group's map (mid noise), on the same footing as a one-level map
+  const byLevel = m.kind === "blocks" ? (((m.data && m.data.blocks) || {})[m.group] ? {"0.5": m.data.blocks[m.group]} : {})
+    : maps[m.kind] || {};
+  const level = m.kind === "blocks" ? "0.5" : m.level;
+  // from the picture's quietest area up (2nd percentile) to its 98th: a LoRA that changes the whole picture a little
+  // drew all of it yellow from zero; from the floor, what stands out is where it acts most
+  const norm = (g) => {
+    const vs = [...g.v].sort((a, b) => a - b);
+    const lo = vs[Math.floor(0.02 * (vs.length - 1))];
+    const hi = (vs[Math.floor(0.98 * (vs.length - 1))] - lo) || 1;
+    return g.v.map((x) => Math.max(0, x - lo) / hi);
+  };
+  const levels = level === "all" ? Object.keys(byLevel) : [level].filter((l) => byLevel[l]);
+  if (!levels.length) return null;
+  const g0 = byLevel[levels[0]], acc = new Array(g0.v.length).fill(0);
+  for (const l of levels) norm(byLevel[l]).forEach((x, j) => { acc[j] += x / levels.length; });
+  if (level === "all") {                        // the average back to 0-1
+    const vs = [...acc].sort((a, b) => a - b), hi = vs[Math.floor(0.98 * (vs.length - 1))] || 1;
+    return {w: g0.w, h: g0.h, v: acc.map((x) => x / hi)};
+  }
+  return {w: g0.w, h: g0.h, v: acc};
+}
+
+function stMapDraw() {
+  try { stMapDrawNow(); } catch (e) {          // never leave an old map on screen
+    $("stMapCanvas").style.display = "none";
+    stMapNote(`The map couldn't be drawn: ${e.message}`);
+  }
+}
+
+function stMapDrawNow() {
+  const m = S.st.map, img = $("stTweak"), cv = $("stMapCanvas");
+  if (!m || !m.kind || !m.data || m.data.gen !== S.st.shown || !img.naturalWidth) { cv.style.display = "none"; return; }
+  const g = stMapGrid();
+  if (!g) {
+    cv.style.display = "none";
+    stMapNote(m.kind === "blocks" ? "No block group to map: this LoRA touches none of them." :
+      m.kind === "tweak" ? "Nothing to show yet: move a slider, and when the Tweaked picture has rendered, the map appears here." :
+      m.kind === "attn" ? (m.data.trigger ? `"${m.data.trigger}" isn't in the prompt (or this model has no trigger map).` :
+        "Type the LoRA's trigger word: it isn't in the LoRA's own information.") : "No map for this one.");
+    return;
+  }
+  stMapNote("");                                 // the explanation sits under the buttons (stMapKindSay)
+  // the picture's box inside the pane (object-fit: contain)
+  const bw = img.clientWidth, bh = img.clientHeight, ar = img.naturalWidth / img.naturalHeight;
+  const w = Math.min(bw, bh * ar), h = w / ar, x0 = img.offsetLeft + (bw - w) / 2, y0 = img.offsetTop + (bh - h) / 2;
+  Object.assign(cv.style, {display: "", left: `${x0}px`, top: `${y0}px`, width: `${w}px`, height: `${h}px`});
+  const dpr = window.devicePixelRatio || 1, W = Math.max(1, Math.round(w * dpr)), H = Math.max(1, Math.round(h * dpr));
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext("2d");
+  ctx.drawImage(img, 0, 0, W, H);
+  const im = ctx.getImageData(0, 0, W, H), p = im.data;          // the picture grey and dimmed under the map
+  for (let j = 0; j < p.length; j += 4) { const y = 0.55 * (0.299 * p[j] + 0.587 * p[j + 1] + 0.114 * p[j + 2]); p[j] = p[j + 1] = p[j + 2] = y; }
+  ctx.putImageData(im, 0, 0);
+  const rgb = (name) => { const q = /(\d+)\D+(\d+)\D+(\d+)/.exec(themeColor(name)); return q ? [+q[1], +q[2], +q[3]] : [0, 0, 0]; };
+  const [c1, c2, c3] = [rgb("--pic-heat-1"), rgb("--pic-heat-2"), rgb("--pic-heat-3")];
+  const off = document.createElement("canvas");
+  off.width = g.w; off.height = g.h;
+  const oc = off.getContext("2d"), px = oc.createImageData(g.w, g.h);
+  for (let j = 0; j < g.v.length; j++) {
+    const f = Math.max(0, Math.min(1, g.v[j])), c = f < 0.5 ? c1 : f < 0.75 ? c2 : c3;
+    px.data.set([c[0], c[1], c[2], Math.round(255 * Math.min(1, (f < 0.25 ? 0 : 0.85) * m.op))], j * 4);
+  }
+  oc.putImageData(px, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(off, 0, 0, W, H);
+  $("stMapLegend").style.background = "linear-gradient(90deg, transparent 0 25%, var(--pic-heat-1) 25% 50%, " +
+    "var(--pic-heat-2) 50% 75%, var(--pic-heat-3) 75% 100%)";
+}
+
 async function studioMetrics() {
   const L = S.st.layout;
   if (!L || L.kind === "audio" || !S.st.shown) return;
@@ -6412,7 +6603,7 @@ async function studioMetrics() {
 function wireStudioMetrics() {
   const setRef = (p) => {
     try { const d = stSaved(); d.metricsRef = p || ""; localStorage.setItem(ST_KEY, JSON.stringify(d)); } catch (e) { /* private window */ }
-    studioMetricsShow(); studioMetrics();
+    studioMetricsShow(); studioMetrics(); studioMapsShow();
   };
   $("stMetRefPick").addEventListener("click", () => pick(stSaved().metricsRef || refStart(), false, setRef));
   $("stMetRefClear").addEventListener("click", () => setRef(""));
@@ -6517,7 +6708,7 @@ async function studioSetupApply(d, name) {        // a saved setup, or one read 
   if (S.st.layout && S.st.layout.kind === "video") studioSlots();
   S.st.region = w.region || null;
   studioEq("primary", false, false); studioEq("donor", false, false);
-  studioAceLayout(); studioAceRemember(); studioH3Remember(); stRemember(); studioMetricsShow(); studioNegRow();
+  studioAceLayout(); studioAceRemember(); studioH3Remember(); stRemember(); studioMetricsShow(); studioMapsShow(); studioNegRow();
   studioSync(); studioCommit();
   studioMixReset();
   S.st.pendingMix = w.mix || w.dmix ? w : null;          // the mix follows once its LoRAs are loaded
@@ -7102,6 +7293,8 @@ async function studioPoll() {
       if (kind === "audio" && has) songLoad(w, q(w + "_media"), st.shown, st.act && st.act[w] ? q(w + "_act") : "");
     }
     studioMetrics();
+    S.st.same = !!st.same;
+    studioMapsAfterRender(S.st.same);
     studioDownloads(st, q);
     const ps = Number($("stPScale").value) || 1;
     $("stBaseCap").textContent = (ps === 1 ? "Baseline (LoRA at default 1.0)" : `Baseline (LoRA at ${ps})`) +

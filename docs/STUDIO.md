@@ -72,6 +72,17 @@ When a roll gives you something you like in part, **🔒 Freeze tweaked** locks 
 - **Profile found for this LoRA**: when the Profiler has profiled this exact file, its findings show here, with a link to the full report.
 - **Model EQ Mode** (models with a Model EQ LoRA set in Preferences): a row holds the model's own weights instead of a LoRA, so the sliders turn the stock model's own blocks up or down. Press it again to get your LoRA back.
 
+## Maps
+
+Under the preview, **Maps** draws a heatmap over the Tweaked picture, for any LoRA Studio can load (one you didn't train included). It's the [training maps](TRAINING_MAPS.md)' method: the picture is noised at three levels and the model's prediction compared. Pick a map and it appears after a few seconds (a badge on the picture says while it's being made); it's made again after every render.
+
+- **Where the LoRA acts:** the LoRA as you've set it, against no LoRA. For a person LoRA it should gather on the face and body; spread over clothes or the background, the LoRA changes those too.
+- **What your tweaks change:** move any slider and let the picture render: where your change acts, against the Baseline. With nothing moved there's nothing to show, and nothing is calculated.
+- **Trigger word:** where the trigger word's attention goes. The word comes from the LoRA's own information, or type it and press **Show**. A made-up trigger word often lands on lettering in the picture (a sign, a logo) as well as the subject. Every picture model but SDXL.
+- **Blocks:** where each group of the LoRA's blocks acts (the picture as tweaked, against the same with that group off), a button per group: the model's charted areas where it has them (MOSS-Image's Identity 24–35, Klein's Style + composition, Identity and Details), else runs of about seven blocks. A group that lights up the background or clothes is the one to turn down there.
+
+Red means most, then yellow, then blue; no colour, barely. Each map is scaled from the picture's quietest area up, so what shows is where it acts most. **All levels** or one noise level, and **Opacity**, are under the buttons. Picture models only.
+
 ## Saving
 
 - **Save repaired LoRA**: name the new file under **Save as** and press it. It's a normal LoRA for ComfyUI and anything else, with the slider settings recorded in its metadata.

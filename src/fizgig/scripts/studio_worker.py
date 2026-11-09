@@ -154,6 +154,7 @@ def _render(c):
             os.makedirs(out, exist_ok=True)
             desc = S["desc"]
             nolora = None                        # the No-LoRA pane's render, after the pair is up
+            same = False                         # the Tweaked render is the Baseline (nothing moved: Studio's maps)
             if getattr(desc, "video_workbench", False):
                 paths, nolora = _render_clips(eng, desc, st, c, out, gen)
             elif getattr(desc, "audio_workbench", False):
@@ -168,7 +169,7 @@ def _render(c):
                 tweak = base if same else eng.generate_preview(st)
                 paths["tweaked"] = os.path.join(out, f"tweaked_{gen}.png")
                 tweak.save(paths["tweaked"])
-            emit(ev="rendered", gen=gen, nolora_pending=nolora is not None, notes=S.get("notes"), **paths)
+            emit(ev="rendered", gen=gen, nolora_pending=nolora is not None, notes=S.get("notes"), same=bool(same), **paths)
             _tidy(out, gen)
             if nolora is not None:               # as the desktop: the pair first, then the base model's own
                 try:
@@ -924,7 +925,31 @@ def cmd_reset(_c):
     emit(ev="reset")
 
 
-HANDLERS = {"load": cmd_load, "donor": cmd_donor, "settings": cmd_settings, "render": cmd_render,
+def cmd_map(c):
+    """Studio's maps over the Tweaked render on screen (engine.lora_map): stills only."""
+    gen = c.get("gen", 0)
+    eng = S["engine"]
+    try:
+        with _engine_lock:
+            if eng is None or eng.primary_network is None:
+                raise ValueError("Load a LoRA first.")
+            if getattr(S["desc"], "video_workbench", False) or getattr(S["desc"], "audio_workbench", False):
+                raise ValueError("Maps are for pictures.")
+            from PIL import Image
+            with Image.open(c["picture"]) as im:
+                pic = im.convert("RGB")
+            emit(ev="status", text="Making the maps…")
+            res = eng.lora_map(_state(c["state"]), pic, trigger=c.get("trigger") or "", blocks=bool(c.get("blocks")))
+            import torch
+            torch.cuda.empty_cache()
+        emit(ev="map", gen=gen, rid=c.get("rid"), with_blocks=bool(c.get("blocks")), **res)
+        emit(ev="status", text="Ready.")
+    except Exception as e:
+        emit(ev="map", gen=gen, rid=c.get("rid"), error=str(e) or type(e).__name__)
+        emit(ev="status", text="Ready.")
+
+
+HANDLERS = {"load": cmd_load, "donor": cmd_donor, "settings": cmd_settings, "render": cmd_render, "map": cmd_map,
             "cancel": cmd_cancel, "save": cmd_save, "reset": cmd_reset, "royale": cmd_royale,
             "royale_travel": cmd_royale_travel, "refmod": cmd_refmod}
 

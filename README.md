@@ -65,6 +65,7 @@ A trainer and workbench for image, video and music models, in its own window on 
 - **Explore** variations: 🎲 I'm feeling lucky in Studio rolls new block strengths within your limits; keep the ones you like.
 - **Find** the best epoch by eye: LoRA Royale renders every epoch on one seed with a crossfade, and exports shareable loops.
 - **Profile** which blocks carry identity, style and detail before you touch anything.
+- **See** where training and a LoRA act: [training maps](docs/TRAINING_MAPS.md) draw heatmaps over your own pictures each epoch (what's learned, what isn't yet, where the LoRA acts, where the trigger word's attention goes), and Studio's Maps draw the same over any LoRA's render, block group by block group.
 - **Train beyond LoRAs:** LoKR, or the full base model itself: Anima on an 8 GB card, the larger models on 16 GB. A LoRA extracted from a fine-tune came out better than one trained directly at the same rank.
 
 Memory plans itself: precision, block swap and previews size to your free VRAM, and if a preview can't fit, training keeps going. Fizgig loads kohya, PEFT, OneTrainer, AI-Toolkit and LyCORIS LoRAs, and saves `.safetensors` that drop straight into ComfyUI. Free and open source.

@@ -163,8 +163,11 @@ def _event(ev):
                       baseline_media=ev.get("baseline_media", ""), tweaked_media=ev.get("tweaked_media", ""),
                       baseline_act=ev.get("baseline_act", ""), tweaked_act=ev.get("tweaked_act", ""),
                       shown=ev.get("gen", 0), status="Ready.", error="", nolora_busy=bool(ev.get("nolora_pending")),
-                      notes=ev.get("notes"))
+                      notes=ev.get("notes"), same=bool(ev.get("same")))
             nxt, _S["pending"] = _S["pending"], None
+        elif kind == "map" and ev.get("rid") == _S.get("map_rid"):    # the newest request's maps (map_request)
+            _S["map"] = {k: v for k, v in ev.items() if k != "ev"}
+            _S["map"]["busy"] = False
         elif kind == "nolora":                   # the No-LoRA pane's render landed (or a newer edit cut it short)
             _S["nolora_busy"] = False
             if ev.get("nolora") and ev["nolora"] != _S.get("nolora"):   # the same file again: the pane plays on
@@ -364,6 +367,40 @@ def render(state, extra=None):
         return {"ok": True, "queued": True}
     _send({"cmd": "render", "gen": gen, "state": state, "out_dir": OUT_DIR, **(extra or {})})
     return {"ok": True, "gen": gen}
+
+
+def lora_trigger(path):
+    """A LoRA's trigger word from its metadata (Fizgig's, kohya's), or ""."""
+    try:
+        from safetensors import safe_open
+        with safe_open(path, framework="pt") as f:
+            md = f.metadata() or {}
+        return (md.get("modelspec.trigger_phrase") or md.get("ss_trigger_word") or "").strip()
+    except Exception:
+        return ""
+
+
+def map_request(state, trigger="", blocks=False):
+    """The maps over the Tweaked render on screen, made in the worker (engine.lora_map); the page polls map_status.
+    No trigger given: the primary LoRA's own, from its metadata."""
+    with _lock:
+        if _S["state"] != "ready":
+            return {"error": "Load a LoRA first."}
+        pic, shown = _S.get("tweaked") or "", _S.get("shown", 0)
+        if not (pic and os.path.isfile(pic)):
+            return {"error": "Render a preview first."}
+        trig = str(trigger or "").strip() or lora_trigger(_S.get("primary") or "")
+        # each request its own number, echoed by the worker: a result is only ever the answer to its own request
+        # (a map asked for while another was being made used to take the earlier one's result)
+        rid = _S["map_rid"] = int(_S.get("map_rid", 0)) + 1
+        _S["map"] = {"gen": shown, "rid": rid, "busy": True, "trigger": trig, "with_blocks": bool(blocks)}
+    _send({"cmd": "map", "gen": shown, "rid": rid, "state": state, "picture": pic, "trigger": trig, "blocks": bool(blocks)})
+    return {"ok": True, "gen": shown, "rid": rid, "trigger": trig}
+
+
+def map_status():
+    with _lock:
+        return dict(_S.get("map") or {})
 
 
 def metrics(ref=""):
@@ -681,6 +718,7 @@ def status():
         d = {k: _S[k] for k in ("state", "family", "primary", "donor", "primary_blocks", "donor_blocks", "status",
                                 "progress", "shown", "rendering", "error", "saved", "profile")}
         d["notes"] = _S.get("notes")
+        d["same"] = bool(_S.get("same"))           # the Tweaked render on screen is the Baseline
         d["eq"] = _S.get("eq") or {}
         d["media"] = {k: bool(_S.get(k + "_media")) for k in ("baseline", "tweaked", "nolora")}
         d["act"] = {k: bool(_S.get(k + "_act")) for k in ("baseline", "tweaked")}

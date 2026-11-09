@@ -775,6 +775,8 @@ def _studio_post(what, b):
         return {"ok": True}
     if what == "keep":
         return {"path": studio.keep_tweaked()}
+    if what == "map":                        # maps over the Tweaked render (where the LoRA acts, the tweaks, the trigger)
+        return studio.map_request(b.get("state") or {}, b.get("trigger") or "", bool(b.get("blocks")))
     if what == "render":
         return studio.render(b.get("state") or {}, extra={k: b.get(k) for k in ("video", "audio", "keyframes", "ref_mode", "mix")
                                                           if b.get(k) is not None})
@@ -3195,6 +3197,8 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(d, dict) or not d.get("fizgig_repair_setup"):
                 return self.json({"error": "That file isn't a Studio setup."}, 404)
             return self.json(d)
+        if path == "/api/studio/map":                # the maps over the Tweaked render, once made
+            return self.json(studio.map_status())
         if path == "/api/studio/metrics":            # the pair on screen, measured (and likeness to a reference)
             return self.json(studio.metrics((qs.get("ref") or [""])[0]))
         if path == "/api/studio/epochs":             # the run a LoRA belongs to (the mix's Up to dial)

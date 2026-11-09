@@ -7602,8 +7602,10 @@ function capSettings() {
     skipCjk: $("capSkipCjk").checked, perPage: $("capPerPage").value, concept: $("capConcept").value.trim()};
 }
 const saveCapSoon = debounce(() => { S.capSaved = capSettings(); api("/api/state", {captions: S.capSaved}).catch(() => {}); }, 600);
-const qwenOn = () => !!S.cap.opts && S.cap.opts.qwen_available && $("capModel").value === S.cap.opts.qwen_model;
-const qwenTask = () => (S.cap.opts.qwen_tasks || []).find((t) => t.label === $("capTask").value);
+// the chosen captioner's description (fizgig/captioners/registry.py), and whether it follows an instruction
+const capDesc = () => ((S.cap.opts && S.cap.opts.captioners) || []).find((c) => c.label === $("capModel").value);
+const qwenOn = () => !!(capDesc() || {}).instruction;
+const qwenTask = () => (S.cap.opts.instruction_tasks || []).find((t) => t.label === $("capTask").value);
 
 async function loadCaptionOptions() {
   const o = S.cap.opts = await api("/api/captions/options?family=" + encodeURIComponent(S.family));
@@ -7643,9 +7645,10 @@ async function loadCaptionOptions() {
 function fillTasks(want) {
   const o = S.cap.opts, task = $("capTask");
   task.innerHTML = "";
-  const labels = qwenOn() ? o.qwen_tasks.map((t) => t.label) : o.florence_tasks;
+  const d = capDesc() || {tasks: [], default_task: ""};
+  const labels = qwenOn() ? o.instruction_tasks.map((t) => t.label) : d.tasks;
   for (const l of labels) task.append(el("option", {value: l, text: l}));
-  task.value = labels.includes(want) ? want : (qwenOn() ? o.default_qwen_task : "<DETAILED_CAPTION>");
+  task.value = labels.includes(want) ? want : (qwenOn() ? o.default_instruction_task : d.default_task);
   $("capEditInstr").style.display = qwenOn() ? "" : "none";
   $("capTaskHint").style.display = qwenOn() && $("capTask").closest(".field-row").style.display !== "none" ? "" : "none";
   $("capInstrBox").style.display = "none";

@@ -44,20 +44,26 @@ def main():
     with open(a.instruction_file, encoding="utf-8") as f:
         instruction = f.read().strip()
     print(f"[detail crops] captioning {len(todo)} crop(s) with Qwen3-VL", flush=True)
-    state = bc._load_state_from_config({"backend": "qwen", "text_encoder": a.captioner},
+    # its own process, before training loads: the captioner the training plans already know (Qwen3-VL), via the
+    # Captions tab's worker code
+    state = bc._load_state_from_config({"captioner": "qwen3vl", "files": {"path": a.captioner}},
                                        "cuda" if torch.cuda.is_available() else "cpu")
     trig = a.trigger if a.trigger and a.trigger.lower() != "trigger_word" else ""
+    job = {"instruction": instruction, "max_new_tokens": a.max_new_tokens, "trigger": trig}
+    request, why = bc.request_for(state.desc, job)
+    if request is None:
+        print(f"[detail crops] no captions: {why}", flush=True)
+        bc.free(state)
+        return 1
     for i, p in enumerate(todo, 1):
         try:
-            cap = bc._caption_qwen(state.model, p, instruction, a.max_new_tokens)
+            cap = bc.caption_file(state, p, request, job)
             if cap:
-                bc._write_caption(p, cap, trig, a.ext)
+                bc._write_caption(p, cap, a.ext)
             print(f"[cache] captions {i}/{len(todo)}", flush=True)       # the run card's count
         except Exception as e:
             print(f"[detail crops] {os.path.basename(p)}: no caption ({e})", flush=True)
-    del state.model
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    bc.free(state)
     n = detail_crops.share_captions(a.folder, a.ext)
     if n:
         print(f"[detail crops] {n} caption(s) copied to the same crops at the other sizes", flush=True)

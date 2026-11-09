@@ -303,7 +303,10 @@ class Watch:
     def _recaption(self, auto, items, device):
         """Caption the stuck images with the shared captioner (Krea 2's Qwen3-VL-4B, loaded for the call and freed
         before the family's encoder loads). Writes each .txt and returns (key, item, caption, attempt) rows to
-        re-encode. A captioner that does not fit the card turns auto-recaption off for the run."""
+        re-encode. A captioner that does not fit the card turns auto-recaption off for the run.
+
+        Only this model, loaded directly: the Captions tab's other captioners (fizgig/captioners/) never load in a run,
+        so the training memory plans only ever fit around Qwen3-VL (the rule in fizgig/captioners/__init__.py)."""
         from fizgig.krea2.embedder import generate_caption
         from fizgig.krea2.utils import load_krea2_text_encoder
         try:

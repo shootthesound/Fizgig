@@ -6474,7 +6474,7 @@ async function studioMapRequest() {
     for (let i = 0; i < 240 && want === m.want; i++) {        // the worker answers in seconds; up to two minutes
       await new Promise((ok) => setTimeout(ok, 500));
       const d = await api("/api/studio/map");
-      if (d.gen === r.gen && !d.busy) {
+      if (d.rid === r.rid && !d.busy) {
         if (want !== m.want) return;
         busy(false);
         if (d.error) { stMapNote(d.error); return; }
@@ -6528,6 +6528,13 @@ function stMapGrid() {                          // the chosen kind at the chosen
 }
 
 function stMapDraw() {
+  try { stMapDrawNow(); } catch (e) {          // never leave an old map on screen
+    $("stMapCanvas").style.display = "none";
+    stMapNote(`The map couldn't be drawn: ${e.message}`);
+  }
+}
+
+function stMapDrawNow() {
   const m = S.st.map, img = $("stTweak"), cv = $("stMapCanvas");
   if (!m || !m.kind || !m.data || m.data.gen !== S.st.shown || !img.naturalWidth) { cv.style.display = "none"; return; }
   const g = stMapGrid();

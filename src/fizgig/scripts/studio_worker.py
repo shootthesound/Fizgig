@@ -942,10 +942,10 @@ def cmd_map(c):
             res = eng.lora_map(_state(c["state"]), pic, trigger=c.get("trigger") or "", blocks=bool(c.get("blocks")))
             import torch
             torch.cuda.empty_cache()
-        emit(ev="map", gen=gen, with_blocks=bool(c.get("blocks")), **res)
+        emit(ev="map", gen=gen, rid=c.get("rid"), with_blocks=bool(c.get("blocks")), **res)
         emit(ev="status", text="Ready.")
     except Exception as e:
-        emit(ev="map", gen=gen, error=str(e) or type(e).__name__)
+        emit(ev="map", gen=gen, rid=c.get("rid"), error=str(e) or type(e).__name__)
         emit(ev="status", text="Ready.")
 
 

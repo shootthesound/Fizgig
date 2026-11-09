@@ -165,7 +165,7 @@ def _event(ev):
                       shown=ev.get("gen", 0), status="Ready.", error="", nolora_busy=bool(ev.get("nolora_pending")),
                       notes=ev.get("notes"), same=bool(ev.get("same")))
             nxt, _S["pending"] = _S["pending"], None
-        elif kind == "map":                      # Studio's maps over the Tweaked render (map_request)
+        elif kind == "map" and ev.get("rid") == _S.get("map_rid"):    # the newest request's maps (map_request)
             _S["map"] = {k: v for k, v in ev.items() if k != "ev"}
             _S["map"]["busy"] = False
         elif kind == "nolora":                   # the No-LoRA pane's render landed (or a newer edit cut it short)
@@ -390,9 +390,12 @@ def map_request(state, trigger="", blocks=False):
         if not (pic and os.path.isfile(pic)):
             return {"error": "Render a preview first."}
         trig = str(trigger or "").strip() or lora_trigger(_S.get("primary") or "")
-        _S["map"] = {"gen": shown, "busy": True, "trigger": trig, "with_blocks": bool(blocks)}
-    _send({"cmd": "map", "gen": shown, "state": state, "picture": pic, "trigger": trig, "blocks": bool(blocks)})
-    return {"ok": True, "gen": shown, "trigger": trig}
+        # each request its own number, echoed by the worker: a result is only ever the answer to its own request
+        # (a map asked for while another was being made used to take the earlier one's result)
+        rid = _S["map_rid"] = int(_S.get("map_rid", 0)) + 1
+        _S["map"] = {"gen": shown, "rid": rid, "busy": True, "trigger": trig, "with_blocks": bool(blocks)}
+    _send({"cmd": "map", "gen": shown, "rid": rid, "state": state, "picture": pic, "trigger": trig, "blocks": bool(blocks)})
+    return {"ok": True, "gen": shown, "rid": rid, "trigger": trig}
 
 
 def map_status():

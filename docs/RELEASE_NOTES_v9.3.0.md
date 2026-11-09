@@ -6,6 +6,12 @@
 - **Where the LoRA acts:** where the LoRA changes the picture. For a person it should gather on the face and body; spreading over clothes or the background means it's learning those too.
 - **Trigger word** (MOSS-Image, Krea 2 and Qwen Image 2.1, an experiment): how much of each area's attention goes to your trigger word inside the model.
 
+![Where the LoRA acts](https://raw.githubusercontent.com/shootthesound/Fizgig/master/docs/assets/training_maps/where_the_lora_acts.jpg)
+
+![Trigger word: on the face, and on the T-shirt's logo](https://raw.githubusercontent.com/shootthesound/Fizgig/master/docs/assets/training_maps/trigger_logo.jpg)
+
+Above, a person LoRA about ten epochs in. **Where the LoRA acts** is strongest on the face. The **Trigger word** map sits on the face, and also on the logo on the T-shirt: a made-up trigger word looks to the model like a word it might write, so it's drawn to lettering. If it stays there, the trigger is being tied to the logo.
+
 Each comes at three noise levels or all together, with play, scrub, a full-window view and auto-refresh while the run trains. It works on every still-picture model. [Training maps guide](https://github.com/shootthesound/Fizgig/blob/master/docs/TRAINING_MAPS.md)
 
 **Compiled runs warm up much faster.** The compiler now builds each block for any picture size and caption length from the start, instead of rebuilding for each new one it meets. Runs using **Leave the rest of the model alone** or **Fizgig LoRA Isolation** gained most: on MOSS-Image with 25 picture sizes, the first steps went from about 19 s each, with 81 rebuilds in the first 26 steps, to a whole 2-epoch test in 84 s with 4. Runs without it reach full speed sooner too (epoch 1 at 0.38 s a step instead of 0.68). Speed once warmed up and memory are unchanged. On Krea 2, compiled blocks also stop rebuilding for each caption's length: the same kind of run reached full speed (0.93 s a step) within its first epoch, where its first 27 steps had taken 3 minutes.

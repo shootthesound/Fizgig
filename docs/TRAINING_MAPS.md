@@ -19,6 +19,32 @@ Pick a picture at the top, then a map:
 - **Where the LoRA acts.** Where the LoRA changes the picture, on the same red / yellow / blue scale. For a person it should gather on the face and body. If it spreads over clothes or the background, the LoRA is learning those too.
 - **Trigger word** (MOSS-Image, Krea 2 and Qwen Image 2.1; an experiment). How much of each area's attention goes to your trigger word inside the model, on the same scale. For a person it should settle on the face and body; if it sits on a hat, a jacket or the background, the trigger word is tied to those too. It appears when the run has a trigger word and the picture's caption contains it.
 
+## Examples
+
+From a person LoRA, about ten epochs in.
+
+**Learned since the start** at high noise (the layout): green across the face, where the model now gets the person right; only scattered cells elsewhere.
+
+![Learned since the start: green on the face](assets/training_maps/learned_since_start.jpg)
+
+**Where the LoRA acts**, the same picture: strongest (red) on the face, some (yellow) on the hair, shoulders and the T-shirt's logo, and a little (blue) over everything else.
+
+![Where the LoRA acts: red on the face](assets/training_maps/where_the_lora_acts.jpg)
+
+**Trigger word**, the same picture: the trigger's attention sits on the face, and also on the logo on the T-shirt. A made-up trigger word looks to the model like a word it might be asked to write, so its attention is drawn to lettering: logos, signs, watermarks. If it stays there as training goes on, the trigger is being tied to the logo. Crop or paint the logo out, or caption it.
+
+![Trigger word: on the face, and on the T-shirt's logo](assets/training_maps/trigger_logo.jpg)
+
+**Trigger word** on a close-up, at all levels together: settled on the face, the eyes and the mouth.
+
+![Trigger word on a close-up](assets/training_maps/trigger_all_levels.jpg)
+
+The same close-up at mid noise and at high noise (the layout), where it spreads a little wider:
+
+![Trigger word at mid noise](assets/training_maps/trigger_mid.jpg)
+
+![Trigger word at high noise](assets/training_maps/trigger_high_noise.jpg)
+
 ## Noise levels
 
 Each picture is checked at three noise levels, always with the same noise, so only the LoRA changes from one epoch to the next:

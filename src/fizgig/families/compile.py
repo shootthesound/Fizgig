@@ -30,6 +30,24 @@ class CheckpointedBlock(torch.nn.Module):
         return self.block(*args)
 
 
+def _seq_dynamic(_module, args):
+    """A compiled block's forward pre-hook (runs eagerly, before the compiled graph): the sequence length of its
+    [B, L, D] input varies, so compile for any length from the start. Dynamo's own automatic dynamic shapes only learn
+    this after a recompile, and a run that alternates passes (DOP: with and without gradients, with and without the
+    LoRA, a trigger-free caption's length) kept it from ever settling - measured on MOSS with 25 picture sizes: 81
+    recompiles in the first 26 steps with DOP, 5 in a whole run without."""
+    x = args[0] if args else None
+    if not (torch.is_tensor(x) and x.dim() == 3):
+        return
+    n = x.shape[1]
+    # every input axis that carries the same length (the RoPE table, a key mask): one left static pins x's too
+    for t in args:
+        if torch.is_tensor(t):
+            for d in range(1, t.dim()):
+                if t.shape[d] == n:
+                    torch._dynamo.maybe_mark_dynamic(t, d)
+
+
 def find_host_compiler() -> bool:
     """Make sure a host C/C++ compiler exists before torch.compile runs; never crash the run.
 
@@ -246,7 +264,9 @@ def compile_blocks(dit, blocks, blocks_to_swap: int = 0, fp8_scaled: bool = Fals
     n = 0
     if boundary == "outside":
         for i, block in enumerate(blocks):
-            blocks[i] = CheckpointedBlock(torch.compile(block, fullgraph=fullgraph), checkpointing and i < last_ck)
+            compiled = torch.compile(block, fullgraph=fullgraph)
+            compiled.register_forward_pre_hook(_seq_dynamic)
+            blocks[i] = CheckpointedBlock(compiled, checkpointing and i < last_ck)
             n += 1
         logger.info("[compile] %d blocks compiled (checkpoint OUTSIDE the "
                     "compiled region — recompute reruns the compiled graph, so activation "
@@ -255,6 +275,7 @@ def compile_blocks(dit, blocks, blocks_to_swap: int = 0, fp8_scaled: bool = Fals
         return
     for i, block in enumerate(blocks):
         blocks[i] = torch.compile(CheckpointedBlock(block, checkpointing and i < last_ck), fullgraph=fullgraph)
+        blocks[i].register_forward_pre_hook(_seq_dynamic)
         n += 1
     logger.info("[compile] %d blocks compiled (checkpoint inside the graph, "
                 "cache_size_limit=8192) — the first step of each new shape pauses to compile", n)

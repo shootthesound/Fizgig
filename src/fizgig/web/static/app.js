@@ -8884,7 +8884,23 @@ function showTab(name) {
     b.classList.toggle("active", b.dataset.tab === name);
     if (b.dataset.tab === name) b.scrollIntoView({block: "nearest", inline: "nearest"});
   });
+  // each tab keeps its own scroll place: back on Training, the loss chart is where you left it (the tabs share one
+  // scrolling pane; a phone scrolls the page itself)
+  const pane = document.querySelector(".notebook-pane"), was = document.querySelector(".tab-panel.active");
+  S.tabScroll = S.tabScroll || {};
+  if (was && was.id !== "tab-" + name) S.tabScroll[was.id] = [pane ? pane.scrollTop : 0, window.scrollY];
   document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + name));
+  if (!was || was.id !== "tab-" + name) {
+    const [py, wy] = S.tabScroll["tab-" + name] || [0, 0];
+    const put = () => { if (pane) pane.scrollTop = py; window.scrollTo(0, wy); };
+    put();
+    // a tab that fills in as it opens (the gallery, the charts) may be too short for the place at first: once more
+    // after it has drawn, unless you've scrolled since
+    const at = [pane ? pane.scrollTop : 0, window.scrollY];
+    setTimeout(() => {
+      if ((pane ? pane.scrollTop : 0) === at[0] && window.scrollY === at[1] && $("tab-" + name).classList.contains("active")) put();
+    }, 350);
+  }
   if (name === "captions") loadCaptions();
   if (name === "prep") loadPrep();
   if (name === "studio") studioOpen();

@@ -98,6 +98,21 @@ def _where(run, key):
     its own paths): a sub-folder's key ("outfits/red/a") is a path inside the run's training folder, another
     subject's ("s2:a") is that subject's folder in the run's settings."""
     key, image_folder = str(key), run.get("image_folder") or ""
+    m = re.match(r"mp(\d+):(.*)$", key)
+    if m:                                  # Fizgig LoRA Isolation's composites of subject n: built in the cache
+        from fizgig.families import launch
+        from fizgig.families.form import CONCEPT_ROWS
+        from fizgig.web.server import load_prefs, pref_path
+        n = int(m.group(1))
+        if n == 1:
+            folder = image_folder
+        else:
+            rows = CONCEPT_ROWS[n - 2:n - 1] if n >= 2 else ()
+            folder = str((run.get("values") or {}).get(rows[0][0]) or "") if rows else ""
+        if not folder:
+            return "", m.group(2)
+        root = pref_path(load_prefs(), "cache_dir")
+        return (launch.cache_dir_for(root, folder) if root else folder.rstrip("/\\")) + "-multiperson", m.group(2)
     m = re.match(r"s(\d+):(.*)$", key)
     if m:
         from fizgig.families.form import CONCEPT_ROWS

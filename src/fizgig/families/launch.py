@@ -1405,10 +1405,14 @@ def dataset_toml(desc, inputs, cache_suffix=""):
         _fuse(f)
         if root:
             lines.append(f'cache_directory = "{(cache_dir_for(root, f) + cache_suffix).replace(chr(92), "/")}"')
+    _subj = [_s(inputs.get("image_folder"))] + extra
     for f, (_s_, w) in mp.items():        # multi-person mode: each person's composites, already captioned fused
         if _s_["kind"] != "person":
             continue
-        lines += ["", "[[datasets]]", f'image_directory = "{w.replace(chr(92), "/")}"']
+        # keyed mp<n>: by subject - every subject's composites share file names (fizgig_mp_00..), so without it two
+        # subjects' pictures were one key, and nothing could find them (they live in the cache, not a training folder)
+        n = next((i + 1 for i, g in enumerate(_subj) if g == f), 1)
+        lines += ["", "[[datasets]]", f'image_directory = "{w.replace(chr(92), "/")}"', f'item_prefix = "mp{n}:"']
         if root:
             lines.append(f'cache_directory = "{(cache_dir_for(root, w) + cache_suffix).replace(chr(92), "/")}"')
     reg = ft_reg_dir(desc, inputs)

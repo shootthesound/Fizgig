@@ -110,11 +110,12 @@ def pick_probes(keys, n):
     groups = {}
     for k in keys:
         m = re.match(r"s\d+:", k)
-        g = "composite" if "fizgig_mp_" in k else (m.group(0) if m else "")
+        c = re.match(r"mp\d+:", k)              # one of a subject's composites (Isolation), one per subject
+        g = ("composite " + (c.group(0) if c else "")) if "fizgig_mp_" in k else (m.group(0) if m else "")
         groups.setdefault(g, []).append(k)
     if len(groups) <= 1:
         return pick_keys(keys, n)
-    out = [pick_keys(groups[g], 1)[0] for g in sorted(groups, key=lambda g: (g == "composite", g))]
+    out = [pick_keys(groups[g], 1)[0] for g in sorted(groups, key=lambda g: (g.startswith("composite"), g))]
     own = [k for k in keys if "fizgig_mp_" not in k]        # the rest from the subjects' own pictures
     for k in pick_keys(own, max(n, len(out)) + len(out)):
         if len(out) >= max(n, len(groups)):

@@ -12,7 +12,7 @@ LoRA changes. No gradients; the model and LoRA in eval mode; the global CPU/CUDA
 exactly as it would have; a block-swapped DiT streams these forwards as inference (as previews do); the run's EMA (what
 previews and saves use) swapped in. A failure is never fatal: one console line, and the maps stop for the run.
 
-Output, in <output>/training_maps/: probes.json ({keys, timesteps}) and maps.jsonl, one line per epoch:
+Output, in <output>/training_maps/<LoRA name>/ (runs often share an output folder): probes.json ({keys, timesteps}) and maps.jsonl, one line per epoch:
 {"epoch", "maps": {key: {t: {"loss": grid, "effect": grid}}}} with each grid {"w", "h", "v": [row-major floats]}
 pooled to at most MAX_SIDE on its long side (a latent grid is small already; the page scales it over the picture).
 """
@@ -29,6 +29,43 @@ logger = logging.getLogger(__name__)
 DIRNAME = "training_maps"
 TIMESTEPS = (0.25, 0.5, 0.75)    # noise levels: composition (high) to detail (low); not tiny (the target divides by t)
 MAX_SIDE = 48
+
+
+def maps_dir(output_dir, output_name):
+    """Where a run's maps live: <output>/training_maps/<LoRA name>."""
+    return os.path.join(output_dir or "", DIRNAME, str(output_name or "lora"))
+
+
+def read(output_dir, output_name, key=None, t=None):
+    """A run's maps for the page: {"keys", "timesteps", "epochs": [{"epoch", "maps"}]}, or None. With key and t, only
+    that picture at that noise level ({"maps": {key: {t: ...}}}) - what the viewer shows, a ninth of the whole. A resumed
+    run's epoch seen twice keeps the later one."""
+    d = maps_dir(output_dir, output_name)
+    try:
+        probes = json.load(open(os.path.join(d, "probes.json"), encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    by = {}
+    try:
+        with open(os.path.join(d, "maps.jsonl"), encoding="utf-8") as f:
+            for line in f:
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue                         # a line still being written
+                m = row.get("maps") or {}
+                if key is not None:
+                    one = (m.get(key) or {}).get(f"{float(t):g}") if t is not None else None
+                    m = {key: {f"{float(t):g}": one}} if one is not None else {}
+                by[int(row.get("epoch", 0))] = m
+    except OSError:
+        pass
+    return {"keys": probes.get("keys") or [], "timesteps": probes.get("timesteps") or [],
+            "epochs": [{"epoch": e, "maps": by[e]} for e in sorted(by)]}
+
+
+def has_maps(output_dir, output_name):
+    return os.path.isfile(os.path.join(maps_dir(output_dir, output_name), "maps.jsonl"))
 
 
 def pick_keys(keys, n):
@@ -62,8 +99,8 @@ def _cpu(v):
 
 
 class TrainingMaps:
-    def __init__(self, output_dir, datasets, *, images=3, timesteps=TIMESTEPS, seed=1234):
-        self.dir = os.path.join(output_dir, DIRNAME)
+    def __init__(self, output_dir, output_name, datasets, *, images=3, timesteps=TIMESTEPS, seed=1234):
+        self.dir = maps_dir(output_dir, output_name)
         self.ts = tuple(float(t) for t in timesteps)
         self.seed = int(seed)
         self.batches = {}

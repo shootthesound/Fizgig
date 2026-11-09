@@ -3291,6 +3291,7 @@ class Handler(BaseHTTPRequestHandler):
                 key = (os.path.normcase(os.path.abspath(r.get("output_dir") or ".")), (r.get("lora") or "").lower())
                 d = get_family(r.get("family") or "")
                 r["image_loss"] = bool(owners.get(r.get("id")) and d is not None and getattr(d, "loss_watch", False))
+                r["train_maps"] = key not in newest and _maps_has(r.get("output_dir"), r.get("lora"))
                 r["loss_graph"] = key not in newest and os.path.isfile(
                     step_log.loss_path(r.get("output_dir") or "", r.get("lora") or ""))
                 # Continue: the newest run with its name and folder owns its saves (an older one's are overwritten)
@@ -3327,6 +3328,21 @@ class Handler(BaseHTTPRequestHandler):
                               "images": [{**im, "path": pics.get(im["key"], ""), "queued": im["key"] in queued,
                                           "applied": (applied.get(im["key"]) or [{}])[-1].get("epoch")}
                                          for im in res["images"]]})
+        if path == "/api/runs/train_maps":           # one run's training maps (training/train_maps.py), by epoch
+            from fizgig.training import train_maps
+            from fizgig.web import image_loss
+            run = history.get((qs.get("id") or [""])[0])
+            k, t = (qs.get("key") or [None])[0], (qs.get("t") or [None])[0]
+            try:
+                res = train_maps.read(run.get("output_dir"), run.get("lora"), k, t) if run else None
+            except ValueError:
+                return self.json({"error": "bad noise level"}, 400)
+            if res is None:
+                return self.json({"error": "This run has no training maps."}, 404)
+            if k is None:                            # the first ask: the pictures and epochs, no maps yet
+                res["epochs"] = [{"epoch": e["epoch"], "maps": {}} for e in res["epochs"]]
+            return self.json({**res, "live": run.get("result") in ("running", "paused"),
+                              "images": image_loss.image_paths(run, res["keys"])})
         if path == "/api/runs/caption":              # one training image's caption, for the per-image editor
             from fizgig.web import image_loss
             run = history.get((qs.get("id") or [""])[0]) or {}
@@ -4969,6 +4985,11 @@ def run_server(host, port=None, password=None, password_arg=False, open_browser=
             logging.shutdown()
             os._exit(0)
 
+
+
+def _maps_has(output_dir, lora):
+    from fizgig.training import train_maps
+    return train_maps.has_maps(output_dir, lora)
 
 _RESTART = [False]
 _SWITCH = [False]

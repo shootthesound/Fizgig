@@ -1742,6 +1742,10 @@ async function pollRun() {
   ilb.setAttribute("aria-disabled", ilOn ? "false" : "true");
   ilb.title = ilOn ? IL_ON_TIP : IL_OFF_TIP;
   if (!ilOn) $("runImageLoss").style.display = "none";
+  // Training maps: the run going now made them (its Training tab tick)
+  const tmOn = live && r.history_id && [true, "true", "True", "1", 1].includes((r.values || {}).TRAINING_MAPS);
+  $("btnTrainMaps").style.display = tmOn ? "" : "none";
+  if (!tmOn) $("runTrainMaps").style.display = "none";
   // Sample now / Save now: while a LoRA trains (a fine-tune saves and previews at whole rotations)
   const runDesc = S.schema.families.find((f) => f.key === r.family);
   const ftRun = r.values && r.values.FAMILY_KIND && /fine-tune/i.test(String(r.values.FAMILY_KIND));
@@ -2894,6 +2898,15 @@ async function loadRuns() {
         try { const load = imageLossLoad(run.id); imageLossPanel(ilBox, await load(), run, load); }
         catch (e) { ilBox.replaceChildren(el("div", {class: "problems", text: e.message})); }
       }}) : null;
+    // training maps (training/train_maps.py), when the run made them
+    const tmBox = el("div", {class: "tm-box", style: "display:none"});
+    const tmBtn = run.train_maps ? el("button", {class: "btn btn-sm btn-lilac", text: "Training maps", title: TM_TIP,
+      onclick: async () => {
+        if (tmBox.style.display !== "none") { tmBox.style.display = "none"; return; }
+        tmBox.style.display = ""; tmBox.textContent = "Loading…";
+        try { const load = trainMapsLoad(run.id); trainMapsPanel(tmBox, await load(), run, load); }
+        catch (e) { tmBox.replaceChildren(el("div", {class: "problems", text: e.message})); }
+      }}) : null;
     host.append(el("div", {class: "run-row"},
       el("div", {class: "run-row-head"},
         el("span", {class: "run-badge", "data-state": RESULT_STATE[run.result] || "idle", text: RESULT_LABEL[run.result] || run.result}),
@@ -2903,9 +2916,9 @@ async function loadRuns() {
         `${new Date(run.started_at * 1000).toLocaleString()} · ${dur(run.started_at, run.ended_at)}`, figs]
         .filter(Boolean).join("  ·  ")}),
       lossChart(run.curve),
-      el("div", {class: "field-row"}, cont, contHint, showFiles, lgBtn, ilBtn, notesBtn, again, del), contBox, delBox,
+      el("div", {class: "field-row"}, cont, contHint, showFiles, lgBtn, ilBtn, tmBtn, notesBtn, again, del), contBox, delBox,
       alertRow, notesBox, files,
-      lgBox, ilBox));
+      lgBox, ilBox, tmBox));
   }
   if (!r.runs.length) host.append(el("div", {class: "field-hint", text: "No runs yet. Every run you start is listed here " +
     "with its results."}));
@@ -2928,6 +2941,141 @@ const IL_PROBLEMS = new Set(["excluded", "stuck", "suspect", "watch"]);
 const IL_PAGE = 48;
 
 // the per-image loss of a run, fetched fresh each time (the panel's Refresh and its dropdowns call it again)
+// ---- Training maps (training/train_maps.py): a few fixed pictures, epoch by epoch - where the model's prediction is
+// still wrong, where it has learned since the start, and where the LoRA is changing it. One colour scale per picture,
+// noise level and map across all the epochs (a scale per frame would hide the change), drawn over the picture
+const TM_LEVELS = {"0.25": "Low noise (detail)", "0.5": "Mid", "0.75": "High noise (layout)"};
+const TM_KINDS = [["loss", "Still wrong", "Where the prediction is still wrong at this noise level. Busy places (hair, edges, " +
+  "texture) are always brighter: compare an area with itself across the epochs, or use Learned since the start."],
+  ["learned", "Learned since the start", "Where the error has fallen since before training (green) or risen (red), " +
+  "with the same noise each epoch, so the picture's own texture cancels out."],
+  ["effect", "Where the LoRA acts", "Where the LoRA changes the model's prediction. On a person LoRA it should " +
+  "gather on the face and body; spreading over clothes and background means it is learning those too."]];
+const TM_TIP = "A few of your pictures, checked before training and after every epoch: where the model is still wrong, " +
+  "what it has learned, and where the LoRA is acting.";
+// the run's pictures and levels first; each picture + noise level's epochs fetched when shown (a ninth of the whole)
+const trainMapsLoad = (id) => (key, t) => api("/api/runs/train_maps?id=" + encodeURIComponent(id) +
+  (key ? `&key=${encodeURIComponent(key)}&t=${encodeURIComponent(t)}` : ""));
+
+function trainMapsPanel(box, meta, run, load) {
+  const st = {key: meta.keys[0], t: String(meta.timesteps[Math.floor(meta.timesteps.length / 2)] ?? "0.5"), kind: "learned",
+              i: Math.max(0, meta.epochs.length - 1), timer: null, img: null};
+  const d = {...meta, epochs: []};
+  const fetchOne = async () => {          // this picture + level's epochs
+    const r = await load(st.key, st.t);
+    const atEnd = st.i >= d.epochs.length - 1;
+    d.epochs = r.epochs; d.live = r.live;
+    scrub.max = String(Math.max(0, d.epochs.length - 1));
+    if (atEnd || st.i > d.epochs.length - 1) st.i = Math.max(0, d.epochs.length - 1);
+    scrub.value = String(st.i);
+    draw();
+  };
+  const tKey = (t) => `${Number(t)}`;          // "0.5", as the trainer writes it
+  const canvas = el("canvas"), epochTag = el("span", {class: "tm-epoch"});
+  const scrub = el("input", {type: "range", class: "tm-scrub", min: "0", max: String(Math.max(0, d.epochs.length - 1)),
+    value: String(st.i)});
+  const say = el("div", {class: "field-hint"}), legend = el("span", {class: "tm-legend"});
+  const grid = (e, k) => {
+    const m = ((d.epochs[e] || {}).maps || {})[st.key];
+    const g = m && m[tKey(st.t)];
+    if (!g) return null;
+    if (k !== "learned") return g[k] || null;
+    const base = (((d.epochs[0] || {}).maps || {})[st.key] || {})[tKey(st.t)];
+    if (!base || !base.loss || !g.loss || base.loss.v.length !== g.loss.v.length) return null;
+    return {w: g.loss.w, h: g.loss.h, v: g.loss.v.map((x, j) => base.loss.v[j] - x), signed: true};
+  };
+  const scale = () => {                        // one scale for this picture + level + map, over every epoch
+    let mx = 0;
+    for (let e = 0; e < d.epochs.length; e++) {
+      const g = grid(e, st.kind);
+      if (!g) continue;
+      const vs = g.v.map((x) => (g.signed ? Math.abs(x) : x)).sort((a, b) => a - b);
+      mx = Math.max(mx, vs[Math.floor(0.98 * (vs.length - 1))] || 0);     // 98th percentile: one hot cell can't wash out the rest
+    }
+    return mx || 1;
+  };
+  const rgb = (name) => { const m = /(\d+)\D+(\d+)\D+(\d+)/.exec(themeColor(name)); return m ? [+m[1], +m[2], +m[3]] : [0, 0, 0]; };
+  const draw = () => {
+    const img = st.img;
+    if (!img || !img.naturalWidth) return;
+    const W = Math.min(640, img.naturalWidth), H = Math.round(W * img.naturalHeight / img.naturalWidth);
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0, W, H);
+    const g = grid(st.i, st.kind);
+    epochTag.textContent = d.epochs.length ? (d.epochs[st.i].epoch === 0 ? "Before training" : `Epoch ${d.epochs[st.i].epoch}`) : "";
+    if (!g) { say.textContent = st.kind === "effect" && d.epochs[st.i] && d.epochs[st.i].epoch === 0 ?
+      "Before training the LoRA does nothing yet." : "No map for this one."; return; }
+    say.textContent = (TM_KINDS.find((k) => k[0] === st.kind) || [])[2] || "";
+    const mx = scale(), off = document.createElement("canvas");
+    off.width = g.w; off.height = g.h;
+    const oc = off.getContext("2d"), px = oc.createImageData(g.w, g.h);
+    const [c1, c2, c3] = [rgb("--pic-heat-1"), rgb("--pic-heat-2"), rgb("--pic-heat-3")];
+    const [gb, gw] = [rgb("--pic-better"), rgb("--pic-worse")];
+    const mixc = (a, b, f) => a.map((x, j) => Math.round(x + (b[j] - x) * f));
+    for (let j = 0; j < g.v.length; j++) {
+      let c, a;
+      if (g.signed) {
+        const f = Math.max(-1, Math.min(1, g.v[j] / mx));
+        c = f >= 0 ? gb : gw; a = Math.abs(f);
+      } else {
+        const f = Math.max(0, Math.min(1, g.v[j] / mx));
+        c = f < 0.5 ? mixc(c1, c2, f * 2) : mixc(c2, c3, (f - 0.5) * 2); a = 0.25 + 0.75 * f;
+      }
+      px.data.set([c[0], c[1], c[2], Math.round(255 * 0.78 * a)], j * 4);
+    }
+    oc.putImageData(px, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(off, 0, 0, W, H);
+    legend.style.background = g.signed ? `linear-gradient(90deg, var(--pic-worse), transparent, var(--pic-better))` :
+      "linear-gradient(90deg, var(--pic-heat-1), var(--pic-heat-2), var(--pic-heat-3))";
+  };
+  const showPic = () => {
+    const p = (d.images || {})[st.key];
+    st.img = null;
+    if (!p) { say.textContent = "The picture isn't in the training folder any more."; return; }
+    const im = new Image();
+    im.onload = () => { st.img = im; draw(); };
+    im.src = `/api/media?path=${encodeURIComponent(p)}&t=${encodeURIComponent(TOKEN)}`;
+  };
+  const chips = (items, cur, set) => el("span", {class: "tm-row"}, ...items.map(([v, label, tip]) =>
+    el("button", {class: "btn btn-sm" + (v === cur() ? " btn-primary" : ""), text: label, title: tip || "",
+      onclick: (e) => { set(v); e.target.parentElement.querySelectorAll("button").forEach((b) => b.classList.remove("btn-primary"));
+        e.target.classList.add("btn-primary"); draw(); }})));
+  const probes = el("span", {class: "tm-row tm-probes"}, ...d.keys.map((k) => {
+    const p = (d.images || {})[k];
+    const im = el("img", {alt: k, title: k, class: k === st.key ? "on" : "",
+      src: p ? `/api/thumb?path=${encodeURIComponent(p)}&t=${encodeURIComponent(TOKEN)}` : ""});
+    im.addEventListener("click", () => { st.key = k; probes.querySelectorAll("img").forEach((x) => x.classList.toggle("on", x === im));
+      showPic(); fetchOne().catch((e) => { say.textContent = e.message; }); });
+    return im;
+  }));
+  scrub.addEventListener("input", () => { st.i = Number(scrub.value); draw(); });
+  const play = el("button", {class: "btn btn-sm", text: "▶ Play", onclick: () => {
+    if (st.timer) { clearInterval(st.timer); st.timer = null; play.textContent = "▶ Play"; return; }
+    play.textContent = "❚❚ Pause";
+    if (st.i >= d.epochs.length - 1) st.i = 0;
+    st.timer = setInterval(() => {
+      if (!box.isConnected) { clearInterval(st.timer); st.timer = null; return; }
+      st.i = (st.i + 1) % Math.max(1, d.epochs.length); scrub.value = String(st.i); draw();
+    }, 700);
+  }});
+  const refresh = el("button", {class: "btn btn-sm", text: "Refresh", title: "Fetch the epochs trained since this opened",
+    onclick: () => fetchOne().catch((e) => { say.textContent = e.message; })});
+  box.replaceChildren(
+    el("div", {class: "field-hint", text: TM_TIP}),
+    probes,
+    chips(d.timesteps.map((t) => [String(t), TM_LEVELS[tKey(t)] || `Noise ${t}`]), () => st.t,
+      (v) => { st.t = v; fetchOne().catch((e) => { say.textContent = e.message; }); }),
+    chips(TM_KINDS, () => st.kind, (v) => { st.kind = v; }),
+    el("div", {class: "tm-stage"}, canvas, epochTag),
+    el("div", {class: "tm-row"}, play, scrub, d.live ? refresh : null, legend),
+    say);
+  showPic();
+  fetchOne().then(() => { if (!d.epochs.length) say.textContent = "No epochs yet: the first maps come before training starts."; })
+    .catch((e) => { say.textContent = e.message; });
+}
+
 const imageLossLoad = (id) => () => api("/api/runs/image_loss?id=" + encodeURIComponent(id));
 
 function imageLossPanel(box, d, run, load) {
@@ -9429,6 +9577,14 @@ function wire() {
   wireStudio();
   wirePrep();
   $("presetSave").addEventListener("click", presetSaveOpen);
+  $("btnTrainMaps").addEventListener("click", async () => {      // the same view as Runs & outputs, for the run going now
+    const box = $("runTrainMaps"), id = S.run && S.run.history_id;
+    if (!id) return;
+    if (box.style.display !== "none") { box.style.display = "none"; return; }
+    box.style.display = ""; box.textContent = "Loading…";
+    try { const load = trainMapsLoad(id); trainMapsPanel(box, await load(), {...S.run, id}, load); }
+    catch (e) { box.replaceChildren(el("div", {class: "problems", text: e.message})); }
+  });
   $("btnImageLoss").addEventListener("click", async () => {      // the same view as Runs & outputs, for the run going now
     const box = $("runImageLoss"), id = S.run && S.run.history_id;
     if (!id || $("btnImageLoss").classList.contains("is-off")) return;

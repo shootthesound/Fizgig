@@ -703,6 +703,7 @@
                 itself mid-run loses what it trained since its last save: press Pause first.</div>
               <div id="runLoss"></div>
               <div class="il-box" id="runImageLoss" style="display:none"></div>
+              <div class="tm-box" id="runTrainMaps" style="display:none"></div>
               <div class="field-row">
                 <button class="btn" id="btnCheck" title="Runs Start's checks without starting: lists anything missing or wrong, else the stages a run would go through">Check settings</button>
                 <button class="btn btn-primary" id="btnStart">Start Training</button>
@@ -710,6 +711,7 @@
                 <button class="btn btn-warning" id="btnPause">Pause</button>
                 <button class="btn" id="btnSampleNow" style="display:none" title="Make the previews now, after the current training step, without waiting for the epoch to end">Sample now</button>
                 <button class="btn btn-lilac is-off" id="btnImageLoss" style="display:none" title="Each training image's loss by epoch, against the rest of the dataset: which images are still being learned, which are done, and what the loss watch decided about each">Per-image loss</button>
+                <button class="btn btn-lilac" id="btnTrainMaps" style="display:none" title="A few of your pictures, checked before training and after every epoch: where the model is still wrong, what it has learned, and where the LoRA is acting">Training maps</button>
                 <button class="btn" id="btnSaveNow" style="display:none" title="Save the LoRA as it is now, after the current training step (as name-stepNNNNNNN.safetensors)">Save now</button>
                 <button class="btn btn-primary" id="btnResume">Resume</button>
                 <button class="btn" id="btnMove" style="display:none" title="Carry on training this run on another computer running Fizgig (a pod, a laptop) while you use this one: it pauses here and resumes there, and comes back the same way">Move to…</button>

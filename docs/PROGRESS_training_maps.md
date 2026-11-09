@@ -20,7 +20,7 @@ the trigger carries it and attention to the trigger's position would mislead. Ma
 - Fixed noise per probe + timestep (seeded generator); RNG state saved and put back; model in eval; block swap
   streamed as inference (`driver.block_swap_mode`); EMA swapped in when the run has EMA (what previews and saves use).
 - A baseline before training (epoch 0: the base model's own error; the effect map is zero there), then each epoch.
-- Output: `<output>/training_maps/maps.jsonl`, one line per (epoch, probe, t, kind) with a small grid (pooled to <= 48
+- Output: `<output>/training_maps/<LoRA name>/maps.jsonl` (runs share output folders), one line per (epoch, probe, t, kind) with a small grid (pooled to <= 48
   on the long side); `probes.json` names the probe pictures. The page draws them over the picture with one colour
   scale per probe+t+kind across all epochs (a per-frame scale would hide the trend).
 - A family ability `training_maps` (description), on for still families, off for video/audio for now.
@@ -31,6 +31,7 @@ the trigger carries it and attention to the trigger's position would mislead. Ma
 - [x] training/train_maps.py (probes, capture, write)
 - [x] train.py hook (baseline + each epoch), argparse flags
 - [x] description ability (+ checks/test_family_abilities) + form.py row TRAINING_MAPS + launch.py flag
-- [ ] server endpoint + Samples tab card (viewer)
-- [ ] local functional test (MOSS, tiny set, 0.25 MP, 2 epochs) - check the maps look sane
+- [x] server endpoint /api/runs/train_maps (meta, then one picture + level at a time) + viewer: a Training maps button beside Per-image loss on the run card and in Runs & outputs (not a Samples card - follows the per-image loss pattern). Views: Still wrong / Learned since the start (baseline - now, green/red) / Where the LoRA acts
+- [x] local functional test (MOSS, 6 pictures, 0.25 MP, 3 epochs, 5090): ~2 s an epoch; effect map gathers on eyes/features after 2 epochs; raw loss map is mostly speckle (one noise draw), hence the Learned view
+- [ ] the viewer in a browser (Peter: no headless captures - he checks it)
 - [ ] docs (WEB_UI.md), CLAUDE.md notes

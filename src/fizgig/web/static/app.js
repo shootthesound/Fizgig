@@ -3142,6 +3142,26 @@ function trainMapsPanel(box, meta, run, load) {
   }});
   const refresh = el("button", {class: "btn btn-sm", text: "Refresh", title: "Fetch the epochs trained since this opened",
     onclick: () => fetchOne().catch((e) => { say.textContent = e.message; })});
+  // Auto-refresh while the run trains: every 10 s a small ask for the epoch count (no maps); a new epoch is fetched,
+  // and followed when you were on the newest. Stops when the run ends or the viewer closes. Remembered per browser.
+  const auto = el("input", {type: "checkbox"});
+  auto.checked = tmPref("auto", "1") === "1";
+  const autoLab = el("label", {class: "tm-auto", title: "Fetch each new epoch's maps as it lands"}, auto, " Auto-refresh");
+  let poll = null;
+  const stopPoll = () => { if (poll) { clearInterval(poll); poll = null; } };
+  const arm = () => {
+    stopPoll();
+    if (!auto.checked || !d.live) return;
+    poll = setInterval(async () => {
+      if (!box.isConnected) { stopPoll(); return; }
+      try {
+        const m = await load();
+        if ((m.epochs || []).length > d.epochs.length) await fetchOne();
+        if (!m.live) { stopPoll(); d.live = false; refresh.style.display = autoLab.style.display = "none"; }
+      } catch (e) { /* a missed poll: the next one tries again */ }
+    }, 10000);
+  };
+  auto.addEventListener("change", () => { tmSetPref("auto", auto.checked ? "1" : "0"); arm(); });
   box.replaceChildren(
     el("div", {class: "field-hint", text: TM_TIP}),
     probes,
@@ -3151,7 +3171,7 @@ function trainMapsPanel(box, meta, run, load) {
     chips(TM_KINDS, () => st.kind, (v) => { st.kind = v; }),
     kindSay,
     stage,
-    el("div", {class: "tm-row"}, play, scrub, d.live ? refresh : null, legendLo, legend, legendHi),
+    el("div", {class: "tm-row"}, play, scrub, d.live ? refresh : null, d.live ? autoLab : null, legendLo, legend, legendHi),
     el("div", {class: "tm-row"},
       chips([["bands", "Bands", "A few clear colours with sharp edges: easiest to tell apart"],
              ["smooth", "Smooth", "A smooth blend of the same colours"]], () => (st.bands ? "bands" : "smooth"),
@@ -3161,7 +3181,7 @@ function trainMapsPanel(box, meta, run, load) {
         () => (st.grey ? "grey" : "colour"), (v) => { st.grey = v === "grey"; tmSetPref("picture", v); })),
     say);
   showPic();
-  fetchOne().then(() => { if (!d.epochs.length) say.textContent = "No epochs yet: the first maps come before training starts."; })
+  fetchOne().then(() => { if (!d.epochs.length) say.textContent = "No epochs yet: the first maps come before training starts."; arm(); })
     .catch((e) => { say.textContent = e.message; });
 }
 

@@ -2731,3 +2731,4 @@ a.google-pill:visited { color: var(--text-primary); }
 .tm-legend { display: inline-block; width: 120px; height: 10px; border-radius: 5px; vertical-align: middle;
   outline: 1px solid var(--border); }
 .tm-legend-end { color: var(--text-secondary); font-size: 8.5pt; }
+.tm-auto { color: var(--text-secondary); font-size: 9pt; display: inline-flex; align-items: center; gap: 4px; }

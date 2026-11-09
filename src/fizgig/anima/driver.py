@@ -230,6 +230,12 @@ class AnimaDriver(FamilyDriver):
         tb = t.view(-1, 1, 1, 1, 1)
         return {"xt": (1 - tb) * x0 + tb * noise, "t": t}
 
+    def map_target(self, latents, state):
+        """The target at this state (training maps): noise - x0, with the frame axis noise_latents adds."""
+        x0 = latents.float()
+        x0 = x0.unsqueeze(2) if x0.dim() == 4 else x0
+        return (state["xt"].float() - x0.to(state["xt"].device)) / state["t"].float().view(-1, 1, 1, 1, 1)
+
     def predict(self, dit, state, cond):
         return self._velocity(dit, state["xt"], state["t"], cond)
 

@@ -11,7 +11,7 @@ from fizgig.families.registry import training_families  # noqa: E402
 # the user-facing abilities a description switches on (fields that are True when offered)
 ABILITIES = ("masked_training", "slider_training", "finetune", "activation_cache", "int8_attention", "adaptive_lr",
              "loss_watch", "caption_dropout", "batch_training", "detail_crops", "resolution_stages", "edit_training",
-             "preview_park_optimizer", "ema_short_run", "category_masters")
+             "preview_park_optimizer", "ema_short_run", "category_masters", "training_maps")
 
 
 def _picture_families():

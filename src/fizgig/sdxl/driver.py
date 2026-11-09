@@ -212,6 +212,11 @@ class SDXLDriver(FamilyDriver):
         xt = state["xt"]
         return self._unet(dit, xt, torch.tensor([state["t"]], device=xt.device), cond, h, w)
 
+    def map_target(self, latents, state):
+        """The UNet's target at this state (training maps): epsilon, or v for a v-pred checkpoint."""
+        a, x0, noise = state["a"], state["x0"], state["noise"]
+        return (a.sqrt() * noise - (1 - a).sqrt() * x0) if self._v_pred() else noise
+
     def training_loss(self, dit, latents, cond, generator, *, min_t=0.0, max_t=1.0, refs=None, diff_ref=None,
                       diff_weight=0.0, loss_mask=None, prior=None):
         st = self.noise_latents(latents, generator, min_t=min_t, max_t=max_t)

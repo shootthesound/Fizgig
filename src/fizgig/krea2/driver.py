@@ -255,8 +255,21 @@ class Krea2Driver(FamilyDriver):
         t_ = t.view(-1, 1, 1, 1).to(DTYPE)
         return {"xt": (1.0 - t_) * latents.to(DTYPE) + t_ * noise, "t": t}
 
+    def map_target(self, latents, state):
+        """The target in predict()'s layout (training maps): noise - x0, patchified as loss_at does."""
+        from fizgig.krea2.sampling import patchify_block
+        t = state["t"].float().view(-1, 1, 1, 1).to(latents.device)
+        return patchify_block((state["xt"].float() - latents.float()) / t, 2)[0]
+
     def predict(self, dit, state, cond):
         return self._forward(dit, state["xt"], state["t"], cond)
+
+    def trigger_text(self, tokenizer, caption):
+        """The encoder's system + user prefix (dropped: its 34 tokens never reach the DiT), the caption, the suffix
+        (krea2/embedder.py: prompt_template_encode_prefix / _suffix)."""
+        from fizgig.krea2.caption_text import ENCODE_SYSTEM_DESCRIPTOR
+        prefix = "<|im_start|>system\n" + ENCODE_SYSTEM_DESCRIPTOR + "<|im_end|>\n<|im_start|>user\n"
+        return prefix + caption + "<|im_end|>\n<|im_start|>assistant\n", prefix
 
     # ---- sampling (sampling.sample, split at the decode) ----------------------------------------
     @staticmethod

@@ -155,6 +155,7 @@ VIMOO = FamilyDescription(
     network_types=("lora", "lokr"),
     batch_training=False,
     not_offered={
+        "training_maps": "its latents are clips (5-D) even for a photo: the maps draw on a still's latent grid",
         "batch_training": "clips train one a step; stills batching not measured for Vimoo",
         "int8_attention": "measured 6 Nov 2026: mottles plain backgrounds (frame-to-frame flicker +13%, the clip 15% "
                           "away from plain attention) for ~2 s a render",
@@ -169,6 +170,7 @@ VIMOO = FamilyDescription(
     finetune=True,                    # the 40 double blocks in six ~3 GB parts (driver ft_spec); clips plan at token load
     ft_learning_rate=1e-5,               # the EMA dropdown's "Short run" (decay sized to the run, as H3's)             # photos only: the dataset gives a mask to a still, never to a clip (as H3)
     loss_watch=True,
+    training_maps=False,
 
     sampling=(
         SamplingSettings("Vimoo Lite", steps=50, cfg=4.0, sampler="euler", scheduler="lognorm", negative_prompt=True,

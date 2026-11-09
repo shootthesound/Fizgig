@@ -1750,6 +1750,10 @@ async function pollRun() {
   ilb.setAttribute("aria-disabled", ilOn ? "false" : "true");
   ilb.title = ilOn ? IL_ON_TIP : IL_OFF_TIP;
   if (!ilOn) $("runImageLoss").style.display = "none";
+  // Training maps: the run going now made them (its Training tab tick)
+  const tmOn = live && r.history_id && [true, "true", "True", "1", 1].includes((r.values || {}).TRAINING_MAPS);
+  $("btnTrainMaps").style.display = tmOn ? "" : "none";
+  if (!tmOn) $("runTrainMaps").style.display = "none";
   // Sample now / Save now: while a LoRA trains (a fine-tune saves and previews at whole rotations)
   const runDesc = S.schema.families.find((f) => f.key === r.family);
   const ftRun = r.values && r.values.FAMILY_KIND && /fine-tune/i.test(String(r.values.FAMILY_KIND));
@@ -2902,6 +2906,15 @@ async function loadRuns() {
         try { const load = imageLossLoad(run.id); imageLossPanel(ilBox, await load(), run, load); }
         catch (e) { ilBox.replaceChildren(el("div", {class: "problems", text: e.message})); }
       }}) : null;
+    // training maps (training/train_maps.py), when the run made them
+    const tmBox = el("div", {class: "tm-box", style: "display:none"});
+    const tmBtn = run.train_maps ? el("button", {class: "btn btn-sm btn-lilac", text: "Training maps", title: TM_TIP,
+      onclick: async () => {
+        if (tmBox.style.display !== "none") { tmBox.style.display = "none"; return; }
+        tmBox.style.display = ""; tmBox.textContent = "Loading…";
+        try { const load = trainMapsLoad(run.id); trainMapsPanel(tmBox, await load(), run, load); }
+        catch (e) { tmBox.replaceChildren(el("div", {class: "problems", text: e.message})); }
+      }}) : null;
     host.append(el("div", {class: "run-row"},
       el("div", {class: "run-row-head"},
         el("span", {class: "run-badge", "data-state": RESULT_STATE[run.result] || "idle", text: RESULT_LABEL[run.result] || run.result}),
@@ -2911,9 +2924,9 @@ async function loadRuns() {
         `${new Date(run.started_at * 1000).toLocaleString()} · ${dur(run.started_at, run.ended_at)}`, figs]
         .filter(Boolean).join("  ·  ")}),
       lossChart(run.curve),
-      el("div", {class: "field-row"}, cont, contHint, showFiles, lgBtn, ilBtn, notesBtn, again, del), contBox, delBox,
+      el("div", {class: "field-row"}, cont, contHint, showFiles, lgBtn, ilBtn, tmBtn, notesBtn, again, del), contBox, delBox,
       alertRow, notesBox, files,
-      lgBox, ilBox));
+      lgBox, ilBox, tmBox));
   }
   if (!r.runs.length) host.append(el("div", {class: "field-hint", text: "No runs yet. Every run you start is listed here " +
     "with its results."}));
@@ -2936,6 +2949,254 @@ const IL_PROBLEMS = new Set(["excluded", "stuck", "suspect", "watch"]);
 const IL_PAGE = 48;
 
 // the per-image loss of a run, fetched fresh each time (the panel's Refresh and its dropdowns call it again)
+// ---- Training maps (training/train_maps.py): a few fixed pictures, epoch by epoch - where the model's prediction is
+// still wrong, where it has learned since the start, and where the LoRA is changing it. One colour scale per picture,
+// noise level and map across all the epochs (a scale per frame would hide the change), drawn over the picture
+const TM_LEVELS = {"0.25": "Low noise (detail)", "0.5": "Mid", "0.75": "High noise (layout)"};
+const TM_KINDS = [["loss", "Not learned yet", "Training covers your picture in noise and asks the model to recover it. This " +
+  "shows where its attempt still misses your picture: red = misses most, yellow = partly, blue = a little, no colour = " +
+  "nearly right. Fine detail (hair, edges, texture) always shows warmer, so watch one area cool from epoch to epoch rather than " +
+  "comparing it with the rest of the picture."],
+  ["learned", "Learned since the start", "Green = the model gets this part more right than before training: what the " +
+  "LoRA has learned so far. Magenta = this part got worse. No colour = little change. Each epoch is checked with the same " +
+  "noise, so only real learning shows."],
+  ["effect", "Where the LoRA acts", "Where the LoRA changes the picture. Red = changes it most, yellow = some, blue = a " +
+  "little, no colour = barely. For a person it should gather on the face and body; if it spreads over clothes or the background, " +
+  "the LoRA is learning those too."],
+  ["attn", "Trigger word", "Where the picture listens to your trigger word: how much of each area's attention goes to " +
+  "it inside the model. Red = most, yellow = some, blue = a little, no colour = barely. For a person it should " +
+  "settle on the face and body; if it sits on a hat, a jacket or the background, the trigger is tied to those too."]];
+const TM_TIP = "A few of your pictures, checked before training and after every epoch: where the model is still wrong, " +
+  "what it has learned, and where the LoRA is acting.";
+// the run's pictures and levels first; each picture + noise level's epochs fetched when shown (a ninth of the whole)
+const trainMapsLoad = (id) => (key, t) => api("/api/runs/train_maps?id=" + encodeURIComponent(id) +
+  (key ? `&key=${encodeURIComponent(key)}&t=${encodeURIComponent(t)}` : ""));
+
+const tmPref = (k, dflt) => { try { return localStorage.getItem("fizgig.tm." + k) || dflt; } catch (e) { return dflt; } };
+const tmSetPref = (k, v) => { try { localStorage.setItem("fizgig.tm." + k, v); } catch (e) { /* private window */ } };
+
+function trainMapsPanel(box, meta, run, load) {
+  const st = {key: meta.keys[0], t: "all", kind: "learned",
+              i: Math.max(0, meta.epochs.length - 1), timer: null, img: null,
+              bands: tmPref("scale", "bands") === "bands", grey: tmPref("picture", "grey") === "grey"};
+  const d = {...meta, epochs: []};
+  const fetchOne = async () => {          // this picture + level's epochs (All levels: each level's, merged by epoch)
+    const ts = st.t === "all" ? d.timesteps.map(String) : [st.t];
+    const rs = await Promise.all(ts.map((t) => load(st.key, t)));
+    const by = new Map();
+    for (const r of rs) for (const e of r.epochs) {
+      const row = by.get(e.epoch) || {epoch: e.epoch, maps: {[st.key]: {}}};
+      Object.assign(row.maps[st.key], (e.maps || {})[st.key] || {});
+      by.set(e.epoch, row);
+    }
+    const atEnd = st.i >= d.epochs.length - 1;
+    d.epochs = [...by.values()].sort((a, b) => a.epoch - b.epoch); d.live = rs.some((r) => r.live);
+    scales.clear();
+    scrub.max = String(Math.max(0, d.epochs.length - 1));
+    if (atEnd || st.i > d.epochs.length - 1) st.i = Math.max(0, d.epochs.length - 1);
+    scrub.value = String(st.i);
+    draw();
+  };
+  const tKey = (t) => `${Number(t)}`;          // "0.5", as the trainer writes it
+  const canvas = el("canvas"), epochTag = el("span", {class: "tm-epoch"});
+  const scrub = el("input", {type: "range", class: "tm-scrub", min: "0", max: String(Math.max(0, d.epochs.length - 1)),
+    value: String(st.i)});
+  const say = el("div", {class: "field-hint"}), legend = el("span", {class: "tm-legend"});
+  const legendLo = el("span", {class: "tm-legend-end"}), legendHi = el("span", {class: "tm-legend-end"});
+  const kindSay = el("div", {class: "tm-kind-say"});        // what the chosen map shows, above the picture
+  const bigHint = el("span", {class: "tm-big-hint", text: "← → step through the epochs · click or Esc to close"});
+  const gridAt = (e, k, t) => {                // one level's map
+    const m = ((d.epochs[e] || {}).maps || {})[st.key];
+    const g = m && m[tKey(t)];
+    if (!g) return null;
+    if (k !== "learned") return g[k] || null;
+    const base = (((d.epochs[0] || {}).maps || {})[st.key] || {})[tKey(t)];
+    if (!base || !base.loss || !g.loss || base.loss.v.length !== g.loss.v.length) return null;
+    return {w: g.loss.w, h: g.loss.h, v: g.loss.v.map((x, j) => base.loss.v[j] - x), signed: true};
+  };
+  const scales = new Map();                    // the scales per picture + map + level, until the epochs change
+  const scaleOf = (k, t) => {                  // one scale for this picture + level + map, over every epoch
+    const memo = `${st.key}|${k}|${t}`;
+    if (scales.has(memo)) return scales.get(memo);
+    let mx = 0;
+    for (let e = 0; e < d.epochs.length; e++) {
+      const g = t === "all" ? grid(e, k) : gridAt(e, k, t);
+      if (!g) continue;
+      const vs = g.v.map((x) => (g.signed ? Math.abs(x) : x)).sort((a, b) => a - b);
+      mx = Math.max(mx, vs[Math.floor(0.98 * (vs.length - 1))] || 0);     // 98th percentile: one hot cell can't wash out the rest
+    }
+    scales.set(memo, mx || 1);
+    return mx || 1;
+  };
+  // All levels: each level over its own scale (heavy noise's error is bigger by nature, so a plain sum would be
+  // mostly it), then the mean, so every level counts the same
+  const grid = (e, k) => {
+    if (st.t !== "all") return gridAt(e, k, st.t);
+    let out = null, n = 0;
+    for (const t of d.timesteps) {
+      const g = gridAt(e, k, t);
+      if (!g || (out && g.v.length !== out.v.length)) continue;
+      const s = scaleOf(k, t);
+      if (!out) out = {w: g.w, h: g.h, signed: g.signed, v: g.v.map((x) => x / s)};
+      else out.v = out.v.map((x, j) => x + g.v[j] / s);
+      n++;
+    }
+    if (out) out.v = out.v.map((x) => x / n);
+    return out;
+  };
+  const scale = () => scaleOf(st.kind, st.t === "all" ? "all" : st.t);
+  const rgb = (name) => { const m = /(\d+)\D+(\d+)\D+(\d+)/.exec(themeColor(name)); return m ? [+m[1], +m[2], +m[3]] : [0, 0, 0]; };
+  const draw = () => {
+    const img = st.img;
+    if (!img || !img.naturalWidth) return;
+    // the part of the photo it trained on (the bucket's centre crop), so the map sits exactly on it
+    const c = (d.crops || {})[st.key] || [0, 0, 1, 1];
+    const sx = c[0] * img.naturalWidth, sy = c[1] * img.naturalHeight;
+    const sw = c[2] * img.naturalWidth, sh = c[3] * img.naturalHeight;
+    const W = Math.round(Math.min(st.big ? 2048 : 640, sw)), H = Math.round(W * sh / sw);
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, W, H);
+    if (st.grey) {                     // the photo in grey and dimmed, so the map's colours are the only colours
+      const im = ctx.getImageData(0, 0, W, H), p = im.data;
+      for (let j = 0; j < p.length; j += 4) {
+        const y = 0.55 * (0.299 * p[j] + 0.587 * p[j + 1] + 0.114 * p[j + 2]);
+        p[j] = p[j + 1] = p[j + 2] = y;
+      }
+      ctx.putImageData(im, 0, 0);
+    }
+    const g = grid(st.i, st.kind);
+    const kind = TM_KINDS.find((k) => k[0] === st.kind) || [];
+    kindSay.textContent = kind[2] || "";
+    epochTag.textContent = (st.big && kind[1] ? `${kind[1]} · ` : "") +
+      (d.epochs.length ? (d.epochs[st.i].epoch === 0 ? "Before training" : `Epoch ${d.epochs[st.i].epoch}`) : "");
+    if (!g) { say.textContent = st.kind === "effect" && d.epochs[st.i] && d.epochs[st.i].epoch === 0 ?
+      "Before training the LoRA does nothing yet." : st.kind === "attn" && !(d.attn || []).includes(st.key) ?
+      "This picture's caption doesn't have the trigger word." : "No map for this one."; return; }
+    say.textContent = "";
+    const mx = scale(), off = document.createElement("canvas");
+    off.width = g.w; off.height = g.h;
+    const oc = off.getContext("2d"), px = oc.createImageData(g.w, g.h);
+    const [c1, c2, c3] = [rgb("--pic-heat-1"), rgb("--pic-heat-2"), rgb("--pic-heat-3")];
+    const [gb, gw] = [rgb("--pic-better"), rgb("--pic-worse")];
+    const mixc = (a, b, f) => a.map((x, j) => Math.round(x + (b[j] - x) * f));
+    for (let j = 0; j < g.v.length; j++) {
+      let c, a;
+      if (g.signed) {
+        const f = Math.max(-1, Math.min(1, g.v[j] / mx));
+        c = f >= 0 ? gb : gw;
+        // bands: under a fifth no colour, then a light and a strong step; smooth: the size as the opacity
+        a = st.bands ? (Math.abs(f) < 0.2 ? 0 : Math.abs(f) < 0.5 ? 0.55 : 0.9) : Math.abs(f);
+      } else {
+        const f = Math.max(0, Math.min(1, g.v[j] / mx));
+        if (st.bands) { c = f < 0.5 ? c1 : f < 0.75 ? c2 : c3; a = f < 0.25 ? 0 : 0.85; }
+        else { c = f < 0.5 ? mixc(c1, c2, f * 2) : mixc(c2, c3, (f - 0.5) * 2); a = f < 0.15 ? 0 : 0.3 + 0.6 * f; }
+      }
+      px.data.set([c[0], c[1], c[2], Math.round(255 * a)], j * 4);
+    }
+    oc.putImageData(px, 0, 0);
+    ctx.imageSmoothingEnabled = !st.bands;         // bands stay sharp cells: no in-between colours at their edges
+    ctx.drawImage(off, 0, 0, W, H);
+    legend.style.background = g.signed ?
+      (st.bands ? "linear-gradient(90deg, var(--pic-worse) 0 30%, transparent 30% 70%, var(--pic-better) 70% 100%)" :
+        "linear-gradient(90deg, var(--pic-worse), transparent, var(--pic-better))") :
+      (st.bands ? "linear-gradient(90deg, transparent 0 25%, var(--pic-heat-1) 25% 50%, var(--pic-heat-2) 50% 75%, " +
+        "var(--pic-heat-3) 75% 100%)" : "linear-gradient(90deg, transparent, var(--pic-heat-1), var(--pic-heat-2), var(--pic-heat-3))");
+    legendLo.textContent = g.signed ? "worse" : "less"; legendHi.textContent = g.signed ? "better" : "more";
+  };
+  const showPic = () => {
+    const p = (d.images || {})[st.key];
+    st.img = null;
+    if (!p) { say.textContent = "The picture isn't in the training folder any more."; return; }
+    const im = new Image();
+    im.onload = () => { st.img = im; draw(); };
+    im.src = `/api/media?path=${encodeURIComponent(p)}&t=${encodeURIComponent(TOKEN)}`;
+  };
+  const chips = (items, cur, set) => el("span", {class: "tm-row"}, ...items.map(([v, label, tip]) =>
+    el("button", {class: "btn btn-sm" + (v === cur() ? " btn-primary" : ""), text: label, title: tip || "",
+      onclick: (e) => { set(v); e.target.parentElement.querySelectorAll("button").forEach((b) => b.classList.remove("btn-primary"));
+        e.target.classList.add("btn-primary"); draw(); }})));
+  const probes = el("span", {class: "tm-row tm-probes"}, ...d.keys.map((k) => {
+    const p = (d.images || {})[k];
+    const im = el("img", {alt: k, title: k, class: k === st.key ? "on" : "",
+      src: p ? `/api/thumb?path=${encodeURIComponent(p)}&t=${encodeURIComponent(TOKEN)}` : ""});
+    im.addEventListener("click", () => { st.key = k; probes.querySelectorAll("img").forEach((x) => x.classList.toggle("on", x === im));
+      showPic(); fetchOne().catch((e) => { say.textContent = e.message; }); });
+    return im;
+  }));
+  scrub.addEventListener("input", () => { st.i = Number(scrub.value); draw(); });
+  // click the picture for a big view over the page; arrows step the epochs, a click or Esc closes it
+  const stage = el("div", {class: "tm-stage", title: "Click to enlarge"}, canvas, epochTag, bigHint);
+  const step = (n) => { if (!d.epochs.length) return;
+    st.i = Math.max(0, Math.min(d.epochs.length - 1, st.i + n)); scrub.value = String(st.i); draw(); };
+  const onKey = (e) => {
+    if (!box.isConnected) { setBig(false); return; }
+    if (e.key === "Escape") { e.preventDefault(); setBig(false); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
+  };
+  const setBig = (on) => {
+    st.big = on;
+    stage.classList.toggle("tm-big", on);
+    stage.title = on ? "" : "Click to enlarge";
+    if (on) document.addEventListener("keydown", onKey); else document.removeEventListener("keydown", onKey);
+    draw();
+  };
+  stage.addEventListener("click", () => setBig(!st.big));
+  const play = el("button", {class: "btn btn-sm", text: "▶ Play", onclick: () => {
+    if (st.timer) { clearInterval(st.timer); st.timer = null; play.textContent = "▶ Play"; return; }
+    play.textContent = "❚❚ Pause";
+    if (st.i >= d.epochs.length - 1) st.i = 0;
+    st.timer = setInterval(() => {
+      if (!box.isConnected) { clearInterval(st.timer); st.timer = null; return; }
+      st.i = (st.i + 1) % Math.max(1, d.epochs.length); scrub.value = String(st.i); draw();
+    }, 700);
+  }});
+  const refresh = el("button", {class: "btn btn-sm", text: "Refresh", title: "Fetch the epochs trained since this opened",
+    onclick: () => fetchOne().catch((e) => { say.textContent = e.message; })});
+  // Auto-refresh while the run trains: every 10 s a small ask for the epoch count (no maps); a new epoch is fetched,
+  // and followed when you were on the newest. Stops when the run ends or the viewer closes. Remembered per browser.
+  const auto = el("input", {type: "checkbox"});
+  auto.checked = tmPref("auto", "1") === "1";
+  const autoLab = el("label", {class: "tm-auto", title: "Fetch each new epoch's maps as it lands"}, auto, " Auto-refresh");
+  let poll = null;
+  const stopPoll = () => { if (poll) { clearInterval(poll); poll = null; } };
+  const arm = () => {
+    stopPoll();
+    if (!auto.checked || !d.live) return;
+    poll = setInterval(async () => {
+      if (!box.isConnected) { stopPoll(); return; }
+      try {
+        const m = await load();
+        if ((m.epochs || []).length > d.epochs.length) await fetchOne();
+        if (!m.live) { stopPoll(); d.live = false; refresh.style.display = autoLab.style.display = "none"; }
+      } catch (e) { /* a missed poll: the next one tries again */ }
+    }, 10000);
+  };
+  auto.addEventListener("change", () => { tmSetPref("auto", auto.checked ? "1" : "0"); arm(); });
+  box.replaceChildren(
+    el("div", {class: "field-hint", text: TM_TIP}),
+    probes,
+    chips([["all", "All levels", "The three noise levels together, each counted equally: the overall picture"],
+           ...d.timesteps.map((t) => [String(t), TM_LEVELS[tKey(t)] || `Noise ${t}`])], () => st.t,
+      (v) => { st.t = v; fetchOne().catch((e) => { say.textContent = e.message; }); }),
+    chips(TM_KINDS.filter((k) => k[0] !== "attn" || (d.attn || []).length), () => st.kind, (v) => { st.kind = v; }),
+    kindSay,
+    stage,
+    el("div", {class: "tm-row"}, play, scrub, d.live ? refresh : null, d.live ? autoLab : null, legendLo, legend, legendHi),
+    el("div", {class: "tm-row"},
+      chips([["bands", "Bands", "A few clear colours with sharp edges: easiest to tell apart"],
+             ["smooth", "Smooth", "A smooth blend of the same colours"]], () => (st.bands ? "bands" : "smooth"),
+        (v) => { st.bands = v === "bands"; tmSetPref("scale", v); }),
+      chips([["grey", "Grey picture", "The photo in grey under the map, so only the map is in colour"],
+             ["colour", "Colour picture", "The photo in its own colours under the map"]],
+        () => (st.grey ? "grey" : "colour"), (v) => { st.grey = v === "grey"; tmSetPref("picture", v); })),
+    say);
+  showPic();
+  fetchOne().then(() => { if (!d.epochs.length) say.textContent = "No epochs yet: the first maps come before training starts."; arm(); })
+    .catch((e) => { say.textContent = e.message; });
+}
+
 const imageLossLoad = (id) => () => api("/api/runs/image_loss?id=" + encodeURIComponent(id));
 
 function imageLossPanel(box, d, run, load) {
@@ -9437,6 +9698,14 @@ function wire() {
   wireStudio();
   wirePrep();
   $("presetSave").addEventListener("click", presetSaveOpen);
+  $("btnTrainMaps").addEventListener("click", async () => {      // the same view as Runs & outputs, for the run going now
+    const box = $("runTrainMaps"), id = S.run && S.run.history_id;
+    if (!id) return;
+    if (box.style.display !== "none") { box.style.display = "none"; return; }
+    box.style.display = ""; box.textContent = "Loading…";
+    try { const load = trainMapsLoad(id); trainMapsPanel(box, await load(), {...S.run, id}, load); }
+    catch (e) { box.replaceChildren(el("div", {class: "problems", text: e.message})); }
+  });
   $("btnImageLoss").addEventListener("click", async () => {      // the same view as Runs & outputs, for the run going now
     const box = $("runImageLoss"), id = S.run && S.run.history_id;
     if (!id || $("btnImageLoss").classList.contains("is-off")) return;

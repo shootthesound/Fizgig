@@ -58,6 +58,11 @@
   --pic-shade: #000000;        /* Their backing, dimming, letterbox (used see-through) */
   --pic-mask: #5AAAFF;         /* Mask editor: what's learned */
   --pic-highlight: #3B9FD8;    /* Crop box, a picked region */
+  --pic-heat-1: #2F6BFF;       /* Training maps: a heatmap over a picture, low (blue) ... */
+  --pic-heat-2: #FFE600;       /* ... middle (yellow) ... */
+  --pic-heat-3: #FF2A2A;       /* ... high (red): three hues far apart, readable see-through over a greyed photo */
+  --pic-better: #00E676;       /* Training maps: where the error fell since the start (green) */
+  --pic-worse: #FF2BD6;        /* ... and where it rose (magenta: apart from green for colour-blind eyes too) */
 
   /* ---- Fixed: other people's colours ---- */
   --coffee: #FFDD00;
@@ -2703,3 +2708,27 @@ a.google-pill:visited { color: var(--text-primary); }
 .google-pill .g-b { fill: var(--google-blue); }
 .google-pill .g-y { fill: var(--google-yellow); }
 .google-pill .g-g { fill: var(--google-green); }
+
+/* Training maps (run card and Runs & outputs): a picture with a heatmap over it, epoch by epoch */
+.tm-box { margin-top: 10px; }
+.tm-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0; }
+.tm-probes img { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; border: 2px solid transparent; cursor: pointer; }
+.tm-probes img.on { border-color: var(--accent); }
+.tm-stage { position: relative; display: inline-block; max-width: 100%; background: var(--pic-shade); border-radius: 8px; overflow: hidden; }
+.tm-stage canvas { display: block; max-width: 100%; height: auto; cursor: zoom-in; }
+.tm-kind-say { color: var(--text-secondary); font-size: 9pt; margin: 2px 0 8px; max-width: 640px; }
+.tm-big-hint { display: none; }
+/* the big view: the picture over the page, as large as the window allows */
+.tm-stage.tm-big { position: fixed; inset: 0; z-index: 1000; max-width: none; border-radius: 0; display: flex;
+  align-items: center; justify-content: center; background: color-mix(in srgb, var(--pic-shade) 92%, transparent); }
+.tm-stage.tm-big canvas { max-width: 96vw; max-height: 90vh; width: auto; height: auto; cursor: zoom-out; }
+.tm-stage.tm-big .tm-epoch { left: 50%; bottom: auto; top: 14px; transform: translateX(-50%); }
+.tm-stage.tm-big .tm-big-hint { display: block; position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+  color: var(--pic-text); font-size: 9pt; opacity: 0.8; pointer-events: none; }
+.tm-epoch { position: absolute; left: 10px; bottom: 10px; padding: 3px 10px; border-radius: 6px; font-weight: 700;
+  background: color-mix(in srgb, var(--pic-shade) 65%, transparent); color: var(--pic-text); pointer-events: none; }
+.tm-scrub { width: min(520px, 100%); }
+.tm-legend { display: inline-block; width: 120px; height: 10px; border-radius: 5px; vertical-align: middle;
+  outline: 1px solid var(--border); }
+.tm-legend-end { color: var(--text-secondary); font-size: 8.5pt; }
+.tm-auto { color: var(--text-secondary); font-size: 9pt; display: inline-flex; align-items: center; gap: 4px; }

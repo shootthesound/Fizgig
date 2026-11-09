@@ -22,6 +22,7 @@ from einops import rearrange
 from torch import Tensor
 
 from fizgig.krea2.attention import AttentionParams, attention as common_attention
+from fizgig.training import attn_probe
 
 
 @dataclass
@@ -197,6 +198,8 @@ class Attention(torch.nn.Module):
         q, k, v = self.qknorm(q, k, v)
         if freqs is not None:
             q, k = ropeapply(q, k, freqs)
+        if attn_probe._ACTIVE is not None:      # training maps: the trigger word's attention (training/attn_probe.py)
+            attn_probe.see(q, k)
 
         # The shared attention expects [B, L, H, D] and returns [B, L, H*D]. GQA (heads != kvheads)
         # is detected and handled inside it (enable_gqa for SDPA; native for flash/sageattn).
@@ -475,6 +478,7 @@ class SingleStreamDiT(nn.Module):
         attn_params = AttentionParams.create_attention_params_from_mask(self.attn_mode, self.split_attn, imglen, txtmask)
 
         freqs = self.posemb(pos)
+        attn_probe.layout((0, imglen), imglen, combined.shape[1], fulllen)    # the padded tail isn't attended
 
         for index, block in enumerate(self.blocks):
             if self.blocks_to_swap:

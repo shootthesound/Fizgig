@@ -154,6 +154,7 @@ def _render(c):
             os.makedirs(out, exist_ok=True)
             desc = S["desc"]
             nolora = None                        # the No-LoRA pane's render, after the pair is up
+            same = False                         # the Tweaked render is the Baseline (nothing moved: Studio's maps)
             if getattr(desc, "video_workbench", False):
                 paths, nolora = _render_clips(eng, desc, st, c, out, gen)
             elif getattr(desc, "audio_workbench", False):
@@ -168,7 +169,7 @@ def _render(c):
                 tweak = base if same else eng.generate_preview(st)
                 paths["tweaked"] = os.path.join(out, f"tweaked_{gen}.png")
                 tweak.save(paths["tweaked"])
-            emit(ev="rendered", gen=gen, nolora_pending=nolora is not None, notes=S.get("notes"), **paths)
+            emit(ev="rendered", gen=gen, nolora_pending=nolora is not None, notes=S.get("notes"), same=bool(same), **paths)
             _tidy(out, gen)
             if nolora is not None:               # as the desktop: the pair first, then the base model's own
                 try:

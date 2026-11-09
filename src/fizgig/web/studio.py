@@ -163,7 +163,7 @@ def _event(ev):
                       baseline_media=ev.get("baseline_media", ""), tweaked_media=ev.get("tweaked_media", ""),
                       baseline_act=ev.get("baseline_act", ""), tweaked_act=ev.get("tweaked_act", ""),
                       shown=ev.get("gen", 0), status="Ready.", error="", nolora_busy=bool(ev.get("nolora_pending")),
-                      notes=ev.get("notes"))
+                      notes=ev.get("notes"), same=bool(ev.get("same")))
             nxt, _S["pending"] = _S["pending"], None
         elif kind == "map":                      # Studio's maps over the Tweaked render (map_request)
             _S["map"] = {k: v for k, v in ev.items() if k != "ev"}
@@ -715,6 +715,7 @@ def status():
         d = {k: _S[k] for k in ("state", "family", "primary", "donor", "primary_blocks", "donor_blocks", "status",
                                 "progress", "shown", "rendering", "error", "saved", "profile")}
         d["notes"] = _S.get("notes")
+        d["same"] = bool(_S.get("same"))           # the Tweaked render on screen is the Baseline
         d["eq"] = _S.get("eq") or {}
         d["media"] = {k: bool(_S.get(k + "_media")) for k in ("baseline", "tweaked", "nolora")}
         d["act"] = {k: bool(_S.get(k + "_act")) for k in ("baseline", "tweaked")}

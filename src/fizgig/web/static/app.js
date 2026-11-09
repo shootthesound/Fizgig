@@ -6429,6 +6429,11 @@ function stMapChips() {
   $("stMapKinds").replaceChildren(...row(ST_MAPS, m.kind, (v) => {
     m.kind = v;
     if (!v) { $("stMapCanvas").style.display = "none"; stMapNote(""); return; }
+    if (v === "tweak" && S.st.same) {            // nothing moved: nothing to calculate
+      $("stMapCanvas").style.display = "none";
+      stMapNote("Nothing to show yet: move a slider, and when the Tweaked picture has rendered, the map appears here.");
+      return;
+    }
     if (!m.data || m.data.gen !== S.st.shown || (v === "blocks" && !m.data.with_blocks)) studioMapRequest(); else stMapDraw();
   }));
   const groups = (m.data && m.data.groups) || [];
@@ -6484,11 +6489,16 @@ async function studioMapRequest() {
 }
 
 // a new Tweaked render: the map on screen belonged to the last one - made again when a map is chosen
-function studioMapsAfterRender() {
+function studioMapsAfterRender(same) {
   const m = S.st.map;
   if (!m) return;
   m.data = null;
   $("stMapCanvas").style.display = "none";
+  // nothing moved (Reset All): What your tweaks change has nothing to show - the overlay goes, nothing is calculated
+  if (m.kind === "tweak" && same) {
+    stMapNote("Nothing to show yet: move a slider, and when the Tweaked picture has rendered, the map appears here.");
+    return;
+  }
   if (m.kind) studioMapRequest();
 }
 
@@ -7276,7 +7286,8 @@ async function studioPoll() {
       if (kind === "audio" && has) songLoad(w, q(w + "_media"), st.shown, st.act && st.act[w] ? q(w + "_act") : "");
     }
     studioMetrics();
-    studioMapsAfterRender();
+    S.st.same = !!st.same;
+    studioMapsAfterRender(S.st.same);
     studioDownloads(st, q);
     const ps = Number($("stPScale").value) || 1;
     $("stBaseCap").textContent = (ps === 1 ? "Baseline (LoRA at default 1.0)" : `Baseline (LoRA at ${ps})`) +

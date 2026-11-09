@@ -3009,10 +3009,14 @@ function trainMapsPanel(box, meta, run, load) {
   const draw = () => {
     const img = st.img;
     if (!img || !img.naturalWidth) return;
-    const W = Math.min(st.big ? 2048 : 640, img.naturalWidth), H = Math.round(W * img.naturalHeight / img.naturalWidth);
+    // the part of the photo it trained on (the bucket's centre crop), so the map sits exactly on it
+    const c = (d.crops || {})[st.key] || [0, 0, 1, 1];
+    const sx = c[0] * img.naturalWidth, sy = c[1] * img.naturalHeight;
+    const sw = c[2] * img.naturalWidth, sh = c[3] * img.naturalHeight;
+    const W = Math.round(Math.min(st.big ? 2048 : 640, sw)), H = Math.round(W * sh / sw);
     canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext("2d");
-    ctx.drawImage(img, 0, 0, W, H);
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, W, H);
     if (st.grey) {                     // the photo in grey and dimmed, so the map's colours are the only colours
       const im = ctx.getImageData(0, 0, W, H), p = im.data;
       for (let j = 0; j < p.length; j += 4) {

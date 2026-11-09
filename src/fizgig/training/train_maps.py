@@ -61,7 +61,24 @@ def read(output_dir, output_name, key=None, t=None):
     except OSError:
         pass
     return {"keys": probes.get("keys") or [], "timesteps": probes.get("timesteps") or [],
-            "epochs": [{"epoch": e, "maps": by[e]} for e in sorted(by)]}
+            "crops": probes.get("crops") or {}, "epochs": [{"epoch": e, "maps": by[e]} for e in sorted(by)]}
+
+
+def crop_box(original_size, bucket_size):
+    """The part of the photo a picture trained on, as [left, top, width, height] fractions of the photo: the bucket
+    resize scales it to cover the bucket and crops the centre (dataset/image_dataset.resize_image_to_bucket, the same
+    arithmetic). None when either size is unknown."""
+    try:
+        w, h = (int(x) for x in original_size)
+        bw, bh = (int(x) for x in bucket_size)
+    except (TypeError, ValueError):
+        return None
+    if min(w, h, bw, bh) <= 0:
+        return None
+    s = max(bw / w, bh / h)
+    nw, nh = int(w * s + 0.5), int(h * s + 0.5)
+    left, top = (nw - bw) // 2, (nh - bh) // 2
+    return [round(left / nw, 5), round(top / nh, 5), round(bw / nw, 5), round(bh / nh, 5)]
 
 
 def has_maps(output_dir, output_name):
@@ -138,6 +155,10 @@ class TrainingMaps:
             except Exception:
                 logger.debug(f"[maps] could not read {k} from the cache", exc_info=True)
         self.keys = [k for k in self.keys if k in self.batches]
+        # the part of each photo it trained on, so the viewer lines the maps up with it exactly
+        self.crops = {k: c for k in self.keys
+                      if (c := crop_box(getattr(items[k][1], "original_size", None),
+                                        getattr(items[k][1], "bucket_size", None) or items[k][0]))}
         self.failed = False
 
     def start(self, resume=False):
@@ -149,9 +170,9 @@ class TrainingMaps:
             except OSError:
                 pass
         with open(os.path.join(self.dir, "probes.json"), "w", encoding="utf-8") as f:
-            json.dump({"keys": self.keys, "timesteps": list(self.ts)}, f)
+            json.dump({"keys": self.keys, "timesteps": list(self.ts), "crops": self.crops}, f)
         logger.info(f"[maps] training maps on: {len(self.keys)} picture(s) x {len(self.ts)} noise level(s), "
-                    "each epoch (Samples tab > Training maps)")
+                    "each epoch (the run card's Training maps button)")
 
     def capture(self, epoch, driver, dit, net, device, *, swapped=False, ema=None):
         """The maps for this epoch (0 = before training), appended to maps.jsonl. Never fatal."""

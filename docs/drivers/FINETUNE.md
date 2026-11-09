@@ -15,7 +15,7 @@ Full fine-tuning trains the base model's own weights instead of a LoRA, and save
   4. Otherwise, **streaming**: the blocks outside the window stay in system RAM and stream to the GPU as the forward reaches them.
 - With more than one window, a rotation trains each window in turn for `rotate every` epochs. The Training tab shows the plan for the user's card before Start, and the log confirms it.
 - The Training tab's **Window size** setting caps how many parts share a window (at most 3, at most 2, or one each), for a user who wants more headroom than Auto leaves. It reaches your planner as `max_parts`.
-- The optimizer is Adafactor, with each gradient applied and freed as it lands, so a window costs about its own bf16 weights.
+- The optimizer is Adafactor by default, with each gradient applied and freed as it lands, so a window costs about its own bf16 weights. The user can pick AdamW8bit, AdamW, AdEMAMix8bit or Lion8bit instead (their larger state is added to each window's plan, `optimizers.FT_OPTIMIZERS`); a LoRA optimizer (Muon, Prodigy, Automagic) trains as Adafactor. A family with its own fine-tune backend keeps Adafactor unless its backend sets `plans_optimizer_state`.
 - Checkpoints are written one tensor at a time: the untouched tensors are copied from the source file, the trained ones come from the master with the live GPU weights laid over it.
 
 ## What your model needs

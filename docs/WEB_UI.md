@@ -107,7 +107,7 @@ The run card shows the run's progress, time left and log, and a **loss graph** t
 - **Still wrong**: where the prediction is still off. Busy places (hair, edges, fabric) are always brighter, so compare an area with itself across epochs.
 - **Where the LoRA acts**: where the LoRA changes the model's prediction. On a person LoRA it should gather on the face and body; when it spreads over clothes and background, the LoRA is learning those too.
 
-Each map keeps one colour scale across all the epochs, so a fading colour really is the error falling. It costs a few seconds an epoch. It's for still-picture models; clip and song models don't have it yet.
+A line under the three buttons says what the chosen map shows. Click the picture to see it full-window: the arrow keys step through the epochs, and a click or Esc closes it. Each map keeps one colour scale across all the epochs, so a fading colour really is the error falling. It costs a few seconds an epoch. It's for still-picture models; clip and song models don't have it yet.
 
 Each run's log is also saved as a file in `user_data/logs` in your Fizgig folder, named with the date, time and LoRA name, so an error is still there after a restart. The newest 20 are kept. When a run fails, the last line of its log names the file.
 

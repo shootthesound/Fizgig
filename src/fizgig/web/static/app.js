@@ -2945,12 +2945,14 @@ const IL_PAGE = 48;
 // still wrong, where it has learned since the start, and where the LoRA is changing it. One colour scale per picture,
 // noise level and map across all the epochs (a scale per frame would hide the change), drawn over the picture
 const TM_LEVELS = {"0.25": "Low noise (detail)", "0.5": "Mid", "0.75": "High noise (layout)"};
-const TM_KINDS = [["loss", "Still wrong", "Where the prediction is still wrong at this noise level. Busy places (hair, edges, " +
-  "texture) are always brighter: compare an area with itself across the epochs, or use Learned since the start."],
-  ["learned", "Learned since the start", "Where the error has fallen since before training (green) or risen (red), " +
-  "with the same noise each epoch, so the picture's own texture cancels out."],
-  ["effect", "Where the LoRA acts", "Where the LoRA changes the model's prediction. On a person LoRA it should " +
-  "gather on the face and body; spreading over clothes and background means it is learning those too."]];
+const TM_KINDS = [["loss", "Still wrong", "Bright = the parts of this picture the model still gets wrong. Fine detail " +
+  "(hair, edges, texture) is always brighter than smooth areas, so watch how one area fades from epoch to epoch rather " +
+  "than comparing it with the rest of the picture."],
+  ["learned", "Learned since the start", "Green = the parts the model gets more right than before training: what the " +
+  "LoRA has learned so far. Red = parts that got worse. Each epoch is checked with the same noise, so only real " +
+  "learning shows."],
+  ["effect", "Where the LoRA acts", "Bright = where the LoRA changes the picture. For a person it should gather on the " +
+  "face and body; if it spreads over clothes or the background, the LoRA is learning those too."]];
 const TM_TIP = "A few of your pictures, checked before training and after every epoch: where the model is still wrong, " +
   "what it has learned, and where the LoRA is acting.";
 // the run's pictures and levels first; each picture + noise level's epochs fetched when shown (a ninth of the whole)
@@ -2975,6 +2977,8 @@ function trainMapsPanel(box, meta, run, load) {
   const scrub = el("input", {type: "range", class: "tm-scrub", min: "0", max: String(Math.max(0, d.epochs.length - 1)),
     value: String(st.i)});
   const say = el("div", {class: "field-hint"}), legend = el("span", {class: "tm-legend"});
+  const kindSay = el("div", {class: "tm-kind-say"});        // what the chosen map shows, above the picture
+  const bigHint = el("span", {class: "tm-big-hint", text: "← → step through the epochs · click or Esc to close"});
   const grid = (e, k) => {
     const m = ((d.epochs[e] || {}).maps || {})[st.key];
     const g = m && m[tKey(st.t)];
@@ -2998,15 +3002,18 @@ function trainMapsPanel(box, meta, run, load) {
   const draw = () => {
     const img = st.img;
     if (!img || !img.naturalWidth) return;
-    const W = Math.min(640, img.naturalWidth), H = Math.round(W * img.naturalHeight / img.naturalWidth);
+    const W = Math.min(st.big ? 2048 : 640, img.naturalWidth), H = Math.round(W * img.naturalHeight / img.naturalWidth);
     canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext("2d");
     ctx.drawImage(img, 0, 0, W, H);
     const g = grid(st.i, st.kind);
-    epochTag.textContent = d.epochs.length ? (d.epochs[st.i].epoch === 0 ? "Before training" : `Epoch ${d.epochs[st.i].epoch}`) : "";
+    const kind = TM_KINDS.find((k) => k[0] === st.kind) || [];
+    kindSay.textContent = kind[2] || "";
+    epochTag.textContent = (st.big && kind[1] ? `${kind[1]} · ` : "") +
+      (d.epochs.length ? (d.epochs[st.i].epoch === 0 ? "Before training" : `Epoch ${d.epochs[st.i].epoch}`) : "");
     if (!g) { say.textContent = st.kind === "effect" && d.epochs[st.i] && d.epochs[st.i].epoch === 0 ?
       "Before training the LoRA does nothing yet." : "No map for this one."; return; }
-    say.textContent = (TM_KINDS.find((k) => k[0] === st.kind) || [])[2] || "";
+    say.textContent = "";
     const mx = scale(), off = document.createElement("canvas");
     off.width = g.w; off.height = g.h;
     const oc = off.getContext("2d"), px = oc.createImageData(g.w, g.h);
@@ -3051,6 +3058,24 @@ function trainMapsPanel(box, meta, run, load) {
     return im;
   }));
   scrub.addEventListener("input", () => { st.i = Number(scrub.value); draw(); });
+  // click the picture for a big view over the page; arrows step the epochs, a click or Esc closes it
+  const stage = el("div", {class: "tm-stage", title: "Click to enlarge"}, canvas, epochTag, bigHint);
+  const step = (n) => { if (!d.epochs.length) return;
+    st.i = Math.max(0, Math.min(d.epochs.length - 1, st.i + n)); scrub.value = String(st.i); draw(); };
+  const onKey = (e) => {
+    if (!box.isConnected) { setBig(false); return; }
+    if (e.key === "Escape") { e.preventDefault(); setBig(false); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
+  };
+  const setBig = (on) => {
+    st.big = on;
+    stage.classList.toggle("tm-big", on);
+    stage.title = on ? "" : "Click to enlarge";
+    if (on) document.addEventListener("keydown", onKey); else document.removeEventListener("keydown", onKey);
+    draw();
+  };
+  stage.addEventListener("click", () => setBig(!st.big));
   const play = el("button", {class: "btn btn-sm", text: "▶ Play", onclick: () => {
     if (st.timer) { clearInterval(st.timer); st.timer = null; play.textContent = "▶ Play"; return; }
     play.textContent = "❚❚ Pause";
@@ -3068,7 +3093,8 @@ function trainMapsPanel(box, meta, run, load) {
     chips(d.timesteps.map((t) => [String(t), TM_LEVELS[tKey(t)] || `Noise ${t}`]), () => st.t,
       (v) => { st.t = v; fetchOne().catch((e) => { say.textContent = e.message; }); }),
     chips(TM_KINDS, () => st.kind, (v) => { st.kind = v; }),
-    el("div", {class: "tm-stage"}, canvas, epochTag),
+    kindSay,
+    stage,
     el("div", {class: "tm-row"}, play, scrub, d.live ? refresh : null, legend),
     say);
   showPic();

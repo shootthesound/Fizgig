@@ -8,7 +8,9 @@ Start at a smaller size never trains a crop shrunk.
 
 The spot is random but fixed per picture (seeded from its name), so every size of one picture's crop shares a centre,
 and a re-run makes the same crops (their captions and caches are kept). A spot that falls on a nearly flat area (a plain
-sky) moves to the picture's most detailed one. No torch: Pillow and numpy only."""
+sky) moves to the picture's most detailed one. A crop you delete stays deleted (deleted(): recorded in
+fizgig_detail_crops/.deleted.json), at every size, while its full picture keeps training. No torch: Pillow and numpy
+only."""
 
 import hashlib
 import json
@@ -18,6 +20,8 @@ import random
 DIR = "fizgig_detail_crops"            # the folder in a training folder; Fizgig's own, so sub-folders skip it
 SETTINGS = "fizgig_detail_crops.json"   # its switch, in the training folder (fizgig_*.json travels with a move)
 MANIFEST = ".crops.json"               # per size folder: each crop's source picture and box
+DELETED = ".deleted.json"               # in DIR: the crops you deleted, {picture stem: the size folder it went from}
+REMOVED = "removed"                     # in a size folder: crops taken out (the Captions tab's Remove; never deleted)
 MASTERS = "detail_masters"              # Train on the crops only: the full pictures, kept here and not trained
 PICS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 RULE = 4                                # the spot rule's version: a crop made by an older one is made again
@@ -251,6 +255,85 @@ def to_caption(folder, ext=".txt"):
     return out
 
 
+def _load(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            v = json.load(f)
+        return v if isinstance(v, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save(path, v):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(v, f)
+
+
+def _take_out(d, stem, ext):
+    """A crop (its caption and mask too) moved into its size folder's removed/ - never deleted, never over a file
+    there. Returns how many files moved."""
+    dest, moved = os.path.join(d, REMOVED), 0
+    for n in (stem + ".png", stem + ext, stem + "-masklabel.png"):
+        if not os.path.isfile(os.path.join(d, n)):
+            continue
+        os.makedirs(dest, exist_ok=True)
+        target, k = os.path.join(dest, n), 2
+        while os.path.exists(target):
+            a, b = os.path.splitext(n)
+            target, k = os.path.join(dest, f"{a} ({k}){b}"), k + 1
+        os.replace(os.path.join(d, n), target)
+        moved += 1
+    return moved
+
+
+def deleted(folder, log=print, ext=".txt", apply=True):
+    """The pictures whose detail crop you deleted, kept deleted: Start never makes them again, at any size, while the
+    full pictures keep training. A crop made (it is in its size folder's manifest) and now gone from that folder
+    (deleted, or the Captions tab's Remove) counts as deleted; its crops at the other sizes are taken out too (into
+    their removed/ folders). Put back in the folder it went from (Undo), it counts again and the other sizes are
+    made afresh. Returns the set of picture stems. apply=False: only the answer (a check before Start), nothing
+    moved or written."""
+    root = os.path.join(folder, DIR)
+    dpath = os.path.join(root, DELETED)
+    gone = _load(dpath)
+    dirs = {os.path.basename(d): d for _label, d in sizes(folder)}
+    changed = False
+    for stem, sz in list(gone.items()):            # put back where it went from: a crop again
+        if sz in dirs and os.path.isfile(os.path.join(dirs[sz], stem + ".png")):
+            gone.pop(stem)
+            changed = True
+            if apply:
+                log(f"[detail crops] {stem}: its crop is back in {sz}, so it trains again")
+    mans = {sz: _load(os.path.join(d, MANIFEST)) for sz, d in dirs.items()}
+    for sz, d in dirs.items():                     # made, and gone from its folder since: deleted
+        for stem, rec in mans[sz].items():
+            if stem not in gone and isinstance(rec, dict) and rec.get("box") \
+                    and not os.path.isfile(os.path.join(d, stem + ".png")):
+                gone[stem] = sz
+                changed = True
+                if apply:
+                    log(f"[detail crops] {stem}: its crop was deleted, so it stays deleted (the full picture "
+                        "still trains)")
+    if not apply:
+        return set(gone)
+    for sz, d in dirs.items():                     # the same crop at the other sizes: taken out too
+        man, edit = mans[sz], False
+        for stem, was in gone.items():
+            if sz == was:
+                continue
+            if _take_out(d, stem, ext):
+                log(f"[detail crops] {stem}: its {sz} crop moved to {sz}/{REMOVED} (deleted at {was})")
+            if stem in man:
+                man.pop(stem)                      # not "deleted here": it comes back if the crop is put back
+                edit = True
+        if edit:
+            _save(os.path.join(d, MANIFEST), man)
+    if changed:
+        os.makedirs(root, exist_ok=True)
+        _save(dpath, gone)
+    return set(gone)
+
+
 def make(folder, mp, log=print, ext=".txt"):
     """The crops for one size, made where missing or out of date (the picture or its mask changed, or the mask was
     added or deleted). A picture smaller than the crop has none (it trains whole), and an old crop of it goes with its
@@ -263,6 +346,7 @@ def make(folder, mp, log=print, ext=".txt"):
     s = side(mp)
     out = size_dir(folder, mp)
     os.makedirs(out, exist_ok=True)
+    gone = deleted(folder, log, ext)                       # crops you deleted: never made again
     mpath = os.path.join(out, MANIFEST)
     try:
         with open(mpath, encoding="utf-8") as f:
@@ -282,6 +366,8 @@ def make(folder, mp, log=print, ext=".txt"):
     made = skipped = 0
     for n in pics:
         stem = os.path.splitext(n)[0]
+        if stem in gone:
+            continue
         src = source(folder, n)                            # its full-size original when Image Prep kept one
         mt = os.path.getmtime(src)
         dst = os.path.join(out, stem + ".png")
@@ -304,9 +390,9 @@ def make(folder, mp, log=print, ext=".txt"):
         if min(w, h) < s:                                  # smaller than the crop: it trains whole, no crop
             skipped += 1
             man.pop(stem, None)
-            for gone in (dst, os.path.join(out, stem + "-masklabel.png"), os.path.join(out, stem + ext)):
+            for stale in (dst, os.path.join(out, stem + "-masklabel.png"), os.path.join(out, stem + ext)):
                 try:                                       # an older, bigger picture's crop must not train
-                    os.remove(gone)
+                    os.remove(stale)
                 except OSError:
                     pass
             continue
@@ -340,4 +426,4 @@ def make(folder, mp, log=print, ext=".txt"):
         log(f"[detail crops] {size_name(mp)}: {made} made" + (f", {skipped} picture(s) smaller than "
             f"{s}x{s} train whole" if skipped else ""))
     return [os.path.join(out, stem + ".png") for stem in sorted(man)
-            if not os.path.isfile(os.path.join(out, stem + ext))]
+            if stem not in gone and not os.path.isfile(os.path.join(out, stem + ext))]

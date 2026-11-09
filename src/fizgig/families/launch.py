@@ -1005,6 +1005,7 @@ def detail_crops_problem(desc, inputs):
     have = set()                         # a picture's crop captioned at any size: the Detail crops stage copies it
     for _label, d in detail_crops.sizes(folder):
         have |= {os.path.splitext(n)[0] for n in os.listdir(d) if n.endswith(ext)}
+    have |= detail_crops.deleted(folder, ext=ext, apply=False)   # a crop you deleted needs no caption
     if any(os.path.splitext(n)[0] not in have for n in detail_crops.pictures(folder)):
         return ("Detail crops need captions, written by the captioner: set the Krea 2 text encoder (or a secondary "
                 "captioning model) in Preferences, or switch Detail crops off for this folder in Image Prep.")

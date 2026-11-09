@@ -58,6 +58,7 @@ def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="1.0", slider=False, ft=
 
 MOSS_IMAGE = FamilyDescription(
     key="moss_image",
+    trigger_attention=True,           # training maps' trigger-word map (an experiment)
     start_lr_bands=(("lora", 1.7e-5, 3e-4), ("finetune", 3e-6, 3e-5), ("slider", 7e-5, 6e-4)),
     masked_training=True,
     batch_training=True,              # Batch size (Other Options): training_loss_batch, exact per picture

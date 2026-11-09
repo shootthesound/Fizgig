@@ -264,6 +264,13 @@ class Krea2Driver(FamilyDriver):
     def predict(self, dit, state, cond):
         return self._forward(dit, state["xt"], state["t"], cond)
 
+    def trigger_text(self, tokenizer, caption):
+        """The encoder's system + user prefix (dropped: its 34 tokens never reach the DiT), the caption, the suffix
+        (krea2/embedder.py: prompt_template_encode_prefix / _suffix)."""
+        from fizgig.krea2.caption_text import ENCODE_SYSTEM_DESCRIPTOR
+        prefix = "<|im_start|>system\n" + ENCODE_SYSTEM_DESCRIPTOR + "<|im_end|>\n<|im_start|>user\n"
+        return prefix + caption + "<|im_end|>\n<|im_start|>assistant\n", prefix
+
     # ---- sampling (sampling.sample, split at the decode) ----------------------------------------
     @staticmethod
     def _grid(width, height):

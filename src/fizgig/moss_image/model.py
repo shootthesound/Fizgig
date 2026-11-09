@@ -14,6 +14,8 @@ import torch.nn.functional as F
 from torch.nn.attention import SDPBackend, sdpa_kernel
 from torch.utils.checkpoint import checkpoint
 
+from fizgig.training import attn_probe
+
 # transformer/config.json (OpenMOSS-Team/MOSS-Image-Base) - the only configuration released
 MOSS_CONFIG = dict(dim=3072, ffn_dim=8192, num_heads=24, num_layers=42, text_dim=4096, freq_dim=256,
                    latent_channels=128, rope_base=10000.0)
@@ -56,6 +58,8 @@ def _attention(q, k, v, rope, heads, key_mask=None):
     k = _rotate(k.reshape(shape), rope).transpose(1, 2)
     v = v.reshape(shape).transpose(1, 2)
     q, k = q.to(v.dtype), k.to(v.dtype)
+    if attn_probe._ACTIVE is not None:      # training maps: the trigger word's attention (training/attn_probe.py)
+        attn_probe.see(q, k, key_mask)
     if key_mask is not None:            # a training batch (forward_batch): each picture's padded caption tokens dropped
         with sdpa_kernel(_MASKED_BACKENDS, set_priority=True):
             out = F.scaled_dot_product_attention(q, k, v, attn_mask=key_mask[:, None, None, :])
@@ -253,6 +257,7 @@ class MOSSImageDiT(nn.Module):
             rope = self.rope(height, width, context.shape[1], hidden_states.device).to(video.dtype)
             text = self.text_embedder(context, rope[:, height * width:])
             x = torch.cat((video, text), 1)
+            attn_probe.layout((0, video.shape[1]), video.shape[1], x.shape[1])
             m = mod[index:index + 1]
             for i, layer in enumerate(self.layers):
                 if self.blocks_to_swap:
@@ -306,6 +311,7 @@ class MOSSImageDiT(nn.Module):
         key_mask = torch.cat([torch.ones(batch, n, dtype=torch.bool, device=dev), mask], 1)
         text = self.text_embedder(encoder_hidden_states.to(dev), rope[:, n:], mask)
         x = torch.cat((video, text), 1)
+        attn_probe.layout((0, n), n, x.shape[1])
         layers = list(self.layers) if self.blocks_to_swap else None
         for i, layer in enumerate(self.layers):
             if self.blocks_to_swap:

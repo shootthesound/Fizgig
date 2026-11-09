@@ -2954,7 +2954,10 @@ const TM_KINDS = [["loss", "Not learned yet", "Training covers your picture in n
   "noise, so only real learning shows."],
   ["effect", "Where the LoRA acts", "Where the LoRA changes the picture. Red = changes it most, yellow = some, blue = a " +
   "little, no colour = barely. For a person it should gather on the face and body; if it spreads over clothes or the background, " +
-  "the LoRA is learning those too."]];
+  "the LoRA is learning those too."],
+  ["attn", "Trigger word", "Where the picture listens to your trigger word: how much of each area's attention goes to " +
+  "it inside the model. Red = most, yellow = some, blue = a little, no colour = barely. For a person it should " +
+  "settle on the face and body; if it sits on a hat, a jacket or the background, the trigger is tied to those too."]];
 const TM_TIP = "A few of your pictures, checked before training and after every epoch: where the model is still wrong, " +
   "what it has learned, and where the LoRA is acting.";
 // the run's pictures and levels first; each picture + noise level's epochs fetched when shown (a ninth of the whole)
@@ -3060,7 +3063,8 @@ function trainMapsPanel(box, meta, run, load) {
     epochTag.textContent = (st.big && kind[1] ? `${kind[1]} · ` : "") +
       (d.epochs.length ? (d.epochs[st.i].epoch === 0 ? "Before training" : `Epoch ${d.epochs[st.i].epoch}`) : "");
     if (!g) { say.textContent = st.kind === "effect" && d.epochs[st.i] && d.epochs[st.i].epoch === 0 ?
-      "Before training the LoRA does nothing yet." : "No map for this one."; return; }
+      "Before training the LoRA does nothing yet." : st.kind === "attn" && !(d.attn || []).includes(st.key) ?
+      "This picture's caption doesn't have the trigger word." : "No map for this one."; return; }
     say.textContent = "";
     const mx = scale(), off = document.createElement("canvas");
     off.width = g.w; off.height = g.h;
@@ -3168,7 +3172,7 @@ function trainMapsPanel(box, meta, run, load) {
     chips([["all", "All levels", "The three noise levels together, each counted equally: the overall picture"],
            ...d.timesteps.map((t) => [String(t), TM_LEVELS[tKey(t)] || `Noise ${t}`])], () => st.t,
       (v) => { st.t = v; fetchOne().catch((e) => { say.textContent = e.message; }); }),
-    chips(TM_KINDS, () => st.kind, (v) => { st.kind = v; }),
+    chips(TM_KINDS.filter((k) => k[0] !== "attn" || (d.attn || []).length), () => st.kind, (v) => { st.kind = v; }),
     kindSay,
     stage,
     el("div", {class: "tm-row"}, play, scrub, d.live ? refresh : null, d.live ? autoLab : null, legendLo, legend, legendHi),

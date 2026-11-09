@@ -359,6 +359,13 @@ class MOSSImageDriver(FamilyDriver):
     def predict(self, dit, state, cond):
         return self._forward(dit, state["xt"], state["t"], cond)
 
+    def trigger_text(self, tokenizer, caption):
+        """The embedder's chat template (thinking on); nothing dropped (embedder.MossTextEncoder.template)."""
+        from fizgig.moss_image.embedder import ensure_chat_template
+        tok = ensure_chat_template(tokenizer)
+        return tok.apply_chat_template([{"role": "user", "content": caption}], tokenize=False,
+                                       add_generation_prompt=True, enable_thinking=True), ""
+
     # ---- sampling -------------------------------------------------------------------------------
     @torch.no_grad()
     def initial_noise(self, seed, width, height):

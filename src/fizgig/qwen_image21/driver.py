@@ -279,6 +279,11 @@ class QwenImage21Driver(FamilyDriver):
         """The target in predict()'s layout (training maps): noise - x0, packed."""
         return (state["xt"].float() - S.pack(latents.float()).to(state["xt"].device)) / float(state["t"])
 
+    def trigger_text(self, tokenizer, caption):
+        """The encoder's template; its system turn is dropped (qwen_image21/embedder.py TEMPLATE_T2I, drop_idx)."""
+        from fizgig.qwen_image21.embedder import SYS_PROMPT, TEMPLATE_T2I
+        return TEMPLATE_T2I.replace("{}", caption, 1), f"<|im_start|>system\n{SYS_PROMPT}<|im_end|>\n"
+
     def predict(self, dit, state, cond):
         h, w = state["hw"]
         n = h * w

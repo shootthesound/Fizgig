@@ -2656,7 +2656,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 else f"{desc.display_name} doesn't have them") + ")")
         else:
             from fizgig.training.train_maps import TrainingMaps
-            maps = TrainingMaps(output_dir, output_name, getattr(group, "datasets", []), images=training_maps_images)
+            maps = TrainingMaps(output_dir, output_name, getattr(group, "datasets", []), images=training_maps_images,
+                                driver=driver, desc=desc,
+                                trigger=str(dop_trigger or trigger_word or metadata_trigger_phrase or "").strip())
             if maps.keys:
                 maps.start(resume=bool(resume_state_dir))
                 if not resume_state_dir:

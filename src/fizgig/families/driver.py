@@ -322,6 +322,12 @@ class FamilyDriver:
         t = t.float().view(-1, *([1] * (latents.dim() - 1))).to(latents.device) if torch.is_tensor(t) else float(t)
         return (state["xt"].float() - latents.float()) / t
 
+    def trigger_text(self, tokenizer, caption: str):
+        """For the trigger-word attention map (description.trigger_attention): (the prompt exactly as this family's
+        text encoder builds it around the caption, the leading part of it the encoder drops before the DiT sees the
+        text). The tokenizer is families/trigger_check's for this family. None: no trigger map."""
+        return None
+
     # ---- sampling -------------------------------------------------------------------------------
     def initial_noise(self, seed: int, width: int, height: int):
         """The seed's starting noise (CPU float32), exactly what generate() draws for this seed. The workbench

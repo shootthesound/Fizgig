@@ -5,6 +5,9 @@ Two maps, both on the family's own noised input (driver.noise_latents) and predi
 textual sliders use, so they work for every picture family:
   * "loss"   - each latent position's squared error against the training target (driver.map_target), channel mean.
   * "effect" - |prediction with the LoRA at 1 - prediction with it at 0| at the same input, channel mean.
+A third where the family has the trigger_attention ability and the run a trigger word in the picture's caption:
+  * "attn"   - the trigger word's share of each picture token's attention, mean over heads and blocks
+               (training/attn_probe.py), from the LoRA-on forward, run eagerly.
 
 The probes are a few training pictures (spread evenly through the sorted keys, so the same dataset picks the same ones),
 each at a few fixed noise levels with fixed noise (a generator seeded per picture and level): between epochs only the
@@ -16,6 +19,7 @@ Output, in <output>/training_maps/<LoRA name>/ (runs often share an output folde
 {"epoch", "maps": {key: {t: {"loss": grid, "effect": grid}}}} with each grid {"w", "h", "v": [row-major floats]}
 pooled to at most MAX_SIDE on its long side (a latent grid is small already; the page scales it over the picture).
 """
+import contextlib
 import json
 import logging
 import os
@@ -61,7 +65,7 @@ def read(output_dir, output_name, key=None, t=None):
     except OSError:
         pass
     return {"keys": probes.get("keys") or [], "timesteps": probes.get("timesteps") or [],
-            "crops": probes.get("crops") or {}, "epochs": [{"epoch": e, "maps": by[e]} for e in sorted(by)]}
+            "crops": probes.get("crops") or {}, "attn": probes.get("attn") or [], "epochs": [{"epoch": e, "maps": by[e]} for e in sorted(by)]}
 
 
 def crop_box(original_size, bucket_size):
@@ -136,7 +140,8 @@ def _cpu(v):
 
 
 class TrainingMaps:
-    def __init__(self, output_dir, output_name, datasets, *, images=3, timesteps=TIMESTEPS, seed=1234):
+    def __init__(self, output_dir, output_name, datasets, *, images=3, timesteps=TIMESTEPS, seed=1234, driver=None,
+                 desc=None, trigger=None):
         self.dir = maps_dir(output_dir, output_name)
         self.ts = tuple(float(t) for t in timesteps)
         self.seed = int(seed)
@@ -159,7 +164,40 @@ class TrainingMaps:
         self.crops = {k: c for k in self.keys
                       if (c := crop_box(getattr(items[k][1], "original_size", None),
                                         getattr(items[k][1], "bucket_size", None) or items[k][0]))}
+        self.trig = self._trigger_positions(driver, desc, trigger, {k: items[k][1] for k in self.keys})
         self.failed = False
+
+    @staticmethod
+    def _trigger_positions(driver, desc, trigger, items):
+        """key -> the trigger's positions in the text the model sees, for the pictures whose caption has it (the
+        caption its text cache was written from). {} when the family or the run has no trigger map."""
+        if not (desc is not None and getattr(desc, "trigger_attention", False) and driver is not None
+                and str(trigger or "").strip()):
+            return {}
+        out = {}
+        try:
+            from safetensors import safe_open
+            from fizgig.families import trigger_check
+            from fizgig.training.attn_probe import trigger_positions
+            tok = trigger_check._tokenizer(desc.key)
+            for k, it in items.items():
+                path = getattr(it, "text_encoder_output_cache_path", None)
+                if not path:
+                    continue
+                with safe_open(path, framework="pt") as f:
+                    cap = (f.metadata() or {}).get("caption1") or ""
+                built = driver.trigger_text(tok, cap)
+                if built is None:
+                    return {}
+                pos = trigger_positions(tok, built[0], built[1], cap, trigger)
+                if pos:
+                    out[k] = pos
+        except Exception as e:
+            logger.warning(f"[maps] the trigger-word map is off for this run ({type(e).__name__}: {str(e)[:160]})")
+            return {}
+        if not out:
+            logger.info(f"[maps] no trigger-word map: '{trigger}' isn't in these pictures' captions")
+        return out
 
     def start(self, resume=False):
         """A fresh run clears the old maps; a resume keeps adding to them."""
@@ -170,9 +208,11 @@ class TrainingMaps:
             except OSError:
                 pass
         with open(os.path.join(self.dir, "probes.json"), "w", encoding="utf-8") as f:
-            json.dump({"keys": self.keys, "timesteps": list(self.ts), "crops": self.crops}, f)
+            json.dump({"keys": self.keys, "timesteps": list(self.ts), "crops": self.crops,
+                       "attn": sorted(self.trig)}, f)
         logger.info(f"[maps] training maps on: {len(self.keys)} picture(s) x {len(self.ts)} noise level(s), "
-                    "each epoch (the run card's Training maps button)")
+                    "each epoch (the run card's Training maps button)"
+                    + (f"; the trigger word's attention on {len(self.trig)} of them" if self.trig else ""))
 
     def capture(self, epoch, driver, dit, net, device, *, swapped=False, ema=None):
         """The maps for this epoch (0 = before training), appended to maps.jsonl. Never fatal."""
@@ -218,9 +258,20 @@ class TrainingMaps:
                         g = torch.Generator().manual_seed(self.seed * 1000003 + j * 1009 + i)
                         state = driver.noise_latents(latents, g, min_t=t, max_t=t)
                         target = driver.map_target(latents, state).float()
-                        pred = driver.predict(dit, state, cond).float()
+                        attn = None
+                        if k in self.trig:          # the trigger's attention, on this same forward, run eagerly
+                            from fizgig.training import attn_probe
+                            stance = (torch.compiler.set_stance("force_eager")
+                                      if hasattr(torch.compiler, "set_stance") else contextlib.nullcontext())
+                            with stance, attn_probe.capturing(self.trig[k]) as probe:
+                                pred = driver.predict(dit, state, cond).float()
+                            attn = probe.result()
+                        else:
+                            pred = driver.predict(dit, state, cond).float()
                         loss = to_map((pred - target).pow(2), latents)
                         maps = {"loss": _grid(loss)}
+                        if attn is not None:
+                            maps["attn"] = _grid(to_map(attn[None, :, None], latents))
                         if epoch > 0 and hasattr(net, "set_trainable_multiplier"):
                             net.set_trainable_multiplier(0.0)
                             try:

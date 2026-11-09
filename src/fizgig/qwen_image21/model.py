@@ -13,6 +13,8 @@ import torch.nn.functional as F
 from torch.nn.attention import SDPBackend, sdpa_kernel
 from torch.utils.checkpoint import checkpoint
 
+from fizgig.training import attn_probe
+
 IMG_TOKENS_PER_SLOT = 4          # each vision-language image slot stands for a 2x2 group of latent tokens
 
 QWEN21_CONFIG = dict(patch_size=1, in_channels=64, out_channels=64, num_layers=32, attention_head_dim=128,
@@ -208,6 +210,9 @@ class Attention(nn.Module):
         # Block-causal prefill (QwenImage21AttnProcessor): each prefix segment attends to keys [0, end); text segments
         # add a causal triangle over their own keys; the target image attends to everything. Padded keys dropped.
         prefix_len = segments[-1][1] if segments else 0
+        if attn_probe._ACTIVE is not None:      # training maps: the trigger word's attention (training/attn_probe.py)
+            attn_probe.layout((prefix_len, q.shape[1]), 0, q.shape[1])
+            attn_probe.see(q.transpose(1, 2), k.transpose(1, 2), key_valid)
         outs = []
         for start, end, is_text in segments:
             m = None

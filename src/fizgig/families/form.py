@@ -383,6 +383,13 @@ def form(desc):
             _row("CAPTION_TRIGGER_WORD", "Trigger word", hint="Used by Auto-recaption (below): it adds this word at the "
                  "end of a new caption. The training folder's word, the same as the Captions tab's."),
         ]
+    if desc.training_maps:
+        params.append(_row("TRAINING_MAPS", "Training maps (see where it's still wrong, and where the LoRA acts)",
+                           "check", "Before training and after every epoch, three of your pictures are checked at three "
+                           "noise levels: where the model's prediction is still wrong, and where the LoRA is changing "
+                           "it. The Samples tab shows them over the pictures, epoch by epoch - hair or a background "
+                           "staying bright while the face cools, or the LoRA's changes spreading onto clothes and "
+                           "background. A few seconds an epoch."))
     params += by_section("training", "", "lora")
     if desc.identity_blocks:
         a, b = desc.identity_blocks[0], desc.identity_blocks[-1]
@@ -1512,6 +1519,7 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
         FAMILY_SLIDER_SOURCE=(("prompts" if s("FAMILY_SLIDER_SOURCE") == "Prompts" else "pairs")
                               if len(slider_sources(desc)) > 1 else slider_sources(desc)[0]),
         ADAPTIVE_LR=b("ADAPTIVE_LR") and desc.adaptive_lr, SAVE_STATE=b("SAVE_STATE"),
+        TRAINING_MAPS=b("TRAINING_MAPS") and desc.training_maps,
         SAVE_STATE_ON_TRAIN_END=b("SAVE_STATE_ON_TRAIN_END"), FAMILY_FT_FUSED=b("FAMILY_FT_FUSED"),
         FAMILY_SLIDER_ULTRA=b("FAMILY_SLIDER_ULTRA"),
         FAMILY_FAST_ID=b("FAMILY_FAST_ID") and kind == "standard" and bool(desc.identity_blocks),

@@ -27,10 +27,10 @@ the trigger carries it and attention to the trigger's position would mislead. Ma
 - UI: a "Training maps" card on the Samples tab: probe, noise level, which map, an epoch scrubber and play.
 
 ## Status
-- [ ] driver hook map_target (+ MiniMax, SDXL overrides)
-- [ ] training/train_maps.py (probes, capture, write)
-- [ ] train.py hook (baseline + each epoch), argparse flags
-- [ ] description ability + form.py row + launch.py flag
+- [x] driver hook map_target (default flow; SDXL override; MiniMax/Vimoo/ACE-Step have the ability off - clips/songs)
+- [x] training/train_maps.py (probes, capture, write)
+- [x] train.py hook (baseline + each epoch), argparse flags
+- [x] description ability (+ checks/test_family_abilities) + form.py row TRAINING_MAPS + launch.py flag
 - [ ] server endpoint + Samples tab card (viewer)
 - [ ] local functional test (MOSS, tiny set, 0.25 MP, 2 epochs) - check the maps look sane
 - [ ] docs (WEB_UI.md), CLAUDE.md notes

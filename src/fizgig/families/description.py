@@ -557,6 +557,9 @@ class FamilyDescription:
     adaptive_lr_clip_signal: bool = False
     adaptive_lr: bool = True          # the Adaptive LR control (off: hidden, never sent - MiniMax H3)
     loss_watch: bool = True           # the per-image loss watch toggles (off: hidden, never sent - MiniMax H3)
+    # Training maps (training/train_maps.py): where a few fixed pictures are still wrong and where the LoRA acts, each
+    # epoch - through the driver's noise_latents / predict / map_target, stills (4-D latents) only
+    training_maps: bool = True
     # Abilities this family leaves out, each with its reason: {field name: why}. checks/test_family_abilities.py
     # fails when a picture family lacks an ability most picture families have (masked training, sliders, fine-tune,
     # Reuse unchanged blocks, INT8 attention, Adaptive LR, the loss watch, caption dropout, batching, Detail crops, Start at

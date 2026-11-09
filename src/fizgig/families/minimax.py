@@ -323,12 +323,14 @@ MINIMAX = FamilyDescription(
     not_offered={
         "adaptive_lr": "retired for H3 by decision (its LR is set by the adapter ramp)",
         "loss_watch": "off for H3 by decision (CLAUDE.md, Per-Image Loss Watch)",
+        "training_maps": "clips: the maps draw on a still's latent grid (a clip's frames would need their own view)",
         "caption_dropout": "H3 has its own caption dropout option (H3_CAPTION_DROPOUT), not the shared row",
         "detail_crops": "a crop of a clip's frame isn't a clip",
         "resolution_stages": "clips train at their own size: not measured with stages",
     },
     slider_training=True,             # prompt pairs, photo pairs and clip pairs (driver: _slider_loss / predict)
     loss_watch=False,
+    training_maps=False,
     batch_training=True,              # Batch size (Other Options): pictures packed (forward_packed); clips one a step
     own_plan=True,                    # the old trainer's planner (driver.plan_run): its own figures, not train_memory
     batch_gb=(0.2, 0.8),              # GB each extra picture takes: fixed, per MP (batch 2 vs 3: batch 1 runs without checkpointing)

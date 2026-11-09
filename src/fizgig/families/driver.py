@@ -313,6 +313,15 @@ class FamilyDriver:
         """The model's prediction at a noise_latents() state for this conditioning (batched dict)."""
         raise NotImplementedError
 
+    def map_target(self, latents, state: dict):
+        """What predict() should return at this noise_latents() state - the training target, for the training maps'
+        per-pixel error. Default: flow matching (x_t = (1 - t) x0 + t noise, target noise - x0), recovered from the
+        state as (x_t - x0) / t. A family with another target overrides it."""
+        import torch
+        t = state["t"]
+        t = t.float().view(-1, *([1] * (latents.dim() - 1))).to(latents.device) if torch.is_tensor(t) else float(t)
+        return (state["xt"].float() - latents.float()) / t
+
     # ---- sampling -------------------------------------------------------------------------------
     def initial_noise(self, seed: int, width: int, height: int):
         """The seed's starting noise (CPU float32), exactly what generate() draws for this seed. The workbench

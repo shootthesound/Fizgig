@@ -1091,6 +1091,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  lr_scheduler="constant", lr_warmup_steps=0, lr_scheduler_num_cycles=1, lr_scheduler_power=1.0,
                  gradient_accumulation_steps=1, compile_blocks="auto", gradient_checkpointing="auto", blocks_to_swap=0, network_type="lora", lokr_factor=8,
                  log_per_image_loss=False, per_image_lr=False, auto_recaption=False, warmup_look_outliers=False,
+                 training_maps=False, training_maps_images=3,
                  trigger_word=None, trigger_position="start", recaption_triggers=None, recaption_instruction=None,
                  recaption_instruction_detailed=None, recaption_task=None, recaption_task_detailed=None,
                  captioner=None, finetune=False, ft_rotations=10, ft_save_every_rotations=1, ft_rotate_every=1, ft_max_parts=0,
@@ -2646,6 +2647,23 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 _noted = time.time()
             time.sleep(2)
     prior = _MaskPrior(driver, dit, net, mask_prior, swapped) if mask_prior else None
+    # Training maps (training/train_maps.py): where a few fixed pictures are still wrong and where the LoRA acts
+    maps = None
+    if training_maps:
+        if not desc.training_maps or slider or ftr is not None or share_worker:
+            logger.info("[maps] training maps are off for this run (" + (
+                "sliders" if slider else "fine-tunes" if ftr is not None else "a helper's share" if share_worker
+                else f"{desc.display_name} doesn't have them") + ")")
+        else:
+            from fizgig.training.train_maps import TrainingMaps
+            maps = TrainingMaps(output_dir, getattr(group, "datasets", []), images=training_maps_images)
+            if maps.keys:
+                maps.start(resume=bool(resume_state_dir))
+                if not resume_state_dir:
+                    maps.capture(0, driver, dit, net, device, swapped=bool(swapped), ema=ema)
+            else:
+                logger.info("[maps] training maps: no picture could be read from the cache - off for this run")
+                maps = None
     for epoch in (_worker_epochs() if share_worker else range(start_epoch, max_train_epochs)):
         shared_epoch.value = epoch + 1
         driver.begin_epoch(epoch + 1 + (ftr.epochs_done if ftr is not None else 0))   # a continued fine-tune counts on
@@ -2965,6 +2983,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 own = sample_for_epoch(output_dir, output_name, done)
                 if own:
                     refresh_checkpoint_thumbnail(os.path.join(output_dir, f"{output_name}-{done:06d}.safetensors"), own)
+        if maps is not None:           # epoch-end work: already left out of the bar's s/it (between)
+            maps.capture(done, driver, dit, net, device, swapped=bool(swapped), ema=ema)
         if (os.path.exists(pause_flag) and done < max_train_epochs
                 and not (share_now[0] is not None and done < share_now[0]["last"])):   # a share round ends first
             if state_saved:
@@ -3033,6 +3053,9 @@ def setup_parser():
     p.add_argument("--speed_lora_strength", type=float, default=None,
                    help="the preview speed LoRA's strength (default: the family's recommended value)")
     p.add_argument("--log_per_image_loss", action="store_true", help="detect problem images (Problem Images window)")
+    p.add_argument("--training_maps", action="store_true",
+                   help="training maps: where a few fixed pictures are still wrong and where the LoRA acts, each epoch")
+    p.add_argument("--training_maps_images", type=int, default=3, help="how many pictures the training maps follow")
     p.add_argument("--per_image_lr", action="store_true", help="scale each step by the image's loss-watch multiplier")
     p.add_argument("--auto_recaption", action="store_true", help="recaption stuck images (needs --captioner)")
     p.add_argument("--warmup_look_outliers", action="store_true", help="LR warm-up for Look Filter outliers")
@@ -3204,6 +3227,7 @@ def main():
         a.family, a.dit, a.dataset_config, a.output_dir, a.output_name, precision=a.precision,
         blocks_to_swap=a.blocks_to_swap, speed_lora_strength=a.speed_lora_strength, network_type=a.network_type, lokr_factor=a.lokr_factor,
         log_per_image_loss=a.log_per_image_loss, per_image_lr=a.per_image_lr, auto_recaption=a.auto_recaption,
+        training_maps=a.training_maps, training_maps_images=a.training_maps_images,
         warmup_look_outliers=a.warmup_look_outliers, trigger_word=a.trigger_word, trigger_position=a.trigger_position,
         recaption_triggers=a.recaption_triggers,
         recaption_instruction=a.recaption_instruction,

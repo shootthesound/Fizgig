@@ -945,6 +945,8 @@ def train_command(desc, inputs, plan):
         if cont.get("checkpoint"):
             cmd += ["--ft_start_window", str(int(cont.get("start_window", 0))),
                     "--ft_epochs_done", str(int(cont.get("epochs_done", 0)))]
+    if st.get("TRAINING_MAPS") and desc.training_maps:     # training/train_maps.py: the Samples tab's Training maps
+        cmd += ["--training_maps"]
     # per-image loss watch (families/loss_watch.py): at any Batch size, a batch's pictures weighed and recorded
     # one by one
     lw = (st.get("loss_watch") or {}) if desc.loss_watch else {}

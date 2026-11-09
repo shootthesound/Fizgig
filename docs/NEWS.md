@@ -1,5 +1,15 @@
 # Fizgig news
 
+## 9 Nov 2026: Training maps, and a much faster compile warm-up
+
+**See what training does to your pictures, epoch by epoch.** Tick **Training maps** under Training Parameters, and three of your training pictures are checked before training and after every epoch, for a few seconds an epoch. The **Training maps** button on the run card shows each with a heatmap over it: **Learned since the start** (green where the model now gets it right, magenta where it got worse), **Not learned yet**, and **Where the LoRA acts**: for a person it should gather on the face and body, and spreading over clothes or the background means the LoRA is learning those too. On MOSS-Image, Krea 2 and Qwen Image 2.1, a fourth map, **Trigger word**, shows how much of each area's attention goes to your trigger word inside the model. It works on every still-picture model.
+
+**Compiled runs warm up much faster.** The compiler now builds each block for any picture size and caption length from the start. With **Leave the rest of the model alone** or **Fizgig LoRA Isolation**, a MOSS-Image test with 25 picture sizes went from about 19 s a step at the start to a whole 2-epoch run in 84 s. Speed once warmed up is unchanged.
+
+**Full fine-tunes train with the optimizer you pick:** Adafactor by default, or AdamW8bit, AdamW, AdEMAMix8bit or Lion8bit (thanks @RitschRatsch666, #312).
+
+Update Fizgig on your computers; your pods follow. [Training maps guide](https://github.com/shootthesound/Fizgig/blob/master/docs/TRAINING_MAPS.md) · [Fizgig v9.2.6 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.2.6)
+
 ## 8 Nov 2026: Faster MOSS-Image training and previews, faster training on every model, and a faster Studio
 
 **Training is much faster, uses far less memory, and likeness is unchanged.** On an RTX 5090, a MOSS-Image LoRA at batch 1 (94 pictures, Muon, 70 epochs) takes about 20 minutes instead of 49. At batch 3, MOSS-Image now matches OneTrainer's speed on the same card in less memory (1.07 s a step in 6.9 GB, against 1.07 s in 7.4 GB). Thanks to @tsk5cb-cmyk, whose logs in #221 showed where the time was going.

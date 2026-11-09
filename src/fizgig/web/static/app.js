@@ -8877,6 +8877,12 @@ function tabsMenu(open) {
 
 function showTab(name) {
   if (name !== "prep" && S.me && S.me.dirty) meSave();      // leaving Image Prep saves the mask being edited
+  // each tab keeps its own scroll place: back on Training, the loss chart is where you left it (the tabs share one
+  // scrolling pane; a phone scrolls the page itself). Read before anything below scrolls (the tab button's
+  // scrollIntoView can move a phone's page)
+  const pane = document.querySelector(".notebook-pane"), was = document.querySelector(".tab-panel.active");
+  S.tabScroll = S.tabScroll || {};
+  if (was && was.id !== "tab-" + name) S.tabScroll[was.id] = [pane ? pane.scrollTop : 0, window.scrollY];
   const tb = document.querySelector(`.tab-item[data-tab="${name}"] span`);
   if (tb) $("tabsToggleName").textContent = tb.textContent;
   tabsMenu(false);
@@ -8884,22 +8890,23 @@ function showTab(name) {
     b.classList.toggle("active", b.dataset.tab === name);
     if (b.dataset.tab === name) b.scrollIntoView({block: "nearest", inline: "nearest"});
   });
-  // each tab keeps its own scroll place: back on Training, the loss chart is where you left it (the tabs share one
-  // scrolling pane; a phone scrolls the page itself)
-  const pane = document.querySelector(".notebook-pane"), was = document.querySelector(".tab-panel.active");
-  S.tabScroll = S.tabScroll || {};
-  if (was && was.id !== "tab-" + name) S.tabScroll[was.id] = [pane ? pane.scrollTop : 0, window.scrollY];
   document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + name));
   if (!was || was.id !== "tab-" + name) {
     const [py, wy] = S.tabScroll["tab-" + name] || [0, 0];
     const put = () => { if (pane) pane.scrollTop = py; window.scrollTo(0, wy); };
+    // a tab that fills in as it opens (the gallery, the charts) may be too short for the place at first: tried again as
+    // it grows, for up to ~2.5 s, until it's there - and never once you've scrolled, or left the tab
+    const now = () => [pane ? pane.scrollTop : 0, window.scrollY];
     put();
-    // a tab that fills in as it opens (the gallery, the charts) may be too short for the place at first: once more
-    // after it has drawn, unless you've scrolled since
-    const at = [pane ? pane.scrollTop : 0, window.scrollY];
-    setTimeout(() => {
-      if ((pane ? pane.scrollTop : 0) === at[0] && window.scrollY === at[1] && $("tab-" + name).classList.contains("active")) put();
-    }, 350);
+    let at = now();
+    const again = (left) => setTimeout(() => {
+      const [p, w] = now();
+      if (p !== at[0] || w !== at[1] || !$("tab-" + name).classList.contains("active")) return;
+      if (Math.abs(p - py) < 2 && Math.abs(w - wy) < 2) return;
+      put(); at = now();
+      if (left > 1) again(left - 1);
+    }, 250);
+    again(10);
   }
   if (name === "captions") loadCaptions();
   if (name === "prep") loadPrep();

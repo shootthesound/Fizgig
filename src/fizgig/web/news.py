@@ -11,7 +11,7 @@ NEWS = [
             "See what training does to your pictures, epoch by epoch. Tick Training maps under Training Parameters, "
             "and the Training maps button on the run card shows three of your pictures with a heatmap over each: "
             "what the LoRA has learned, what it hasn't yet, and where it's changing things it shouldn't, like the "
-            "background or clothes. On MOSS-Image, Krea 2 and Qwen Image 2.1, a fourth map shows where your trigger "
+            "background or clothes. On every still-picture model except SDXL, a fourth map shows where your trigger "
             "word's attention goes.\n\n"
             "Compiled runs reach full speed much sooner, most of all with Leave the rest of the model alone or Fizgig "
             "LoRA Isolation. Full fine-tunes now train with the optimizer you pick, Adafactor by default."

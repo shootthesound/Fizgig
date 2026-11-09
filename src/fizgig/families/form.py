@@ -384,12 +384,11 @@ def form(desc):
                  "end of a new caption. The training folder's word, the same as the Captions tab's."),
         ]
     if desc.training_maps:
-        params.append(_row("TRAINING_MAPS", "Training maps (see where it's still wrong, and where the LoRA acts)",
-                           "check", "Before training and after every epoch, three of your pictures are checked at three "
-                           "noise levels: where the model's prediction is still wrong, and where the LoRA is changing "
-                           "it. The Samples tab shows them over the pictures, epoch by epoch - hair or a background "
-                           "staying bright while the face cools, or the LoRA's changes spreading onto clothes and "
-                           "background. A few seconds an epoch."))
+        params.append(_row("TRAINING_MAPS", "Training maps (watch what your LoRA is learning)",
+                           "check", "Heatmaps over three of your own pictures, updated every epoch: which parts the "
+                           "LoRA has learned, which it hasn't yet, and where it's changing things it shouldn't, like "
+                           "the background or clothes. Open them with the Training maps button on the run card. Adds "
+                           "a few seconds an epoch."))
     params += by_section("training", "", "lora")
     if desc.identity_blocks:
         a, b = desc.identity_blocks[0], desc.identity_blocks[-1]

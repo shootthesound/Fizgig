@@ -2470,6 +2470,16 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     # one-step-behind loss read). Flushed at the epoch's end, before anything reads the records.
     lag = []
 
+    def _step_rate(raw=False):
+        """The rate the step applied: the optimizer's (raw: its group rate, as the bar shows it), or under a
+        fine-tune's free-each-gradient - one optimizer per weight, none to read (#312) - the stepper's rate times
+        this step's multiplier."""
+        if optimizer is not None:
+            return float(optimizer.param_groups[0]["lr"]) if raw else optimizer_lr(optimizer)
+        if ftr is not None and ftr.fused is not None:
+            return float(ftr.fused.lr) * float(ftr.fused.scale)
+        return float(learning_rate)
+
     def _later(fn, **vals):
         """Call fn(**vals as Python numbers / lists) one step from now, without waiting for the GPU now."""
         cpu = {k: (v.detach().to("cpu", non_blocking=True) if torch.is_tensor(v) and v.is_cuda else v)
@@ -2891,7 +2901,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             def _rec(lv, per=None, _e=epoch, _i=i, _g=global_step, _keys=batch.get("item_keys"), _ts=_info.get("ts"),
                      _t=_info.get("t", 0.5), _kept=(_kept if not slider and bsz > 1 and _wb is not None else None),
                      _rate=(None if global_step % 20 else      # the rate now and then (Automagic's averages it)
-                            learning_rate if optimizer is None else optimizer_lr(optimizer))):
+                            _step_rate())):
                 recorder.add(epoch=_e, step=_i, loss=lv)
                 steplog.add(step_off + _g, _e + 1 + (ftr.epochs_done if ftr is not None else 0), lv, _rate)
                 if per is not None:            # a batch: one record per picture
@@ -2912,7 +2922,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     progress.start_t += time.time() - _tp
             # the run card's Learning: loss, the step's learning rate (Adaptive LR's, Automagic's) and grad norm
             progress.set_postfix(avr_loss=f"{recorder.moving_average:.4f}",
-                                 lr=f"{float(optimizer.param_groups[0]['lr']):.2e}" if optimizer is not None else "-",
+                                 lr=f"{_step_rate(raw=True):.2e}",
                                  **({"gn": f"{last_gn[0]:.3f}"} if last_gn[0] is not None else {}), refresh=False)
             progress.update(1)
 
@@ -2923,7 +2933,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         _off = ftr.epochs_done if ftr is not None else 0
         logger.info(f"epoch {epoch + 1 + _off}/{max_train_epochs + _off}  avr_loss={recorder.moving_average:.4f}  "
                     f"step={global_step}  {(time.time() - t0) / max(1, steps_per_epoch):.2f}s/step  "
-                    f"lr={learning_rate if optimizer is None else optimizer_lr(optimizer):.3e}  "
+                    f"lr={_step_rate():.3e}  "
                     + (f"({group_rates(optimizer)})  " if optimizer is not None and group_rates(optimizer) else "") +
                     f"peak VRAM {torch.cuda.max_memory_reserved() / 1024 ** 3:.1f} GB")
         steplog.flush()

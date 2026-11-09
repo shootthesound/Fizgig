@@ -1,4 +1,4 @@
-# Fizgig v9.2.6: Training maps, a much faster compile warm-up, and fine-tunes with the optimizer you pick
+# Fizgig v9.3.0: Training maps, a much faster compile warm-up, and fine-tunes with the optimizer you pick
 
 **New: Training maps.** See what training is doing to your pictures, epoch by epoch. Tick **Training maps** under Training Parameters, and three of your training pictures are checked before training and after every epoch, for a few seconds an epoch. The **Training maps** button on the run card shows each one with a heatmap over it:
 - **Learned since the start:** green where the model now gets that part of the picture right, magenta where it got worse.

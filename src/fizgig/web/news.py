@@ -18,7 +18,7 @@ NEWS = [
         ),
         "links": [{"text": "Read more", "href": _ARTICLE + "#9-nov-2026-training-maps-and-a-much-faster-compile-warm-up"},
                   {"text": "Training maps guide", "href": "https://github.com/shootthesound/Fizgig/blob/master/docs/TRAINING_MAPS.md"},
-                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.2.6"}],
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.3.0"}],
     },
     {
         "date": "8 Nov 2026",

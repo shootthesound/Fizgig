@@ -8,7 +8,7 @@
 
 **Full fine-tunes train with the optimizer you pick:** Adafactor by default, or AdamW8bit, AdamW, AdEMAMix8bit or Lion8bit (thanks @RitschRatsch666, #312).
 
-Update Fizgig on your computers; your pods follow. [Training maps guide](https://github.com/shootthesound/Fizgig/blob/master/docs/TRAINING_MAPS.md) · [Fizgig v9.2.6 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.2.6)
+Update Fizgig on your computers; your pods follow. [Training maps guide](https://github.com/shootthesound/Fizgig/blob/master/docs/TRAINING_MAPS.md) · [Fizgig v9.3.0 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.3.0)
 
 ## 8 Nov 2026: Faster MOSS-Image training and previews, faster training on every model, and a faster Studio
 

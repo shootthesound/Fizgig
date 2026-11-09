@@ -5595,7 +5595,7 @@ function studioKind(L, sv) {
   studioAce(L, sv);
   studioEqButtons(L);
   studioMixShow(L);
-  studioMetricsShow();
+  studioMetricsShow(); studioMapsShow();
   if (!video) return;
   // the clip row's values are remembered per model (H3's under the old "h3" key), each starting from its own defaults
   const V = L.video, h3 = (sv.video || {})[L.key] || (L.key === "minimax" ? sv.h3 : null) || {};
@@ -6659,7 +6659,7 @@ async function studioSetupApply(d, name) {        // a saved setup, or one read 
   if (S.st.layout && S.st.layout.kind === "video") studioSlots();
   S.st.region = w.region || null;
   studioEq("primary", false, false); studioEq("donor", false, false);
-  studioAceLayout(); studioAceRemember(); studioH3Remember(); stRemember(); studioMetricsShow(); studioNegRow();
+  studioAceLayout(); studioAceRemember(); studioH3Remember(); stRemember(); studioMetricsShow(); studioMapsShow(); studioNegRow();
   studioSync(); studioCommit();
   studioMixReset();
   S.st.pendingMix = w.mix || w.dmix ? w : null;          // the mix follows once its LoRAs are loaded

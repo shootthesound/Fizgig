@@ -6427,7 +6427,7 @@ function stMapChips() {
     text: label, title: tip || "", onclick: () => { set(v); stMapChips(); }}));
   $("stMapKinds").replaceChildren(...row(ST_MAPS, m.kind, (v) => {
     m.kind = v;
-    if (!v) { $("stMapCanvas").style.display = "none"; $("stMapSay").textContent = ""; return; }
+    if (!v) { $("stMapCanvas").style.display = "none"; stMapNote(""); return; }
     if (!m.data || m.data.gen !== S.st.shown || (v === "blocks" && !m.data.with_blocks)) studioMapRequest(); else stMapDraw();
   }));
   const groups = (m.data && m.data.groups) || [];
@@ -6440,7 +6440,12 @@ function stMapChips() {
   $("stMapOpts").style.display = m.kind ? "" : "none";
   // what the chosen map shows, right under its button, before the next row of controls
   $("stMapKindSay").textContent = m.kind ? (ST_MAPS.find((k) => k[0] === m.kind) || [])[2] || "" : "";
-  $("stMapTrigRow").style.display = $("stMapGo").style.display = m.kind === "attn" ? "" : "none";
+  $("stMapTrigRow").style.display = m.kind === "attn" ? "" : "none";
+}
+
+function stMapNote(text) {                     // the notice under the controls (empty: hidden)
+  $("stMapSay").textContent = text || "";
+  $("stMapSay").style.display = text ? "" : "none";
 }
 
 async function studioMapRequest() {
@@ -6449,15 +6454,16 @@ async function studioMapRequest() {
   const state = studioState();
   if (state.seed === 0 && S.st.seedUsed) state.seed = S.st.seedUsed;
   const want = (m.want = (m.want || 0) + 1);
-  const busy = (on) => {                        // the Show button and the line say a map is on its way
+  const busy = (on) => {                        // a pill by the title, a badge on the picture, the Show button
     $("stMapGo").disabled = on;
     $("stMapGo").textContent = on ? "Making the map…" : "Show";
+    $("stMapPill").style.display = $("stMapBadge").style.display = on ? "" : "none";
   };
   busy(true);
-  $("stMapSay").textContent = "Making the map… (a few seconds)";
+  stMapNote("");
   try {
     const r = await api("/api/studio/map", {state, trigger: $("stMapTrig").value.trim(), blocks: m.kind === "blocks"});
-    if (r.error) { busy(false); $("stMapSay").textContent = r.error; return; }
+    if (r.error) { busy(false); stMapNote(r.error); return; }
     if (!$("stMapTrig").value.trim() && r.trigger) $("stMapTrig").placeholder = r.trigger;
     for (let i = 0; i < 240 && want === m.want; i++) {        // the worker answers in seconds; up to two minutes
       await new Promise((ok) => setTimeout(ok, 500));
@@ -6465,14 +6471,14 @@ async function studioMapRequest() {
       if (d.gen === r.gen && !d.busy) {
         if (want !== m.want) return;
         busy(false);
-        if (d.error) { $("stMapSay").textContent = d.error; return; }
+        if (d.error) { stMapNote(d.error); return; }
         m.data = d;
         stMapChips();
         stMapDraw();
         return;
       }
     }
-  } catch (e) { $("stMapSay").textContent = e.message; }
+  } catch (e) { stMapNote(e.message); }
   if (want === m.want) busy(false);
 }
 
@@ -6516,13 +6522,13 @@ function stMapDraw() {
   const g = stMapGrid();
   if (!g) {
     cv.style.display = "none";
-    $("stMapSay").textContent = m.kind === "blocks" ? "No block group to map: this LoRA touches none of them." :
+    stMapNote(m.kind === "blocks" ? "No block group to map: this LoRA touches none of them." :
       m.kind === "tweak" ? "No slider has moved: the Tweaked picture is the Baseline." :
       m.kind === "attn" ? (m.data.trigger ? `"${m.data.trigger}" isn't in the prompt (or this model has no trigger map).` :
-        "Type the LoRA's trigger word: it isn't in the LoRA's own information.") : "No map for this one.";
+        "Type the LoRA's trigger word: it isn't in the LoRA's own information.") : "No map for this one.");
     return;
   }
-  $("stMapSay").textContent = "";                 // the explanation sits under the buttons (stMapKindSay)
+  stMapNote("");                                 // the explanation sits under the buttons (stMapKindSay)
   // the picture's box inside the pane (object-fit: contain)
   const bw = img.clientWidth, bh = img.clientHeight, ar = img.naturalWidth / img.naturalHeight;
   const w = Math.min(bw, bh * ar), h = w / ar, x0 = img.offsetLeft + (bw - w) / 2, y0 = img.offsetTop + (bh - h) / 2;

@@ -6388,8 +6388,9 @@ const ST_MAPS = [["", "Off", "No map"],
   ["effect", "Where the LoRA acts", "Where the LoRA, as you've set it, changes the picture. Red = changes it most, " +
     "yellow = some, blue = a little, no colour = barely. For a person LoRA it should gather on the face and body; if " +
     "it spreads over clothes or the background, the LoRA changes those too."],
-  ["tweak", "What your tweaks change", "Where your slider changes move the picture away from the Baseline (every " +
-    "slider at 1.0), on the same colours: what each tweak touches."],
+  ["tweak", "What your tweaks change", "Move any slider (a block, a master slider or a LoRA's strength) and let the " +
+    "Tweaked picture render: this map then shows where your change acts, against the Baseline (every slider at 1.0). " +
+    "Red = your change moves that part most, yellow = some, blue = a little. It updates after every render."],
   ["attn", "Trigger word", "How much of each area's attention goes to the trigger word inside the model, on the same " +
     "colours. For a person it should settle on the face and body; on lettering (a logo, a watermark) or the background, " +
     "the trigger is tied to those too. The prompt must contain the trigger word."],
@@ -6523,7 +6524,7 @@ function stMapDraw() {
   if (!g) {
     cv.style.display = "none";
     stMapNote(m.kind === "blocks" ? "No block group to map: this LoRA touches none of them." :
-      m.kind === "tweak" ? "No slider has moved: the Tweaked picture is the Baseline." :
+      m.kind === "tweak" ? "Nothing to show yet: move a slider, and when the Tweaked picture has rendered, the map appears here." :
       m.kind === "attn" ? (m.data.trigger ? `"${m.data.trigger}" isn't in the prompt (or this model has no trigger map).` :
         "Type the LoRA's trigger word: it isn't in the LoRA's own information.") : "No map for this one.");
     return;

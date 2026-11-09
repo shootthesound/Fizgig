@@ -635,9 +635,19 @@ def _plan_from_header_lists(hdr, spec: FTSpec, free_gb: float, mp=None, max_part
     return windows, stream, usable
 
 
-def make_optimizer(params, lr):
-    """Adafactor first (factored state ~10x smaller than Adam's - what keeps a full fine-tune on the card), then
+def make_optimizer(params, lr, name="adafactor"):
+    """The fine-tune's optimizer (training/optimizers.FT_OPTIMIZERS; anything else is Adafactor). Adafactor is the
+    default (factored state ~10x smaller than Adam's - what keeps a full fine-tune on the card), falling back to
     AdamW8bit, then AdamW. Returns (optimizer, label)."""
+    from fizgig.training.optimizers import _bnb, ft_optimizer
+    name = ft_optimizer(name)
+    if name != "adafactor":
+        params = list(params)
+        if name == "adamw":
+            return torch.optim.AdamW(params, lr=lr, fused=all(p.is_cuda for p in params) or None), name
+        cls = {"adamw8bit": "AdamW8bit", "pagedadamw8bit": "PagedAdamW8bit", "ademamix8bit": "AdEMAMix8bit",
+               "pagedademamix8bit": "PagedAdEMAMix8bit", "lion8bit": "Lion8bit"}[name]
+        return _bnb(cls)(params, lr=lr), name
     try:
         from transformers.optimization import Adafactor
         return Adafactor(params, lr=lr, scale_parameter=False, relative_step=False, warmup_init=False), "adafactor"
@@ -655,8 +665,9 @@ class FusedSteps:
     so only one parameter's gradient is ever live (~5 GB saved on Krea 2). No clipping, no accumulation. `scale` is
     the step's LR multiplier (the driver's step_policy), set before each backward."""
 
-    def __init__(self, lr):
+    def __init__(self, lr, name="adafactor"):
         self.lr = lr
+        self.name = name
         self.scale = 1.0
         self.opts = {}
         self.handles = []
@@ -664,7 +675,7 @@ class FusedSteps:
     def attach(self, params):
         self.detach()
         for p in params:
-            self.opts[p] = make_optimizer([p], self.lr)[0]
+            self.opts[p] = make_optimizer([p], self.lr, self.name)[0]
 
         def _hook(param):
             opt = self.opts.get(param)
@@ -734,6 +745,8 @@ class SharedBackend:
     whose base differs (H3's int8 ConvRot file, its own 4-bit trunk and ring) brings its own backend with the same
     surface (driver.ft_backend)."""
 
+    plans_optimizer_state = True    # plan() takes the optimizer's state_factor
+
     always_label = None
 
     def __init__(self, driver, dit, device, src, group=None):
@@ -751,14 +764,17 @@ class SharedBackend:
     def start_always(self):
         return self.rot.start_always()
 
-    def plan(self, free_gb, allow_stream=True, mp=None, max_parts=0, held_grads=False):
+    def plan(self, free_gb, allow_stream=True, mp=None, max_parts=0, held_grads=False, state_factor=0.0):
         """held_grads: every trained weight's gradient is held at once this run (DOP's pass joins the step's
         backward, so each weight waits for both passes' gradients before its free-each-gradient step: measured +8.3
-        GB on Krea 2's 4.04B-parameter attention window) - planned as the window factor's weights-plus-gradient."""
+        GB on Krea 2's 4.04B-parameter attention window) - planned as the window factor's weights-plus-gradient.
+        state_factor: the optimizer's state per GB of window weights beyond Adafactor's (optimizers.FT_OPTIMIZERS)."""
+        import dataclasses
         spec = self.spec
         if held_grads and spec.window_factor < 2.0:
-            import dataclasses
             spec = dataclasses.replace(spec, window_factor=2.0)
+        if state_factor:
+            spec = dataclasses.replace(spec, window_factor=spec.window_factor + state_factor)
         windows, stream, why, usable = plan_windows(self.dit, spec, self.rot, free_gb, allow_stream, mp,
                                                     max_parts)
         if windows is not None and stream and any(isinstance(w, tuple) for w in windows):

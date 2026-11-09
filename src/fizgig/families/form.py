@@ -187,8 +187,8 @@ def kind_sets(desc, kind):
     """What picking a kind of training also sets (the desktop's _family_kind_chosen): Fine-tune takes the family's
     fine-tune learning rate with Adaptive LR off; a family's kind_values come too."""
     out = dict(dict(getattr(desc, "kind_values", ()) or ()).get(kind, ()))
-    if kind == "finetune":
-        out.update(LEARNING_RATE=f"{desc.ft_learning_rate:g}", ADAPTIVE_LR=False)
+    if kind == "finetune":                   # Adafactor: what every fine-tune is tested on (#312)
+        out.update(LEARNING_RATE=f"{desc.ft_learning_rate:g}", ADAPTIVE_LR=False, OPTIMIZER_TYPE="adafactor")
     return out
 
 
@@ -634,9 +634,6 @@ def form(desc):
     ])
     add("optimizer", "Optimizer", "training", [
         _row("OPTIMIZER_TYPE", "Optimizer Type", "choice", choices=_optimizers()),
-        _row("_ft_optimizer", "A fine-tune trains with Adafactor, whatever the Optimizer Type says: its small "
-             "factored state is what keeps the whole model on your card, and it is what every Fizgig fine-tune is "
-             "tested on. Muon, Prodigy and Automagic are LoRA optimizers - don't use them for a fine-tune.", "note"),
         _row("OPTIMIZER_ARGS", "Optimizer Args"),
         _row("GRADIENT_ACCUMULATION", "Gradient Accumulation", hint="Every model trains one image at a time. For a "
              "larger effective batch, raise this: the same averaged gradient as a bigger batch, at the memory of "
@@ -1063,12 +1060,14 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         hidden.add("LEARNING_RATE")          # Adaptive LR on: Min and Max in its place (the box is ignored)
     if kind == "finetune":       # a fine-tune trains at its own fixed rate: no Adaptive LR, on any model
         hidden.add("ADAPTIVE_LR")
-    # a fine-tune always trains with Adafactor (families/ft.py make_optimizer, #312): the LoRA optimizer rows go,
-    # the note says what runs
-    if kind == "finetune":
-        hidden |= {"OPTIMIZER_TYPE", "OPTIMIZER_ARGS"}
-    else:
-        hidden.add("_ft_optimizer")
+    if kind == "finetune":       # its optimizers take no args; a LoRA optimizer is said, and trains as Adafactor (#312)
+        from fizgig.training.optimizers import FT_OPTIMIZERS
+        hidden.add("OPTIMIZER_ARGS")
+        ft_opt = str(values.get("OPTIMIZER_TYPE", "") or "").strip().lower()
+        if ft_opt and ft_opt not in FT_OPTIMIZERS:
+            notes["OPTIMIZER_TYPE"] = (f"{ft_opt} is a LoRA optimizer - a fine-tune can't use it, so it would train "
+                                       f"with Adafactor. Pick Adafactor (recommended: what every Fizgig fine-tune is "
+                                       f"tested on), or AdamW8bit, AdamW, AdEMAMix8bit or Lion8bit.")
     opt = str(values.get("OPTIMIZER_TYPE", "")) if kind != "finetune" else ""
     if opt in ("automagic3", "automagic4"):
         disabled |= {"ADAPTIVE_LR", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK"}

@@ -784,7 +784,15 @@ function onValue(r, val) {
        "SAMPLE_EVERY_AFTER", "FAMILY_PREVIEW_LOOK", "SAMPLE_CHECKPOINT"].includes(r.key))) sampleLiveSoon();
   if (r.key === "CAPTION_TRIGGER_WORD") { S.trigger = String(val).trim(); $("capTrigger").value = S.trigger; saveTriggerSoon(S.trigger); }
   const extra = r.sets && r.sets[val];            // a kind of training that also sets others (Fine-tune's LR)
+  // Fine-tune sets Adafactor (#312): the LoRA optimizer is kept, and comes back when another kind is picked
+  const ftOpt = (k) => !!(r.sets && r.sets[k] && "OPTIMIZER_TYPE" in r.sets[k]);
+  if (r.sets && prev !== val && ftOpt(val) && !ftOpt(prev)) S.values._LORA_OPTIMIZER = S.values.OPTIMIZER_TYPE;
   if (extra) { Object.assign(S.values, extra); syncInputs(Object.keys(extra)); }
+  if (r.sets && prev !== val && ftOpt(prev) && !ftOpt(val) && S.values._LORA_OPTIMIZER) {
+    const back = S.values._LORA_OPTIMIZER;
+    delete S.values._LORA_OPTIMIZER;
+    S.values.OPTIMIZER_TYPE = back; optimizerPicked("adafactor", back); syncInputs(["OPTIMIZER_TYPE"]);
+  }
   if (r.timesteps && r.timesteps[val]) {           // a Model Area with its own timestep window
     [S.values.MIN_TIMESTEP, S.values.MAX_TIMESTEP] = r.timesteps[val];
     syncInputs(["MIN_TIMESTEP", "MAX_TIMESTEP"]);
@@ -2162,7 +2170,7 @@ function runSummary() {
     cell("Training", [v.MAX_TRAIN_EPOCHS ? `${v.MAX_TRAIN_EPOCHS} epochs` : "", p.total_steps ? `${p.total_steps} steps` : "",
       `batch ${v.BATCH_SIZE || 1}`, v.DATASET_MEGAPIXELS ? `${v.DATASET_MEGAPIXELS} MP` : "",
       v.STAGE_MP && v.STAGE_MP !== "Off" ? `${v.STAGE_MP} MP for the first ${v.STAGE_UNTIL || "30%"}` : ""].filter(Boolean).join(" · ")),
-    cell("Optimizer", [yes("FAMILY_FT") ? "adafactor (fine-tune)" : v.OPTIMIZER_TYPE, yes("ADAPTIVE_LR") ? `Adaptive LR ${v.ADAPTIVE_LR_MIN} to ${v.ADAPTIVE_LR_MAX}` :
+    cell("Optimizer", [v.OPTIMIZER_TYPE, yes("ADAPTIVE_LR") ? `Adaptive LR ${v.ADAPTIVE_LR_MIN} to ${v.ADAPTIVE_LR_MAX}` :
       v.LEARNING_RATE ? `from ${v.LEARNING_RATE}` : ""].filter(Boolean).join(" · ")),
     cell("Network", net.filter(Boolean).join(" · ")),
     cell("Memory", [v.BLOCKS_SWAP ? `block swap ${first(v.BLOCKS_SWAP)}` : "",

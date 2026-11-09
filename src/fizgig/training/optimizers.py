@@ -13,7 +13,7 @@ Two things matter for a LoRA and pull against the "more optimizers is better" in
   produce a fried LoRA and a bug report, so `create_optimizer` warns loudly on the record when
   the LR looks wrong for the family. Prodigy estimates the rate itself (`d`) and takes `lr=1.0` as a
   multiplier; Muon with `adjust_lr_fn=match_rms_adamw` matches AdamW's step size, so AdamW's rates
-  apply. (CAME and Adafactor stay out; see the note above _CATALOG.)
+  apply. (CAME stays out; see the note above _CATALOG.)
 
 Free-form `module.path.ClassName` is accepted too, so a user who pip-installs something exotic
 does not need a Fizgig release to use it.
@@ -45,10 +45,14 @@ NEW_OPTIMIZERS = ("prodigy", "muon", "automagic4")    # added with #292; they ne
 # via the full module.path.ClassName form.
 # Prodigy came back with #292 (@Murf-Code): vendored (fizgig/training/prodigy.py, no package),
 # Adaptive LR and the scheduler stand down for it (owns_its_rate), and it never falls back to
-# AdamW. CAME and Adafactor stay out.
+# AdamW. CAME stays out; Adafactor came back at a fixed rate (#312, see its entry).
 _CATALOG = {
     "adamw8bit":          ("bitsandbytes", "AdamW, 8-bit state (default — the validated recipe)"),
     "adamw":              (None,           "AdamW, fp32 state, CUDA-fused where available"),
+    # Back 9 Nov 2026 (#312) at a FIXED rate (relative_step off, the rate is the Learning Rate box), so Adaptive LR
+    # and the scheduler drive it like any other: the old bugs came from relative_step's lr=None. Every full
+    # fine-tune trains on it by default.
+    "adafactor":          ("transformers",  "Adafactor - factored state, far smaller than AdamW's; the fine-tune default"),
     "pagedadamw8bit":     ("bitsandbytes", "AdamW8bit that pages state to CPU under pressure"),
     "ademamix8bit":       ("bitsandbytes", "AdEMAMix — second slow EMA, aimed at long runs"),
     "pagedademamix8bit":  ("bitsandbytes", "AdEMAMix8bit with CPU paging"),
@@ -71,6 +75,20 @@ _CATALOG = {
 }
 
 DEFAULT_OPTIMIZER = "adamw8bit"
+
+# What a full fine-tune can train with (families/ft.py make_optimizer, one optimizer per weight at the fine-tune's
+# fixed rate), Adafactor first - the default. Muon, Prodigy and Automagic are LoRA optimizers: a fine-tune given one
+# trains with Adafactor and says so. The number is the optimizer state per GB of the window's bf16 weights, which
+# the fine-tune planner adds to each window (Adafactor's factored state is in every family's measured overhead).
+FT_OPTIMIZERS = {"adafactor": 0.0, "adamw8bit": 1.0, "pagedadamw8bit": 1.0, "ademamix8bit": 1.5,
+                 "pagedademamix8bit": 1.5, "lion8bit": 0.5, "adamw": 2.0}
+FT_DEFAULT_OPTIMIZER = "adafactor"
+
+
+def ft_optimizer(name) -> str:
+    """The optimizer a fine-tune runs for this choice: itself when a fine-tune can use it, else Adafactor."""
+    n = str(name or "").strip().lower()
+    return n if n in FT_OPTIMIZERS else FT_DEFAULT_OPTIMIZER
 
 
 def available_optimizers() -> list[str]:
@@ -271,6 +289,11 @@ def create_optimizer(name: str, params, lr: float, args_str: str = "",
             opt = _bnb("PagedAdEMAMix8bit")(params, lr=lr, **kwargs)
         elif key == "lion8bit":
             opt = _bnb("Lion8bit")(params, lr=lr, **kwargs)
+        elif key == "adafactor":
+            from transformers.optimization import Adafactor
+            for k, v in (("scale_parameter", False), ("relative_step", False), ("warmup_init", False)):
+                kwargs.setdefault(k, v)
+            opt = Adafactor(params, lr=lr, **kwargs)
         elif key == "adamw":
             # Fused AdamW is one CUDA kernel over all 264 factors instead of a Python loop —
             # the "CUDA optimizer" the comparison thread was pointing at. Requires every param

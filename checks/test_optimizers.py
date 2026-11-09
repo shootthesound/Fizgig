@@ -38,11 +38,13 @@ CHOSEN = {k: "muon" for k in ("qwen_image21", "krea2", "moss_image", "vimoo", "z
 
 def test_no_preset_picks_a_new_optimizer():
     """No preset picks a new optimizer, except the families in CHOSEN, whose presets all use their chosen one with
-    its default arguments."""
+    its default arguments. A Fine-tune preset trains with Adafactor (#312)."""
     for desc in registry.training_families():
         for name, p in desc.presets or ():
             opt = str(p.get("OPTIMIZER_TYPE") or "").lower()
-            if desc.key in CHOSEN:
+            if p.get("FAMILY_FT"):
+                assert opt == "adafactor", (desc.key, name)
+            elif desc.key in CHOSEN:
                 assert opt == CHOSEN[desc.key], (desc.key, name)
                 if opt == "muon":
                     assert p.get("OPTIMIZER_ARGS") == MUON_DEFAULT_ARGS, (desc.key, name)

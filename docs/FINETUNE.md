@@ -40,7 +40,7 @@ A naive full fine-tune of Krea 2 (12.9B) needs roughly **78 GB** — bf16 weight
 - **A 4-bit NF4 frozen base** (the default). The frozen rest of the model is held at half size; on 16 GB it streams from system RAM.
 - **A CPU-resident bf16 master copy** as the source of truth. Training never round-trips through a quantiser, so small updates aren't erased, and checkpoints are written in bf16 from the master.
 - **Optimizer-in-backward**, which consumes and frees each gradient as it lands (saves 5.2 GB).
-- **Adafactor**, whose factored state is ~10× smaller than AdamW's.
+- **Adafactor** by default, whose factored state is ~10× smaller than AdamW's. Optimizer Type also offers AdamW8bit, AdamW, AdEMAMix8bit and Lion8bit for a fine-tune (the window planner makes room for their larger state); Muon, Prodigy and Automagic are LoRA optimizers, and a fine-tune given one trains with Adafactor.
 
 ## Model files
 

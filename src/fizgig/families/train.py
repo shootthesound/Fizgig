@@ -959,8 +959,9 @@ class _FineTune:
 
     def __init__(self, driver, desc, dit, net, dit_path, device, *, max_train_epochs, rotations, save_every_rotations,
                  rotate_every, start_window, epochs_done, fused, lr, master_dir, mp=None, group=None, max_parts=0,
-                 held_grads=False, batch_gb=0.0):
+                 held_grads=False, batch_gb=0.0, optimizer_type="adafactor"):
         from fizgig.families import ft
+        from fizgig.training.optimizers import FT_OPTIMIZERS, ft_optimizer
         from fizgig.utils.device import plannable_free_vram
         self.ft, self.driver, self.desc, self.dit, self.src, self.lr = ft, driver, desc, dit, dit_path, lr
         self.be = driver.ft_backend(dit, device, dit_path, group) or ft.SharedBackend(driver, dit, device, dit_path,
@@ -987,9 +988,30 @@ class _FineTune:
                     f"{plannable_free_vram():.2f} GB free")
         if batch_gb:                   # Batch size: the pictures past the first, planned off the free memory
             logger.info(f"[finetune] {batch_gb:.1f} GB kept for the batch's pictures past the first")
+        # the optimizer (#312): one a fine-tune can use, else Adafactor; a backend that plans its own windows
+        # (MiniMax H3's calibration) keeps Adafactor, the state its plan is measured with
+        opt = ft_optimizer(optimizer_type)
+        if opt != str(optimizer_type or "").strip().lower():
+            logger.warning(f"[finetune] {optimizer_type} is a LoRA optimizer - a fine-tune can't use it, so this one "
+                           f"trains with Adafactor")
+        if opt != "adafactor" and not getattr(self.be, "plans_optimizer_state", False):
+            logger.warning(f"[finetune] {desc.display_name}'s fine-tune plans its memory for Adafactor - training "
+                           f"with Adafactor, not {opt}")
+            opt = "adafactor"
+        if opt != "adafactor":
+            try:                               # built once here, so a missing package says so before the first step
+                ft.make_optimizer([torch.zeros(8, device=device, requires_grad=True)], lr, opt)
+            except Exception as e:
+                logger.warning(f"[finetune] {opt} could not be built ({type(e).__name__}: {e}) - training with "
+                               f"Adafactor")
+                opt = "adafactor"
+        self.opt = opt
+        if FT_OPTIMIZERS[opt]:
+            logger.info(f"[finetune] {opt}: windows planned with its optimizer state (+{FT_OPTIMIZERS[opt]:g} GB per "
+                        f"GB of trained weights)")
         windows, stream, why, usable = self.be.plan(
             plannable_free_vram() - batch_gb, allow_stream=os.environ.get("FIZGIG_NO_FT_STREAM") != "1", mp=mp,
-            max_parts=max_parts, held_grads=held_grads)
+            max_parts=max_parts, held_grads=held_grads, state_factor=FT_OPTIMIZERS[opt])
         for line in why:
             logger.info(f"[finetune] {line}")
         if windows is None:
@@ -1003,8 +1025,9 @@ class _FineTune:
         self.epochs_done = int(epochs_done)
         self.streamer = getattr(self.be, "streamer", None) or (True if stream else None)
         driver.ft_cycle(self.cycle, self.epochs_done, self.epochs)
-        self.fused = ft.FusedSteps(lr) if fused else None
-        self.opt_label = ("per-parameter " if fused else "") + ft.make_optimizer([torch.zeros(1)], lr)[1] + " (fine-tune)"
+        self.fused = ft.FusedSteps(lr, opt) if fused else None
+        self.opt_label = ("per-parameter " if fused else "") + (
+            opt if opt != "adafactor" else ft.make_optimizer([torch.zeros(1)], lr)[1]) + " (fine-tune)"
         logger.info(f"[finetune] FULL FINE-TUNE - {self.sched.describe()}")
         logger.info(f"[finetune] {rotations} rotation(s) of {self.cycle} epoch(s) = {self.epochs} epochs; checkpoint"
                     f" + preview every {save_every_rotations} rotation(s) = every {self.save_every} epochs "
@@ -1045,7 +1068,7 @@ class _FineTune:
         if self.fused is not None:
             self.fused.attach(params)
             return params, None
-        return params, self.ft.make_optimizer(params, self.lr)[0]
+        return params, self.ft.make_optimizer(params, self.lr, self.opt)[0]
 
     def park(self):
         """Everything back to NF4 with the master complete - before a save, a preview, or the end."""
@@ -1087,7 +1110,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  metadata_title=None, metadata_author=None, metadata_description=None, metadata_license=None,
                  metadata_tags=None, metadata_trigger_phrase=None, metadata_thumbnail=None,
                  resume_state_dir=None, adaptive_lr=False, adaptive_lr_min=1e-4, adaptive_lr_max=2e-4,
-                 max_grad_norm=1.0, ema_decay=0.0, optimizer_type="adamw", optimizer_args="",
+                 max_grad_norm=1.0, ema_decay=0.0, optimizer_type=None, optimizer_args="",
                  lr_scheduler="constant", lr_warmup_steps=0, lr_scheduler_num_cycles=1, lr_scheduler_power=1.0,
                  gradient_accumulation_steps=1, compile_blocks="auto", gradient_checkpointing="auto", blocks_to_swap=0, network_type="lora", lokr_factor=8,
                  log_per_image_loss=False, per_image_lr=False, auto_recaption=False, warmup_look_outliers=False,
@@ -1105,6 +1128,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     if desc is None or not desc.training_ready:
         raise RuntimeError(f"unknown or untrainable family {family!r}")
     validate_output_name(output_name)          # before any model loads, not at the first save an epoch in (#70)
+    # none given: a LoRA trains with AdamW, a fine-tune with Adafactor (#312)
+    ft_optimizer_type, optimizer_type = optimizer_type or "adafactor", optimizer_type or "adamw"
     if context_lora_path and finetune:
         raise RuntimeError("A Context LoRA trains a LoRA on top of another one; a fine-tune trains the base model "
                            "itself, so the two don't combine. Drop --context_lora_path.")
@@ -1724,7 +1749,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                         save_every_rotations=ft_save_every_rotations, rotate_every=ft_rotate_every,
                         start_window=ft_start_window, epochs_done=ft_epochs_done, fused=ft_fused_backward,
                         lr=learning_rate, master_dir=output_dir, mp=driver.ft_load_mp(group), group=group,
-                        max_parts=ft_max_parts, held_grads=bool(dop_cond),
+                        max_parts=ft_max_parts, held_grads=bool(dop_cond), optimizer_type=ft_optimizer_type,
                         batch_gb=quant.batch_extra(desc, _largest_bucket_mp(group) or 0.25, bsz))
         max_train_epochs, save_every_n_epochs = ftr.epochs, ftr.save_every
         if ftr.streamer is not None:
@@ -3147,7 +3172,10 @@ def setup_parser():
                    help="torch.compile the DiT blocks (families with compiles=True); auto weighs warm-up vs run length")
     p.add_argument("--ema_decay", type=lambda v: v if str(v).lower().startswith("short") else float(v), default=0.0,
                    help="EMA decay (0.98), 0 = off, or 'short' (sized to the run)")
-    p.add_argument("--optimizer_type", default="adamw")
+    p.add_argument("--optimizer_type", default=None,
+                   help="default: adamw for a LoRA, adafactor for a fine-tune (which takes adafactor, adamw8bit, "
+                        "adamw, pagedadamw8bit, ademamix8bit, pagedademamix8bit or lion8bit; anything else trains "
+                        "it with adafactor)")
     p.add_argument("--optimizer_args", default="")
     p.add_argument("--lr_scheduler", default="constant",
                    choices=["constant", "constant_with_warmup", "cosine", "cosine_with_restarts", "linear",

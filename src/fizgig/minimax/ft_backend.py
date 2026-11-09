@@ -191,11 +191,12 @@ class H3FTBackend:
     always_label = "token_refiner (when ticked)"
 
     # ---- the window plan ---------------------------------------------------------------------------------------------
-    def plan(self, free_gb, allow_stream=True, mp=None, max_parts=0, held_grads=False):
+    def plan(self, free_gb, allow_stream=True, mp=None, max_parts=0, held_grads=False, state_factor=0.0):
         """plan_h3_ft_windows over usable = free + the NF4 trunk already resident - 1.5, less a clip dataset's
         activation reserve (the stills calibration has no idea a 56-frame clip adds ~2.3 GB a step). held_grads (a DOP
         fine-tune, the shared trainer's argument): H3's window sizes are its own calibration and aren't re-planned for
-        it; taken so the call matches families/ft.py's."""
+        it; taken so the call matches families/ft.py's. state_factor likewise: H3 fine-tunes plan for Adafactor
+        (no plans_optimizer_state, so the trainer keeps it)."""
         from fizgig.minimax.rotation_ft import ft_clip_activation_gb, plan_h3_ft_windows
         act = margin = 0.0
         if self.n_clip_items:

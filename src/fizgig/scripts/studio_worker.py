@@ -938,10 +938,10 @@ def cmd_map(c):
             with Image.open(c["picture"]) as im:
                 pic = im.convert("RGB")
             emit(ev="status", text="Making the maps…")
-            res = eng.lora_map(_state(c["state"]), pic, trigger=c.get("trigger") or "")
+            res = eng.lora_map(_state(c["state"]), pic, trigger=c.get("trigger") or "", blocks=bool(c.get("blocks")))
             import torch
             torch.cuda.empty_cache()
-        emit(ev="map", gen=gen, **res)
+        emit(ev="map", gen=gen, with_blocks=bool(c.get("blocks")), **res)
         emit(ev="status", text="Ready.")
     except Exception as e:
         emit(ev="map", gen=gen, error=str(e) or type(e).__name__)

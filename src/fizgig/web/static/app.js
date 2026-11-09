@@ -6392,7 +6392,10 @@ const ST_MAPS = [["", "Off", "No map"],
     "slider at 1.0), on the same colours: what each tweak touches."],
   ["attn", "Trigger word", "How much of each area's attention goes to the trigger word inside the model, on the same " +
     "colours. For a person it should settle on the face and body; on lettering (a logo, a watermark) or the background, " +
-    "the trigger is tied to those too. The prompt must contain the trigger word."]];
+    "the trigger is tied to those too. The prompt must contain the trigger word."],
+  ["blocks", "Blocks", "Where each group of the LoRA's blocks acts: the picture as tweaked against the same with that " +
+    "group switched off, at mid noise. Pick a group below. Red = it changes that part most; a group that lights up the " +
+    "background or clothes is the one to turn down there."]];
 const ST_MAP_LEVELS = [["all", "All levels"], ["0.25", "Low noise (detail)"], ["0.5", "Mid"], ["0.75", "High noise (layout)"]];
 
 function stMapPrefs() { try { return JSON.parse(localStorage.getItem("fizgig.stmap") || "{}"); } catch (e) { return {}; } }
@@ -6404,7 +6407,7 @@ function studioMapsShow() {
   if (!on) { $("stMapCanvas").style.display = "none"; return; }
   if (!S.st.map) {
     const p = stMapPrefs();
-    S.st.map = {kind: "", level: p.level || "all", op: p.op != null ? p.op : 1, data: null, want: null};
+    S.st.map = {kind: "", level: p.level || "all", op: p.op != null ? p.op : 1, data: null, want: null, group: ""};
     $("stMapOp").value = String(Math.round(S.st.map.op * 100));
     $("stMapOp").addEventListener("input", () => { S.st.map.op = Number($("stMapOp").value) / 100; stMapDraw(); });
     $("stMapOp").addEventListener("change", () => stMapSave({op: S.st.map.op}));
@@ -6423,9 +6426,15 @@ function stMapChips() {
   $("stMapKinds").replaceChildren(...row(ST_MAPS, m.kind, (v) => {
     m.kind = v;
     if (!v) { $("stMapCanvas").style.display = "none"; $("stMapSay").textContent = ""; return; }
-    if (!m.data || m.data.gen !== S.st.shown) studioMapRequest(); else stMapDraw();
+    if (!m.data || m.data.gen !== S.st.shown || (v === "blocks" && !m.data.with_blocks)) studioMapRequest(); else stMapDraw();
   }));
-  $("stMapLevels").replaceChildren(...row(ST_MAP_LEVELS, m.level, (v) => { m.level = v; stMapSave({level: v}); stMapDraw(); }));
+  const groups = (m.data && m.data.groups) || [];
+  if (m.kind === "blocks") {                    // a button per group, the first one chosen
+    if (!groups.includes(m.group)) m.group = groups[0] || "";
+    $("stMapLevels").replaceChildren(...row(groups.map((g) => [g, g, `Where ${g} acts`]), m.group, (v) => { m.group = v; stMapDraw(); }));
+  } else {
+    $("stMapLevels").replaceChildren(...row(ST_MAP_LEVELS, m.level, (v) => { m.level = v; stMapSave({level: v}); stMapDraw(); }));
+  }
   $("stMapOpts").style.display = m.kind ? "" : "none";
   $("stMapTrigRow").style.display = m.kind === "attn" ? "" : "none";
 }
@@ -6438,7 +6447,7 @@ async function studioMapRequest() {
   const want = (m.want = (m.want || 0) + 1);
   $("stMapSay").textContent = "Making the maps…";
   try {
-    const r = await api("/api/studio/map", {state, trigger: $("stMapTrig").value.trim()});
+    const r = await api("/api/studio/map", {state, trigger: $("stMapTrig").value.trim(), blocks: m.kind === "blocks"});
     if (r.error) { $("stMapSay").textContent = r.error; return; }
     if (!$("stMapTrig").value.trim() && r.trigger) $("stMapTrig").placeholder = r.trigger;
     for (let i = 0; i < 240 && want === m.want; i++) {        // the worker answers in seconds; up to two minutes
@@ -6448,6 +6457,7 @@ async function studioMapRequest() {
         if (want !== m.want) return;
         if (d.error) { $("stMapSay").textContent = d.error; return; }
         m.data = d;
+        stMapChips();
         stMapDraw();
         return;
       }
@@ -6465,7 +6475,11 @@ function studioMapsAfterRender() {
 }
 
 function stMapGrid() {                          // the chosen kind at the chosen level, or every level together
-  const m = S.st.map, maps = (m.data && m.data.maps) || {}, byLevel = maps[m.kind] || {};
+  const m = S.st.map, maps = (m.data && m.data.maps) || {};
+  // Blocks: the chosen group's map (mid noise), on the same footing as a one-level map
+  const byLevel = m.kind === "blocks" ? (((m.data && m.data.blocks) || {})[m.group] ? {"0.5": m.data.blocks[m.group]} : {})
+    : maps[m.kind] || {};
+  const level = m.kind === "blocks" ? "0.5" : m.level;
   // from the picture's quietest area up (2nd percentile) to its 98th: a LoRA that changes the whole picture a little
   // drew all of it yellow from zero; from the floor, what stands out is where it acts most
   const norm = (g) => {
@@ -6474,11 +6488,11 @@ function stMapGrid() {                          // the chosen kind at the chosen
     const hi = (vs[Math.floor(0.98 * (vs.length - 1))] - lo) || 1;
     return g.v.map((x) => Math.max(0, x - lo) / hi);
   };
-  const levels = m.level === "all" ? Object.keys(byLevel) : [m.level].filter((l) => byLevel[l]);
+  const levels = level === "all" ? Object.keys(byLevel) : [level].filter((l) => byLevel[l]);
   if (!levels.length) return null;
   const g0 = byLevel[levels[0]], acc = new Array(g0.v.length).fill(0);
   for (const l of levels) norm(byLevel[l]).forEach((x, j) => { acc[j] += x / levels.length; });
-  if (m.level === "all") {                      // the average back to 0-1
+  if (level === "all") {                        // the average back to 0-1
     const vs = [...acc].sort((a, b) => a - b), hi = vs[Math.floor(0.98 * (vs.length - 1))] || 1;
     return {w: g0.w, h: g0.h, v: acc.map((x) => x / hi)};
   }
@@ -6492,7 +6506,8 @@ function stMapDraw() {
   const g = stMapGrid();
   if (!g) {
     cv.style.display = "none";
-    $("stMapSay").textContent = m.kind === "tweak" ? "No slider has moved: the Tweaked picture is the Baseline." :
+    $("stMapSay").textContent = m.kind === "blocks" ? "No block group to map: this LoRA touches none of them." :
+      m.kind === "tweak" ? "No slider has moved: the Tweaked picture is the Baseline." :
       m.kind === "attn" ? (m.data.trigger ? `"${m.data.trigger}" isn't in the prompt (or this model has no trigger map).` :
         "Type the LoRA's trigger word: it isn't in the LoRA's own information.") : "No map for this one.";
     return;

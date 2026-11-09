@@ -380,7 +380,7 @@ def lora_trigger(path):
         return ""
 
 
-def map_request(state, trigger=""):
+def map_request(state, trigger="", blocks=False):
     """The maps over the Tweaked render on screen, made in the worker (engine.lora_map); the page polls map_status.
     No trigger given: the primary LoRA's own, from its metadata."""
     with _lock:
@@ -390,8 +390,8 @@ def map_request(state, trigger=""):
         if not (pic and os.path.isfile(pic)):
             return {"error": "Render a preview first."}
         trig = str(trigger or "").strip() or lora_trigger(_S.get("primary") or "")
-        _S["map"] = {"gen": shown, "busy": True, "trigger": trig}
-    _send({"cmd": "map", "gen": shown, "state": state, "picture": pic, "trigger": trig})
+        _S["map"] = {"gen": shown, "busy": True, "trigger": trig, "with_blocks": bool(blocks)}
+    _send({"cmd": "map", "gen": shown, "state": state, "picture": pic, "trigger": trig, "blocks": bool(blocks)})
     return {"ok": True, "gen": shown, "trigger": trig}
 
 

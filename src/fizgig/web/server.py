@@ -776,7 +776,7 @@ def _studio_post(what, b):
     if what == "keep":
         return {"path": studio.keep_tweaked()}
     if what == "map":                        # maps over the Tweaked render (where the LoRA acts, the tweaks, the trigger)
-        return studio.map_request(b.get("state") or {}, b.get("trigger") or "")
+        return studio.map_request(b.get("state") or {}, b.get("trigger") or "", bool(b.get("blocks")))
     if what == "render":
         return studio.render(b.get("state") or {}, extra={k: b.get(k) for k in ("video", "audio", "keyframes", "ref_mode", "mix")
                                                           if b.get(k) is not None})

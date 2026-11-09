@@ -58,11 +58,11 @@
   --pic-shade: #000000;        /* Their backing, dimming, letterbox (used see-through) */
   --pic-mask: #5AAAFF;         /* Mask editor: what's learned */
   --pic-highlight: #3B9FD8;    /* Crop box, a picked region */
-  --pic-heat-1: #3B0F70;       /* Training maps: a heatmap over a picture, low (dark violet) ... */
-  --pic-heat-2: #DE4968;       /* ... middle (rose) ... */
-  --pic-heat-3: #FCFDBF;       /* ... high (pale yellow), the magma scale */
-  --pic-better: #2EE6A8;       /* Training maps: where the error fell since the start */
-  --pic-worse: #FF4D6D;        /* ... and where it rose */
+  --pic-heat-1: #2F6BFF;       /* Training maps: a heatmap over a picture, low (blue) ... */
+  --pic-heat-2: #FFE600;       /* ... middle (yellow) ... */
+  --pic-heat-3: #FF2A2A;       /* ... high (red): three hues far apart, readable see-through over a greyed photo */
+  --pic-better: #00E676;       /* Training maps: where the error fell since the start (green) */
+  --pic-worse: #FF2BD6;        /* ... and where it rose (magenta: apart from green for colour-blind eyes too) */
 
   /* ---- Fixed: other people's colours ---- */
   --coffee: #FFDD00;
@@ -2728,4 +2728,6 @@ a.google-pill:visited { color: var(--text-primary); }
 .tm-epoch { position: absolute; left: 10px; bottom: 10px; padding: 3px 10px; border-radius: 6px; font-weight: 700;
   background: color-mix(in srgb, var(--pic-shade) 65%, transparent); color: var(--pic-text); pointer-events: none; }
 .tm-scrub { width: min(520px, 100%); }
-.tm-legend { display: inline-block; width: 120px; height: 10px; border-radius: 5px; vertical-align: middle; }
+.tm-legend { display: inline-block; width: 120px; height: 10px; border-radius: 5px; vertical-align: middle;
+  outline: 1px solid var(--border); }
+.tm-legend-end { color: var(--text-secondary); font-size: 8.5pt; }

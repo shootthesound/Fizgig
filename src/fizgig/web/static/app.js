@@ -2946,14 +2946,14 @@ const IL_PAGE = 48;
 // noise level and map across all the epochs (a scale per frame would hide the change), drawn over the picture
 const TM_LEVELS = {"0.25": "Low noise (detail)", "0.5": "Mid", "0.75": "High noise (layout)"};
 const TM_KINDS = [["loss", "Not learned yet", "Training covers your picture in noise and asks the model to recover it. This " +
-  "shows where its attempt still misses your picture: yellow = misses most, pink = partly, dark purple = nearly right. " +
-  "Fine detail (hair, edges, texture) always shows warmer, so watch one area cool from epoch to epoch rather than " +
+  "shows where its attempt still misses your picture: red = misses most, yellow = partly, blue = a little, no colour = " +
+  "nearly right. Fine detail (hair, edges, texture) always shows warmer, so watch one area cool from epoch to epoch rather than " +
   "comparing it with the rest of the picture."],
   ["learned", "Learned since the start", "Green = the model gets this part more right than before training: what the " +
-  "LoRA has learned so far. Red = this part got worse. No colour = no change. Each epoch is checked with the same " +
+  "LoRA has learned so far. Magenta = this part got worse. No colour = little change. Each epoch is checked with the same " +
   "noise, so only real learning shows."],
-  ["effect", "Where the LoRA acts", "Where the LoRA changes the picture. Yellow = changes it most, pink = some, dark " +
-  "purple = barely. For a person it should gather on the face and body; if it spreads over clothes or the background, " +
+  ["effect", "Where the LoRA acts", "Where the LoRA changes the picture. Red = changes it most, yellow = some, blue = a " +
+  "little, no colour = barely. For a person it should gather on the face and body; if it spreads over clothes or the background, " +
   "the LoRA is learning those too."]];
 const TM_TIP = "A few of your pictures, checked before training and after every epoch: where the model is still wrong, " +
   "what it has learned, and where the LoRA is acting.";
@@ -2961,9 +2961,13 @@ const TM_TIP = "A few of your pictures, checked before training and after every 
 const trainMapsLoad = (id) => (key, t) => api("/api/runs/train_maps?id=" + encodeURIComponent(id) +
   (key ? `&key=${encodeURIComponent(key)}&t=${encodeURIComponent(t)}` : ""));
 
+const tmPref = (k, dflt) => { try { return localStorage.getItem("fizgig.tm." + k) || dflt; } catch (e) { return dflt; } };
+const tmSetPref = (k, v) => { try { localStorage.setItem("fizgig.tm." + k, v); } catch (e) { /* private window */ } };
+
 function trainMapsPanel(box, meta, run, load) {
   const st = {key: meta.keys[0], t: String(meta.timesteps[Math.floor(meta.timesteps.length / 2)] ?? "0.5"), kind: "learned",
-              i: Math.max(0, meta.epochs.length - 1), timer: null, img: null};
+              i: Math.max(0, meta.epochs.length - 1), timer: null, img: null,
+              bands: tmPref("scale", "bands") === "bands", grey: tmPref("picture", "grey") === "grey"};
   const d = {...meta, epochs: []};
   const fetchOne = async () => {          // this picture + level's epochs
     const r = await load(st.key, st.t);
@@ -2979,6 +2983,7 @@ function trainMapsPanel(box, meta, run, load) {
   const scrub = el("input", {type: "range", class: "tm-scrub", min: "0", max: String(Math.max(0, d.epochs.length - 1)),
     value: String(st.i)});
   const say = el("div", {class: "field-hint"}), legend = el("span", {class: "tm-legend"});
+  const legendLo = el("span", {class: "tm-legend-end"}), legendHi = el("span", {class: "tm-legend-end"});
   const kindSay = el("div", {class: "tm-kind-say"});        // what the chosen map shows, above the picture
   const bigHint = el("span", {class: "tm-big-hint", text: "← → step through the epochs · click or Esc to close"});
   const grid = (e, k) => {
@@ -3008,6 +3013,14 @@ function trainMapsPanel(box, meta, run, load) {
     canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext("2d");
     ctx.drawImage(img, 0, 0, W, H);
+    if (st.grey) {                     // the photo in grey and dimmed, so the map's colours are the only colours
+      const im = ctx.getImageData(0, 0, W, H), p = im.data;
+      for (let j = 0; j < p.length; j += 4) {
+        const y = 0.55 * (0.299 * p[j] + 0.587 * p[j + 1] + 0.114 * p[j + 2]);
+        p[j] = p[j + 1] = p[j + 2] = y;
+      }
+      ctx.putImageData(im, 0, 0);
+    }
     const g = grid(st.i, st.kind);
     const kind = TM_KINDS.find((k) => k[0] === st.kind) || [];
     kindSay.textContent = kind[2] || "";
@@ -3026,18 +3039,25 @@ function trainMapsPanel(box, meta, run, load) {
       let c, a;
       if (g.signed) {
         const f = Math.max(-1, Math.min(1, g.v[j] / mx));
-        c = f >= 0 ? gb : gw; a = Math.abs(f);
+        c = f >= 0 ? gb : gw;
+        // bands: under a fifth no colour, then a light and a strong step; smooth: the size as the opacity
+        a = st.bands ? (Math.abs(f) < 0.2 ? 0 : Math.abs(f) < 0.5 ? 0.55 : 0.9) : Math.abs(f);
       } else {
         const f = Math.max(0, Math.min(1, g.v[j] / mx));
-        c = f < 0.5 ? mixc(c1, c2, f * 2) : mixc(c2, c3, (f - 0.5) * 2); a = 0.25 + 0.75 * f;
+        if (st.bands) { c = f < 0.5 ? c1 : f < 0.75 ? c2 : c3; a = f < 0.25 ? 0 : 0.85; }
+        else { c = f < 0.5 ? mixc(c1, c2, f * 2) : mixc(c2, c3, (f - 0.5) * 2); a = f < 0.15 ? 0 : 0.3 + 0.6 * f; }
       }
-      px.data.set([c[0], c[1], c[2], Math.round(255 * 0.78 * a)], j * 4);
+      px.data.set([c[0], c[1], c[2], Math.round(255 * a)], j * 4);
     }
     oc.putImageData(px, 0, 0);
-    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingEnabled = !st.bands;         // bands stay sharp cells: no in-between colours at their edges
     ctx.drawImage(off, 0, 0, W, H);
-    legend.style.background = g.signed ? `linear-gradient(90deg, var(--pic-worse), transparent, var(--pic-better))` :
-      "linear-gradient(90deg, var(--pic-heat-1), var(--pic-heat-2), var(--pic-heat-3))";
+    legend.style.background = g.signed ?
+      (st.bands ? "linear-gradient(90deg, var(--pic-worse) 0 30%, transparent 30% 70%, var(--pic-better) 70% 100%)" :
+        "linear-gradient(90deg, var(--pic-worse), transparent, var(--pic-better))") :
+      (st.bands ? "linear-gradient(90deg, transparent 0 25%, var(--pic-heat-1) 25% 50%, var(--pic-heat-2) 50% 75%, " +
+        "var(--pic-heat-3) 75% 100%)" : "linear-gradient(90deg, transparent, var(--pic-heat-1), var(--pic-heat-2), var(--pic-heat-3))");
+    legendLo.textContent = g.signed ? "worse" : "less"; legendHi.textContent = g.signed ? "better" : "more";
   };
   const showPic = () => {
     const p = (d.images || {})[st.key];
@@ -3097,7 +3117,14 @@ function trainMapsPanel(box, meta, run, load) {
     chips(TM_KINDS, () => st.kind, (v) => { st.kind = v; }),
     kindSay,
     stage,
-    el("div", {class: "tm-row"}, play, scrub, d.live ? refresh : null, legend),
+    el("div", {class: "tm-row"}, play, scrub, d.live ? refresh : null, legendLo, legend, legendHi),
+    el("div", {class: "tm-row"},
+      chips([["bands", "Bands", "A few clear colours with sharp edges: easiest to tell apart"],
+             ["smooth", "Smooth", "A smooth blend of the same colours"]], () => (st.bands ? "bands" : "smooth"),
+        (v) => { st.bands = v === "bands"; tmSetPref("scale", v); }),
+      chips([["grey", "Grey picture", "The photo in grey under the map, so only the map is in colour"],
+             ["colour", "Colour picture", "The photo in its own colours under the map"]],
+        () => (st.grey ? "grey" : "colour"), (v) => { st.grey = v === "grey"; tmSetPref("picture", v); })),
     say);
   showPic();
   fetchOne().then(() => { if (!d.epochs.length) say.textContent = "No epochs yet: the first maps come before training starts."; })

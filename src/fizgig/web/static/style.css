@@ -82,6 +82,8 @@
   --swatch-light-orange-bg: #FFFFFF; --swatch-light-orange-accent: #F25C05;
   --swatch-seventies-bg: #2B1D14; --swatch-seventies-accent: #D9661A;
   --swatch-synthwave-bg: #140B24; --swatch-synthwave-accent: #FF2E97;
+  --swatch-cosmic-pigeon-bg: #0D0B1E; --swatch-cosmic-pigeon-accent: #7C4DEA;
+  --swatch-deep-space-bg: #07070D; --swatch-deep-space-accent: #7A5AE0;
   --swatch-graphite-bg: #161616; --swatch-graphite-accent: #0D9488;
   --swatch-colour-safe-bg: #12161D; --swatch-colour-safe-accent: #E69F00;
   --swatch-high-contrast-bg: #000000; --swatch-high-contrast-accent: #FFD400;
@@ -2623,6 +2625,36 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   --data-blue: #4D8DFF; --data-teal: #22D3EE; --data-green: #2EE6A6; --data-olive: #E6D04D; --data-orange: #FF8A3D;
 }
 
+/* Cosmic Pigeon: deep space navy, nebula purple, iridescent pigeon-neck green, soft pigeon greys, a touch of starlight pink */
+:root[data-theme="cosmic-pigeon"] {
+  --bg-deep: #0D0B1E; --bg-side: #090816; --bg-surface: #15122B; --bg-raised: #1D1938; --bg-hover: #262046;
+  --bg-inset: #0A0918; --overlay: #070612; --shadow: #000000;
+  --text-primary: #E8E6F0; --text-secondary: #A9A6BC; --text-explain: #CCC9DA; --text-muted: #8A86A2;
+  --text-on-color: #FFFFFF; --text-on-light: #0D0B1E;
+  --accent: #7C4DEA; --accent-hover: #8B5CF6; --accent-subtle: #2E1F5C; --accent-text: #C4B0FF; --accent-text-hover: #DDD0FF;
+  --border: #2B2648; --border-strong: #8A87A0;
+  --success: #5FB88A; --success-text: #9EE0BC; --warning: #F0B44C; --warning-strong: #D4962E;
+  --warning-text: #F7CF85; --warning-text-soft: #FADDA8; --danger: #F0566A; --danger-strong: #D63A4F;
+  --danger-text: #FF9CA9; --gold: #F5D06B;
+  --special-strong: #C0368A; --special: #E879C6; --special-soft: #EE9AD4; --special-text: #F6C2E6; --special-light: #FBE0F2;
+  --data-blue: #6E8BFF; --data-teal: #4FC9B8; --data-green: #5FB88A; --data-olive: #D8C86A; --data-orange: #F29A5C;
+}
+
+/* Deep Space: Graphite's restraint, near-black with a faint blue-violet tint, a sparing nebula violet, a faint star-glow cyan */
+:root[data-theme="deep-space"] {
+  --bg-deep: #07070D; --bg-side: #050509; --bg-surface: #0E0D18; --bg-raised: #15141F; --bg-hover: #1C1A29;
+  --bg-inset: #0A0912; --overlay: #040408; --shadow: #000000;
+  --text-primary: #E4E3EC; --text-secondary: #A2A1AF; --text-explain: #C8C7D3; --text-muted: #858496;
+  --text-on-color: #FFFFFF; --text-on-light: #07070D;
+  --accent: #6D4FD6; --accent-hover: #7A5AE0; --accent-subtle: #1F1838; --accent-text: #B6A6F2; --accent-text-hover: #D2C8F8;
+  --border: #23212F; --border-strong: #7F7D8E;
+  --success: #3FA88A; --success-text: #8AD6BF; --warning: #D9A441; --warning-strong: #B88828;
+  --warning-text: #EAC77E; --warning-text-soft: #F0D6A2; --danger: #D9536A; --danger-strong: #B83A50;
+  --danger-text: #F09AA8; --gold: #E3C565;
+  --special-strong: #0E8FA8; --special: #4CC6DB; --special-soft: #7BD3E2; --special-text: #A9E4EE; --special-light: #D3F2F7;
+  --data-blue: #6A86E8; --data-teal: #4CC6DB; --data-green: #5DB08A; --data-olive: #C9BC66; --data-orange: #E0915A;
+}
+
 /* Graphite: plain neutral greys, a teal accent */
 :root[data-theme="graphite"] {
   --bg-deep: #161616; --bg-side: #111111; --bg-surface: #1E1E1E; --bg-raised: #262626; --bg-hover: #2E2E2E;
@@ -2733,3 +2765,77 @@ a.google-pill:visited { color: var(--text-primary); }
 .tm-legend-end { color: var(--text-secondary); font-size: 8.5pt; }
 .tm-opacity { width: 110px; }
 .tm-auto { color: var(--text-secondary); font-size: 9pt; display: inline-flex; align-items: center; gap: 4px; }
+
+/* Include sub-folders under the Start tab's training folder: a plain tick, its explanation on hover */
+#folderOptions .form-row { margin-top: 8px; }
+#folderOptions .form-row .field-hint { padding-left: 24px; }
+.tip-mark { cursor: help; color: var(--text-secondary); font-weight: 400; }
+label[title]:has(.tip-mark) { cursor: help; }
+/* Body-part and watermark detectors: one compact row per model (no new colours: theme text colours only) */
+.det-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.det-table td { padding: 4px 6px; vertical-align: middle; border-top: 1px solid var(--border, rgba(127,127,127,.25)); }
+.det-table .det-name { font-weight: 600; white-space: nowrap; }
+.det-table .det-state { white-space: nowrap; }
+.det-table .det-acts { white-space: nowrap; text-align: right; }
+.det-table .det-acts .btn { margin-left: 4px; }
+.det-box > summary { cursor: pointer; }
+.det-table tr.det-off td:not(:first-child) { opacity: .55; }
+.det-table .det-remove.det-confirm { color: var(--danger-text); border-color: var(--danger); }
+.det-add { flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+/* Cosmic Pigeon and Deep Space only: buttons glow and lift, progress and meter bars shimmer.
+   Cheap to draw (transform, opacity, background-position) and off under reduced motion. */
+:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"] {
+  --fx-glow: color-mix(in srgb, var(--accent) 45%, transparent);
+  --fx-bar: linear-gradient(90deg, #7C4DEA, #A855F7 45%, #E879C6 80%, #7C4DEA);
+}
+:root[data-theme="deep-space"] { --fx-glow: color-mix(in srgb, var(--accent) 35%, transparent);
+  --fx-bar: linear-gradient(90deg, #6D4FD6, #7A5AE0 40%, #4CC6DB 80%, #6D4FD6); }
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.btn, .runpod-btn, .theme-pick button) {
+  transition: background .15s, border-color .15s, box-shadow .2s ease, transform .15s ease; }
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.btn, .runpod-btn, .theme-pick button):not(:disabled):hover {
+  transform: translateY(-1px); box-shadow: 0 2px 12px var(--fx-glow); }
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.btn, .runpod-btn, .theme-pick button):not(:disabled):active {
+  transform: translateY(0) scale(.98); box-shadow: 0 0 4px var(--fx-glow); transition-duration: .05s; }
+/* the bars: the theme's gradient sliding along, plus a soft light sweeping across (paused, done and failed bars stay plain) */
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.run-bar:not([data-state="paused"]):not([data-state="pausing"]):not([data-state="completed"]):not([data-state="failed"]):not([data-state="stopped"]) > span, .meter:not(.warn) .meter-bar > span, .fetch-bar > div) {
+  position: relative; overflow: hidden; background: var(--fx-bar) 0 0 / 240px 100% repeat-x;
+  animation: fx-drift 6s linear infinite; box-shadow: 0 0 6px var(--fx-glow); }
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.run-bar:not([data-state="paused"]):not([data-state="pausing"]):not([data-state="completed"]):not([data-state="failed"]):not([data-state="stopped"]) > span, .meter:not(.warn) .meter-bar > span, .fetch-bar > div)::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; will-change: background-position, opacity;
+  background: linear-gradient(90deg, transparent 0, rgba(255,255,255,.35) 70px, transparent 140px, transparent 100%) -140px 0 / 2000px 100% repeat-x;
+  animation: fx-sweep 6s linear infinite; }
+/* Cosmic Pigeon's faint twinkle: the sweep fades in and out */
+:root[data-theme="cosmic-pigeon"] :is(.run-bar:not([data-state="paused"]):not([data-state="pausing"]):not([data-state="completed"]):not([data-state="failed"]):not([data-state="stopped"]) > span, .meter:not(.warn) .meter-bar > span, .fetch-bar > div)::after { animation: fx-sweep 6s linear infinite, fx-twinkle 1.5s ease-in-out infinite alternate; }
+/* tiny star specks drifting along the active bars, each twinkling */
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.run-bar:not([data-state="paused"]):not([data-state="pausing"]):not([data-state="completed"]):not([data-state="failed"]):not([data-state="stopped"]) > span, .meter:not(.warn) .meter-bar > span, .fetch-bar > div)::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; will-change: background-position, opacity;
+  background-image: radial-gradient(circle at 12% 30%, #fff 0 0.6px, transparent 1px),
+    radial-gradient(circle at 37% 70%, #fff 0 0.5px, transparent 1px),
+    radial-gradient(circle at 63% 40%, #fff 0 0.6px, transparent 1px),
+    radial-gradient(circle at 86% 65%, #fff 0 0.5px, transparent 1px);
+  background-size: 46px 100%, 61px 100%, 53px 100%, 71px 100%; background-repeat: repeat-x;
+  animation: fx-stars 9s linear infinite, fx-twinkle 1.6s ease-in-out infinite alternate; }
+:root[data-theme="deep-space"] :is(.run-bar:not([data-state="paused"]):not([data-state="pausing"]):not([data-state="completed"]):not([data-state="failed"]):not([data-state="stopped"]) > span, .meter:not(.warn) .meter-bar > span, .fetch-bar > div)::before { opacity: .8; animation-duration: 12s, 2.1s; }
+@keyframes fx-stars { from { background-position: 0 0, 0 0, 0 0, 0 0; } to { background-position: 46px 0, 122px 0, 53px 0, 142px 0; } }
+/* every layer is a fixed px tile moved by exactly whole tiles, so it loops without a jump and a bar's width changing never shifts it */
+@keyframes fx-drift { from { background-position: 0 0; } to { background-position: -240px 0; } }
+/* the sweep: one 140px band per 2000px tile, so it crosses even a full-width bar in one go at a steady ~330px/s */
+@keyframes fx-sweep { from { background-position: -140px 0; } to { background-position: 1860px 0; } }
+@keyframes fx-twinkle { from { opacity: .45; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  :is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.run-bar > span, .meter-bar > span, .fetch-bar > div) { animation: none; }
+  :is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.run-bar > span, .meter-bar > span, .fetch-bar > div)::after, :is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.run-bar > span, .meter-bar > span, .fetch-bar > div)::before { display: none; }
+  :is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.btn, .runpod-btn, .theme-pick button) { transition: none; transform: none !important; }
+}
+/* the bars are rebuilt on every status poll; app.js gives each new one --fx-d = minus the page clock, so its
+   animations carry on from the same phase instead of starting over (a skip every poll) */
+/* (pseudo-elements can't go inside :is(), so the star and sweep layers are listed on their own) */
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) :is(.run-bar > span, .meter-bar > span, .fetch-bar > div),
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) .run-bar > span::before,
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) .meter-bar > span::before,
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) .fetch-bar > div::before,
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) .run-bar > span::after,
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) .meter-bar > span::after,
+:is(:root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"]) .fetch-bar > div::after {
+  animation-delay: var(--fx-d, 0s) !important; }

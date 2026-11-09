@@ -6660,7 +6660,11 @@ function studioSchedule(live) {
 
 async function studioRender() {
   if (!$("stPrompt").value.trim()) { $("stStatus").textContent = "Enter a prompt (include the LoRA's trigger word) to see previews."; return; }
-  try { await api("/api/studio/render", {state: studioState(), ...studioExtra(), ...studioMixExtra()}); studioPoll(); }
+  // seed 0: a fresh random seed for each render (Baseline and Tweaked share it), as the training previews do
+  const state = studioState();
+  if (state.seed === 0) state.seed = 1 + Math.floor(Math.random() * (2 ** 31 - 2));
+  S.st.seedUsed = state.seed;
+  try { await api("/api/studio/render", {state, ...studioExtra(), ...studioMixExtra()}); studioPoll(); }
   catch (e) { $("stStatus").textContent = e.message; }
 }
 
@@ -6799,7 +6803,7 @@ function studioDownloads(st, q) {
   row.style.display = on ? "" : "none";
   if (!on) return;
   const lora = ($("stPrimary").value.trim().split(/[\\/]/).pop() || "render").replace(/\.safetensors$/i, "");
-  const seed = ($("stSeed").value || "").trim();
+  const seed = String(seedOf("stSeed") === 0 && S.st.seedUsed ? S.st.seedUsed : ($("stSeed").value || "").trim());
   for (const [w, id, word] of [["baseline", "stDlBase", "original"], ["tweaked", "stDlTweak", "tweaked"]]) {
     const video = kind === "video" && st.media && st.media[w];
     const name = `${lora}_${word}${seed ? "_seed" + seed : ""}${video ? ".mp4" : ".png"}`;

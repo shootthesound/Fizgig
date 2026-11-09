@@ -102,6 +102,13 @@ Open Fizgig in your phone's browser (your computer's address, or a pod's) and us
 
 The run card shows the run's progress, time left and log, and a **loss graph** that fills in as it trains: every step's loss (faint) with a smoothed line over it, the epochs marked, the lowest point, and the learning rate when Adaptive LR moves it. Drag **Smoothing**, tick **Log scale** or **Clip outliers** (one spike no longer flattens the rest), and point at the graph for a step's figures; the settings are remembered. **Sample now** makes the previews after the current step instead of waiting for the epoch to end (they show with the others, under the epoch in progress), and **Save now** saves the LoRA as it is, as `<name>-stepNNNNNNN.safetensors` beside its checkpoints. A fine-tune saves and previews at whole rotations only, so it doesn't offer them.
 
+**Training maps** (tick it on the Training tab, under Training Parameters) open what training does to your pictures. Three of them, spread through the training folder, are checked before training and after every epoch at three noise levels, always with the same noise, so only the LoRA changes between epochs. The run card's **Training maps** button (and the same button in Runs & outputs) shows each picture with a heatmap over it; pick the picture and the noise level, then scrub or play through the epochs:
+- **Learned since the start**: where the error has fallen since before training (green) or risen (red). The picture's own texture cancels out, so this is the one to read first.
+- **Still wrong**: where the prediction is still off. Busy places (hair, edges, fabric) are always brighter, so compare an area with itself across epochs.
+- **Where the LoRA acts**: where the LoRA changes the model's prediction. On a person LoRA it should gather on the face and body; when it spreads over clothes and background, the LoRA is learning those too.
+
+Each map keeps one colour scale across all the epochs, so a fading colour really is the error falling. It costs a few seconds an epoch. It's for still-picture models; clip and song models don't have it yet.
+
 Each run's log is also saved as a file in `user_data/logs` in your Fizgig folder, named with the date, time and LoRA name, so an error is still there after a restart. The newest 20 are kept. When a run fails, the last line of its log names the file.
 
 ## The password

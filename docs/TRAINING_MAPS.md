@@ -74,6 +74,10 @@ Each picture is checked at three noise levels, always with the same noise, so on
 - **Learned since the start turning magenta in an area after epochs of green:** the LoRA is starting to overwrite something it had right. An earlier epoch may be the better LoRA.
 - **The Trigger word map sitting on something other than the subject:** the trigger word is bound to that thing. Captioning it, or varying it across the pictures, helps.
 
+## In Studio
+
+Studio has the same maps for any LoRA, including ones you didn't train: under its preview, **Maps** draws where the LoRA acts, what your slider changes do, where the trigger word's attention goes and where each block group acts, over the Tweaked picture. See [STUDIO.md](STUDIO.md#maps).
+
 ## Where they're saved
 
 In the run's output folder, under `training_maps/<LoRA name>/`: `probes.json` (which pictures and noise levels) and `maps.jsonl` (one line per epoch).

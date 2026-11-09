@@ -33,5 +33,10 @@ the trigger carries it and attention to the trigger's position would mislead. Ma
 - [x] description ability (+ checks/test_family_abilities) + form.py row TRAINING_MAPS + launch.py flag
 - [x] server endpoint /api/runs/train_maps (meta, then one picture + level at a time) + viewer: a Training maps button beside Per-image loss on the run card and in Runs & outputs (not a Samples card - follows the per-image loss pattern). Views: Still wrong / Learned since the start (baseline - now, green/red) / Where the LoRA acts
 - [x] local functional test (MOSS, 6 pictures, 0.25 MP, 3 epochs, 5090): ~2 s an epoch; effect map gathers on eyes/features after 2 epochs; raw loss map is mostly speckle (one noise draw), hence the Learned view
+- [x] Krea 2 local test: its predict() returns patch tokens - fixed generally (train_maps.to_map lays tokens on the patch
+  grid; Krea 2 / Flux 3 / Qwen give map_target in token layout, Anima with a frame axis, Fibo from its stored noise).
+  Krea 2 maps line up (effect on the eyes, as MOSS)
+- [ ] one-epoch sweep of the other still families on the 5090: klein, qwen_image21, zimage, flux3, anima, fibo2, sdxl
 - [ ] the viewer in a browser (Peter: no headless captures - he checks it)
-- [ ] docs (WEB_UI.md), CLAUDE.md notes
+- [x] docs (WEB_UI.md)
+- [ ] CLAUDE.md note (when merged)

@@ -2945,9 +2945,10 @@ const IL_PAGE = 48;
 // still wrong, where it has learned since the start, and where the LoRA is changing it. One colour scale per picture,
 // noise level and map across all the epochs (a scale per frame would hide the change), drawn over the picture
 const TM_LEVELS = {"0.25": "Low noise (detail)", "0.5": "Mid", "0.75": "High noise (layout)"};
-const TM_KINDS = [["loss", "Still wrong", "Where the model still gets this picture wrong. Yellow = most wrong, " +
-  "pink = partly, dark purple = nearly right. Fine detail (hair, edges, texture) always shows warmer than smooth areas, " +
-  "so watch one area cool from epoch to epoch rather than comparing it with the rest of the picture."],
+const TM_KINDS = [["loss", "Not learned yet", "Training covers your picture in noise and asks the model to recover it. This " +
+  "shows where its attempt still misses your picture: yellow = misses most, pink = partly, dark purple = nearly right. " +
+  "Fine detail (hair, edges, texture) always shows warmer, so watch one area cool from epoch to epoch rather than " +
+  "comparing it with the rest of the picture."],
   ["learned", "Learned since the start", "Green = the model gets this part more right than before training: what the " +
   "LoRA has learned so far. Red = this part got worse. No colour = no change. Each epoch is checked with the same " +
   "noise, so only real learning shows."],

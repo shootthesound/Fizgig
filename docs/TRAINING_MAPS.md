@@ -17,7 +17,7 @@ Pick a picture at the top, then a map:
 - **Learned since the start.** Green where the model now gets that part of the picture more right than it did before training: what the LoRA has learned so far. Magenta where it got worse. No colour where little changed. This is the one to read first.
 - **Not learned yet.** Training covers your picture in noise and asks the model to recover it. This map shows where its attempt still misses your picture: red where it misses most, then yellow, then blue, and no colour where it's nearly right. Fine detail (hair, edges, fabric) always shows warmer than smooth areas, so watch one area cool from epoch to epoch rather than comparing it with the rest of the picture.
 - **Where the LoRA acts.** Where the LoRA changes the picture, on the same red / yellow / blue scale. For a person it should gather on the face and body. If it spreads over clothes or the background, the LoRA is learning those too.
-- **Trigger word** (MOSS-Image, Krea 2 and Qwen Image 2.1; an experiment). How much of each area's attention goes to your trigger word inside the model, on the same scale. For a person it should settle on the face and body; if it sits on a hat, a jacket or the background, the trigger word is tied to those too. It appears when the run has a trigger word and the picture's caption contains it. With several subjects (Multi Concept or Fizgig LoRA Isolation), each subject gets at least one of the pictures, and an Isolation run includes one of its side-by-side pictures: there, pick each subject's trigger on its own to see whether it lands on its own person.
+- **Trigger word** (MOSS-Image, Krea 2 and Qwen Image 2.1; an experiment). How much of each area's attention goes to your trigger word inside the model, on the same scale. For a person it should settle on the face and body; if it sits on a hat, a jacket or the background, the trigger word is tied to those too. It appears when the run has a trigger word and the picture's caption contains it. 
 
 ## Examples
 
@@ -44,6 +44,12 @@ The same close-up at mid noise and at high noise (the layout), where it spreads 
 ![Trigger word at mid noise](assets/training_maps/trigger_mid.jpg)
 
 ![Trigger word at high noise](assets/training_maps/trigger_high_noise.jpg)
+
+## Several subjects
+
+With Multi Concept or Fizgig LoRA Isolation, each subject gets at least one of the map pictures (so four subjects means four pictures), and an Isolation run also includes one of its side-by-side pictures, with two subjects in one picture.
+
+On a picture whose caption has more than one trigger word, the Trigger word map gets a row of buttons: **All triggers**, then each trigger word on its own. Pick one subject's trigger and check it lands on that subject's person, not the other one. That's a direct look at whether Isolation is keeping the subjects apart.
 
 ## Noise levels
 

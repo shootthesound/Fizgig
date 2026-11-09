@@ -65,7 +65,8 @@ def read(output_dir, output_name, key=None, t=None):
     except OSError:
         pass
     return {"keys": probes.get("keys") or [], "timesteps": probes.get("timesteps") or [],
-            "crops": probes.get("crops") or {}, "attn": probes.get("attn") or [], "epochs": [{"epoch": e, "maps": by[e]} for e in sorted(by)]}
+            "crops": probes.get("crops") or {}, "attn": probes.get("attn") or [],
+            "attn_words": probes.get("attn_words") or {}, "epochs": [{"epoch": e, "maps": by[e]} for e in sorted(by)]}
 
 
 def crop_box(original_size, bucket_size):
@@ -96,6 +97,30 @@ def pick_keys(keys, n):
     if n <= 1:
         return keys[len(keys) // 2:len(keys) // 2 + 1] if n == 1 else []
     return [keys[round(i * (len(keys) - 1) / (n - 1))] for i in range(n)]
+
+
+def pick_probes(keys, n):
+    """The map pictures: one from each subject first (Multi Concept / Fizgig LoRA Isolation subjects are keyed "s<n>:";
+    the training folder is the first), and one of Isolation's side-by-side pictures when the run has them (both
+    subjects in one picture: whether each trigger lands on its own person), then the rest spread evenly through the
+    sorted keys. At least one per subject, so more than n when there are more subjects. Stills only; never a
+    regularisation picture."""
+    import re
+    keys = sorted({str(k) for k in keys if "#" not in str(k) and not str(k).startswith("reg:")})
+    groups = {}
+    for k in keys:
+        m = re.match(r"s\d+:", k)
+        g = "composite" if "fizgig_mp_" in k else (m.group(0) if m else "")
+        groups.setdefault(g, []).append(k)
+    if len(groups) <= 1:
+        return pick_keys(keys, n)
+    out = [pick_keys(groups[g], 1)[0] for g in sorted(groups, key=lambda g: (g == "composite", g))]
+    for k in pick_keys(keys, max(n, len(out)) + len(out)):
+        if len(out) >= max(n, len(groups)):
+            break
+        if k not in out:
+            out.append(k)
+    return out
 
 
 def _grid(m):
@@ -151,7 +176,7 @@ class TrainingMaps:
             for reso, its in getattr(getattr(ds, "batch_manager", None), "buckets", {}).items():
                 for it in its:
                     items.setdefault(str(it.item_key), (reso, it))
-        self.keys = [k for k in pick_keys(items, images) if "#" not in k]     # stills only (a clip's still: no)
+        self.keys = pick_probes(items, images)              # stills only, one per subject at least
         from fizgig.dataset.image_dataset import BucketBatchManager
         for k in self.keys:
             reso, it = items[k]
@@ -189,9 +214,13 @@ class TrainingMaps:
                 built = driver.trigger_text(tok, cap)
                 if built is None:
                     return {}
-                pos = trigger_positions(tok, built[0], built[1], cap, trigger)
-                if pos:
-                    out[k] = pos
+                per = {}
+                for word in [w.strip() for w in str(trigger).split(",") if w.strip()]:
+                    pos = trigger_positions(tok, built[0], built[1], cap, word)
+                    if pos:
+                        per[word] = pos
+                if per:
+                    out[k] = per
         except Exception as e:
             logger.warning(f"[maps] the trigger-word map is off for this run ({type(e).__name__}: {str(e)[:160]})")
             return {}
@@ -209,7 +238,7 @@ class TrainingMaps:
                 pass
         with open(os.path.join(self.dir, "probes.json"), "w", encoding="utf-8") as f:
             json.dump({"keys": self.keys, "timesteps": list(self.ts), "crops": self.crops,
-                       "attn": sorted(self.trig)}, f)
+                       "attn": sorted(self.trig), "attn_words": {k: list(v) for k, v in self.trig.items()}}, f)
         logger.info(f"[maps] training maps on: {len(self.keys)} picture(s) x {len(self.ts)} noise level(s), "
                     "each epoch (the run card's Training maps button)"
                     + (f"; the trigger word's attention on {len(self.trig)} of them" if self.trig else ""))
@@ -271,7 +300,11 @@ class TrainingMaps:
                         loss = to_map((pred - target).pow(2), latents)
                         maps = {"loss": _grid(loss)}
                         if attn is not None:
-                            maps["attn"] = _grid(to_map(attn[None, :, None], latents))
+                            # every trigger in the caption together; and each on its own when there are several
+                            maps["attn"] = _grid(to_map(attn[""][None, :, None], latents))
+                            if len(attn) > 2:
+                                maps["attn_by"] = {w: _grid(to_map(a[None, :, None], latents))
+                                                   for w, a in attn.items() if w}
                         if epoch > 0 and hasattr(net, "set_trainable_multiplier"):
                             net.set_trainable_multiplier(0.0)
                             try:

@@ -2976,7 +2976,7 @@ const tmPref = (k, dflt) => { try { return localStorage.getItem("fizgig.tm." + k
 const tmSetPref = (k, v) => { try { localStorage.setItem("fizgig.tm." + k, v); } catch (e) { /* private window */ } };
 
 function trainMapsPanel(box, meta, run, load) {
-  const st = {key: meta.keys[0], t: "all", kind: "learned",
+  const st = {key: meta.keys[0], t: "all", kind: "learned", trig: "",
               i: Math.max(0, meta.epochs.length - 1), timer: null, img: null,
               bands: tmPref("scale", "bands") === "bands", grey: tmPref("picture", "grey") === "grey",
               // the map's opacity, 1 = as designed; up to 1.5 stronger (capped at solid), down to 0 (hidden)
@@ -3011,6 +3011,7 @@ function trainMapsPanel(box, meta, run, load) {
     const m = ((d.epochs[e] || {}).maps || {})[st.key];
     const g = m && m[tKey(t)];
     if (!g) return null;
+    if (k === "attn" && st.trig && g.attn_by) return g.attn_by[st.trig] || null;   // one subject's trigger
     if (k !== "learned") return g[k] || null;
     const base = (((d.epochs[0] || {}).maps || {})[st.key] || {})[tKey(t)];
     if (!base || !base.loss || !g.loss || base.loss.v.length !== g.loss.v.length) return null;
@@ -3018,7 +3019,7 @@ function trainMapsPanel(box, meta, run, load) {
   };
   const scales = new Map();                    // the scales per picture + map + level, until the epochs change
   const scaleOf = (k, t) => {                  // one scale for this picture + level + map, over every epoch
-    const memo = `${st.key}|${k}|${t}`;
+    const memo = `${st.key}|${k}|${t}|${k === "attn" ? st.trig : ""}`;
     if (scales.has(memo)) return scales.get(memo);
     let mx = 0;
     for (let e = 0; e < d.epochs.length; e++) {
@@ -3048,7 +3049,22 @@ function trainMapsPanel(box, meta, run, load) {
   };
   const scale = () => scaleOf(st.kind, st.t === "all" ? "all" : st.t);
   const rgb = (name) => { const m = /(\d+)\D+(\d+)\D+(\d+)/.exec(themeColor(name)); return m ? [+m[1], +m[2], +m[3]] : [0, 0, 0]; };
+  // a picture whose caption has several subjects' triggers (Fizgig LoRA Isolation's side-by-side pictures): each
+  // trigger's map on its own, or all of them together
+  const trigRow = el("span", {class: "tm-row"});
+  let trigSig = null;
+  const fillTrig = () => {
+    const ws = (d.attn_words || {})[st.key] || [];
+    const sig = `${st.key}|${st.kind}|${ws.join(",")}`;
+    if (sig === trigSig) return;
+    trigSig = sig;
+    if (st.kind !== "attn" || ws.length < 2) { trigRow.replaceChildren(); return; }
+    if (!ws.includes(st.trig)) st.trig = "";
+    trigRow.replaceChildren(chips([["", "All triggers", "Every trigger word in this picture's caption together"],
+      ...ws.map((w) => [w, w, `Only ${w}: does it land on its own subject?`])], () => st.trig, (v) => { st.trig = v; }));
+  };
   const draw = () => {
+    fillTrig();
     const img = st.img;
     if (!img || !img.naturalWidth) return;
     // the part of the photo it trained on (the bucket's centre crop), so the map sits exactly on it
@@ -3193,6 +3209,7 @@ function trainMapsPanel(box, meta, run, load) {
            ...d.timesteps.map((t) => [String(t), TM_LEVELS[tKey(t)] || `Noise ${t}`])], () => st.t,
       (v) => { st.t = v; fetchOne().catch((e) => { say.textContent = e.message; }); }),
     chips(TM_KINDS.filter((k) => k[0] !== "attn" || (d.attn || []).length), () => st.kind, (v) => { st.kind = v; }),
+    trigRow,
     kindSay,
     stage,
     el("div", {class: "tm-row"}, play, scrub, d.live ? refresh : null, d.live ? autoLab : null, legendLo, legend, legendHi),

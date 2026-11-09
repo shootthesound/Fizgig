@@ -302,7 +302,8 @@ class TrainingMaps:
                         if attn is not None:
                             # every trigger in the caption together; and each on its own when there are several
                             maps["attn"] = _grid(to_map(attn[""][None, :, None], latents))
-                            if len(attn) > 2:
+                            if isinstance(self.trig[k], dict) and len(self.trig[k]) > 1:   # (a cut caption: maybe
+                                # fewer than its words - the viewer then says there's no map for the missing one)
                                 maps["attn_by"] = {w: _grid(to_map(a[None, :, None], latents))
                                                    for w, a in attn.items() if w}
                         if epoch > 0 and hasattr(net, "set_trainable_multiplier"):

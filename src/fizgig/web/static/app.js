@@ -3011,7 +3011,7 @@ function trainMapsPanel(box, meta, run, load) {
     const m = ((d.epochs[e] || {}).maps || {})[st.key];
     const g = m && m[tKey(t)];
     if (!g) return null;
-    if (k === "attn" && st.trig && g.attn_by) return g.attn_by[st.trig] || null;   // one subject's trigger
+    if (k === "attn" && st.trig) return (g.attn_by || {})[st.trig] || null;   // one subject's trigger, never all of them
     if (k !== "learned") return g[k] || null;
     const base = (((d.epochs[0] || {}).maps || {})[st.key] || {})[tKey(t)];
     if (!base || !base.loss || !g.loss || base.loss.v.length !== g.loss.v.length) return null;

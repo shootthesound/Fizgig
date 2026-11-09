@@ -36,7 +36,12 @@ the trigger carries it and attention to the trigger's position would mislead. Ma
 - [x] Krea 2 local test: its predict() returns patch tokens - fixed generally (train_maps.to_map lays tokens on the patch
   grid; Krea 2 / Flux 3 / Qwen give map_target in token layout, Anima with a frame axis, Fibo from its stored noise).
   Krea 2 maps line up (effect on the eyes, as MOSS)
-- [ ] one-epoch sweep of the other still families on the 5090: klein, qwen_image21, zimage, flux3, anima, fibo2, sdxl
+- [x] one-epoch sweep on the 5090: klein, qwen_image21, zimage, flux3, anima, fibo2, sdxl all capture (1-4 s an epoch); the
+  effect maps gather on the eyes of both face crops for every family (layouts right); SDXL speckly after 1 epoch.
+  Sheet: scratchpad nic/p9/fam_sheet.png
+- Known limit: a map covers the picture as its bucket cropped it; the viewer stretches it over the whole picture, so a
+  bucket crop far from the picture's own shape sits a little off (Qwen: 30x32 for a square picture). Could record the
+  crop box if it matters.
 - [ ] the viewer in a browser (Peter: no headless captures - he checks it)
 - [x] docs (WEB_UI.md)
 - [ ] CLAUDE.md note (when merged)

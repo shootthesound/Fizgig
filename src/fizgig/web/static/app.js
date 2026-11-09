@@ -3703,7 +3703,9 @@ const RESULT_LABEL = {running: "Running", finished: "Finished", failed: "Failed"
 
 async function loadRuns() {
   let r;
-  try { r = await api("/api/runs"); } catch (e) { return; }
+  try { r = await api("/api/runs"); } catch (e) { S.runsToCurrent = false; return; }
+  const toCurrent = S.runsToCurrent;      // the tab's own click set it (Runs & outputs opened while a run trains)
+  S.runsToCurrent = false;
   const host = $("runsList");
   host.innerHTML = "";
   const famName = (k) => ((S.schema.families.find((f) => f.key === k) || {}).display_name) || k;
@@ -3883,7 +3885,7 @@ async function loadRuns() {
         try { const load = trainMapsLoad(run.id); trainMapsPanel(tmBox, await load(), run, load); }
         catch (e) { tmBox.replaceChildren(el("div", {class: "problems", text: e.message})); }
       }}) : null;
-    host.append(el("div", {class: "run-row"},
+    host.append(el("div", {class: "run-row", "data-result": run.result || ""},
       el("div", {class: "run-row-head"},
         el("span", {class: "run-badge", "data-state": RESULT_STATE[run.result] || "idle", text: RESULT_LABEL[run.result] || run.result}),
         el("b", {text: run.lora || "(unnamed)"}),
@@ -3898,6 +3900,13 @@ async function loadRuns() {
   }
   if (!r.runs.length) host.append(el("div", {class: "field-hint", text: "No runs yet. Every run you start is listed here " +
     "with its results."}));
+  if (toCurrent) runsScrollToCurrent(host);
+}
+// opened from its tab while a run trains: Runs & outputs goes to that run (the newest in Runs), not the queue above
+function runsScrollToCurrent(host) {
+  const row = host.querySelector('.run-row[data-result="running"]');
+  if (row) requestAnimationFrame(() => row.scrollIntoView({block: "start", behavior: "smooth"}));
+  return !!row;
 }
 
 // ---- Purge older than X days: the run history in bulk. The preview reads the history list alone - no folder is
@@ -12984,7 +12993,11 @@ function wire() {
     try { const load = imageLossLoad(id); imageLossPanel(box, await load(), {...S.run, id}, load); }
     catch (e) { box.replaceChildren(el("div", {class: "problems", text: e.message})); }
   });
-  document.querySelectorAll(".tab-item").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+  // Runs & outputs opened from its own tab while a run trains goes to that run (loadRuns reads it after its fetch)
+  document.querySelectorAll(".tab-item").forEach((b) => b.addEventListener("click", () => {
+    if (b.dataset.tab === "outputs") S.runsToCurrent = true;
+    showTab(b.dataset.tab);
+  }));
   document.querySelectorAll("[data-goto]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.goto)));
   // the sidebar's run opens the run card itself (it sits under the Training form)
   $("sideRun").addEventListener("click", () => setTimeout(() =>

@@ -214,6 +214,11 @@ class ZImageDriver(FamilyDriver):
         sb = sig.view(-1, 1, 1, 1)
         return {"xt": (1 - sb) * x0 + sb * noise, "t": sig}
 
+    def trigger_text(self, tokenizer, caption):
+        """The encoder's chat template around the caption (training maps' trigger-word map); nothing dropped."""
+        return tokenizer.apply_chat_template([{"role": "user", "content": caption}], tokenize=False,
+                                             add_generation_prompt=True, enable_thinking=True), ""
+
     def predict(self, dit, state, cond):
         n = state["xt"].shape[0]
         return self._velocity(dit, state["xt"], state["t"], [_cap(cond, i) for i in range(n)])

@@ -14,6 +14,8 @@ from torch.utils.checkpoint import checkpoint
 from fizgig.modules.attention import AttentionParams
 from fizgig.modules.offloading import ModelOffloader, weighs_to_device
 from fizgig.modules.attention import attention as unified_attention
+from fizgig.training import attn_probe
+
 
 
 # region cpu offloading utilities
@@ -693,6 +695,7 @@ class KleinDiT(nn.Module):
         del ctx_ids
 
         attn_params = AttentionParams.create(self.attn_mode, self.split_attn)  # No attention mask
+        attn_probe.layout((txt.shape[1], txt.shape[1] + img.shape[1]), 0, txt.shape[1] + img.shape[1])
 
         for block_idx, block in enumerate(self.double_blocks):
             if self.blocks_to_swap:
@@ -1064,6 +1067,8 @@ def attention(qkv_list: list[Tensor], pe: Tensor, attn_params: AttentionParams) 
     q, k, v = qkv_list
     del qkv_list
     q, k = apply_rope(q, k, pe)
+    if attn_probe._ACTIVE is not None:      # training maps: the trigger word's attention (training/attn_probe.py)
+        attn_probe.see(q, k)
 
     q = q.transpose(1, 2)  # B, H, L, D -> B, L, H, D
     k = k.transpose(1, 2)  # B, H, L, D -> B, L, H, D

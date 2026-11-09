@@ -204,21 +204,17 @@ class TrainingMaps:
         out = {}
         try:
             from safetensors import safe_open
-            from fizgig.families import trigger_check
-            from fizgig.training.attn_probe import trigger_positions
-            tok = trigger_check._tokenizer(desc.key)
             for k, it in items.items():
                 path = getattr(it, "text_encoder_output_cache_path", None)
                 if not path:
                     continue
                 with safe_open(path, framework="pt") as f:
                     cap = (f.metadata() or {}).get("caption1") or ""
-                built = driver.trigger_text(tok, cap)
-                if built is None:
-                    return {}
                 per = {}
                 for word in [w.strip() for w in str(trigger).split(",") if w.strip()]:
-                    pos = trigger_positions(tok, built[0], built[1], cap, word)
+                    pos = driver.trigger_key_positions(cap, word)
+                    if pos is None:
+                        return {}
                     if pos:
                         per[word] = pos
                 if per:
@@ -294,7 +290,8 @@ class TrainingMaps:
                             from fizgig.training import attn_probe
                             stance = (torch.compiler.set_stance("force_eager")
                                       if hasattr(torch.compiler, "set_stance") else contextlib.nullcontext())
-                            with stance, attn_probe.capturing(self.trig[k]) as probe:
+                            with stance, driver.trigger_attention_hooks(dit), \
+                                    attn_probe.capturing(self.trig[k]) as probe:
                                 pred = driver.predict(dit, state, cond).float()
                             attn = probe.result()
                         else:

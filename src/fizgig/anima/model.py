@@ -19,6 +19,7 @@ import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint as torch_checkpoint
 
 from fizgig.modules import int8_attention as _i8a
+from fizgig.training import attn_probe
 
 
 
@@ -253,6 +254,8 @@ class Attention(nn.Module):
         if q.dtype != v.dtype:
             q, k = q.to(v.dtype), k.to(v.dtype)
         qt, kt, vt = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
+        if attn_probe._ACTIVE is not None and context is not None:   # training maps: the trigger word's attention
+            attn_probe.see(qt, kt)
         out = _i8a.attend(qt, kt, vt)                # workbench renders: comfy-kitchen's INT8 kernel
         if out is None:
             out = F.scaled_dot_product_attention(qt, kt, vt)
@@ -1107,6 +1110,8 @@ class Anima(nn.Module):
             padding_mask=padding_mask,
         )
 
+        _n = x_B_T_H_W_D.shape[1] * x_B_T_H_W_D.shape[2] * x_B_T_H_W_D.shape[3]
+        attn_probe.layout((0, _n), 0, _n, kv_total=-1)       # the picture's tokens read the text (any length)
         if timesteps_B_T.ndim == 1:
             timesteps_B_T = timesteps_B_T.unsqueeze(1)
         t_embedding_B_T_D, adaln_lora_B_T_3D = self.t_embedder(timesteps_B_T)

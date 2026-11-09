@@ -22,6 +22,7 @@ _SPECS = {
     "anima": ("auto", "circlestone-labs/Anima-Base-v1.0-Diffusers", "tokenizer"),
     "sdxl": ("clip", "stabilityai/stable-diffusion-xl-base-1.0", "tokenizer"),
     "moss_image": ("auto", "OpenMOSS-Team/MOSS-Image-Base", "tokenizer"),
+    "fibo2": ("auto", None, None),                    # the bundled Qwen3-VL copy, as its driver encodes with
 }
 _TOK, _LOCK = {}, threading.Lock()
 
@@ -50,6 +51,28 @@ def _tokenizer(family):
                 from transformers import AutoTokenizer
                 _TOK[family] = from_pretrained_cache_first(AutoTokenizer, repo, **kw)
         return _TOK[family]
+
+
+def fast_tokenizer(family):
+    """The family's tokenizer in its fast form (character offsets, for the training maps' trigger-word map): Klein's
+    Qwen2Tokenizer and SDXL's CLIPTokenizer are the slow kind."""
+    tok = _tokenizer(family)
+    if getattr(tok, "is_fast", False):
+        return tok
+    key = family + ":fast"
+    with _LOCK:
+        if key not in _TOK:
+            kind, repo, sub = _SPECS[family]
+            from fizgig.utils.hf_cache import from_pretrained_cache_first
+            kw = {"subfolder": sub} if sub else {}
+            if kind == "qwen2":
+                from transformers import Qwen2TokenizerFast as cls
+            elif kind == "clip":
+                from transformers import CLIPTokenizerFast as cls
+            else:
+                from transformers import AutoTokenizer as cls
+            _TOK[key] = from_pretrained_cache_first(cls, repo, **kw)
+        return _TOK[key]
 
 
 def _pieces(tok, text):

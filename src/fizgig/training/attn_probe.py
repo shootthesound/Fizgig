@@ -3,9 +3,10 @@ trigger word, averaged over heads and blocks.
 
 A model with the `trigger_attention` ability (families/description.py) calls two hooks, both no-ops unless a probe is
 active (a training-maps capture, run eagerly):
-  * layout(img, txt, total, valid) - in its forward, once the joint sequence is built: the picture's query rows
-    [img[0], img[1]), where the text's keys start, the joint length its attention sees, and how many keys are real
-    (a padded tail past `valid` is ignored);
+  * layout(img, txt, total, valid, kv_total) - in its forward, once the joint sequence is built: the picture's query
+    rows [img[0], img[1]), where the text's keys start, the joint length its attention sees, and how many keys are
+    real (a padded tail past `valid` is ignored). Cross-attention (the picture reads a separate text sequence: Fibo
+    2.0's injection blocks, Anima, SDXL) gives kv_total, the keys' own length, or -1 for any;
   * see(q, k, key_mask) - in its attention, with q and k as attention uses them ([B, H, L, D], after QK-norm and RoPE;
     k may have fewer heads, GQA). Calls whose length isn't the joint one (a text-only refiner) are skipped.
 
@@ -39,9 +40,11 @@ class TriggerProbe:
     def see(self, q, k, key_mask=None):
         if self.layout is None or not self.pos:
             return
-        (a, b), t0, total, valid = self.layout
-        if q.shape[-2] != total or k.shape[-2] != total:
+        (a, b), t0, total, valid, kv_total = self.layout
+        if q.shape[-2] != total or (kv_total != -1 and k.shape[-2] != (total if kv_total is None else kv_total)):
             return
+        if kv_total is not None:                    # cross-attention: every key is the text's
+            valid = k.shape[-2]
         cols = {w: [t0 + p for p in ps if t0 + p < valid] for w, ps in self.groups.items()}
         if not cols[""]:
             return
@@ -77,10 +80,11 @@ class TriggerProbe:
         return None if self.acc is None or not self.n else {w: a / self.n for w, a in self.acc.items()}
 
 
-def layout(img, txt, total, valid=None):
+def layout(img, txt, total, valid=None, kv_total=None):
     p = _ACTIVE
     if p is not None:
-        p.layout = ((int(img[0]), int(img[1])), int(txt), int(total), int(total if valid is None else valid))
+        p.layout = ((int(img[0]), int(img[1])), int(txt), int(total), int(total if valid is None else valid),
+                    None if kv_total is None else int(kv_total))
 
 
 def see(q, k, key_mask=None):

@@ -38,6 +38,7 @@ def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="0.5", slider=False, ada
 
 ZIMAGE = FamilyDescription(
     key="zimage",
+    trigger_attention=True,           # training maps' trigger-word map (an experiment)
     start_lr_bands=(("lora", 3e-5, 4.5e-4), ("finetune", 1.7e-5, 3e-4), ("slider", 7e-5, 6e-4)),
     masked_training=True,
     batch_training=True,              # Batch size (Other Options): training_loss_batch, exact per picture
@@ -202,6 +203,7 @@ def _base_presets():
 ZIMAGE_BASE = dataclasses.replace(
     ZIMAGE,
     key="zimage_base",
+    trigger_attention=True,           # training maps' trigger-word map (an experiment)
     arch_id="zimagebase",
     display_name="Z-Image Base",
     gui_label="Z-Image Base",

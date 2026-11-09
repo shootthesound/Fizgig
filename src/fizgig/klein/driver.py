@@ -259,6 +259,11 @@ class KleinDriver(FamilyDriver):
     def predict(self, dit, state, cond):
         return self._forward(dit, state["xt"], state["t"], cond)
 
+    def trigger_text(self, tokenizer, caption):
+        """The encoder's chat template around the caption (training maps' trigger-word map); nothing dropped."""
+        return tokenizer.apply_chat_template([{"role": "user", "content": caption}], tokenize=False,
+                                             add_generation_prompt=True, enable_thinking=False), ""
+
     # ---- sampling (the old trainer's previews, split at the decode) -----------------------------
     @staticmethod
     def _grid(width, height):

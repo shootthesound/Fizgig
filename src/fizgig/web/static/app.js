@@ -2965,14 +2965,22 @@ const tmPref = (k, dflt) => { try { return localStorage.getItem("fizgig.tm." + k
 const tmSetPref = (k, v) => { try { localStorage.setItem("fizgig.tm." + k, v); } catch (e) { /* private window */ } };
 
 function trainMapsPanel(box, meta, run, load) {
-  const st = {key: meta.keys[0], t: String(meta.timesteps[Math.floor(meta.timesteps.length / 2)] ?? "0.5"), kind: "learned",
+  const st = {key: meta.keys[0], t: "all", kind: "learned",
               i: Math.max(0, meta.epochs.length - 1), timer: null, img: null,
               bands: tmPref("scale", "bands") === "bands", grey: tmPref("picture", "grey") === "grey"};
   const d = {...meta, epochs: []};
-  const fetchOne = async () => {          // this picture + level's epochs
-    const r = await load(st.key, st.t);
+  const fetchOne = async () => {          // this picture + level's epochs (All levels: each level's, merged by epoch)
+    const ts = st.t === "all" ? d.timesteps.map(String) : [st.t];
+    const rs = await Promise.all(ts.map((t) => load(st.key, t)));
+    const by = new Map();
+    for (const r of rs) for (const e of r.epochs) {
+      const row = by.get(e.epoch) || {epoch: e.epoch, maps: {[st.key]: {}}};
+      Object.assign(row.maps[st.key], (e.maps || {})[st.key] || {});
+      by.set(e.epoch, row);
+    }
     const atEnd = st.i >= d.epochs.length - 1;
-    d.epochs = r.epochs; d.live = r.live;
+    d.epochs = [...by.values()].sort((a, b) => a.epoch - b.epoch); d.live = rs.some((r) => r.live);
+    scales.clear();
     scrub.max = String(Math.max(0, d.epochs.length - 1));
     if (atEnd || st.i > d.epochs.length - 1) st.i = Math.max(0, d.epochs.length - 1);
     scrub.value = String(st.i);
@@ -2986,25 +2994,46 @@ function trainMapsPanel(box, meta, run, load) {
   const legendLo = el("span", {class: "tm-legend-end"}), legendHi = el("span", {class: "tm-legend-end"});
   const kindSay = el("div", {class: "tm-kind-say"});        // what the chosen map shows, above the picture
   const bigHint = el("span", {class: "tm-big-hint", text: "← → step through the epochs · click or Esc to close"});
-  const grid = (e, k) => {
+  const gridAt = (e, k, t) => {                // one level's map
     const m = ((d.epochs[e] || {}).maps || {})[st.key];
-    const g = m && m[tKey(st.t)];
+    const g = m && m[tKey(t)];
     if (!g) return null;
     if (k !== "learned") return g[k] || null;
-    const base = (((d.epochs[0] || {}).maps || {})[st.key] || {})[tKey(st.t)];
+    const base = (((d.epochs[0] || {}).maps || {})[st.key] || {})[tKey(t)];
     if (!base || !base.loss || !g.loss || base.loss.v.length !== g.loss.v.length) return null;
     return {w: g.loss.w, h: g.loss.h, v: g.loss.v.map((x, j) => base.loss.v[j] - x), signed: true};
   };
-  const scale = () => {                        // one scale for this picture + level + map, over every epoch
+  const scales = new Map();                    // the scales per picture + map + level, until the epochs change
+  const scaleOf = (k, t) => {                  // one scale for this picture + level + map, over every epoch
+    const memo = `${st.key}|${k}|${t}`;
+    if (scales.has(memo)) return scales.get(memo);
     let mx = 0;
     for (let e = 0; e < d.epochs.length; e++) {
-      const g = grid(e, st.kind);
+      const g = t === "all" ? grid(e, k) : gridAt(e, k, t);
       if (!g) continue;
       const vs = g.v.map((x) => (g.signed ? Math.abs(x) : x)).sort((a, b) => a - b);
       mx = Math.max(mx, vs[Math.floor(0.98 * (vs.length - 1))] || 0);     // 98th percentile: one hot cell can't wash out the rest
     }
+    scales.set(memo, mx || 1);
     return mx || 1;
   };
+  // All levels: each level over its own scale (heavy noise's error is bigger by nature, so a plain sum would be
+  // mostly it), then the mean, so every level counts the same
+  const grid = (e, k) => {
+    if (st.t !== "all") return gridAt(e, k, st.t);
+    let out = null, n = 0;
+    for (const t of d.timesteps) {
+      const g = gridAt(e, k, t);
+      if (!g || (out && g.v.length !== out.v.length)) continue;
+      const s = scaleOf(k, t);
+      if (!out) out = {w: g.w, h: g.h, signed: g.signed, v: g.v.map((x) => x / s)};
+      else out.v = out.v.map((x, j) => x + g.v[j] / s);
+      n++;
+    }
+    if (out) out.v = out.v.map((x) => x / n);
+    return out;
+  };
+  const scale = () => scaleOf(st.kind, st.t === "all" ? "all" : st.t);
   const rgb = (name) => { const m = /(\d+)\D+(\d+)\D+(\d+)/.exec(themeColor(name)); return m ? [+m[1], +m[2], +m[3]] : [0, 0, 0]; };
   const draw = () => {
     const img = st.img;
@@ -3116,7 +3145,8 @@ function trainMapsPanel(box, meta, run, load) {
   box.replaceChildren(
     el("div", {class: "field-hint", text: TM_TIP}),
     probes,
-    chips(d.timesteps.map((t) => [String(t), TM_LEVELS[tKey(t)] || `Noise ${t}`]), () => st.t,
+    chips([["all", "All levels", "The three noise levels together, each counted equally: the overall picture"],
+           ...d.timesteps.map((t) => [String(t), TM_LEVELS[tKey(t)] || `Noise ${t}`])], () => st.t,
       (v) => { st.t = v; fetchOne().catch((e) => { say.textContent = e.message; }); }),
     chips(TM_KINDS, () => st.kind, (v) => { st.kind = v; }),
     kindSay,

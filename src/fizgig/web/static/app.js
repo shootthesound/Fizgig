@@ -6438,6 +6438,8 @@ function stMapChips() {
     $("stMapLevels").replaceChildren(...row(ST_MAP_LEVELS, m.level, (v) => { m.level = v; stMapSave({level: v}); stMapDraw(); }));
   }
   $("stMapOpts").style.display = m.kind ? "" : "none";
+  // what the chosen map shows, right under its button, before the next row of controls
+  $("stMapKindSay").textContent = m.kind ? (ST_MAPS.find((k) => k[0] === m.kind) || [])[2] || "" : "";
   $("stMapTrigRow").style.display = $("stMapGo").style.display = m.kind === "attn" ? "" : "none";
 }
 
@@ -6511,7 +6513,6 @@ function stMapGrid() {                          // the chosen kind at the chosen
 function stMapDraw() {
   const m = S.st.map, img = $("stTweak"), cv = $("stMapCanvas");
   if (!m || !m.kind || !m.data || m.data.gen !== S.st.shown || !img.naturalWidth) { cv.style.display = "none"; return; }
-  const kind = ST_MAPS.find((k) => k[0] === m.kind);
   const g = stMapGrid();
   if (!g) {
     cv.style.display = "none";
@@ -6521,7 +6522,7 @@ function stMapDraw() {
         "Type the LoRA's trigger word: it isn't in the LoRA's own information.") : "No map for this one.";
     return;
   }
-  $("stMapSay").textContent = kind ? kind[2] : "";
+  $("stMapSay").textContent = "";                 // the explanation sits under the buttons (stMapKindSay)
   // the picture's box inside the pane (object-fit: contain)
   const bw = img.clientWidth, bh = img.clientHeight, ar = img.naturalWidth / img.naturalHeight;
   const w = Math.min(bw, bh * ar), h = w / ar, x0 = img.offsetLeft + (bw - w) / 2, y0 = img.offsetTop + (bh - h) / 2;

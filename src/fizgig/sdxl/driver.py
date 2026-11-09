@@ -121,6 +121,23 @@ class _TextEncoders:
             torch.cuda.empty_cache()
 
 
+class _ProbeProcessor:
+    """A diffusers attention processor that first hands the cross-attention's queries and keys ([B, H, L, D], the
+    LoRA included) to the training maps' trigger-word probe, then runs the original."""
+
+    def __init__(self, inner):
+        self.inner = inner
+
+    def __call__(self, attn, hidden_states, encoder_hidden_states=None, *args, **kwargs):
+        from fizgig.training import attn_probe
+        if attn_probe._ACTIVE is not None and encoder_hidden_states is not None and hidden_states.dim() == 3:
+            q, k = attn.to_q(hidden_states), attn.to_k(encoder_hidden_states)
+            b, h = q.shape[0], attn.heads
+            attn_probe.see(q.view(b, -1, h, q.shape[-1] // h).transpose(1, 2),
+                           k.view(b, -1, h, k.shape[-1] // h).transpose(1, 2))
+        return self.inner(attn, hidden_states, encoder_hidden_states, *args, **kwargs)
+
+
 class SDXLDriver(FamilyDriver):
 
     # ---- models ---------------------------------------------------------------------------------
@@ -206,10 +223,39 @@ class SDXLDriver(FamilyDriver):
         return {"xt": a.sqrt() * x0 + (1 - a).sqrt() * noise, "t": t, "a": a, "x0": x0, "noise": noise,
                 "hw": (x0.shape[-2] * 8, x0.shape[-1] * 8)}
 
+    def trigger_key_positions(self, caption, word):
+        """The caption's CLIP tokens sit in 75-token chunks, each BOS + chunk + EOS + padding (77): token i is key
+        77 * (i // 75) + 1 + i % 75 (_chunks). Both CLIPs tokenize alike."""
+        from fizgig.families import trigger_check
+        from fizgig.training.attn_probe import trigger_positions
+        tok = trigger_check.fast_tokenizer("sdxl")
+        return [77 * (i // 75) + 1 + i % 75 for i in trigger_positions(tok, caption, "", caption, word)]
+
+    def trigger_attention_hooks(self, dit):
+        """The UNet's cross-attention processors (attn2), each wrapped to pass its queries and keys to the probe."""
+        import contextlib
+
+        @contextlib.contextmanager
+        def hooks():
+            mods = [m for n, m in dit.named_modules() if n.endswith("attn2") and hasattr(m, "processor")]
+            old = [m.processor for m in mods]
+            for m, p in zip(mods, old):
+                m.processor = _ProbeProcessor(p)
+            try:
+                yield
+            finally:
+                for m, p in zip(mods, old):
+                    m.processor = p
+        return hooks()
+
     def predict(self, dit, state, cond):
         """The UNet's output (epsilon, or v for a v-pred checkpoint) at a noise_latents() state."""
         h, w = state["hw"]
         xt = state["xt"]
+        from fizgig.training import attn_probe
+        if attn_probe._ACTIVE is not None:      # the trigger map reads the quarter-size blocks (down 2, mid, up 0)
+            n = (xt.shape[-2] // 4) * (xt.shape[-1] // 4)
+            attn_probe.layout((0, n), 0, n, kv_total=-1)
         return self._unet(dit, xt, torch.tensor([state["t"]], device=xt.device), cond, h, w)
 
     def map_target(self, latents, state):

@@ -30,6 +30,7 @@ def _preset(rank, lr=1e-4, adaptive=None, epochs=20, mp="1.0", alpha=None, slide
 
 SDXL = FamilyDescription(
     key="sdxl",
+    trigger_attention=True,           # training maps' trigger-word map (an experiment)
     start_lr_bands=(("lora", 1.7e-5, 1.5e-4), ("finetune", 1e-6, 3e-5), ("slider", 1.7e-5, 1.5e-4)),
     masked_training=True,
     batch_training=True,              # Batch size (Other Options): training_loss_batch, exact per picture

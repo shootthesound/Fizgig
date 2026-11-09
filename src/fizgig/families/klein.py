@@ -29,6 +29,7 @@ _STYLE_COMP = tuple(f"double_{i}" for i in range(8)) + ("single_0", "single_1")
 
 KLEIN = FamilyDescription(
     key="klein",
+    trigger_attention=True,           # training maps' trigger-word map (an experiment)
     start_lr_bands=(("lora", 3e-5, 1.2e-3),),
     masked_training=True,
     batch_training=True,              # Batch size (Other Options): training_loss_batch, exact per picture

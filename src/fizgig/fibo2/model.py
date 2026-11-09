@@ -20,6 +20,8 @@ from torch.nn.attention import SDPBackend, sdpa_kernel
 from torch.utils.checkpoint import checkpoint
 
 from fizgig.modules import int8_attention as _i8a
+from fizgig.training import attn_probe
+
 
 if TYPE_CHECKING:
     from fizgig.modules.offloading import ModelOffloader
@@ -248,6 +250,8 @@ class Attention(nn.Module):
         v = self.to_v(ctx).unflatten(-1, (self.heads, -1))
         if freqs_cis is not None:
             q, k = _rope(q, freqs_cis), _rope(k, freqs_cis)
+        if attn_probe._ACTIVE is not None and encoder_hidden_states is not None:     # training maps: cross only
+            attn_probe.see(q.transpose(1, 2), k.transpose(1, 2), attention_mask)
         if attention_mask is not None and attention_mask.ndim == 2:
             attention_mask = attention_mask[:, None, None, :]     # [B, S] -> broadcast over heads and queries
         return self.to_out[0](attention(q, k, v, attention_mask).flatten(2, 3))
@@ -479,6 +483,7 @@ class Fibo2DiT(nn.Module):
         noise_mask = torch.zeros(b, x.shape[1], dtype=torch.long, device=device)
         noise_mask[:, start:start + n_img] = 1
 
+        attn_probe.layout((start, start + n_img), 0, x.shape[1], kv_total=encoder_hidden_states.shape[2])
         # 6. the main blocks; injection blocks also read their own bundle
         bundle = {layer_id: i + 1 for i, layer_id in enumerate(c.injection_layer_ids)}
         for i, block in enumerate(self.layers):

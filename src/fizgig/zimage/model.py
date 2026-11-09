@@ -19,6 +19,8 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.checkpoint import checkpoint
 
 from fizgig.modules.int8_attention import attend
+from fizgig.training import attn_probe
+
 
 ADALN_EMBED_DIM = 256
 SEQ_MULTI_OF = 32
@@ -134,6 +136,8 @@ class ZImageAttention(nn.Module):
             k = self.norm_k(k)
         if freqs_cis is not None:
             q, k = apply_rotary_emb(q, freqs_cis), apply_rotary_emb(k, freqs_cis)
+        if attn_probe._ACTIVE is not None:      # training maps: the trigger word's attention (training/attn_probe.py)
+            attn_probe.see(q.transpose(1, 2), k.transpose(1, 2), attention_mask)
         dtype = q.dtype
         # (B, S) True = attend -> SDPA's boolean mask; None when nothing is padded (decided in the model's forward,
         # outside the compiled layers)
@@ -427,6 +431,8 @@ class ZImageTransformer2DModel(nn.Module):
         u_mask = _mask_or_none(u_mask)
         if travelling:
             u_mask = self._key_bias(travel, x_lens, cap_lens, u_mask, u.shape[1])
+        if attn_probe._ACTIVE is not None:      # the picture's real tokens (not its pad to 32), the caption after
+            attn_probe.layout((0, x_lens[0] - int(x_pad[0].sum())), x_lens[0], u.shape[1])
         layers = list(self.layers) if self.blocks_to_swap else None
         for index, layer in enumerate(self.layers):
             if self.blocks_to_swap:

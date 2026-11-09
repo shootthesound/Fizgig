@@ -236,6 +236,19 @@ class AnimaDriver(FamilyDriver):
         x0 = x0.unsqueeze(2) if x0.dim() == 4 else x0
         return (state["xt"].float() - x0.to(state["xt"].device)) / state["t"].float().view(-1, 1, 1, 1, 1)
 
+    def trigger_tokenizer(self):
+        """The DiT's text keys are the LLM adapter's T5 tokens of the raw caption, one for one."""
+        if getattr(self, "_t5_fast", None) is None:
+            from transformers import PreTrainedTokenizerFast
+            from fizgig.utils import hf_public
+            self._t5_fast = PreTrainedTokenizerFast(
+                tokenizer_file=hf_public.download(repo_id=HELPER, filename="t5_tokenizer/tokenizer.json"),
+                eos_token="</s>", pad_token="<pad>", unk_token="<unk>")
+        return self._t5_fast
+
+    def trigger_text(self, tokenizer, caption):
+        return caption, ""                       # the caption as it is: no template
+
     def predict(self, dit, state, cond):
         return self._velocity(dit, state["xt"], state["t"], cond)
 

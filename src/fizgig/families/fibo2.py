@@ -45,6 +45,7 @@ def _preset(rank, lr=1e-6, adaptive=None, epochs=40, mp="0.25", slider=False, ed
 
 _FIBO2 = FamilyDescription(
     key="fibo2",
+    trigger_attention=True,           # training maps' trigger-word map (an experiment)
     arch_id="fibo2",
     display_name="Fibo 2.0",
     gui_label="Fibo 2.0",

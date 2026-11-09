@@ -439,6 +439,11 @@ class Fibo2Driver(FamilyDriver):
             out.append(self._encode(te, edit_prompt(text, len(pics)), pics))
         return out
 
+    def trigger_text(self, tokenizer, caption):
+        """The pipeline's prompt template; its injection blocks' keys are these tokens, nothing dropped."""
+        from fizgig.fibo2.model import PROMPT_TEMPLATE
+        return PROMPT_TEMPLATE.replace("{}", caption, 1), ""
+
     def predict(self, dit, state, cond):
         """The velocity as a tensor (the trainer's loss paths take it apart as one). The cached latents and the text
         bundles are fp32 on the CPU; they go to the model's device and compute dtype (the first parameter that is

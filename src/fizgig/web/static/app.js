@@ -2945,14 +2945,15 @@ const IL_PAGE = 48;
 // still wrong, where it has learned since the start, and where the LoRA is changing it. One colour scale per picture,
 // noise level and map across all the epochs (a scale per frame would hide the change), drawn over the picture
 const TM_LEVELS = {"0.25": "Low noise (detail)", "0.5": "Mid", "0.75": "High noise (layout)"};
-const TM_KINDS = [["loss", "Still wrong", "Bright = the parts of this picture the model still gets wrong. Fine detail " +
-  "(hair, edges, texture) is always brighter than smooth areas, so watch how one area fades from epoch to epoch rather " +
-  "than comparing it with the rest of the picture."],
-  ["learned", "Learned since the start", "Green = the parts the model gets more right than before training: what the " +
-  "LoRA has learned so far. Red = parts that got worse. Each epoch is checked with the same noise, so only real " +
-  "learning shows."],
-  ["effect", "Where the LoRA acts", "Bright = where the LoRA changes the picture. For a person it should gather on the " +
-  "face and body; if it spreads over clothes or the background, the LoRA is learning those too."]];
+const TM_KINDS = [["loss", "Still wrong", "Where the model still gets this picture wrong. Yellow = most wrong, " +
+  "pink = partly, dark purple = nearly right. Fine detail (hair, edges, texture) always shows warmer than smooth areas, " +
+  "so watch one area cool from epoch to epoch rather than comparing it with the rest of the picture."],
+  ["learned", "Learned since the start", "Green = the model gets this part more right than before training: what the " +
+  "LoRA has learned so far. Red = this part got worse. No colour = no change. Each epoch is checked with the same " +
+  "noise, so only real learning shows."],
+  ["effect", "Where the LoRA acts", "Where the LoRA changes the picture. Yellow = changes it most, pink = some, dark " +
+  "purple = barely. For a person it should gather on the face and body; if it spreads over clothes or the background, " +
+  "the LoRA is learning those too."]];
 const TM_TIP = "A few of your pictures, checked before training and after every epoch: where the model is still wrong, " +
   "what it has learned, and where the LoRA is acting.";
 // the run's pictures and levels first; each picture + noise level's epochs fetched when shown (a ninth of the whole)

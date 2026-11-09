@@ -39,9 +39,14 @@ the trigger carries it and attention to the trigger's position would mislead. Ma
 - [x] one-epoch sweep on the 5090: klein, qwen_image21, zimage, flux3, anima, fibo2, sdxl all capture (1-4 s an epoch); the
   effect maps gather on the eyes of both face crops for every family (layouts right); SDXL speckly after 1 epoch.
   Sheet: scratchpad nic/p9/fam_sheet.png
-- Known limit: a map covers the picture as its bucket cropped it; the viewer stretches it over the whole picture, so a
-  bucket crop far from the picture's own shape sits a little off (Qwen: 30x32 for a square picture). Could record the
-  crop box if it matters.
-- [ ] the viewer in a browser (Peter: no headless captures - he checks it)
+- [x] bucket crop recorded in probes.json (crops), the viewer draws that part of the photo (92b47de4)
+- [x] the viewer in a browser: Peter tried it 9 Nov ("superb"). Since: Not learned yet wording, colour bands over a greyed
+  photo (Bands/Smooth, Grey/Colour), click to enlarge, All levels (default), Auto-refresh
+- [x] trigger-word attention map, an EXPERIMENT on MOSS / Krea 2 / Qwen (Peter's pick, 9 Nov) - b9246765: ability
+  description.trigger_attention, driver.trigger_text(tok, caption) -> (prompt, dropped prefix), model hooks
+  attn_probe.layout()/see() (no-ops unless a maps capture), probe computes softmax over all keys per picture token, keeps
+  the trigger's share; capture runs force_eager. CPU-checked positions (Krea drop 34). NOT YET RUN ON A GPU (card busy).
+- [ ] GPU test of the trigger map on MOSS, Krea 2, Qwen (2 epochs, 0.25 MP, datasq, trigger in captions); then Peter judges
+  whether it shows anything the other maps don't
 - [x] docs (WEB_UI.md)
 - [ ] CLAUDE.md note (when merged)

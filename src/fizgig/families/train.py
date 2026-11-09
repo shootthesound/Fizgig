@@ -676,8 +676,8 @@ def _dop_path(te_path):
 
 def _load_dop_cond(path):
     """A DOP text encoding from its file, batched as the loader batches the cache."""
-    from safetensors.torch import load_file
-    return {k[len("cond__"):]: v[None] for k, v in load_file(path).items() if k.startswith("cond__")}
+    from fizgig.dataset import compact_text
+    return {k[len("cond__"):]: v[None] for k, v in compact_text.load(path).items() if k.startswith("cond__")}
 
 
 def _dop_step(driver, dit, net, latents, cond, gen, *, weight, min_t, max_t, accum, swapped=False):

@@ -84,8 +84,9 @@ def save_cond(desc, item, cond, refs=""):
     md = {"architecture": desc.arch_id, "caption1": item.caption, "format_version": FORMAT_VERSION}
     if refs:
         md["reference_sizes"] = refs
-    save_file({f"cond__{k}": _clean(v, k, item.item_key) for k, v in cond.items()},
-              item.text_encoder_output_cache_path, metadata=md)
+    from fizgig.dataset import compact_text      # Krea 2: only the real tokens on disk (the padding is never read)
+    compact_text.save({f"cond__{k}": _clean(v, k, item.item_key) for k, v in cond.items()},
+                      item.text_encoder_output_cache_path, md, getattr(desc, "text_cache_trim", False))
 
 
 def save_cond_file(desc, path, caption, cond, key=""):
@@ -93,7 +94,9 @@ def save_cond_file(desc, path, caption, cond, key=""):
     item's own cache)."""
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     md = {"architecture": desc.arch_id, "caption1": caption, "format_version": FORMAT_VERSION}
-    save_file({f"cond__{k}": _clean(v, k, key) for k, v in cond.items()}, path, metadata=md)
+    from fizgig.dataset import compact_text
+    compact_text.save({f"cond__{k}": _clean(v, k, key) for k, v in cond.items()}, path, md,
+                      getattr(desc, "text_cache_trim", False))
 
 
 def cond_file_matches(path, caption):

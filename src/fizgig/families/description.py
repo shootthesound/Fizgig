@@ -709,6 +709,8 @@ class FamilyDescription:
     # the text cache's padding is dropped before every step (only the tokens its <name>__attention_mask marks are
     # used, in order), so a training share can send it trimmed to those and pad it back on the helper (Krea 2: 512
     # tokens kept, ~80 used - 31.5 MB a caption trimmed to ~5 MB)
+    # - and its text cache is written that way on disk too, padded back as it loads
+    # (dataset/compact_text.py)
     text_cache_trim: bool = False
     workbench_follows_samples: bool = False   # Repair Studio / Royale previews take the Samples tab's steps,
     #                                   CFG, negative prompt and turbo strength (else the family's fixed preview recipe)

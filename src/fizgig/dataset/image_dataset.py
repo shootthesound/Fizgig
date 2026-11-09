@@ -24,6 +24,7 @@ from safetensors.torch import save_file, load_file
 from PIL import Image
 import cv2
 
+from fizgig.dataset import compact_text
 from fizgig.dataset.masks import (SEG_AREAS, element_map, face_box, folder_names, is_mask_file, load_element,
                                   load_face, load_mask, mask_for_stem, mask_problem)
 from fizgig.utils.safetensors import mem_eff_save_file, MemoryEfficientSafeOpen
@@ -610,7 +611,7 @@ class BucketBatchManager:
             # each time, so a caption fixed mid-run (more or fewer lines) is followed from the next step
             _alts = (text_cache_alts(item_info.text_encoder_output_cache_path)
                      if getattr(item_info, "multi_caption", False) else None)
-            sd_te = load_file(random.choice([item_info.text_encoder_output_cache_path] + _alts) if _alts
+            sd_te = compact_text.load(random.choice([item_info.text_encoder_output_cache_path] + _alts) if _alts
                               else item_info.text_encoder_output_cache_path)
             if getattr(item_info, "still_only", False):
                 # the clip's still item: the cached sharpest-face frame when the cache pass

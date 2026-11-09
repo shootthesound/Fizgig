@@ -2134,6 +2134,12 @@ def _trim(src, dst):
     """A text cache file with only the tokens its masks mark, the original lengths kept to pad it back. False for a
     file with no mask (a latent)."""
     from safetensors import safe_open
+
+    from fizgig.dataset import compact_text
+    if compact_text.is_compact(src):          # already only its real tokens: sent as it is, read back as it is
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.copyfile(src, dst)
+        return True
     with safe_open(src, "pt") as f:
         keys = list(f.keys())
         masks = [k for k in keys if k.endswith("__attention_mask")]

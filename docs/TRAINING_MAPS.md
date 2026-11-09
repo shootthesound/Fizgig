@@ -47,9 +47,9 @@ The same close-up at mid noise and at high noise (the layout), where it spreads 
 
 ## Several subjects
 
-With Multi Concept or Fizgig LoRA Isolation, each subject gets at least one of the map pictures (so four subjects means four pictures), and an Isolation run also includes one of its side-by-side pictures, with two subjects in one picture.
+With Multi Concept or Fizgig LoRA Isolation, each subject gets at least one of the map pictures (so four subjects means four pictures). An Isolation run also includes one of its side-by-side pictures: your subject beside a stranger. On the Trigger word map, the trigger should land on your subject and stay off the stranger. That's a direct look at whether Isolation is keeping other people themselves.
 
-On a picture whose caption has more than one trigger word, the Trigger word map gets a row of buttons: **All triggers**, then each trigger word on its own. Pick one subject's trigger and check it lands on that subject's person, not the other one. That's a direct look at whether Isolation is keeping the subjects apart.
+On a picture whose caption names more than one subject's trigger word, the Trigger word map gets a row of buttons: **All triggers**, then each trigger word on its own. Pick one and check it lands on its own person, not the other.
 
 ## Noise levels
 

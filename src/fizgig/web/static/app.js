@@ -3049,8 +3049,8 @@ function trainMapsPanel(box, meta, run, load) {
   };
   const scale = () => scaleOf(st.kind, st.t === "all" ? "all" : st.t);
   const rgb = (name) => { const m = /(\d+)\D+(\d+)\D+(\d+)/.exec(themeColor(name)); return m ? [+m[1], +m[2], +m[3]] : [0, 0, 0]; };
-  // a picture whose caption has several subjects' triggers (Fizgig LoRA Isolation's side-by-side pictures): each
-  // trigger's map on its own, or all of them together
+  // a picture whose caption names several subjects' triggers (Multi Concept captions with two people): each trigger's
+  // map on its own, or all of them together
   const trigRow = el("span", {class: "tm-row"});
   let trigSig = null;
   const fillTrig = () => {

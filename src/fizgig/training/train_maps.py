@@ -101,10 +101,10 @@ def pick_keys(keys, n):
 
 def pick_probes(keys, n):
     """The map pictures: one from each subject first (Multi Concept / Fizgig LoRA Isolation subjects are keyed "s<n>:";
-    the training folder is the first), and one of Isolation's side-by-side pictures when the run has them (both
-    subjects in one picture: whether each trigger lands on its own person), then the rest spread evenly through the
-    sorted keys. At least one per subject, so more than n when there are more subjects. Stills only; never a
-    regularisation picture."""
+    the training folder is the first), and one of Isolation's side-by-side pictures when the run has them (the subject
+    beside a stranger: does the trigger land on the subject, not the stranger?), then the rest spread evenly through
+    the subjects' own pictures. At least one per subject, so more than n when there are more subjects. Stills only;
+    never a regularisation picture."""
     import re
     keys = sorted({str(k) for k in keys if "#" not in str(k) and not str(k).startswith("reg:")})
     groups = {}
@@ -115,7 +115,8 @@ def pick_probes(keys, n):
     if len(groups) <= 1:
         return pick_keys(keys, n)
     out = [pick_keys(groups[g], 1)[0] for g in sorted(groups, key=lambda g: (g == "composite", g))]
-    for k in pick_keys(keys, max(n, len(out)) + len(out)):
+    own = [k for k in keys if "fizgig_mp_" not in k]        # the rest from the subjects' own pictures
+    for k in pick_keys(own, max(n, len(out)) + len(out)):
         if len(out) >= max(n, len(groups)):
             break
         if k not in out:

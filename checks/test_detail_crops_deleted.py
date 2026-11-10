@@ -64,3 +64,17 @@ def test_the_captions_tab_remove_and_its_undo(tmp_path):
     dc.make(f, 0.25, log=q)
     assert dc.deleted(f, apply=False) == set()
     assert _crops(f, 0.25) == ["p0.png", "p1.png", "p2.png"]      # made again at the other size
+
+
+def test_a_too_small_picture_keeps_the_deleted_list(tmp_path):
+    # a picture smaller than the crop (it trains whole) used to reuse make()'s name for the deleted crops
+    f = _folder(tmp_path)
+    Image.fromarray(np.zeros((300, 300, 3), dtype=np.uint8)).save(os.path.join(f, "a_small.png"))
+    q = lambda *a: None                                          # noqa: E731
+    dc.make(f, 0.25, log=q)
+    os.remove(os.path.join(dc.size_dir(f, 0.25), "p1.png"))
+    dc.make(f, 0.25, log=q)
+    assert _crops(f, 0.25) == ["p0.png", "p2.png"]                # p1 stays deleted after the small picture
+    todo = dc.make(f, 0.5, log=q)
+    assert _crops(f, 0.5) == ["p0.png", "p2.png"]
+    assert not any(p.endswith("p1.png") for p in todo)

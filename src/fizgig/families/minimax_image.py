@@ -116,10 +116,12 @@ MINIMAX_IMAGE = FamilyDescription(
     # the checkpoint's own int8 ConvRot codes, or a 4-bit base (NF4, HQQ), as MiniMax H3's loader offers them
     precisions=("int8", "nf4", "hqq"),
     auto_precisions=("int8", "nf4"),
-    # From the file (10 Nov 2026, safetensors header): one block is 0.387 GB int8 (385 M matmul params), ~0.22 GB
-    # NF4; the non-block layers 1.6 GB. Peaks: TO MEASURE on a pod (STILLS.md section 4) - these are the file's
-    # weights plus MiniMax H3's measured overheads (minimax/common.py: 0.5 GB checkpointed at 0.25 MP), a placeholder.
-    train_memory={"int8": (((1.0, 23.5), (4.0, 27.0)), 0.39), "nf4": (((1.0, 13.0), (4.0, 16.5)), 0.22)},
+    # Measured 10 Nov 2026 on an RTX 5090 (docs/drivers/STILLS.md section 4): rank 8, Muon, EMA 0.98, the training
+    # adapter on, 2 epochs on 4 pictures with a 2048x2048 6-step preview after each. The preview sets the peak at every
+    # size: int8 trains at 21.0 GB (0.25 MP) / 21.7 (1 MP) and previews at 22.7; NF4 11.3 / 11.9, preview 12.8.
+    # Per swapped block: int8 0.29 GB (1 MP, 10 blocks: 18.7 train / 19.8 preview; the header's 0.387 GB of int8
+    # weights less what stays resident); NF4 from the file (0.22 GB of 4-bit weights per block) until measured.
+    train_memory={"int8": (((0.25, 22.7), (1.0, 22.7)), 0.29), "nf4": (((0.25, 12.8), (1.0, 12.8)), 0.22)},
     precision_labels={"auto": "Auto (fits your free VRAM)", "int8": "int8 · most accurate, needs ~24 GB free",
                       "nf4": "4-bit · fits smaller cards", "hqq": "4-bit HQQ · lower error than 4-bit, slower"},
     optimizers=("adamw", "adamw8bit"),

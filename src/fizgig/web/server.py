@@ -4422,6 +4422,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not where:
                     return self.json({"error": "SAM 3.1 isn't here yet: choose SAM 3.1 on this card and press "
                                                "Download first."}, 400)
+                captions.unload()                   # anything on the GPU frees the caption model first
                 try:
                     png = mask_edit.sam_click(str(b.get("folder") or ""), str(b.get("name") or ""),
                                               float(b.get("x") or 0), float(b.get("y") or 0), where)
@@ -4439,6 +4440,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not where:
                     return self.json({"error": "SAM 3.1 isn't here yet: press Download first."}, 400)
                 include, exclude = sammask.split_words(b.get("include")), sammask.split_words(b.get("exclude"))
+                captions.unload()
                 if not include:
                     return self.json({"error": "Type what the masks should show in Mask these (e.g. person)."}, 400)
                 try:
@@ -4471,11 +4473,13 @@ class Handler(BaseHTTPRequestHandler):
                                                          b.get("padding") or 20, bool(b.get("replace")),
                                                          bool(b.get("crops_only"))))
                     if path == "/api/look/scan":
+                        captions.unload()
                         return self.json(prep_jobs.look_scan(folder, b.get("baselines") or []))
                     if path == "/api/masks/edit/save":
                         from fizgig.web import mask_edit
                         return self.json(mask_edit.save(folder, str(b.get("name") or ""), str(b.get("png") or "")))
                     if path == "/api/masks/make":
+                        captions.unload()
                         sam = None
                         if b.get("sam"):
                             from fizgig.dataset import sammask
@@ -4796,6 +4800,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not name.lower().endswith(".safetensors"):
                     name += ".safetensors"
                 folder = str(b.get("out_dir") or "").strip() or default_output_dir()
+                captions.unload()                   # LoKR / LoHa sources SVD on the GPU
                 out = tools.run(desc, str(b.get("source") or "").strip(), os.path.join(folder, os.path.basename(name)),
                                 int(b.get("rank") or 4), str(b.get("preset") or ""), [str(x) for x in (b.get("blocks") or [])],
                                 identity=bool(b.get("identity")))

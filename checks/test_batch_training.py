@@ -433,3 +433,16 @@ def test_qwen_padding_to_16_matches_one_at_a_time():
         img_mask = torch.cat([torch.zeros(16, dtype=torch.bool), torch.ones(n // 4, dtype=torch.bool)])[None].to(dev)
         both = dit(x, enc, t, [[(1, h, w)]], img_mask, mask)[:, -n:]
     assert torch.allclose(one, both, atol=1e-4, rtol=1e-3), (one - both).abs().max()
+
+
+def test_a_single_item_step_in_a_batched_run_trains_alone():
+    """Batch size above 1 batches a step only when that step holds more than one item: an H3 clip or voice (always
+    a bucket of one) or a bucket's last picture takes the one-item path, not _batch_loss (H3's refuses a clip or a
+    voice, ending the run - reported by @mabseyuk)."""
+    import re
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[1] / "src" / "fizgig" / "families" / "train.py").read_text(encoding="utf-8")
+    assert re.search(r"_many = bsz > 1 and len\(batch\.get\(\"item_keys\"\)", src)
+    assert "if _many:\n                    _frozen_now = _step_freeze(driver.step_frozen_blocks(batch))\n" \
+           "                    loss, _info = _batch_loss(batch, latents)" in src
+    assert "if bsz > 1 else None" not in src and "and bsz > 1 and _wb" not in src

@@ -384,8 +384,8 @@ MOSS_IMAGE = FamilyDescription(
                      # epoch 60 (Peter, 20 Oct 2026); 60:7:30:8:3 then led it from epoch 9 (28 Oct 2026)
                      slide=tuple(_LORA_SHARE.split(":")),
                      single="40",             # one value for the whole run: 40 beat 30 (Peter, 20 Oct 2026)
-                     slide_alt=("Earlier settings, slower to train but known to work well: 60 until epoch 7, then 30 "
-                                "from epoch 8, every 3rd epoch at 30.", "60:7:30:8:3"),
+                     slide_alt=("Earlier settings, slower to train but known to work well: 30 until epoch 7, then 60 "
+                                "from epoch 8, every 3rd epoch at 30.", "30:7:60:8:3"),
                      slide_hint="Slide: one share until an epoch, then sliding a few points an epoch to another by a "
                                 "later epoch. 11 until epoch 7, then 40 from epoch 8 (the default) works best with Muon. Ticked: after "
                                 "the slide, training runs at the higher of the two shares, which keeps likeness from "

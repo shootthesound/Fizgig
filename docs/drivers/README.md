@@ -21,7 +21,7 @@ You don't edit the GUI, the trainer or the tools. If your model needs something 
 
 ## Before you start: open a Discussion
 
-Adding a model (or fine-tuning for a model Fizgig already has) starts with a post in the repo's [New models & fine-tuning](https://github.com/shootthesound/Fizgig/discussions/new?category=new-models-fine-tuning) discussions, before any code: which model, where its weights and reference implementation live, and what you plan to support. Discussions are for that only; bugs, questions and feature requests go in [Issues](https://github.com/shootthesound/Fizgig/issues). It's a prerequisite for a model pull request. It lets us agree the scope, avoids two people building the same model, and gets you answers about the driver system early.
+Adding a model (or fine-tuning for a model Fizgig already has, or a captioner: see [Adding a captioner](../ADDING_A_CAPTIONER.md)) starts with a post in the repo's [New models & fine-tuning](https://github.com/shootthesound/Fizgig/discussions/new?category=new-models-fine-tuning) discussions, before any code: which model, where its weights and reference implementation live, and what you plan to support. Discussions are for that only; bugs, questions and feature requests go in [Issues](https://github.com/shootthesound/Fizgig/issues). It's a prerequisite for a model pull request. It lets us agree the scope, avoids two people building the same model, and gets you answers about the driver system early.
 
 ## The guides
 

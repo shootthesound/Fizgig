@@ -8,11 +8,10 @@
 
 **Auto-recaption is unchanged.** During training it always uses Qwen3-VL (the Krea 2 text encoder, or Qwen3-VL 8B if you've set it in Preferences), whichever model the Captions tab uses. The new captioners never load inside a training run, so training memory and speed are exactly as before.
 
-**Adding a captioner is now like adding a model:** a description and a small class in `src/fizgig/captioners/`, and Fizgig does the rest. See [Adding a captioner](https://github.com/shootthesound/Fizgig/blob/master/docs/ADDING_A_CAPTIONER.md).
+**Adding a captioner is now like adding a model:** a description and a small class in `src/fizgig/captioners/`, and Fizgig does the rest. Start with a post in [New models & fine-tuning](https://github.com/shootthesound/Fizgig/discussions/new?category=new-models-fine-tuning), then see [Adding a captioner](https://github.com/shootthesound/Fizgig/blob/master/docs/ADDING_A_CAPTIONER.md).
 
 **Also in this release:**
 - Make masks (with SAM 3.1), the Look Consistency Filter and Extract now free the caption model's memory first, as training and Studio already did, so a smaller card doesn't run out.
-- Transparent pictures are captioned as seen on white by every captioner.
 - Detail crops follow their picture's mask. A mask you edit, add or delete updates the crops, and a picture replaced by one too small for a crop no longer leaves its old crop training. Thanks @mabseyuk.
 - Batch size above 1 on MiniMax H3: a clip or a voice trains on its own step again, instead of stopping the run. Thanks @mabseyuk.
 

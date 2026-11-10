@@ -1549,6 +1549,12 @@ def _oom_recover(kind, stage_name, plan):
     rec = history.get(rid) or {}
     tries = [t for t in (rec.get("oom") or []) if isinstance(t, dict)]
     pt = _continue_point(rec)
+    try:            # only a save this run made: an earlier run with the same name and folder leaves its own behind
+        started = float(rec.get("started_at") or 0)        # the record's first start (a Continue keeps it)
+        if pt and os.path.getmtime(pt["path"]) < started - 5:
+            pt = None
+    except (OSError, TypeError, ValueError):
+        pass
     desc = get_family(rec.get("family") or "")
     values = {k: v for k, v in (rec.get("values") or {}).items() if not str(k).startswith("__")}
     prog = rec.get("progress") or _run.get("progress") or {}

@@ -112,7 +112,9 @@ class MiniMaxH3ImageDriver(FamilyDriver):
 
     @torch.no_grad()
     def encode_text(self, te, captions):
-        return [{"hidden_states": te.encode(c)[0].detach().cpu()} for c in captions]        # (L, 5120)
+        # H3's batched encode: right padding on a causal stack, so each row equals its single encode (embedder.py
+        # encode_batch, verified to 4.5e-8); one forward per batch instead of per caption
+        return [{"hidden_states": h[0].detach().cpu()} for h in te.encode_batch(list(captions), batch_size=16)]
 
     @staticmethod
     def _vision_size(w, h):

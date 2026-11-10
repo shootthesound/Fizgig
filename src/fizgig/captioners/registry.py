@@ -23,4 +23,11 @@ CAPTIONERS = (
         key="qwen3vl", label="Qwen3-VL (Krea 2 text encoder, or the secondary captioning model)", kind="sentences",
         module="fizgig.captioners.qwen3vl:Qwen3VLCaptioner", files=PrefFile("captioner"),
         licence="Apache-2.0", vram_gb=8.0, instruction=True),
+    CaptionerDescription(
+        key="wd_eva02_large_v3", label="WD EVA02 Large v3 (booru tags)", kind="tags",
+        module="fizgig.captioners.wd_tagger:WDTagger",
+        files=HFRepo("SmilingWolf/wd-eva02-large-tagger-v3", "b25b82a03f7282e41aa2f257a52c7583b710bd1c"),
+        licence="Apache-2.0", vram_gb=2.0, size_gb=1.3,
+        hint="Booru tags (1girl, long hair, smile...) for anime and illustration: what Anima and anime SDXL "
+             "models were trained on. Downloads itself the first time (1.3 GB)."),
 )

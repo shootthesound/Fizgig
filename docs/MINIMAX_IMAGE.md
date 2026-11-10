@@ -43,12 +43,16 @@ Base precision **Auto** picks int8 (the checkpoint's own storage) when it fits, 
 | 4-bit (NF4) | 11.3 / 11.9 GB | 12.8 GB | 0.15 GB |
 | 4-bit HQQ (pick it yourself) | 17.0 GB at 1 MP | 17.3 GB | — |
 
-A 16 GB laptop trains Ultra Fast on Auto. The text encoder (Qwen3-VL-32B, shared with MiniMax H3) needs about 19 GB of free system RAM to stream onto a card under ~16 GB.
+A 16 GB laptop with 32 GB of RAM trains Ultra Fast on Auto and runs Studio (14.7 GB peak). A 12 GB card trains too (4-bit, 11.2 GB peak), but the text encoder (Qwen3-VL-32B, shared with MiniMax H3) then streams through about 19 GB of free system RAM, and Studio on a 12 GB card needs about 48 GB of RAM: the model waits in RAM while each new prompt is encoded.
 
 ## Previews
 
 - 6 steps, no CFG, Euler on the model's own schedule, 2048×2048 by default (ComfyUI's default size for this model). Negative prompts don't apply.
 - Studio renders with INT8 attention, as the checkpoint asks and as ComfyUI does: on the same LoRA, prompt and seed at 2048×2048, Studio and ComfyUI differ by a mean of 5 in 255 (27 dB PSNR). In-training previews use standard attention, which differs from ComfyUI by a mean of 10 in 255 (22 dB); judge the final look in Studio or ComfyUI.
+
+## Other trainers' LoRAs
+
+LoRAs for H3 Image made elsewhere load in Studio, LoRA Royale, the Profiler, Extract and as a Context LoRA, in kohya names (`lora_unet_blocks_…`), ComfyUI names (`diffusion_model.blocks.…`) or diffusers names (`transformer_blocks.…`, whose separate q/k/v Fizgig fuses as ComfyUI does). Tested on public files from three trainers: every module landed.
 
 ## In ComfyUI
 

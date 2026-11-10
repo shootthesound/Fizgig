@@ -887,7 +887,7 @@ def train_command(desc, inputs, plan):
         if mask_prior(desc, st) and batch_size(desc, st) <= 1:
             cmd += ["--mask_prior", f"{mask_prior(desc, st):g}"]
     if face_weight(desc, st) is not None:
-        cmd += ["--face_weight", f"{face_weight(desc, st):g}", "--face_area", "head",
+        cmd += ["--face_weight", f"{face_weight(desc, st):g}", "--face_area", "face" if str(st.get("FACE_BOOST_AREA") or "").startswith("Face only") else "head",
                 "--face_cycle", f"{FACE_CYCLE[0]}:{FACE_CYCLE[1]}", "--face_until", f"{FACE_STOP[0]}:{FACE_STOP[1]}"]
     if dop_on(desc, st) or mp_subs:
         trig, cls = dop_rules(st)
@@ -1534,6 +1534,7 @@ def mask_prior(desc, st):
 FACE_BOOST = 9.0
 FACE_CYCLE = (3, 1)
 FACE_STOP = (12, 600)
+FACE_AREAS = ("Face and hair", "Face only")   # What it covers: --face_area head / face
 
 
 def face_weight(desc, st):

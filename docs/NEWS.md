@@ -1,5 +1,13 @@
 # Fizgig news
 
+## 10 Nov 2026: JoyCaption and booru tags on the Captions tab
+
+**Two new captioners.** **JoyCaption Beta One** is an 8B model made for writing training captions: good with people (it tells men from women and isn't fooled by mirrors) and with every style. It follows the same instructions as Qwen3-VL, and offers its own caption types (Descriptive, Straightforward, Stable Diffusion prompt and more) with a Length, extra options to tick (lighting, camera angle, shot type…), and a box for your own instructions. The **WD EVA02 tagger** writes booru tags (1girl, long hair, smile…) for anime and illustration, which is what Anima and anime SDXL models were trained on (thanks @mart-hill, #313, and @axymeus, #315).
+
+**Preferences has a Captioning models card:** the main model (Krea 2's text encoder), the optional Qwen3-VL 8B, and the other captioners, each with a Download button. Each also downloads itself the first time you use it, and works offline afterwards. **Auto-recaption still uses Qwen3-VL**, and the new captioners never load in a training run, so training is unchanged.
+
+Update Fizgig on your computers; your pods follow. [Fizgig v9.5.0 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.5.0)
+
 ## 9 Nov 2026: Maps in Studio, for any LoRA
 
 **Studio draws heatmaps over its preview, for any LoRA it can load,** including ones you didn't train. Pick a map under the preview: **Where the LoRA acts** (as you've set it, against no LoRA), **What your tweaks change** (move a slider and see where it acts), **Trigger word** (where its attention goes, which on a made-up word often includes any lettering in the picture), and **Blocks** (where each group of the LoRA's blocks acts: on MOSS-Image the Identity group lights up the face, the last blocks edges and texture everywhere). It turns the Profiler's numbers into a picture, and shows which slider to pull down when a LoRA reaches into the background or clothes.

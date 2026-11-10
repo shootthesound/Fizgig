@@ -5,6 +5,20 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 
 NEWS = [
     {
+        "date": "10 Nov 2026",
+        "title": "JoyCaption and booru tags on the Captions tab",
+        "body": (
+            "Two new captioners. JoyCaption Beta One writes detailed training captions, is good with people, mirrors "
+            "and every style, and follows the same instructions as Qwen3-VL, plus its own caption types and extra "
+            "options to tick. The WD EVA02 tagger writes booru tags for anime and illustration, as Anima and anime "
+            "SDXL models were trained on.\n\n"
+            "Each downloads itself the first time you use it, or ahead from Preferences' new Captioning models card. "
+            "Auto-recaption still uses Qwen3-VL, and training is unchanged."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#10-nov-2026-joycaption-and-booru-tags-on-the-captions-tab"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.5.0"}],
+    },
+    {
         "date": "9 Nov 2026",
         "title": "Maps in Studio, for any LoRA",
         "body": (

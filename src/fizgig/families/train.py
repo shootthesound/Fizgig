@@ -2842,6 +2842,17 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             return float(ftr.fused.lr) * float(ftr.fused.scale)
         return float(learning_rate)
 
+    log_rate = [None]
+
+    def _log_rate(step):
+        """The loss log's rate for a step: read fresh, except from an optimizer that averages its rate over its
+        weights on the GPU (Automagic v3's get_avg_learning_rate - a wait for the GPU, #221): read every 20th step,
+        the last reading written in between."""
+        if (log_rate[0] is None or step % 20 == 0
+                or not callable(getattr(optimizer, "get_avg_learning_rate", None))):
+            log_rate[0] = _step_rate()
+        return log_rate[0]
+
     def _later(fn, **vals):
         """Call fn(**vals as Python numbers / lists) one step from now, without waiting for the GPU now."""
         cpu = {k: (v.detach().to("cpu", non_blocking=True) if torch.is_tensor(v) and v.is_cuda else v)
@@ -3295,7 +3306,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
 
             def _rec(lv, per=None, _e=epoch, _i=i, _g=global_step, _keys=batch.get("item_keys"), _ts=_info.get("ts"),
                      _t=_info.get("t", 0.5), _kept=(_kept if not slider and _many and _wb is not None else None),
-                     _rate=_step_rate()):
+                     _rate=_log_rate(global_step)):
                 recorder.add(epoch=_e, step=_i, loss=lv)
                 steplog.add(step_off + _g, _e + 1 + (ftr.epochs_done if ftr is not None else 0), lv, _rate,
                             automagic4_braked(optimizer) if _rate is not None else None)

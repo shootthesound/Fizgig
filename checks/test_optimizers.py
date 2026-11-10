@@ -232,7 +232,7 @@ def test_fine_tune_with_prodigy_keeps_its_rate():
 def test_trainer_composes_step_scales_into_prodigy():
     src = open(launch.__file__.replace("launch.py", "train.py"), encoding="utf-8").read()
     assert 'optimizer.__class__.__name__ in ("Automagic3", "Automagic4")' in src
-    assert "None if global_step % 20 else" in src                # the rate logged now and then, as before
+    assert "step % 20 == 0" in src and "_rate=_log_rate(global_step)" in src   # Automagic's rate read every 20th step
 
 
 def test_lr_band_check_skips_prodigy_lora():

@@ -203,6 +203,13 @@ class MiniMaxH3ImageDriver(FamilyDriver):
         if not keep:
             mid = 0.5 * (min_t + max_t)
             keep = [min(levels, key=lambda s: abs(s - mid))]
+        pct = self.options.get("lownoise_pct")      # MiniMax H3's clean-end share option: that share of the steps
+        if pct not in (None, "") and len(keep) > 1:  # at the levels below sigma 0.5, the rest spread evenly above
+            p = min(max(float(str(pct).rstrip("%")) / 100.0, 0.0), 1.0)
+            lo, hi = [s for s in keep if s < 0.5], [s for s in keep if s >= 0.5]
+            if lo and hi:
+                w = torch.tensor([p / len(lo) if s < 0.5 else (1.0 - p) / len(hi) for s in keep])
+                return float(keep[int(torch.multinomial(w, 1, generator=generator))])
         return float(keep[int(torch.randint(len(keep), (1,), generator=generator))])
 
     def _noised(self, latents, generator, min_t, max_t):

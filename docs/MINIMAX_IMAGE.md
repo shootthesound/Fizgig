@@ -6,8 +6,6 @@ MiniMax H3 Image is MiniMax's picture model from the H3 family, released 3 Novem
 
 Fizgig trains LoRAs, LoKRs, edit LoRAs and slider LoRAs on it, with masked training, Multi Concept, DOP and Fizgig LoRA Isolation. Every workbench tool works with it: Studio with Reuse unchanged blocks, LoRA Royale with seed and prompt travel, the Profiler and Extract. Saved LoRAs load in ComfyUI's standard LoRA loader.
 
-> **Status:** the family is being built (branch `h3-image`); this guide fills in as each part is measured.
-
 ## Getting set up
 
 Pick **MiniMax H3 Image** on the Training tab, then press **Download models for me** in Preferences. None of the files are gated.

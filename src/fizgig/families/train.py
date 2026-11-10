@@ -3295,8 +3295,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
 
             def _rec(lv, per=None, _e=epoch, _i=i, _g=global_step, _keys=batch.get("item_keys"), _ts=_info.get("ts"),
                      _t=_info.get("t", 0.5), _kept=(_kept if not slider and _many and _wb is not None else None),
-                     _rate=(None if global_step % 20 else      # the rate now and then (Automagic's averages it)
-                            _step_rate())):
+                     _rate=_step_rate()):
                 recorder.add(epoch=_e, step=_i, loss=lv)
                 steplog.add(step_off + _g, _e + 1 + (ftr.epochs_done if ftr is not None else 0), lv, _rate,
                             automagic4_braked(optimizer) if _rate is not None else None)

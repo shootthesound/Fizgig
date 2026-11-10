@@ -1122,7 +1122,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  ft_epochs_done=0, ft_fused_backward=False, reg_lr_multiplier=0.2, preview_checkpoint=None,
                  preview_checkpoint_cache="auto", preview_int8=False, family_options=None,
                  dop=False, dop_trigger=None, dop_class="", dop_weight=1.0, dop_every=1, dop_ft_samples=8,
-                 lr_boost=None, share_worker=None, masked_training=False, mask_floor=0.1, mask_prior=0.0, face_weight=1.0, face_area="face", face_cycle="1:0",
+                 lr_boost=None, share_worker=None, masked_training=False, mask_floor=0.1, mask_prior=0.0, face_weight=1.0, face_area="face", face_cycle="1:0", face_until="0:0",
                  caption_dropout=0.0, stage_dataset_config=None, stage_until=0.3, stage_blend=0.1,
                  batch_size_auto=False):
     desc = get_family(family)
@@ -1248,7 +1248,11 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     # ---- data ------------------------------------------------------------------------------------
     shared_epoch = Value("i", 0)
     # the face's own loss weight (the face detector's oval): anything but 1 (0 = the face not at all); stills only
-    face_phase = {"on": True}              # Boost the face's cycle: this epoch boosted? (set per epoch)
+    face_phase = {"on": True, "epoch": 0, "ended": False}   # Boost the face's cycle: this epoch boosted? (per epoch)
+    try:                                   # --face_until E:S - the boost ends after epoch E or step S, whichever is
+        _face_end = tuple(max(0, int(x)) for x in (str(face_until or "0:0").split(":") + ["0"])[:2])   # sooner; 0 = none
+    except ValueError:
+        raise RuntimeError(f"--face_until {face_until!r}: give it as EPOCH:STEP, e.g. 12:600 (0 = no limit)") from None
     try:                                   # --face_cycle N:M - N boosted epochs, then M normal ones
         _face_cyc = tuple(max(0, int(x)) for x in str(face_cycle or "1:0").split(":")[:2])
         _face_cyc = (max(1, _face_cyc[0]), _face_cyc[1] if len(_face_cyc) > 1 else 0)
@@ -1350,6 +1354,13 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         """The step's per-cell loss weights (masked training), or None: a picture without a mask trains as normal."""
         m = batch.get("loss_mask") if masked_training else None
         f = batch.get("face_weight") if face_on and face_phase["on"] else None
+        if f is not None and not face_phase["ended"] and ((_face_end[0] and face_phase["epoch"] >= _face_end[0])
+                                                         or (_face_end[1] and global_step >= _face_end[1])):
+            face_phase["ended"] = True       # its limit: from here on the run trains as if it were off
+            logger.info(f"[face boost] ends at step {global_step} (epoch {face_phase['epoch'] + 1}): the rest of the "
+                        f"run trains without it")
+        if face_phase["ended"]:
+            f = None
         if m is None and f is None:
             return None
         from fizgig.dataset.masks import mask_weight
@@ -2061,6 +2072,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             md["ss_face_weight"] = f"{float(face_weight):g}"
             md["ss_face_area"] = "head" if face_area == "head" else "face"
             md["ss_face_cycle"] = f"{_face_cyc[0]}:{_face_cyc[1]}"
+            if any(_face_end):
+                md["ss_face_until"] = f"{_face_end[0]}:{_face_end[1]}"
         md.update(driver.run_metadata())
         return md
 
@@ -2724,8 +2737,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 logger.info("[maps] training maps: no picture could be read from the cache - off for this run")
                 maps = None
     for epoch in (_worker_epochs() if share_worker else range(start_epoch, max_train_epochs)):
-        if face_on and _face_cyc[1] > 0:     # Boost the face on N epochs, then M normal ones, repeating from epoch 1
-            face_phase["on"] = epoch % (_face_cyc[0] + _face_cyc[1]) < _face_cyc[0]
+        face_phase["epoch"] = epoch
+        if face_on and _face_cyc[1] > 0 and not face_phase["ended"]:   # Boost the face on N epochs, then M normal
+            face_phase["on"] = epoch % (_face_cyc[0] + _face_cyc[1]) < _face_cyc[0]   # ones, repeating from epoch 1
             logger.info(f"[face boost] epoch {epoch + 1}: " + ("boosted" if face_phase["on"] else "normal (no boost)"))
         shared_epoch.value = epoch + 1
         driver.begin_epoch(epoch + 1 + (ftr.epochs_done if ftr is not None else 0))   # a continued fine-tune counts on
@@ -3277,6 +3291,9 @@ def setup_parser():
     p.add_argument("--face_cycle", default="1:0",
                    help="--face_weight on N epochs then off M, repeating from epoch 1 (N:M; the off ones train as if "
                         "it were off): 1:1 = every 2nd epoch, 2:1 = two boosted then one normal, 1:0 = every epoch")
+    p.add_argument("--face_until", default="0:0",
+                   help="--face_weight ends after epoch E or step S, whichever comes first (E:S, 0 = no limit; it "
+                        "can stop mid-epoch): 12:600 = the first 12 epochs or 600 steps")
     p.add_argument("--face_area", choices=("face", "head"), default="face",
                    help="--face_weight's area: the face, or the head (face and hair; a mask trims it to the person)")
     p.add_argument("--mask_prior", type=float, default=0.0,
@@ -3351,7 +3368,7 @@ def main():
         dop_ft_samples=a.dop_ft_samples,
         lr_boost=[(x.split("=", 1)[0], float(x.split("=", 1)[1])) for x in a.lr_boost if "=" in x] or None,
         share_worker=a.share_worker, masked_training=a.masked_training, mask_floor=a.mask_floor,
-        mask_prior=a.mask_prior, face_weight=a.face_weight, face_area=a.face_area, face_cycle=a.face_cycle, caption_dropout=a.caption_dropout, stage_dataset_config=a.stage_dataset_config,
+        mask_prior=a.mask_prior, face_weight=a.face_weight, face_area=a.face_area, face_cycle=a.face_cycle, face_until=a.face_until, caption_dropout=a.caption_dropout, stage_dataset_config=a.stage_dataset_config,
         stage_until=a.stage_until, stage_blend=a.stage_blend)
 
 

@@ -890,10 +890,12 @@ def train_command(desc, inputs, plan):
         cmd += ["--face_weight", f"{face_weight(desc, st):g}"]
         if str(st.get("FACE_BOOST_AREA") or "Head").startswith("Head"):
             cmd += ["--face_area", "head"]
-        pick = str(st.get("FACE_BOOST_EVERY") or FACE_EVERY[1])
+        pick = str(st.get("FACE_BOOST_EVERY") or FACE_EVERY[3])
         on, off = next(((a, b) for lab, a, b in FACE_CYCLES if lab == pick), (1, 1))
         if off:
             cmd += ["--face_cycle", f"{on}:{off}"]
+        if not str(st.get("FACE_BOOST_UNTIL") or FACE_UNTIL[1]).startswith(FACE_UNTIL[0]):
+            cmd += ["--face_until", f"{FACE_STOP[0]}:{FACE_STOP[1]}"]
     if dop_on(desc, st) or mp_subs:
         trig, cls = dop_rules(st)
         if mp_subs:          # the captions are read fused: DOP swaps "zwxemwoman" for "a woman"
@@ -1538,6 +1540,9 @@ FACE_AREAS = ("Face", "Head (face and hair)")   # Boost the face's area: the Tra
 # when it's on: (label, boosted epochs, normal epochs) repeating from epoch 1; the normal ones train as if it were off
 FACE_CYCLES = (("Every epoch", 1, 0), ("Every 2nd epoch", 1, 1), ("2 boosted, 1 normal", 2, 1), ("3 boosted, 1 normal", 3, 1))
 FACE_EVERY = tuple(c[0] for c in FACE_CYCLES)
+# Boost the face only early on: it ends after epoch 12 or step 600, whichever comes first (Peter, 10 Nov 2026)
+FACE_STOP = (12, 600)
+FACE_UNTIL = ("The whole run", f"The first {FACE_STOP[0]} epochs or {FACE_STOP[1]} steps, whichever is sooner")
 # the face's loss weight by default with Boost the face ticked (an experiment): Head x9 every 2nd epoch led the
 # 10 Nov pixie runs' epoch-50 likeness (x9 every epoch starved the body: Peter, 10 Nov 2026)
 FACE_BOOST = 9.0

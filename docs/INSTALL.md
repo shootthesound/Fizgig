@@ -81,15 +81,15 @@ Install a full **Python 3.12** first: the ROCm bitsandbytes wheel is cp312-only,
 - **Recommended** — [Python Install Manager](https://www.python.org/downloads/latest/pymanager) from the [Microsoft Store](https://apps.microsoft.com/detail/9NQ7512CXL7T), then `py install 3.12`.
 - **Alternative** — [python-3.12.10-amd64.exe](https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe); tick **Add python.exe to PATH** and **tcl/tk and IDLE**.
 
-Then double-click `install_fizgig_rocm.bat` (NVIDIA users never run this). It picks 3.12 via `py -3.12` / `python3.12`, not whatever `python` defaults to (e.g. 3.14). It detects the GPU, then installs pinned multi-arch wheels from **AMD ROCm nightlies** (`https://rocm.nightlies.amd.com/whl-multi-arch/`, not built by Fizgig):
+Then double-click `install_fizgig_rocm.bat` (NVIDIA users never run this). It picks 3.12 via `py -3.12` / `python3.12`, not whatever `python` defaults to (e.g. 3.14). It detects the GPU, then installs pinned multi-arch wheels from **AMD's stable index** (`https://stable.repo.amd.com/rocm/whl-next/`, not built by Fizgig):
 
-- `torch==2.12.0+rocm7.15.0a20260728`
-- `torchvision==0.27.0+rocm7.15.0a20260728`
-- `rocm-sdk-devel==7.15.0a20260728`
+- `torch[device-ARCH]==2.14.0+rocm10.1.0`
+- `torchvision[device-ARCH]==0.29.0a0+rocm10.1.0`
+- `rocm-sdk-devel==10.1.0`
 
-Override with `TORCH_PIN` / `TORCHVISION_PIN` / `ROCM_SDK_DEVEL_PIN` if needed. **bitsandbytes** is a pinned community Windows ROCm wheel from [0xDELUXA/bitsandbytes_win_rocm](https://github.com/0xDELUXA/bitsandbytes_win_rocm), built by neither AMD nor Fizgig. Shared deps come from `requirements.txt` with CUDA `torch`/`bitsandbytes` and NVIDIA-only `nvidia-ml-py` filtered out (`filter_requirements_rocm.py`). Launch with `Launch Fizgig AMD.bat`; update with `update_fizgig_rocm.bat` — **not** `update_fizgig.bat`, which installs CUDA torch and would wipe the ROCm stack.
+Same stable pin as Linux (a step down from floating 2.15 nightlies). Override with `TORCH_PIN` / `TORCHVISION_PIN` / `ROCM_SDK_DEVEL_PIN` if needed. **bitsandbytes** stays a pinned community Windows ROCm wheel from [0xDELUXA/bitsandbytes_win_rocm](https://github.com/0xDELUXA/bitsandbytes_win_rocm), built by neither AMD nor Fizgig; when its ROCm DLL set does not match the torch stack, `write_rocm_env.py` falls back as before. Shared deps come from `requirements.txt` with CUDA `torch`/`bitsandbytes` and NVIDIA-only `nvidia-ml-py` filtered out (`filter_requirements_rocm.py`). Launch with `Launch Fizgig AMD.bat`; update with `update_fizgig_rocm.bat` — **not** `update_fizgig.bat`, which installs CUDA torch and would wipe the ROCm stack.
 
-**`--experimental` (unsupported):** `install_fizgig_rocm.bat --experimental` installs unpinned `torch[device-ARCH]` / `torchvision[device-ARCH]` / `rocm-sdk-devel` from AMD's **whl-next** nightlies (`https://nightly.repo.amd.com/rocm/whl-next/`, the index comfyui-rocm uses for floating installs; the pinned TORCH_PIN wheels are not on it) and leaves `BNB_ROCM_VERSION` unset so bitsandbytes auto-selects its highest matching DLL. It is **not** the same as Linux `ROCM_CHANNEL=nightly` (which stays on the constrained 7.14 / bitsandbytes 714 lane), and not the default Windows multi-arch pin index. Local experimentation only. **Do not open GitHub issues for crashes, install failures, or training problems when `--experimental` was used** — those reports are not supported. Use the pinned install (no flag) for anything you expect help with.
+**`--experimental` (unsupported):** `install_fizgig_rocm.bat --experimental` installs the same floating packages from AMD's **nightly** whl-next (`https://nightly.repo.amd.com/rocm/whl-next/`) and leaves `BNB_ROCM_VERSION` unset so bitsandbytes auto-selects its highest matching DLL. Same idea as Linux `ROCM_CHANNEL=nightly`. Local experimentation only. **Do not open GitHub issues for crashes, install failures, or training problems when `--experimental` was used** — those reports are not supported. Use the default stable install (no flag) for anything you expect help with.
 
 ### Linux (AMD ROCm — highly experimental)
 
@@ -101,21 +101,12 @@ chmod +x install_fizgig_rocm.sh
 ./launch_fizgig_amd.sh
 ```
 
-The script detects your gfx target (`detect_gpu_linux.py`). **Nightly is the Linux default**: the [TheRock multi-arch RELEASES.md](https://github.com/ROCm/TheRock/blob/main/RELEASES.md) index plus a `[device-gfx*]` extra for your GPU (e.g. `gfx1201` → `device-gfx1201`). Unpinned nightly resolves the latest **torch 2.12** + **ROCm 7.14.0a\*** stack (matches `libbitsandbytes_rocm714.so`). Override with `TORCH_PIN=…`, `ROCM_META_PIN=…`, or `TORCH_NIGHTLY_MINOR=…`.
+The script detects your gfx target (`detect_gpu_linux.py`). **Stable is the Linux default**: AMD's [stable whl-next](https://stable.repo.amd.com/rocm/whl-next/) index plus a `[device-gfx*]` extra for your GPU (e.g. `gfx1201` → `device-gfx1201`), pinned to **`torch==2.14.0+rocm10.1.0`** / **`torchvision==0.29.0a0+rocm10.1.0`** / **`rocm-sdk-devel==10.1.0`**. Override with `TORCH_PIN=…`, `TORCHVISION_PIN=…`, or `ROCM_SDK_PIN=…`.
 
-**Stable** (repo.amd.com, no nightly alphas) pins **`torch==2.12.0+rocm7.14.0`** + **`rocm-sdk==7.14.0`** (cp310–cp314):
-
-```bash
-ROCM_CHANNEL=stable ./install_fizgig_rocm.sh
-```
-
-**torch 2.14** is nightly-only and can increase sampling VRAM pressure compared with 2.12:
+**Nightly** (unsupported floating builds from `https://nightly.repo.amd.com/rocm/whl-next/`):
 
 ```bash
-ROCM_CHANNEL=nightly TORCH_NIGHTLY_MINOR=2.14 ./install_fizgig_rocm.sh
-# or an explicit pin, e.g.:
-# TORCH_PIN=2.14.0a0+rocm7.14.0a20260625 ROCM_CHANNEL=nightly ./install_fizgig_rocm.sh
-# (paired torchvision ~0.29.0a0+rocm7.14.0a… — installer resolves the match)
+ROCM_CHANNEL=nightly ./install_fizgig_rocm.sh
 ```
 
 The installer then adds shared deps from `requirements.txt` (filtered) and `bitsandbytes>=0.50.0` for ROCm.

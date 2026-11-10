@@ -21,8 +21,8 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).parent.resolve()
 OUT_BAT = SCRIPT_DIR / "user_data" / "rocm_env.bat"
 OUT_SH = SCRIPT_DIR / "user_data" / "rocm_env.sh"
-DEFAULT_BNB_LINUX = "714"  # libbitsandbytes_rocm714.so - matches stable repo.amd.com torch
-DEFAULT_BNB_WIN = "715"  # Windows 0xDELUXA wheel / pinned multi-arch torch (+rocm7.15)
+DEFAULT_BNB_LINUX = "714"  # fallback when probed ROCm has no matching libbitsandbytes_rocm*.so
+DEFAULT_BNB_WIN = "715"  # Windows 0xDELUXA wheel fallback when probed ROCm has no matching DLL
 
 
 def _bnb_lib_ext() -> str:

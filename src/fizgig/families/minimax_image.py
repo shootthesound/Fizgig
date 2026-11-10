@@ -143,6 +143,8 @@ MINIMAX_IMAGE = FamilyDescription(
     # ComfyUI renders with it. Measured 10 Nov 2026 (RTX PRO 6000, 2048 px, 6 steps): Studio vs ComfyUI 27.4 dB with
     # it, 21.8 dB without; no faster (7.32 s vs 7.43 s).
     int8_attention=True,
+    # Studio's Auto precision from train_memory (the file is int8 already; the shared rule sizes it as bf16)
+    workbench_engine="fizgig.minimax_image.workbench:MiniMaxH3ImageWorkbenchEngine",
     activation_cache=True,            # Reuse unchanged blocks: step-1 replay, identical to a full render
     # compile: not switched on - MiniMax H3's DiT has never been measured compiled (its int8 ConvRot Linears); to measure
     finetune=True,                    # MiniMax H3's rotation fine-tune on the int8 file (driver: H3's ft_* methods)

@@ -46,6 +46,8 @@ ROW_GROUPS = (
     ("length", "Length", ("MAX_TRAIN_EPOCHS", "SEED")),
     ("size", "Picture size", ("DATASET_MEGAPIXELS", "CLIP_MEGAPIXELS", "STAGE_MP", "STAGE_UNTIL")),
     ("context", "Context LoRA", ("CONTEXT_LORA_PATH", "CONTEXT_LORA_STRENGTH")),
+    ("faceboost", "Boost the face (experimental)", ("FACE_BOOST", "FACE_BOOST_AREA", "FACE_BOOST_EVERY",
+                                                    "FACE_BOOST_WEIGHT")),
 )
 STAGE_MPS = ("Off", "0.25", "0.37", "0.5", "0.75")
 STAGE_UNTILS = ("20%", "30%", "50%")
@@ -490,7 +492,7 @@ def form(desc):
                  "model's look stay its own. The higher the number, the firmer.\n"
                  "Speed: each step takes up to about half as long again.",
                  launch.MASK_PRIORS, hint_labels=True),                 # one spaced line per choice, name in bold
-            _row("FACE_BOOST", "Boost the face (experimental)", "check",
+            _row("FACE_BOOST", "On", "check",
                  "Each picture's face counts more than the rest (by the number below), so likeness learns faster "
                  "when faces are small in the frame (medium and full-length shots) - or, set below 1, less, to "
                  "learn the rest of the person without the face. Works with or without masks. Pictures with no "

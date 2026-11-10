@@ -369,9 +369,9 @@ def form(desc):
             _row("KREA2_AUTO_RECAPTION", "Auto-recaption stuck images (Qwen3-VL rewrites the caption between "
                  "epochs)", "check", "A stuck image gets a new caption written from what is in it, and a fresh start; "
                  "a second try goes into more detail. Still stuck after that, it is left out of training - edit its "
-                 "caption to bring it back. Always Qwen3-VL - the Krea 2 text encoder, or the Qwen3-VL 8B when it's "
-                 "set as the secondary captioning model in Preferences - whichever model the Captions tab uses: it "
-                 "runs inside the training run, and only Qwen3-VL fits there."),
+                 "caption to bring it back. The new captions are written by Qwen3-VL: the Krea 2 text encoder, or "
+                 "Qwen3-VL 8B if you've set it as the secondary captioning model in Preferences. The other model on "
+                 "the Captions tab, Florence-2, isn't used for auto-recaption."),
             _row("RECAPTION_FIRST", "First try uses", "choice",
                  "The Captions tab's instruction for that task, as you've edited it there. The defaults are the "
                  "person or character versions: for an object or product, pick the (object or product) Training "

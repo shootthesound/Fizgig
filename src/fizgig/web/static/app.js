@@ -119,7 +119,12 @@ async function boot() {
   podLocalInit();                                             // in the app window on a pod: this computer's folders
   welcomeShow(pr);
   pollRun(); pollStats(); followLog();
-  setInterval(pollRun, 2000); setInterval(pollStats, 2000); setInterval(loadGallery, 15000);
+  setInterval(pollRun, 2000); setInterval(pollStats, 2000); setInterval(galleryRefresh, 15000);
+  // F5 / Ctrl+R reload the page in the app window as in a browser (the window has no reload of its own)
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "r")) {
+      e.preventDefault(); location.reload(); }
+  });
   setInterval(loadCheckpoints, 15000);
 }
 
@@ -2344,6 +2349,18 @@ function previewGrid(items, prompts, eager) {
     top.hidden = table.scrollWidth <= wrap.clientWidth;
   }).observe(table);
   return el("div", {}, top, wrap);
+}
+
+// the 15 s refresh: a refresh that fails says so under the previews (and in the console) instead of leaving the
+// gallery silently frozen at its last good draw - an app-window gallery once stopped at epoch 36 with no clue why
+async function galleryRefresh() {
+  try {
+    await loadGallery();
+    $("galleryError").textContent = "";
+  } catch (e) {
+    console.error("[gallery] refresh failed", e);
+    $("galleryError").textContent = `Previews couldn't refresh: ${e && e.message || e}. Press F5 to reload the page.`;
+  }
 }
 
 async function loadGallery() {

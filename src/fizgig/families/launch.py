@@ -886,7 +886,7 @@ def train_command(desc, inputs, plan):
         cmd += ["--masked_training", "--mask_floor", f"{mask_floor(st):g}"]
         if mask_prior(desc, st) and batch_size(desc, st) <= 1:
             cmd += ["--mask_prior", f"{mask_prior(desc, st):g}"]
-    if face_weight(desc, st):
+    if face_weight(desc, st) is not None:
         cmd += ["--face_weight", f"{face_weight(desc, st):g}"]
     if dop_on(desc, st) or mp_subs:
         trig, cls = dop_rules(st)
@@ -1533,14 +1533,17 @@ FACE_BOOST = 2.0        # the face's loss weight by default with Boost the face 
 
 def face_weight(desc, st):
     """Boost the face: each picture's face (the face detector's largest) counts this many times as much in the loss,
-    on top of any mask; 0 when off. Stills of a family with masked training, not a prompt slider (no photos)."""
+    on top of any mask - 0 to 10, 0 = the face not at all (the LoRA learns the rest). None when off (unticked, or 1).
+    Stills of a family with masked training, not a prompt slider (no photos)."""
     if not (st.get("FACE_BOOST") and desc.masked_training) or slider_on(desc, st, "prompts"):
-        return 0.0
+        return None
+    raw = str(st.get("FACE_BOOST_WEIGHT") if st.get("FACE_BOOST_WEIGHT") not in (None, "") else FACE_BOOST)
     try:
-        v = float(str(st.get("FACE_BOOST_WEIGHT") or FACE_BOOST).split()[0])
-    except ValueError:
+        v = float(raw.split()[0])
+    except (ValueError, IndexError):
         v = FACE_BOOST
-    return min(10.0, v) if v > 1.0 else 0.0          # 1 or less: no boost
+    v = min(10.0, max(0.0, v))
+    return None if v == 1.0 else v                    # 1: the face counts as the rest, nothing to do
 
 
 def mask_folders(desc, st):

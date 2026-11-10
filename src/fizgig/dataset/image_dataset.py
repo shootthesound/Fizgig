@@ -900,9 +900,9 @@ class ImageDataset(torch.utils.data.Dataset):
     # on its latent's grid as `loss_mask` in the batch. Set on the CLASS by the trainer before the dataset group is
     # generated, like clip_still_as_photo.
     loss_masks: bool = False
-    # Boost the face (an experiment): > 0 gives each still's largest face (masks.face_box) as `face_weight` in the
+    # Boost the face (an experiment): anything but 1 gives each still's largest face (masks.face_box) as `face_weight` in the
     # batch, a soft oval on its latent's grid; the trainer multiplies it into the loss weights. Set on the CLASS.
-    face_boost: float = 0.0
+    face_boost: float = 1.0
 
     def __init__(
         self,
@@ -1400,7 +1400,7 @@ class ImageDataset(torch.utils.data.Dataset):
                         misfit_masks.append(f"{os.path.basename(item_info.mask_path)} ({_why})")
                         item_info.mask_path = None              # its picture trains unmasked, and the log says so
                 masked_items += bool(item_info.mask_path)
-            if self.face_boost and self.image_directory and bucket_key == bucket_reso \
+            if self.face_boost != 1.0 and self.image_directory and bucket_key == bucket_reso \
                     and self.latent_cache_frames(cache_file) <= 1:          # Boost the face: stills only
                 if _pic_names is None:
                     _pic_names = folder_names(self.image_directory)
@@ -1456,7 +1456,7 @@ class ImageDataset(torch.utils.data.Dataset):
                     f"[dataset] {still_frame0_fallback} clip(s) were cached without a picked "
                     f"still — their frame 0 is used instead. Re-run caching with the tick on "
                     f"(or flush the cache) to pick sharp frames for them.")
-        if self.face_boost:
+        if self.face_boost != 1.0:
             logger.info(f"[face boost] {face_items} picture(s) in {self.image_directory} have a face found: it counts "
                         f"x{self.face_boost:g} in the loss; the rest train as normal")
         if self.loss_masks:

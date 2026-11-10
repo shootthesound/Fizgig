@@ -491,10 +491,13 @@ def form(desc):
                  launch.MASK_PRIORS, hint_labels=True),                 # one spaced line per choice, name in bold
             _row("FACE_BOOST", "Boost the face (experimental)", "check",
                  "Each picture's face counts more than the rest (by the number below), so likeness learns faster "
-                 "when faces are small in the frame (medium and full-length shots). Works with or without masks. "
-                 "Pictures with no face found train as normal."),
-            _row("FACE_BOOST_WEIGHT", "How much more the face counts", "entry",
-                 "2 = twice as much as the rest of the picture. 1 = no boost.", suffix="x"),
+                 "when faces are small in the frame (medium and full-length shots) - or, set below 1, less, to "
+                 "learn the rest of the person without the face. Works with or without masks. Pictures with no "
+                 "face found train as normal."),
+            _row("FACE_BOOST_WEIGHT", "How much the face counts", "entry",
+                 "2 = twice as much as the rest of the picture. 1 = the same. 0 = not at all: the LoRA learns the "
+                 "hair, body and outfit, not the face (with Outside the mask, keep the model's own picture on, the "
+                 "face stays the model's own).", suffix="x"),
         ])
     add("subjects", "Subjects", "training", subjects,
         help={"href": VIDEO, "text": "How to set up Fizgig LoRA Isolation",

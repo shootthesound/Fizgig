@@ -1122,7 +1122,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  ft_epochs_done=0, ft_fused_backward=False, reg_lr_multiplier=0.2, preview_checkpoint=None,
                  preview_checkpoint_cache="auto", preview_int8=False, family_options=None,
                  dop=False, dop_trigger=None, dop_class="", dop_weight=1.0, dop_every=1, dop_ft_samples=8,
-                 lr_boost=None, share_worker=None, masked_training=False, mask_floor=0.1, mask_prior=0.0, face_weight=0.0,
+                 lr_boost=None, share_worker=None, masked_training=False, mask_floor=0.1, mask_prior=0.0, face_weight=1.0,
                  caption_dropout=0.0, stage_dataset_config=None, stage_until=0.3, stage_blend=0.1,
                  batch_size_auto=False):
     desc = get_family(family)
@@ -1247,6 +1247,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
 
     # ---- data ------------------------------------------------------------------------------------
     shared_epoch = Value("i", 0)
+    # the face's own loss weight (the face detector's oval): anything but 1 (0 = the face not at all); stills only
+    face_on = (face_weight is not None and float(face_weight) >= 0.0 and float(face_weight) != 1.0
+               and not slider_prompts and desc.masked_training)
     if slider_prompts:
         user_config = {"general": {"resolution": [slider_bank_res, slider_bank_res]}}
         group = _SliderBank([None] * max(1, int(slider_bank)))    # filled once the DiT is loaded
@@ -1267,7 +1270,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 raise RuntimeError(f"{desc.display_name} has no masked training - drop --masked_training")
             from fizgig.dataset.image_dataset import ImageDataset
             ImageDataset.loss_masks = True      # each still with a photo-masklabel.png gets its mask (dataset/masks.py)
-        if face_weight and face_weight > 1.0 and desc.masked_training:
+        if face_on:
             from fizgig.dataset.image_dataset import ImageDataset
             ImageDataset.face_boost = float(face_weight)     # each still's largest face as an oval (Boost the face)
         group = generate_dataset_group_by_blueprint(blueprint.dataset_group, training=True,
@@ -1339,12 +1342,12 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     def _loss_mask(batch):
         """The step's per-cell loss weights (masked training), or None: a picture without a mask trains as normal."""
         m = batch.get("loss_mask") if masked_training else None
-        f = batch.get("face_weight") if face_weight and face_weight > 1.0 else None
+        f = batch.get("face_weight") if face_on else None
         if m is None and f is None:
             return None
         from fizgig.dataset.masks import mask_weight
         w = mask_weight(m.to(device).float(), mask_floor) if m is not None else None
-        if f is not None:                    # Boost the face: x face_weight over the face oval, on top of the mask
+        if f is not None:                    # the face: x face_weight over its oval (0 = not at all), on top of the mask
             f = 1.0 + (float(face_weight) - 1.0) * f.to(device).float()
             w = f if w is None else w * f
         return w
@@ -2047,7 +2050,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                        "ss_masked_images": str(masked_images)})
             if mask_prior:
                 md["ss_mask_prior"] = f"{mask_prior:g}"
-        if face_weight and face_weight > 1.0:
+        if face_on:
             md["ss_face_weight"] = f"{float(face_weight):g}"
         md.update(driver.run_metadata())
         return md
@@ -3256,9 +3259,9 @@ def setup_parser():
                         "fully, grey partly, black at --mask_floor; pictures without a mask train as normal")
     p.add_argument("--mask_floor", type=float, default=0.1,
                    help="masked training: how much outside the mask counts (0 = nothing, 1 = as much as inside)")
-    p.add_argument("--face_weight", type=float, default=0.0,
+    p.add_argument("--face_weight", type=float, default=1.0,
                    help="Boost the face (an experiment): each still's largest face counts this many times as much in "
-                        "the loss (a soft oval from the face detector), on top of any mask; 0 or 1 = off")
+                        "the loss (a soft oval from the face detector), on top of any mask; 1 = off, 0 = the face not at all")
     p.add_argument("--mask_prior", type=float, default=0.0,
                    help="masked training: outside the mask, keep the LoRA to the model's own prediction (LoRA at 0) "
                         "at this weight (OneTrainer's masked prior preservation; 0 = off; one extra forward a step)")

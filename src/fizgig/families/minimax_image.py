@@ -71,6 +71,8 @@ MINIMAX_IMAGE = FamilyDescription(
                        "into caricatures."),
     ),
     text_encoder_label="Qwen3-VL-32B",
+    licence_link=("MiniMax-H3-Image Community License",
+                  "https://huggingface.co/MiniMaxAI/MiniMax-H3-Image/blob/main/LICENSE"),
     vae_label="MiniMax H3 Image VAE",
 
     latent_channels=24,               # vae/config.json latent_channels

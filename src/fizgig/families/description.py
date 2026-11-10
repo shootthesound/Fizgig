@@ -373,6 +373,9 @@ class FamilyDescription:
     prefs_note: str = ""
     fetch_note: str = ""
     fetch_optional_label: str = ""
+    # (label, url): one small link under the family's Download button in Preferences, opening the model's licence in a
+    # new tab. A link only - the licence's text and terms live in the family's guide (docs/drivers/CHECKLIST.md)
+    licence_link: tuple = ()
     # the "new model files" popup's opening line (the files themselves: ModelFile.announce)
     announce_intro: str = ""
 

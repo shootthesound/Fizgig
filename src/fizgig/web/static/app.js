@@ -1227,6 +1227,9 @@ function fetchRow(f) {
   for (const p of picks) line.append(el("label", {class: "fetch-opt"}, p.label + ": ", p.sel));
   if (opt) line.append(el("label", {class: "fetch-opt"}, opt, " " + f.fetch_optional_label));
   box.append(line);
+  if ((f.licence_link || []).length === 2)       // the model's licence, a link only (description.licence_link)
+    box.append(el("div", {class: "field-hint licence-link"},
+      el("a", {target: "_blank", rel: "noopener", href: f.licence_link[1], text: f.licence_link[0]})));
   if (token) {
     const seen = new Set();
     const links = gated.filter((m) => !seen.has(m.repo) && seen.add(m.repo)).map((m) =>

@@ -24,6 +24,15 @@ CAPTIONERS = (
         module="fizgig.captioners.qwen3vl:Qwen3VLCaptioner", files=PrefFile("captioner"),
         licence="Apache-2.0", vram_gb=8.0, instruction=True),
     CaptionerDescription(
+        key="joycaption_beta_one", label="JoyCaption Beta One", kind="sentences",
+        module="fizgig.captioners.joycaption:JoyCaption",
+        files=HFRepo("fancyfeast/llama-joycaption-beta-one-hf-llava", "ebf414ea497a020da0f82df3913e5b6cb8e9663a"),
+        licence="Llama 3.1 Community License", vram_gb=8.0, size_gb=16.1, instruction=True,
+        precisions=(("bf16", 19.0), ("nf4", 8.0)),
+        hint="An 8B captioner made for training captions: good with people (gender, mirrors and reflections) and "
+             "every style. Follows the same instructions as Qwen3-VL. Downloads itself the first time (16 GB); "
+             "runs in 4-bit on cards under about 19 GB free."),
+    CaptionerDescription(
         key="wd_eva02_large_v3", label="WD EVA02 Large v3 (booru tags)", kind="tags",
         module="fizgig.captioners.wd_tagger:WDTagger",
         files=HFRepo("SmilingWolf/wd-eva02-large-tagger-v3", "b25b82a03f7282e41aa2f257a52c7583b710bd1c"),

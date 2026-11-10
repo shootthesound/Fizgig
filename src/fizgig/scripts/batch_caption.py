@@ -113,8 +113,13 @@ def _load_state_from_config(config: dict, device: str) -> CaptionState:
         files = {"path": (config.get("files") or {}).get("path") or ""}
         if not files["path"]:
             raise ValueError(f"{desc.label} needs its model file")
-    print(f"INFO: Loading {desc.label}...", flush=True)
-    cap = captioners.make(desc, device, files)
+    free = None
+    if device == "cuda" and desc.precisions:
+        free = torch.cuda.mem_get_info()[0] / 2 ** 30
+    precision = captioners.pick_precision(desc, free)
+    print(f"INFO: Loading {desc.label}" + (f" ({precision}, {free:.0f} GB free)" if precision and free is not None
+                                            else f" ({precision})" if precision else "") + "...", flush=True)
+    cap = captioners.make(desc, device, files, precision)
     cap.load()
     print("INFO: Model ready.", flush=True)
     return CaptionState(desc, cap, bool(config.get("include_video")))

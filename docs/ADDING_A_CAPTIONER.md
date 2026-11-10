@@ -30,7 +30,8 @@ CaptionerDescription(
 - **`files`** is pinned to a commit (`revision`, plus `code_revision` for `trust_remote_code` models), so a change upstream can't swap what runs. Use `PrefFile` only for a file Preferences already holds.
 - **`tasks`** / **`default_task`**: a fixed menu the model understands (Florence's `<CAPTION>` …).
 - **`instruction=True`**: it follows a written instruction. It then gets the Captions tab's instruction menu and edit box. A tagger never does.
-- **`vram_gb`** is checked before a caption job starts beside a running run. Measure it, don't guess.
+- **`vram_gb`** is what it needs at its smallest, checked before a caption job starts beside a running run. Measure it, don't guess.
+- **`precisions`**: for a model that loads more than one way, `(("bf16", 19.0), ("nf4", 8.0))`, best first. The worker picks the first that fits the card's free memory and hands it to your class as `self.precision`.
 
 **2. The class**, in its own file in `src/fizgig/captioners/`:
 

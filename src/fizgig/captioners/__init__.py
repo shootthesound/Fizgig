@@ -43,12 +43,14 @@ class CaptionerDescription:
     module: str                      # "fizgig.captioners.<file>:<Class>", imported only inside the worker
     files: HFRepo | PrefFile
     licence: str
-    vram_gb: float                   # what it needs on the card (the Captions tab checks it beside a run)
+    vram_gb: float                   # what it needs on the card at its smallest (checked beside a running run)
     size_gb: float = 0.0             # its download, for the hint
     tasks: tuple = ()                # a fixed menu of tasks the model understands (Florence's <CAPTION>...), first = default
     default_task: str = ""
     instruction: bool = False        # follows a written instruction (the Captions tab's task menu + edit box)
     hint: str = ""                   # one line for the model menu's hint
+    precisions: tuple = ()           # ((name, vram_gb), ...) best first, when it loads in more than one way: the
+                                     # worker picks the first that fits the card's free memory (pick_precision)
 
 
 @dataclass
@@ -67,12 +69,12 @@ class CaptionResult:
 
 
 class Captioner:
-    """The class a captioner implements. Fizgig constructs it with its description, the device ("cuda" / "cpu") and
-    its files ({"repo", "revision", "code_revision"} or {"path"}), calls load() once, caption() per picture, and
-    unload() before the worker exits."""
+    """The class a captioner implements. Fizgig constructs it with its description, the device ("cuda" / "cpu"), its
+    files ({"repo", "revision", "code_revision"} or {"path"}) and, for one with precisions, the one to load in; calls
+    load() once, caption() per picture, and unload() before the worker exits."""
 
-    def __init__(self, desc: CaptionerDescription, device: str, files: dict):
-        self.desc, self.device, self.files = desc, device, files
+    def __init__(self, desc: CaptionerDescription, device: str, files: dict, precision: str = ""):
+        self.desc, self.device, self.files, self.precision = desc, device, files, precision
 
     def load(self) -> None:
         raise NotImplementedError
@@ -95,6 +97,16 @@ def finish(result: CaptionResult, *, threshold: float = 0.35, leave_out=(), unde
     return " ".join(str(result.text or "").split())
 
 
+def pick_precision(desc: CaptionerDescription, free_gb: float | None) -> str:
+    """The best of a captioner's precisions that fits `free_gb` (None: not on a GPU - the first), else its smallest;
+    "" for one with a single way to load."""
+    if not desc.precisions:
+        return ""
+    if free_gb is None:
+        return desc.precisions[0][0]
+    return next((n for n, need in desc.precisions if need <= free_gb), desc.precisions[-1][0])
+
+
 def with_trigger(caption: str, trigger: str) -> str:
     """The trigger word first, as every Fizgig caption has it."""
     trigger = str(trigger or "").strip()
@@ -112,7 +124,7 @@ def get(key_or_label: str) -> CaptionerDescription | None:
     return _BY_KEY.get(key_or_label) or _BY_LABEL.get(key_or_label)
 
 
-def make(desc: CaptionerDescription, device: str, files: dict) -> Captioner:
+def make(desc: CaptionerDescription, device: str, files: dict, precision: str = "") -> Captioner:
     """The captioner's class, imported now (inside the worker) and constructed."""
     mod, _, cls = desc.module.partition(":")
-    return getattr(importlib.import_module(mod), cls)(desc, device, files)
+    return getattr(importlib.import_module(mod), cls)(desc, device, files, precision)

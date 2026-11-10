@@ -29,6 +29,9 @@ def test_each_captioner_declares_what_fizgig_needs(d):
     else:
         assert isinstance(d.files, PrefFile) and d.files.pref
     assert not d.tasks or d.default_task in d.tasks
+    if d.precisions:                                     # best first; vram_gb is what it needs at its smallest
+        needs = [g for _n, g in d.precisions]
+        assert needs == sorted(needs, reverse=True) and d.vram_gb == needs[-1]
     assert not (d.kind == "tags" and d.instruction), "a tagger doesn't follow instructions"
 
 
@@ -62,6 +65,16 @@ def test_training_code_never_imports_captioners():
     assert not bad, f"training code imports the captioner registry: {bad}"
 
 
+def test_pick_precision():
+    from fizgig.captioners import pick_precision
+    d = CaptionerDescription(key="x", label="x", kind="sentences", module="fizgig.captioners.x:X",
+                             files=HFRepo("a/b", "0" * 40), licence="MIT", vram_gb=8.0,
+                             precisions=(("bf16", 19.0), ("nf4", 8.0)))
+    assert pick_precision(d, 30.0) == "bf16" and pick_precision(d, 12.0) == "nf4"
+    assert pick_precision(d, 4.0) == "nf4" and pick_precision(d, None) == "bf16"
+    assert pick_precision(captioners.get("florence2_base"), 30.0) == ""
+
+
 def test_finish_tags_and_sentences():
     tags = CaptionResult(tags=[("smile", 0.9), ("long_hair", 0.8), ("watermark", 0.95), ("hat", 0.2)])
     assert finish(tags, threshold=0.35, leave_out=["watermark"]) == "smile, long hair"
@@ -89,7 +102,7 @@ def test_a_stub_captioner_goes_through_the_worker(tmp_path, monkeypatch):
     desc = CaptionerDescription(key="stub", label="Stub tagger", kind="tags", module="x:_Stub",
                                 files=HFRepo("a/b", "0" * 40), licence="MIT", vram_gb=1.0)
     monkeypatch.setattr(captioners, "get", lambda k: desc if k == "stub" else None)
-    monkeypatch.setattr(captioners, "make", lambda d, dev, files: _Stub(d, dev, files))
+    monkeypatch.setattr(captioners, "make", lambda d, dev, files, precision="": _Stub(d, dev, files, precision))
     img = tmp_path / "a.png"
     Image.new("RGBA", (16, 16), (0, 0, 0, 0)).save(img)      # see-through: must reach the captioner as white
     (tmp_path / "list.txt").write_text(str(img) + "\n", encoding="utf-8")

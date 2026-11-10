@@ -1079,10 +1079,11 @@ function captionerCard() {
       text: l.label.split(" (")[0], title: l.label})));
   return el("div", {class: "section-card"}, el("div", {class: "card-title"}, el("span", {text: "Captioning model"})),
     el("div", {class: "card-content"}, el("div", {class: "pref-file"}, row,
-      el("div", {class: "field-hint", text: "Optional. Qwen3-VL 8B, the bigger model of the family the Krea 2 text " +
-        "encoder belongs to (it's Qwen Image 2.1's text encoder): more detailed captions. Download a build from the " +
-        "links and choose it here; from then on it does all captioning - the Captions tab and auto-recaption. Empty " +
-        "the box to go back to the Krea 2 text encoder. " + (c.links || []).map((l) => l.label).join(" · ") +
+      el("div", {class: "field-hint", text: "Optional, and Qwen3-VL only: the 8B, the bigger model of the family the " +
+        "Krea 2 text encoder belongs to (it's Qwen Image 2.1's text encoder), for more detailed captions. Any other " +
+        "file is refused; other captioners are picked on the Captions tab. Download a build from the links and " +
+        "choose it here; from then on it takes the Krea 2 text encoder's place wherever Qwen3-VL captions - the " +
+        "Captions tab's Qwen3-VL and auto-recaption. Empty the box to go back to the Krea 2 text encoder. " + (c.links || []).map((l) => l.label).join(" · ") +
         ". On a card with less VRAM than it needs, it keeps what fits and streams the rest from system RAM (slower)."}),
       note)));
 }

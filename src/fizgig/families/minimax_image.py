@@ -9,7 +9,7 @@ weights moved a long way from H3 fl2va (|dW| 25-46% of |W| on attention out / fc
 used here.
 """
 from fizgig.training.optimizers import MUON_DEFAULT_ARGS
-from fizgig.families.description import FamilyDescription, LoRAFormat, ModelFile, SamplingSettings
+from fizgig.families.description import FamilyDescription, LoRAFormat, ModelFile, SamplingSettings, TextEncoderBuild
 
 _CARD = "https://huggingface.co/MiniMaxAI/MiniMax-H3-Image"
 _COMFY = "Comfy-Org/MiniMax-H3-Image"
@@ -71,6 +71,13 @@ MINIMAX_IMAGE = FamilyDescription(
                   hint="Frozen during training, off in previews and saved LoRAs: keeps MiniMax H3 Image's faces and "
                        "skin true to the model while the LoRA learns. Without it, people trained on this model turn "
                        "into caricatures."),
+    ),
+    # measured with scripts/check_te_builds.py against the nvfp4 default (10 Nov 2026, RTX PRO 6000); the int8
+    # (convrot) build Comfy-Org also publishes doesn't load in H3's encoder loader (rotated weights)
+    text_encoder_builds=(
+        TextEncoderBuild("bf16", _H, "text_encoders/qwen3vl_32b_minimax_h3_bf16.safetensors", 51.51,
+                         "600d567f6a9629c8574e8e7041b199bdd9c59a986afa7906910a81919610607d", 0.99997,
+                         note="worst token 0.9518"),
     ),
     text_encoder_label="Qwen3-VL-32B",
     licence_link=("MiniMax-H3-Image Community License",

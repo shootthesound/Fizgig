@@ -1283,7 +1283,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         if face_on:
             from fizgig.dataset.image_dataset import ImageDataset
             ImageDataset.face_boost = float(face_weight)     # each still's largest face as an oval (Boost the face)
-            ImageDataset.face_area = "head" if face_area == "head" else "face"
+            from fizgig.dataset.masks import FACE_AREAS
+            ImageDataset.face_area = face_area if face_area in FACE_AREAS else "face"
         group = generate_dataset_group_by_blueprint(blueprint.dataset_group, training=True,
                                                     num_timestep_buckets=None, shared_epoch=shared_epoch)
     if group.num_train_items == 0:
@@ -2082,7 +2083,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 md["ss_mask_prior"] = f"{mask_prior:g}"
         if face_on:
             md["ss_face_weight"] = f"{float(face_weight):g}"
-            md["ss_face_area"] = "head" if face_area == "head" else "face"
+            md["ss_face_area"] = str(face_area or "face")
             md["ss_face_cycle"] = f"{_face_cyc[0]}:{_face_cyc[1]}"
             if any(_face_end):
                 md["ss_face_until"] = f"{_face_end[0]}:{_face_end[1]}"
@@ -3306,7 +3307,8 @@ def setup_parser():
     p.add_argument("--face_until", default="0:0",
                    help="--face_weight ends after epoch E or step S, whichever comes first (E:S, 0 = no limit; it "
                         "can stop mid-epoch): 12:600 = the first 12 epochs or 600 steps")
-    p.add_argument("--face_area", choices=("face", "head"), default="face",
+    p.add_argument("--face_area", choices=("face", "head", "person", "no_clothes", "body_clothes", "body", "clothes",
+                                           "not_faces", "background"), default="face",
                    help="--face_weight's area: the face, or the head (face and hair; a mask trims it to the person)")
     p.add_argument("--mask_prior", type=float, default=0.0,
                    help="masked training: outside the mask, keep the LoRA to the model's own prediction (LoRA at 0) "

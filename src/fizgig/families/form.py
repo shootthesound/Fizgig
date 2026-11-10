@@ -500,15 +500,19 @@ def form(desc):
                  "model's look stay its own. The higher the number, the firmer.\n"
                  "Speed: each step takes up to about half as long again.",
                  launch.MASK_PRIORS, hint_labels=True),                 # one spaced line per choice, name in bold
-            _row("FACE_BOOST", "Boost the face (experimental)", "check",
-                 "Early in the run, each picture's face and hair count much more than the rest, so likeness "
-                 "comes in faster, most of all when faces are small in the frame (medium and full-length shots). "
+            _row("FACE_BOOST", "Element boost (experimental)", "check",
+                 "Early in the run, one part of each picture (the face and hair, unless you pick another below) "
+                 "counts much more than the rest, so it's learned faster - for a face, most of all when faces "
+                 "are small in the frame (medium and full-length shots). "
                  "It runs 3 boosted stretches, then 1 normal, for the first 12 epochs or 600 steps, whichever "
                  "is sooner; after that the run trains as normal, so the body and background catch up. Works "
-                 "with or without masks (a mask trims it to the hair). Pictures with no face found train as normal."),
-            _row("FACE_BOOST_AREA", "What it covers", "choice",
+                 "with or without masks (a mask trims it). Pictures where it isn't found train as normal."),
+            _row("FACE_BOOST_AREA", "What it boosts", "choice",
                  "Face and hair (the default): the face and the hair around it. Face only: just the face, for when "
-                 "the hair changes from picture to picture or shouldn't be learned.", launch.FACE_AREAS),
+                 "the hair changes from picture to picture or shouldn't be learned. These two use the face "
+                 "finder. The rest are the Make masks choices, found by its person finder: the clothes for an "
+                 "outfit LoRA, the background for a place, and so on. Only the face has been tested.",
+                 launch.FACE_AREAS),
         ])
     add("subjects", "Subjects", "training", subjects,
         help={"href": VIDEO, "text": "How to set up Fizgig LoRA Isolation",

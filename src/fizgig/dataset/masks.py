@@ -187,7 +187,69 @@ def face_box(image_path):
     return _FACES[key]
 
 
-FACE_AREAS = ("face", "head")
+# Element boost's areas: "face" / "head" are the face detector's oval (face_box / load_face); the rest are the Make
+# masks picker's person-finder kinds (automask.KINDS, MediaPipe's 16 MB CPU segmenter; element_map / load_element)
+SEG_AREAS = ("person", "no_clothes", "body_clothes", "body", "clothes", "not_faces", "background")
+FACE_AREAS = ("face", "head") + SEG_AREAS
+_SEG = []
+_ELEMENTS = {}
+_ELEMENT_SIDE = 384                    # a map is kept this small (a side) in memory; the latent grid is coarser
+
+
+def element_map(image_path, area):
+    """Element boost: where `area` (one of SEG_AREAS) is in a picture, from the Make masks person finder - a small
+    uint8 (h, w) map over the picture's upright pixels, or None (nothing of it found, or no segmenter here). Found
+    once per file per run."""
+    try:
+        st = os.stat(image_path)
+    except OSError:
+        return None
+    key = (os.path.abspath(image_path), st.st_mtime_ns, st.st_size, area)
+    if key not in _ELEMENTS:
+        out = None
+        try:
+            import numpy as np
+            from PIL import Image
+            from fizgig.dataset import automask
+            from fizgig.utils.image import flatten
+            from fizgig.utils.upright import upright
+            if not _SEG:
+                from fizgig.user_data import MODELS_DIR
+                _SEG.append(automask.Segmenter(automask.ensure_model(MODELS_DIR, log=lambda s: None)))
+            with Image.open(image_path) as im:
+                img = flatten(upright(im))
+            m = automask.mask_from(_SEG[0].classes(img), area)
+            if float(m.mean()) >= 0.002:
+                s = _ELEMENT_SIDE / max(img.size)
+                size = (max(1, round(img.size[0] * min(1.0, s))), max(1, round(img.size[1] * min(1.0, s))))
+                out = np.asarray(Image.fromarray((m * 255).astype(np.uint8), "L").resize(size, Image.BILINEAR))
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"[face boost] no person finder for {image_path}: {e}")
+        _ELEMENTS[key] = out
+    return _ELEMENTS[key]
+
+
+def _to_latent(m, bucket_reso, latent_hw):
+    """A (h, w) float map over a picture's own pixels onto its cached latent's grid, cropped as the picture was
+    when it was cached (the same path as load_mask)."""
+    import cv2
+    import numpy as np
+    from PIL import Image
+    from fizgig.dataset.image_dataset import resize_image_to_bucket
+    px = resize_image_to_bucket(Image.fromarray((np.clip(m, 0, 1) * 255).astype(np.uint8), "L"), tuple(bucket_reso))
+    out = cv2.resize(px.astype(np.float32) / 255.0, (int(latent_hw[1]), int(latent_hw[0])),
+                     interpolation=cv2.INTER_AREA)
+    return np.clip(out, 0.0, 1.0)
+
+
+def load_element(small, image_size, bucket_reso, latent_hw):
+    """An element_map on a cached latent's grid: (h, w) float32 in [0, 1]."""
+    import numpy as np
+    from PIL import Image
+    w, h = (int(v) for v in image_size)
+    full = np.asarray(Image.fromarray(small, "L").resize((w, h), Image.BILINEAR), np.float32) / 255.0
+    return _to_latent(full, bucket_reso, latent_hw)
 
 
 def load_face(box, image_size, bucket_reso, latent_hw, area="face"):
@@ -211,10 +273,7 @@ def load_face(box, image_size, bucket_reso, latent_hw, area="face"):
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
     r = np.sqrt(((xx - cx) / ax) ** 2 + ((yy - cy) / ay) ** 2)
     m = np.clip((1.0 - r) / 0.3, 0.0, 1.0)                            # full inside 0.7 of the oval, fading to its edge
-    px = resize_image_to_bucket(Image.fromarray((m * 255).astype(np.uint8), "L"), tuple(bucket_reso))
-    out = cv2.resize(px.astype(np.float32) / 255.0, (int(latent_hw[1]), int(latent_hw[0])),
-                     interpolation=cv2.INTER_AREA)
-    return np.clip(out, 0.0, 1.0)
+    return _to_latent(m, bucket_reso, latent_hw)
 
 
 _REPORTS = {}

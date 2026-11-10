@@ -887,7 +887,7 @@ def train_command(desc, inputs, plan):
         if mask_prior(desc, st) and batch_size(desc, st) <= 1:
             cmd += ["--mask_prior", f"{mask_prior(desc, st):g}"]
     if face_weight(desc, st) is not None:
-        cmd += ["--face_weight", f"{face_weight(desc, st):g}", "--face_area", "face" if str(st.get("FACE_BOOST_AREA") or "").startswith("Face only") else "head",
+        cmd += ["--face_weight", f"{face_weight(desc, st):g}", "--face_area", dict(FACE_AREA_KEYS).get(str(st.get("FACE_BOOST_AREA") or ""), "head"),
                 "--face_cycle", f"{FACE_CYCLE[0]}:{FACE_CYCLE[1]}", "--face_until", f"{FACE_STOP[0]}:{FACE_STOP[1]}"]
     if dop_on(desc, st) or mp_subs:
         trig, cls = dop_rules(st)
@@ -1534,7 +1534,14 @@ def mask_prior(desc, st):
 FACE_BOOST = 9.0
 FACE_CYCLE = (3, 1)
 FACE_STOP = (12, 600)
-FACE_AREAS = ("Face and hair", "Face only")   # What it covers: --face_area head / face
+# What it boosts: --face_area. Face and hair / Face only: the face detector's oval; the rest: the Make masks
+# picker's person-finder kinds (their labels as on the masks card), its "Just the face and hair" left out
+FACE_AREA_KEYS = (("Face and hair", "head"), ("Face only", "face"), ("The person (hair to clothes)", "person"),
+                  ("The person, not their clothes", "no_clothes"),
+                  ("The body and clothes, not the face or hair", "body_clothes"),
+                  ("The body's skin, not the face, hair or clothes", "body"), ("Just the clothes", "clothes"),
+                  ("Everything but the faces", "not_faces"), ("Just the background, not the people", "background"))
+FACE_AREAS = tuple(k[0] for k in FACE_AREA_KEYS)
 
 
 def face_weight(desc, st):

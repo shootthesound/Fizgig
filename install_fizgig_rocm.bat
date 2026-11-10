@@ -24,7 +24,7 @@ goto :parse_args
 :args_done
 
 REM Default: pinned AMD stable multi-arch (https://stable.repo.amd.com/rocm/whl-next/).
-REM Same stack as Linux stable: torch 2.14.0+rocm10.1.0 (a step down from floating 2.15 nightlies).
+REM Same stack as Linux stable: torch 2.14.0+rocm10.1.0.
 REM Optional overrides: TORCH_PIN / TORCHVISION_PIN / ROCM_SDK_DEVEL_PIN (same index).
 REM --experimental uses floating nightlies instead. gfx942 / gfx950 keep legacy staging URLs.
 set "ROCM_INDEX=https://stable.repo.amd.com/rocm/whl-next/"

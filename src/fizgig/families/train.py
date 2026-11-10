@@ -1353,6 +1353,18 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     def _loss_mask(batch):
         """The step's per-cell loss weights (masked training), or None: a picture without a mask trains as normal."""
         m = batch.get("loss_mask") if masked_training else None
+        if face_on and any(_face_end) and _face_cyc[1] > 0 and not face_phase["ended"]:
+            # with --face_until, the cycle runs in steps: the window (epoch E or step S, the sooner) splits into E
+            # equal blocks (12 if no epoch is given) - an epoch each when they fit, so a big dataset whose S steps
+            # are only a few epochs still gets its normal stretches between the boosted ones
+            win = min(x for x in (_face_end[0] * steps_per_epoch, _face_end[1]) if x)
+            unit = max(1, min(steps_per_epoch, win // (_face_end[0] or 12)))
+            on = (global_step // unit) % (_face_cyc[0] + _face_cyc[1]) < _face_cyc[0]
+            if on != face_phase.get("was"):
+                face_phase["was"] = on
+                logger.info(f"[face boost] step {global_step} (epoch {face_phase['epoch'] + 1}): "
+                            + ("boosted" if on else "normal (no boost)") + f" for {unit * (_face_cyc[0] if on else _face_cyc[1])} steps")
+            face_phase["on"] = on
         f = batch.get("face_weight") if face_on and face_phase["on"] else None
         if f is not None and not face_phase["ended"] and ((_face_end[0] and face_phase["epoch"] >= _face_end[0])
                                                          or (_face_end[1] and global_step >= _face_end[1])):
@@ -2738,7 +2750,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 maps = None
     for epoch in (_worker_epochs() if share_worker else range(start_epoch, max_train_epochs)):
         face_phase["epoch"] = epoch
-        if face_on and _face_cyc[1] > 0 and not face_phase["ended"]:   # Boost the face on N epochs, then M normal
+        if face_on and _face_cyc[1] > 0 and not any(_face_end):   # Boost the face on N epochs, then M normal
             face_phase["on"] = epoch % (_face_cyc[0] + _face_cyc[1]) < _face_cyc[0]   # ones, repeating from epoch 1
             logger.info(f"[face boost] epoch {epoch + 1}: " + ("boosted" if face_phase["on"] else "normal (no boost)"))
         shared_epoch.value = epoch + 1

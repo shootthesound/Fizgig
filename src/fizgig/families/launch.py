@@ -887,15 +887,8 @@ def train_command(desc, inputs, plan):
         if mask_prior(desc, st) and batch_size(desc, st) <= 1:
             cmd += ["--mask_prior", f"{mask_prior(desc, st):g}"]
     if face_weight(desc, st) is not None:
-        cmd += ["--face_weight", f"{face_weight(desc, st):g}"]
-        if str(st.get("FACE_BOOST_AREA") or "Head").startswith("Head"):
-            cmd += ["--face_area", "head"]
-        pick = str(st.get("FACE_BOOST_EVERY") or FACE_EVERY[3])
-        on, off = next(((a, b) for lab, a, b in FACE_CYCLES if lab == pick), (1, 1))
-        if off:
-            cmd += ["--face_cycle", f"{on}:{off}"]
-        if not str(st.get("FACE_BOOST_UNTIL") or FACE_UNTIL[1]).startswith(FACE_UNTIL[0]):
-            cmd += ["--face_until", f"{FACE_STOP[0]}:{FACE_STOP[1]}"]
+        cmd += ["--face_weight", f"{face_weight(desc, st):g}", "--face_area", "head",
+                "--face_cycle", f"{FACE_CYCLE[0]}:{FACE_CYCLE[1]}", "--face_until", f"{FACE_STOP[0]}:{FACE_STOP[1]}"]
     if dop_on(desc, st) or mp_subs:
         trig, cls = dop_rules(st)
         if mp_subs:          # the captions are read fused: DOP swaps "zwxemwoman" for "a woman"
@@ -1536,31 +1529,19 @@ def mask_prior(desc, st):
         return 0.0
 
 
-FACE_AREAS = ("Face", "Head (face and hair)")   # Boost the face's area: the Training tab's choice
-# when it's on: (label, boosted epochs, normal epochs) repeating from epoch 1; the normal ones train as if it were off
-FACE_CYCLES = (("Every epoch", 1, 0), ("Every 2nd epoch", 1, 1), ("2 boosted, 1 normal", 2, 1), ("3 boosted, 1 normal", 3, 1))
-FACE_EVERY = tuple(c[0] for c in FACE_CYCLES)
-# Boost the face only early on: it ends after epoch 12 or step 600, whichever comes first (Peter, 10 Nov 2026)
-FACE_STOP = (12, 600)
-FACE_UNTIL = ("The whole run", f"The first {FACE_STOP[0]} epochs or {FACE_STOP[1]} steps, whichever is sooner")
-# the face's loss weight by default with Boost the face ticked (an experiment): Head x9 every 2nd epoch led the
-# 10 Nov pixie runs' epoch-50 likeness (x9 every epoch starved the body: Peter, 10 Nov 2026)
+# Boost the face (one tick, an experiment): the head (face and hair) at x9 in the loss, 3 boosted stretches then 1
+# normal, for the first 12 epochs or 600 steps, whichever is sooner - Peter's pick from the 10 Nov 2026 pixie runs
 FACE_BOOST = 9.0
+FACE_CYCLE = (3, 1)
+FACE_STOP = (12, 600)
 
 
 def face_weight(desc, st):
-    """Boost the face: each picture's face (the face detector's largest) counts this many times as much in the loss,
-    on top of any mask - 0 to 10, 0 = the face not at all (the LoRA learns the rest). None when off (unticked, or 1).
-    Stills of a family with masked training, not a prompt slider (no photos)."""
+    """Boost the face: the face weight when ticked, else None. Stills of a family with masked training, not a
+    prompt slider (no photos)."""
     if not (st.get("FACE_BOOST") and desc.masked_training) or slider_on(desc, st, "prompts"):
         return None
-    raw = str(st.get("FACE_BOOST_WEIGHT") if st.get("FACE_BOOST_WEIGHT") not in (None, "") else FACE_BOOST)
-    try:
-        v = float(raw.split()[0])
-    except (ValueError, IndexError):
-        v = FACE_BOOST
-    v = min(10.0, max(0.0, v))
-    return None if v == 1.0 else v                    # 1: the face counts as the rest, nothing to do
+    return FACE_BOOST
 
 
 def mask_folders(desc, st):

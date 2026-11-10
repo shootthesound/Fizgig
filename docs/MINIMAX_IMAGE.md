@@ -49,8 +49,10 @@ python -m fizgig.scripts.fetch_models --family minimax_image
 
 MiniMax H3 Image is released under the [MiniMax-H3-Image Community License Agreement](https://huggingface.co/MiniMaxAI/MiniMax-H3-Image/blob/main/LICENSE), which differs from MiniMax H3's licence. Its terms include:
 
+- **Territory:** the licence applies only in its "Applicable Territory": worldwide, excluding the European Union, the United Kingdom, the Republic of Korea and the United States. It does not authorise using, reproducing, modifying, distributing or displaying the model, its derivatives or their outputs outside that territory.
 - Written permission from MiniMax is needed if your (and your affiliates') annual revenue exceeds 1 million USD, or if you provide a hosted service to third parties (requested through [platform.minimax.io/license](https://platform.minimax.io/license)).
 - A commercial product or service that uses the model must show "MiniMax-H3-Image" in its user interface.
-- The model and its outputs may not be used to improve any other AI model.
+- The model and its outputs may not be used to improve any AI model other than MiniMax H3 Image and its derivatives.
+- Distributing the model or a derivative of it (a LoRA, for example) requires passing on a copy of the licence, a notice that the files were modified, and the attribution notice the licence specifies, and binding recipients to its use restrictions.
 
 Read the licence itself for the full terms.

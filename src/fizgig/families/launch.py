@@ -1536,7 +1536,7 @@ def mask_prior(desc, st):
 
 FACE_AREAS = ("Face", "Head (face and hair)")   # Boost the face's area: the Training tab's choice
 # when it's on: (label, boosted epochs, normal epochs) repeating from epoch 1; the normal ones train as if it were off
-FACE_CYCLES = (("Every epoch", 1, 0), ("Every 2nd epoch", 1, 1), ("2 boosted, 1 normal", 2, 1))
+FACE_CYCLES = (("Every epoch", 1, 0), ("Every 2nd epoch", 1, 1), ("2 boosted, 1 normal", 2, 1), ("3 boosted, 1 normal", 3, 1))
 FACE_EVERY = tuple(c[0] for c in FACE_CYCLES)
 # the face's loss weight by default with Boost the face ticked (an experiment): Head x9 every 2nd epoch led the
 # 10 Nov pixie runs' epoch-50 likeness (x9 every epoch starved the body: Peter, 10 Nov 2026)

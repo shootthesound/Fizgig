@@ -514,7 +514,7 @@ def form(desc):
             _row("FACE_BOOST_EVERY", "When", "choice",
                  "Every 2nd epoch: epochs 1, 3, 5... train with the boost, the ones between as if it were off, so the "
                  "body and the background still learn. 2 boosted, 1 normal: epochs 1-2 boosted, 3 normal, and so on "
-                 "- more of the boost. Every epoch: the boost on all the time (strong values then starve the body).",
+                 "- more of the boost; 3 boosted, 1 normal more again. Every epoch: the boost on all the time (strong values then starve the body).",
                  launch.FACE_EVERY),
             _row("FACE_BOOST_WEIGHT", "How much the face counts", "entry",
                  "2 = twice as much as the rest of the picture. 1 = the same. 0 = not at all: the LoRA learns the "

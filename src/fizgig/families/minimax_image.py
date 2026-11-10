@@ -124,6 +124,10 @@ MINIMAX_IMAGE = FamilyDescription(
     # pick, not in Auto) 1 MP: 17.0 train / 17.3 preview; its per-block figure is NF4's until measured.
     train_memory={"int8": (((0.25, 22.7), (1.0, 22.7)), 0.29), "nf4": (((0.25, 12.8), (1.0, 12.8)), 0.15),
                   "hqq": (((0.25, 17.3), (1.0, 17.3)), 0.15)},
+    # GB each extra picture takes: fixed, per MP (int8 training peaks, batch 1 vs 3, previews off, RTX PRO 6000,
+    # 10 Nov 2026): 20.7 / 21.2 GB at 0.25 MP, 21.3 / 23.0 at 1 MP. Batching is slower per picture here (1 MP: 17 s
+    # an epoch at batch 1, 33 s at batch 3), so Auto never batches (batch_auto stays ())
+    batch_gb=(0.05, 0.8),
     precision_labels={"auto": "Auto (fits your free VRAM)", "int8": "int8 · most accurate, needs ~24 GB free",
                       "nf4": "4-bit · fits smaller cards", "hqq": "4-bit HQQ · lower error than 4-bit, slower"},
     optimizers=("adamw", "adamw8bit"),

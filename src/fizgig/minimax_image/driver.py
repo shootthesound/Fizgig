@@ -442,3 +442,36 @@ class MiniMaxH3ImageDriver(FamilyDriver):
         """The 50 main blocks, as MiniMax H3 trains (the token refiner left out: training it softens output and makes
         previews judder between epochs, measured on H3)."""
         return [m for b in self.block_map(dit)[0].blocks for m in b.modules]
+
+    def convert_lora_state_dict(self, sd):
+        """A diffusers-named H3 Image LoRA (transformer_blocks.N / token_refiner.refiner_blocks.N, separate to_q /
+        to_k / to_v, to_out.0, ff.net.0.proj / ff.net.2; witcherderivia's and akhaliq's diffusers files) -> ComfyUI's
+        names. q/k/v fuse into qkv_proj as akhaliq's own ComfyUI conversion does: A stacked [q; k; v], B block
+        diagonal, alpha the summed ranks (each part keeps its alpha / rank scale). Any other file passes as is."""
+        import re
+        pat = re.compile(r"^(?:transformer\.)?(transformer_blocks|token_refiner\.refiner_blocks)\.(\d+)\.(.+)\."
+                         r"(lora_A|lora_B)\.weight$")
+        if not any(pat.match(k) for k in sd):
+            return sd
+        rename = {"attn.to_out.0": "attn.out_proj", "ff.net.0.proj": "mlp.fc1", "ff.net.2": "mlp.fc2"}
+        out, qkv = {}, {}
+        for k, v in sd.items():
+            m = pat.match(k)
+            if m is None:
+                out[k] = v
+                continue
+            where = ("blocks" if m.group(1) == "transformer_blocks" else "token_refiner.blocks") + "." + m.group(2)
+            mod, ab = m.group(3), m.group(4)
+            if mod in ("attn.to_q", "attn.to_k", "attn.to_v"):
+                qkv.setdefault(where, {})[(mod[-1], ab)] = v
+            elif mod in rename:
+                out[f"diffusion_model.{where}.{rename[mod]}.{ab}.weight"] = v
+        for where, parts in qkv.items():
+            if not all((p, ab) in parts for p in "qkv" for ab in ("lora_A", "lora_B")):
+                continue
+            a = [parts[(p, "lora_A")] for p in "qkv"]
+            b = [parts[(p, "lora_B")] for p in "qkv"]
+            out[f"diffusion_model.{where}.attn.qkv_proj.lora_A.weight"] = torch.cat(a, 0)
+            out[f"diffusion_model.{where}.attn.qkv_proj.lora_B.weight"] = torch.block_diag(*b)
+            out[f"diffusion_model.{where}.attn.qkv_proj.alpha"] = torch.tensor(float(sum(x.shape[0] for x in a)))
+        return out

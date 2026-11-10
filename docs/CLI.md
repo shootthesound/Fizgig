@@ -135,6 +135,7 @@ Headless, there is no Preferences tab: **model locations are passed as flags on 
 | DiT, pruned int8 (~21 GB) | [minimax_h3_image_pruned_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3-Image/blob/main/diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors) | training (`--dit`) — the same file ComfyUI runs |
 | VAE | [minimax_h3_image_vae_fp16.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3-Image/blob/main/vae/minimax_h3_image_vae_fp16.safetensors) | `--vae` (cache step: `--model`) — its own VAE, not the H3 video VAE |
 | Text encoder, nvfp4 (~15.7 GB) | [qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors) | `--text_encoder` (cache step: `--model`) — MiniMax H3's, unchanged |
+| Training adapter *(recommended)* | [fizgig_minimax_h3_image_training_adapter.safetensors](https://huggingface.co/ShootTheSound/Fizgig-MiniMax-H3-Image-Training-Adapter/blob/main/fizgig_minimax_h3_image_training_adapter.safetensors) | `--training_adapter` — frozen in training, off in previews and the saved LoRA |
 
 **Qwen Image 2.1:**
 
@@ -643,15 +644,27 @@ H3's own settings are `--family_option name=value` pairs (the GUI's Training-tab
 
 ## MiniMax H3 Image training
 
-MiniMax H3 Image is MiniMax H3's DiT for pictures: no audio stream, distilled to 6 CFG-free steps with one output head per step. It trains through the shared cache script and trainer with `--family minimax_image`; the [dataset TOML](#dataset-config-toml) is the same as the other families'. You need the three files from the [download table](#model-files-where-they-come-from-where-they-go). A LoRA trains at the checkpoint's own 6 noise levels, each through its own head; `--family_option lownoise_pct=P` puts P% of the steps at the level below 0.5 (0.232) and spreads the rest over the other five.
+MiniMax H3 Image is MiniMax H3's DiT for pictures: no audio stream, distilled to 6 CFG-free steps with one output head per step. It trains through the shared cache script and trainer with `--family minimax_image`; the [dataset TOML](#dataset-config-toml) is the same as the other families'. You need the files from the [download table](#model-files-where-they-come-from-where-they-go), the training adapter included: without it, people trained on this model turn into caricatures. A LoRA trains at the checkpoint's own 6 noise levels, each through its own head; `--family_option lownoise_pct=P` puts P% of the steps at the level below 0.5 (0.232) and spreads the rest over the other five.
 
 ```bash
 python src/fizgig/families/cache.py --family minimax_image --stage latents --dataset_config my_dataset.toml --model /models/minimax_h3_image_vae_fp16.safetensors
 python src/fizgig/families/cache.py --family minimax_image --stage text    --dataset_config my_dataset.toml --model /models/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors
-python src/fizgig/families/train.py --family minimax_image   --dataset_config my_dataset.toml   --dit /models/minimax_h3_image_pruned_int8_convrot.safetensors   --vae /models/minimax_h3_image_vae_fp16.safetensors   --text_encoder /models/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors   --output_dir ./output_loras/my_subject --output_name my_subject_mmh3i   --network_dim 8 --network_alpha 8 --optimizer_type muon   --adaptive_lr --adaptive_lr_min 1e-4 --adaptive_lr_max 2e-4 --ema_decay 0.98   --max_train_epochs 16 --save_every_n_epochs 1 --seed 42   --precision auto --blocks_to_swap -1   --sample_prompts sample_prompts.txt --sample_every_n_epochs 1 --sample_at_first   --sample_width 2048 --sample_height 2048 --sample_steps 6
+python src/fizgig/families/train.py --family minimax_image \
+  --dataset_config my_dataset.toml \
+  --dit /models/minimax_h3_image_pruned_int8_convrot.safetensors \
+  --vae /models/minimax_h3_image_vae_fp16.safetensors \
+  --text_encoder /models/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors \
+  --training_adapter /models/fizgig_minimax_h3_image_training_adapter.safetensors \
+  --output_dir ./output_loras/my_subject --output_name my_subject_mmh3i \
+  --network_dim 8 --network_alpha 8 --optimizer_type muon \
+  --adaptive_lr --adaptive_lr_min 1e-4 --adaptive_lr_max 2e-4 --ema_decay 0.98 \
+  --max_train_epochs 16 --save_every_n_epochs 1 --seed 42 \
+  --precision auto --blocks_to_swap -1 \
+  --sample_prompts sample_prompts.txt --sample_every_n_epochs 1 --sample_at_first \
+  --sample_width 2048 --sample_height 2048 --sample_steps 6
 ```
 
-The recipe's values (presets, the training adapter) are still being measured; see [MINIMAX_IMAGE.md](MINIMAX_IMAGE.md).
+The presets are still being tuned; see [MINIMAX_IMAGE.md](MINIMAX_IMAGE.md).
 
 ---
 

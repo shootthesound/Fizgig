@@ -21,6 +21,7 @@ python -m fizgig.scripts.fetch_models --family minimax_image
 | DiT (training) | `diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors` from [Comfy-Org/MiniMax-H3-Image](https://huggingface.co/Comfy-Org/MiniMax-H3-Image) | 21.0 GB |
 | VAE | `vae/minimax_h3_image_vae_fp16.safetensors` from [Comfy-Org/MiniMax-H3-Image](https://huggingface.co/Comfy-Org/MiniMax-H3-Image) | 1.2 GB |
 | Text encoder | `text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors` from [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3) | 15.7 GB |
+| Fizgig training adapter | `fizgig_minimax_h3_image_training_adapter.safetensors` from [ShootTheSound/Fizgig-MiniMax-H3-Image-Training-Adapter](https://huggingface.co/ShootTheSound/Fizgig-MiniMax-H3-Image-Training-Adapter) | 0.15 GB |
 
 - **Already have MiniMax H3?** The text encoder is the same file, so it isn't downloaded again.
 - **The VAE is its own:** MiniMax H3's video VAE encoder with a decoder made for pictures. The H3 video VAE won't decode H3 Image's pictures properly.
@@ -30,6 +31,7 @@ python -m fizgig.scripts.fetch_models --family minimax_image
 
 - **The checkpoint's own noise levels:** H3 Image is distilled to 6 fixed noise levels (1.0, 0.968, 0.888, 0.750, 0.533, 0.232) with one output head per level. Fizgig trains a LoRA at those levels, each through its own head: the exact inputs the model sees when it renders.
 - **Size:** each DiT token covers 32×32 pixels, so 1 MP is 1,024 tokens. The presets train at 1 MP.
+- **Fizgig's training adapter:** on by default, frozen at 1.0 for every training step, off for previews and never in your saved file. Without it, people trained on this model turned into caricatures; with it, the same dataset gave photographic skin and a clear likeness, and pictures without the trigger kept the model's own quality. It was trained on 7,600 real photos and 1,000 of the model's own renders, and it's free on [Hugging Face](https://huggingface.co/ShootTheSound/Fizgig-MiniMax-H3-Image-Training-Adapter) for any trainer.
 
 ## Previews
 

@@ -28,7 +28,8 @@ def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="1.0", edit=False, slide
         "ADAPTIVE_LR": adaptive is not None, "ADAPTIVE_LR_MIN": lo, "ADAPTIVE_LR_MAX": hi,
         "OPTIMIZER_TYPE": "muon", "OPTIMIZER_ARGS": MUON_DEFAULT_ARGS, "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
         "DATASET_MEGAPIXELS": mp, "BLOCKS_SWAP": "Auto (detect from GPU)",
-        "FAMILY_PRECISION": "Auto (fits your free VRAM)", "FAMILY_EMA": "0.98 (recommended)",
+        "FAMILY_PRECISION": "Auto (fits your free VRAM)", "FAMILY_TRAINING_ADAPTER": True,
+        "FAMILY_EMA": "0.98 (recommended)",
         "KREA2_LOSS_WATCH": True, "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False,
         "KREA2_WARMUP_LOOK": False, "FAMILY_SLIDER_GUIDANCE": "2", "FAMILY_FAST_ID": False,
     }
@@ -46,8 +47,6 @@ MINIMAX_IMAGE = FamilyDescription(
     # Comfy-Org/MiniMax-H3-Image also ships minimax_h3_image_pruned_w4a8.safetensors (12.6 GB): left out, MiniMax H3's
     # loader takes int8 ConvRot or 16-bit files, not w4a8. The upstream bf16 shards (MiniMaxAI, 66 GB) aren't offered:
     # the pruned bf16 below is the same model in the layout the loader reads.
-    # Training adapter: Fizgig's own is being trained (X:\H3-Image\adapter, step 5000 on 10 Nov 2026); its ModelFile row
-    # (role "training_adapter", a default download) and training_adapter= go in once Peter has released it on HF.
     model_files=(
         ModelFile("minimax_image_dit", "MiniMax H3 Image DiT", True, _COMFY,
                   "diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors", 20.98,
@@ -64,6 +63,12 @@ MINIMAX_IMAGE = FamilyDescription(
                   role="text_encoder", same_as="minimax_text_encoder",
                   alt_repo=_H, alt_path="text_encoders/qwen3vl_32b_minimax_h3_bf16.safetensors", alt_label="bf16",
                   alt_note="~51.5 GB bf16 - the same conditioning (validated on H3), 3.3x the disk"),
+        ModelFile("minimax_image_training_adapter", "Fizgig training adapter", False,
+                  "ShootTheSound/Fizgig-MiniMax-H3-Image-Training-Adapter",
+                  "fizgig_minimax_h3_image_training_adapter.safetensors", 0.15, role="training_adapter",
+                  hint="Frozen during training, off in previews and saved LoRAs: keeps MiniMax H3 Image's faces and "
+                       "skin true to the model while the LoRA learns. Without it, people trained on this model turn "
+                       "into caricatures."),
     ),
     text_encoder_label="Qwen3-VL-32B",
     vae_label="MiniMax H3 Image VAE",
@@ -92,7 +97,17 @@ MINIMAX_IMAGE = FamilyDescription(
     driver="fizgig.minimax_image.driver:MiniMaxH3ImageDriver",
     modelspec_arch="MiniMax-H3-Image",
     implementation=_CARD,
-    helper_files=(),                  # the tokenizer and processor are minimax/'s bundled copies (embedder.py)
+    helper_files=(),
+    # Fizgig's training adapter (10 Nov 2026), the Qwen / Z-Image recipe on this model: rank 16 on attention + MLP of the
+    # 50 blocks, 7.6k real photos + 1k of the model's own 6-step renders (1 step in 3), the 6 distilled noise levels each
+    # through its own head, EMA 0.998; cosine 1e-4 to step 500, then flat 1e-4 to step 4000 (the released EMA). Without it
+    # a 16-epoch LoRA on a 53-photo set (uniform or 60% clean-end draw) drew caricatures, no face found in later
+    # close-ups; with it (Peter's eye, 20 epochs at 0.25 MP, 2e-4 Muon) photographic skin and a clear likeness, and a
+    # no-trigger 2048 render kept the base model's quality.
+    training_adapter="minimax_image_training_adapter",
+    training_adapter_note=("Keeps MiniMax H3 Image true to itself while your LoRA learns: frozen at 1.0 for every "
+                           "training step, off for previews and never in your saved file. Without it people trained on "
+                           "this model turn into caricatures."),                  # the tokenizer and processor are minimax/'s bundled copies (embedder.py)
 
     # the checkpoint's own int8 ConvRot codes, or a 4-bit base (NF4, HQQ), as MiniMax H3's loader offers them
     precisions=("int8", "nf4", "hqq"),

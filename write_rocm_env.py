@@ -52,12 +52,53 @@ def _bitsandbytes_rocm_libs_available() -> list[Path]:
     return sorted(lib_dir.glob(f"libbitsandbytes_rocm*{_bnb_lib_ext()}"))
 
 
+# The 4-bit (NF4) matrix-vector kernels a 4-bit model uses when it generates a token at a time (JoyCaption NF4's
+# captions): some bitsandbytes ROCm builds ship without them - #316: its rocm715 DLL had none, its rocm716 one did
+GEMM_4BIT = (b"cgemm_4bit_bf16", b"cgemm_4bit_fp16", b"cgemm_4bit_fp32")
+
+
+def _has_4bit_gemm(lib: Path) -> bool:
+    """Does this bitsandbytes library export the 4-bit kernels? (Their names in its export table, read as bytes, so
+    it works on a DLL that can't load yet, and on a Linux .so.)"""
+    try:
+        data = lib.read_bytes()
+    except OSError:
+        return True                  # can't tell: keep it
+    return all(name + b"\0" in data for name in GEMM_4BIT)
+
+
+def _rocm_lib_version(lib: Path) -> int | None:
+    m = re.search(r"rocm(\d+)", lib.name)
+    return int(m.group(1)) if m else None
+
+
+def _with_4bit_gemm(bnb: str, lib: Path | None) -> tuple[str, Path | None]:
+    """The library for BNB_ROCM_VERSION: the matching one when it has the 4-bit kernels, else the nearest version
+    that does - newer first (#316: 715 lacked them, 716 worked with PyTorch's ROCm 7.15). None has them: unchanged."""
+    if lib is None or _has_4bit_gemm(lib):
+        return bnb, lib
+    want = int(bnb) if bnb.isdigit() else 0
+    others = [(v, p) for p in _bitsandbytes_rocm_libs_available()
+              if (v := _rocm_lib_version(p)) is not None and v != want and _has_4bit_gemm(p)]
+    if not others:
+        print(f"WARN: {lib.name} has no 4-bit kernels (cgemm_4bit_*) and no other build has them: 4-bit (NF4) "
+              f"text generation such as JoyCaption NF4 may fail", file=sys.stderr)
+        return bnb, lib
+    v, p = min(others, key=lambda vp: (vp[0] < want, abs(vp[0] - want)))   # nearest newer, else nearest older
+    print(f"WARN: {lib.name} has no 4-bit kernels (cgemm_4bit_*); using {p.name} (BNB_ROCM_VERSION={v}) instead",
+          file=sys.stderr)
+    return str(v), p
+
+
 def _windows_rocm_path_prefix(core: Path) -> str | None:
     """Directories where hipInfo.exe lives (bitsandbytes cuda_specs runs ``hipinfo``)."""
     parts: list[str] = []
     bin_dir = core / "bin"
     if bin_dir.is_dir():
         parts.append(str(bin_dir.resolve()))
+    libs_bin = core.parent / "_rocm_sdk_libraries" / "bin"     # the libraries newer bitsandbytes DLLs load (#316)
+    if libs_bin.is_dir():
+        parts.append(str(libs_bin.resolve()))
     devel_bin = core.parent / "_rocm_sdk_devel" / "bin"
     if devel_bin.is_dir():
         parts.append(str(devel_bin.resolve()))
@@ -253,10 +294,15 @@ def main(argv: list[str] | None = None) -> int:
                 )
             bnb = default_bnb
             bnb_lib = _bitsandbytes_rocm_lib(bnb)
-        elif is_linux and probed == DEFAULT_BNB_LINUX:
-            src = f"{src} (Linux ROCm 7.14 / bnb {bnb})"
         else:
-            src = f"{src} (bnb {bnb} / {bnb_lib.name})"
+            picked, bnb_lib = _with_4bit_gemm(bnb, bnb_lib)
+            if picked != bnb:
+                src = f"{src} (bnb {picked} / {bnb_lib.name}: rocm{bnb} has no 4-bit kernels, #316)"
+                bnb = picked
+            elif is_linux and probed == DEFAULT_BNB_LINUX:
+                src = f"{src} (Linux ROCm 7.14 / bnb {bnb})"
+            else:
+                src = f"{src} (bnb {bnb} / {bnb_lib.name})"
     except Exception as exc:
         print(f"WARN: {exc}; using default BNB_ROCM_VERSION={default_bnb}")
         bnb = default_bnb

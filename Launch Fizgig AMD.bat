@@ -52,6 +52,8 @@ if not defined HIP_PATH set "HIP_PATH=%ROCM_PATH%"
 
 REM bitsandbytes cuda_specs runs "hipinfo" on Windows - lives under the pip ROCm SDK bin/ and venv\Scripts.
 if defined ROCM_PATH if exist "%ROCM_PATH%\bin" set "PATH=%ROCM_PATH%\bin;%PATH%"
+REM the ROCm SDK libraries that bitsandbytes' newer ROCm DLLs load (#316)
+if exist "%~dp0venv\Lib\site-packages\_rocm_sdk_libraries\bin" set "PATH=%~dp0venv\Lib\site-packages\_rocm_sdk_libraries\bin;%PATH%"
 if exist "%~dp0venv\Lib\site-packages\_rocm_sdk_devel\bin" set "PATH=%~dp0venv\Lib\site-packages\_rocm_sdk_devel\bin;%PATH%"
 if exist "%~dp0venv\Scripts" set "PATH=%~dp0venv\Scripts;%PATH%"
 

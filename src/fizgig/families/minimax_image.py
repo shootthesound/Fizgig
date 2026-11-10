@@ -139,7 +139,9 @@ MINIMAX_IMAGE = FamilyDescription(
                "1 MP or larger; Fizgig resizes them."),
     batch_training=True,              # Batch size (Other Options): pictures packed one after another (forward_packed)
     trigger_attention=True,           # training maps' trigger-word map (driver.trigger_attention_hooks)
-    int8_attention=True,              # workbench renders: comfy-kitchen's INT8 attention, as MiniMax H3's
+    # INT8 attention off (measured 10 Nov 2026, RTX PRO 6000, Studio, 6 steps): no faster (2048 px 7.32 s on vs 7.43 s
+    # off, 1024 px 2.38 vs 2.39) and the picture moves away from the training previews (22.5 dB vs 38.8 dB off).
+    int8_attention=False,
     activation_cache=True,            # Reuse unchanged blocks: step-1 replay, identical to a full render
     # compile: not switched on - MiniMax H3's DiT has never been measured compiled (its int8 ConvRot Linears); to measure
     finetune=True,                    # MiniMax H3's rotation fine-tune on the int8 file (driver: H3's ft_* methods)

@@ -35,6 +35,28 @@ def _lat5(x):
     return x if x.dim() == 5 else x.unsqueeze(2)
 
 
+class _VAEBox(torch.nn.Module):
+    """The image VAE and the device it works on. A module, so the workbench can park it (`.to("cpu")`) like any
+    family's VAE on a small card; vae["vae"] / vae["device"] as the driver reads it."""
+
+    def __init__(self, vae, device):
+        super().__init__()
+        self.vae = vae
+        self.device = device
+
+    def __getitem__(self, key):
+        return getattr(self, key)
+
+    def to(self, *args, **kwargs):
+        """A move to the GPU (the workbench's, before an encode or decode on a small card) is where the jobs run from
+        then on; parking on the CPU leaves that as it is - the driver moves the halves for each job itself."""
+        out = super().to(*args, **kwargs)
+        dev = next(self.vae.parameters()).device
+        if dev.type != "cpu":
+            self.device = dev
+        return out
+
+
 class MiniMaxH3ImageDriver(FamilyDriver):
 
     _grid = M.PDD_SIGMAS
@@ -162,7 +184,7 @@ class MiniMaxH3ImageDriver(FamilyDriver):
     def load_vae(self, path, device):
         """Both halves in fp32 on the CPU (2.3 GB): each rides to the GPU for its own job only."""
         from fizgig.minimax_image.vae import load_image_vae
-        return {"vae": load_image_vae(path, "cpu"), "device": device}
+        return _VAEBox(load_image_vae(path, "cpu"), device)
 
     @torch.no_grad()
     def encode_images(self, vae, images):

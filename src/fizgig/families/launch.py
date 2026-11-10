@@ -888,8 +888,10 @@ def train_command(desc, inputs, plan):
             cmd += ["--mask_prior", f"{mask_prior(desc, st):g}"]
     if face_weight(desc, st) is not None:
         cmd += ["--face_weight", f"{face_weight(desc, st):g}"]
-        if str(st.get("FACE_BOOST_AREA") or "").startswith("Head"):
+        if str(st.get("FACE_BOOST_AREA") or "Head").startswith("Head"):
             cmd += ["--face_area", "head"]
+        if not str(st.get("FACE_BOOST_EVERY") or FACE_EVERY[1]).startswith("Every epoch"):
+            cmd += ["--face_every", "2"]
     if dop_on(desc, st) or mp_subs:
         trig, cls = dop_rules(st)
         if mp_subs:          # the captions are read fused: DOP swaps "zwxemwoman" for "a woman"
@@ -1531,7 +1533,10 @@ def mask_prior(desc, st):
 
 
 FACE_AREAS = ("Face", "Head (face and hair)")   # Boost the face's area: the Training tab's choice
-FACE_BOOST = 2.0        # the face's loss weight by default with Boost the face ticked (an experiment)
+FACE_EVERY = ("Every epoch", "Every 2nd epoch")  # when it's on: every 2nd = epochs 1, 3, 5...; the rest train normally
+# the face's loss weight by default with Boost the face ticked (an experiment): Head x9 every 2nd epoch led the
+# 10 Nov pixie runs' epoch-50 likeness (x9 every epoch starved the body: Peter, 10 Nov 2026)
+FACE_BOOST = 9.0
 
 
 def face_weight(desc, st):

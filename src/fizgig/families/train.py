@@ -1122,7 +1122,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  ft_epochs_done=0, ft_fused_backward=False, reg_lr_multiplier=0.2, preview_checkpoint=None,
                  preview_checkpoint_cache="auto", preview_int8=False, family_options=None,
                  dop=False, dop_trigger=None, dop_class="", dop_weight=1.0, dop_every=1, dop_ft_samples=8,
-                 lr_boost=None, share_worker=None, masked_training=False, mask_floor=0.1, mask_prior=0.0, face_weight=1.0, face_area="face",
+                 lr_boost=None, share_worker=None, masked_training=False, mask_floor=0.1, mask_prior=0.0, face_weight=1.0, face_area="face", face_every=1,
                  caption_dropout=0.0, stage_dataset_config=None, stage_until=0.3, stage_blend=0.1,
                  batch_size_auto=False):
     desc = get_family(family)
@@ -1248,6 +1248,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     # ---- data ------------------------------------------------------------------------------------
     shared_epoch = Value("i", 0)
     # the face's own loss weight (the face detector's oval): anything but 1 (0 = the face not at all); stills only
+    face_phase = {"on": True}              # Boost the face every Nth epoch: this epoch boosted? (set per epoch)
     face_on = (face_weight is not None and float(face_weight) >= 0.0 and float(face_weight) != 1.0
                and not slider_prompts and desc.masked_training)
     if slider_prompts:
@@ -1343,7 +1344,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     def _loss_mask(batch):
         """The step's per-cell loss weights (masked training), or None: a picture without a mask trains as normal."""
         m = batch.get("loss_mask") if masked_training else None
-        f = batch.get("face_weight") if face_on else None
+        f = batch.get("face_weight") if face_on and face_phase["on"] else None
         if m is None and f is None:
             return None
         from fizgig.dataset.masks import mask_weight
@@ -2054,6 +2055,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         if face_on:
             md["ss_face_weight"] = f"{float(face_weight):g}"
             md["ss_face_area"] = "head" if face_area == "head" else "face"
+            md["ss_face_every"] = str(max(1, int(face_every or 1)))
         md.update(driver.run_metadata())
         return md
 
@@ -2717,6 +2719,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 logger.info("[maps] training maps: no picture could be read from the cache - off for this run")
                 maps = None
     for epoch in (_worker_epochs() if share_worker else range(start_epoch, max_train_epochs)):
+        if face_on and int(face_every or 1) > 1:   # Boost the face every Nth epoch (1, 1+N, ...), normal between
+            face_phase["on"] = epoch % int(face_every) == 0
+            logger.info(f"[face boost] epoch {epoch + 1}: " + ("boosted" if face_phase["on"] else "normal (no boost)"))
         shared_epoch.value = epoch + 1
         driver.begin_epoch(epoch + 1 + (ftr.epochs_done if ftr is not None else 0))   # a continued fine-tune counts on
         if share_worker and epoch + 1 == int(share_now[0]["epoch"]):   # a round's first epoch: the lead's LoRA
@@ -3264,6 +3269,9 @@ def setup_parser():
     p.add_argument("--face_weight", type=float, default=1.0,
                    help="Boost the face (an experiment): each still's largest face counts this many times as much in "
                         "the loss (a soft oval from the face detector), on top of any mask; 1 = off, 0 = the face not at all")
+    p.add_argument("--face_every", type=int, default=1,
+                   help="--face_weight every Nth epoch only (epochs 1, 1+N, ...); the epochs between train as if it "
+                        "were off. 1 = every epoch")
     p.add_argument("--face_area", choices=("face", "head"), default="face",
                    help="--face_weight's area: the face, or the head (face and hair; a mask trims it to the person)")
     p.add_argument("--mask_prior", type=float, default=0.0,
@@ -3338,7 +3346,7 @@ def main():
         dop_ft_samples=a.dop_ft_samples,
         lr_boost=[(x.split("=", 1)[0], float(x.split("=", 1)[1])) for x in a.lr_boost if "=" in x] or None,
         share_worker=a.share_worker, masked_training=a.masked_training, mask_floor=a.mask_floor,
-        mask_prior=a.mask_prior, face_weight=a.face_weight, face_area=a.face_area, caption_dropout=a.caption_dropout, stage_dataset_config=a.stage_dataset_config,
+        mask_prior=a.mask_prior, face_weight=a.face_weight, face_area=a.face_area, face_every=a.face_every, caption_dropout=a.caption_dropout, stage_dataset_config=a.stage_dataset_config,
         stage_until=a.stage_until, stage_blend=a.stage_blend)
 
 

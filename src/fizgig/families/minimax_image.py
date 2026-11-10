@@ -18,20 +18,22 @@ _H = "Comfy-Org/MiniMax-H3"
 _PDD_SIGMAS = (1.0, 0.9675236940383911, 0.8875485062599182, 0.75, 0.5327739119529724, 0.23200887441635132, 0.0)
 
 
-def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="1.0", edit=False, slider=False):
-    # NOT YET TRAINED (10 Nov 2026): the shared stills recipe (Muon, Peter 6 Nov; saved every epoch) at 1 MP - each
-    # token is 32 px, so 1 MP is 1024 tokens, Qwen 2.1's 0.25 MP. To be tuned on pod runs before the family ships.
-    lo, hi = adaptive or ("1e-4", "2e-4")
+def _preset(rank, lr=1e-4, adaptive=None, epochs=30, slider=False, mp="0.25", edit=False):
+    """Krea 2's presets, value for value (families/krea2.py _preset; Peter, 10 Nov 2026: "mirror the Krea 2 presets
+    exactly", after a 0.25 MP, 2e-4, Muon run with the adapter gave a strong likeness), plus the two this model needs:
+    Fizgig's training adapter on (without it people turn into caricatures) and an edit flag for the Edit preset."""
+    lo, hi = adaptive or ("1e-4", "4e-4")
     return {
         "NETWORK_DIM": rank, "NETWORK_ALPHA": rank, "NETWORK_TYPE": "LoRA (standard)", "LEARNING_RATE": lr,
-        "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 42, "FAMILY_EDIT": edit, "FAMILY_SLIDER": slider,
+        "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 42, "FAMILY_SLIDER": slider, "FAMILY_EDIT": edit,
         "ADAPTIVE_LR": adaptive is not None, "ADAPTIVE_LR_MIN": lo, "ADAPTIVE_LR_MAX": hi,
         "OPTIMIZER_TYPE": "muon", "OPTIMIZER_ARGS": MUON_DEFAULT_ARGS, "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
         "DATASET_MEGAPIXELS": mp, "BLOCKS_SWAP": "Auto (detect from GPU)",
         "FAMILY_PRECISION": "Auto (fits your free VRAM)", "FAMILY_TRAINING_ADAPTER": True,
         "FAMILY_EMA": "0.98 (recommended)",
-        "KREA2_LOSS_WATCH": True, "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False,
-        "KREA2_WARMUP_LOOK": False, "FAMILY_SLIDER_GUIDANCE": "2", "FAMILY_FAST_ID": False,
+        "KREA2_LOSS_WATCH": True, "KREA2_PER_IMAGE_LR": True, "KREA2_AUTO_RECAPTION": False,
+        "KREA2_WARMUP_LOOK": False,
+        "FAMILY_SLIDER_GUIDANCE": "3",    # Krea 2's prompt-slider push strength
     }
 
 
@@ -125,6 +127,7 @@ MINIMAX_IMAGE = FamilyDescription(
     network_types=("lora", "lokr"),
     ema_default="0.98",
     masked_training=True,
+    slider_guidance=3.0,              # Krea 2's (the presets mirror Krea 2's)
     slider_training=True,             # photo pairs (training_loss diff weighting) or prompts (noise_latents / predict)
     edit_training=True,               # one checkpoint for text-to-image and edits (model card)
     edit_references=16,               # "supports up to 16 reference images" (model card)
@@ -163,11 +166,11 @@ MINIMAX_IMAGE = FamilyDescription(
     workbench=("repair", "profiler", "extract", "royale"),
 
     presets=(
-        ("✨ MiniMax H3 Image Fast (rank 8, adaptive LR)", _preset(8, adaptive=("1e-4", "2e-4"))),
-        ("✨ MiniMax H3 Image (rank 16, adaptive LR)", _preset(16, adaptive=("5e-5", "1e-4"))),
-        ("✨ MiniMax H3 Image Style (rank 16, 1e-4)", _preset(16, lr=1e-4)),
-        ("✨ MiniMax H3 Image Edit (rank 8, adaptive LR)", _preset(8, adaptive=("1e-4", "2e-4"), epochs=12, edit=True)),
-        ("✨ MiniMax H3 Image Slider (rank 8, 2e-4)", _preset(8, lr=2e-4, epochs=16, slider=True)),
+        ("✨ MiniMax H3 Image Ultra Fast (rank 8, adaptive LR)", _preset(8, adaptive=("2e-4", "4e-4"))),
+        ("✨ MiniMax H3 Image Standard (rank 32, full model)", _preset(32, epochs=64)),
+        ("✨ MiniMax H3 Image Style (rank 16, gentle LR)", _preset(16, adaptive=("5e-5", "2e-4"), epochs=64)),
+        ("✨ MiniMax H3 Image Edit (rank 8, adaptive LR)", _preset(8, adaptive=("2e-4", "4e-4"), epochs=12, edit=True)),
+        ("✨ MiniMax H3 Image Slider (rank 8, 2e-4)", _preset(8, lr=2e-4, epochs=20, slider=True, mp="0.5")),
     ),
-    start_lr_bands=(("lora", 1.7e-5, 6e-4), ("slider", 7e-5, 6e-4)),
+    start_lr_bands=(("lora", 3e-5, 3e-4), ("slider", 7e-5, 6e-4)),     # Krea 2's, as the presets are its
 )

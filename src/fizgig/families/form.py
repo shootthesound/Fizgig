@@ -57,6 +57,7 @@ ROW_GROUPS = (
     ("turbo", "Turbo LoRA", ("FAMILY_TURBO_ON", "FAMILY_TURBO_STRENGTH")),
     ("rotations", "Rotations", ("FAMILY_FT_ROTATIONS", "FAMILY_FT_SAVE_EVERY", "FAMILY_FT_ROTATE_EVERY")),
     ("reg", "Regularisation", ("FAMILY_FT_REG_DIR", "FAMILY_FT_REG_MULT")),
+    ("elementboost", "Element boost (experimental)", ("FACE_BOOST", "FACE_BOOST_AREA")),
 )
 STAGE_MPS = ("Off", "0.25", "0.37", "0.5", "0.75")
 STAGE_UNTILS = ("20%", "30%", "50%")
@@ -403,6 +404,23 @@ def form(desc):
                            "LoRA has learned, which it hasn't yet, and where it's changing things it shouldn't, like "
                            "the background or clothes. Open them with the Training maps button on the run card. Adds "
                            "a few seconds an epoch."))
+    if desc.masked_training:             # Element boost: stills, with or without masks (a mask only trims it)
+        params += [
+            _row("FACE_BOOST", "On", "check",
+                 "Early in the run, one part of each picture (the face and hair, unless you pick another below) "
+                 "counts much more than the rest, so it's learned faster - for a face, most of all when faces "
+                 "are small in the frame (medium and full-length shots). "
+                 "It runs 3 boosted stretches, then 1 normal, for the first 12 epochs or 600 steps, whichever "
+                 "is sooner; after that the run trains as normal, so the body and background catch up. Works "
+                 "with or without masks (a mask, if a picture has one, trims it). Pictures where it isn't found "
+                 "train as normal."),
+            _row("FACE_BOOST_AREA", "What it boosts", "choice",
+                 "Face and hair (the default): the face and the hair around it. Face only: just the face, for when "
+                 "the hair changes from picture to picture or shouldn't be learned. These two use the face "
+                 "finder. The rest are the Make masks choices, found by its person finder: the clothes for an "
+                 "outfit LoRA, the background for a place, and so on.",
+                 launch.FACE_AREAS),
+        ]
     params += by_section("training", "", "lora")
     if desc.identity_blocks:
         a, b = desc.identity_blocks[0], desc.identity_blocks[-1]
@@ -500,19 +518,6 @@ def form(desc):
                  "model's look stay its own. The higher the number, the firmer.\n"
                  "Speed: each step takes up to about half as long again.",
                  launch.MASK_PRIORS, hint_labels=True),                 # one spaced line per choice, name in bold
-            _row("FACE_BOOST", "Element boost (experimental)", "check",
-                 "Early in the run, one part of each picture (the face and hair, unless you pick another below) "
-                 "counts much more than the rest, so it's learned faster - for a face, most of all when faces "
-                 "are small in the frame (medium and full-length shots). "
-                 "It runs 3 boosted stretches, then 1 normal, for the first 12 epochs or 600 steps, whichever "
-                 "is sooner; after that the run trains as normal, so the body and background catch up. Works "
-                 "with or without masks (a mask trims it). Pictures where it isn't found train as normal."),
-            _row("FACE_BOOST_AREA", "What it boosts", "choice",
-                 "Face and hair (the default): the face and the hair around it. Face only: just the face, for when "
-                 "the hair changes from picture to picture or shouldn't be learned. These two use the face "
-                 "finder. The rest are the Make masks choices, found by its person finder: the clothes for an "
-                 "outfit LoRA, the background for a place, and so on.",
-                 launch.FACE_AREAS),
         ])
     add("subjects", "Subjects", "training", subjects,
         help={"href": VIDEO, "text": "How to set up Fizgig LoRA Isolation",
@@ -1075,6 +1080,7 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         media = launch.dataset_media(image_folder) if image_folder else {"photo"}
         if prompt_slider or (media and "photo" not in media):
             hidden.add("masks")             # a prompt slider makes its own pictures; a folder of clips has none to mask
+            hidden |= {"FACE_BOOST", "FACE_BOOST_AREA"}   # nor anything for Element boost to find
         elif not values.get("MASKED_TRAINING"):
             hidden |= {"MASK_FLOOR", "MASK_PRIOR"}
         else:

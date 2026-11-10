@@ -79,12 +79,6 @@ Captions tab: a picture with a mask has a **Show mask** button.
 
 Each step takes longer: one extra pass through the model, without the LoRA. In our tests that added from a few percent to about half again, depending on the model. It's for LoRAs: a slider or a fine-tune trains without it. This is known as masked prior preservation.
 
-### …make one part of each picture learn faster (Element boost)?
-
-**Element boost (experimental)**, in the Masked training section. Early in the run one part of each picture counts much more than the rest, so it's learned sooner: by default the face and hair, which brings likeness in faster, most of all when faces are small in the frame. It runs three boosted stretches then one normal, for the first 12 epochs or 600 steps, whichever comes first; after that the run trains as normal, so the body and background catch up. It works with or without masks (a mask trims it), and a picture where the part isn't found trains as normal. It's on in MOSS-Image's Fast, Standard and Turbo Train presets.
-
-**What it boosts:** Face and hair (the default) or Face only come from the face finder; Face only suits a subject whose hair changes between pictures. The other choices are the same as Make masks' person finder (the clothes, the body, the background and so on), found with the same model. The clothes choice suits an outfit LoRA, not a person one.
-
 ## What to watch out for
 
 **A mask Fizgig won't use.** These are named under the tick and in the training log, and their pictures train without a mask:

@@ -49,6 +49,9 @@ class CaptionerDescription:
     default_task: str = ""
     instruction: bool = False        # follows a written instruction (the Captions tab's task menu + edit box)
     hint: str = ""                   # one line for the model menu's hint
+    blurb: str = ""                  # a few words on what it's good for (Preferences' Other captioning models)
+    download_skip: tuple = ()        # repo files its class never loads (a second copy of the weights...): the
+                                     # Download button leaves them out
     precisions: tuple = ()           # ((name, vram_gb), ...) best first, when it loads in more than one way: the
                                      # worker picks the first that fits the card's free memory (pick_precision)
     # An instruction captioner's own prompt menu, shown under Fizgig's instruction tasks (the page builds the text):
@@ -81,6 +84,14 @@ class Captioner:
 
     def __init__(self, desc: CaptionerDescription, device: str, files: dict, precision: str = ""):
         self.desc, self.device, self.files, self.precision = desc, device, files, precision
+
+    @classmethod
+    def fetch(cls, desc: "CaptionerDescription", files: dict) -> None:
+        """Download everything load() will need, so it then works offline: by default the pinned snapshot without
+        desc.download_skip. A captioner whose first use caches more than its own files - a trust_remote_code model's
+        code, which can live in another repo - overrides this to fetch that too (FlorenceCaptioner)."""
+        from huggingface_hub import snapshot_download
+        snapshot_download(files["repo"], revision=files["revision"], ignore_patterns=list(desc.download_skip) or None)
 
     def load(self) -> None:
         raise NotImplementedError
@@ -128,6 +139,12 @@ _BY_LABEL = {d.label: d for d in CAPTIONERS}
 
 def get(key_or_label: str) -> CaptionerDescription | None:
     return _BY_KEY.get(key_or_label) or _BY_LABEL.get(key_or_label)
+
+
+def captioner_class(desc: CaptionerDescription):
+    """Its class, imported now (inside the worker)."""
+    mod, _, cls = desc.module.partition(":")
+    return getattr(importlib.import_module(mod), cls)
 
 
 def make(desc: CaptionerDescription, device: str, files: dict, precision: str = "") -> Captioner:

@@ -48,6 +48,84 @@ SECONDARY_LINKS = (("fp8 (10.6 GB, about 10.5 GB of VRAM)", "Comfy-Org/Qwen3-VL"
                    ("bf16 (17.5 GB, about 17 GB of VRAM)", "Comfy-Org/Qwen3-VL", "text_encoders/qwen3vl_8b_bf16.safetensors"))
 
 
+# ---- Preferences' Other captioning models: each one's download, from the registry ---------------------------
+_dl = {}                      # key -> {"state": "downloading" / "failed", "error"}
+_dl_lock = threading.Lock()
+
+
+def _repo_dir(repo):
+    from huggingface_hub.constants import HF_HUB_CACHE
+    return os.path.join(HF_HUB_CACHE, "models--" + repo.replace("/", "--"))
+
+
+def _downloaded(desc) -> bool:
+    """Its pinned snapshot is in the Hugging Face cache with its weights (a first use's download counts too)."""
+    try:
+        from huggingface_hub import snapshot_download
+        snap = snapshot_download(desc.files.repo, revision=desc.files.revision, local_files_only=True)
+    except Exception:
+        return False
+    return any(n.endswith((".safetensors", ".bin")) for n in os.listdir(snap)) if os.path.isdir(snap) else False
+
+
+def _cached_gb(repo) -> float:
+    """What of the repo is on disk so far (finished and partial files), for a download's progress."""
+    total = 0
+    for root, _dirs, names in os.walk(os.path.join(_repo_dir(repo), "blobs")):
+        for n in names:
+            try:
+                total += os.path.getsize(os.path.join(root, n))
+            except OSError:
+                pass
+    return total / 2 ** 30
+
+
+def other_captioners():
+    """[{key, label, blurb, size_gb, downloaded, state, done_gb, error}] for every captioner that downloads itself."""
+    out = []
+    for d in _captioners.CAPTIONERS:
+        if not isinstance(d.files, _captioners.HFRepo):
+            continue
+        with _dl_lock:
+            job = dict(_dl.get(d.key) or {})
+        busy = job.get("state") == "downloading"
+        out.append({"key": d.key, "label": d.label, "blurb": d.blurb, "size_gb": d.size_gb,
+                    "downloaded": False if busy else _downloaded(d), "state": job.get("state", ""),
+                    "done_gb": round(_cached_gb(d.files.repo), 2) if busy else 0.0, "error": job.get("error", "")})
+    return out
+
+
+def download_captioner(key, prefs=None):
+    """Fetch one captioner now (its first use would otherwise), in the background: the worker's --fetch, which runs
+    the captioner's own fetch() - its pinned files, and whatever else its first use caches - in its own process."""
+    d = _captioners.get(key)
+    if d is None or not isinstance(d.files, _captioners.HFRepo):
+        raise ValueError("Unknown captioning model.")
+    with _dl_lock:
+        if (_dl.get(key) or {}).get("state") == "downloading":
+            return {"ok": True}
+        _dl[key] = {"state": "downloading"}
+
+    def run():
+        try:
+            proc = _popen([sys.executable, "-m", "fizgig.scripts.batch_caption", "--fetch", d.key], prefs or {})
+            last = ""
+            for line in proc.stdout:
+                if line.strip():
+                    last = line.strip()
+            proc.wait()
+            if proc.returncode or last != "DONE":
+                raise RuntimeError(last[len("FAIL: "):] if last.startswith("FAIL: ") else last or "it stopped")
+            with _dl_lock:
+                _dl.pop(key, None)
+            _log(f"Downloaded {d.label}")
+        except Exception as e:
+            with _dl_lock:
+                _dl[key] = {"state": "failed", "error": str(e)[:300]}
+    threading.Thread(target=run, daemon=True).start()
+    return {"ok": True}
+
+
 def captioner_problem(path) -> str:
     """Why a file can't be the captioner, from its safetensors header alone ("" = it can): a Qwen3-VL 4B or 8B in a
     build the loader reads (bf16 or fp8 scaled). ComfyUI's int8 ConvRot / w4a8 builds (int8 / uint8 weights) don't load."""

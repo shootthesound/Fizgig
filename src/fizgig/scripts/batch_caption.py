@@ -246,11 +246,27 @@ def setup_parser() -> argparse.ArgumentParser:
     p.add_argument("--task", default="", help="One of the captioner's tasks (Florence: <DETAILED_CAPTION>...)")
     p.add_argument("--instruction_file", default="", help="The instruction, for a captioner that follows one")
     p.add_argument("--caption_ext", default=".txt")
+    p.add_argument("--fetch", default="", help="Download a captioner's files now (its key), so it works offline")
     return p
 
 
 def main() -> int:
     args = setup_parser().parse_args()
+
+    if args.fetch:                               # Preferences' Download: the captioner's own fetch(), in this process
+        from fizgig import captioners
+        desc = captioners.get(args.fetch)
+        if desc is None or not isinstance(desc.files, captioners.HFRepo):
+            print(f"FAIL: {args.fetch} doesn't download itself", flush=True)
+            return 1
+        try:
+            captioners.captioner_class(desc).fetch(desc, {"repo": desc.files.repo, "revision": desc.files.revision,
+                                                          "code_revision": desc.files.code_revision})
+        except Exception as exc:
+            print(f"FAIL: {type(exc).__name__}: {exc}", flush=True)
+            return 1
+        print("DONE", flush=True)
+        return 0
 
     if args.serve:
         if not args.config:

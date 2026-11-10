@@ -2963,6 +2963,10 @@ class Handler(BaseHTTPRequestHandler):
                                          for k in form.model_keys(d)},
                               "cache_dir": str(p.get("cache_dir") or ""),
                               "settings": {k: str(p.get(k) or "") for k in SETTING_PREFS},
+                              "captioning": {"main": pref_path(p, "krea2_text_encoder"),
+                                             "main_ok": bool(pref_path(p, "krea2_text_encoder")
+                                                             and os.path.isfile(pref_path(p, "krea2_text_encoder"))),
+                                             "others": captions.other_captioners()},
                               "captioner": {"path": str(p.get(captions.SECONDARY_PREF) or ""),
                                             "note": secondary_captioner_note(p),
                                             "links": [{"label": lab, "href": f"https://huggingface.co/{r}/blob/main/{f}"}
@@ -3035,6 +3039,8 @@ class Handler(BaseHTTPRequestHandler):
                                       "application/octet-stream")
             except (ValueError, OSError) as e:
                 return self.json({"error": str(e)}, 400)
+        if path == "/api/captioners/status":          # Preferences' Other captioning models, while one downloads
+            return self.json({"others": captions.other_captioners()})
         if path == "/api/captions/options":
             p = load_prefs()
             cap = captioner_for(p)
@@ -4291,6 +4297,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/trigger":
                 set_folder_trigger(str(b.get("folder") or ""), str(b.get("word") or ""))
                 return self.json({"ok": True})
+            if path == "/api/captioners/download":    # one captioner's files now, rather than on first use
+                return self.json(captions.download_captioner(str(b.get("key") or ""), load_prefs()))
             if path == "/api/captions/ai":
                 prefs, folder, clips, photos, _ = _caption_args(b)
                 cap = captioner_for(prefs)

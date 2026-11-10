@@ -73,6 +73,7 @@ async function boot() {
   const pr = await api("/api/prefs");
   S.prefs = pr.models || {};
   S.captioner = pr.captioner;              // the secondary captioning model's row
+  S.captioning = pr.captioning;            // the Captioning models card: the main model, the other captioners
   S.webPort = pr.web_port;
   S.portNow = pr.port_now;
   S.onPod = pr.on_pod;
@@ -1057,11 +1058,22 @@ function renderPrefs() {
   paintFetch();
 }
 
-// the secondary captioning model (#270): set, it captions everything (the Captions tab and auto-recaption);
-// empty, the Krea 2 text encoder does. Plain Hugging Face links to the builds Fizgig reads - nothing downloads itself
+// Preferences' Captioning models card: the main model (Krea 2's text encoder), the optional bigger Qwen3-VL (#270)
+// that takes its place everywhere, and the Captions tab's other models, each with a Download (or downloaded on first use)
 function captionerCard() {
   const c = S.captioner || {path: "", note: "", links: []};
-  const input = el("input", {type: "text", class: "w-path", value: c.path || "", placeholder: "Empty = the Krea 2 text encoder"});
+  const g = S.captioning || {main: "", main_ok: false, others: []};
+  const sub = (title, text) => [el("div", {class: "cap-pref-title", text: title}), el("div", {class: "field-hint", text})];
+
+  // 1. the main model
+  const main = el("div", {class: "pref-file"}, ...sub("Main captioning model",
+    "Krea 2's text encoder (Qwen3-VL 4B) writes captions on the Captions tab, and it's the model auto-recaption uses " +
+    "while training."),
+    el("div", {class: "field-hint cap-pref-state", text: g.main_ok ? `Set: ${g.main.split(/[\\/]/).pop()}` :
+      "Not set yet: set the Krea 2 text encoder under Krea 2 below, or press Download models for me."}));
+
+  // 2. the bigger Qwen3-VL, optional
+  const input = el("input", {type: "text", class: "w-path", value: c.path || "", placeholder: "Empty = the main model"});
   const note = el("div", {class: "field-hint", text: c.note || ""});
   const save = async () => {
     try {
@@ -1072,20 +1084,60 @@ function captionerCard() {
     } catch (e) { note.textContent = e.message; }
   };
   input.addEventListener("change", save);
-  const row = el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Secondary captioning model:"}),
+  const row = el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Bigger model:"}),
     input, el("button", {class: "btn", text: "Choose…", title: "Pick from what is on the machine running Fizgig",
       onclick: () => pick(input.value, false, (p) => { input.value = p; save(); })}),
     ...(c.links || []).map((l) => el("a", {class: "btn", target: "_blank", rel: "noopener", href: l.href,
       text: l.label.split(" (")[0], title: l.label})));
-  return el("div", {class: "section-card"}, el("div", {class: "card-title"}, el("span", {text: "Captioning model"})),
-    el("div", {class: "card-content"}, el("div", {class: "pref-file"}, row,
-      el("div", {class: "field-hint", text: "Optional, and Qwen3-VL only: the 8B, the bigger model of the family the " +
-        "Krea 2 text encoder belongs to (it's Qwen Image 2.1's text encoder), for more detailed captions. Any other " +
-        "file is refused; other captioners are picked on the Captions tab. Download a build from the links and " +
-        "choose it here; from then on it takes the Krea 2 text encoder's place wherever Qwen3-VL captions - the " +
-        "Captions tab's Qwen3-VL and auto-recaption. Empty the box to go back to the Krea 2 text encoder. " + (c.links || []).map((l) => l.label).join(" · ") +
-        ". On a card with less VRAM than it needs, it keeps what fits and streams the rest from system RAM (slower)."}),
-      note)));
+  const bigger = el("div", {class: "pref-file"}, ...sub("Bigger model (optional)",
+    "For more detailed captions, set Qwen3-VL 8B here (Qwen Image 2.1's text encoder), or another Qwen3-VL 4B. It " +
+    "takes the main model's place everywhere, auto-recaption included. Only Qwen3-VL files work, in bf16 or fp8 (not " +
+    "the int8 builds). Download a build from the links, choose it, and empty the box to go back to the main model. " +
+    "On a card with less memory than it needs, it keeps what fits and streams the rest from system RAM (slower)."),
+    row, note);
+
+  // 3. the Captions tab's other models
+  const list = el("div", {class: "cap-pref-list"});
+  const others = el("div", {class: "pref-file"}, ...sub("Other captioning models",
+    "For the Captions tab only: auto-recaption doesn't use them. Each downloads itself the first time you caption " +
+    "with it, or download it here first, to have it ready or to caption without internet."), list);
+  captionerOthersDraw(list, g.others || []);
+  return el("div", {class: "section-card"}, el("div", {class: "card-title"}, el("span", {text: "Captioning models"})),
+    el("div", {class: "card-content"}, main, bigger, others));
+}
+
+// a row per other captioner: what it's for, its size, and Download / its progress / Downloaded
+function captionerOthersDraw(list, others) {
+  list.replaceChildren(...others.map((o) => {
+    const state = o.state === "downloading" ? el("span", {class: "field-hint", text:
+        `Downloading… ${o.done_gb.toFixed(1)} of ${o.size_gb.toFixed(1)} GB`})
+      : o.downloaded ? el("span", {class: "cap-pref-done", text: "Downloaded ✓"})
+      : el("button", {class: "btn btn-sm", text: o.state === "failed" ? "Try again" : "Download",
+          onclick: async (ev) => {
+            ev.target.disabled = true;
+            try { await api("/api/captioners/download", {key: o.key}); captionerOthersPoll(list); }
+            catch (e) { ev.target.disabled = false; ev.target.title = e.message; }
+          }});
+    return el("div", {class: "cap-pref-row"},
+      el("span", {class: "cap-pref-name", text: o.label}),
+      el("span", {class: "field-hint", text: `${o.blurb} · ${o.size_gb < 1 ? Math.round(o.size_gb * 1000) + " MB" :
+        o.size_gb.toFixed(1) + " GB"}`}),
+      state,
+      o.state === "failed" ? el("div", {class: "field-hint cap-pref-err", text: `The download stopped: ${o.error}`}) : null);
+  }));
+}
+
+function captionerOthersPoll(list) {               // every 2 s while any is downloading
+  clearTimeout(S.capDlTimer);
+  S.capDlTimer = setTimeout(async () => {
+    try {
+      const r = await api("/api/captioners/status");
+      if (S.captioning) S.captioning.others = r.others;
+      if (!list.isConnected) return;
+      captionerOthersDraw(list, r.others);
+      if (r.others.some((o) => o.state === "downloading")) captionerOthersPoll(list);
+    } catch (e) { captionerOthersPoll(list); }
+  }, 2000);
 }
 
 // a folder setting the two apps share (prefs.json): a box, Choose…, saved when it changes

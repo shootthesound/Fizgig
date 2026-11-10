@@ -25,6 +25,7 @@ def test_each_captioner_declares_what_fizgig_needs(d):
     assert re.fullmatch(r"fizgig\.captioners\.[a-z0-9_]+:[A-Za-z0-9_]+", d.module)
     if isinstance(d.files, HFRepo):                      # pinned: a change upstream can't swap the files
         assert d.files.repo and re.fullmatch(r"[0-9a-f]{40}", d.files.revision)
+        assert d.blurb and d.size_gb > 0, "Preferences lists it with a few words and its size"
         assert not d.files.code_revision or re.fullmatch(r"[0-9a-f]{40}", d.files.code_revision)
     else:
         assert isinstance(d.files, PrefFile) and d.files.pref

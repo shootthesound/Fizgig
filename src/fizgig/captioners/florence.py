@@ -5,6 +5,22 @@ from fizgig.captioners import Captioner, CaptionRequest, CaptionResult
 
 
 class FlorenceCaptioner(Captioner):
+    @classmethod
+    def fetch(cls, desc, files):
+        """Its files, then its processor and config the way load() asks for them: Florence-2 runs its own code
+        (trust_remote_code), which transformers caches on first use - without that cache, offline, transformers
+        falls back to its built-in Florence-2, which this model's processor doesn't match."""
+        super().fetch(desc, files)
+        from transformers import AutoConfig, AutoProcessor
+        from transformers.dynamic_module_utils import get_class_from_dynamic_module
+        kw = {"revision": files["revision"]}
+        if files.get("code_revision"):
+            kw["code_revision"] = files["code_revision"]
+        cfg = AutoConfig.from_pretrained(files["repo"], trust_remote_code=True, **kw)
+        AutoProcessor.from_pretrained(files["repo"], trust_remote_code=True, **kw)
+        for ref in (getattr(cfg, "auto_map", None) or {}).values():     # the model class's code (maybe another repo)
+            get_class_from_dynamic_module(ref, files["repo"], **kw)
+
     def load(self):
         from transformers import AutoModelForCausalLM, AutoProcessor
 

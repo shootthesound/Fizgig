@@ -51,7 +51,9 @@ class WDTagger(Captioner):
         ...
 ```
 
-`request` carries `task`, `instruction` and `max_new_tokens`. Import heavy libraries inside `load()`, not at the top of the file: the registry is read by the web server, which must not load torch or model code to show a menu.
+`request` carries `task`, `instruction` and `max_new_tokens`.
+
+Preferences lists every captioner that downloads itself, with its `blurb` and `size_gb` and a **Download** button. That button runs your class's `fetch(desc, files)`, which by default downloads the pinned snapshot minus `download_skip` (list there any second copy of the weights your class never loads). If your model's first use caches more than its own files, override `fetch()` to do that too, so it works offline afterwards. For example, a `trust_remote_code` model's code, which can live in another repo: see `FlorenceCaptioner.fetch`. Import heavy libraries inside `load()`, not at the top of the file: the registry is read by the web server, which must not load torch or model code to show a menu.
 
 ## What Fizgig does, so your class doesn't
 

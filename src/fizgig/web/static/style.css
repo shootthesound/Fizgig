@@ -2868,3 +2868,13 @@ label[title]:has(.tip-mark) { cursor: help; }
 #capExtraOwn { width: 100%; max-width: 720px; margin: 2px 0 6px; }
 .cap-sent { margin-top: 4px; padding: 6px 10px; border-left: 3px solid var(--accent); border-radius: 4px;
   background: color-mix(in srgb, var(--accent) 8%, transparent); max-width: 720px; }
+
+/* Preferences' Captioning models card */
+.cap-pref-title { font-weight: 700; color: var(--text-primary); margin-bottom: 2px; }
+.cap-pref-state { margin-top: 4px; }
+.cap-pref-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.cap-pref-row { display: grid; grid-template-columns: minmax(180px, 260px) 1fr auto; gap: 4px 12px; align-items: center; }
+.cap-pref-name { font-weight: 600; }
+.cap-pref-done { color: var(--success); font-weight: 600; white-space: nowrap; }
+.cap-pref-err { grid-column: 1 / -1; color: var(--warning); }
+@media (max-width: 640px) { .cap-pref-row { grid-template-columns: 1fr auto; } .cap-pref-row > .field-hint:not(.cap-pref-err) { grid-column: 1 / -1; } }

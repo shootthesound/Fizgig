@@ -575,6 +575,10 @@ class FamilyDescription:
     # masked training (fizgig/dataset/masks.py): the driver's training_loss takes loss_mask; opt in, so a family added
     # later never gets a tick its driver can't honour
     masked_training: bool = False
+    # Element boost (an experiment, the loss weight of one part of each still early in a run; masks.face_box /
+    # element_map): tuned on MOSS-Image only, so only a family that opts in shows it (Peter, 10 Nov 2026). Needs
+    # masked_training too (the driver's training_loss takes loss_mask)
+    element_boost: bool = False
     # see-through pictures (an RGBA VAE: Qwen Image 2.1): the latent cache keeps a picture's alpha when some of it is
     # transparent, and the driver's decode returns RGBA when the render is; off: the alpha is dropped, as for RGB VAEs
     rgba: bool = False

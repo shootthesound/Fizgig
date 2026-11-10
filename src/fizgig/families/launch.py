@@ -1547,7 +1547,7 @@ FACE_AREAS = tuple(k[0] for k in FACE_AREA_KEYS)
 def face_weight(desc, st):
     """Boost the face: the face weight when ticked, else None. Stills of a family with masked training, not a
     prompt slider (no photos)."""
-    if not (st.get("FACE_BOOST") and desc.masked_training) or slider_on(desc, st, "prompts"):
+    if not (st.get("FACE_BOOST") and desc.element_boost and desc.masked_training) or slider_on(desc, st, "prompts"):
         return None
     return FACE_BOOST
 

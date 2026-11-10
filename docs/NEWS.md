@@ -2,7 +2,7 @@
 
 ## 10 Nov 2026: Element boost, and new MOSS-Image settings
 
-**Element boost (experimental), under Training Parameters.** Early in a run, one part of each picture counts much more than the rest, so it's learned sooner. By default it's the face and hair, which brings likeness in faster, most of all when faces are small in the frame. It runs three boosted stretches then one normal for the first 12 epochs or 600 steps, then the run trains as normal. It works with or without masks. **What it boosts** can also be the face only, or one of the Make masks choices: the clothes, the body, the background and so on. It's on in MOSS-Image's Fast, Standard and Turbo Train presets.
+**Element boost (experimental), for MOSS-Image, under Training Parameters.** Early in a run, one part of each picture counts much more than the rest, so it's learned sooner. By default it's the face and hair, which brings likeness in faster, most of all when faces are small in the frame. It runs three boosted stretches then one normal for the first 12 epochs or 600 steps, then the run trains as normal. It works with or without masks. **What it boosts** can also be the face only, or one of the Make masks choices: the clothes, the body, the background and so on. It's on in MOSS-Image's Fast, Standard and Turbo Train presets.
 
 **MOSS-Image's Clean-end share now defaults to `11:7:40:8:3`:** 11% until epoch 7, then 40%, with every 3rd epoch back at 11% at half the learning rate. Muon trains differently from AdamW, so the sweet spot moved; starting at 11 lets composition settle and kept the hair from darkening late in a run. It was tuned with Element boost on. Load a ✨ preset to pick it up.
 

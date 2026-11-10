@@ -404,7 +404,7 @@ def form(desc):
                            "LoRA has learned, which it hasn't yet, and where it's changing things it shouldn't, like "
                            "the background or clothes. Open them with the Training maps button on the run card. Adds "
                            "a few seconds an epoch."))
-    if desc.masked_training:             # Element boost: stills, with or without masks (a mask only trims it)
+    if desc.element_boost and desc.masked_training:   # Element boost: stills, with or without masks (a mask trims it)
         params += [
             _row("FACE_BOOST", "On", "check",
                  "Early in the run, one part of each picture (the face and hair, unless you pick another below) "
@@ -1572,7 +1572,7 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
         FAMILY_TURBO_PACE=s("FAMILY_TURBO_PACE"), FAMILY_PREVIEW_LOOK=b("FAMILY_PREVIEW_LOOK"), FAMILY_PREVIEW_SMALL=b("FAMILY_PREVIEW_SMALL"),
         CAPTION_DROPOUT=caption_dropout_share(s("CAPTION_DROPOUT")) if desc.caption_dropout else 0.0,
         MASKED_TRAINING=b("MASKED_TRAINING") and desc.masked_training, MASK_FLOOR=s("MASK_FLOOR"),
-        MASK_PRIOR=s("MASK_PRIOR"), FACE_BOOST=b("FACE_BOOST"), FACE_BOOST_AREA=s("FACE_BOOST_AREA"),
+        MASK_PRIOR=s("MASK_PRIOR"), FACE_BOOST=b("FACE_BOOST") and desc.element_boost, FACE_BOOST_AREA=s("FACE_BOOST_AREA"),
         python=python, repo_dir=repo_dir, models=models, image_folder=image_folder,
         caption_ext=s("DATASET_CAPTION_EXT") or ".txt", batch_size=1, megapixels=s("DATASET_MEGAPIXELS"),
         STAGE_MP=s("STAGE_MP") if desc.resolution_stages else "", STAGE_UNTIL=s("STAGE_UNTIL"),

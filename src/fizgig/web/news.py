@@ -8,7 +8,7 @@ NEWS = [
         "date": "10 Nov 2026",
         "title": "Element boost, and new MOSS-Image settings",
         "body": (
-            "Element boost, under Training Parameters: early in a run, the face and hair (or another part you pick) "
+            "Element boost for MOSS-Image, under Training Parameters: early in a run, the face and hair (or another part you pick) "
             "count much more than the rest, so likeness comes in faster. It works with or without masks, and it's on "
             "in MOSS-Image's Fast, Standard and Turbo Train presets.\n\n"
             "MOSS-Image's Clean-end share now starts at 11 (11:7:40:8:3): with Muon the sweet spot moved, and it was "

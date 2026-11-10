@@ -44,7 +44,7 @@ MINIMAX_IMAGE = FamilyDescription(
     gui_label="MiniMax H3 Image",
     lora_name_suffix="mmh3i",
     aliases=("minimax-h3-image", "h3-image"),
-    hidden=True,                      # not in the GUI until the checklist passes (docs/drivers/STILLS.md)
+    hidden=False,
 
     # Comfy-Org/MiniMax-H3-Image also ships minimax_h3_image_pruned_w4a8.safetensors (12.6 GB): left out, MiniMax H3's
     # loader takes int8 ConvRot or 16-bit files, not w4a8. The upstream bf16 shards (MiniMaxAI, 66 GB) aren't offered:
@@ -157,7 +157,12 @@ MINIMAX_IMAGE = FamilyDescription(
     # Studio's Auto precision from train_memory (the file is int8 already; the shared rule sizes it as bf16)
     workbench_engine="fizgig.minimax_image.workbench:MiniMaxH3ImageWorkbenchEngine",
     activation_cache=True,            # Reuse unchanged blocks: step-1 replay, identical to a full render
-    # compile: not switched on - MiniMax H3's DiT has never been measured compiled (its int8 ConvRot Linears); to measure
+    # Compile Blocks offered (Peter, 10 Nov 2026); compile_payback_steps / train_memory_nogc still to measure
+    compiles=True,
+    # the int8 ConvRot Linears stay eager (driver.compile_blocks), so each block's graph breaks around them: no
+    # fullgraph, and the checkpoint outside the compiled region (a break can't sit inside a checkpoint in the graph)
+    compile_fullgraph=False,
+    compile_boundary="outside",
     finetune=True,                    # MiniMax H3's rotation fine-tune on the int8 file (driver: H3's ft_* methods)
     ft_learning_rate=3e-5,            # MiniMax H3's tested fine-tune rate (families/minimax.py); to confirm here
 

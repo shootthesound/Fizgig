@@ -1047,7 +1047,9 @@ class MiniMaxH3DiT(nn.Module):
                 _full = (h, cos, sin, mod_row)
                 _k = route[2]
                 h, cos, sin, mod_row = h[_k], cos[_k], sin[_k], mod_row[_k]
-            if use_ckpt and i < len(self.blocks) - self.gc_off_blocks:
+            # a compiled block (families/compile.py) checkpoints itself inside its graph: not again here
+            if use_ckpt and i < len(self.blocks) - self.gc_off_blocks and \
+                    not getattr(self.blocks[i], "_handles_checkpointing", False):
                 h = torch.utils.checkpoint.checkpoint(
                     _run_block, self.blocks, i, self._swap_from, h, t_emb, mod_row, cos, sin,
                     use_reentrant=False)
@@ -1102,7 +1104,8 @@ class MiniMaxH3DiT(nn.Module):
         mod_row = torch.cat(rows)
         use_ckpt = self._gradient_checkpointing and torch.is_grad_enabled()
         for i in range(len(self.blocks)):
-            if use_ckpt and i < len(self.blocks) - self.gc_off_blocks:
+            if use_ckpt and i < len(self.blocks) - self.gc_off_blocks and \
+                    not getattr(self.blocks[i], "_handles_checkpointing", False):
                 h = torch.utils.checkpoint.checkpoint(
                     _run_block, self.blocks, i, self._swap_from, h, t_emb, mod_row, cos, sin, segs,
                     use_reentrant=False)

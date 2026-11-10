@@ -792,6 +792,11 @@ def _render_previews(driver, dit, net, vae, encoded, out_dir, epoch, *, output_n
         _eager = torch.compiler.set_stance("force_eager")
         _eager.__enter__()
         done.add("eager")
+        if getattr(driver, "preview_int8_attention", False):   # the checkpoint asks for INT8 attention, so the
+            from fizgig.modules import int8_attention as _i8a   # previews match ComfyUI's render (MiniMax H3 Image)
+            _i8 = _i8a.renders(True)
+            _i8.__enter__()
+            done.add("i8a")
         for i, cond in enumerate(encoded):
             for m in mults:
                 if m is not None or extra:
@@ -830,6 +835,8 @@ def _render_previews(driver, dit, net, vae, encoded, out_dir, epoch, *, output_n
     finally:
         if "eager" in done:
             _eager.__exit__(None, None, None)
+        if "i8a" in done:
+            _i8.__exit__(None, None, None)
         if slider or strengths:
             net.set_trainable_multiplier(1.0)  # a preview that failed mid-dial must not leave the LoRA scaled
         if "decode_park" in done:

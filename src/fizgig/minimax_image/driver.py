@@ -90,6 +90,19 @@ class MiniMaxH3ImageDriver(FamilyDriver):
     def compile_targets(self, dit):
         return dit.blocks
 
+    def compile_blocks(self, dit, boundary="inside", blocks_to_swap=0):
+        """The shared compile, with H3's int8 ConvRot Linears left eager: their custom autograd Function (Triton
+        W8A16 kernels, a fallback path, class state) can't be traced, so dynamo steps around each one and compiles
+        the rest of the block (norms, rotary, attention, modulation)."""
+        from fizgig.minimax.convrot import ConvRotInt8Linear
+        for m in dit.blocks.modules():
+            if isinstance(m, ConvRotInt8Linear) and not getattr(m, "_fizgig_eager", False):
+                m.forward = torch.compiler.disable(m.forward, recursive=True)
+                m._fizgig_eager = True
+        # the shared compile reads gradient_checkpointing; H3 keeps it as _gradient_checkpointing
+        dit.gradient_checkpointing = bool(getattr(dit, "_gradient_checkpointing", False))
+        super().compile_blocks(dit, boundary=boundary, blocks_to_swap=blocks_to_swap)
+
     def park_for(self, dit, device, need_gb, purpose):
         """Only the missing gigabytes (+1) of tail blocks go to CPU (H3's partial park, ring-aware); a decode wants
         ~3 GB (the 24-layer decoder in fp32 and one row of 256 px tiles)."""
@@ -120,6 +133,9 @@ class MiniMaxH3ImageDriver(FamilyDriver):
         return load_minimax_h3_te_planned(path, device=device, compute_dtype=DTYPE, quantize=True)
 
     supports_references = True
+    # training previews render with comfy-kitchen's INT8 attention, as the checkpoint asks (every block's
+    # comfy_attention.config) and ComfyUI does: 22 dB from ComfyUI without it, 27 dB with (10 Nov 2026, 2048 px)
+    preview_int8_attention = True
 
     def load_reference_text_encoder(self, path, device):
         """With its vision tower: an edit's pictures are encoded with the caption."""

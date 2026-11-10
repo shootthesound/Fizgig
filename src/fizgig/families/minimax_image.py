@@ -139,9 +139,10 @@ MINIMAX_IMAGE = FamilyDescription(
                "1 MP or larger; Fizgig resizes them."),
     batch_training=True,              # Batch size (Other Options): pictures packed one after another (forward_packed)
     trigger_attention=True,           # training maps' trigger-word map (driver.trigger_attention_hooks)
-    # INT8 attention off (measured 10 Nov 2026, RTX PRO 6000, Studio, 6 steps): no faster (2048 px 7.32 s on vs 7.43 s
-    # off, 1024 px 2.38 vs 2.39) and the picture moves away from the training previews (22.5 dB vs 38.8 dB off).
-    int8_attention=False,
+    # INT8 attention on: the checkpoint asks for it (every block's comfy_attention.config is comfy_kitchen_int8), so
+    # ComfyUI renders with it. Measured 10 Nov 2026 (RTX PRO 6000, 2048 px, 6 steps): Studio vs ComfyUI 27.4 dB with
+    # it, 21.8 dB without; no faster (7.32 s vs 7.43 s).
+    int8_attention=True,
     activation_cache=True,            # Reuse unchanged blocks: step-1 replay, identical to a full render
     # compile: not switched on - MiniMax H3's DiT has never been measured compiled (its int8 ConvRot Linears); to measure
     finetune=True,                    # MiniMax H3's rotation fine-tune on the int8 file (driver: H3's ft_* methods)

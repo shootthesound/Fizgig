@@ -30,13 +30,25 @@ python -m fizgig.scripts.fetch_models --family minimax_image
 ## How it trains
 
 - **The checkpoint's own noise levels:** H3 Image is distilled to 6 fixed noise levels (1.0, 0.968, 0.888, 0.750, 0.533, 0.232) with one output head per level. Fizgig trains a LoRA at those levels, each through its own head: the exact inputs the model sees when it renders.
-- **Size:** each DiT token covers 32×32 pixels, so 1 MP is 1,024 tokens. The presets train at 1 MP.
+- **Size:** each DiT token covers 32×32 pixels, so 1 MP is 1,024 tokens. The presets are Krea 2's (Ultra Fast, Standard, Style, Edit, Slider) and train at 0.25 MP, the Slider at 0.5 MP.
 - **Fizgig's training adapter:** on by default, frozen at 1.0 for every training step, off for previews and never in your saved file. Without it, people trained on this model turned into caricatures; with it, the same dataset gave photographic skin and a clear likeness, and pictures without the trigger kept the model's own quality. It was trained on 7,600 real photos and 1,000 of the model's own renders, and it's free on [Hugging Face](https://huggingface.co/ShootTheSound/Fizgig-MiniMax-H3-Image-Training-Adapter) for any trainer.
+
+## Memory
+
+Base precision **Auto** picks int8 (the checkpoint's own storage) when it fits, else 4-bit, and swaps blocks as needed. The 2048×2048 preview sets the peak, so training size barely changes it. Measured on an RTX 5090 (rank 8, the training adapter on):
+
+| Base | Training, 0.25 MP / 1 MP | Peak with the preview | Each swapped block saves |
+|---|---|---|---|
+| int8 | 21.0 / 21.7 GB | 22.7 GB | 0.29 GB |
+| 4-bit (NF4) | 11.3 / 11.9 GB | 12.8 GB | 0.15 GB |
+| 4-bit HQQ (pick it yourself) | 17.0 GB at 1 MP | 17.3 GB | — |
+
+A 16 GB laptop trains Ultra Fast on Auto. The text encoder (Qwen3-VL-32B, shared with MiniMax H3) needs about 19 GB of free system RAM to stream onto a card under ~16 GB.
 
 ## Previews
 
 - 6 steps, no CFG, Euler on the model's own schedule, 2048×2048 by default (ComfyUI's default size for this model). Negative prompts don't apply.
-- Measured against ComfyUI on the same LoRA, prompt and seed: a Fizgig preview and ComfyUI's render are 40 dB PSNR apart (a mean difference of 1.2 in 255). The preview is what ComfyUI will give you.
+- Studio renders with INT8 attention, as the checkpoint asks and as ComfyUI does: on the same LoRA, prompt and seed at 2048×2048, Studio and ComfyUI differ by a mean of 5 in 255 (27 dB PSNR). In-training previews use standard attention, which differs from ComfyUI by a mean of 10 in 255 (22 dB); judge the final look in Studio or ComfyUI.
 
 ## In ComfyUI
 

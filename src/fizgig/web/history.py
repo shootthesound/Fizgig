@@ -130,6 +130,19 @@ def set_values(run_id, changes):
         pass
 
 
+def set_field(run_id, key, value):
+    """One field of a run's record (the out-of-memory recovery's tries, "oom")."""
+    try:
+        with _Lock():
+            runs = _read()
+            for r in runs:
+                if r.get("id") == run_id:
+                    r[key] = value
+            _write(runs)
+    except OSError:
+        pass
+
+
 def set_notes(run_id, text):
     """The run's notes (Runs & outputs): what you tried, what you thought of it."""
     try:

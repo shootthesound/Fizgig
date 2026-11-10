@@ -1098,6 +1098,29 @@ class _FineTune:
         logger.info(f"[save] {path} ({replaced}{'/' + str(total) if total else ''} tensors trained)")
 
 
+def _test_vram_cap(device):
+    """(GB, from step) for FIZGIG_TEST_VRAM_CAP_GB / FIZGIG_TEST_VRAM_CAP_AT_STEP (the out-of-memory recovery's
+    tests), else None. A cap from step 0 applies at once."""
+    raw = os.environ.get("FIZGIG_TEST_VRAM_CAP_GB", "").strip()
+    if not raw or torch.device(device).type != "cuda" or not torch.cuda.is_available():
+        return None
+    try:
+        gb, at = float(raw), int(os.environ.get("FIZGIG_TEST_VRAM_CAP_AT_STEP", "0") or 0)
+    except ValueError:
+        return None
+    if at <= 0:
+        _apply_test_vram_cap(gb, 0)
+        return None
+    return gb, at
+
+
+def _apply_test_vram_cap(gb, at):
+    total = torch.cuda.get_device_properties(0).total_memory
+    torch.cuda.empty_cache()                 # the cached blocks go, so the cap bites on the next allocations
+    torch.cuda.set_per_process_memory_fraction(max(0.01, min(1.0, gb * 1024 ** 3 / total)))
+    logger.warning(f"[test] VRAM capped at {gb:g} GB from step {at} (FIZGIG_TEST_VRAM_CAP_GB) - a test setting")
+
+
 def train_family(family, dit_path, dataset_config, output_dir, output_name, *, network_dim=32, network_alpha=32,
                  preview_small_card_cap=0,
                  learning_rate=1e-4, max_train_epochs=16, save_every_n_epochs=1, save_until_epoch=0,
@@ -2437,6 +2460,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     steplog = StepLog(output_dir, output_name, start_step=step_off + global_step)
     for _w in ("sample", "save"):          # a request left from an earlier run is not this one's
         take_request(output_dir, _w)
+    # a test setting, ignored unless set: FIZGIG_TEST_VRAM_CAP_GB caps this process's VRAM (a real CUDA out-of-memory
+    # where Windows would otherwise spill into shared memory), from step FIZGIG_TEST_VRAM_CAP_AT_STEP (default 0)
+    test_cap = _test_vram_cap(device)
     progress = tqdm(total=steps_per_epoch * max_train_epochs, initial=global_step, desc="steps", smoothing=0)
     between = [None]          # when the last epoch's steps ended: the time until the next epoch's is left out of s/it
     dit.train()
@@ -2982,6 +3008,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             if pending >= accum:
                 _update()
             global_step += 1
+            if test_cap and global_step >= test_cap[1]:
+                _apply_test_vram_cap(*test_cap)
+                test_cap = None
             _flush()                           # the last step's numbers: finished on the GPU by now
 
             def _rec(lv, per=None, _e=epoch, _i=i, _g=global_step, _keys=batch.get("item_keys"), _ts=_info.get("ts"),

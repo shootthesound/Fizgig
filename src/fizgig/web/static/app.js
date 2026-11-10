@@ -2060,8 +2060,8 @@ function queueSummary(q, r) {
     return;
   }
   const text = q.held ? `Queue held: ${q.reason || "press Start queue to carry on"}` :
-    q.waiting ? `Queue waiting: ${q.waiting}` : "";
-  const sig = JSON.stringify([text, q.held, q.reason, q.waiting, items.map((it) => [it.id, it.lora])]);
+    q.waiting ? `Queue waiting: ${q.waiting}` : q.failed || "";
+  const sig = JSON.stringify([text, q.held, q.reason, q.waiting, q.failed, items.map((it) => [it.id, it.lora])]);
   if (sig === S.queueSumSig) return;              // as renderWebQueue: a rebuild mid-click drops Start queue's click
   S.queueSumSig = sig;
   side.classList.toggle("held", !!q.held);
@@ -2071,7 +2071,7 @@ function queueSummary(q, r) {
   $("sideQueueList").replaceChildren(...items.slice(0, 3).map((it, i) => el("div", {class: "side-queue-row"},
     el("span", {class: "n", text: String(i + 1)}), el("span", {class: "name", text: it.lora, title: it.lora}))),
     ...(n > 3 ? [el("div", {class: "side-queue-more", text: `+${n - 3} more`})] : []));
-  $("sideQueueHeld").textContent = q.held ? q.reason || "Press Start queue to carry on." : q.waiting || "";
+  $("sideQueueHeld").textContent = q.held ? q.reason || "Press Start queue to carry on." : q.waiting || q.failed || "";
   $("sideQueueStart").style.display = q.held ? "" : "none";
   up.classList.toggle("held", !!q.held);
   up.replaceChildren(...[el("span", {text: q.held ? text : `Up next: ${items.slice(0, 3).map((it, i) => `${i + 1}. ${it.lora}`).join(" · ")}` +

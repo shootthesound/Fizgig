@@ -22,7 +22,7 @@ QUEUE_FILE = user_file("web_queue.json")
 WAIT_S = 30                                   # how often a waiting queue looks again
 
 _lock = threading.Lock()
-_q = {"items": [], "held": False, "reason": "", "waiting": "", "timer": None, "for_pause": False}
+_q = {"items": [], "held": False, "reason": "", "waiting": "", "timer": None, "for_pause": False, "failed": []}
 
 
 def _save():
@@ -55,7 +55,10 @@ def status():
         return {"items": [{**{k: i.get(k) for k in ("id", "family", "lora", "image_folder", "queued_at", "output_dir")},
                            "continues": bool((i.get("values") or {}).get("__continue"))}     # Continue on Runs & outputs
                           for i in _q["items"]],
-                "held": _q["held"], "reason": _q["reason"], "waiting": _q["waiting"]}
+                "held": _q["held"], "reason": _q["reason"], "waiting": _q["waiting"],
+                # the runs that failed (an out-of-memory recovery that gave up too) - the queue moved on past them
+                "failed": (f"{', '.join(_q['failed'][-3:])} failed - see the log on its card; the queue moved on"
+                           if _q["failed"] else "")}
 
 
 def add(family, values, image_folder, lora, output_dir):
@@ -161,8 +164,10 @@ def on_run_ended(result, lora, starter):
             if _q["for_pause"]:              # the paused run (resumed) is done: the queue carries on
                 _q.update(held=False, reason="", for_pause=False)
         schedule(10, starter)
-    elif result == "failed":
-        hold(f"The last run ({lora}) failed - check its log, then press Start queue to carry on.")
+    elif result == "failed":            # an overnight queue doesn't stall on one run: it's named, and the next starts
+        with _lock:
+            _q["failed"] = (_q["failed"] + [str(lora or "a run")])[-10:]
+        schedule(10, starter)
     elif result == "stopped":
         hold("You stopped the last run. Press Start queue to carry on with the next.")
     elif result == "paused":

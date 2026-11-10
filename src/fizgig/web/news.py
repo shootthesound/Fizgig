@@ -6,6 +6,19 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 NEWS = [
     {
         "date": "10 Nov 2026",
+        "title": "Element boost, and new MOSS-Image settings",
+        "body": (
+            "Element boost, under Training Parameters: early in a run, the face and hair (or another part you pick) "
+            "count much more than the rest, so likeness comes in faster. It works with or without masks, and it's on "
+            "in MOSS-Image's Fast, Standard and Turbo Train presets.\n\n"
+            "MOSS-Image's Clean-end share now starts at 11 (11:7:40:8:3): with Muon the sweet spot moved, and it was "
+            "tuned with Element boost on. Load a preset to pick it up."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#10-nov-2026-element-boost-and-new-moss-image-settings"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.5.1"}],
+    },
+    {
+        "date": "10 Nov 2026",
         "title": "JoyCaption and booru tags on the Captions tab",
         "body": (
             "Two new captioners. JoyCaption Beta One writes detailed training captions, is good with people, mirrors "

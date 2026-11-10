@@ -1,5 +1,13 @@
 # Fizgig news
 
+## 10 Nov 2026: Element boost, and new MOSS-Image settings
+
+**Element boost (experimental), under Training Parameters.** Early in a run, one part of each picture counts much more than the rest, so it's learned sooner. By default it's the face and hair, which brings likeness in faster, most of all when faces are small in the frame. It runs three boosted stretches then one normal for the first 12 epochs or 600 steps, then the run trains as normal. It works with or without masks. **What it boosts** can also be the face only, or one of the Make masks choices: the clothes, the body, the background and so on. It's on in MOSS-Image's Fast, Standard and Turbo Train presets.
+
+**MOSS-Image's Clean-end share now defaults to `11:7:40:8:3`:** 11% until epoch 7, then 40%, with every 3rd epoch back at 11% at half the learning rate. Muon trains differently from AdamW, so the sweet spot moved; starting at 11 lets composition settle and kept the hair from darkening late in a run. It was tuned with Element boost on. Load a ✨ preset to pick it up.
+
+Update Fizgig on your computers; your pods follow. [Element boost guide](https://github.com/shootthesound/Fizgig/blob/master/docs/TRAINING.md#element-boost-one-part-of-each-picture-learns-faster) · [Fizgig v9.5.1 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.5.1)
+
 ## 10 Nov 2026: JoyCaption and booru tags on the Captions tab
 
 **Two new captioners.** **JoyCaption Beta One** is an 8B model made for writing training captions: good with people (it tells men from women and isn't fooled by mirrors) and with every style. It follows the same instructions as Qwen3-VL, and offers its own caption types (Descriptive, Straightforward, Stable Diffusion prompt and more) with a Length, extra options to tick (lighting, camera angle, shot type…), and a box for your own instructions. The **WD EVA02 tagger** writes booru tags (1girl, long hair, smile…) for anime and illustration, which is what Anima and anime SDXL models were trained on (thanks @mart-hill, #313, and @axymeus, #315).

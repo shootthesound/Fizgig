@@ -53,6 +53,8 @@ def test_one_step_lighter():
     v, why = _step({**auto, "BLOCKS_SWAP": "26"}, ("int8", 26))                       # swap at its most: precision
     assert v["FAMILY_PRECISION"] == LABELS["nf4"] and why == "precision int8 -> nf4"
     assert _step(auto, ("nf4", 26))[0] is None                                       # nothing lighter
+    v, why = _step(auto, ("nf4", 0))                                                 # NF4 can't stream: no swap step
+    assert v is None and "can't swap blocks" in why
     mine = {"FAMILY_PRECISION": LABELS["bf16"], "BLOCKS_SWAP": "26"}
     v, why = _step(mine, None)
     assert v is None and "your own choice" in why                                    # a precision you picked stays

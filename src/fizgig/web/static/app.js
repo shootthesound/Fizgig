@@ -7622,10 +7622,10 @@ function capExtrasText() {
   const d = capDesc() || {}, trig = $("capTrigger").value.trim().replace(/,+$/, "").trim();
   const ticked = (d.prompt_extras || []).filter((x, i) => { const b = $("capExtra" + i); return b && b.checked; })
     .filter((x) => !x.text.includes("{name}") || trig).map((x) => x.text.split("{name}").join(trig));
-  return ticked.concat(capOwnText()).join(" ");
+  return capOwnText().concat(ticked).join(" ");        // your own first, straight after the main instruction
 }
 
-// the user's own extra instructions, after the ticked ones: as typed, a full stop added when the last has none so it
+// the user's own extra instructions, straight after the main instruction (before the ticked ones): as typed, a full stop added when the last has none so it
 // can't run into what follows
 function capOwnText() {
   const b = $("capExtraOwn");

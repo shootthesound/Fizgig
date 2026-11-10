@@ -7098,13 +7098,33 @@ async function studioPresets() {
   const user = (await api("/api/studio/presets?family=" + encodeURIComponent(L.key)).catch(() => ({user: []}))).user;
   sel.innerHTML = "";
   sel.append(el("option", {value: "", text: "Presets…"}));
+  // every model's: the primary and the donor evenly, block by block (needs a donor loaded)
+  sel.append(el("option", {value: "x:even", text: "Primary + donor, 50/50", title: "Every block both LoRAs touch: " +
+    "each at 0.5. A block only one of them touches: that one at full strength. Needs a donor LoRA loaded."}));
   for (const p of L.presets) sel.append(el("option", {value: "b:" + p.name, text: p.name}));
   if (user.length) sel.append(el("optgroup", {label: "Your presets"}, ...user.map((n) => el("option", {value: "u:" + n, text: n}))));
 }
 
 async function studioPresetApply(v) {
   const L = S.st.layout;
-  if (v.startsWith("b:")) {
+  if (v === "x:even") {                          // Primary + donor, 50/50: each block by who touches it
+    if (!S.st.donor) {
+      $("stStatus").textContent = "Primary + donor, 50/50 needs a donor LoRA: load one under Donor first.";
+      $("stPreset").value = "";
+      return;
+    }
+    let both = 0, one = 0;
+    for (const [id, b] of Object.entries(S.st.blocks)) {
+      const p = S.st.primaryBlocks.has(id), d = S.st.donorBlocks.has(id);
+      if (!p && !d) continue;
+      const w = p && d ? 0.5 : 1;                // only one of them touches it: that one at full strength
+      if (p && !S.st.locks.has(id)) Object.assign(b, {pe: true, ps: w});
+      if (d && !S.st.dlocks.has(id)) Object.assign(b, {de: true, ds: w});
+      if (p && d) both++; else one++;
+    }
+    $("stStatus").textContent = `Primary + donor, 50/50: ${both} block(s) at 0.5 each, ${one} touched by one LoRA ` +
+      "at full strength" + (S.st.locks.size + S.st.dlocks.size ? "; locked sliders left alone." : ".");
+  } else if (v.startsWith("b:")) {
     const p = L.presets.find((x) => x.name === v.slice(2));
     for (const [id, b] of Object.entries(S.st.blocks)) {
       if (!S.st.dlocks.has(id)) Object.assign(b, {de: true, ds: 1});

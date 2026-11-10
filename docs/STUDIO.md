@@ -42,6 +42,7 @@ On each row:
 Above the rows:
 
 - **Presets**: the model's built-in ones (✨) and yours. **Save preset…** keeps the current sliders under a name for this model.
+- **Primary + donor, 50/50** (with a donor loaded, on every model): each block both LoRAs touch gets each at 0.5, and a block only one of them touches gets that one at full strength. Locked rows are left alone.
 - **Bulk buttons**: Reset all, All off, All on, Invert, Alternate (even blocks on, odd off), and, where the model has them, Toggle detail blocks.
 - **Master controls** (models with a block map, such as Klein): one slider per category (Style + Composition, Identity, Details) that moves all its blocks together, on the primary or the donor.
 

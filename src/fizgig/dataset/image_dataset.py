@@ -24,7 +24,7 @@ from safetensors.torch import save_file, load_file
 from PIL import Image
 import cv2
 
-from fizgig.dataset.masks import folder_names, is_mask_file, load_mask, mask_for_stem, mask_problem
+from fizgig.dataset.masks import face_box, folder_names, is_mask_file, load_face, load_mask, mask_for_stem, mask_problem
 from fizgig.utils.safetensors import mem_eff_save_file, MemoryEfficientSafeOpen
 from fizgig.training.metadata import (ARCHITECTURE_KLEIN_9B, ARCHITECTURE_KLEIN_9B_FULL,
                                       ARCHITECTURE_MINIMAX)
@@ -631,6 +631,17 @@ class BucketBatchManager:
                         m = load_mask(it.mask_path, it.original_size, it.bucket_size, (lh, lw))
                 masks.append(torch.from_numpy(m)[None] if m is not None else torch.ones(1, *lat.shape[-2:]))
             batch_tensor_data["loss_mask"] = masks
+        # Boost the face: each item's face oval on its latent's grid (zeros without a face)
+        if any(getattr(it, "face_box", None) for it in bucket[start:end]):
+            faces = []
+            for it, lat in zip(bucket[start:end], batch_tensor_data.get("latents", [])):
+                lh, lw = lat.shape[-2:]
+                bw, bh = it.bucket_size
+                f = None
+                if getattr(it, "face_box", None) and abs(bw / lw - bh / lh) < 1e-6:
+                    f = load_face(it.face_box, it.original_size, it.bucket_size, (lh, lw), getattr(it, "face_area", "face"))
+                faces.append(torch.from_numpy(f)[None] if f is not None else torch.zeros(1, lh, lw))
+            batch_tensor_data["face_weight"] = faces
 
         # Stack tensors per key
         stacked: dict[str, Any] = {}
@@ -889,6 +900,10 @@ class ImageDataset(torch.utils.data.Dataset):
     # on its latent's grid as `loss_mask` in the batch. Set on the CLASS by the trainer before the dataset group is
     # generated, like clip_still_as_photo.
     loss_masks: bool = False
+    # Boost the face (an experiment): anything but 1 gives each still's largest face (masks.face_box) as `face_weight` in the
+    # batch, a soft oval on its latent's grid; the trainer multiplies it into the loss weights. Set on the CLASS.
+    face_boost: float = 1.0
+    face_area: str = "face"           # "head": the oval takes in the hair (masks.load_face)
 
     def __init__(
         self,
@@ -1323,6 +1338,7 @@ class ImageDataset(torch.utils.data.Dataset):
 
         bucketed: dict[Tuple, list[ItemInfo]] = {}   # (w, h), or ("audio", w, h) for voice items
         _mask_names, masked_items, misfit_masks = None, 0, []
+        _pic_names, face_items = None, 0
         for cache_file in latent_cache_files:
             tokens = os.path.basename(cache_file).split("_")
             # Filename: {basename}_{W:04d}x{H:04d}_{arch}.safetensors
@@ -1385,6 +1401,15 @@ class ImageDataset(torch.utils.data.Dataset):
                         misfit_masks.append(f"{os.path.basename(item_info.mask_path)} ({_why})")
                         item_info.mask_path = None              # its picture trains unmasked, and the log says so
                 masked_items += bool(item_info.mask_path)
+            if self.face_boost != 1.0 and self.image_directory and bucket_key == bucket_reso \
+                    and self.latent_cache_frames(cache_file) <= 1:          # Boost the face: stills only
+                if _pic_names is None:
+                    _pic_names = folder_names(self.image_directory)
+                _pic = next((os.path.join(self.image_directory, _pic_names[n]) for n in
+                             (item_key.lower() + e.lower() for e in IMAGE_EXTENSIONS) if n in _pic_names), None)
+                item_info.face_box = face_box(_pic) if _pic else None
+                item_info.face_area = self.face_area
+                face_items += item_info.face_box is not None
 
             bucket = bucketed.get(bucket_key, [])
             for _ in range(self.num_repeats):
@@ -1433,6 +1458,10 @@ class ImageDataset(torch.utils.data.Dataset):
                     f"[dataset] {still_frame0_fallback} clip(s) were cached without a picked "
                     f"still — their frame 0 is used instead. Re-run caching with the tick on "
                     f"(or flush the cache) to pick sharp frames for them.")
+        if self.face_boost != 1.0:
+            logger.info(f"[face boost] {face_items} picture(s) in {self.image_directory} have a face found: it counts "
+                        f"x{self.face_boost:g} in the loss"
+                        + (" (face and hair)" if self.face_area == "head" else "") + "; the rest train as normal")
         if self.loss_masks:
             logger.info(f"[masks] {masked_items} picture(s) in {self.mask_directory or self.image_directory} train "
                         f"with their mask"

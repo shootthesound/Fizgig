@@ -1234,6 +1234,10 @@ input[type="range"] {
 .form-group-rows { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: flex-end; }
 .section-card[id^="sec-"] .form-group-rows > .form-row { flex: 1 1 140px; min-width: 120px; margin: 0; }
 .form-group-rows > .form-row.kind-wide { flex: 3 1 320px; }
+/* Metadata's seven boxes: about three to a line (one on a phone), the long ones a line each */
+.section-card[id^="sec-"] .form-group[data-group="metadata"] .form-group-rows > .form-row { flex: 1 1 220px; }
+.section-card[id^="sec-"] .form-group[data-group="metadata"] .form-group-rows >
+  .form-row:is([data-key="METADATA_DESCRIPTION"], [data-key="METADATA_THUMBNAIL"]) { flex: 1 1 100%; }
 .section-card[id^="sec-"] .form-group-rows > .form-row.kind-check { flex: 0 1 auto; padding: 4px 0; border: none;
   background: none; align-self: flex-end; }
 .section-card[id^="sec-"] .form-group-rows .row-hint { display: none; }

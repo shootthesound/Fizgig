@@ -7620,8 +7620,18 @@ function capTypeText(t, length) {
 // the ticked extra options' sentences; {name} is the trigger word, and that sentence goes when there is none
 function capExtrasText() {
   const d = capDesc() || {}, trig = $("capTrigger").value.trim().replace(/,+$/, "").trim();
-  return (d.prompt_extras || []).filter((x, i) => { const b = $("capExtra" + i); return b && b.checked; })
-    .filter((x) => !x.text.includes("{name}") || trig).map((x) => x.text.split("{name}").join(trig)).join(" ");
+  const ticked = (d.prompt_extras || []).filter((x, i) => { const b = $("capExtra" + i); return b && b.checked; })
+    .filter((x) => !x.text.includes("{name}") || trig).map((x) => x.text.split("{name}").join(trig));
+  return ticked.concat(capOwnText()).join(" ");
+}
+
+// the user's own extra instructions, after the ticked ones: as typed, a full stop added when the last has none so it
+// can't run into what follows
+function capOwnText() {
+  const b = $("capExtraOwn");
+  if (!b || !((capDesc() || {}).prompt_extras || []).length) return [];
+  const t = b.value.replace(/\s+/g, " ").trim();
+  return t ? [/[.!?]["'\u201d)]?$/.test(t) ? t : t + "."] : [];
 }
 
 // what the captioner is told: Fizgig's task instruction (or its own caption type at the chosen length), then the ticks
@@ -7699,6 +7709,7 @@ function capExtrasFill() {
   $("capLength").innerHTML = "";
   for (const l of lengths) $("capLength").append(el("option", {value: l, text: l}));
   $("capLength").value = lengths.includes(saved.length) ? saved.length : (d.default_length || lengths[0] || "");
+  $("capExtraOwn").value = saved.own || "";
   const box = $("capExtras");
   box.innerHTML = "";
   (d.prompt_extras || []).forEach((x, i) => {
@@ -7715,7 +7726,8 @@ function capExtrasSave() {
   if (!d || !(d.prompt_extras || []).length) return;
   const ticks = d.prompt_extras.filter((x, i) => $("capExtra" + i).checked).map((x) => x.label);
   S.capSaved = S.capSaved || {};
-  S.capSaved.extras = {...(S.capSaved.extras || {}), [d.key]: {ticks, length: $("capLength").value}};
+  S.capSaved.extras = {...(S.capSaved.extras || {}),
+    [d.key]: {ticks, length: $("capLength").value, own: $("capExtraOwn").value}};
   saveCapSoon();
 }
 
@@ -8103,6 +8115,7 @@ function wireCaptions() {
   });
   $("capLength").addEventListener("change", () => { capExtrasSave(); onCapTask(); });
   $("capTrigger").addEventListener("input", capSentShow);
+  $("capExtraOwn").addEventListener("input", () => { capSentShow(); capExtrasSave(); });
   $("capConcept").addEventListener("input", capSentShow);
   $("capInstrSave").addEventListener("click", () => saveInstr($("capInstr").value));
   $("capInstrReset").addEventListener("click", () => saveInstr(""));

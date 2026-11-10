@@ -2865,3 +2865,6 @@ label[title]:has(.tip-mark) { cursor: help; }
 /* a captioner's extra-option ticks (Captions tab) */
 .cap-extras { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 2px 14px; margin: 4px 0 8px; }
 .cap-extras .checkbox-label { margin: 0; }
+#capExtraOwn { width: 100%; max-width: 720px; margin: 2px 0 6px; }
+.cap-sent { margin-top: 4px; padding: 6px 10px; border-left: 3px solid var(--accent); border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent); max-width: 720px; }

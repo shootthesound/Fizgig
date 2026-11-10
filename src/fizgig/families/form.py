@@ -94,7 +94,7 @@ DEFAULTS = {
     "FAMILY_FT_ROTATIONS": "10", "FAMILY_FT_SAVE_EVERY": "1", "FAMILY_FT_ROTATE_EVERY": "1",
     "FAMILY_FT_FUSED": True, "FAMILY_FT_REG_DIR": "", "FAMILY_FT_REG_MULT": "0.2",
     "DATASET_MEGAPIXELS": "0.25", "DATASET_CAPTION_EXT": ".txt", "ENABLE_BUCKET": True, "BUCKET_NO_UPSCALE": True,
-    "ENABLE_CACHE": True, "MASKED_TRAINING": False, "MASK_FLOOR": "0.1 (recommended)", "MASK_PRIOR": "Off", "FACE_BOOST": False,
+    "ENABLE_CACHE": True, "MASKED_TRAINING": False, "MASK_FLOOR": "0.1 (recommended)", "MASK_PRIOR": "Off", "FACE_BOOST": False, "FACE_BOOST_WEIGHT": "2",
     "METADATA_TITLE": "", "METADATA_AUTHOR": "", "METADATA_DESCRIPTION": "", "METADATA_LICENSE": "",
     "METADATA_TAGS": "", "METADATA_TRIGGER_PHRASE": "", "METADATA_THUMBNAIL": "",
     "SAMPLE_ENABLED": True, "SAMPLE_PROMPT": "A high quality photo", "SAMPLE_SEED": "1234",
@@ -490,9 +490,11 @@ def form(desc):
                  "Speed: each step takes up to about half as long again.",
                  launch.MASK_PRIORS, hint_labels=True),                 # one spaced line per choice, name in bold
             _row("FACE_BOOST", "Boost the face (experimental)", "check",
-                 "Each picture's face counts twice as much as the rest, so likeness learns faster when faces are "
-                 "small in the frame (medium and full-length shots). Works with or without masks. Pictures with no "
-                 "face found train as normal."),
+                 "Each picture's face counts more than the rest (by the number below), so likeness learns faster "
+                 "when faces are small in the frame (medium and full-length shots). Works with or without masks. "
+                 "Pictures with no face found train as normal."),
+            _row("FACE_BOOST_WEIGHT", "How much more the face counts", "entry",
+                 "2 = twice as much as the rest of the picture. 1 = no boost.", suffix="x"),
         ])
     add("subjects", "Subjects", "training", subjects,
         help={"href": VIDEO, "text": "How to set up Fizgig LoRA Isolation",
@@ -1062,6 +1064,8 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             if kind in ("slider", "finetune"):      # it switches the LoRA off for a step: a slider or a fine-tune has none
                 disabled.add("MASK_PRIOR")
                 notes["MASK_PRIOR"] = "For a LoRA: a slider or a fine-tune trains without it."
+        if not values.get("FACE_BOOST"):
+            hidden.add("FACE_BOOST_WEIGHT")
     lokr = str(values.get("NETWORK_TYPE", "")).startswith("LoKR") and kind not in ("slider", "finetune")
     hidden |= {"NETWORK_DIM", "NETWORK_ALPHA"} if lokr else {"LOKR_FACTOR"}
     if lokr:
@@ -1544,7 +1548,7 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
         FAMILY_TURBO_PACE=s("FAMILY_TURBO_PACE"), FAMILY_PREVIEW_LOOK=b("FAMILY_PREVIEW_LOOK"), FAMILY_PREVIEW_SMALL=b("FAMILY_PREVIEW_SMALL"),
         CAPTION_DROPOUT=caption_dropout_share(s("CAPTION_DROPOUT")) if desc.caption_dropout else 0.0,
         MASKED_TRAINING=b("MASKED_TRAINING") and desc.masked_training, MASK_FLOOR=s("MASK_FLOOR"),
-        MASK_PRIOR=s("MASK_PRIOR"), FACE_BOOST=b("FACE_BOOST"),
+        MASK_PRIOR=s("MASK_PRIOR"), FACE_BOOST=b("FACE_BOOST"), FACE_BOOST_WEIGHT=s("FACE_BOOST_WEIGHT"),
         python=python, repo_dir=repo_dir, models=models, image_folder=image_folder,
         caption_ext=s("DATASET_CAPTION_EXT") or ".txt", batch_size=1, megapixels=s("DATASET_MEGAPIXELS"),
         STAGE_MP=s("STAGE_MP") if desc.resolution_stages else "", STAGE_UNTIL=s("STAGE_UNTIL"),

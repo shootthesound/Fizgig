@@ -1528,7 +1528,7 @@ def mask_prior(desc, st):
         return 0.0
 
 
-FACE_BOOST = 2.0        # the face's loss weight with Boost the face ticked (an experiment, branch experiment/face-weight)
+FACE_BOOST = 2.0        # the face's loss weight by default with Boost the face ticked (an experiment)
 
 
 def face_weight(desc, st):
@@ -1536,7 +1536,11 @@ def face_weight(desc, st):
     on top of any mask; 0 when off. Stills of a family with masked training, not a prompt slider (no photos)."""
     if not (st.get("FACE_BOOST") and desc.masked_training) or slider_on(desc, st, "prompts"):
         return 0.0
-    return FACE_BOOST
+    try:
+        v = float(str(st.get("FACE_BOOST_WEIGHT") or FACE_BOOST).split()[0])
+    except ValueError:
+        v = FACE_BOOST
+    return min(10.0, v) if v > 1.0 else 0.0          # 1 or less: no boost
 
 
 def mask_folders(desc, st):

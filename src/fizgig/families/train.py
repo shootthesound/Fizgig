@@ -2822,6 +2822,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 _lrm *= next((m for pat, m in lr_boost if pat in _ik), 1.0)
             lr_acc.append(_lrm)
             latents = batch["latents"].to(device)
+            # a batched step only when this step really holds more than one item: a single-item bucket in a batched
+            # run (an H3 clip or voice, which always train alone, or a bucket's last picture) takes the one-item path
+            _many = bsz > 1 and len(batch.get("item_keys") or [None] * latents.shape[0]) > 1
             if slider:
                 # both poles backpropagate before the strength flips: checkpointed blocks recompute their forward
                 # in backward, at whatever strength is set then. The family's per-step freeze applies as on any step
@@ -2860,7 +2863,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     _p.requires_grad_(True)
                 loss, _info = torch.tensor(_l), {"t": _t}
             else:
-                if bsz > 1:
+                if _many:
                     _frozen_now = _step_freeze(driver.step_frozen_blocks(batch))
                     loss, _info = _batch_loss(batch, latents)
                 else:
@@ -2883,7 +2886,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     lr_acc[-1] *= _info["lr_mult"]     # where the step landed (the H3 noise-band LR)
                 if pending == 0 and optimizer is not None:
                     optimizer.zero_grad(set_to_none=True)
-                _wb = watch.weigh(_info, batch.get("item_keys"), reg_keys, reg_lr_multiplier) if bsz > 1 else None
+                _wb = watch.weigh(_info, batch.get("item_keys"), reg_keys, reg_lr_multiplier) if _many else None
                 if _wb is not None:                # a batch: each picture at its own weight (loss_watch.Watch.weigh)
                     _scaled, loss, _kept = _wb
                 else:
@@ -2919,7 +2922,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             _flush()                           # the last step's numbers: finished on the GPU by now
 
             def _rec(lv, per=None, _e=epoch, _i=i, _g=global_step, _keys=batch.get("item_keys"), _ts=_info.get("ts"),
-                     _t=_info.get("t", 0.5), _kept=(_kept if not slider and bsz > 1 and _wb is not None else None),
+                     _t=_info.get("t", 0.5), _kept=(_kept if not slider and _many and _wb is not None else None),
                      _rate=(None if global_step % 20 else      # the rate now and then (Automagic's averages it)
                             _step_rate())):
                 recorder.add(epoch=_e, step=_i, loss=lv)
@@ -2929,7 +2932,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 else:
                     watch.observe(_e + 1, _g, {"item_keys": _keys}, _t, lv)
             _per = (_info.get("per_raw") or _info["per"].detach().float()) \
-                if not slider and bsz > 1 and _wb is not None else None
+                if not slider and _many and _wb is not None else None
             _later(_rec, lv=loss.detach().float(), per=_per)
             if pending == 0 and ftr is None:   # the web UI's Sample now / Save now, between optimizer steps
                 if take_request(output_dir, "save"):

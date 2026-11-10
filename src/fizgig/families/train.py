@@ -1363,15 +1363,17 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             on = (global_step // unit) % (_face_cyc[0] + _face_cyc[1]) < _face_cyc[0]
             if on != face_phase.get("was"):
                 face_phase["was"] = on
-                logger.info(f"[face boost] step {global_step} (epoch {face_phase['epoch'] + 1}): "
-                            + ("boosted" if on else "normal (no boost)") + f" for {unit * (_face_cyc[0] if on else _face_cyc[1])} steps")
+                face_phase.setdefault("said", []).append(   # said at the next epoch's start: mid-step it would land
+                    f"[face boost] step {global_step} (epoch {face_phase['epoch'] + 1}): "     # on a progress-bar
+                    + ("boosted" if on else "normal (no boost)")                                 # line, which the
+                    + f" for {unit * (_face_cyc[0] if on else _face_cyc[1])} steps")            # app's log thins out
             face_phase["on"] = on
         f = batch.get("face_weight") if face_on and face_phase["on"] else None
         if f is not None and not face_phase["ended"] and ((_face_end[0] and face_phase["epoch"] >= _face_end[0])
                                                          or (_face_end[1] and global_step >= _face_end[1])):
             face_phase["ended"] = True       # its limit: from here on the run trains as if it were off
-            logger.info(f"[face boost] ends at step {global_step} (epoch {face_phase['epoch'] + 1}): the rest of the "
-                        f"run trains without it")
+            face_phase.setdefault("said", []).append(f"[face boost] ends at step {global_step} (epoch "
+                                                     f"{face_phase['epoch'] + 1}): the rest of the run trains without it")
         if face_phase["ended"]:
             f = None
         if m is None and f is None:
@@ -2750,6 +2752,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 logger.info("[maps] training maps: no picture could be read from the cache - off for this run")
                 maps = None
     for epoch in (_worker_epochs() if share_worker else range(start_epoch, max_train_epochs)):
+        while face_phase.get("said"):        # the boost's switches during the last epoch, each on a line of its own
+            logger.info(face_phase["said"].pop(0))
         face_phase["epoch"] = epoch
         if face_on and _face_cyc[1] > 0 and not any(_face_end):   # Boost the face on N epochs, then M normal
             face_phase["on"] = epoch % (_face_cyc[0] + _face_cyc[1]) < _face_cyc[0]   # ones, repeating from epoch 1
@@ -3098,6 +3102,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         logger.info("[share] the lead's run is done here")
         return None
     progress.close()
+    while face_phase.get("said"):
+        logger.info(face_phase["said"].pop(0))
     steplog.flush()
     for _old in glob.glob(os.path.join(output_dir, SHARE_DIR, "*")):   # the share's rounds and bundles: done with
         if os.path.basename(_old) != "setup.json":

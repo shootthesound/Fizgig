@@ -212,6 +212,10 @@ The text-encoder slot is open: any Qwen3-VL-4B in the ComfyUI layout loads — f
 
 The file list is in [MINIMAX_H3.md](MINIMAX_H3.md).
 
+### MiniMax H3 Image
+
+Use **Download models for me** in the MiniMax H3 Image section of Preferences: the 21 GB int8 DiT and its 1.2 GB VAE, plus MiniMax H3's 15.7 GB text encoder if you don't already have it. Details in [MINIMAX_IMAGE.md](MINIMAX_IMAGE.md).
+
 ### Qwen Image 2.1
 
 Use the **Download models for me** button in the Qwen Image 2.1 section of the Preferences tab: about 34 GB, plus Krea 2's ~5 GB Qwen3-VL-4B captioner if you don't already have it. Details in [QWEN_IMAGE.md](QWEN_IMAGE.md).
@@ -254,6 +258,10 @@ Auto budgets from your *free* VRAM and the console explains its choice. If a pre
 ### MiniMax H3
 
 See [MINIMAX_H3.md](MINIMAX_H3.md) for the Auto table and preview limits per card.
+
+### MiniMax H3 Image
+
+Measured so far: the int8 base at 1 MP trains at a 21.2 GB peak and previews at 2048×2048 peak at 22.3 GB. Smaller cards (NF4, block swap) are still to be measured; see [MINIMAX_IMAGE.md](MINIMAX_IMAGE.md).
 
 ### Qwen Image 2.1
 

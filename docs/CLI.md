@@ -37,6 +37,7 @@ Every script supports `--help` for the full argument list. This document covers 
 - [MOSS-Image training](#moss-image-training)
 - [Krea 2 training](#krea-2-training)
 - [MiniMax H3 training](#minimax-h3-training)
+- [MiniMax H3 Image training](#minimax-h3-image-training)
 - [Qwen Image 2.1 training](#qwen-image-21-training)
 - [Z-Image Turbo and Z-Image Base training](#z-image-turbo-and-z-image-base-training)
 - [SDXL training](#sdxl-training)
@@ -127,6 +128,14 @@ Headless, there is no Preferences tab: **model locations are passed as flags on 
 | Training adapter *(recommended)* | [minimax_h3_image_training_adapter.safetensors](https://huggingface.co/circlestone-labs/MiniMax-H3-Image-Training-Adapter/blob/main/minimax_h3_image_training_adapter.safetensors) (Circlestone, the GUI default — one file for both bases) | `--training_adapter` |
 | Training adapter, Ostris *(best for videos)* | [minimax_h3_training_adapter_v1.safetensors](https://huggingface.co/ostris/minimax_h3_training_adapter/blob/main/minimax_h3_training_adapter_v1.safetensors) (fl2va) · [ref2va file](https://huggingface.co/ostris/minimax_h3_training_adapter/blob/main/minimax_h3_ref2va_training_adapter_v1.safetensors) | `--training_adapter` — match it to `--dit` |
 
+**MiniMax H3 Image:**
+
+| File | Download | Used for |
+|---|---|---|
+| DiT, pruned int8 (~21 GB) | [minimax_h3_image_pruned_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3-Image/blob/main/diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors) | training (`--dit`) — the same file ComfyUI runs |
+| VAE | [minimax_h3_image_vae_fp16.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3-Image/blob/main/vae/minimax_h3_image_vae_fp16.safetensors) | `--vae` (cache step: `--model`) — its own VAE, not the H3 video VAE |
+| Text encoder, nvfp4 (~15.7 GB) | [qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors) | `--text_encoder` (cache step: `--model`) — MiniMax H3's, unchanged |
+
 **Qwen Image 2.1:**
 
 | File | Download | Used for |
@@ -175,7 +184,7 @@ The quickest way to get every file is the fetcher the Preferences download butto
 
 ## What's family-specific at a glance
 
-Every family trains through the same two scripts — `src/fizgig/families/cache.py` and `src/fizgig/families/train.py`, selected with `--family` (`klein`, `flux3`, `fibo2`, `moss_image`, `krea2`, `minimax`, `qwen_image21`, `zimage`, `zimage_base`, `sdxl`, `anima`, `acestep15xl`) — and shares the dataset format, pause/resume, Context LoRA, LoKR, sliders, fine-tuning and the memory planner. What differs:
+Every family trains through the same two scripts — `src/fizgig/families/cache.py` and `src/fizgig/families/train.py`, selected with `--family` (`klein`, `flux3`, `fibo2`, `moss_image`, `krea2`, `minimax`, `minimax_image`, `qwen_image21`, `zimage`, `zimage_base`, `sdxl`, `anima`, `acestep15xl`) — and shares the dataset format, pause/resume, Context LoRA, LoKR, sliders, fine-tuning and the memory planner. What differs:
 
 | Feature | Klein 9B | Flux 3 Image Klein | MiniMax H3 | Krea 2 | Qwen Image 2.1 |
 |---|---|---|---|---|---|
@@ -629,6 +638,20 @@ H3's own settings are `--family_option name=value` pairs (the GUI's Training-tab
 - `preview_frames=N preview_audio=1` — previews as clips on the 17n+5 frame grid (1 = a still), with their sound.
 
 `--training_adapter` is frozen at 1.0 for every training step, off for previews and absent from the saved LoRA; with Ostris's adapters, use the fl2va or ref2va file to match `--dit`. `--ema_decay 0.98` saves a smoothed average of the weights. `--precision auto --blocks_to_swap -1` picks the base precision (int8 ~21 GB resident, NF4 ~11 GB, HQQ by hand) and the swap together from free VRAM. Full fine-tuning (`--finetune`) trains the base in component windows on an NF4-resident trunk and saves exact int8 checkpoints; the GUI's Fine-tune choice builds it — see `docs/FINETUNE_HOWDOI.md` before running one headless.
+
+---
+
+## MiniMax H3 Image training
+
+MiniMax H3 Image is MiniMax H3's DiT for pictures: no audio stream, distilled to 6 CFG-free steps with one output head per step. It trains through the shared cache script and trainer with `--family minimax_image`; the [dataset TOML](#dataset-config-toml) is the same as the other families'. You need the three files from the [download table](#model-files-where-they-come-from-where-they-go). A LoRA trains at the checkpoint's own 6 noise levels, each through its own head; `--family_option lownoise_pct=P` puts P% of the steps at the level below 0.5 (0.232) and spreads the rest over the other five.
+
+```bash
+python src/fizgig/families/cache.py --family minimax_image --stage latents --dataset_config my_dataset.toml --model /models/minimax_h3_image_vae_fp16.safetensors
+python src/fizgig/families/cache.py --family minimax_image --stage text    --dataset_config my_dataset.toml --model /models/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors
+python src/fizgig/families/train.py --family minimax_image   --dataset_config my_dataset.toml   --dit /models/minimax_h3_image_pruned_int8_convrot.safetensors   --vae /models/minimax_h3_image_vae_fp16.safetensors   --text_encoder /models/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors   --output_dir ./output_loras/my_subject --output_name my_subject_mmh3i   --network_dim 8 --network_alpha 8 --optimizer_type muon   --adaptive_lr --adaptive_lr_min 1e-4 --adaptive_lr_max 2e-4 --ema_decay 0.98   --max_train_epochs 16 --save_every_n_epochs 1 --seed 42   --precision auto --blocks_to_swap -1   --sample_prompts sample_prompts.txt --sample_every_n_epochs 1 --sample_at_first   --sample_width 2048 --sample_height 2048 --sample_steps 6
+```
+
+The recipe's values (presets, the training adapter) are still being measured; see [MINIMAX_IMAGE.md](MINIMAX_IMAGE.md).
 
 ---
 

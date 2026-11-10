@@ -43,6 +43,11 @@ MINIMAX_IMAGE = FamilyDescription(
     aliases=("minimax-h3-image", "h3-image"),
     hidden=True,                      # not in the GUI until the checklist passes (docs/drivers/STILLS.md)
 
+    # Comfy-Org/MiniMax-H3-Image also ships minimax_h3_image_pruned_w4a8.safetensors (12.6 GB): left out, MiniMax H3's
+    # loader takes int8 ConvRot or 16-bit files, not w4a8. The upstream bf16 shards (MiniMaxAI, 66 GB) aren't offered:
+    # the pruned bf16 below is the same model in the layout the loader reads.
+    # Training adapter: Fizgig's own is being trained (X:\H3-Image\adapter, step 5000 on 10 Nov 2026); its ModelFile row
+    # (role "training_adapter", a default download) and training_adapter= go in once Peter has released it on HF.
     model_files=(
         ModelFile("minimax_image_dit", "MiniMax H3 Image DiT", True, _COMFY,
                   "diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors", 20.98,

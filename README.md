@@ -86,6 +86,7 @@ https://github.com/user-attachments/assets/2db82d0d-e7ed-4f60-a79c-d2ac1f4984ac
 | **Fibo 2.0** (8.2B), experimental | photos | ✅ | — | ✅ slider + edit | ✅ experimental | 12 GB | [Fibo 2.0](docs/FIBO2.md) |
 | **Krea 2** (12.9B) | photos | ✅ | ✅ | ✅ slider | ✅ experimental | 8 GB | [Krea 2](docs/KREA2.md) |
 | **MiniMax H3** (33B) | photos, video clips, sound, voice | ✅ | ✅ | ✅ slider | ✅ experimental | 16 GB | [MiniMax H3](docs/MINIMAX_H3.md) |
+| **MiniMax H3 Image** (33B), experimental | photos | ✅ | ✅ | ✅ slider + edit | ✅ experimental | to measure | [MiniMax H3 Image](docs/MINIMAX_IMAGE.md) |
 | **Vimoo 1.0 Lite** (9.5B), experimental | photos, video clips | ✅ | ✅ | ✅ slider | ✅ experimental | 16 GB | [Vimoo 1.0 Lite](docs/VIMOO.md) |
 | **Qwen Image 2.1** | photos | ✅ | ✅ | ✅ slider + edit | ✅ experimental | 10 GB | [Qwen Image 2.1](docs/QWEN_IMAGE.md) |
 | **MOSS-Image** (5B), experimental | photos | ✅ | ✅ | ✅ slider | ✅ experimental | 12 GB | [MOSS-Image](docs/MOSS_IMAGE.md) |
@@ -228,7 +229,7 @@ Renting through the [RunPod link](https://console.runpod.io/deploy?type=GPU&gpu=
 | Guide | What's in it |
 |---|---|
 | [Install and requirements](docs/INSTALL.md) | Hardware, system RAM, AMD ROCm, model downloads, VRAM tables |
-| [Klein 9B](docs/KLEIN.md) · [Flux 3 Image Klein](docs/FLUX3.md) · [Fibo 2.0](docs/FIBO2.md) · [Krea 2](docs/KREA2.md) · [MiniMax H3](docs/MINIMAX_H3.md) · [Qwen Image 2.1](docs/QWEN_IMAGE.md) · [MOSS-Image](docs/MOSS_IMAGE.md) · [Z-Image Turbo](docs/ZIMAGE.md) · [SDXL](docs/SDXL.md) · [Anima](docs/ANIMA.md) · [ACE-Step](docs/ACESTEP.md) | Each model: presets, features, memory |
+| [Klein 9B](docs/KLEIN.md) · [Flux 3 Image Klein](docs/FLUX3.md) · [Fibo 2.0](docs/FIBO2.md) · [Krea 2](docs/KREA2.md) · [MiniMax H3](docs/MINIMAX_H3.md) · [MiniMax H3 Image](docs/MINIMAX_IMAGE.md) · [Qwen Image 2.1](docs/QWEN_IMAGE.md) · [MOSS-Image](docs/MOSS_IMAGE.md) · [Z-Image Turbo](docs/ZIMAGE.md) · [SDXL](docs/SDXL.md) · [Anima](docs/ANIMA.md) · [ACE-Step](docs/ACESTEP.md) | Each model: presets, features, memory |
 | [Training and the workbench](docs/TRAINING.md) | The shared features and tools in detail |
 | [Face backends](docs/FACE_BACKENDS.md) | Face finder (InsightFace / YOLO) and look match (ArcFace / DINOv2) for people, anime and furry |
 | [Full fine-tuning](docs/FINETUNE.md) · [How do I…?](docs/FINETUNE_HOWDOI.md) | Training the base model itself |

@@ -511,7 +511,7 @@ def form(desc):
                  "Face and hair (the default): the face and the hair around it. Face only: just the face, for when "
                  "the hair changes from picture to picture or shouldn't be learned. These two use the face "
                  "finder. The rest are the Make masks choices, found by its person finder: the clothes for an "
-                 "outfit LoRA, the background for a place, and so on. Only the face has been tested.",
+                 "outfit LoRA, the background for a place, and so on.",
                  launch.FACE_AREAS),
         ])
     add("subjects", "Subjects", "training", subjects,

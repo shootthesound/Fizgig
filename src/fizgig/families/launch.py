@@ -886,6 +886,8 @@ def train_command(desc, inputs, plan):
         cmd += ["--masked_training", "--mask_floor", f"{mask_floor(st):g}"]
         if mask_prior(desc, st) and batch_size(desc, st) <= 1:
             cmd += ["--mask_prior", f"{mask_prior(desc, st):g}"]
+    if face_weight(desc, st):
+        cmd += ["--face_weight", f"{face_weight(desc, st):g}"]
     if dop_on(desc, st) or mp_subs:
         trig, cls = dop_rules(st)
         if mp_subs:          # the captions are read fused: DOP swaps "zwxemwoman" for "a woman"
@@ -1524,6 +1526,17 @@ def mask_prior(desc, st):
         return max(0.0, float(str(st.get("MASK_PRIOR") or "Off").split()[0]))
     except ValueError:
         return 0.0
+
+
+FACE_BOOST = 2.0        # the face's loss weight with Boost the face ticked (an experiment, branch experiment/face-weight)
+
+
+def face_weight(desc, st):
+    """Boost the face: each picture's face (the face detector's largest) counts this many times as much in the loss,
+    on top of any mask; 0 when off. Stills of a family with masked training, not a prompt slider (no photos)."""
+    if not (st.get("FACE_BOOST") and desc.masked_training) or slider_on(desc, st, "prompts"):
+        return 0.0
+    return FACE_BOOST
 
 
 def mask_folders(desc, st):

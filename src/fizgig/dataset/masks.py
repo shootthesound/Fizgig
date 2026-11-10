@@ -159,6 +159,54 @@ def load_mask(path, image_size, bucket_reso, latent_hw):
     return out
 
 
+_FACES = {}
+_DETECTOR = []
+
+
+def face_box(image_path):
+    """Boost the face: the largest face in a picture as (x1, y1, x2, y2) in its upright pixels, or None (no face, no
+    detector). Found once per file per run."""
+    try:
+        st = os.stat(image_path)
+    except OSError:
+        return None
+    key = (os.path.abspath(image_path), st.st_mtime_ns, st.st_size)
+    if key not in _FACES:
+        box = None
+        try:
+            if not _DETECTOR:
+                from fizgig.face_utils import FaceDetector
+                _DETECTOR.append(FaceDetector())
+            f = _DETECTOR[0].get_largest(_DETECTOR[0].detect_all(image_path))
+            if f is not None:
+                box = tuple(float(v) for v in f.bbox)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"[face boost] no face detection for {image_path}: {e}")
+        _FACES[key] = box
+    return _FACES[key]
+
+
+def load_face(box, image_size, bucket_reso, latent_hw):
+    """A face box as a soft oval on a cached latent's grid: (h, w) float32 in [0, 1] (1 over the face, feathered to 0
+    a little past it), cropped as the picture was when it was cached - the same path as load_mask."""
+    import cv2
+    import numpy as np
+    from PIL import Image
+    from fizgig.dataset.image_dataset import resize_image_to_bucket
+    w, h = (int(v) for v in image_size)
+    x1, y1, x2, y2 = box
+    cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+    ax, ay = max(1.0, (x2 - x1) * 0.6), max(1.0, (y2 - y1) * 0.65)    # a little past the box: chin, hairline
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    r = np.sqrt(((xx - cx) / ax) ** 2 + ((yy - cy) / ay) ** 2)
+    m = np.clip((1.0 - r) / 0.3, 0.0, 1.0)                            # full inside 0.7 of the oval, fading to its edge
+    px = resize_image_to_bucket(Image.fromarray((m * 255).astype(np.uint8), "L"), tuple(bucket_reso))
+    out = cv2.resize(px.astype(np.float32) / 255.0, (int(latent_hw[1]), int(latent_hw[0])),
+                     interpolation=cv2.INTER_AREA)
+    return np.clip(out, 0.0, 1.0)
+
+
 _REPORTS = {}
 
 

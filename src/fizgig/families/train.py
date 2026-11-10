@@ -1122,7 +1122,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  ft_epochs_done=0, ft_fused_backward=False, reg_lr_multiplier=0.2, preview_checkpoint=None,
                  preview_checkpoint_cache="auto", preview_int8=False, family_options=None,
                  dop=False, dop_trigger=None, dop_class="", dop_weight=1.0, dop_every=1, dop_ft_samples=8,
-                 lr_boost=None, share_worker=None, masked_training=False, mask_floor=0.1, mask_prior=0.0,
+                 lr_boost=None, share_worker=None, masked_training=False, mask_floor=0.1, mask_prior=0.0, face_weight=0.0,
                  caption_dropout=0.0, stage_dataset_config=None, stage_until=0.3, stage_blend=0.1,
                  batch_size_auto=False):
     desc = get_family(family)
@@ -1267,6 +1267,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 raise RuntimeError(f"{desc.display_name} has no masked training - drop --masked_training")
             from fizgig.dataset.image_dataset import ImageDataset
             ImageDataset.loss_masks = True      # each still with a photo-masklabel.png gets its mask (dataset/masks.py)
+        if face_weight and face_weight > 1.0 and desc.masked_training:
+            from fizgig.dataset.image_dataset import ImageDataset
+            ImageDataset.face_boost = float(face_weight)     # each still's largest face as an oval (Boost the face)
         group = generate_dataset_group_by_blueprint(blueprint.dataset_group, training=True,
                                                     num_timestep_buckets=None, shared_epoch=shared_epoch)
     if group.num_train_items == 0:
@@ -1336,10 +1339,15 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     def _loss_mask(batch):
         """The step's per-cell loss weights (masked training), or None: a picture without a mask trains as normal."""
         m = batch.get("loss_mask") if masked_training else None
-        if m is None:
+        f = batch.get("face_weight") if face_weight and face_weight > 1.0 else None
+        if m is None and f is None:
             return None
         from fizgig.dataset.masks import mask_weight
-        return mask_weight(m.to(device).float(), mask_floor)
+        w = mask_weight(m.to(device).float(), mask_floor) if m is not None else None
+        if f is not None:                    # Boost the face: x face_weight over the face oval, on top of the mask
+            f = 1.0 + (float(face_weight) - 1.0) * f.to(device).float()
+            w = f if w is None else w * f
+        return w
     if slider_pairs:
         shared = _pair_slider_caption(user_config)
         if shared:                           # the dial is shown on what both ends of a pair have in common
@@ -2039,6 +2047,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                        "ss_masked_images": str(masked_images)})
             if mask_prior:
                 md["ss_mask_prior"] = f"{mask_prior:g}"
+        if face_weight and face_weight > 1.0:
+            md["ss_face_weight"] = f"{float(face_weight):g}"
         md.update(driver.run_metadata())
         return md
 
@@ -3246,6 +3256,9 @@ def setup_parser():
                         "fully, grey partly, black at --mask_floor; pictures without a mask train as normal")
     p.add_argument("--mask_floor", type=float, default=0.1,
                    help="masked training: how much outside the mask counts (0 = nothing, 1 = as much as inside)")
+    p.add_argument("--face_weight", type=float, default=0.0,
+                   help="Boost the face (an experiment): each still's largest face counts this many times as much in "
+                        "the loss (a soft oval from the face detector), on top of any mask; 0 or 1 = off")
     p.add_argument("--mask_prior", type=float, default=0.0,
                    help="masked training: outside the mask, keep the LoRA to the model's own prediction (LoRA at 0) "
                         "at this weight (OneTrainer's masked prior preservation; 0 = off; one extra forward a step)")
@@ -3318,7 +3331,7 @@ def main():
         dop_ft_samples=a.dop_ft_samples,
         lr_boost=[(x.split("=", 1)[0], float(x.split("=", 1)[1])) for x in a.lr_boost if "=" in x] or None,
         share_worker=a.share_worker, masked_training=a.masked_training, mask_floor=a.mask_floor,
-        mask_prior=a.mask_prior, caption_dropout=a.caption_dropout, stage_dataset_config=a.stage_dataset_config,
+        mask_prior=a.mask_prior, face_weight=a.face_weight, caption_dropout=a.caption_dropout, stage_dataset_config=a.stage_dataset_config,
         stage_until=a.stage_until, stage_blend=a.stage_blend)
 
 

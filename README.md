@@ -120,7 +120,7 @@ Each tool works on your own runs **or any LoRA you've downloaded**, and they han
 - **The trainer curates your dataset while it trains** (every model except MiniMax H3). Every image starts as useful training data; the watch follows each one's loss, and only when an image stops teaching the model does it step in: throttle it, recaption it, and as a last resort set it aside. It also tells you when the whole run has plateaued. No other trainer does this.
 - **Fast previews** in a few steps on a turbo or distilled model where one exists: Klein's and Flux 3 Image Klein's distilled models, the Turbo LoRAs for Fibo 2.0, Krea 2, MiniMax H3, Qwen Image 2.1 and Anima, Vimoo's distilled LoRA, and Qwen Image 2.1's Turbo model.
 - **A sample gallery that scores likeness** live, and a run visualiser to scrub epochs.
-- **Dataset prep**: AI captions with Qwen3-VL or Florence-2, bilingual captions, face crops, and a Look Consistency Filter.
+- **Dataset prep**: AI captions with Qwen3-VL or Florence-2, booru tags with the WD EVA02 tagger, bilingual captions, face crops, and a Look Consistency Filter.
 - **Face backends for every kind of character**: face crops, the Look Filter and likeness scores work on anime, furry and fursuit characters as well as people (see the section below).
 - **Gizmo** (MiniMax H3): cut clips with scene detection, crop to the subject, and record or segment a voice dataset with Whisper transcription.
 

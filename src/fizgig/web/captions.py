@@ -395,9 +395,10 @@ def _popen(cmd, prefs, stdin=False):
 
 
 def ai_captions(prefs, captioner, folder, model, task_label, instruction, max_tokens, trigger, overwrite, clips,
-                only=None, photos=True, ext=".txt"):
+                only=None, photos=True, ext=".txt", threshold=0.35, leave_out="", underscores=False):
     """Caption the folder's pictures (and clips) with a captioner from the registry (`model` is its label or key), or
-    just `only` (a re-caption). The worker loads once and stays loaded for the next batch."""
+    just `only` (a re-caption). The worker loads once and stays loaded for the next batch. A tagger keeps the tags
+    scoring `threshold` or more, minus `leave_out` (comma-separated), underscores as spaces unless `underscores`."""
     if _busy():
         raise ValueError("A captioning job is already running. Stop it first.")
     desc = _captioners.get(model)
@@ -453,6 +454,9 @@ def ai_captions(prefs, captioner, folder, model, task_label, instruction, max_to
         job["instruction_file"] = instr
     if desc.tasks:
         job["task"] = task_label if task_label in desc.tasks else desc.default_task
+    if desc.kind == "tags":
+        job.update(threshold=min(max(float(threshold or 0.35), 0.01), 0.99), underscores=bool(underscores),
+                   leave_out=[t.strip() for t in str(leave_out or "").split(",") if t.strip()])
     job_path = os.path.join(JOB_DIR, "job.json")
     with open(job_path, "w", encoding="utf-8") as f:
         json.dump(job, f)

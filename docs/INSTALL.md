@@ -142,7 +142,7 @@ NVIDIA uses `pynvml` / `nvidia-smi`; the AMD readers (`vram_monitor.read_amd_gpu
 
 ### Helper models
 
-Three small models download on first use: InsightFace `buffalo_l` (~300 MB, during install), Florence-2 (~500 MB–1.5 GB, first AI caption), and Helsinki-NLP `opus-mt-en-zh` (~300 MB, first bilingual translation). If you use the furry / anime face backends, two more download on first use: the deepghs anime head model (~40 MB) and DINOv2-base (~350 MB). See [face backends](FACE_BACKENDS.md).
+Three small models download on first use: InsightFace `buffalo_l` (~300 MB, during install), Florence-2 (~500 MB–1.5 GB, first AI caption), the WD EVA02 tagger (1.3 GB, first booru tagging), and Helsinki-NLP `opus-mt-en-zh` (~300 MB, first bilingual translation). If you use the furry / anime face backends, two more download on first use: the deepghs anime head model (~40 MB) and DINOv2-base (~350 MB). See [face backends](FACE_BACKENDS.md).
 
 ## Model downloads
 

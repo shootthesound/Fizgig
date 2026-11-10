@@ -7599,7 +7599,8 @@ const capItemFolder = (it) => it.path.slice(0, it.path.length - it.name.length -
 function capSettings() {
   return {trigger: $("capTrigger").value, model: $("capModel").value, task: $("capTask").value,
     tokens: $("capTokens").value, overwrite: $("capOverwrite").checked, songWords: $("capSongWords").value,
-    skipCjk: $("capSkipCjk").checked, perPage: $("capPerPage").value, concept: $("capConcept").value.trim()};
+    skipCjk: $("capSkipCjk").checked, perPage: $("capPerPage").value, concept: $("capConcept").value.trim(),
+    threshold: $("capThreshold").value, leaveOut: $("capLeaveOut").value, underscores: $("capUnderscores").checked};
 }
 const saveCapSoon = debounce(() => { S.capSaved = capSettings(); api("/api/state", {captions: S.capSaved}).catch(() => {}); }, 600);
 // the chosen captioner's description (fizgig/captioners/registry.py), and whether it follows an instruction
@@ -7614,7 +7615,7 @@ async function loadCaptionOptions() {
   model.innerHTML = "";
   for (const m of o.models) model.append(el("option", {value: m, text: m}));
   model.value = o.models.includes(saved.model) ? saved.model : o.default_model;
-  $("capModelHint").textContent = o.secondary ?
+  S.cap.hint = o.secondary ?
     `Qwen3-VL captions with your secondary captioning model (${o.secondary}, set in Preferences), following an ` +
     "instruction you can edit. Empty that row in Preferences to caption with the Krea 2 text encoder again. " +
     "Florence-2 downloads itself the first time." : o.qwen_available ?
@@ -7629,6 +7630,9 @@ async function loadCaptionOptions() {
   fillTasks(saved.task);
   if (saved.tokens) $("capTokens").value = saved.tokens;
   if (saved.concept !== undefined) $("capConcept").value = saved.concept;
+  if (saved.threshold) $("capThreshold").value = saved.threshold;
+  if (saved.leaveOut !== undefined) $("capLeaveOut").value = saved.leaveOut;
+  if (saved.underscores !== undefined) $("capUnderscores").checked = saved.underscores;
   capConceptShow();
   $("capSongCard").style.display = o.song_words ? "" : "none";
   // a model that trains on no pictures or clips (ACE-Step): the AI card has nothing to caption, the song card does
@@ -7639,7 +7643,22 @@ async function loadCaptionOptions() {
   $("capModelHint").style.display = pictures ? "" : "none";
   if (!pictures) $("capInstrBox").style.display = "none";
   $("capTaskHint").style.display = pictures && qwenOn() ? "" : "none";       // fillTasks ran while the row was hidden
+  capKindRows();
   if (o.song_words) { $("capSongWords").placeholder = "e.g. " + o.song_words; $("capSongWords").value = saved.songWords || ""; }
+}
+
+// the rows the chosen captioner uses: a task menu when it has one (or follows an instruction), Max tokens for
+// sentences, the tag rows (threshold, left-out tags, underscores) for a tagger; its own hint when it has one
+function capKindRows() {
+  const o = S.cap.opts, d = capDesc() || {kind: "sentences", tasks: []};
+  const media = (S.fam && S.fam.media) || ["photo"];
+  const pictures = media.includes("photo") || media.includes("clip");
+  const show = (id, on) => { $(id).closest(".field-row").style.display = pictures && on ? "" : "none"; };
+  show("capTask", d.instruction || d.tasks.length);
+  show("capTokens", d.kind !== "tags");
+  $("capTagRows").style.display = pictures && d.kind === "tags" ? "" : "none";
+  $("capModelHint").textContent = d.hint || S.cap.hint || "";
+  if (o && !qwenOn()) $("capTaskHint").style.display = "none";
 }
 
 function fillTasks(want) {
@@ -7701,6 +7720,8 @@ function capJobBody(extra = {}) {
   return {family: S.family, folder: capFolder(), model: $("capModel").value, task: $("capTask").value, ext: capExt(),
     instruction: t ? t.instruction.split("{concept}").join($("capConcept").value.trim() || "the same concept") : "",
     max_tokens: Number($("capTokens").value) || 120,
+    threshold: Number($("capThreshold").value) || 0.35, leave_out: $("capLeaveOut").value,
+    underscores: $("capUnderscores").checked,
     trigger: $("capTrigger").value, overwrite: $("capOverwrite").checked, ...extra};
 }
 
@@ -7973,12 +7994,13 @@ function wireCaptions() {
     S.values.DATASET_CAPTION_EXT = $("captionExt").value.trim() || ".txt";
     syncInputs(["DATASET_CAPTION_EXT"]); saveStateSoon(); loadCaptions();
   });
-  $("capModel").addEventListener("change", () => { fillTasks(); onCapTask(); });
+  $("capModel").addEventListener("change", () => { fillTasks(); onCapTask(); capKindRows(); });
   $("capPerPage").addEventListener("change", () => {
     CAP_PAGE = Number($("capPerPage").value) || 12; S.cap.page = 0; renderCaptions(); saveCapSoon(); });
   $("capTask").addEventListener("change", onCapTask);
   $("capConcept").addEventListener("input", saveCapSoon);
-  for (const id of ["capTrigger", "capTokens", "capOverwrite", "capSongWords", "capSkipCjk"])
+  for (const id of ["capTrigger", "capTokens", "capOverwrite", "capSongWords", "capSkipCjk", "capThreshold", "capLeaveOut",
+                    "capUnderscores"])
     $(id).addEventListener("change", saveCapSoon);
   // a trigger word typed here fills auto-recaption's on the Training tab (an empty one leaves it alone)
   $("capTrigger").addEventListener("input", () => {

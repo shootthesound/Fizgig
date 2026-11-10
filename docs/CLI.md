@@ -1031,7 +1031,7 @@ Points at the output dir (or the `per_image_loss.jsonl` directly) and prints the
 python -m fizgig.scripts.batch_caption --captioner qwen3vl --model_file /models/qwen3vl_4b_fp8_scaled.safetensors   --list_file images.txt --instruction_file instruction.txt --trigger zwxem --max_new_tokens 160
 ```
 
-The GUI's caption tasks (person or character, object or product, style, concept) are instructions; write the one you want to a file. Florence-2 downloads itself: `--captioner florence2_promptgen` (or `florence2_base`, `florence2_large`) with `--task "<DETAILED_CAPTION>"`. To add a captioner, see [ADDING_A_CAPTIONER.md](ADDING_A_CAPTIONER.md).
+The GUI's caption tasks (person or character, object or product, style, concept) are instructions; write the one you want to a file. Florence-2 downloads itself: `--captioner florence2_promptgen` (or `florence2_base`, `florence2_large`) with `--task "<DETAILED_CAPTION>"`. Booru tags: `--captioner wd_eva02_large_v3` (downloads itself, 1.3 GB; tags scoring 0.35 or more). To add a captioner, see [ADDING_A_CAPTIONER.md](ADDING_A_CAPTIONER.md).
 
 **Bilingual captions** — `python -m fizgig.scripts.translate_captions <folder> [--skip_existing] [--ext .txt]` adds a Chinese translation to every caption (`<trigger>, <english> - <chinese>`), keeping the trigger word as it is.
 

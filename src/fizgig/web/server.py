@@ -4303,7 +4303,8 @@ class Handler(BaseHTTPRequestHandler):
                     prefs, cap if cap and os.path.isfile(cap) else "", folder, model, str(b.get("task") or ""),
                     str(b.get("instruction") or ""), int(b.get("max_tokens") or 120), str(b.get("trigger") or ""),
                     bool(b.get("overwrite")), clips, only=only or None, photos=photos,
-                    ext=captions.caption_ext(b.get("ext"))))
+                    ext=captions.caption_ext(b.get("ext")), threshold=float(b.get("threshold") or 0.35),
+                    leave_out=str(b.get("leave_out") or ""), underscores=bool(b.get("underscores"))))
             if path.startswith("/api/studio/"):
                 try:
                     return self.json(_studio_post(path[len("/api/studio/"):], b))

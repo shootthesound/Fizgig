@@ -532,6 +532,16 @@
               <div class="field-row"><span class="field-label">Max tokens:</span>
                 <input type="number" id="capTokens" class="w-num" value="120">
                 <span class="field-hint">How long a caption may be.</span></div>
+              <div id="capTagRows" style="display:none">
+                <div class="field-row"><span class="field-label">Keep tags scoring:</span>
+                  <input type="number" id="capThreshold" class="w-num" min="0.05" max="0.95" step="0.05" value="0.35">
+                  <span class="field-hint">or more (0 to 1). Higher keeps only the tags it's sure of; lower adds more tags,
+                    and more mistakes.</span></div>
+                <div class="field-row"><span class="field-label">Leave out:</span>
+                  <input type="text" id="capLeaveOut" class="w-path" placeholder="tags never to write, e.g. watermark, signature, blurry"></div>
+                <label class="checkbox-label"><input type="checkbox" id="capUnderscores">
+                  Keep underscores in tags (long_hair rather than long hair)</label>
+              </div>
               <label class="checkbox-label"><input type="checkbox" id="capOverwrite" checked>
                 Overwrite existing captions (untick to caption only the files without one)</label>
             </div>

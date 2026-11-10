@@ -501,7 +501,7 @@ def form(desc):
                  "Speed: each step takes up to about half as long again.",
                  launch.MASK_PRIORS, hint_labels=True),                 # one spaced line per choice, name in bold
             _row("FACE_BOOST", "Boost the face (experimental)", "check",
-                 "Early in the run, each picture's face and hair count 9 times as much as the rest, so likeness "
+                 "Early in the run, each picture's face and hair count much more than the rest, so likeness "
                  "comes in faster, most of all when faces are small in the frame (medium and full-length shots). "
                  "It runs 3 boosted stretches, then 1 normal, for the first 12 epochs or 600 steps, whichever "
                  "is sooner; after that the run trains as normal, so the body and background catch up. Works "

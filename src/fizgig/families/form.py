@@ -46,6 +46,17 @@ ROW_GROUPS = (
     ("length", "Length", ("MAX_TRAIN_EPOCHS", "SEED")),
     ("size", "Picture size", ("DATASET_MEGAPIXELS", "CLIP_MEGAPIXELS", "STAGE_MP", "STAGE_UNTIL")),
     ("context", "Context LoRA", ("CONTEXT_LORA_PATH", "CONTEXT_LORA_STRENGTH")),
+    ("states", "Save state", ("SAVE_STATE", "SAVE_STATE_ON_TRAIN_END", "KEEP_LAST_N_STATES")),
+    ("gradients", "Gradients", ("GRADIENT_ACCUMULATION", "MAX_GRAD_NORM")),
+    ("schedule", "Learning-rate schedule", ("LR_SCHEDULER", "LR_WARMUP_STEPS")),
+    ("buckets", "Buckets", ("ENABLE_BUCKET", "BUCKET_NO_UPSCALE")),
+    ("metadata", "Metadata (saved in the LoRA)", ("METADATA_TITLE", "METADATA_AUTHOR", "METADATA_DESCRIPTION",
+                                                  "METADATA_LICENSE", "METADATA_TAGS", "METADATA_TRIGGER_PHRASE",
+                                                  "METADATA_THUMBNAIL")),
+    ("previewsize", "Preview size", ("SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS", "SAMPLE_SEED")),
+    ("turbo", "Turbo LoRA", ("FAMILY_TURBO_ON", "FAMILY_TURBO_STRENGTH")),
+    ("rotations", "Rotations", ("FAMILY_FT_ROTATIONS", "FAMILY_FT_SAVE_EVERY", "FAMILY_FT_ROTATE_EVERY")),
+    ("reg", "Regularisation", ("FAMILY_FT_REG_DIR", "FAMILY_FT_REG_MULT")),
     ("faceboost", "Boost the face (experimental)", ("FACE_BOOST", "FACE_BOOST_AREA", "FACE_BOOST_EVERY",
                                                     "FACE_BOOST_WEIGHT")),
 )
@@ -668,14 +679,14 @@ def form(desc):
              "larger effective batch, raise this: the same averaged gradient as a bigger batch, at the memory of "
              "batch 1."),
         _row("MAX_GRAD_NORM", "Max Grad Norm"),
+        _row("LR_SCHEDULER", "LR Scheduler", "choice", choices=["constant", "constant_with_warmup", "cosine",
+                                                                 "cosine_with_restarts", "linear", "polynomial"]),
+        _row("LR_WARMUP_STEPS", "Warmup steps"),
     ], collapsed=True)
     add("other", "Other Options", "training", [
         _row("DATASET_CAPTION_EXT", "Caption Extension"),
         _row("ENABLE_BUCKET", "Enable Bucket", "check"),
         _row("BUCKET_NO_UPSCALE", "No Upscale (keep small images at native size)", "check"),
-        _row("LR_SCHEDULER", "LR Scheduler", "choice", choices=["constant", "constant_with_warmup", "cosine",
-                                                                 "cosine_with_restarts", "linear", "polynomial"]),
-        _row("LR_WARMUP_STEPS", "Warmup steps"),
         _row("CAPTION_DROPOUT", "Caption dropout", "choice", CAPTION_DROPOUT_HINT, CAPTION_DROPOUTS,
              default=CAPTION_DROPOUTS[0]) if desc.caption_dropout and pictures else None,
         _row("BATCH_SIZE", "Batch size", "choice", BATCH_HINT, launch.batch_choices(desc))

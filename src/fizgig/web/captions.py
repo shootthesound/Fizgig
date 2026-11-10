@@ -143,7 +143,11 @@ def options(prefs, captioner, secondary=""):
     return {"models": [d.label for d in offered],
             "captioners": [{"label": d.label, "key": d.key, "kind": d.kind, "instruction": d.instruction,
                             "tasks": list(d.tasks), "default_task": d.default_task, "hint": d.hint,
-                            "size_gb": d.size_gb, "licence": d.licence} for d in offered],
+                            "size_gb": d.size_gb, "licence": d.licence,
+                            "prompt_types": [list(t) for t in d.prompt_types], "prompt_lengths": list(d.prompt_lengths),
+                            "default_length": d.default_length,
+                            "prompt_extras": [{"label": l, "text": t, "on": on} for l, t, on in d.prompt_extras]}
+                           for d in offered],
             "default_model": qwen_label if captioner else offered[0].label,
             "instruction_tasks": qwen, "default_instruction_task": tasks[default][0],
             "qwen_available": bool(captioner), "secondary": os.path.basename(secondary) if secondary else ""}

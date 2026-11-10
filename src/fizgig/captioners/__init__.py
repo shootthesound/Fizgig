@@ -51,6 +51,12 @@ class CaptionerDescription:
     hint: str = ""                   # one line for the model menu's hint
     precisions: tuple = ()           # ((name, vram_gb), ...) best first, when it loads in more than one way: the
                                      # worker picks the first that fits the card's free memory (pick_precision)
+    # An instruction captioner's own prompt menu, shown under Fizgig's instruction tasks (the page builds the text):
+    prompt_types: tuple = ()         # ((label, any length, "{word_count}" words, "{length}" word), ...) templates
+    prompt_lengths: tuple = ()       # the Length menu: words ("long") and word counts ("120"); first = "any"
+    default_length: str = ""
+    prompt_extras: tuple = ()        # ((label, sentence, ticked by default), ...) added to any instruction; "{name}"
+                                     # in a sentence is the trigger word (that sentence left out when there is none)
 
 
 @dataclass

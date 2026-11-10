@@ -65,6 +65,20 @@ def test_training_code_never_imports_captioners():
     assert not bad, f"training code imports the captioner registry: {bad}"
 
 
+@pytest.mark.parametrize("d", [d for d in captioners.CAPTIONERS if d.prompt_types or d.prompt_extras],
+                         ids=lambda d: d.key)
+def test_a_captioners_own_prompt_menu(d):
+    assert d.instruction, "a prompt menu only makes sense for a captioner that follows an instruction"
+    for t in d.prompt_types:
+        assert len(t) == 4 and "{word_count}" in t[2] and "{length}" in t[3] and "{" not in t[1]
+    assert not d.prompt_lengths or (d.prompt_lengths[0] == "any" and d.default_length in d.prompt_lengths)
+    labels = [x[0] for x in d.prompt_extras]
+    assert len(set(labels)) == len(labels)
+    for _label, text, _on in d.prompt_extras:
+        assert set(re.findall(r"{(\w+)}", text)) <= {"name"}
+    assert not any(re.search(r"profanity|vulgar", x[1], re.I) for x in d.prompt_extras)
+
+
 def test_pick_precision():
     from fizgig.captioners import pick_precision
     d = CaptionerDescription(key="x", label="x", kind="sentences", module="fizgig.captioners.x:X",

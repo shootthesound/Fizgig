@@ -2861,3 +2861,7 @@ label[title]:has(.tip-mark) { cursor: help; }
 .st-map-note { margin-top: 8px; padding: 6px 10px; border-left: 3px solid var(--warning); border-radius: 4px;
   background: color-mix(in srgb, var(--warning) 12%, transparent); color: var(--text-primary); font-size: 9.5pt; }
 .st-map-trig { width: 140px; }
+
+/* a captioner's extra-option ticks (Captions tab) */
+.cap-extras { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 2px 14px; margin: 4px 0 8px; }
+.cap-extras .checkbox-label { margin: 0; }

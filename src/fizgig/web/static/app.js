@@ -7600,13 +7600,43 @@ function capSettings() {
   return {trigger: $("capTrigger").value, model: $("capModel").value, task: $("capTask").value,
     tokens: $("capTokens").value, overwrite: $("capOverwrite").checked, songWords: $("capSongWords").value,
     skipCjk: $("capSkipCjk").checked, perPage: $("capPerPage").value, concept: $("capConcept").value.trim(),
-    threshold: $("capThreshold").value, leaveOut: $("capLeaveOut").value, underscores: $("capUnderscores").checked};
+    threshold: $("capThreshold").value, leaveOut: $("capLeaveOut").value, underscores: $("capUnderscores").checked,
+    extras: (S.capSaved || {}).extras || {}};
 }
 const saveCapSoon = debounce(() => { S.capSaved = capSettings(); api("/api/state", {captions: S.capSaved}).catch(() => {}); }, 600);
 // the chosen captioner's description (fizgig/captioners/registry.py), and whether it follows an instruction
 const capDesc = () => ((S.cap.opts && S.cap.opts.captioners) || []).find((c) => c.label === $("capModel").value);
 const qwenOn = () => !!(capDesc() || {}).instruction;
 const qwenTask = () => (S.cap.opts.instruction_tasks || []).find((t) => t.label === $("capTask").value);
+// the chosen captioner's own caption type (JoyCaption's Straightforward...), when one is picked in the task menu
+const capType = () => ((capDesc() || {}).prompt_types || []).find((t) => t[0] === $("capTask").value);
+
+// a caption type's text at the chosen length: "any", a word ("long") or a word count ("120")
+function capTypeText(t, length) {
+  if (!length || length === "any") return t[1];
+  return /^\d+$/.test(length) ? t[2].split("{word_count}").join(length) : t[3].split("{length}").join(length);
+}
+
+// the ticked extra options' sentences; {name} is the trigger word, and that sentence goes when there is none
+function capExtrasText() {
+  const d = capDesc() || {}, trig = $("capTrigger").value.trim().replace(/,+$/, "").trim();
+  return (d.prompt_extras || []).filter((x, i) => { const b = $("capExtra" + i); return b && b.checked; })
+    .filter((x) => !x.text.includes("{name}") || trig).map((x) => x.text.split("{name}").join(trig)).join(" ");
+}
+
+// what the captioner is told: Fizgig's task instruction (or its own caption type at the chosen length), then the ticks
+function capInstruction() {
+  const t = qwenOn() && qwenTask(), ty = capType();
+  const base = ty ? capTypeText(ty, $("capLength").value)
+    : t ? t.instruction.split("{concept}").join($("capConcept").value.trim() || "the same concept") : "";
+  return [base, capExtrasText()].filter(Boolean).join(" ");
+}
+
+function capSentShow() {                         // the line under the ticks: exactly what will be sent
+  const d = capDesc() || {};
+  if (!(d.prompt_extras || []).length) return;
+  $("capSent").textContent = "It's told: " + capInstruction();
+}
 
 async function loadCaptionOptions() {
   const o = S.cap.opts = await api("/api/captions/options?family=" + encodeURIComponent(S.family));
@@ -7659,6 +7689,43 @@ function capKindRows() {
   $("capTagRows").style.display = pictures && d.kind === "tags" ? "" : "none";
   $("capModelHint").textContent = d.hint || S.cap.hint || "";
   if (o && !qwenOn()) $("capTaskHint").style.display = "none";
+  capOwnRows();
+}
+
+// the captioner's Length menu and extra-option ticks (remembered per captioner), shown when it has them
+function capExtrasFill() {
+  const d = capDesc() || {}, saved = ((S.capSaved || {}).extras || {})[d.key] || {};
+  const lengths = d.prompt_lengths || [];
+  $("capLength").innerHTML = "";
+  for (const l of lengths) $("capLength").append(el("option", {value: l, text: l}));
+  $("capLength").value = lengths.includes(saved.length) ? saved.length : (d.default_length || lengths[0] || "");
+  const box = $("capExtras");
+  box.innerHTML = "";
+  (d.prompt_extras || []).forEach((x, i) => {
+    const b = el("input", {type: "checkbox", id: "capExtra" + i});
+    b.checked = saved.ticks ? saved.ticks.includes(x.label) : x.on;
+    b.addEventListener("change", () => { capExtrasSave(); capSentShow(); });
+    box.append(el("label", {class: "checkbox-label", title: x.text}, [b, " " + x.label]));
+  });
+  capOwnRows();
+}
+
+function capExtrasSave() {
+  const d = capDesc();
+  if (!d || !(d.prompt_extras || []).length) return;
+  const ticks = d.prompt_extras.filter((x, i) => $("capExtra" + i).checked).map((x) => x.label);
+  S.capSaved = S.capSaved || {};
+  S.capSaved.extras = {...(S.capSaved.extras || {}), [d.key]: {ticks, length: $("capLength").value}};
+  saveCapSoon();
+}
+
+function capOwnRows() {                          // Length with the captioner's own types; the ticks with any task
+  const d = capDesc() || {}, on = $("capTask").closest(".field-row").style.display !== "none";
+  $("capLengthRow").style.display = on && capType() ? "" : "none";
+  $("capExtrasBox").style.display = on && (d.prompt_extras || []).length ? "" : "none";
+  // its own types aren't edited in place: Edit instructions copies one into Custom... to change it
+  $("capEditInstr").textContent = capType() ? "Edit as Custom…" : "Edit instructions…";
+  capSentShow();
 }
 
 function fillTasks(want) {
@@ -7667,7 +7734,14 @@ function fillTasks(want) {
   const d = capDesc() || {tasks: [], default_task: ""};
   const labels = qwenOn() ? o.instruction_tasks.map((t) => t.label) : d.tasks;
   for (const l of labels) task.append(el("option", {value: l, text: l}));
-  task.value = labels.includes(want) ? want : (qwenOn() ? o.default_instruction_task : d.default_task);
+  const own = (d.prompt_types || []).map((t) => t[0]);       // the captioner's own types, under a divider
+  if (own.length) {
+    const g = el("optgroup", {label: `${d.label}'s own`});
+    for (const l of own) g.append(el("option", {value: l, text: l}));
+    task.append(g);
+  }
+  task.value = labels.concat(own).includes(want) ? want : (qwenOn() ? o.default_instruction_task : d.default_task);
+  capExtrasFill();
   $("capEditInstr").style.display = qwenOn() ? "" : "none";
   $("capTaskHint").style.display = qwenOn() && $("capTask").closest(".field-row").style.display !== "none" ? "" : "none";
   $("capInstrBox").style.display = "none";
@@ -7680,10 +7754,16 @@ function capConceptShow() {
   for (const id of ["capConceptRow", "capConceptHint"]) $(id).style.display = on ? "" : "none";
 }
 
+const CAP_LENGTH_TOKENS = {"any": 300, "very short": 60, "short": 120, "medium-length": 200, "long": 300, "very long": 400};
+
 function onCapTask() {
   capConceptShow();
-  const t = qwenOn() && qwenTask();
-  if (t) $("capTokens").value = t.tokens;            // each Qwen task suggests its own length
+  capOwnRows();
+  const t = qwenOn() && qwenTask(), ty = capType();
+  if (ty) {                                        // its own type: room for the length asked for
+    const l = $("capLength").value;
+    $("capTokens").value = /^\d+$/.test(l) ? Number(l) * 2 + 40 : CAP_LENGTH_TOKENS[l] || 300;
+  } else if (t) $("capTokens").value = t.tokens;     // each Qwen task suggests its own length
   if ($("capInstrBox").style.display !== "none") openInstr();
   saveCapSoon();
 }
@@ -7716,9 +7796,8 @@ const capExt = () => {                    // Training > Other Options > Caption 
 };
 
 function capJobBody(extra = {}) {
-  const t = qwenOn() && qwenTask();
   return {family: S.family, folder: capFolder(), model: $("capModel").value, task: $("capTask").value, ext: capExt(),
-    instruction: t ? t.instruction.split("{concept}").join($("capConcept").value.trim() || "the same concept") : "",
+    instruction: capInstruction(),
     max_tokens: Number($("capTokens").value) || 120,
     threshold: Number($("capThreshold").value) || 0.35, leave_out: $("capLeaveOut").value,
     underscores: $("capUnderscores").checked,
@@ -8010,8 +8089,21 @@ function wireCaptions() {
     saveTriggerSoon($("capTrigger").value.trim());
     saveStateSoon();
   });
-  $("capEditInstr").addEventListener("click", () =>
-    $("capInstrBox").style.display === "none" ? openInstr() : ($("capInstrBox").style.display = "none"));
+  $("capEditInstr").addEventListener("click", async () => {
+    const ty = capType();
+    if (ty) {                                      // its own type: copied into Custom..., which is editable
+      await api("/api/captions/instruction", {key: "custom", text: capTypeText(ty, $("capLength").value)});
+      await loadCaptionOptions();
+      $("capTask").value = (S.cap.opts.instruction_tasks.find((t) => t.key === "custom") || {}).label || $("capTask").value;
+      onCapTask();
+      openInstr();
+      return;
+    }
+    $("capInstrBox").style.display === "none" ? openInstr() : ($("capInstrBox").style.display = "none");
+  });
+  $("capLength").addEventListener("change", () => { capExtrasSave(); onCapTask(); });
+  $("capTrigger").addEventListener("input", capSentShow);
+  $("capConcept").addEventListener("input", capSentShow);
   $("capInstrSave").addEventListener("click", () => saveInstr($("capInstr").value));
   $("capInstrReset").addEventListener("click", () => saveInstr(""));
   $("capAll").addEventListener("click", () => capRun("/api/captions/ai", capJobBody()));

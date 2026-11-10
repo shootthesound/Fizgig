@@ -513,6 +513,14 @@
               <div class="field-row"><span class="field-label">Task:</span>
                 <select id="capTask" class="w-combo-lg"></select>
                 <button class="btn" id="capEditInstr">Edit instructions…</button></div>
+              <div class="field-row" id="capLengthRow" style="display:none"><span class="field-label">Length:</span>
+                <select id="capLength" class="w-combo"></select>
+                <span class="field-hint">A length word, or at most this many words.</span></div>
+              <div id="capExtrasBox" style="display:none">
+                <div class="field-hint">Also tell it to (added to the end of the instruction):</div>
+                <div class="cap-extras" id="capExtras"></div>
+                <div class="field-hint" id="capSent"></div>
+              </div>
               <div class="field-row" id="capConceptRow" style="display:none"><span class="field-label">The concept is:</span>
                 <input type="text" id="capConcept" class="w-path" placeholder='a few plain words, e.g. "a backflip" or "a double exposure"'></div>
               <div class="field-hint" id="capConceptHint" style="display:none;margin-bottom:12px">Every caption names it in exactly these

@@ -89,6 +89,7 @@ def test_advice_and_summary():
     s = oom.summary([{"kind": "gpu", "step": 100, "action": "Continue (same settings)"},
                      {"kind": "gpu", "step": 104, "action": "Continue (block swap 6 -> 10)"}])
     assert "1. GPU ran out at step 100" in s and "2. GPU ran out at step 104: Continue (block swap 6 -> 10)" in s
+    assert "ran out before training's first step" in oom.summary([{"kind": "gpu", "step": None, "action": "x"}])
 
 
 def test_a_failed_run_moves_the_queue_on(monkeypatch):

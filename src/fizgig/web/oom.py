@@ -155,8 +155,10 @@ def summary(tries):
     """Each automatic try, one line each, for the log once recovery stops."""
     if not tries:
         return ""
-    lines = [f"  {i}. {'GPU' if t.get('kind') == 'gpu' else 'system RAM'} ran out at step {t.get('step', '?')}: "
-             f"{t.get('action', '')}" for i, t in enumerate(tries, 1)]
+    def where(t):
+        return f"at step {t['step']}" if t.get("step") is not None else "before training's first step"
+    lines = [f"  {i}. {'GPU' if t.get('kind') == 'gpu' else 'system RAM'} ran out {where(t)}: {t.get('action', '')}"
+             for i, t in enumerate(tries, 1)]
     return "\nOut-of-memory recovery tried:\n" + "\n".join(lines) + "\n"
 
 

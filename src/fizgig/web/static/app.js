@@ -1457,7 +1457,11 @@ function podCard() {
 
 // Fizgig 8's welcome, on this computer's own Fizgig (not a pod's or another computer's page): once a launch until
 // Don't show this again. The tour ships with Fizgig; if it won't play, the words stand on their own.
+// Off since 10 Nov 2026 (Peter): kept for a future release's welcome - new words and video, a new hidden pref
+// name (so Don't show this again from 8 doesn't hide it), then WELCOME_ON = true.
+const WELCOME_ON = false;
 function welcomeShow(pr) {
+  if (!WELCOME_ON) return;
   let seen = false;
   try { seen = sessionStorage.getItem("fizgig.welcomeSeen") === "1"; } catch (e) { /* no storage */ }
   if (pr.welcome_hidden || seen || S.onPod || pageIsElsewhere() || $("welcomeModal").classList.contains("active")) return;

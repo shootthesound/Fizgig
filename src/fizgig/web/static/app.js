@@ -533,6 +533,10 @@ function splitRow(r, wrap) {
   const hintOne = el("div", {class: "field-hint", text: r.hint});
   const hintSplit = el("div", {class: "field-hint", text: r.split_hint || r.hint});
   const hintSlide = el("div", {class: "field-hint", text: r.slide_hint || r.hint});
+  // other known-good numbers, bracketed above the hint; the link puts them in the boxes
+  const altSlide = r.slide_alt ? el("div", {class: "field-hint"}, "(" + r.slide_alt[0] + " ",
+    el("a", {class: "inline-link", href: "#", text: "Click here to try them", onclick: (e) => {
+      e.preventDefault(); onValue(r, r.slide_alt[1]); show(); }}), ".)") : null;
   function show() {
     const m = modeOf();
     pills.querySelectorAll("input").forEach((rb) => { rb.checked = rb.value === m; });
@@ -549,7 +553,7 @@ function splitRow(r, wrap) {
     else { one.value = S.values[r.key] ?? ""; mem.single = one.value; }
     for (const [node, on] of [[lineOne, m === "Single"], [hintOne, m === "Single"], [lineSplit, m === "Split"],
                               [hintSplit, m === "Split"], [lineSlide, m === "Slide"], [lineRefresh, m === "Slide"],
-                              [hintSlide, m === "Slide"]]) {
+                              [altSlide, m === "Slide"], [hintSlide, m === "Slide"]]) {
       if (node) node.style.display = on ? "" : "none";
     }
   }
@@ -557,7 +561,7 @@ function splitRow(r, wrap) {
   sync._sync = show;
   sTick.addEventListener("change", () => { mem.slideTick = sTick.checked; });
   wrap.append(el("div", {class: "cad-title", text: r.label}), pills, lineOne, lineSplit, lineSlide, ...(lineRefresh ? [lineRefresh] : []),
-    hintOne, hintSplit,
+    hintOne, hintSplit, ...(altSlide ? [altSlide] : []),
     hintSlide, sync,
     el("div", {class: "field-hint row-note", id: "note_" + r.key}));
   if (r.warn) wrap.append(el("div", {class: "field-hint tc-warn"}, r.warn, r.warn_link ? el("a", {class: "inline-link",

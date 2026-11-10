@@ -382,6 +382,8 @@ MOSS_IMAGE = FamilyDescription(
                      # epoch 60 (Peter, 20 Oct 2026); 60:7:30:8:3 then led it from epoch 9 (28 Oct 2026)
                      slide=tuple(_LORA_SHARE.split(":")),
                      single="40",             # one value for the whole run: 40 beat 30 (Peter, 20 Oct 2026)
+                     slide_alt=("Previous settings, slower to train but known to work well, are the reverse: 60 until "
+                                "epoch 7, then 30 from epoch 8, every 3rd epoch at 30.", "60:7:30:8:3"),
                      slide_hint="Slide: one share until an epoch, then sliding a few points an epoch to another by a "
                                 "later epoch. 30 until epoch 7, then 60 from epoch 8 (the default) works best with Muon on datasets of up to "
                                 "about 55 images; with many more, drop from 60 earlier. Ticked: after "
@@ -389,7 +391,7 @@ MOSS_IMAGE = FamilyDescription(
                                 "fading on a small dataset, and every Nth epoch at the lower share, at half the "
                                 "learning rate.",
                      warn="Experimental figure.",
-                     warn_link="https://www.reddit.com/r/StableDiffusion/comments/1x9khtm/a_potential_fix_for_moss_training_issues/", summary="clean-end {}%", featured=True),
+                     summary="clean-end {}%", featured=True),
     ),
     workbench=("repair", "profiler", "extract", "royale"),
 

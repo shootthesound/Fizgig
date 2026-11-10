@@ -281,6 +281,9 @@ class FamilyOption:
     # with the tick ":N", after it the higher value with every Nth epoch at the lower; `slide_hint` replaces the hint
     slide: tuple = ()
     slide_hint: str = ""
+    # (note, value): a bracketed line above the Slide hint naming other known-good numbers, with "click here to try
+    # them", which puts `value` into the boxes. () = none
+    slide_alt: tuple = ()
     single: str = ""                  # Single's value to start with when the default is a Split or Slide value
 
     def choice_labels(self):

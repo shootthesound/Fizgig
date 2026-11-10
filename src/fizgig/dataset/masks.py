@@ -187,17 +187,27 @@ def face_box(image_path):
     return _FACES[key]
 
 
-def load_face(box, image_size, bucket_reso, latent_hw):
+FACE_AREAS = ("face", "head")
+
+
+def load_face(box, image_size, bucket_reso, latent_hw, area="face"):
     """A face box as a soft oval on a cached latent's grid: (h, w) float32 in [0, 1] (1 over the face, feathered to 0
-    a little past it), cropped as the picture was when it was cached - the same path as load_mask."""
+    a little past it), cropped as the picture was when it was cached - the same path as load_mask. area "head": the
+    oval grown sideways and upward to take in the hair (a mask trims it to the person)."""
     import cv2
     import numpy as np
     from PIL import Image
     from fizgig.dataset.image_dataset import resize_image_to_bucket
     w, h = (int(v) for v in image_size)
     x1, y1, x2, y2 = box
+    bw, bh = x2 - x1, y2 - y1
     cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
-    ax, ay = max(1.0, (x2 - x1) * 0.6), max(1.0, (y2 - y1) * 0.65)    # a little past the box: chin, hairline
+    if area == "head":                  # face and hair: wider, and up past the crown
+        cy -= 0.2 * bh                  # full weight from ~0.45 face-heights above the hairline to past the chin
+        ax, ay = max(1.0, bw * 1.0), max(1.0, bh * 1.05)
+    else:
+        # full weight over the whole box (chin, cheeks, hairline: r <= 0.7 at its edges), fading to 0 just past it
+        ax, ay = max(1.0, bw * 0.72), max(1.0, bh * 0.75)
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
     r = np.sqrt(((xx - cx) / ax) ** 2 + ((yy - cy) / ay) ** 2)
     m = np.clip((1.0 - r) / 0.3, 0.0, 1.0)                            # full inside 0.7 of the oval, fading to its edge

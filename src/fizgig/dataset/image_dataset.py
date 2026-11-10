@@ -639,7 +639,7 @@ class BucketBatchManager:
                 bw, bh = it.bucket_size
                 f = None
                 if getattr(it, "face_box", None) and abs(bw / lw - bh / lh) < 1e-6:
-                    f = load_face(it.face_box, it.original_size, it.bucket_size, (lh, lw))
+                    f = load_face(it.face_box, it.original_size, it.bucket_size, (lh, lw), getattr(it, "face_area", "face"))
                 faces.append(torch.from_numpy(f)[None] if f is not None else torch.zeros(1, lh, lw))
             batch_tensor_data["face_weight"] = faces
 
@@ -903,6 +903,7 @@ class ImageDataset(torch.utils.data.Dataset):
     # Boost the face (an experiment): anything but 1 gives each still's largest face (masks.face_box) as `face_weight` in the
     # batch, a soft oval on its latent's grid; the trainer multiplies it into the loss weights. Set on the CLASS.
     face_boost: float = 1.0
+    face_area: str = "face"           # "head": the oval takes in the hair (masks.load_face)
 
     def __init__(
         self,
@@ -1407,6 +1408,7 @@ class ImageDataset(torch.utils.data.Dataset):
                 _pic = next((os.path.join(self.image_directory, _pic_names[n]) for n in
                              (item_key.lower() + e.lower() for e in IMAGE_EXTENSIONS) if n in _pic_names), None)
                 item_info.face_box = face_box(_pic) if _pic else None
+                item_info.face_area = self.face_area
                 face_items += item_info.face_box is not None
 
             bucket = bucketed.get(bucket_key, [])
@@ -1458,7 +1460,8 @@ class ImageDataset(torch.utils.data.Dataset):
                     f"(or flush the cache) to pick sharp frames for them.")
         if self.face_boost != 1.0:
             logger.info(f"[face boost] {face_items} picture(s) in {self.image_directory} have a face found: it counts "
-                        f"x{self.face_boost:g} in the loss; the rest train as normal")
+                        f"x{self.face_boost:g} in the loss"
+                        + (" (face and hair)" if self.face_area == "head" else "") + "; the rest train as normal")
         if self.loss_masks:
             logger.info(f"[masks] {masked_items} picture(s) in {self.mask_directory or self.image_directory} train "
                         f"with their mask"

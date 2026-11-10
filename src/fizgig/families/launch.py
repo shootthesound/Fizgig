@@ -888,6 +888,8 @@ def train_command(desc, inputs, plan):
             cmd += ["--mask_prior", f"{mask_prior(desc, st):g}"]
     if face_weight(desc, st) is not None:
         cmd += ["--face_weight", f"{face_weight(desc, st):g}"]
+        if str(st.get("FACE_BOOST_AREA") or "").startswith("Head"):
+            cmd += ["--face_area", "head"]
     if dop_on(desc, st) or mp_subs:
         trig, cls = dop_rules(st)
         if mp_subs:          # the captions are read fused: DOP swaps "zwxemwoman" for "a woman"
@@ -1528,6 +1530,7 @@ def mask_prior(desc, st):
         return 0.0
 
 
+FACE_AREAS = ("Face", "Head (face and hair)")   # Boost the face's area: the Training tab's choice
 FACE_BOOST = 2.0        # the face's loss weight by default with Boost the face ticked (an experiment)
 
 

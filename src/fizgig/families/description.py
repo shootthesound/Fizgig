@@ -440,6 +440,10 @@ class FamilyDescription:
     # breaks rather than degrade quietly.
     compile_payback_steps: dict = field(default_factory=dict)
     compile_boundary: str = "inside"
+    # "inside" only from this PyTorch (e.g. "2.15"): older ones keep the checkpoint outside - MOSS-Image's inside
+    # placement keeps 7-10 full-width activations a block on torch 2.10 against 2 on 2.15 (#324: an install pulled
+    # without updating PyTorch spilled into system RAM). "" = any version.
+    compile_inside_min_torch: str = ""
     compile_fullgraph: bool = True
     # measured peak GB when compiled: {precision: {"inside" | "outside": ((megapixels, GB), ...)}}. With it the compile
     # plan checks free VRAM: the family's boundary if it fits, else the checkpoint outside the graph, else uncompiled.

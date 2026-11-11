@@ -243,14 +243,27 @@ class MiniMaxH3ImageDriver(FamilyDriver):
         if not keep:
             mid = 0.5 * (min_t + max_t)
             keep = [min(levels, key=lambda s: abs(s - mid))]
-        pct = self.options.get("lownoise_pct")      # MiniMax H3's clean-end share option: that share of the steps
-        if pct not in (None, "") and len(keep) > 1:  # at the levels below sigma 0.5, the rest spread evenly above
+        pct = self._clean_share()                  # that share of the steps at the levels below sigma 0.5, the rest
+        if pct is not None and len(keep) > 1:       # spread evenly above
             p = min(max(float(str(pct).rstrip("%")) / 100.0, 0.0), 1.0)
             lo, hi = [s for s in keep if s < 0.5], [s for s in keep if s >= 0.5]
             if lo and hi:
                 w = torch.tensor([p / len(lo) if s < 0.5 else (1.0 - p) / len(hi) for s in keep])
                 return float(keep[int(torch.multinomial(w, 1, generator=generator))])
         return float(keep[int(torch.randint(len(keep), (1,), generator=generator))])
+
+    def _clean_share(self):
+        """The clean-end share for this epoch (percent) or None (the model's even draw). Likeness optimization: 75
+        for epochs 1-8, then 50 and 75 in turn (epoch 9 at 50). lownoise_pct=P (the CLI) still sets one share."""
+        if str(self.options.get("likeness_opt", "")).strip() in ("1", "true", "True"):
+            e = int(getattr(self, "epoch", 1) or 1)
+            pct = 75 if e <= 8 or (e - 8) % 2 == 0 else 50
+            if getattr(self, "_share_said", None) != pct:
+                self._share_said = pct
+                logger.info(f"MiniMax H3 Image: Likeness optimization - {pct}% of steps at the clean end from epoch {e}")
+            return pct
+        pct = self.options.get("lownoise_pct")
+        return None if pct in (None, "") else float(str(pct).rstrip("%"))
 
     def _noised(self, latents, generator, min_t, max_t):
         """(x0, noise, sigma): the latent cropped to the 2x2 patch grid, the step's noise level, then its noise."""

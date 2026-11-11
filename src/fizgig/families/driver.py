@@ -579,13 +579,14 @@ class FamilyDriver:
         d = self.description
         if mode == "outside":
             return "outside", ""
+        pref, old = self._torch_boundary()
         if mode != "auto":
-            b, why = self._compile_fit(precision, mp, d.compile_boundary)
+            b, why = self._compile_fit(precision, mp, pref)
             if not b:                       # On still compiles: the leanest boundary, with a warning
                 return "outside", ("on: " + why.replace(" - running uncompiled", "") +
                                    " - compiling with the checkpoint outside the graph anyway (it may run out of "
                                    "memory; Off or Auto avoid that)")
-            return b, (why if b != d.compile_boundary else "")
+            return b, "; ".join(w for w in (old, why if b != pref else "") if w)
         from fizgig.utils.capabilities import compile_blocker
         blocked = compile_blocker(blocks_to_swap)
         if blocked:
@@ -597,11 +598,26 @@ class FamilyDriver:
         if total_steps < pay:
             return False, (f"{total_steps} steps on the {precision.upper()} path — compile pays back after ~{pay}, "
                            "so this run is quicker uncompiled")
-        b, fit = self._compile_fit(precision, mp, d.compile_boundary)
+        b, fit = self._compile_fit(precision, mp, pref)
         if not b:
             return False, fit
         return b, (f"{total_steps} steps on the {precision.upper()} path — compile pays back within ~{pay} steps and "
-                   f"this run is longer" + (f"; {fit}" if fit else ""))
+                   f"this run is longer" + "".join(f"; {w}" for w in (old, fit) if w))
+
+    def _torch_boundary(self):
+        """(boundary, why): the description's, except "inside" on a PyTorch older than compile_inside_min_torch, which
+        keeps the checkpoint outside (the old memory)."""
+        d = self.description
+        need = d.compile_inside_min_torch
+        if d.compile_boundary != "inside" or not need:
+            return d.compile_boundary, ""
+        import torch
+        have = tuple(int(p) for p in torch.__version__.split("+")[0].split(".")[:2])
+        if have >= tuple(int(p) for p in need.split(".")[:2]):
+            return "inside", ""
+        return "outside", (f"PyTorch {torch.__version__.split('+')[0]} is older than {need}, so the checkpoint stays "
+                           f"outside the compiled blocks (inside needs more memory on it) - run the updater for "
+                           f"PyTorch {need}")
 
     def _compile_fit(self, precision, mp, preferred):
         """(boundary, why) by the description's measured compiled peaks (compile_memory) against free VRAM: the

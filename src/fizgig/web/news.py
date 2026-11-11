@@ -6,6 +6,17 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 NEWS = [
     {
         "date": "11 Nov 2026",
+        "title": "Likeness optimization for MiniMax H3 Image",
+        "body": (
+            "MiniMax H3 Image has a new Likeness optimization, and in our tests it improves likeness dramatically. It's on "
+            "in the Standard preset: load it to pick it up. It replaces H3 Image's Clean-end share box.\n\n"
+            "It will be updated over the coming days with more ways to customise it."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#11-nov-2026-likeness-optimization-for-minimax-h3-image"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.6.4"}],
+    },
+    {
+        "date": "11 Nov 2026",
         "title": "Training suddenly slow on Windows? Turn off Sysmem Fallback",
         "body": (
             "If training is suddenly several times slower, especially after a driver or Windows update, NVIDIA's driver "

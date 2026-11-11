@@ -2,7 +2,7 @@
 
 ## 11 Nov 2026: MiniMax H3 Image presets start at 2.8e-4
 
-**MiniMax H3 Image's presets now start Automagic v3 at 2.8e-4**, up from 2e-4, based on early user feedback: it gave better previews at the presets' 0.5 MP. Automagic mostly keeps the level it starts from, so the start matters. At 1 MP or more it may well be fine too; if a run looks overcooked early, try a little lower. Load a ✨ preset to pick it up.
+**MiniMax H3 Image's presets now start Automagic v3 at 2.8e-4**, up from 2e-4, based on early user feedback: it gave better previews at the presets' 0.5 MP. Automagic mostly keeps the level it starts from, so the start matters. It worked at 1 MP too in a test run. Load a ✨ preset to pick it up.
 
 **Element boost** works best on pictures of 1 MP or more where the boosted part is small in the frame; on small pictures it can teach the LoRA pixelation, unless the boosted part is large in the frame.
 

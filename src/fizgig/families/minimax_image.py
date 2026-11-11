@@ -36,7 +36,7 @@ def _preset(rank, epochs=30, slider=False, mp="0.5", edit=False):
         "KREA2_LOSS_WATCH": True, "KREA2_PER_IMAGE_LR": True, "KREA2_AUTO_RECAPTION": False,
         "KREA2_WARMUP_LOOK": False,
         "FAMILY_SLIDER_GUIDANCE": "3",    # Krea 2's prompt-slider push strength
-        "MINIMAX_IMAGE_LOWNOISE_PCT": "40",    # the clean-end share (Peter, 11 Nov 2026); the model's own is ~17
+        "MINIMAX_IMAGE_LIKENESS_OPT": "1",     # 75% clean end for 8 epochs, then 50 / 75 alternating (Peter, 11 Nov 2026)
     }
 
 
@@ -205,17 +205,17 @@ MINIMAX_IMAGE = FamilyDescription(
     preview_width=2048,               # ComfyUI's MiniMaxH3ImageConditioning default; the low end of 4-20 MP
     preview_height=2048,
     repair_size=1024,
-    # the clean-end share (MiniMax H3's): that share of the steps at the noise level below sigma 0.5 (0.232, the
-    # last of the 6), the rest spread evenly over the 5 above; empty = the model's own even draw, 1 in 6 (~17%)
+    # Likeness optimization (H3 Image's own, in place of the Clean-end share box, Peter 11 Nov 2026): the share of
+    # steps at the noise level below sigma 0.5 (0.232, the last of the 6) is 75% for epochs 1-8, then 50% and 75% in
+    # turn (epoch 9 at 50); the rest spread evenly over the 5 above. Off = the model's own even draw, 1 in 6 (~17%).
     options=(
-        FamilyOption("MINIMAX_IMAGE_LOWNOISE_PCT", "Clean-end share", kind="entry", tokens="lownoise_pct={}",
-                     default="40", width=8, suffix="% of steps",
-                     hint="How much of training goes to the last of the model's 6 steps, the nearly finished "
-                          "picture, where skin, eyes and fine detail are made. The rest is shared evenly by the "
-                          "earlier steps, which set out pose, layout and the shape of things. Higher: more detail "
-                          "and likeness. Lower: more on layout and composition. Fizgig's presets use 40; H3 Image's "
-                          "own default is 17, an even share for every step (leave the box empty for that).",
-                     summary="clean-end {}%"),
+        FamilyOption("MINIMAX_IMAGE_LIKENESS_OPT", "Likeness optimization", kind="check",
+                     tokens="likeness_opt=1", default="1",
+                     hint="Puts more of training on the last of the model's 6 steps, the nearly finished picture, "
+                          "where skin, eyes and fine detail are made: three quarters of it for the first 8 epochs, "
+                          "then half and three quarters in turn, so the earlier steps (pose, layout, the shape of "
+                          "things) keep up. Untick for H3 Image's own even share, 1 step in 6.",
+                     summary="likeness optimization"),
     ),
     workbench=("repair", "profiler", "extract", "royale"),
 

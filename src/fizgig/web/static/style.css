@@ -1138,6 +1138,10 @@ input[type="range"] {
   display: flex;
 }
 /* the welcome: the tour beside what's the same and what's new; stacked on a narrow window */
+.modal-window.sysmem-window { width: 620px; border-radius: var(--radius); overflow: hidden; }
+.sysmem-body { font-size: 13.5px; line-height: 1.5; }
+.sysmem-body p { margin: 0 0 10px; }
+.sysmem-body a { color: var(--accent); }
 .modal-window.welcome-window { width: 1080px; border-radius: var(--radius); overflow: hidden; }
 .welcome-body { display: flex; gap: 20px; align-items: flex-start; }
 .welcome-body video { flex: 0 0 58%; width: 58%; border-radius: 10px; background: var(--pic-shade); aspect-ratio: 16 / 9; }

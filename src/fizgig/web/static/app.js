@@ -118,6 +118,7 @@ async function boot() {
   phoneCard();
   podLocalInit();                                             // in the app window on a pod: this computer's folders
   welcomeShow(pr);
+  sysmemTipShow(pr);
   pollRun(); pollStats(); followLog();
   setInterval(pollRun, 2000); setInterval(pollStats, 2000); setInterval(galleryRefresh, 15000);
   // F5 / Ctrl+R reload the page in the app window as in a browser (the window has no reload of its own)
@@ -1475,6 +1476,24 @@ function podCard() {
 // Off since 10 Nov 2026 (Peter): kept for a future release's welcome - new words and video, a new hidden pref
 // name (so Don't show this again from 8 doesn't hide it), then WELCOME_ON = true.
 const WELCOME_ON = false;
+// On Windows with an NVIDIA card: the tip to turn off CUDA Sysmem Fallback (a run spilling into system RAM trains
+// several times slower; driver and Windows updates turn it back on). Once a launch on this computer's own page, until
+// Don't show this again (pref sysmem_tip_hidden).
+function sysmemTipShow(pr) {
+  let seen = false;
+  try { seen = sessionStorage.getItem("fizgig.sysmemSeen") === "1"; } catch (e) { /* no storage */ }
+  if (!pr.sysmem_tip || seen || S.onPod || pageIsElsewhere()) return;
+  const m = $("sysmemModal");
+  const close = () => {
+    m.classList.remove("active");
+    try { sessionStorage.setItem("fizgig.sysmemSeen", "1"); } catch (e) { /* no storage */ }
+    if ($("sysmemNever").checked) api("/api/prefs", {changes: {sysmem_tip_hidden: "1"}}).catch(() => {});
+  };
+  $("sysmemClose").onclick = close; $("sysmemX").onclick = close;
+  m.onclick = (e) => { if (e.target === m) close(); };
+  m.classList.add("active");
+}
+
 function welcomeShow(pr) {
   if (!WELCOME_ON) return;
   let seen = false;

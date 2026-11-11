@@ -3044,6 +3044,11 @@ class Handler(BaseHTTPRequestHandler):
                               "password_on": bool(self.password),
                               "password_saved": bool(str(p.get("web_password") or "").strip()),
                               "welcome_hidden": str(p.get("welcome_v8_hidden") or "") == "1",
+                              # the launch tip to turn off CUDA Sysmem Fallback: Windows with an NVIDIA card (nvidia-smi
+                              # answers), until Don't show this again
+                              "sysmem_tip": sys.platform == "win32" and str(p.get("sysmem_tip_hidden") or "") != "1"
+                              and any("nvidia" in str(g.get("name", "")).lower() or g.get("uuid", "").startswith("GPU-")
+                                      for g in list_gpus()),
                               "password_env": bool(os.environ.get("FIZGIG_PASSWORD")) or getattr(self, "password_arg", False),
                               "lan_ip": __import__("fizgig.web.port", fromlist=["x"]).lan_ip(),
                               "cuda_device": str(p.get("cuda_device") or ""), "gpus": list_gpus(),
@@ -4313,7 +4318,7 @@ class Handler(BaseHTTPRequestHandler):
                 render_keys = {f"workbench_render_{d.key}" for d in training_families()
                                if getattr(d, "workbench_render_choice", False)}
                 allowed = {k for d in training_families() for k in form.model_keys(d)} | set(SETTING_PREFS) | {
-                    "input_dataset_dir", "welcome_v8_hidden", captions.SECONDARY_PREF} | render_keys
+                    "input_dataset_dir", "welcome_v8_hidden", "sysmem_tip_hidden", captions.SECONDARY_PREF} | render_keys
                 ch = b.get("changes") or {}
                 ch = {k: v for k, v in ch.items() if k not in render_keys or v in ("checkpoint", "samples")}
                 if b.get("reset"):                      # Reset to defaults: the settings, never the model files

@@ -268,6 +268,8 @@ If a run that used to be quick is suddenly many times slower with nothing change
 
 To fix it, open NVIDIA Control Panel → Manage 3D settings → **Global Settings**, set **CUDA - Sysmem Fallback Policy** to **Prefer No Sysmem Fallback**, and restart Fizgig. Don't add `venv\Scripts\python.exe` under Program settings: on Windows it's only a launcher that starts the Python Fizgig was installed with (the `home` line in `venv\pyvenv.cfg`), so the setting never reaches the process using the GPU. To keep it to Fizgig only, add that Python's `python.exe` under Program settings instead. Restarting the PC and closing apps that use the GPU (browsers, Discord, games) before training also helps. With fallback off, a run that genuinely doesn't fit stops with an out-of-memory error instead of crawling: then swap a few more blocks or pick the next precision down (Memory & Precision, on the Training tab).
 
+On Windows with an NVIDIA card, Fizgig shows these steps when it starts, until you tick **Don't show this again**.
+
 ### Desktop feels juddery while training? (Windows)
 
 Turn off **Hardware-accelerated GPU scheduling** (Settings → System → Display → Graphics → *Default graphics settings*), then reboot. With it off, Fizgig runs training at low priority so your desktop stays smooth; training speed is unaffected.

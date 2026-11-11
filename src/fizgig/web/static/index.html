@@ -2047,6 +2047,29 @@
     </div>
   </div>
 
+  <!-- On Windows with an NVIDIA card: turn off CUDA Sysmem Fallback, once a launch until Don't show this again -->
+  <div class="modal-backdrop" id="sysmemModal">
+    <div class="modal-window sysmem-window">
+      <div class="modal-header"><span>For full training speed on Windows</span>
+        <button class="btn btn-sm" id="sysmemX" title="Close">✕</button></div>
+      <div class="modal-body sysmem-body">
+        <p>NVIDIA's driver can quietly move part of a training run into system RAM when the card fills up. Nothing
+          crashes, but training can run several times slower, and a driver or Windows update can switch it on.</p>
+        <p><b>To turn it off:</b> open <b>NVIDIA Control Panel</b> → <b>Manage 3D settings</b> → <b>Global Settings</b>,
+          set <b>CUDA - Sysmem Fallback Policy</b> to <b>Prefer No Sysmem Fallback</b>, click Apply, and restart
+          Fizgig.</p>
+        <p class="field-hint">Use Global Settings, not Program Settings: Fizgig's Python there is only a launcher, so a
+          per-program setting never reaches it. With it off, a run too big for your card stops with an out-of-memory
+          message instead of slowing down, and Fizgig retries it lighter by itself.
+          <a href="https://github.com/shootthesound/Fizgig/blob/master/docs/INSTALL.md#training-suddenly-several-times-slower-windows-shared-gpu-memory" target="_blank" rel="noopener">More in the install guide</a></p>
+      </div>
+      <div class="modal-footer">
+        <label class="checkbox-label"><input type="checkbox" id="sysmemNever"> Don't show this again</label>
+        <button class="btn btn-primary" id="sysmemClose">OK</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-backdrop" id="loginModal">
     <div class="modal-window" style="width: 380px;">
       <div class="modal-header"><span>Log in</span></div>

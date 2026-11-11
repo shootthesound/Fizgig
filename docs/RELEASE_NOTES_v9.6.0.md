@@ -6,7 +6,7 @@
 
 **Fizgig's training adapter is on by default.** Without it, people trained on this model came out as caricatures; with it, the same dataset gave photographic skin and a clear likeness, and pictures without the trigger word kept the model's own quality. It stays frozen during training, is off in previews, and is never in your saved LoRA. It downloads with the model, and it's free on [Hugging Face](https://huggingface.co/ShootTheSound/Fizgig-MiniMax-H3-Image-Training-Adapter) for any trainer.
 
-**Clean-end share** sets how much of training goes to the last of the model's 6 steps, the nearly finished picture, where skin, eyes and fine detail are made. The presets put 40% of training there; H3 Image's own default is about 17%, an even share for every step. Higher gives more detail and likeness, lower more layout and composition.
+**Clean-end share** (Training Parameters) sets how much of training goes to the last of the model's 6 steps, the nearly finished picture, where skin, eyes and fine detail are made. The presets put 40% of training there; H3 Image's own default is about 17%, an even share for every step. Higher gives more detail and likeness, lower more layout and composition. MiniMax H3's own Clean-end share box now explains itself the same way; its presets stay at 60, and the model's own default there is 8.
 
 **Every workbench tool works with it:** Studio with Reuse unchanged blocks and Save Repaired, LoRA Royale with seed and prompt travel, the Profiler and Extract. LoRAs from other trainers load too, in kohya, ComfyUI or diffusers names. Fizgig's LoRAs load in ComfyUI's standard LoRA loader with every layer.
 

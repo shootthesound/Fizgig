@@ -137,7 +137,9 @@ def read(path, max_points=4000):
             epochs.append([r[1], r[0]])
             last = r[1]
     k = max(1, -(-len(rows) // max_points))
-    pts = rows[::k]
+    # every k-th step, plus every step that carries a learning rate: the rate is recorded only now and then (every
+    # 20th step), and a stride that misses those steps would leave the graph with no LR line at all
+    pts = [r for i, r in enumerate(rows) if i % k == 0 or r[3] is not None]
     if rows and pts[-1] is not rows[-1]:
         pts.append(rows[-1])
     return {"points": pts, "epochs": epochs, "steps": len(rows), "stride": k, "epoch_mean": epoch_means(rows),

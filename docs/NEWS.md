@@ -1,8 +1,16 @@
 # Fizgig news
 
+## 11 Nov 2026: MiniMax H3 Image presets start at 2.8e-4
+
+**MiniMax H3 Image's presets now start Automagic v3 at 2.8e-4**, up from 2e-4, based on early user feedback: it gave better previews at the presets' 0.5 MP. Automagic mostly keeps the level it starts from, so the start matters. At 1 MP or more it may well be fine too; if a run looks overcooked early, try a little lower. Load a ✨ preset to pick it up.
+
+**Element boost** works best on pictures of 1 MP or more where the boosted part is small in the frame; on small pictures it can teach the LoRA pixelation, unless the boosted part is large in the frame.
+
+[Fizgig v9.6.2 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.6.2)
+
 ## 11 Nov 2026: MiniMax H3 Image presets, and Element boost to try
 
-**MiniMax H3 Image's presets now train at 0.5 MP and start Automagic v3 at 2.8e-4.** The model seems to prefer 0.5 MP or more. Automagic mostly keeps the level it starts from, and 2.8e-4 gave the best previews at 0.5 MP; at 1 MP or more, start lower, around 1e-4 to 2e-4. Load a ✨ preset to pick these up.
+**MiniMax H3 Image's presets now train at 0.5 MP and start Automagic v3 at 2.8e-4.** The model seems to prefer 0.5 MP or more. Automagic mostly keeps the level it starts from, and 2.8e-4 gave the best previews at 0.5 MP; at 1 MP or more it may well be fine too, or try a little lower if a run looks overcooked early. Load a ✨ preset to pick these up.
 
 **Element boost is on MiniMax H3 Image**, under Training Parameters, off in every preset: tick **On** to try it. Also, 2048 is a preview size in Studio and the Samples tab for every model.
 

@@ -6,10 +6,22 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 NEWS = [
     {
         "date": "11 Nov 2026",
+        "title": "MiniMax H3 Image presets start at 2.8e-4",
+        "body": (
+            "Based on early user feedback, MiniMax H3 Image's presets now start Automagic v3 at 2.8e-4 (was 2e-4): better "
+            "previews at the presets' 0.5 MP. Load a preset to pick it up.\n\n"
+            "Element boost works best on pictures of 1 MP or more where the boosted part is small in the frame; on small "
+            "pictures it can teach the LoRA pixelation."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#11-nov-2026-minimax-h3-image-presets-start-at-28e-4"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.6.2"}],
+    },
+    {
+        "date": "11 Nov 2026",
         "title": "MiniMax H3 Image presets, and Element boost to try",
         "body": (
             "MiniMax H3 Image's presets now train at 0.5 MP and start Automagic v3 at 2.8e-4: the model seems to prefer "
-            "0.5 MP or more, and 2.8e-4 gave the best previews there. At 1 MP or more, start lower (1e-4 to 2e-4). Load "
+            "0.5 MP or more, and 2.8e-4 gave the best previews there (at 1 MP it may well be fine too). Load "
             "a preset to pick these up.\n\n"
             "Element boost is on H3 Image too, under Training Parameters, off in every preset: tick On to try it."
         ),

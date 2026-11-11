@@ -34,6 +34,7 @@ def _preset(rank, epochs=30, slider=False, mp="0.25", edit=False):
         "KREA2_LOSS_WATCH": True, "KREA2_PER_IMAGE_LR": True, "KREA2_AUTO_RECAPTION": False,
         "KREA2_WARMUP_LOOK": False,
         "FAMILY_SLIDER_GUIDANCE": "3",    # Krea 2's prompt-slider push strength
+        "MINIMAX_IMAGE_LOWNOISE_PCT": "40",    # the clean-end share (Peter, 11 Nov 2026); the model's own is ~17
     }
 
 
@@ -205,10 +206,12 @@ MINIMAX_IMAGE = FamilyDescription(
     # last of the 6), the rest spread evenly over the 5 above; empty = the model's own even draw, 1 in 6 (~17%)
     options=(
         FamilyOption("MINIMAX_IMAGE_LOWNOISE_PCT", "Clean-end share", kind="entry", tokens="lownoise_pct={}",
-                     default="", width=8, suffix="% of steps",
-                     hint="The share of training steps on the nearly clean noise level, where faces and fine "
-                          "detail are refined. Empty = the model's own even spread over its 6 levels, about 17%. "
-                          "Higher shifts training toward detail and likeness, lower toward layout and composition.",
+                     default="40", width=8, suffix="% of steps",
+                     hint="How much of training goes to the last of the model's 6 steps, the nearly finished "
+                          "picture, where skin, eyes and fine detail are made. The rest is shared evenly by the "
+                          "earlier steps, which set out pose, layout and the shape of things. Higher: more detail "
+                          "and likeness. Lower: more on layout and composition. Fizgig's presets use 40; H3 Image's "
+                          "own default is 17, an even share for every step (leave the box empty for that).",
                      summary="clean-end {}%"),
     ),
     workbench=("repair", "profiler", "extract", "royale"),

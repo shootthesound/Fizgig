@@ -61,6 +61,10 @@ OPTIONS = (
                  choice_values=tuple(c[2] for c in _STRUCTURE), choice_notes=tuple((c[0], c[3]) for c in _STRUCTURE),
                  setting="MINIMAX_LOWNOISE_PCT", hint_indent=7, pady=(8, 2), width=36),
     FamilyOption("H3_LOWNOISE_PCT", "Clean-end share", kind="entry", tokens="lownoise_pct={}", default="60", width=8, suffix="% of steps",
+                 hint="How much of training goes to nearly clean pictures (the less noisy half of the steps), where "
+                      "skin, eyes and fine detail are made. The rest goes to the noisier half, which sets movement, "
+                      "pose and layout. Higher: more detail and likeness. Lower: more movement and composition. "
+                      "Fizgig's presets use 60; MiniMax H3's own default is 8, weighted to movement.",
                  summary="low-noise {}%", setting="MINIMAX_LOWNOISE_PCT", requires="H3_STRUCTURE=Custom", pady=(2, 2)),
     FamilyOption("H3_HIGHNOISE_LR_PCT", "Medium to High Noise LR", kind="entry",
                  tokens="highnoise_lr_pct={}", default="100",

@@ -2235,6 +2235,20 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 #rvModal .rv-window { max-width: 96vw; }
 #rvModal select.st-small-select { width: auto !important; min-width: 0; }
 
+/* the job the tabs show: top right, narrow enough to stay clear of the app window's bar (top middle, up to 60% of the
+   window); under modals and lightboxes. A narrow window or a phone has it bottom right, above the status bar */
+.job-pill { position: fixed; top: 10px; right: 16px; z-index: 30; display: flex; align-items: center; gap: 4px;
+  max-width: min(18vw, 280px); padding: 3px 4px 3px 4px; border-radius: 999px; background: var(--bg-surface);
+  border: 1px solid var(--accent); box-shadow: 0 2px 10px color-mix(in srgb, var(--shadow) 40%, transparent); }
+.job-pill-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none;
+  border: 0; color: var(--text-primary); font-size: 12.5px; padding: 2px 8px; cursor: pointer; text-align: left; }
+.job-pill-text b { color: var(--accent); font-weight: 600; }
+.job-pill-x { flex: none; background: none; border: 0; color: var(--text-muted); cursor: pointer; padding: 2px 8px;
+  border-radius: 999px; }
+.job-pill-x:hover { color: var(--text-primary); background: var(--bg-hover); }
+@media (max-width: 900px) {
+  .job-pill { top: auto; bottom: 112px; max-width: min(70vw, 320px); }
+}
 /* a pod's auto-stop countdown, over every tab */
 .pod-stop-bar { position: sticky; top: 0; z-index: 20; }
 /* editing a queued run: fixed to the bottom of the window, on every tab, until Save to queue or Cancel edit */

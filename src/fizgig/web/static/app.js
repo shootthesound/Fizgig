@@ -1803,6 +1803,7 @@ const RUN_LABELS = {idle: "Idle", starting: "Starting", running: "Running", paus
 async function pollRun() {
   try { S.run = await api("/api/run"); } catch (e) { return; }
   resumeMarks();
+  jobPillShow();
   runSummary();
   if (training() !== S.wasTraining) {             // the LoRA lists' Studio buttons show only between runs
     if (S.wasTraining !== undefined && $("tab-training").classList.contains("active")) loadCheckpoints();
@@ -2401,7 +2402,7 @@ async function loadGallery() {
   // a job loaded into the form (Edit on a queued run, Start again) is the one shown, until Back to the run training
   // now or a run starts; otherwise the run training now (or the last one)
   // a loaded job that is the run training now (Continue loads it too) is simply the run now
-  if (S.viewJob && S.viewJob.lora === (S.run && S.run.lora) && training()) S.viewJob = null;
+  if (S.viewJob && S.viewJob.lora === (S.run && S.run.lora) && training()) { S.viewJob = null; jobPillShow(); }
   const vj = S.viewJob;
   const out = (vj && vj.output_dir) || S.run.output_dir || S.values.LORA_OUTPUT_DIR || S.outputDefault;   // empty = default
   const host = $("gallery");
@@ -2461,11 +2462,27 @@ async function loadGallery() {
     el("a", {href: "#", text: "Back to the run training now", onclick: (e) => { e.preventDefault(); viewJob(null); }})] : []));
 }
 
+// the pill (top right) naming the job the tabs show: the run training now, a job loaded with Edit / Start again (✕
+// goes back to the run now), or a queued run being edited (its bar at the bottom has Cancel edit)
+function jobPillShow() {
+  const p = $("jobPill");
+  if (!p) return;
+  const vj = S.viewJob, live = training() && S.run && S.run.lora;
+  const [label, name] = S.editQueue ? ["Editing queued", S.editQueue.lora || (vj && vj.lora) || ""] :
+    vj ? ["Viewing", vj.lora] : live ? ["Training", S.run.lora] : ["", ""];
+  p.style.display = label ? "" : "none";
+  if (!label) return;
+  $("jobPillText").replaceChildren(el("b", {text: label + ": "}), name);
+  $("jobPillText").title = `${label}: ${name}. Open its previews on the Samples tab.`;
+  $("jobPillBack").style.display = vj && !S.editQueue ? "" : "none";
+}
+
 // the job the tabs follow: one loaded into the form (Edit on a queued run, Start again on a past one) shows its own
 // previews and scores in the Samples gallery; null = the run training now (or the last one)
 function viewJob(job) {
   S.viewJob = job && job.lora ? job : null;
   S.galleryRun = ""; S.gal = null;
+  jobPillShow();
   loadGallery();
 }
 
@@ -4679,6 +4696,7 @@ async function loadIntoForm(s) {
 function queueEditing(item) {
   if (!item && S.editQueue && S.viewJob) viewJob(null);   // the edit ended: the gallery goes back to the run now
   S.editQueue = item;
+  jobPillShow();
   $("btnQueue").textContent = item ? `Save to queue (run ${item.n})` : "Add to queue";
   $("btnQueue").style.display = item ? "none" : "";
   $("queueEditBar").style.display = item ? "" : "none";
@@ -10397,6 +10415,8 @@ function wire() {
   $("btnStart").addEventListener("click", () => start("/api/start"));
   $("galleryRun").addEventListener("change", () => { S.galleryRun = $("galleryRun").value; loadGallery(); });
   $("likBtn").addEventListener("click", likenessPicker);
+  $("jobPillText").addEventListener("click", () => showTab("samples"));
+  $("jobPillBack").addEventListener("click", () => viewJob(null));
   $("styBtn").addEventListener("click", async () => {       // the Style score on or off for the shown run's folder
     const dir = S.lik && S.lik.dir;
     if (!dir) return;

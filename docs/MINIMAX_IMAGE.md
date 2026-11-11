@@ -29,7 +29,7 @@ python -m fizgig.scripts.fetch_models --family minimax_image
 
 - **The checkpoint's own noise levels:** H3 Image is distilled to 6 fixed noise levels (1.0, 0.968, 0.888, 0.750, 0.533, 0.232) with one output head per level. Fizgig trains a LoRA at those levels, each through its own head: the exact inputs the model sees when it renders.
 - **Clean-end share** (Training Parameters): how much of training goes to the last of the model's 6 steps, the nearly finished picture (noise level 0.232), where skin, eyes and fine detail are made. The rest is shared evenly by the five earlier steps, which set out pose, layout and the shape of things. The presets use 40. H3 Image's own default is about 17, an even share for every step: leave the box empty for that. Higher gives more detail and likeness, lower more layout and composition.
-- **Size:** each DiT token covers 32×32 pixels, so 1 MP is 1,024 tokens. The presets (Standard, Style, Edit, Slider) train on Automagic v3, which finds its own learning rate, at 0.25 MP, the Slider at 0.5 MP.
+- **Size:** each DiT token covers 32×32 pixels, so 1 MP is 1,024 tokens. The presets (Standard, Style, Edit, Slider) train on Automagic v3, which finds its own learning rate, at 0.5 MP.
 - **Fizgig's training adapter:** on by default, frozen at 1.0 for every training step, off for previews and never in your saved file. Without it, people trained on this model turned into caricatures; with it, the same dataset gave photographic skin and a clear likeness, and pictures without the trigger kept the model's own quality. It was trained on 7,600 real photos and 1,000 of the model's own renders, and it's free on [Hugging Face](https://huggingface.co/ShootTheSound/Fizgig-MiniMax-H3-Image-Training-Adapter) for any trainer.
 
 ## Memory

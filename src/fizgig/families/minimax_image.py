@@ -9,7 +9,8 @@ weights moved a long way from H3 fl2va (|dW| 25-46% of |W| on attention out / fc
 used here.
 """
 from fizgig.training.optimizers import MUON_DEFAULT_ARGS
-from fizgig.families.description import FamilyDescription, LoRAFormat, ModelFile, SamplingSettings, TextEncoderBuild
+from fizgig.families.description import (FamilyDescription, FamilyOption, LoRAFormat, ModelFile, SamplingSettings,
+                                         TextEncoderBuild)
 
 _CARD = "https://huggingface.co/MiniMaxAI/MiniMax-H3-Image"
 _COMFY = "Comfy-Org/MiniMax-H3-Image"
@@ -201,6 +202,16 @@ MINIMAX_IMAGE = FamilyDescription(
     preview_width=2048,               # ComfyUI's MiniMaxH3ImageConditioning default; the low end of 4-20 MP
     preview_height=2048,
     repair_size=1024,
+    # the clean-end share (MiniMax H3's): that share of the steps at the noise level below sigma 0.5 (0.232, the
+    # last of the 6), the rest spread evenly over the 5 above; empty = the model's own even draw, 1 in 6 (~17%)
+    options=(
+        FamilyOption("MINIMAX_IMAGE_LOWNOISE_PCT", "Clean-end share", kind="entry", tokens="lownoise_pct={}",
+                     default="", width=8, suffix="% of steps",
+                     hint="The share of training steps on the nearly clean noise level, where faces and fine "
+                          "detail are refined. Empty = the model's own even spread over its 6 levels, about 17%. "
+                          "Higher shifts training toward detail and likeness, lower toward layout and composition.",
+                     summary="clean-end {}%"),
+    ),
     workbench=("repair", "profiler", "extract", "royale"),
 
     presets=(

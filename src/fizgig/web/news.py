@@ -5,6 +5,20 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 
 NEWS = [
     {
+        "date": "11 Nov 2026",
+        "title": "MiniMax H3 Image, and out-of-memory recovery",
+        "body": (
+            "A new model, MiniMax H3 Image: train LoRAs, LoKRs, edit LoRAs and slider LoRAs from photo pairs, with "
+            "Fizgig's training adapter on by default for photographic skin and likeness. Press Download models for me "
+            "in Preferences.\n\n"
+            "For every model: a run that runs out of memory carries on by itself where it can, and a failed run no "
+            "longer holds the queue (from @Murf-Code's Fizgig Advanced). AMD installs use AMD's stable PyTorch "
+            "(thanks @scryptio)."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#11-nov-2026-minimax-h3-image-and-out-of-memory-recovery"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.6.0"}],
+    },
+    {
         "date": "10 Nov 2026",
         "title": "Element boost, and new MOSS-Image settings",
         "body": (

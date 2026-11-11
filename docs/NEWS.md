@@ -1,5 +1,15 @@
 # Fizgig news
 
+## 11 Nov 2026: MiniMax H3 Image, and out-of-memory recovery
+
+**A new model: MiniMax H3 Image**, MiniMax's picture model from the H3 family: text-to-image and edits with up to 16 reference pictures, in 6 steps with no CFG. Train LoRAs, LoKRs, edit LoRAs from before/after pairs and slider LoRAs from photo pairs. Fizgig's training adapter is on by default: without it people came out as caricatures, with it the same dataset gave photographic skin and a clear likeness. The presets train on Automagic v3 with 40% of training on the nearly finished picture (Clean-end share). It runs in about 23 GB with int8, 13 GB in 4-bit. Press **Download models for me** in Preferences.
+
+**Out-of-memory recovery, for every model.** A run that runs out of GPU memory or system RAM carries on by itself where it can, up to three times: from its newest save, then a step lighter. A failed run no longer holds the queue; the next one starts. From @Murf-Code's Fizgig Advanced.
+
+**AMD installs use AMD's stable PyTorch** (torch 2.14.0 for ROCm 10.1) instead of the nightlies. Thanks @scryptio (#319).
+
+Update Fizgig on your computers; your pods follow. [MiniMax H3 Image guide](https://github.com/shootthesound/Fizgig/blob/master/docs/MINIMAX_IMAGE.md) · [Fizgig v9.6.0 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.6.0)
+
 ## 10 Nov 2026: Element boost, and new MOSS-Image settings
 
 **Element boost (experimental), for MOSS-Image, under Training Parameters.** Early in a run, one part of each picture counts much more than the rest, so it's learned sooner. By default it's the face and hair, which brings likeness in faster, most of all when faces are small in the frame. It runs three boosted stretches then one normal for the first 12 epochs or 600 steps, then the run trains as normal. It works with or without masks. **What it boosts** can also be the face only, or one of the Make masks choices: the clothes, the body, the background and so on. It's on in MOSS-Image's Fast, Standard and Turbo Train presets.

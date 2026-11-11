@@ -129,7 +129,8 @@ async function boot() {
 }
 
 // fresh (you picked another model at the top): the model's first preset goes over its saved values, so no setting
-// from earlier (an optimizer this model doesn't offer, say) carries over; paths and prompts the preset doesn't set stay
+// from earlier (an optimizer this model doesn't offer, say) carries over; paths and prompts the preset doesn't set stay.
+// Back on the model a run is training: that run's own settings instead
 async function chooseFamily(key, fresh = false) {
   try {                                     // the latest saved, in case another open page changed it
     const st = await api("/api/state");
@@ -138,7 +139,11 @@ async function chooseFamily(key, fresh = false) {
   S.family = key;
   S.fam = S.schema.families.find((f) => f.key === key);
   for (const sel of document.querySelectorAll(".family-pick")) sel.value = key;
-  if (S.all[key] && !fresh) {
+  if (fresh) try { S.run = await api("/api/run"); } catch (e) { /* the last poll's */ }
+  const live = fresh && training() && S.run.family === key && S.run.values;
+  if (live) {
+    S.values = {...defaults(), ...(S.all[key] || {}), ...live};
+  } else if (S.all[key] && !fresh) {
     S.values = {...defaults(), ...S.all[key]};
   } else {                              // a first visit or a switch takes the family's first preset
     S.values = {...defaults(), ...(S.all[key] || {})};

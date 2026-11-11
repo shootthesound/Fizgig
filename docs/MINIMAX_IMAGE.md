@@ -68,6 +68,8 @@ LoRAs for H3 Image made elsewhere load in Studio, LoRA Royale, the Profiler, Ext
 | KSampler | sampler `euler`, scheduler `simple`, 6 steps, CFG 1 |
 | Your LoRA | Load LoRA |
 
+**Your LoRA can look smoother in ComfyUI than in Fizgig.** ComfyUI's default loading (dynamic VRAM) currently applies a LoRA a little weaker on this model: it adds the LoRA to each weight in bf16, where the smallest changes round away. On our test LoRA about 15% was lost, and the same seed came out cleaner and slightly less like the subject. Fizgig's previews and Studio show the LoRA at its full strength, and so does ComfyUI started with `--disable-dynamic-vram`. To see ComfyUI's default look in Studio, set the LoRA's strength to about 0.8. Reported to ComfyUI as [#17690](https://github.com/Comfy-Org/ComfyUI/issues/17690).
+
 ## Licence
 
 MiniMax H3 Image is released under the [MiniMax-H3-Image Community License Agreement](https://huggingface.co/MiniMaxAI/MiniMax-H3-Image/blob/main/LICENSE), which differs from MiniMax H3's licence. Its terms include:

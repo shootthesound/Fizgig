@@ -12,6 +12,8 @@
 
 **Sliders from prompts are off on this model for now.** Slider LoRAs from photo pairs work well. A prompt slider (say, smiling vs frowning) moved clothes, styling and light instead of the expression: on H3 Image a change of prompt reshuffles the whole picture, and the slider learns all of it. We tried training on the clean noise levels only, on the noisy ones only, and without the training adapter, and none helped. If you can make prompt sliders work on this model, a pull request is very welcome; start with a post in [New models & fine-tuning](https://github.com/shootthesound/Fizgig/discussions/new?category=new-models-fine-tuning).
 
+**Your LoRA can look smoother in ComfyUI than in Fizgig's previews.** ComfyUI's default loading (dynamic VRAM) currently applies a LoRA a little weaker on this model: on our test about 15% of it was lost, so the same seed came out cleaner. Fizgig's previews and Studio show the LoRA at its full strength. To see ComfyUI's look in Studio, set the LoRA's strength to about 0.8. Reported to ComfyUI as [#17690](https://github.com/Comfy-Org/ComfyUI/issues/17690).
+
 **Memory:** about 23 GB with the int8 model, 13 GB in 4-bit; Auto picks for you. A 16 GB card trains and runs Studio. A 12 GB card trains, but Studio there needs about 48 GB of system RAM for the 32B text encoder.
 
 ## Also in this release, for every model

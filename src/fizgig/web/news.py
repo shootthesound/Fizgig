@@ -6,6 +6,18 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 NEWS = [
     {
         "date": "11 Nov 2026",
+        "title": "Training suddenly slow on Windows? Turn off Sysmem Fallback",
+        "body": (
+            "If training is suddenly several times slower, especially after a driver or Windows update, NVIDIA's driver "
+            "is probably spilling part of the run into system RAM.\n\n"
+            "NVIDIA Control Panel > Manage 3D settings > Global Settings: set CUDA - Sysmem Fallback Policy to Prefer No "
+            "Sysmem Fallback, Apply, and restart Fizgig. Use Global Settings, not Program Settings."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#11-nov-2026-training-suddenly-slow-on-windows-turn-off-sysmem-fallback"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.6.3"}],
+    },
+    {
+        "date": "11 Nov 2026",
         "title": "MiniMax H3 Image presets start at 2.8e-4",
         "body": (
             "Based on early user feedback, MiniMax H3 Image's presets now start Automagic v3 at 2.8e-4 (was 2e-4): better "

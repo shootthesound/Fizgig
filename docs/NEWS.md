@@ -1,5 +1,11 @@
 # Fizgig news
 
+## 11 Nov 2026: training suddenly slow on Windows? Turn off Sysmem Fallback
+
+If training on Windows with an NVIDIA card is suddenly several times slower, especially after a driver or Windows update, the driver is probably spilling part of the run into system RAM. Open NVIDIA Control Panel → Manage 3D settings → **Global Settings**, set **CUDA - Sysmem Fallback Policy** to **Prefer No Sysmem Fallback**, Apply, and restart Fizgig. Use Global Settings, not Program Settings. A few people went from 10–15 s/it back to about 2.5 s/it. Fizgig now shows these steps when it starts, until you tick Don't show this again.
+
+[Install guide](https://github.com/shootthesound/Fizgig/blob/master/docs/INSTALL.md#training-suddenly-several-times-slower-windows-shared-gpu-memory) · [Fizgig v9.6.3 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.6.3)
+
 ## 11 Nov 2026: MiniMax H3 Image presets start at 2.8e-4
 
 **MiniMax H3 Image's presets now start Automagic v3 at 2.8e-4**, up from 2e-4, based on early user feedback: it gave better previews at the presets' 0.5 MP. Automagic mostly keeps the level it starts from, so the start matters. It worked at 1 MP too in a test run. Load a ✨ preset to pick it up.

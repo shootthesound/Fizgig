@@ -33,7 +33,7 @@ EMA = ("Off", "0.98 (recommended)", "0.99 (stronger)", "0.995 (long runs only)")
 EMA_SHORT = "Short run (window = ¼ of the run)"
 EMA_HINT = ("Saves and previews a running average of the LoRA instead of its latest step: smoother, less overbaked. "
             "0.98 averages over roughly the last 50 steps.")
-SIZES = ("512", "640", "768", "1024", "1280", "1536")
+SIZES = ("512", "640", "768", "1024", "1280", "1536", "2048")
 KINDS = (("standard", "Standard LoRA"), ("edit", "Edit (original + edited photo pairs)"),
          ("slider", "Slider (a dial between two looks)"), ("finetune", "Fine-tune the whole model"))
 FT_REG_MULT = ("0.05", "0.1", "0.2", "0.3", "0.5", "0.75", "1.0")

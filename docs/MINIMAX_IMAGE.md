@@ -44,7 +44,7 @@ Base precision **Auto** picks int8 (the checkpoint's own storage) when it fits, 
 
 On a card of 40 GB or more, a compiled int8 run trains without gradient checkpointing, about 1.5× faster (23.4 GB at 0.25 MP, 30.6 GB at 1 MP). Compile Blocks on its own adds about 10% at 1 MP and little at 0.25 MP, so Auto compiles only long runs.
 
-A 16 GB laptop with 32 GB of RAM trains Ultra Fast on Auto and runs Studio (14.7 GB peak). A 12 GB card trains too (4-bit, 11.2 GB peak), but the text encoder (Qwen3-VL-32B, shared with MiniMax H3) then streams through about 19 GB of free system RAM, and Studio on a 12 GB card needs about 48 GB of RAM: the model waits in RAM while each new prompt is encoded.
+A 16 GB laptop with 32 GB of RAM trains a rank 8 LoRA on Auto and runs Studio (14.7 GB peak). A 12 GB card trains too (4-bit, 11.2 GB peak), but the text encoder (Qwen3-VL-32B, shared with MiniMax H3) then streams through about 19 GB of free system RAM, and Studio on a 12 GB card needs about 48 GB of RAM: the model waits in RAM while each new prompt is encoded.
 
 ## Previews
 

@@ -792,7 +792,7 @@ CAT_SHORT = {"style_composition": "Style+Comp", "style_ident_overlap": "Style/ID
 KLEIN_PRESETS = {"✨Reset All": None, "✨Identity Only": ["identity", "style_ident_overlap", "ident_details_overlap"],
                  "✨Style+Composition Only": ["style_composition", "style_ident_overlap"],
                  "✨Details Only": ["details", "ident_details_overlap"]}
-STILLS_SIZES = ["256", "384", "512", "640", "768", "1024", "1280", "1536"]   # the Samples tab's + two quick ones
+STILLS_SIZES = ["256", "384", "512", "640", "768", "1024", "1280", "1536", "2048"]   # the Samples tab's + two quick ones
 
 
 def families():

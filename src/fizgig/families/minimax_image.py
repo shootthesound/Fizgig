@@ -220,7 +220,7 @@ MINIMAX_IMAGE = FamilyDescription(
     workbench=("repair", "profiler", "extract", "royale"),
 
     presets=(
-        ("✨ MiniMax H3 Image Standard (rank 32, full model)", _preset(32, epochs=64, likeness=True)),
+        ("✨ MiniMax H3 Image Standard (rank 32, full model)", _preset(32, epochs=30, likeness=True)),
         ("✨ MiniMax H3 Image Style (rank 16)", _preset(16, epochs=64)),
         ("✨ MiniMax H3 Image Edit (rank 8)", _preset(8, epochs=12, edit=True)),
         ("✨ MiniMax H3 Image Slider (rank 8)", _preset(8, epochs=20, slider=True)),

@@ -3513,7 +3513,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._samples((qs.get("dir") or [""])[0], (qs.get("run") or [""])[0])
         if path == "/api/style":                    # the gallery's Style score (resumes the scorer when on)
             from fizgig.web import gallery_style
-            return self.json(gallery_style.state((qs.get("dir") or [""])[0], (qs.get("dataset") or [""])[0]))
+            return self.json(gallery_style.state((qs.get("dir") or [""])[0], (qs.get("run") or [""])[0],
+                                                 (qs.get("dataset") or [""])[0]))
         if path == "/api/likeness":                 # the gallery's likeness scores (resumes the scorer)
             from fizgig.web import gallery_likeness
             return self.json(gallery_likeness.state((qs.get("dir") or [""])[0], (qs.get("run") or [""])[0],
@@ -4492,8 +4493,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/style":               # the gallery's Style score on or off for a samples folder
                 from fizgig.web import gallery_style
                 try:
-                    return self.json(gallery_style.switch(str(b.get("dir") or ""), str(b.get("dataset") or ""),
-                                                          bool(b.get("on"))))
+                    return self.json(gallery_style.switch(str(b.get("dir") or ""), str(b.get("run") or ""),
+                                                          str(b.get("dataset") or ""), bool(b.get("on"))))
                 except ValueError as e:
                     return self.json({"error": str(e)}, 400)
             if path == "/api/likeness":            # three dataset photos to score the samples against; [] clears

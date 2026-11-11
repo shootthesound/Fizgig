@@ -126,3 +126,54 @@ def test_profiler_prefill_uses_the_folders_photos(monkeypatch, tmp_path):
     monkeypatch.setattr(tools, "_run_sample_prompt", lambda lora, trig: ("p", "c"))
     r = tools.profile_prefill(str(out / "nicola_run-000012.safetensors"))
     assert [os.path.basename(p) for p in r["baselines"]] == ["a.jpg", "b.jpg", "c.jpg"]
+
+
+# ---- the Style score, the same way (web/gallery_style.py) -----------------------------------------------------------
+
+def _style(monkeypatch):
+    from fizgig.web import gallery_style as gs
+    started = []
+    monkeypatch.setattr(gs, "_worker", lambda samples_dir, run, dataset_dir, gen: started.append(run))
+    gs._runs.clear()
+    return gs, started
+
+
+def test_style_on_is_remembered_with_the_training_folder(tmp_path, monkeypatch):
+    gs, started = _style(monkeypatch)
+    ds, samples = _dataset(tmp_path, "nicola"), tmp_path / "sample"
+    samples.mkdir()
+    assert gs.switch(str(samples), "run_one", ds, True) == {"on": True}
+    assert gs.dataset_on(ds)
+    gs._runs.clear()
+    st = gs.state(str(samples), "run_two", ds)              # never switched for run_two: follows the folder
+    assert st["on"] and started[-1] == "run_two"
+
+
+def test_style_off_for_a_run_stays_off_and_the_folder_follows(tmp_path, monkeypatch):
+    gs, _ = _style(monkeypatch)
+    ds, samples = _dataset(tmp_path, "nicola"), tmp_path / "sample"
+    samples.mkdir()
+    gs.switch(str(samples), "a", ds, True)
+    gs.switch(str(samples), "a", ds, False)
+    gs._runs.clear()
+    assert not gs.state(str(samples), "a", ds)["on"]
+    assert not gs.dataset_on(ds) and not gs.state(str(samples), "b", ds)["on"]
+
+
+def test_style_runs_of_different_folders_keep_their_own(tmp_path, monkeypatch):
+    gs, _ = _style(monkeypatch)
+    one, two, samples = _dataset(tmp_path, "nicola"), _dataset(tmp_path, "painter"), tmp_path / "sample"
+    samples.mkdir()
+    gs.switch(str(samples), "painter_run", two, True)
+    gs._runs.clear()
+    assert gs.state(str(samples), "painter_run", two)["on"]
+    assert not gs.state(str(samples), "nicola_run", one)["on"]          # another folder: not switched on
+    gs._write(str(samples), "painter_run", scores={"painter_run_e000001_00_1_1.png": 0.8})
+    assert gs.state(str(samples), "nicola_run", one)["scores"] == {}    # scores never mix between runs
+
+
+def test_style_needs_a_run(tmp_path, monkeypatch):
+    import pytest
+    gs, _ = _style(monkeypatch)
+    with pytest.raises(ValueError):
+        gs.switch(str(tmp_path), "", str(tmp_path), True)

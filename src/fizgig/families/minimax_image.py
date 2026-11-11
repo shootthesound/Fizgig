@@ -128,9 +128,10 @@ MINIMAX_IMAGE = FamilyDescription(
     # size: int8 trains at 21.0 GB (0.25 MP) / 21.7 (1 MP) and previews at 22.7; NF4 11.3 / 11.9, preview 12.8.
     # Per swapped block: int8 0.29 GB (1 MP, 10 blocks: 18.7 train / 19.8 preview; the header's 0.387 GB of int8
     # weights less what stays resident); NF4 0.15 GB (1 MP, 10 blocks: 10.3 train / 11.3 preview). HQQ (a manual
-    # pick, not in Auto) 1 MP: 17.0 train / 17.3 preview; its per-block figure is NF4's until measured.
+    # pick, not in Auto) 1 MP: 17.0 train / 17.3 preview; 0.22 GB per block (10 swapped: 14.8 train / 15.2 preview,
+    # RTX PRO 6000, 11 Nov 2026).
     train_memory={"int8": (((0.25, 22.7), (1.0, 22.7)), 0.29), "nf4": (((0.25, 12.8), (1.0, 12.8)), 0.15),
-                  "hqq": (((0.25, 17.3), (1.0, 17.3)), 0.15)},
+                  "hqq": (((0.25, 17.3), (1.0, 17.3)), 0.22)},
     # GB each extra picture takes: fixed, per MP (int8 training peaks, batch 1 vs 3, previews off, RTX PRO 6000,
     # 10 Nov 2026): 20.7 / 21.2 GB at 0.25 MP, 21.3 / 23.0 at 1 MP. Batching is slower per picture here (1 MP: 17 s
     # an epoch at batch 1, 33 s at batch 3), so Auto never batches (batch_auto stays ())
@@ -161,8 +162,15 @@ MINIMAX_IMAGE = FamilyDescription(
     # Studio's Auto precision from train_memory (the file is int8 already; the shared rule sizes it as bf16)
     workbench_engine="fizgig.minimax_image.workbench:MiniMaxH3ImageWorkbenchEngine",
     activation_cache=True,            # Reuse unchanged blocks: step-1 replay, identical to a full render
-    # Compile Blocks offered (Peter, 10 Nov 2026); compile_payback_steps / train_memory_nogc still to measure
+    # Compile Blocks (measured 11 Nov 2026, RTX PRO 6000, 8 epochs, previews off, steady-state s/step off -> on):
+    # int8 0.25 MP 0.297 -> 0.286 (1.04x, the warm-up pays back after ~1,500 steps), int8 1 MP 0.614 -> 0.556 (1.10x,
+    # ~200 steps), NF4 1 MP 0.593 -> 0.526 (1.13x, ~220 steps). Auto's payback isn't per size, so it takes the presets'
+    # 0.25 MP figure; NF4 wasn't timed at 0.25 MP and takes int8's
     compiles=True,
+    compile_payback_steps={"int8": 1500, "nf4": 1500},
+    # gradient checkpointing off, compiled, no swap, previews on (11 Nov 2026): 23.4 GB at 0.25 MP, 30.6 at 1 MP;
+    # 1.5x faster than checkpointed (0.25 MP 0.286 -> 0.19 s/step, 1 MP 0.556 -> 0.38)
+    train_memory_nogc={"int8": ((0.25, 23.4), (1.0, 30.6))},
     # the int8 ConvRot Linears stay eager (driver.compile_blocks), so each block's graph breaks around them: no
     # fullgraph, and the checkpoint outside the compiled region (a break can't sit inside a checkpoint in the graph)
     compile_fullgraph=False,

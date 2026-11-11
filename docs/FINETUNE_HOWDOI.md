@@ -289,6 +289,10 @@ your card's tier, or Target Megapixels above the default. And know the Windows q
 when **system RAM** runs out, the error still arrives dressed as "CUDA out of memory"
 with the GPU nearly empty — close other apps and retry before suspecting VRAM.
 
+Runs started from the web UI recover from an out-of-memory error by themselves where they can: from the
+newest save, then a step lighter (more block swap; a lower precision only from Auto), up to three tries —
+see [the queue](WEB_UI.md#the-queue).
+
 ## What model files do I need?
 
 The same training bases you already have — nothing new to download:

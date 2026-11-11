@@ -167,7 +167,8 @@ MINIMAX_IMAGE = FamilyDescription(
     # fullgraph, and the checkpoint outside the compiled region (a break can't sit inside a checkpoint in the graph)
     compile_fullgraph=False,
     compile_boundary="outside",
-    finetune=True,                    # MiniMax H3's rotation fine-tune on the int8 file (driver: H3's ft_* methods)
+    finetune=False,                   # not built for H3-Image yet (Peter, 11 Nov 2026): no Fine-tune kind until it is
+    not_offered={"finetune": "not done for H3-Image yet (Peter, 11 Nov 2026)"},
     ft_learning_rate=3e-5,            # MiniMax H3's tested fine-tune rate (families/minimax.py); to confirm here
 
     sampling=(

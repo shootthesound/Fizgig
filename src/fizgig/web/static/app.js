@@ -1731,6 +1731,7 @@ async function start(path, body) {
     showProblems(r.problems || (r.error ? [r.error] : []));    // stays up: the run line below refreshes itself
     // the form went to a run that started: it isn't the queued run being edited any more (Save to queue would have
     // put this run's settings in its place)
+    if (r.ok && S.viewJob && !S.editQueue) viewJob(null);   // a run started: the gallery follows it
     if (r.ok && S.editQueue) {
       queueEditing(null);
       $("runStatus").textContent = "Started. The queued run you were editing is left as it was.";
@@ -2397,27 +2398,38 @@ async function galleryRefresh() {
 }
 
 async function loadGallery() {
-  const out = S.run.output_dir || S.values.LORA_OUTPUT_DIR || S.outputDefault;   // an empty box = the default folder
+  // a job loaded into the form (Edit on a queued run, Start again) is the one shown, until Back to the run training
+  // now or a run starts; otherwise the run training now (or the last one)
+  // a loaded job that is the run training now (Continue loads it too) is simply the run now
+  if (S.viewJob && S.viewJob.lora === (S.run && S.run.lora) && training()) S.viewJob = null;
+  const vj = S.viewJob;
+  const out = (vj && vj.output_dir) || S.run.output_dir || S.values.LORA_OUTPUT_DIR || S.outputDefault;   // empty = default
   const host = $("gallery");
   if (!out) { host.innerHTML = ""; $("galleryControls").style.display = "none"; return; }
   const sep = out.includes("\\") ? "\\" : "/";
   const dir = out + sep + "sample";
-  // the run picked here stays picked until another run starts
-  const cur = currentRunName();
+  // the run picked here stays picked until another run starts (or another job is loaded)
+  const cur = vj ? vj.lora : currentRunName();
   if (S.galleryFor !== cur) { S.galleryRun = ""; S.galleryFor = cur; }
   const want = S.galleryRun || cur;
   const get = (run) => api(`/api/samples?dir=${encodeURIComponent(dir)}&run=${encodeURIComponent(run)}`)
     .catch(() => ({items: [], runs: [], prompts: []}));
   let g = await get(want);
   let run = want;
-  if (!g.items.length && g.runs.length && !g.runs.includes(want)) { run = g.runs[0]; g = await get(run); }
+  // a loaded job with no previews yet shows none, not another run's
+  if (!vj && !g.items.length && g.runs.length && !g.runs.includes(want)) { run = g.runs[0]; g = await get(run); }
+  // the shown run's own training folder (its record), for its likeness photos and Style score; a run Fizgig has no
+  // record of falls back to the training folder set now, as before
+  S.galDataset = g.dataset || (run === currentRunName() ? S.imageFolder || "" : "");
   previewMode(g.preview_mode);
   S.galleryLabels = {run, labels: g.preview_labels || {}};        // the lightbox's line per epoch (previewFigure)
   const sel = $("galleryRun");
   sel.innerHTML = "";
   // "this run" while it trains; once it has ended it is the last run
   const R = S.run || {}, liveNow = !!(R.running || ["starting", "running", "pausing"].includes(R.state));
-  for (const r of g.runs) sel.append(el("option", {value: r, text: r + (r === cur ? (liveNow ? " (this run)" : " (last run)") : "")}));
+  for (const r of g.runs) sel.append(el("option", {value: r, text: r + (r === cur ?
+    (vj ? " (loaded)" : liveNow ? " (this run)" : " (last run)") : "")}));
+  if (vj && !g.runs.includes(run)) sel.append(el("option", {value: run, text: run + " (loaded, no previews yet)"}));
   sel.value = run;
   $("galleryControls").style.display = g.runs.length ? "" : "none";
   const view = S.galleryView || "list";
@@ -2441,10 +2453,20 @@ async function loadGallery() {
   likenessShow(dir, g.items, run, view);
   styleShow(dir, g.items);
   const others = g.runs.filter((r) => r !== run).length;
-  $("galleryInfo").textContent = g.items.length ?
+  const info = g.items.length ?
     `${g.items.length} preview${g.items.length === 1 ? "" : "s"} of ${run} in ${dir}` +
     (others ? ` · ${others} other run${others === 1 ? "" : "s"} have previews here too (pick one above)` : "") :
-    "No previews yet. They appear here as the run makes them.";
+    vj ? `No previews of ${run} yet.` : "No previews yet. They appear here as the run makes them.";
+  $("galleryInfo").replaceChildren(info, ...(vj ? [" · ", el("b", {text: "Showing the job you loaded."}), " ",
+    el("a", {href: "#", text: "Back to the run training now", onclick: (e) => { e.preventDefault(); viewJob(null); }})] : []));
+}
+
+// the job the tabs follow: one loaded into the form (Edit on a queued run, Start again on a past one) shows its own
+// previews and scores in the Samples gallery; null = the run training now (or the last one)
+function viewJob(job) {
+  S.viewJob = job && job.lora ? job : null;
+  S.galleryRun = ""; S.gal = null;
+  loadGallery();
 }
 
 // ---- likeness to the subject (fizgig/web/gallery_likeness.py; the desktop gallery's likeness.json) ------------
@@ -2459,7 +2481,7 @@ function arcPeak(label) { return !label || String(label).startsWith("ArcFace") ?
 // the gallery's Style score (web/gallery_style.py): each preview against the training pictures' look as a whole
 async function styleShow(dir, items) {
   let d;
-  try { d = await api(`/api/style?dir=${encodeURIComponent(dir)}&dataset=${encodeURIComponent(S.imageFolder || "")}`); }
+  try { d = await api(`/api/style?dir=${encodeURIComponent(dir)}&dataset=${encodeURIComponent(S.galDataset || "")}`); }
   catch (e) { return; }
   S.sty = {dir, on: d.on};
   $("styBtn").classList.toggle("active", d.on);
@@ -2479,7 +2501,9 @@ async function likenessShow(dir, items, run, view) {
   S.lik.dir = dir;
   const ask = S.lik.ask = (S.lik.ask || 0) + 1;     // an older refresh's answer arriving late changes nothing
   let d;
-  try { d = await api(`/api/likeness?dir=${encodeURIComponent(dir)}&dataset=${encodeURIComponent(S.imageFolder || "")}`); }
+  S.lik.run = run;
+  try { d = await api(`/api/likeness?dir=${encodeURIComponent(dir)}&run=${encodeURIComponent(run || "")}` +
+                      `&dataset=${encodeURIComponent(S.galDataset || "")}`); }
   catch (e) { return; }
   if (ask !== S.lik.ask) return;
   S.lik.data = d;
@@ -2539,7 +2563,7 @@ async function likenessShow(dir, items, run, view) {
 }
 async function likenessPicker() {
   S.lik.mode = "gallery";
-  await likGridShow(S.imageFolder || "", (S.lik.data && S.lik.data.baselines) || []);
+  await likGridShow(S.galDataset || "", (S.lik.data && S.lik.data.baselines) || []);   // the shown run's own photos
 }
 // the 3-photo picker, for the Samples gallery (exactly 3, from the training images) or LoRA Royale (1-3, any folder)
 async function likGridShow(folder, picked) {
@@ -2547,7 +2571,8 @@ async function likGridShow(folder, picked) {
   S.lik.folder = folder; S.lik.paths = {};
   $("likTitle").textContent = `Likeness: pick ${royale ? "up to " : ""}3 photos of your subject`;
   $("likFrom").textContent = royale ? "this folder" : "the training images";
-  $("likFolder").textContent = folder || "no training image folder set on the Start tab";
+  $("likFolder").textContent = folder || (royale ? "no folder picked" :
+    "this run's training folder isn't on record (set the training folder on the Start tab)");
   $("likFolderPick").style.display = royale ? "" : "none";
   $("likClear").style.display = royale ? "none" : "";
   $("likStart").textContent = royale ? "Use these" : "Start scoring";
@@ -2584,7 +2609,7 @@ function likenessMarks() {
 async function likenessSet(names) {
   $("likPickStatus").textContent = "Starting…";
   try {
-    await api("/api/likeness", {dir: S.lik.dir, dataset: S.imageFolder || "", baselines: names});
+    await api("/api/likeness", {dir: S.lik.dir, run: S.lik.run || "", dataset: S.galDataset || "", baselines: names});
     $("likModal").classList.remove("active");
     loadGallery();
   } catch (e) { $("likPickStatus").textContent = e.message; }
@@ -4641,6 +4666,8 @@ async function loadIntoForm(s) {
   renderSections("training", $("trainingForm"));
   await refreshState();
   saveState();
+  // the Samples gallery follows this job (its previews and likeness scores) until Back or a run starts
+  viewJob({lora: S.values.LORA_NAME || "", output_dir: S.values.LORA_OUTPUT_DIR || S.outputDefault || ""});
   showTab("training");
 }
 
@@ -4648,6 +4675,7 @@ async function loadIntoForm(s) {
 // editing a queued run: a bar at the bottom of the window, on every tab, with Save to queue and Cancel edit, until
 // one of them (or a Start) ends it; the Training tab's Add to queue steps aside meanwhile
 function queueEditing(item) {
+  if (!item && S.editQueue && S.viewJob) viewJob(null);   // the edit ended: the gallery goes back to the run now
   S.editQueue = item;
   $("btnQueue").textContent = item ? `Save to queue (run ${item.n})` : "Add to queue";
   $("btnQueue").style.display = item ? "none" : "";
@@ -10370,7 +10398,7 @@ function wire() {
   $("styBtn").addEventListener("click", async () => {       // the Style score on or off for the shown run's folder
     const dir = S.lik && S.lik.dir;
     if (!dir) return;
-    try { await api("/api/style", {dir, dataset: S.imageFolder || "", on: !(S.sty && S.sty.on)}); }
+    try { await api("/api/style", {dir, dataset: S.galDataset || "", on: !(S.sty && S.sty.on)}); }
     catch (e) { $("styStatus").textContent = e.message; return; }
     styleShow(dir, []);
   });

@@ -83,6 +83,18 @@ def last_values(lora, output_dir):
     return None
 
 
+def image_folder_of(lora, output_dir):
+    """The training folder the newest run with this LoRA name and output folder trained on, or "" (a run Fizgig has
+    no record of)."""
+    try:
+        for r in reversed(_read()):
+            if _same_run(r, lora, output_dir):
+                return str(r.get("image_folder") or "")
+    except OSError:
+        pass
+    return ""
+
+
 def start(source, family, lora, output_dir, image_folder, values, resume=False, carry=""):
     """Record a run that is starting; returns its id. A resume carries on the paused run's own record (the newest
     paused one with the same LoRA name and folder, from either app) instead of listing the run twice; Continue on

@@ -18,7 +18,7 @@ _H = "Comfy-Org/MiniMax-H3"
 _PDD_SIGMAS = (1.0, 0.9675236940383911, 0.8875485062599182, 0.75, 0.5327739119529724, 0.23200887441635132, 0.0)
 
 
-def _preset(rank, epochs=30, slider=False, mp="0.5", edit=False):
+def _preset(rank, epochs=30, slider=False, mp="0.5", edit=False, likeness=False):
     """Krea 2's presets (families/krea2.py _preset; Peter, 10 Nov 2026: "mirror the Krea 2 presets exactly"), plus the
     two this model needs: Fizgig's training adapter on (without it people turn into caricatures) and an edit flag for
     the Edit preset. Every preset trains on Automagic v3 (Peter, 11 Nov 2026), which starts at 2.8e-4 and finds its own
@@ -36,7 +36,8 @@ def _preset(rank, epochs=30, slider=False, mp="0.5", edit=False):
         "KREA2_LOSS_WATCH": True, "KREA2_PER_IMAGE_LR": True, "KREA2_AUTO_RECAPTION": False,
         "KREA2_WARMUP_LOOK": False,
         "FAMILY_SLIDER_GUIDANCE": "3",    # Krea 2's prompt-slider push strength
-        "MINIMAX_IMAGE_LIKENESS_OPT": "1",     # 75% clean end for 8 epochs, then 50 / 75 alternating (Peter, 11 Nov 2026)
+        # 75% clean end for 8 epochs, then 50 / 75 alternating: on in Standard only (Peter, 11 Nov 2026)
+        "MINIMAX_IMAGE_LIKENESS_OPT": "1" if likeness else "",
     }
 
 
@@ -220,7 +221,7 @@ MINIMAX_IMAGE = FamilyDescription(
     workbench=("repair", "profiler", "extract", "royale"),
 
     presets=(
-        ("✨ MiniMax H3 Image Standard (rank 32, full model)", _preset(32, epochs=64)),
+        ("✨ MiniMax H3 Image Standard (rank 32, full model)", _preset(32, epochs=64, likeness=True)),
         ("✨ MiniMax H3 Image Style (rank 16)", _preset(16, epochs=64)),
         ("✨ MiniMax H3 Image Edit (rank 8)", _preset(8, epochs=12, edit=True)),
         ("✨ MiniMax H3 Image Slider (rank 8)", _preset(8, epochs=20, slider=True)),

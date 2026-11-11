@@ -128,6 +128,15 @@ def _amd_gpu_row():
         return None
 
 
+def _has_nvidia():
+    """An NVIDIA card on this machine (nvidia-smi lists one; ROCm's AMD fallback rows don't count)."""
+    try:
+        return any("nvidia" in str(g.get("name") or "").lower() or str(g.get("uuid") or "").startswith("GPU-")
+                   for g in list_gpus())
+    except Exception:
+        return False
+
+
 def list_gpus():
     """[{index, name, total_gb, used_gb, uuid}] from nvidia-smi (unchanged). On ROCm launch only, AMD fallback (#188)."""
     try:
@@ -3047,8 +3056,7 @@ class Handler(BaseHTTPRequestHandler):
                               # the launch tip to turn off CUDA Sysmem Fallback: Windows with an NVIDIA card (nvidia-smi
                               # answers), until Don't show this again
                               "sysmem_tip": sys.platform == "win32" and str(p.get("sysmem_tip_hidden") or "") != "1"
-                              and any("nvidia" in str(g.get("name", "")).lower() or g.get("uuid", "").startswith("GPU-")
-                                      for g in list_gpus()),
+                              and _has_nvidia(),
                               "password_env": bool(os.environ.get("FIZGIG_PASSWORD")) or getattr(self, "password_arg", False),
                               "lan_ip": __import__("fizgig.web.port", fromlist=["x"]).lan_ip(),
                               "cuda_device": str(p.get("cuda_device") or ""), "gpus": list_gpus(),

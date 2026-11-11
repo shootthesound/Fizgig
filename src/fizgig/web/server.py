@@ -3057,6 +3057,7 @@ class Handler(BaseHTTPRequestHandler):
                               # answers), until Don't show this again
                               "sysmem_tip": sys.platform == "win32" and str(p.get("sysmem_tip_hidden") or "") != "1"
                               and _has_nvidia(),
+                              "qt_disable_gpu": str(p.get("qt_disable_gpu") or "") == "1",
                               "password_env": bool(os.environ.get("FIZGIG_PASSWORD")) or getattr(self, "password_arg", False),
                               "lan_ip": __import__("fizgig.web.port", fromlist=["x"]).lan_ip(),
                               "cuda_device": str(p.get("cuda_device") or ""), "gpus": list_gpus(),
@@ -4326,7 +4327,8 @@ class Handler(BaseHTTPRequestHandler):
                 render_keys = {f"workbench_render_{d.key}" for d in training_families()
                                if getattr(d, "workbench_render_choice", False)}
                 allowed = {k for d in training_families() for k in form.model_keys(d)} | set(SETTING_PREFS) | {
-                    "input_dataset_dir", "welcome_v8_hidden", "sysmem_tip_hidden", captions.SECONDARY_PREF} | render_keys
+                    "input_dataset_dir", "welcome_v8_hidden", "sysmem_tip_hidden", "qt_disable_gpu",
+                    captions.SECONDARY_PREF} | render_keys
                 ch = b.get("changes") or {}
                 ch = {k: v for k, v in ch.items() if k not in render_keys or v in ("checkpoint", "samples")}
                 if b.get("reset"):                      # Reset to defaults: the settings, never the model files
@@ -4334,7 +4336,7 @@ class Handler(BaseHTTPRequestHandler):
                                                                   if k in SETTING_PREFS}}
                 if "inference_int8" in ch:
                     ch["inference_int8"] = "1" if ch["inference_int8"] in (True, "1", 1) else "0"
-                for k in ("lan_discovery", "update_check"):
+                for k in ("lan_discovery", "update_check", "qt_disable_gpu"):
                     if k in ch:
                         ch[k] = "1" if ch[k] in (True, "1", 1) else "0"
                 upd = {k: str(v) for k, v in ch.items() if k in allowed}

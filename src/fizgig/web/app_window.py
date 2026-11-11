@@ -609,6 +609,12 @@ def main():
     home = f"http://127.0.0.1:{port}/"
     fallback = [""]                       # why the window gave way to the browser, when it did
     try:
+        # Qt WebEngine only reads QTWEBENGINE_CHROMIUM_FLAGS at init (Preferences → App window)
+        if sys.platform.startswith("linux") and str(_prefs().get("qt_disable_gpu") or "") == "1":
+            flag = "--disable-gpu"
+            cur = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "").strip()
+            if flag not in cur.split():
+                os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = f"{cur} {flag}".strip()
         import webview
         _log_pywebview()
         if os.name == "nt":            # the taskbar shows Fizgig's own button and icon, not pythonw's (as the old app)
@@ -880,7 +886,8 @@ def main():
         how = (f"For the window, install Microsoft Edge WebView2 Runtime: {WEBVIEW2_URL}" if os.name == "nt" else
                "For the window on Linux, in Fizgig's venv: `venv/bin/pip install \"pywebview[qt]\"`, or WebKitGTK: "
                "your distro's gir1.2-webkit2-4.1 and libgirepository dev packages, then `venv/bin/pip install "
-               "PyGObject` (the distro's python3-gi isn't seen inside the venv).")
+               "PyGObject` (the distro's python3-gi isn't seen inside the venv). If the window opens then crashes or "
+               "stays blank, try Preferences → App window → Disable GPU for the app window, then open Fizgig again.")
         _log(f"[app] no app window ({e}) - opening the web UI in your browser instead. {how}")
         webbrowser.open(url)
         if own is not None:

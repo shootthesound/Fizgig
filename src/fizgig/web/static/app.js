@@ -82,6 +82,7 @@ async function boot() {
   S.passwordOn = pr.password_on;
   S.portFixed = pr.port_fixed;
   S.pw = {saved: pr.password_saved, env: pr.password_env, lan: pr.lan_ip || ""};
+  S.qtGpu = {saved: !!pr.qt_disable_gpu, changed: false};
   S.pod = pr.pod;
   S.outputDefault = pr.output_default || "";
   S.outputPref = pr.lora_output_dir || "";
@@ -1005,6 +1006,8 @@ function renderPrefs() {
   const host = $("prefsForm");
   host.innerHTML = "";
   if (S.pod) host.append(podCard());
+  const qt = qtGpuCard();
+  if (qt) host.append(qt);                 // between Theme (above) and Web UI
   host.append(webPortCard());
   if (!S.pod) host.append(networkCard());
   host.append(dataFolderCard());
@@ -1510,6 +1513,35 @@ function welcomeShow(pr) {
   m.onclick = (e) => { if (e.target === m) close(); };
   m.classList.add("active");
   v.play().catch(() => {});
+}
+
+// prefs qt_disable_gpu → on Linux, QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu before import webview (no effect elsewhere)
+function qtGpuCard() {
+  const G = S.qtGpu;
+  if (!G || S.onPod) return null;
+  const on = el("input", {type: "checkbox"});
+  on.checked = !!G.saved;
+  const say = el("div", {class: "field-hint"});
+  const base = "Linux only (Qt WebEngine): keeps the app window's Chromium off the GPU so it does not share VRAM " +
+    "with training, and can stop some setups where the window crashes or stays blank. No effect on Windows or " +
+    "macOS. Used from the next start (close Fizgig and open it again; not a browser tab).";
+  const paint = () => {
+    say.textContent = (G.changed ? "Saved: restart Fizgig for it to apply. " : "") + base;
+  };
+  on.addEventListener("change", async () => {
+    try {
+      await api("/api/prefs", {changes: {qt_disable_gpu: on.checked}});
+      G.saved = on.checked; G.changed = true; paint();
+    } catch (e) { on.checked = G.saved; say.textContent = e.message; }
+  });
+  paint();
+  return el("div", {class: "section-card"},
+    el("div", {class: "card-title"}, el("span", {text: "App window"})),
+    el("div", {class: "card-desc", text: "The Fizgig desktop window (Qt WebEngine on Linux)."}),
+    el("div", {class: "card-content"},
+      el("div", {class: "field-row"},
+        el("label", {class: "checkbox-label"}, on, " Disable GPU for the app window")),
+      say));
 }
 
 // the web UI's password (prefs web_password, the desktop's): empty = this machine only; set = other devices log in

@@ -16,11 +16,13 @@
 
 ## Also in this release, for every model
 
-**Out-of-memory recovery.** When a run started from the web UI runs out of GPU memory or system RAM, the log now says which, and Fizgig tries to carry the run on by itself, up to three times. With a save, it continues from the newest one; if it runs out again at about the same point, it goes one step lighter: more block swap, then a lower precision, the precision only when it was on Auto. With nothing saved yet, it starts again once, lighter. Each try is in the log and on the run's record, and after the last the log sums up what was tried and what to change.
+**Out-of-memory recovery.** When a run started from the web UI runs out of GPU memory or system RAM, the log now says which, and Fizgig tries to carry the run on by itself, up to three times. With a save, it continues from the newest one; if it runs out again at about the same point, it goes one step lighter: more block swap, then a lower precision, the precision only when it was on Auto. With nothing saved yet, it starts again once, lighter. Each try is in the log and on the run's record, and after the last the log sums up what was tried and what to change. From @Murf-Code's Fizgig Advanced build, with thanks.
 
 **A failed run no longer holds the queue.** The Queue box names it and the next run starts, so one failure doesn't stall a night's queue. A stopped run still holds it until you press Start queue.
 
 **Switching models on the Training tab loads that model's first preset.** Settings from before no longer carry over, such as an optimizer the new model doesn't offer. Your folders and the Samples tab are kept. Switching back to the model a run is training, or is paused on, shows that run's own settings.
+
+**AMD installs use AMD's stable PyTorch.** The Windows and Linux AMD installers now install torch 2.14.0 for ROCm 10.1 from AMD's stable index, instead of the nightly builds. To keep the nightlies, run `install_fizgig_rocm.bat --experimental` on Windows or set `ROCM_CHANNEL=nightly` on Linux. Tested on Windows; Linux testers welcome. Thanks to @scryptio (#319).
 
 **Fixes:**
 - Studio, opened from a sample preview in the Samples tab, opened a MiniMax H3 Image LoRA as a MiniMax H3 one. A Fizgig LoRA's model now comes from the name stored in it.

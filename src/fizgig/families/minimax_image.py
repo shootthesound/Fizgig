@@ -144,6 +144,7 @@ MINIMAX_IMAGE = FamilyDescription(
     network_types=("lora", "lokr"),
     ema_default="0.98",
     masked_training=True,
+    element_boost=True,               # Peter, 11 Nov 2026: to try; off in every preset (MOSS-Image's Fast / Standard / Turbo have it on)
     slider_guidance=3.0,              # Krea 2's (the presets mirror Krea 2's)
     slider_training=True,             # photo pairs (training_loss diff weighting)
     # prompt sliders off (Peter, 11 Nov 2026): a smiling/frowning prompt slider moved clothes, styling and light, never

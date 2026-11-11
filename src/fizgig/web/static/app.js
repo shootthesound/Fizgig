@@ -8040,7 +8040,8 @@ async function captionsLive() {
       $("lightboxCapNote").textContent = "Re-captioned";
     }
     it.caption = n.caption;
-    if (ta) ta.value = n.caption ?? "";
+    if (ta) { ta.value = n.caption ?? ""; fitText(ta); }
+    if (big.value === (n.caption ?? "")) fitText(big);
   }
 }
 
@@ -8122,10 +8123,14 @@ function renderCaptions() {
     (q ? ` · ${items.length} match` : "") + (pages > 1 ? ` · page ${S.cap.page + 1} of ${pages}` : "");
   $("capPrev").disabled = S.cap.page === 0; $("capNext").disabled = S.cap.page >= pages - 1;
   host.classList.toggle("captions-as-table", $("capView").value === "table");
-  if ($("capView").value === "table") { host.append(captionsTable(items.slice(S.cap.page * CAP_PAGE, (S.cap.page + 1) * CAP_PAGE), ext)); return; }
+  if ($("capView").value === "table") {
+    host.append(captionsTable(items.slice(S.cap.page * CAP_PAGE, (S.cap.page + 1) * CAP_PAGE), ext));
+    fitTexts(host);
+    return;
+  }
   for (const it of items.slice(S.cap.page * CAP_PAGE, (S.cap.page + 1) * CAP_PAGE)) {
     const src = `/api/media?path=${encodeURIComponent(it.path)}&t=${encodeURIComponent(TOKEN)}`;
-    const ta = el("textarea", {rows: 4});
+    const ta = el("textarea", {rows: 4, class: "fit-text"});
     ta.value = it.caption ?? "";
     it._ta = ta;                                 // for the live refresh while captioning runs
     const status = el("span", {class: "field-hint"});
@@ -8187,6 +8192,7 @@ function renderCaptions() {
       el("div", {class: "field-row"}, save, recap, speech, maskBtn, remove, status)));
     host.append(card);
   }
+  fitTexts(host);
 }
 
 // the table view: one row a file, sorted by a click on a column's head (again: the other way)
@@ -8204,7 +8210,7 @@ function captionsTable(items, ext) {
     text: c.label + (ts.key === c.key ? (ts.dir > 0 ? " ▲" : " ▼") : ""), title: "Sort by this column",
     onclick: () => { S.cap.tsort = {key: c.key, dir: ts.key === c.key ? -ts.dir : 1}; S.cap.page = 0; renderCaptions(); }})));
   const rows = items.map((it) => {
-    const ta = el("textarea", {rows: 2, class: "cap-cell-text"});
+    const ta = el("textarea", {rows: 2, class: "cap-cell-text fit-text"});
     ta.value = it.caption ?? "";
     it._ta = ta;                                 // the live refresh while captioning runs fills it too
     const words = el("td", {class: "cap-num", text: String(capWords(it))});
@@ -10107,6 +10113,23 @@ function uploadButton(r, input, set) {
 }
 
 let wired = false;
+// ---- caption boxes sized to their caption (class fit-text): the whole caption shows, no scrolling, up to 40% of the
+// window (the big view's: half); typing grows one past its height, and a box dragged taller stays as dragged.
+// On a wide window the big view's box sits beside the picture at full height (CSS), so it isn't sized here.
+const LB_SIDE = "(min-width: 1100px) and (min-aspect-ratio: 5/4)";
+function fitText(ta, grow) {
+  if (!ta || !ta.isConnected || !ta.offsetParent) return;
+  if (ta.id === "lightboxCapText" && matchMedia(LB_SIDE).matches) { ta.style.height = ""; return; }
+  if (grow && ta.scrollHeight <= ta.clientHeight) return;
+  const max = Math.round(innerHeight * (ta.id === "lightboxCapText" ? 0.5 : 0.4));
+  const border = ta.offsetHeight - ta.clientHeight;
+  ta.style.height = "";
+  ta.style.height = Math.min(Math.max(ta.scrollHeight + border, ta.offsetHeight), max) + "px";
+}
+const fitTexts = (host) => requestAnimationFrame(() => host.querySelectorAll("textarea.fit-text").forEach((t) => fitText(t)));
+document.addEventListener("input", (e) => { if (e.target.matches && e.target.matches("textarea.fit-text")) fitText(e.target, true); });
+matchMedia(LB_SIDE).addEventListener("change", () => fitText($("lightboxCapText")));
+
 // ---- the picture viewer: any preview or Captions picture, big, with the others in its list a step away --------
 const LIGHTBOX_PICS = ".gallery-item > img, .caption-card > img";      // (Repair Studio's panes are gallery items)
 S.lb = {list: [], at: 0};
@@ -10141,6 +10164,7 @@ function lightboxShow(i) {
   $("lightboxPrev").style.visibility = i > 0 ? "" : "hidden";
   $("lightboxNext").style.visibility = i < S.lb.list.length - 1 ? "" : "hidden";
   $("lightbox").style.display = "";
+  if (pic.cap) fitText($("lightboxCapText"));
 }
 async function lightboxClose() {
   if (!(await lightboxCapFlush())) return;
@@ -10216,7 +10240,7 @@ function wireLightbox() {
     const pic = S.lb.list[S.lb.at];
     if (!pic || !pic.cap || !pic.cap.speech || !(await lightboxCapFlush())) return;
     const text = await pic.cap.speech((t) => { $("lightboxCapNote").textContent = t; });
-    if (text && S.lb.list[S.lb.at] === pic) $("lightboxCapText").value = text;
+    if (text && S.lb.list[S.lb.at] === pic) { $("lightboxCapText").value = text; fitText($("lightboxCapText")); }
   });
   $("lightboxCapRemove").addEventListener("click", async () => {
     const pic = S.lb.list[S.lb.at];

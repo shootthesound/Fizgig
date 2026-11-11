@@ -239,8 +239,8 @@ community bitsandbytes wheel from:
 https://github.com/0xDELUXA/bitsandbytes_win_rocm
 
 That wheel is **not** built by AMD or Fizgig; it is only fetched on the AMD
-install path. Official ROCm PyTorch wheels similarly come from AMD's nightly
-index (`https://rocm.nightlies.amd.com/whl-multi-arch/`), also disclosed by the
+install path. Official ROCm PyTorch wheels similarly come from AMD's stable
+index (`https://stable.repo.amd.com/rocm/whl-next/`), also disclosed by the
 installer before download.
 
 ---

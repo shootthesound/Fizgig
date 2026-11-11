@@ -2,7 +2,7 @@
 REM Fizgig ROCm Windows installer.
 REM Uses detect_gpu.py (GPL-3.0, from comfyui-rocm - see docs/THIRD_PARTY_NOTICES.md)
 REM and ROCm-wheel install patterns adapted from comfyui-rocm install.bat:
-REM   https://github.com/patientx/comfyui-rocm
+REM   https://github.com/patientx-cfz/comfyui-rocm
 setlocal enabledelayedexpansion
 title Fizgig ROCm Installer
 cd /d "%~dp0"
@@ -13,9 +13,9 @@ set "PY312_SOURCE="
 set "ROCM_EXPERIMENTAL=0"
 
 REM Optional: install_fizgig_rocm.bat --experimental  -> floating packages from
-REM ROCM_EXPERIMENTAL_INDEX (whl-next), leave BNB_ROCM_VERSION unset so bitsandbytes
-REM auto-picks its highest matching lib. Not the same as Linux ROCM_CHANNEL=nightly
-REM (constrained 7.14 / bnb 714 lane), and not the pinned ROCM_INDEX multi-arch path.
+REM ROCM_EXPERIMENTAL_INDEX (nightly whl-next), leave BNB_ROCM_VERSION unset so
+REM bitsandbytes auto-picks its highest matching lib. Same idea as Linux
+REM ROCM_CHANNEL=nightly.
 :parse_args
 if "%~1"=="" goto :args_done
 if /I "%~1"=="--experimental" set "ROCM_EXPERIMENTAL=1"
@@ -23,24 +23,24 @@ shift
 goto :parse_args
 :args_done
 
-REM Pinned stack confirmed working on RDNA (multi-arch nightlies). Override if needed.
-REM Ignored when --experimental is passed (experimental uses ROCM_EXPERIMENTAL_INDEX).
-set "ROCM_INDEX=https://rocm.nightlies.amd.com/whl-multi-arch/"
-REM Floating --experimental only: AMD's newer whl-next nightlies (comfyui-rocm install.bat).
-REM Pinned TORCH_PIN wheels are NOT on this index - do not point the default install here.
+REM Default: pinned AMD stable multi-arch (https://stable.repo.amd.com/rocm/whl-next/).
+REM Same stack as Linux stable: torch 2.14.0+rocm10.1.0.
+REM Optional overrides: TORCH_PIN / TORCHVISION_PIN / ROCM_SDK_DEVEL_PIN (same index).
+REM --experimental uses floating nightlies instead. gfx942 / gfx950 keep legacy staging URLs.
+set "ROCM_INDEX=https://stable.repo.amd.com/rocm/whl-next/"
 set "ROCM_EXPERIMENTAL_INDEX=https://nightly.repo.amd.com/rocm/whl-next/"
-if not defined TORCH_PIN set "TORCH_PIN=2.12.0+rocm7.15.0a20260728"
-if not defined TORCHVISION_PIN set "TORCHVISION_PIN=0.27.0+rocm7.15.0a20260728"
-if not defined ROCM_SDK_DEVEL_PIN set "ROCM_SDK_DEVEL_PIN=7.15.0a20260728"
+if not defined TORCH_PIN set "TORCH_PIN=2.14.0+rocm10.1.0"
+if not defined TORCHVISION_PIN set "TORCHVISION_PIN=0.29.0a0+rocm10.1.0"
+if not defined ROCM_SDK_DEVEL_PIN set "ROCM_SDK_DEVEL_PIN=10.1.0"
 set "BNB_WHEEL=https://github.com/0xDELUXA/bitsandbytes_win_rocm/releases/download/0.50.2.dev0-py3.12-rocm7.16-win_amd64_all/bitsandbytes-0.50.2.dev0-cp312-cp312-win_amd64.whl"
 
 echo ============================================================
 echo   Fizgig Installer - AMD ROCm (Windows)
 echo   LoRA and Fine-tune Studio
 if !ROCM_EXPERIMENTAL!==1 (
-    echo   Mode: --experimental ^(floating multi-arch, no torch pin^)
+    echo   Mode: --experimental ^(floating nightlies, no torch pin^)
 ) else (
-    echo   Mode: pinned multi-arch ^(default^)
+    echo   Mode: AMD stable multi-arch ^(default, pinned^)
 )
 echo ============================================================
 echo.
@@ -54,8 +54,8 @@ if !ROCM_EXPERIMENTAL!==1 (
     echo   BNB_ROCM_VERSION: unset - bitsandbytes auto-selects its highest matching DLL
 ) else (
     echo   Index:  !ROCM_INDEX!
-    echo   torch==!TORCH_PIN!
-    echo   torchvision==!TORCHVISION_PIN!
+    echo   torch[device-ARCH]==!TORCH_PIN!
+    echo   torchvision[device-ARCH]==!TORCHVISION_PIN!
     echo   rocm-sdk-devel==!ROCM_SDK_DEVEL_PIN!
 )
 echo.
@@ -179,7 +179,7 @@ if !USE_LEGACY_URL!==1 (
 )
 
 if !ROCM_EXPERIMENTAL!==1 (
-    echo Installing floating ROCm experimental ^(whl-next, unpinned --pre^) for !arch!...
+    echo Installing floating ROCm experimental ^(nightly whl-next, unpinned --pre^) for !arch!...
     echo Source: !ROCM_EXPERIMENTAL_INDEX!
     echo   torch[device-!arch!]
     echo   torchvision[device-!arch!]
@@ -191,17 +191,22 @@ if !ROCM_EXPERIMENTAL!==1 (
         "rocm-sdk-devel"
     if errorlevel 1 goto :install_failed
 ) else (
-    echo Installing pinned ROCm PyTorch ^(multi-arch^) for !arch!...
+    echo Installing pinned ROCm PyTorch from AMD stable for !arch!...
     echo Source: !ROCM_INDEX!
     echo   torch[device-!arch!]==!TORCH_PIN!
     echo   torchvision[device-!arch!]==!TORCHVISION_PIN!
     echo   rocm-sdk-devel==!ROCM_SDK_DEVEL_PIN!
-    python -m uv pip install --index-strategy unsafe-best-match --index-url "!ROCM_INDEX!" ^
+    python -m uv pip install --index-strategy unsafe-best-match --prerelease allow ^
+        --index-url "!ROCM_INDEX!" ^
         "torch[device-!arch!]==!TORCH_PIN!" ^
         "torchvision[device-!arch!]==!TORCHVISION_PIN!" ^
         "rocm-sdk-devel==!ROCM_SDK_DEVEL_PIN!"
     if errorlevel 1 goto :install_failed
 )
+
+echo Initializing rocm-sdk...
+rocm-sdk init
+if errorlevel 1 echo WARNING: rocm-sdk init failed, continuing anyway...
 
 :install_shared
 echo.

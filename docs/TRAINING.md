@@ -22,6 +22,12 @@ Everything on this page works on every model unless it says otherwise: [Klein 9B
 - **Look Consistency Filter** — pick the 3 images that best nail the look and every image is scored against them (ArcFace, or DINOv2 for furry / anime faces). Worst matches surface first; mark drifters or let Auto-Suggest flag the outliers, then move them out in one click — nothing is deleted, and the scores feed the trainer's [look-outlier warm-up](KREA2.md#the-trainer-curates-your-dataset-while-it-trains-experimental).
 - **Sub-folders (optional)** — tick **Also train on its sub-folders** on the Training tab and a big dataset can stay organised in folders (outfits, forms, sources), each trained with its own captions and cache. Off by default. See [Sub-folders](#sub-folders) below.
 
+## Element boost: one part of each picture learns faster
+
+**Element boost (experimental)**, in Training Parameters, for MOSS-Image. Early in the run one part of each picture counts much more than the rest, so it's learned sooner: by default the face and hair, which brings likeness in faster, most of all when faces are small in the frame. It runs three boosted stretches then one normal, for the first 12 epochs or 600 steps, whichever comes first; after that the run trains as normal, so the body and background catch up. It works with or without masks (a mask trims it), and a picture where the part isn't found trains as normal. It's on in MOSS-Image's Fast, Standard and Turbo Train presets.
+
+**What it boosts:** Face and hair (the default) or Face only come from the face finder; Face only suits a subject whose hair changes between pictures. The other choices are the same as Make masks' person finder (the clothes, the body, the background and so on), found with the same model. The clothes choice suits an outfit LoRA, not a person one. [Masked training](MASKED_TRAINING.md) explains masks.
+
 ## Sub-folders
 
 A training folder is read at its top level only. Tick **Also train on its sub-folders** on the Training tab (off by default) and the pictures in its sub-folders train too, so a big dataset can stay organised in folders: outfits, forms, sources, or the thousands of pictures of a fine-tune. The folder you choose on the Start tab stays the training folder; the tick only adds what is inside it.

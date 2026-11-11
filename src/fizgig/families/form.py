@@ -46,6 +46,18 @@ ROW_GROUPS = (
     ("length", "Length", ("MAX_TRAIN_EPOCHS", "SEED")),
     ("size", "Picture size", ("DATASET_MEGAPIXELS", "CLIP_MEGAPIXELS", "STAGE_MP", "STAGE_UNTIL")),
     ("context", "Context LoRA", ("CONTEXT_LORA_PATH", "CONTEXT_LORA_STRENGTH")),
+    ("states", "Save state", ("SAVE_STATE", "SAVE_STATE_ON_TRAIN_END", "KEEP_LAST_N_STATES")),
+    ("gradients", "Gradients", ("GRADIENT_ACCUMULATION", "MAX_GRAD_NORM")),
+    ("schedule", "Learning-rate schedule", ("LR_SCHEDULER", "LR_WARMUP_STEPS")),
+    ("buckets", "Buckets", ("ENABLE_BUCKET", "BUCKET_NO_UPSCALE")),
+    ("metadata", "Metadata (saved in the LoRA)", ("METADATA_TITLE", "METADATA_AUTHOR", "METADATA_DESCRIPTION",
+                                                  "METADATA_LICENSE", "METADATA_TAGS", "METADATA_TRIGGER_PHRASE",
+                                                  "METADATA_THUMBNAIL")),
+    ("previewsize", "Preview size", ("SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS", "SAMPLE_SEED")),
+    ("turbo", "Turbo LoRA", ("FAMILY_TURBO_ON", "FAMILY_TURBO_STRENGTH")),
+    ("rotations", "Rotations", ("FAMILY_FT_ROTATIONS", "FAMILY_FT_SAVE_EVERY", "FAMILY_FT_ROTATE_EVERY")),
+    ("reg", "Regularisation", ("FAMILY_FT_REG_DIR", "FAMILY_FT_REG_MULT")),
+    ("elementboost", "Element boost (experimental)", ("FACE_BOOST", "FACE_BOOST_AREA")),
 )
 STAGE_MPS = ("Off", "0.25", "0.37", "0.5", "0.75")
 STAGE_UNTILS = ("20%", "30%", "50%")
@@ -94,7 +106,7 @@ DEFAULTS = {
     "FAMILY_FT_ROTATIONS": "10", "FAMILY_FT_SAVE_EVERY": "1", "FAMILY_FT_ROTATE_EVERY": "1",
     "FAMILY_FT_FUSED": True, "FAMILY_FT_REG_DIR": "", "FAMILY_FT_REG_MULT": "0.2",
     "DATASET_MEGAPIXELS": "0.25", "DATASET_CAPTION_EXT": ".txt", "ENABLE_BUCKET": True, "BUCKET_NO_UPSCALE": True,
-    "ENABLE_CACHE": True, "MASKED_TRAINING": False, "MASK_FLOOR": "0.1 (recommended)", "MASK_PRIOR": "Off",
+    "ENABLE_CACHE": True, "MASKED_TRAINING": False, "MASK_FLOOR": "0.1 (recommended)", "MASK_PRIOR": "Off", "FACE_BOOST": False, "FACE_BOOST_AREA": "Face and hair",
     "METADATA_TITLE": "", "METADATA_AUTHOR": "", "METADATA_DESCRIPTION": "", "METADATA_LICENSE": "",
     "METADATA_TAGS": "", "METADATA_TRIGGER_PHRASE": "", "METADATA_THUMBNAIL": "",
     "SAMPLE_ENABLED": True, "SAMPLE_PROMPT": "A high quality photo", "SAMPLE_SEED": "1234",
@@ -392,6 +404,23 @@ def form(desc):
                            "LoRA has learned, which it hasn't yet, and where it's changing things it shouldn't, like "
                            "the background or clothes. Open them with the Training maps button on the run card. Adds "
                            "a few seconds an epoch."))
+    if desc.element_boost and desc.masked_training:   # Element boost: stills, with or without masks (a mask trims it)
+        params += [
+            _row("FACE_BOOST", "On", "check",
+                 "Early in the run, one part of each picture (the face and hair, unless you pick another below) "
+                 "counts much more than the rest, so it's learned faster - for a face, most of all when faces "
+                 "are small in the frame (medium and full-length shots). "
+                 "It runs 3 boosted stretches, then 1 normal, for the first 12 epochs or 600 steps, whichever "
+                 "is sooner; after that the run trains as normal, so the body and background catch up. Works "
+                 "with or without masks (a mask, if a picture has one, trims it). Pictures where it isn't found "
+                 "train as normal."),
+            _row("FACE_BOOST_AREA", "What it boosts", "choice",
+                 "Face and hair (the default): the face and the hair around it. Face only: just the face, for when "
+                 "the hair changes from picture to picture or shouldn't be learned. These two use the face "
+                 "finder. The rest are the Make masks choices, found by its person finder: the clothes for an "
+                 "outfit LoRA, the background for a place, and so on.",
+                 launch.FACE_AREAS),
+        ]
     params += by_section("training", "", "lora")
     if desc.identity_blocks:
         a, b = desc.identity_blocks[0], desc.identity_blocks[-1]
@@ -648,14 +677,14 @@ def form(desc):
              "larger effective batch, raise this: the same averaged gradient as a bigger batch, at the memory of "
              "batch 1."),
         _row("MAX_GRAD_NORM", "Max Grad Norm"),
+        _row("LR_SCHEDULER", "LR Scheduler", "choice", choices=["constant", "constant_with_warmup", "cosine",
+                                                                 "cosine_with_restarts", "linear", "polynomial"]),
+        _row("LR_WARMUP_STEPS", "Warmup steps"),
     ], collapsed=True)
     add("other", "Other Options", "training", [
         _row("DATASET_CAPTION_EXT", "Caption Extension"),
         _row("ENABLE_BUCKET", "Enable Bucket", "check"),
         _row("BUCKET_NO_UPSCALE", "No Upscale (keep small images at native size)", "check"),
-        _row("LR_SCHEDULER", "LR Scheduler", "choice", choices=["constant", "constant_with_warmup", "cosine",
-                                                                 "cosine_with_restarts", "linear", "polynomial"]),
-        _row("LR_WARMUP_STEPS", "Warmup steps"),
         _row("CAPTION_DROPOUT", "Caption dropout", "choice", CAPTION_DROPOUT_HINT, CAPTION_DROPOUTS,
              default=CAPTION_DROPOUTS[0]) if desc.caption_dropout and pictures else None,
         _row("BATCH_SIZE", "Batch size", "choice", BATCH_HINT, launch.batch_choices(desc))
@@ -1043,12 +1072,15 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         notes["TRAIN_SUBFOLDERS"], act = subfolders_note(desc, values, image_folder)
         if act:
             actions["TRAIN_SUBFOLDERS"] = act
+    if not values.get("FACE_BOOST"):
+        hidden.add("FACE_BOOST_AREA")
     if desc.masked_training:
         prompt_slider = kind == "slider" and launch.slider_on(desc, {"FAMILY_SLIDER": True, "FAMILY_SLIDER_SOURCE": (
             "prompts" if values.get("FAMILY_SLIDER_SOURCE") == "Prompts" else "pairs")}, "prompts")
         media = launch.dataset_media(image_folder) if image_folder else {"photo"}
         if prompt_slider or (media and "photo" not in media):
             hidden.add("masks")             # a prompt slider makes its own pictures; a folder of clips has none to mask
+            hidden |= {"FACE_BOOST", "FACE_BOOST_AREA"}   # nor anything for Element boost to find
         elif not values.get("MASKED_TRAINING"):
             hidden |= {"MASK_FLOOR", "MASK_PRIOR"}
         else:
@@ -1540,7 +1572,7 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
         FAMILY_TURBO_PACE=s("FAMILY_TURBO_PACE"), FAMILY_PREVIEW_LOOK=b("FAMILY_PREVIEW_LOOK"), FAMILY_PREVIEW_SMALL=b("FAMILY_PREVIEW_SMALL"),
         CAPTION_DROPOUT=caption_dropout_share(s("CAPTION_DROPOUT")) if desc.caption_dropout else 0.0,
         MASKED_TRAINING=b("MASKED_TRAINING") and desc.masked_training, MASK_FLOOR=s("MASK_FLOOR"),
-        MASK_PRIOR=s("MASK_PRIOR"),
+        MASK_PRIOR=s("MASK_PRIOR"), FACE_BOOST=b("FACE_BOOST") and desc.element_boost, FACE_BOOST_AREA=s("FACE_BOOST_AREA"),
         python=python, repo_dir=repo_dir, models=models, image_folder=image_folder,
         caption_ext=s("DATASET_CAPTION_EXT") or ".txt", batch_size=1, megapixels=s("DATASET_MEGAPIXELS"),
         STAGE_MP=s("STAGE_MP") if desc.resolution_stages else "", STAGE_UNTIL=s("STAGE_UNTIL"),

@@ -271,6 +271,12 @@ Trains on cards down to **10 GB**. At the presets' 0.5 MP, Auto picks bf16 on 24
 
 Each preview parks the training model and optimizer in system RAM while the decoder runs. A fixed small paging file (e.g. 4 GB) can't cover that commit spike, and the run dies with **Windows error 1455** ("paging file is too small"), which says nothing about previews. Set Settings → System → About → Advanced system settings → Performance → Advanced → Virtual memory → *Automatically manage*. Reported and confirmed on a 12 GB RTX 5070 by [@mabseyuk](https://github.com/mabseyuk).
 
+### Training suddenly several times slower? (Windows: shared GPU memory)
+
+If a run that used to be quick is suddenly many times slower with nothing changed in Fizgig, Windows has probably moved part of it into **shared GPU memory** (system RAM over PCIe). It doesn't crash, it just crawls. To check, open Task Manager → Performance → your GPU while it trains: **Shared GPU memory** well above about 0.5 GB means a spill, even if dedicated GPU memory isn't full. A driver update or a Windows update can bring it on.
+
+To fix it, open NVIDIA Control Panel → Manage 3D settings → **Global Settings**, set **CUDA - Sysmem Fallback Policy** to **Prefer No Sysmem Fallback**, and restart Fizgig. Don't add `venv\Scripts\python.exe` under Program settings: on Windows it's only a launcher that starts the Python Fizgig was installed with (the `home` line in `venv\pyvenv.cfg`), so the setting never reaches the process using the GPU. To keep it to Fizgig only, add that Python's `python.exe` under Program settings instead. Restarting the PC and closing apps that use the GPU (browsers, Discord, games) before training also helps. With fallback off, a run that genuinely doesn't fit stops with an out-of-memory error instead of crawling: then swap a few more blocks or pick the next precision down (Memory & Precision, on the Training tab).
+
 ### Desktop feels juddery while training? (Windows)
 
 Turn off **Hardware-accelerated GPU scheduling** (Settings → System → Display → Graphics → *Default graphics settings*), then reboot. With it off, Fizgig runs training at low priority so your desktop stays smooth; training speed is unaffected.

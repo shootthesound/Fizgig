@@ -27,14 +27,16 @@ _NEGATIVE = "worst quality, bad anatomy, watermark, jpeg artifact"
 # 0.05 ArcFace from epoch 9 to 20 on a 53-photo dataset (Peter's test1 / test3, 28 Oct 2026)
 # 8 Nov 2026: reversed to 30 until epoch 7, 60 from epoch 8, then 60 with every 3rd epoch at 30 (half LR) - best with
 # Muon, now every preset's optimizer (Peter)
-_LORA_SHARE = "30:7:60:8:3"
+# 10 Nov 2026: 11 (about the model's own share) until epoch 7, 40 from epoch 8, then 40 with every 3rd epoch at 11
+# (half LR) - starting at 11 stopped the hair darkening late in the run, and the late likeness was the best (Peter)
+_LORA_SHARE = "11:7:40:8:3"
 # a fine-tune's Clean-end share starts on the model's own schedule (about 11%) so the body and the model's knowledge
 # hold, then slides to 30: at 60 a fine-tune's plain "a woman" turned into the subject from epoch 10, even with DOP
 # (Peter, 28 Oct 2026, #223)
 _FT_SHARE = "11:4:30:8:2"
 
 
-def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="1.0", slider=False, ft=False):
+def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="1.0", slider=False, ft=False, face=False):
     # Not yet trained on MOSS-Image (the driver was built without a GPU): Flux 3's preset shape (Krea 2's values,
     # families/flux3.py), at 1 MP (the last pretraining stage's area), on Muon (Peter, 6 Nov). EMA 0.98, the
     # per-image loss watch off, saved every epoch. adaptive=(min, max) turns Adaptive LR on.
@@ -49,9 +51,12 @@ def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="1.0", slider=False, ft=
         "KREA2_LOSS_WATCH": False, "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False,
         "KREA2_WARMUP_LOOK": False, "FAMILY_FT": ft, "FAMILY_EDIT": False, "FAMILY_SLIDER": slider,
         "FAMILY_FAST_ID": False, "FAMILY_SLIDER_GUIDANCE": "3",
-        # the Clean-end share: Slide, 30% until epoch 7, 60% from epoch 8, then 60% with every 3rd at 30% (_LORA_SHARE);
+        # the Clean-end share: Slide, 11% until epoch 7, 40% from epoch 8, then 40% with every 3rd at 11% (_LORA_SHARE);
         # every preset sets it
         "MOSS_LOWNOISE_PCT": _FT_SHARE if ft else _LORA_SHARE,
+        # Boost the face: on in the likeness presets (Fast, Standard, Turbo Train), off where it works against the
+        # preset - Style (no one face), Slider, Fine-tune (Peter, 10 Nov 2026)
+        "FACE_BOOST": face,
         **({"FAMILY_FT_ROTATIONS": "10"} if ft else {}),
     }
 
@@ -61,6 +66,7 @@ MOSS_IMAGE = FamilyDescription(
     trigger_attention=True,           # training maps' trigger-word map (an experiment)
     start_lr_bands=(("lora", 1.7e-5, 3e-4), ("finetune", 3e-6, 3e-5), ("slider", 7e-5, 6e-4)),
     masked_training=True,
+    element_boost=True,
     batch_training=True,              # Batch size (Other Options): training_loss_batch, exact per picture
     batch_gb=(0.45, 1.35),          # GB each extra picture takes: fixed, per MP (batch 1 vs 3)
     arch_id="mossimage",
@@ -352,13 +358,13 @@ MOSS_IMAGE = FamilyDescription(
         # a fixed learning rate: Adaptive LR walks to its floor on MOSS-Image's flat loss (@Murf-Code's runs, PR
         # #195; Peter's runs agree that 1e-4 suits it). Adaptive LR stays on the Training tab, off by default
         # Fast first, so a first visit applies it (Peter, 27 Oct 2026)
-        ("✨ MOSS-Image Fast (rank 16, 0.25 MP)", _preset(16, epochs=70, mp="0.25")),
-        ("✨ MOSS-Image Standard (rank 32, 1e-4)", _preset(32, epochs=70)),
+        ("✨ MOSS-Image Fast (rank 16, 0.25 MP)", _preset(16, epochs=70, mp="0.25", face=True)),
+        ("✨ MOSS-Image Standard (rank 32, 1e-4)", _preset(32, epochs=70, face=True)),
         ("✨ MOSS-Image Style (rank 16, 5e-5)", {**_preset(16, lr=5e-5, epochs=50), "FAMILY_EMA": "Off"}),   # no EMA: a style at 5e-5 is slow enough
         ("✨ MOSS-Image Slider (rank 8, 2e-4)", _preset(8, lr=2e-4, epochs=20, slider=True)),
         # Fast with Adaptive LR (2e-4 to 4e-4) and the per-image loss watch + per-image LR (Peter, 8 Nov 2026); rank 32
         # alpha 16 (Peter, 9 Nov); just above Fine-tune
-        ("✨ MOSS-Image Turbo Train (Experimental)", {**_preset(32, adaptive=("2e-4", "4e-4"), epochs=70, mp="0.25"),
+        ("✨ MOSS-Image Turbo Train (Experimental)", {**_preset(32, adaptive=("2e-4", "4e-4"), epochs=70, mp="0.25", face=True),
                                                      "NETWORK_ALPHA": 16,
                                                      "KREA2_LOSS_WATCH": True, "KREA2_PER_IMAGE_LR": True}),
         ("✨ MOSS-Image Fine-tune (1e-5)", _preset(16, lr=1e-5, ft=True)),
@@ -382,11 +388,10 @@ MOSS_IMAGE = FamilyDescription(
                      # epoch 60 (Peter, 20 Oct 2026); 60:7:30:8:3 then led it from epoch 9 (28 Oct 2026)
                      slide=tuple(_LORA_SHARE.split(":")),
                      single="40",             # one value for the whole run: 40 beat 30 (Peter, 20 Oct 2026)
-                     slide_alt=("Previous settings, slower to train but known to work well, are the reverse: 60 until "
-                                "epoch 7, then 30 from epoch 8, every 3rd epoch at 30.", "60:7:30:8:3"),
+                     slide_alt=("Earlier settings, slower to train but known to work well: 30 until epoch 7, then 60 "
+                                "from epoch 8, every 3rd epoch at 30.", "30:7:60:8:3"),
                      slide_hint="Slide: one share until an epoch, then sliding a few points an epoch to another by a "
-                                "later epoch. 30 until epoch 7, then 60 from epoch 8 (the default) works best with Muon on datasets of up to "
-                                "about 55 images; with many more, drop from 60 earlier. Ticked: after "
+                                "later epoch. 11 until epoch 7, then 40 from epoch 8 (the default) works best with Muon. Ticked: after "
                                 "the slide, training runs at the higher of the two shares, which keeps likeness from "
                                 "fading on a small dataset, and every Nth epoch at the lower share, at half the "
                                 "learning rate.",

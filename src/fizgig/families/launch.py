@@ -886,6 +886,9 @@ def train_command(desc, inputs, plan):
         cmd += ["--masked_training", "--mask_floor", f"{mask_floor(st):g}"]
         if mask_prior(desc, st) and batch_size(desc, st) <= 1:
             cmd += ["--mask_prior", f"{mask_prior(desc, st):g}"]
+    if face_weight(desc, st) is not None:
+        cmd += ["--face_weight", f"{face_weight(desc, st):g}", "--face_area", dict(FACE_AREA_KEYS).get(str(st.get("FACE_BOOST_AREA") or ""), "head"),
+                "--face_cycle", f"{FACE_CYCLE[0]}:{FACE_CYCLE[1]}", "--face_until", f"{FACE_STOP[0]}:{FACE_STOP[1]}"]
     if dop_on(desc, st) or mp_subs:
         trig, cls = dop_rules(st)
         if mp_subs:          # the captions are read fused: DOP swaps "zwxemwoman" for "a woman"
@@ -1524,6 +1527,29 @@ def mask_prior(desc, st):
         return max(0.0, float(str(st.get("MASK_PRIOR") or "Off").split()[0]))
     except ValueError:
         return 0.0
+
+
+# Boost the face (one tick, an experiment): the head (face and hair) at x9 in the loss, 3 boosted stretches then 1
+# normal, for the first 12 epochs or 600 steps, whichever is sooner - Peter's pick from the 10 Nov 2026 pixie runs
+FACE_BOOST = 9.0
+FACE_CYCLE = (3, 1)
+FACE_STOP = (12, 600)
+# What it boosts: --face_area. Face and hair / Face only: the face detector's oval; the rest: the Make masks
+# picker's person-finder kinds (their labels as on the masks card), its "Just the face and hair" left out
+FACE_AREA_KEYS = (("Face and hair", "head"), ("Face only", "face"), ("The person (hair to clothes)", "person"),
+                  ("The person, not their clothes", "no_clothes"),
+                  ("The body and clothes, not the face or hair", "body_clothes"),
+                  ("The body's skin, not the face, hair or clothes", "body"), ("Just the clothes", "clothes"),
+                  ("Everything but the faces", "not_faces"), ("Just the background, not the people", "background"))
+FACE_AREAS = tuple(k[0] for k in FACE_AREA_KEYS)
+
+
+def face_weight(desc, st):
+    """Boost the face: the face weight when ticked, else None. Stills of a family with masked training, not a
+    prompt slider (no photos)."""
+    if not (st.get("FACE_BOOST") and desc.element_boost and desc.masked_training) or slider_on(desc, st, "prompts"):
+        return None
+    return FACE_BOOST
 
 
 def mask_folders(desc, st):

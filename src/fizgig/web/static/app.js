@@ -119,7 +119,12 @@ async function boot() {
   podLocalInit();                                             // in the app window on a pod: this computer's folders
   welcomeShow(pr);
   pollRun(); pollStats(); followLog();
-  setInterval(pollRun, 2000); setInterval(pollStats, 2000); setInterval(loadGallery, 15000);
+  setInterval(pollRun, 2000); setInterval(pollStats, 2000); setInterval(galleryRefresh, 15000);
+  // F5 / Ctrl+R reload the page in the app window as in a browser (the window has no reload of its own)
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "r")) {
+      e.preventDefault(); location.reload(); }
+  });
   setInterval(loadCheckpoints, 15000);
 }
 
@@ -1460,7 +1465,11 @@ function podCard() {
 
 // Fizgig 8's welcome, on this computer's own Fizgig (not a pod's or another computer's page): once a launch until
 // Don't show this again. The tour ships with Fizgig; if it won't play, the words stand on their own.
+// Off since 10 Nov 2026 (Peter): kept for a future release's welcome - new words and video, a new hidden pref
+// name (so Don't show this again from 8 doesn't hide it), then WELCOME_ON = true.
+const WELCOME_ON = false;
 function welcomeShow(pr) {
+  if (!WELCOME_ON) return;
   let seen = false;
   try { seen = sessionStorage.getItem("fizgig.welcomeSeen") === "1"; } catch (e) { /* no storage */ }
   if (pr.welcome_hidden || seen || S.onPod || pageIsElsewhere() || $("welcomeModal").classList.contains("active")) return;
@@ -2349,6 +2358,18 @@ function previewGrid(items, prompts, eager) {
   return el("div", {}, top, wrap);
 }
 
+// the 15 s refresh: a refresh that fails says so under the previews (and in the console) instead of leaving the
+// gallery silently frozen at its last good draw - an app-window gallery once stopped at epoch 36 with no clue why
+async function galleryRefresh() {
+  try {
+    await loadGallery();
+    $("galleryError").textContent = "";
+  } catch (e) {
+    console.error("[gallery] refresh failed", e);
+    $("galleryError").textContent = `Previews couldn't refresh: ${e && e.message || e}. Press F5 to reload the page.`;
+  }
+}
+
 async function loadGallery() {
   const out = S.run.output_dir || S.values.LORA_OUTPUT_DIR || S.outputDefault;   // an empty box = the default folder
   const host = $("gallery");
@@ -3039,6 +3060,9 @@ function trainMapsPanel(box, meta, run, load) {
   const st = {key: meta.keys[0], t: "all", kind: "learned", trig: "",
               i: Math.max(0, meta.epochs.length - 1), timer: null, img: null,
               bands: tmPref("scale", "bands") === "bands", grey: tmPref("picture", "grey") === "grey",
+              // Learned since the start: "amount" (the loss removed), "share" (removed as a share of the cell's own
+              // start: how far along each part is), "fixed" (the share on one 0-20% scale for every run and epoch)
+              learnedAs: ["amount", "share", "fixed"].includes(tmPref("learned", "amount")) ? tmPref("learned", "amount") : "amount",
               // the map's opacity, 1 = as designed; up to 1.5 stronger (capped at solid), down to 0 (hidden)
               opacity: Math.max(0, Math.min(1.5, Number(tmPref("opacity", "1")) || 0))};
   const d = {...meta, epochs: []};
@@ -3104,11 +3128,17 @@ function trainMapsPanel(box, meta, run, load) {
     if (k !== "learned") return g[k] || null;
     const base = (((d.epochs[0] || {}).maps || {})[st.key] || {})[tKey(t)];
     if (!base || !base.loss || !g.loss || base.loss.v.length !== g.loss.v.length) return null;
+    if (st.learnedAs !== "amount") {           // a share of the cell's own start; a nearly-clean cell's start is floored
+      const b = base.loss.v, lo = [...b].sort((x, y) => x - y)[Math.floor(0.1 * (b.length - 1))] || 1e-8;
+      return {w: g.loss.w, h: g.loss.h, signed: true, share: true,
+              v: g.loss.v.map((x, j) => (b[j] - x) / Math.max(b[j], lo, 1e-8))};
+    }
     return {w: g.loss.w, h: g.loss.h, v: g.loss.v.map((x, j) => base.loss.v[j] - x), signed: true};
   };
   const scales = new Map();                    // the scales per picture + map + level, until the epochs change
   const scaleOf = (k, t) => {                  // one scale for this picture + level + map, over every epoch
-    const memo = `${st.key}|${k}|${t}|${k === "attn" ? st.trig : ""}`;
+    if (k === "learned" && st.learnedAs === "fixed") return 0.2;      // 20% of a cell's start = full colour, every run
+    const memo = `${st.key}|${k}|${t}|${k === "attn" ? st.trig : ""}|${k === "learned" ? st.learnedAs : ""}`;
     if (scales.has(memo)) return scales.get(memo);
     let mx = 0;
     for (let e = 0; e < d.epochs.length; e++) {
@@ -3128,7 +3158,7 @@ function trainMapsPanel(box, meta, run, load) {
     for (const t of d.timesteps) {
       const g = gridAt(e, k, t);
       if (!g || (out && g.v.length !== out.v.length)) continue;
-      const s = scaleOf(k, t);
+      const s = g.share ? 1 : scaleOf(k, t);  // shares already compare across levels: a plain mean
       if (!out) out = {w: g.w, h: g.h, signed: g.signed, v: g.v.map((x) => x / s)};
       else out.v = out.v.map((x, j) => x + g.v[j] / s);
       n++;
@@ -3154,6 +3184,7 @@ function trainMapsPanel(box, meta, run, load) {
   };
   const draw = () => {
     fillTrig();
+    learnedRow.style.display = st.kind === "learned" ? "" : "none";
     const img = st.img;
     if (!img || !img.naturalWidth) return;
     // the part of the photo it trained on (the bucket's centre crop), so the map sits exactly on it
@@ -3209,7 +3240,8 @@ function trainMapsPanel(box, meta, run, load) {
         "linear-gradient(90deg, var(--pic-worse), transparent, var(--pic-better))") :
       (st.bands ? "linear-gradient(90deg, transparent 0 25%, var(--pic-heat-1) 25% 50%, var(--pic-heat-2) 50% 75%, " +
         "var(--pic-heat-3) 75% 100%)" : "linear-gradient(90deg, transparent, var(--pic-heat-1), var(--pic-heat-2), var(--pic-heat-3))");
-    legendLo.textContent = g.signed ? "worse" : "less"; legendHi.textContent = g.signed ? "better" : "more";
+    legendLo.textContent = g.signed ? (g.share && st.learnedAs === "fixed" ? "20% worse" : "worse") : "less";
+    legendHi.textContent = g.signed ? (g.share && st.learnedAs === "fixed" ? "20% better" : "better") : "more";
   };
   const showPic = () => {
     const p = (d.images || {})[st.key];
@@ -3223,6 +3255,15 @@ function trainMapsPanel(box, meta, run, load) {
     el("button", {class: "btn btn-sm" + (v === cur() ? " btn-primary" : ""), text: label, title: tip || "",
       onclick: (e) => { set(v); e.target.parentElement.querySelectorAll("button").forEach((b) => b.classList.remove("btn-primary"));
         e.target.classList.add("btn-primary"); draw(); }})));
+  // how Learned since the start is measured (optional; Amount is the default)
+  const learnedRow = chips([
+    ["amount", "Amount", "How much less wrong each part is than at the start. The part that learned most sets the scale, " +
+      "so a part with less to learn looks pale even when it's well learned"],
+    ["share", "Share of its own start", "How much of each part's own starting error has gone: how far along each part is, " +
+      "whatever it started at"],
+    ["fixed", "Share, same scale for every run", "The share on one scale (full colour = 20% of its start gone) for every run " +
+      "and epoch, so two runs' maps compare by eye"]],
+    () => st.learnedAs, (v) => { st.learnedAs = v; tmSetPref("learned", v); });
   const probes = el("span", {class: "tm-row tm-probes"}, ...d.keys.map((k) => {
     const p = (d.images || {})[k];
     const im = el("img", {alt: k, title: k, class: k === st.key ? "on" : "",
@@ -3299,6 +3340,7 @@ function trainMapsPanel(box, meta, run, load) {
       (v) => { st.t = v; fetchOne().catch((e) => { say.textContent = e.message; }); }),
     chips(TM_KINDS.filter((k) => k[0] !== "attn" || (d.attn || []).length), () => st.kind, (v) => { st.kind = v; }),
     trigRow,
+    learnedRow,
     kindSay,
     stage,
     el("div", {class: "tm-row"}, play, scrub, d.live ? refresh : null, d.live ? autoLab : null, legendLo, legend, legendHi),

@@ -77,7 +77,8 @@ def with_prior(loss, prior, base, se_base, mw, *weights):
     error against base, the shape `loss` was taken over."""
     if base is None or mw is None:
         return loss
-    return loss + float(prior.weight) * weighted_loss(se_base, *weights, 1.0 - mw)
+    # clamped: a face boost (weights above 1, inside the mask) never makes the outside negative
+    return loss + float(prior.weight) * weighted_loss(se_base, *weights, (1.0 - mw).clamp_min(0.0))
 
 
 class FamilyDriver:

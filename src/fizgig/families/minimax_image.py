@@ -8,7 +8,6 @@ cited per value. Measured on the weights (10 Nov 2026, safetensors headers): the
 weights moved a long way from H3 fl2va (|dW| 25-46% of |W| on attention out / fc2), so H3's training adapters are not
 used here.
 """
-from fizgig.training.optimizers import MUON_DEFAULT_ARGS
 from fizgig.families.description import (FamilyDescription, FamilyOption, LoRAFormat, ModelFile, SamplingSettings,
                                          TextEncoderBuild)
 
@@ -19,16 +18,16 @@ _H = "Comfy-Org/MiniMax-H3"
 _PDD_SIGMAS = (1.0, 0.9675236940383911, 0.8875485062599182, 0.75, 0.5327739119529724, 0.23200887441635132, 0.0)
 
 
-def _preset(rank, lr=1e-4, adaptive=None, epochs=30, slider=False, mp="0.25", edit=False):
-    """Krea 2's presets, value for value (families/krea2.py _preset; Peter, 10 Nov 2026: "mirror the Krea 2 presets
-    exactly", after a 0.25 MP, 2e-4, Muon run with the adapter gave a strong likeness), plus the two this model needs:
-    Fizgig's training adapter on (without it people turn into caricatures) and an edit flag for the Edit preset."""
-    lo, hi = adaptive or ("1e-4", "4e-4")
+def _preset(rank, epochs=30, slider=False, mp="0.25", edit=False):
+    """Krea 2's presets (families/krea2.py _preset; Peter, 10 Nov 2026: "mirror the Krea 2 presets exactly"), plus the
+    two this model needs: Fizgig's training adapter on (without it people turn into caricatures) and an edit flag for
+    the Edit preset. Every preset trains on Automagic v3 (Peter, 11 Nov 2026), which starts at 1e-4 and finds its own
+    rate from there (Peter, 11 Nov 2026), and turns Adaptive LR off, so Krea 2's Ultra Fast preset (an LR choice) isn't here."""
     return {
-        "NETWORK_DIM": rank, "NETWORK_ALPHA": rank, "NETWORK_TYPE": "LoRA (standard)", "LEARNING_RATE": lr,
+        "NETWORK_DIM": rank, "NETWORK_ALPHA": rank, "NETWORK_TYPE": "LoRA (standard)", "LEARNING_RATE": 1e-4,
         "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 42, "FAMILY_SLIDER": slider, "FAMILY_EDIT": edit,
-        "ADAPTIVE_LR": adaptive is not None, "ADAPTIVE_LR_MIN": lo, "ADAPTIVE_LR_MAX": hi,
-        "OPTIMIZER_TYPE": "muon", "OPTIMIZER_ARGS": MUON_DEFAULT_ARGS, "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
+        "ADAPTIVE_LR": False, "ADAPTIVE_LR_MIN": "1e-4", "ADAPTIVE_LR_MAX": "4e-4",
+        "OPTIMIZER_TYPE": "automagic3", "OPTIMIZER_ARGS": "", "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
         "DATASET_MEGAPIXELS": mp, "BLOCKS_SWAP": "Auto (detect from GPU)",
         "FAMILY_PRECISION": "Auto (fits your free VRAM)", "FAMILY_TRAINING_ADAPTER": True,
         "FAMILY_EMA": "0.98 (recommended)",
@@ -139,7 +138,7 @@ MINIMAX_IMAGE = FamilyDescription(
     batch_gb=(0.05, 0.8),
     precision_labels={"auto": "Auto (fits your free VRAM)", "int8": "int8 · most accurate, needs ~24 GB free",
                       "nf4": "4-bit · fits smaller cards", "hqq": "4-bit HQQ · lower error than 4-bit, slower"},
-    optimizers=("adamw", "adamw8bit"),
+    optimizers=("automagic3", "adamw", "adamw8bit"),
     trainable_dtype="bf16",           # MiniMax H3's LoRA dtype (its trainer: network.to(bfloat16))
     network_types=("lora", "lokr"),
     ema_default="0.98",
@@ -215,11 +214,10 @@ MINIMAX_IMAGE = FamilyDescription(
     workbench=("repair", "profiler", "extract", "royale"),
 
     presets=(
-        ("✨ MiniMax H3 Image Ultra Fast (rank 8, adaptive LR)", _preset(8, adaptive=("2e-4", "4e-4"))),
         ("✨ MiniMax H3 Image Standard (rank 32, full model)", _preset(32, epochs=64)),
-        ("✨ MiniMax H3 Image Style (rank 16, gentle LR)", _preset(16, adaptive=("5e-5", "2e-4"), epochs=64)),
-        ("✨ MiniMax H3 Image Edit (rank 8, adaptive LR)", _preset(8, adaptive=("2e-4", "4e-4"), epochs=12, edit=True)),
-        ("✨ MiniMax H3 Image Slider (rank 8, 2e-4)", _preset(8, lr=2e-4, epochs=20, slider=True, mp="0.5")),
+        ("✨ MiniMax H3 Image Style (rank 16)", _preset(16, epochs=64)),
+        ("✨ MiniMax H3 Image Edit (rank 8)", _preset(8, epochs=12, edit=True)),
+        ("✨ MiniMax H3 Image Slider (rank 8)", _preset(8, epochs=20, slider=True, mp="0.5")),
     ),
     start_lr_bands=(("lora", 3e-5, 3e-4), ("slider", 7e-5, 6e-4)),     # Krea 2's, as the presets are its
 )

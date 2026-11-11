@@ -26,8 +26,11 @@ NEW = ("prodigy", "muon", "automagic4")
 
 
 def test_new_optimizers_listed():
+    import importlib.util
     opts = available_optimizers()
-    for name in NEW + ("automagic3", "adamw", "adamw8bit"):
+    # adamw8bit needs bitsandbytes, which the public CPU checks don't install (it's listed only where it loads)
+    want = NEW + ("automagic3", "adamw") + (("adamw8bit",) if importlib.util.find_spec("bitsandbytes") else ())
+    for name in want:
         assert name in opts
 
 

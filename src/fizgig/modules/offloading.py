@@ -91,6 +91,25 @@ def _streamed_linears(layer: nn.Module):
     return out
 
 
+def _swap_jobs(layer_to_cpu: nn.Module, layer_to_cuda: nn.Module, device: torch.device):
+    """(jobs, unpaired_to_cpu) for one swap: a job per Linear both blocks hold at the same shape and dtype
+    (to_cpu module, to_cuda module, its GPU tensor, the incoming CPU tensor); an incoming Linear with no partner goes to
+    the device here, and the outgoing ones with none (an injection block's cross-attention leaving for a plain block)
+    are returned to move off once the block's compute is done."""
+    jobs, paired = [], set()
+    modules_to_cpu = _streamed_linears(layer_to_cpu)
+    for name, module_to_cuda in _streamed_linears(layer_to_cuda).items():
+        module_to_cpu = modules_to_cpu.get(name, None)
+        if (module_to_cpu is not None and module_to_cpu.weight.shape == module_to_cuda.weight.shape
+                and module_to_cpu.weight.dtype == module_to_cuda.weight.dtype):
+            jobs.append((module_to_cpu, module_to_cuda, module_to_cpu.weight.data, module_to_cuda.weight.data))
+            paired.add(name)
+        elif module_to_cuda.weight.data.device.type != device.type:
+            module_to_cuda.weight.data = module_to_cuda.weight.data.to(device)
+    unpaired = [m for n, m in modules_to_cpu.items() if n not in paired and m.weight.data.device.type == device.type]
+    return jobs, unpaired
+
+
 def swap_weight_devices_no_cuda(device: torch.device, layer_to_cpu: nn.Module, layer_to_cuda: nn.Module):
     """
     Swap weights between two layers without CUDA streams (fallback path).
@@ -166,12 +185,27 @@ class Offloader:
 
         # Staging buffers for cuda offloading without large pinned memory.
         # Pinned memory buffers to speed up the transfer between CPU and GPU.
-        # One staging buffer per transfer direction (A: GPU->CPU, B: CPU->GPU).
-        self.staging_buffer_a = None
-        self.staging_buffer_b = None
+        # One staging buffer per transfer direction (A: GPU->CPU, B: CPU->GPU), kept per swap's set of weights
+        # (_job_key): blocks of one model need not hold the same Linears - Fibo 2's injection blocks carry a
+        # cross-attention the others don't - and buffers made for one pair, zipped against a longer pair's jobs,
+        # silently skipped the extra weights, which stayed on the CPU ("mat2 is on cpu" in _int_mm, issue #2).
+        self._staging = {}
 
-        # Pinned buffer for cuda offloading with pinned memory (one per layer transfer).
-        self.pinned_buffer = None
+        # Pinned buffer for cuda offloading with pinned memory (one per layer transfer), per set of weights too.
+        self._pinned = {}
+
+    @staticmethod
+    def _job_key(weight_swap_jobs):
+        """The shapes and dtypes a swap moves, in order: buffers made for one set fit only the same set."""
+        return tuple((tuple(v.shape), v.dtype) for _, _, v, _ in weight_swap_jobs)
+
+    def _staging_for(self, weight_swap_jobs, make):
+        """(A, B) staging buffers for exactly these jobs, made once per _job_key with make(tensor) -> buffer."""
+        k = self._job_key(weight_swap_jobs)
+        if k not in self._staging:
+            self._staging[k] = ([make(v) for _, _, v, _ in weight_swap_jobs],
+                                [make(v) for _, _, v, _ in weight_swap_jobs])
+        return self._staging[k]
 
     def swap_weight_devices_cuda(self, device: torch.device, layer_to_cpu: nn.Module, layer_to_cuda: nn.Module):
         assert layer_to_cpu.__class__ == layer_to_cuda.__class__
@@ -203,39 +237,25 @@ class Offloader:
         weight_swap_jobs = []
 
         with T.section("find modules"):
-            modules_to_cpu = _streamed_linears(layer_to_cpu)
-            for module_to_cuda_name, module_to_cuda in _streamed_linears(layer_to_cuda).items():
-                module_to_cpu = modules_to_cpu.get(module_to_cuda_name, None)
-                if module_to_cpu is not None and module_to_cpu.weight.shape == module_to_cuda.weight.shape:
-                    weight_swap_jobs.append(
-                        (module_to_cpu, module_to_cuda, module_to_cpu.weight.data, module_to_cuda.weight.data)
-                    )
-                else:
-                    if module_to_cuda.weight.data.device.type != device.type:
-                        module_to_cuda.weight.data = module_to_cuda.weight.data.to(device)
+            weight_swap_jobs, unpaired_to_cpu = _swap_jobs(layer_to_cpu, layer_to_cuda, device)
 
         with T.section("synchronize before swap"):
             # Ensures the offloading layer's computation is done before we touch its buffers
             torch.cuda.current_stream().synchronize()
+        for m in unpaired_to_cpu:
+            m.weight.data = m.weight.data.to("cpu")
 
         if not self.use_pinned_memory:
             # Minimize pinned memory usage for lower shared GPU RAM consumption
             stream = self.stream
             with torch.cuda.stream(stream):
-                if self.staging_buffer_a is None:
-                    self.staging_buffer_a = [
-                        torch.empty_like(cuda_data_view, device="cpu").pin_memory(device=device)
-                        for _, _, cuda_data_view, _ in weight_swap_jobs
-                    ]
-                    self.staging_buffer_b = [
-                        torch.empty_like(cuda_data_view, device="cpu").pin_memory(device=device)
-                        for _, _, cuda_data_view, _ in weight_swap_jobs
-                    ]
+                staging_a, staging_b = self._staging_for(
+                    weight_swap_jobs, lambda v: torch.empty_like(v, device="cpu").pin_memory(device=device))
 
                 # Copy weights to staging buffers and record events
                 event_b = None
                 for sbuf_a, sbuf_b, (module_to_cpu, module_to_cuda, cuda_data_view, cpu_data_view) in zip(
-                    self.staging_buffer_a, self.staging_buffer_b, weight_swap_jobs
+                    staging_a, staging_b, weight_swap_jobs
                 ):
                     # CUDA to staging buffer A, non-blocking copy
                     event_a = torch.cuda.Event()
@@ -267,7 +287,7 @@ class Offloader:
                         cpu_data_view.copy_(sbuf_a)  # BOTTLENECK
 
             for sbuf_a, sbuf_b, (module_to_cpu, module_to_cuda, cuda_data_view, cpu_data_view) in zip(
-                self.staging_buffer_a, self.staging_buffer_b, weight_swap_jobs
+                staging_a, staging_b, weight_swap_jobs
             ):
                 # Update references
                 module_to_cuda.weight.data = cuda_data_view
@@ -277,20 +297,22 @@ class Offloader:
 
         else:
             # Use pinned memory for faster transfer (requires more memory)
-            if self.pinned_buffer is None:
+            job_key = self._job_key(weight_swap_jobs)
+            if job_key not in self._pinned:
                 with torch.cuda.stream(self.stream):
-                    self.pinned_buffer = [
+                    self._pinned[job_key] = [
                         torch.empty_like(cuda_data_view, device="cpu").pin_memory(device=device)
                         for _, _, cuda_data_view, _ in weight_swap_jobs
                     ]
                 self.stream.synchronize()
+            pinned_buffer = self._pinned[job_key]
             released_pinned_buffer = []
 
             events = [torch.cuda.Event() for _ in weight_swap_jobs]
 
             # Copy weights to CPU
             for event, module_pin_buf, (module_to_cpu, module_to_cuda, cuda_data_view, cpu_data_view) in zip(
-                events, self.pinned_buffer, weight_swap_jobs
+                events, pinned_buffer, weight_swap_jobs
             ):
                 with torch.cuda.stream(self.stream):
                     with T.section("cuda to cpu"):
@@ -308,21 +330,21 @@ class Offloader:
 
             # Update references
             for module_pin_buf, (module_to_cpu, module_to_cuda, cuda_data_view, cpu_data_view) in zip(
-                self.pinned_buffer, weight_swap_jobs
+                pinned_buffer, weight_swap_jobs
             ):
                 module_to_cuda.weight.data = cuda_data_view
                 module_to_cpu.weight.data = module_pin_buf
                 released_pinned_buffer.append(cpu_data_view)
 
             # Reuse released pinned buffers
-            if not released_pinned_buffer[0].is_pinned():
+            if released_pinned_buffer and not released_pinned_buffer[0].is_pinned():
                 # First time: offloaded weights are not yet pinned, so allocate new buffers
                 with torch.cuda.stream(self.stream):
                     released_pinned_buffer = [
                         torch.empty_like(cuda_data_view, device="cpu").pin_memory(device=device)
                         for _, _, cuda_data_view, _ in weight_swap_jobs
                     ]
-            self.pinned_buffer = released_pinned_buffer
+            self._pinned[job_key] = released_pinned_buffer
 
             sync_event = self.stream.record_event()
 

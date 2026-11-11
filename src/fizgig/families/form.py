@@ -413,9 +413,9 @@ def form(desc):
                  "It runs 3 boosted stretches, then 1 normal, for the first 12 epochs or 600 steps, whichever "
                  "is sooner; after that the run trains as normal, so the body and background catch up. Works "
                  "with or without masks (a mask, if a picture has one, trims it). Pictures where it isn't found "
-                 "train as normal. Best on pictures of 1 MP or more where the face is small in the frame: on "
-                 "small pictures with small faces, the face is only a few pixels wide and the boost can teach "
-                 "the LoRA that pixelation."),
+                 "train as normal. Best on pictures of 1 MP or more where the boosted part (the face, the "
+                 "clothes and so on) is small in the frame: on small pictures, a small face or outfit is only a "
+                 "few pixels wide and the boost can teach the LoRA that pixelation."),
             _row("FACE_BOOST_AREA", "What it boosts", "choice",
                  "Face and hair (the default): the face and the hair around it. Face only: just the face, for when "
                  "the hair changes from picture to picture or shouldn't be learned. These two use the face "

@@ -1,5 +1,11 @@
 # Fizgig news
 
+## 11 Nov 2026: Likeness optimization for MiniMax H3 Image
+
+**MiniMax H3 Image has a new Likeness optimization**, and in our tests it improves likeness dramatically. It puts three quarters of training on the nearly finished picture, where skin, eyes and fine detail are made, for the first 8 epochs, then alternates between half and three quarters so pose and layout keep up. It's on in the Standard preset (load **✨ MiniMax H3 Image Standard**) and replaces H3 Image's Clean-end share box. It will be updated over the coming days with more ways to customise it.
+
+[Fizgig v9.6.4 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.6.4)
+
 ## 11 Nov 2026: training suddenly slow on Windows? Turn off Sysmem Fallback
 
 If training on Windows with an NVIDIA card is suddenly several times slower, especially after a driver or Windows update, the driver is probably spilling part of the run into system RAM. Open NVIDIA Control Panel → Manage 3D settings → **Global Settings**, set **CUDA - Sysmem Fallback Policy** to **Prefer No Sysmem Fallback**, Apply, and restart Fizgig. Use Global Settings, not Program Settings. A few people went from 10–15 s/it back to about 2.5 s/it. Fizgig now shows these steps when it starts, until you tick Don't show this again.

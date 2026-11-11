@@ -34,6 +34,7 @@
 </p>
 
 > ### 📰 Latest news
+> - **Fizgig 9.6.4 — Likeness optimization for MiniMax H3 Image.** In our tests it improves likeness dramatically; on in the Standard preset, in place of the Clean-end share box. More ways to customise it over the coming days. [Release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.6.4)
 > - **Fizgig 9.6.3 — training suddenly slow on Windows?** Turn off NVIDIA's CUDA Sysmem Fallback (Global Settings → Prefer No Sysmem Fallback): a run spilling into system RAM trains several times slower. Fizgig now shows the steps when it starts. [Release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.6.3)
 > - **Fizgig 9.6.2 — MiniMax H3 Image presets start at 2.8e-4.** Based on early user feedback: better previews at the presets' 0.5 MP. Element boost's hint now says it works best on pictures of 1 MP or more where the boosted part is small in the frame. [Release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.6.2)
 > - **Fizgig 9.6.1 — MiniMax H3 Image presets, and Element boost to try.** H3 Image's presets now train at 0.5 MP and start Automagic v3 at 2e-4; Element boost is on H3 Image's Training tab, off in every preset; 2048 previews for every model. [Release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.6.1)

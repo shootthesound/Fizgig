@@ -128,7 +128,9 @@ async function boot() {
   setInterval(loadCheckpoints, 15000);
 }
 
-async function chooseFamily(key) {
+// fresh (you picked another model at the top): the model's first preset goes over its saved values, so no setting
+// from earlier (an optimizer this model doesn't offer, say) carries over; paths and prompts the preset doesn't set stay
+async function chooseFamily(key, fresh = false) {
   try {                                     // the latest saved, in case another open page changed it
     const st = await api("/api/state");
     if (st && st.values && st.values[key]) S.all[key] = st.values[key];
@@ -136,10 +138,10 @@ async function chooseFamily(key) {
   S.family = key;
   S.fam = S.schema.families.find((f) => f.key === key);
   for (const sel of document.querySelectorAll(".family-pick")) sel.value = key;
-  if (S.all[key]) {
+  if (S.all[key] && !fresh) {
     S.values = {...defaults(), ...S.all[key]};
-  } else {                              // a first visit takes the family's first preset, as the desktop does
-    S.values = defaults();
+  } else {                              // a first visit or a switch takes the family's first preset
+    S.values = {...defaults(), ...(S.all[key] || {})};
     const first = S.fam.form.presets[0];
     if (first) {
       S.values = (await api("/api/preset", {family: key, name: first.name, values: S.values})).values;
@@ -10226,7 +10228,7 @@ function wire() {
   document.querySelectorAll("[data-close]").forEach((b) =>
     b.addEventListener("click", () => $(b.dataset.close).classList.remove("active")));
   for (const sel of document.querySelectorAll(".family-pick"))
-    sel.addEventListener("change", (e) => chooseFamily(e.target.value));
+    sel.addEventListener("change", (e) => chooseFamily(e.target.value, true));
   const folder = $("imageFolder");
   const setFolder = () => {
     const was = S.imageFolder;

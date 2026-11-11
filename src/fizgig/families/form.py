@@ -415,7 +415,8 @@ def form(desc):
                  "with or without masks (a mask, if a picture has one, trims it). Pictures where it isn't found "
                  "train as normal. Best on pictures of 1 MP or more where the boosted part (the face, the "
                  "clothes and so on) is small in the frame: on small pictures, a small face or outfit is only a "
-                 "few pixels wide and the boost can teach the LoRA that pixelation."),
+                 "few pixels wide and the boost can teach the LoRA that pixelation. Smaller sizes (0.25 MP and "
+                 "so on) are fine when the boosted part is large in the frame."),
             _row("FACE_BOOST_AREA", "What it boosts", "choice",
                  "Face and hair (the default): the face and the hair around it. Face only: just the face, for when "
                  "the hair changes from picture to picture or shouldn't be learned. These two use the face "

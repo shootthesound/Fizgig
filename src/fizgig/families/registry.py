@@ -76,8 +76,14 @@ def family_of_lora(path: str) -> Optional[FamilyDescription]:
         from safetensors import safe_open
         with safe_open(path, "pt") as f:
             keys = list(f.keys())
+            meta = f.metadata() or {}
     except Exception:
         return None
+    # Fizgig's own LoRAs name their model (ss_architecture = the family's arch_id): that settles it, as two families
+    # can share a block map exactly (MiniMax H3 and MiniMax H3 Image), where the key share below is a tie
+    named = by_arch_id(str(meta.get("ss_architecture") or ""))
+    if named is not None and named in training_families():
+        return named
     import re
     from fizgig.families.lorafile import loha_modules, lokr_modules, lora_pairs
     stem_of = re.compile(r"(.+)\.(?:lora_A|lora_down|lora\.down)\.weight$|(.+)\.(?:lokr_w1(?:_a)?|hada_w1_a)$")

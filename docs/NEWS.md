@@ -2,7 +2,7 @@
 
 ## 11 Nov 2026: MiniMax H3 Image presets, and Element boost to try
 
-**MiniMax H3 Image's presets now train at 0.5 MP and start Automagic v3 at 2e-4.** The model seems to prefer 0.5 MP or more. Started at 1e-4, Automagic climbed to about 1.8e-4 straight away, so the presets now start it near where it was heading. Load a ✨ preset to pick these up.
+**MiniMax H3 Image's presets now train at 0.5 MP and start Automagic v3 at 2.8e-4.** The model seems to prefer 0.5 MP or more. Automagic mostly keeps the level it starts from, and 2.8e-4 gave the best previews at 0.5 MP; at 1 MP or more, start lower, around 1e-4 to 2e-4. Load a ✨ preset to pick these up.
 
 **Element boost is on MiniMax H3 Image**, under Training Parameters, off in every preset: tick **On** to try it. Also, 2048 is a preview size in Studio and the Samples tab for every model.
 

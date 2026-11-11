@@ -21,11 +21,12 @@ _PDD_SIGMAS = (1.0, 0.9675236940383911, 0.8875485062599182, 0.75, 0.532773911952
 def _preset(rank, epochs=30, slider=False, mp="0.5", edit=False):
     """Krea 2's presets (families/krea2.py _preset; Peter, 10 Nov 2026: "mirror the Krea 2 presets exactly"), plus the
     two this model needs: Fizgig's training adapter on (without it people turn into caricatures) and an edit flag for
-    the Edit preset. Every preset trains on Automagic v3 (Peter, 11 Nov 2026), which starts at 2e-4 and finds its own
+    the Edit preset. Every preset trains on Automagic v3 (Peter, 11 Nov 2026), which starts at 2.8e-4 and finds its own
     rate from there (Peter, 11 Nov 2026: started at 1e-4 it climbed to ~1.8e-4 at once, then trickled down to ~9e-5
-    over ~1,200 steps; starting higher looked better), and turns Adaptive LR off, so Krea 2's Ultra Fast preset (an LR choice) isn't here."""
+    over ~1,200 steps; started at 2.8e-4 it eased down ~20% over 400 steps with no overshoot cut, and the previews
+    looked better - Automagic keeps roughly the level it starts from, so the start is the choice), and turns Adaptive LR off, so Krea 2's Ultra Fast preset (an LR choice) isn't here."""
     return {
-        "NETWORK_DIM": rank, "NETWORK_ALPHA": rank, "NETWORK_TYPE": "LoRA (standard)", "LEARNING_RATE": 2e-4,
+        "NETWORK_DIM": rank, "NETWORK_ALPHA": rank, "NETWORK_TYPE": "LoRA (standard)", "LEARNING_RATE": 2.8e-4,
         "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 42, "FAMILY_SLIDER": slider, "FAMILY_EDIT": edit,
         "ADAPTIVE_LR": False, "ADAPTIVE_LR_MIN": "1e-4", "ADAPTIVE_LR_MAX": "4e-4",
         "OPTIMIZER_TYPE": "automagic3", "OPTIMIZER_ARGS": "", "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,

@@ -14,5 +14,12 @@ if _os.environ.get("FIZGIG_POD") == "1":
     _os.environ.setdefault("TORCHINDUCTOR_CACHE_DIR", _os.path.join(
         _os.environ.get("FIZGIG_HOME") or "/workspace", ".cache", "torchinductor"))
 
+# bitsandbytes ships libraries for some CUDA versions only (0.50.2: up to 13.2): on PyTorch's CUDA 13.4 it logs "No
+# prebuilt binary for CUDA 13.4, loading CUDA 13.2 instead" and loads that one, which works (same CUDA major). Drop
+# just that line. (Setting BNB_CUDA_VERSION instead makes it print a longer override warning.)
+import logging as _logging
+_logging.getLogger("bitsandbytes.cextension").addFilter(
+    lambda r: "No prebuilt binary for CUDA" not in r.getMessage())
+
 from fizgig.utils.container_ram import install as _container_ram
 _container_ram()     # a pod's RAM checks read its own limit, not the host's (Linux containers only)

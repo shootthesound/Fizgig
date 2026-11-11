@@ -2,7 +2,7 @@
 
 **MiniMax H3 Image has a new Likeness optimization**, and in our tests it improves likeness dramatically. It's on in the Standard preset: load **✨ MiniMax H3 Image Standard** to pick it up. It replaces H3 Image's Clean-end share box.
 
-It puts three quarters of training on the last of the model's 6 steps, the nearly finished picture where skin, eyes and fine detail are made, for the first 8 epochs. After that it alternates between half and three quarters, so the earlier steps that set pose and layout keep up. Untick it on the Training tab (Training Parameters) for H3 Image's own even share. Style, Edit and Slider leave it off.
+It changes how training is shared between the model's steps over the run, weighted toward the nearly finished picture where skin, eyes and fine detail are made, while the earlier steps that set pose and layout keep up. Untick it on the Training tab (Training Parameters) for H3 Image's own even share. Style, Edit and Slider leave it off.
 
 It will be updated over the coming days with more ways to customise it.
 

@@ -2,7 +2,7 @@
 
 ## 11 Nov 2026: Likeness optimization for MiniMax H3 Image
 
-**MiniMax H3 Image has a new Likeness optimization**, and in our tests it improves likeness dramatically. It puts three quarters of training on the nearly finished picture, where skin, eyes and fine detail are made, for the first 8 epochs, then alternates between half and three quarters so pose and layout keep up. It's on in the Standard preset (load **✨ MiniMax H3 Image Standard**) and replaces H3 Image's Clean-end share box. It will be updated over the coming days with more ways to customise it.
+**MiniMax H3 Image has a new Likeness optimization**, and in our tests it improves likeness dramatically. It weights training toward the nearly finished picture, where skin, eyes and fine detail are made, while pose and layout keep up. It's on in the Standard preset (load **✨ MiniMax H3 Image Standard**) and replaces H3 Image's Clean-end share box. It will be updated over the coming days with more ways to customise it.
 
 [Fizgig v9.6.4 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.6.4)
 

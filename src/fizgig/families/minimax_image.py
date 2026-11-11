@@ -212,10 +212,9 @@ MINIMAX_IMAGE = FamilyDescription(
     options=(
         FamilyOption("MINIMAX_IMAGE_LIKENESS_OPT", "Likeness optimization", kind="check",
                      tokens="likeness_opt=1", default="1",
-                     hint="Puts more of training on the last of the model's 6 steps, the nearly finished picture, "
-                          "where skin, eyes and fine detail are made: three quarters of it for the first 8 epochs, "
-                          "then half and three quarters in turn, so the earlier steps (pose, layout, the shape of "
-                          "things) keep up. Untick for H3 Image's own even share, 1 step in 6.",
+                     hint="Weights training toward the last of the model's 6 steps, the nearly finished picture, "
+                          "where skin, eyes and fine detail are made, changing over the run so the earlier steps "
+                          "(pose, layout, the shape of things) keep up. Untick for H3 Image's own even share.",
                      summary="likeness optimization"),
     ),
     workbench=("repair", "profiler", "extract", "royale"),

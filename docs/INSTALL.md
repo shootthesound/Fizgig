@@ -261,7 +261,7 @@ See [MINIMAX_H3.md](MINIMAX_H3.md) for the Auto table and preview limits per car
 
 ### MiniMax H3 Image
 
-Measured so far: the int8 base at 1 MP trains at a 21.2 GB peak and previews at 2048×2048 peak at 22.3 GB. Smaller cards (NF4, block swap) are still to be measured; see [MINIMAX_IMAGE.md](MINIMAX_IMAGE.md).
+Trains on cards down to **12 GB**. Auto picks the int8 base where it fits (22.7 GB peak with the 2048×2048 preview) and 4-bit below that (12.8 GB; 11.2 GB on a 12 GB card). A 16 GB card with 32 GB of RAM trains and runs Studio; Studio on a 12 GB card needs about 48 GB of system RAM for the 32B text encoder. See [MINIMAX_IMAGE.md](MINIMAX_IMAGE.md).
 
 ### Qwen Image 2.1
 

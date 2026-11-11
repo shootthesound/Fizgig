@@ -4,7 +4,7 @@
 
 MiniMax H3 Image is MiniMax's picture model from the H3 family, released 3 November 2026: text-to-image and edits with up to 16 reference pictures in one checkpoint. It is MiniMax H3's 33B diffusion transformer without its audio stream, distilled to render in **6 steps with no CFG**, at about 4 to 20 megapixels (best around 16 MP). Its text encoder is MiniMax H3's Qwen3-VL-32B, unchanged.
 
-Fizgig trains LoRAs, LoKRs, edit LoRAs and slider LoRAs on it, with masked training, Multi Concept, DOP and Fizgig LoRA Isolation. Every workbench tool works with it: Studio with Reuse unchanged blocks, LoRA Royale with seed and prompt travel, the Profiler and Extract. Saved LoRAs load in ComfyUI's standard LoRA loader.
+Fizgig trains LoRAs, LoKRs, edit LoRAs and slider LoRAs from photo pairs on it, with masked training, Multi Concept, DOP and Fizgig LoRA Isolation. Every workbench tool works with it: Studio with Reuse unchanged blocks, LoRA Royale with seed and prompt travel, the Profiler and Extract. Saved LoRAs load in ComfyUI's standard LoRA loader.
 
 ## Getting set up
 
@@ -47,6 +47,10 @@ A 16 GB laptop with 32 GB of RAM trains Ultra Fast on Auto and runs Studio (14.7
 
 - 6 steps, no CFG, Euler on the model's own schedule, 2048×2048 by default (ComfyUI's default size for this model). Negative prompts don't apply.
 - Studio renders with INT8 attention, as the checkpoint asks and as ComfyUI does: on the same LoRA, prompt and seed at 2048×2048, Studio and ComfyUI differ by a mean of 5 in 255 (27 dB PSNR). In-training previews use standard attention, which differs from ComfyUI by a mean of 10 in 255 (22 dB); judge the final look in Studio or ComfyUI.
+
+## Sliders
+
+Slider LoRAs train from photo pairs. Sliders from prompts are off on this model for now: a smiling / frowning prompt slider moved clothes, styling and light rather than the expression, because on H3 Image a change of prompt reshuffles the whole picture and the slider learns all of it. If you can fix that, a pull request is very welcome.
 
 ## Other trainers' LoRAs
 

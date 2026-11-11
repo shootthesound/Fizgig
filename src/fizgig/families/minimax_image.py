@@ -143,7 +143,11 @@ MINIMAX_IMAGE = FamilyDescription(
     ema_default="0.98",
     masked_training=True,
     slider_guidance=3.0,              # Krea 2's (the presets mirror Krea 2's)
-    slider_training=True,             # photo pairs (training_loss diff weighting) or prompts (noise_latents / predict)
+    slider_training=True,             # photo pairs (training_loss diff weighting)
+    # prompt sliders off (Peter, 11 Nov 2026): a smiling/frowning prompt slider moved clothes, styling and light, never
+    # the expression - with the adapter on or off, on the top 3 or the bottom 2 noise levels. On this model a prompt
+    # change reshuffles the whole picture, and the slider learns that. noise_latents / predict stay for the maps
+    slider_sources=("pairs",),
     edit_training=True,               # one checkpoint for text-to-image and edits (model card)
     edit_references=16,               # "supports up to 16 reference images" (model card)
     edit_note=("Pairs of an original and its edited version, the same crop and shape - about 40 pairs. Each photo "

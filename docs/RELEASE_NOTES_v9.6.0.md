@@ -8,6 +8,8 @@
 
 **Every workbench tool works with it:** Studio with Reuse unchanged blocks and Save Repaired, LoRA Royale with seed and prompt travel, the Profiler and Extract. LoRAs from other trainers load too, in kohya, ComfyUI or diffusers names. Fizgig's LoRAs load in ComfyUI's standard LoRA loader with every layer.
 
+**Sliders from prompts are off on this model for now.** Slider LoRAs from photo pairs work well. A prompt slider (say, smiling vs frowning) moved clothes, styling and light instead of the expression: on H3 Image a change of prompt reshuffles the whole picture, and the slider learns all of it. We tried training on the clean noise levels only, on the noisy ones only, and without the training adapter, and none helped. If you can make prompt sliders work on this model, a pull request is very welcome; start with a post in [New models & fine-tuning](https://github.com/shootthesound/Fizgig/discussions/new?category=new-models-fine-tuning).
+
 **Memory:** about 23 GB with the int8 model, 13 GB in 4-bit; Auto picks for you. A 16 GB card trains and runs Studio. A 12 GB card trains, but Studio there needs about 48 GB of system RAM for the 32B text encoder.
 
 Setup, presets, memory and the ComfyUI settings are in the [MiniMax H3 Image guide](https://github.com/shootthesound/Fizgig/blob/master/docs/MINIMAX_IMAGE.md).

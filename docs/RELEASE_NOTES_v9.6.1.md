@@ -1,0 +1,9 @@
+# Fizgig v9.6.1: MiniMax H3 Image presets, and Element boost to try
+
+**MiniMax H3 Image's presets now train at 0.5 MP and start Automagic v3 at 2e-4.** The model seems to prefer training at 0.5 MP or more, and likes good-quality datasets. Automagic sets its own learning rate: started at 1e-4, it climbed to about 1.8e-4 straight away and then trickled down, so the presets now start it near where it was heading and the run doesn't spend its first stretch climbing. Load a ✨ preset to pick these up.
+
+**Element boost on MiniMax H3 Image.** The Training Parameters tick from MOSS-Image is now on H3 Image too: early in a run, the face and hair (or another part you pick) count much more than the rest, so likeness comes in sooner. It's off in every H3 Image preset; tick **On** to try it. [How it works](https://github.com/shootthesound/Fizgig/blob/master/docs/TRAINING.md#element-boost-one-part-of-each-picture-learns-faster).
+
+**2048 previews.** 2048 is now a Width and Height choice in Studio and the Samples tab, for every model. H3 Image's default preview size is 2048×2048, which the lists stopped short of.
+
+**If your H3 Image LoRA looks smoother in ComfyUI than in Fizgig's previews:** ComfyUI's default loading (dynamic VRAM) currently adds a LoRA to the weights in bf16, and on this model about 15% of it rounds away. Fizgig's previews and Studio show the LoRA at full strength, and so does ComfyUI started with `--disable-dynamic-vram`. To see ComfyUI's look in Studio, set the LoRA's strength to about 0.8. Reported to ComfyUI as [#17690](https://github.com/Comfy-Org/ComfyUI/issues/17690).

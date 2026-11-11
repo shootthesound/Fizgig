@@ -6,6 +6,18 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 NEWS = [
     {
         "date": "11 Nov 2026",
+        "title": "MiniMax H3 Image presets, and Element boost to try",
+        "body": (
+            "MiniMax H3 Image's presets now train at 0.5 MP and start Automagic v3 at 2e-4: the model seems to prefer "
+            "0.5 MP or more, and Automagic was climbing to about 1.8e-4 from a 1e-4 start anyway. Load a preset to pick "
+            "these up.\n\n"
+            "Element boost is on H3 Image too, under Training Parameters, off in every preset: tick On to try it."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#11-nov-2026-minimax-h3-image-presets-and-element-boost-to-try"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.6.1"}],
+    },
+    {
+        "date": "11 Nov 2026",
         "title": "MiniMax H3 Image, and out-of-memory recovery",
         "body": (
             "A new model, MiniMax H3 Image: train LoRAs, LoKRs, edit LoRAs and slider LoRAs from photo pairs, with "

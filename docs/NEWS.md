@@ -1,5 +1,13 @@
 # Fizgig news
 
+## 11 Nov 2026: MiniMax H3 Image presets, and Element boost to try
+
+**MiniMax H3 Image's presets now train at 0.5 MP and start Automagic v3 at 2e-4.** The model seems to prefer 0.5 MP or more. Started at 1e-4, Automagic climbed to about 1.8e-4 straight away, so the presets now start it near where it was heading. Load a ✨ preset to pick these up.
+
+**Element boost is on MiniMax H3 Image**, under Training Parameters, off in every preset: tick **On** to try it. Also, 2048 is a preview size in Studio and the Samples tab for every model.
+
+[Fizgig v9.6.1 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.6.1)
+
 ## 11 Nov 2026: MiniMax H3 Image, and out-of-memory recovery
 
 **A new model: MiniMax H3 Image**, MiniMax's picture model from the H3 family: text-to-image and edits with up to 16 reference pictures, in 6 steps with no CFG. Train LoRAs, LoKRs, edit LoRAs from before/after pairs and slider LoRAs from photo pairs. Fizgig's training adapter is on by default: without it people came out as caricatures, with it the same dataset gave photographic skin and a clear likeness. The presets train on Automagic v3 with 40% of training on the nearly finished picture (Clean-end share). It runs in about 23 GB with int8, 13 GB in 4-bit. Press **Download models for me** in Preferences.

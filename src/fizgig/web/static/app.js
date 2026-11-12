@@ -7012,12 +7012,12 @@ function studioCanvas() {
 }
 
 // The Clip row's length. "Other…" takes seconds and moves them to the nearest length on the model's frame grid
-// (H3: 17n + 5 frames at 24 fps). Past the model's own longest clip is allowed, up to four times it.
+// (H3: 17n + 5 frames at 24 fps). Past the model's own longest clip is allowed, with no upper limit: a clip too
+// long for the card fails for memory (Peter, 12 Nov 2026: longer than 20 s works in ComfyUI).
 const ST_LEN_OTHER = "Other…";
 function studioSnapFrames(V, sec) {
   const c = V.clip, want = Math.max(0, Number(sec) || 0) * c.fps;
-  const most = Math.floor((4 * c.max - c.offset) / c.step);
-  return c.offset + Math.min(most, Math.max(0, Math.round((want - c.offset) / c.step))) * c.step;
+  return c.offset + Math.max(0, Math.round((want - c.offset) / c.step)) * c.step;
 }
 function studioClipFrames(V) {
   if ($("stH3Len").value !== ST_LEN_OTHER || !V.clip) return V.length_frames[$("stH3Len").value] || 22;
@@ -7031,7 +7031,7 @@ function studioLenOther(snap) {
   if (!other) return;
   const f = studioClipFrames(V), c = V.clip, secs = (n) => String(Math.round(n / c.fps * 100) / 100);
   if (snap && box.value.trim()) box.value = secs(f);
-  note.textContent = `${f} frames (${secs(f)} s)` + (f > c.max ? `, past the model's ${secs(c.max)} s range: untested` : "");
+  note.textContent = `${f} frames (${secs(f)} s)` + (f > c.max ? `, past the model's ${secs(c.max)} s range` : "");
 }
 
 // the clip row's line under the boxes: what the Steps and speed-LoRA boxes give (a model with a speed LoRA)

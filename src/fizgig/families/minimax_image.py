@@ -38,6 +38,7 @@ def _preset(rank, epochs=30, slider=False, mp="0.5", edit=False, likeness=False)
         "FAMILY_SLIDER_GUIDANCE": "3",    # Krea 2's prompt-slider push strength
         # 75% clean end for 8 epochs, then 50 / 75 alternating: on in Standard only (Peter, 11 Nov 2026)
         "MINIMAX_IMAGE_LIKENESS_OPT": "1" if likeness else "",
+        "MINIMAX_IMAGE_LIKENESS_FIRST": "75", "MINIMAX_IMAGE_LIKENESS_ALT": "50", "MINIMAX_IMAGE_LIKENESS_HINGE": "8",
     }
 
 
@@ -216,6 +217,19 @@ MINIMAX_IMAGE = FamilyDescription(
                           "where skin, eyes and fine detail are made, changing over the run so the earlier steps "
                           "(pose, layout, the shape of things) keep up. Untick for H3 Image's own even share.",
                      summary="likeness optimization"),
+        # its three numbers (Peter, 12 Nov 2026): the first share, the share it alternates with after the hinge, and
+        # the hinge epoch. Shown while it's ticked.
+        FamilyOption("MINIMAX_IMAGE_LIKENESS_FIRST", "Clean-end share", kind="entry", tokens="likeness_first={}",
+                     default="75", width=6, suffix="% of steps, up to the hinge epoch",
+                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0),
+                     hint="The share of steps on the nearly finished picture early in the run."),
+        FamilyOption("MINIMAX_IMAGE_LIKENESS_ALT", "Alternate with", kind="entry", tokens="likeness_alt={}",
+                     default="50", width=6, suffix="% of steps, every other epoch after the hinge",
+                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0),
+                     hint="After the hinge, epochs take this share and the first share in turn, starting with this one."),
+        FamilyOption("MINIMAX_IMAGE_LIKENESS_HINGE", "Hinge epoch", kind="entry", tokens="likeness_hinge={}",
+                     default="8", width=6, suffix="the last epoch at the first share",
+                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0)),
     ),
     workbench=("repair", "profiler", "extract", "royale"),
 

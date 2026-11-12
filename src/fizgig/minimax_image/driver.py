@@ -253,11 +253,20 @@ class MiniMaxH3ImageDriver(FamilyDriver):
         return float(keep[int(torch.randint(len(keep), (1,), generator=generator))])
 
     def _clean_share(self):
-        """The clean-end share for this epoch (percent) or None (the model's even draw). Likeness optimization: 75
-        for epochs 1-8, then 50 and 75 in turn (epoch 9 at 50). lownoise_pct=P (the CLI) still sets one share."""
+        """The clean-end share for this epoch (percent) or None (the model's even draw). Likeness optimization:
+        likeness_first (75) up to and including epoch likeness_hinge (8), then likeness_alt (50) and the first share
+        in turn (the epoch after the hinge at likeness_alt). lownoise_pct=P (the CLI) still sets one share."""
         if str(self.options.get("likeness_opt", "")).strip() in ("1", "true", "True"):
+            def num(key, default):
+                try:
+                    return float(str(self.options.get(key, "") or default).rstrip("%").strip())
+                except ValueError:
+                    return float(default)
+            first, alt = num("likeness_first", 75), num("likeness_alt", 50)
+            hinge = int(num("likeness_hinge", 8))
             e = int(getattr(self, "epoch", 1) or 1)
-            pct = 75 if e <= 8 or (e - 8) % 2 == 0 else 50
+            pct = first if e <= hinge or (e - hinge) % 2 == 0 else alt
+            pct = int(pct) if float(pct).is_integer() else pct
             if getattr(self, "_share_said", None) != pct:
                 self._share_said = pct
                 logger.info(f"MiniMax H3 Image: Likeness optimization - {pct}% of steps at the clean end from epoch {e}")

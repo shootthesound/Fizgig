@@ -255,9 +255,59 @@ def ensure_face_models(log=print):
         return None
 
 
+def ensure_mask_segmenter(log=print):
+    """Make masks' person segmenter (~20 MB, hash-checked) for an updating install. Only an early fetch: Make masks
+    still downloads it on first use if it's missing (automask.ensure_model). Never raises."""
+    try:
+        from fizgig import user_data
+        from fizgig.dataset import automask
+        if os.path.isfile(automask.model_path(user_data.MODELS_DIR)):
+            return True
+        return bool(automask.ensure_model(user_data.MODELS_DIR, log=lambda m: log(m.rstrip())))
+    except Exception as e:
+        log(f"Make masks' segmenter: skipped, it downloads on first use ({type(e).__name__}: {e})")
+        return None
+
+
+# Tokenizer configs the older families load by name (fetch_models' hf-config tools): (the pref that says the family is
+# set up, repo). The Qwen3-VL one is the shared captioner's.
+TEXT_HELPERS = (("krea2_text_encoder", "Qwen/Qwen3-VL-4B-Instruct"), ("text_encoder", "Qwen/Qwen3-8B"))
+
+
+def ensure_text_helpers(repo_dir: str = REPO_DIR, log=print):
+    """The small tokenizer / processor files of every family set up here (a model path in Preferences): the described
+    families' helper_files and the older families' tokenizer configs. Only an early fetch: the drivers still download
+    them on first use if they're missing. A repo already cached is skipped without asking the Hub. Never raises."""
+    try:
+        from fizgig.families.registry import FAMILIES
+        from fizgig.utils import hf_public
+        from fizgig.utils.hf_cache import cached_snapshot_dir
+        prefs = _load_prefs(_prefs_file(repo_dir))
+        has = lambda key: bool(key and str(prefs.get(key) or "").strip())
+        want = {repo: (["*.json", "*.txt", "*.model"], repo.split("/")[-1]) for key, repo in TEXT_HELPERS if has(key)}
+        for d in FAMILIES.values():
+            if d.training_ready and d.helper_files and any(has(f.pref_key) for f in d.model_files):
+                for repo, pats in d.helper_files:
+                    want.setdefault(repo, (list(pats), d.display_name))
+        for repo, (pats, label) in want.items():
+            if cached_snapshot_dir(repo):
+                continue
+            try:
+                log(f"Fetching {label}'s tokenizer files ...")
+                hf_public.snapshot(repo_id=repo, allow_patterns=pats, log=log)
+            except Exception as e:
+                log(f"  {label}'s tokenizer files: skipped, they download on first use ({type(e).__name__})")
+        return True
+    except Exception as e:
+        log(f"Tokenizer files: skipped ({type(e).__name__}: {e})")
+        return None
+
+
 if __name__ == "__main__":
     ensure_all()
     ensure_taeh3()
     ensure_moss_previews()
     ensure_face_models()
+    ensure_mask_segmenter()
+    ensure_text_helpers()
     qwen_turbo_dit_hint()

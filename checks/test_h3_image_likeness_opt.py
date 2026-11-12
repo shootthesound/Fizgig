@@ -38,11 +38,19 @@ def test_alternating_off():
     assert [_share(o, e) for e in range(1, 7)] == [50, 50, 50, 75, 75, 75]
 
 
+def test_slide():
+    o = {"likeness_opt": "1", "likeness_before": "50", "likeness_after": "75", "likeness_hinge": "8",
+         "likeness_slide": "5", "likeness_alternate": "off"}
+    assert [_share(o, e) for e in range(7, 16)] == [50, 50, 55, 60, 65, 70, 75, 75, 75]
+    o["likeness_alternate"] = "after"          # the After side's alternating starts once the slide ends
+    assert [_share(o, e) for e in range(13, 17)] == [75, 75, 50, 75]
+
+
 def test_boxes_only_sent_while_ticked():
     from fizgig.families.minimax_image import MINIMAX_IMAGE as d
     keys = {o.key: o for o in d.options}
     for k in ("MINIMAX_IMAGE_LIKENESS_BEFORE", "MINIMAX_IMAGE_LIKENESS_HINGE", "MINIMAX_IMAGE_LIKENESS_AFTER",
-              "MINIMAX_IMAGE_LIKENESS_ALTERNATE"):
+              "MINIMAX_IMAGE_LIKENESS_ALTERNATE", "MINIMAX_IMAGE_LIKENESS_SLIDE"):
         assert keys[k].requires == "MINIMAX_IMAGE_LIKENESS_OPT"
 
 

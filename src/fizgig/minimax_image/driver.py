@@ -256,6 +256,7 @@ class MiniMaxH3ImageDriver(FamilyDriver):
         """The clean-end share for this epoch (percent) or None (the model's even draw). Likeness optimization:
         likeness_before (75) for epochs 1 to likeness_hinge (8), likeness_after (50) after it; likeness_alternate
         (after / before / off) makes that side switch between the two shares every epoch, starting with its own.
+        likeness_slide=N: the N epochs after the hinge move evenly from Before to After (After's alternating after).
         lownoise_pct=P (the CLI) still sets one share."""
         if str(self.options.get("likeness_opt", "")).strip() in ("1", "true", "True"):
             def num(key, default):
@@ -264,13 +265,15 @@ class MiniMaxH3ImageDriver(FamilyDriver):
                 except ValueError:
                     return float(default)
             before, after = num("likeness_before", 75), num("likeness_after", 50)
-            hinge = int(num("likeness_hinge", 8))
+            hinge, slide = int(num("likeness_hinge", 8)), max(int(num("likeness_slide", 0)), 0)
             e = int(getattr(self, "epoch", 1) or 1)
             alt = str(self.options.get("likeness_alternate", "") or "after").strip().lower()
             if e <= hinge:
                 pct = after if alt == "before" and (e - 1) % 2 == 1 else before
+            elif e <= hinge + slide:            # the slide: evenly from Before to After, at After on its last epoch
+                pct = round(before + (after - before) * (e - hinge) / slide, 1)
             else:
-                pct = before if alt == "after" and (e - hinge - 1) % 2 == 1 else after
+                pct = before if alt == "after" and (e - hinge - slide - 1) % 2 == 1 else after
             pct = int(pct) if float(pct).is_integer() else pct
             if getattr(self, "_share_said", None) != pct:
                 self._share_said = pct

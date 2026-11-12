@@ -109,16 +109,16 @@ FAMILIES = {
                "minimax_h3_turbo_v4_step600.safetensors", 0.78,
                "Turbo LoRA — fast 6-step in-training previews"),
         # Training adapters, picked by the Training tab's dropdown: Circlestone (the default, one
-        # 620 MB file for both bases) and Ostris's pair (155 MB each, one per base, for video-only
+        # 620 MB file for both bases) and Ostris's pair (310 MB each, one per base, for video-only
         # datasets). All fetched — small next to the DiT.
         Weight("minimax_circlestone_adapter", "circlestone-labs/MiniMax-H3-Image-Training-Adapter",
                "minimax_h3_image_training_adapter.safetensors", 0.62,
                "Training adapter (Circlestone) — the default, one file for both bases"),
         Weight("minimax_training_adapter", "ostris/minimax_h3_training_adapter",
-               "minimax_h3_training_adapter_v1.safetensors", 0.16,
+               "minimax_h3_training_adapter_v3.safetensors", 0.31,
                "Training adapter (fl2va) — de-distills the base while your LoRA learns (Ostris)"),
         Weight("minimax_ref_training_adapter", "ostris/minimax_h3_training_adapter",
-               "minimax_h3_ref2va_training_adapter_v1.safetensors", 0.16,
+               "minimax_h3_ref2va_training_adapter_v3.safetensors", 0.31,
                "Training adapter (ref2va) — the same, for runs on the reference base (Ostris)"),
         # ref2va is a DIFFERENT fine-tune, needed only for reference distillation — 21 GB most
         # users don't want on a first setup, so it rides behind --include-optional like the

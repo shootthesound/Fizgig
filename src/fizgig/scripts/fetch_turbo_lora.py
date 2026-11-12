@@ -49,16 +49,19 @@ LORAS = [
      "minimax_h3_image_training_adapter.safetensors",
      "diffusion_model.blocks.0.attn.out_proj.lora_A.weight", 580 * 1024 * 1024,
      "MiniMax H3 training adapter, Circlestone (~620 MB, the default)"),
-    ("minimax_training_adapter", "minimax_h3_training_adapter_v1.safetensors",
+    # Ostris's adapters, v3 (Nov 2026, rank 32): a pref on v1 / v2 moves to it, the old file stays on disk
+    ("minimax_training_adapter", "minimax_h3_training_adapter_v3.safetensors",
      "https://huggingface.co/ostris/minimax_h3_training_adapter/resolve/main/"
-     "minimax_h3_training_adapter_v1.safetensors",
-     "diffusion_model.blocks.0.attn.out_proj.lora_A.weight", 140 * 1024 * 1024,
-     "MiniMax H3 training adapter, fl2va (~155 MB, Ostris)"),
-    ("minimax_ref_training_adapter", "minimax_h3_ref2va_training_adapter_v1.safetensors",
+     "minimax_h3_training_adapter_v3.safetensors",
+     "diffusion_model.blocks.0.attn.out_proj.lora_A.weight", 290 * 1024 * 1024,
+     "MiniMax H3 training adapter v3, fl2va (~310 MB, Ostris)",
+     ("minimax_h3_training_adapter_v1.safetensors", "minimax_h3_training_adapter_v2.safetensors")),
+    ("minimax_ref_training_adapter", "minimax_h3_ref2va_training_adapter_v3.safetensors",
      "https://huggingface.co/ostris/minimax_h3_training_adapter/resolve/main/"
-     "minimax_h3_ref2va_training_adapter_v1.safetensors",
-     "diffusion_model.blocks.0.attn.out_proj.lora_A.weight", 140 * 1024 * 1024,
-     "MiniMax H3 training adapter, ref2va (~155 MB, Ostris)"),
+     "minimax_h3_ref2va_training_adapter_v3.safetensors",
+     "diffusion_model.blocks.0.attn.out_proj.lora_A.weight", 290 * 1024 * 1024,
+     "MiniMax H3 training adapter v3, ref2va (~310 MB, Ostris)",
+     ("minimax_h3_ref2va_training_adapter_v1.safetensors", "minimax_h3_ref2va_training_adapter_v2.safetensors")),
     # Qwen Image 2.1's Turbo LoRA (Comfy-Org) replaced Viggle's in the same pref: an install still pointing at
     # another file gets this one (the old file stays on disk)
     ("qwen21_turbo_lora", "qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors",

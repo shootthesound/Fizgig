@@ -261,19 +261,19 @@ MINIMAX = FamilyDescription(
                   download_note="~620MB — circlestone-labs/MiniMax-H3-Image-Training-Adapter → "
                                 "minimax_h3_image_training_adapter.safetensors"),
         ModelFile("minimax_training_adapter", "Training adapter (Ostris fl2va)", False,
-                  "ostris/minimax_h3_training_adapter", "minimax_h3_training_adapter_v1.safetensors", 0.16,
+                  "ostris/minimax_h3_training_adapter", "minimax_h3_training_adapter_v3.safetensors", 0.31,
                   fetch_optional=False,
                   hint="OPTIONAL — Ostris's adapter for the standard fl2va base, used when the Training tab's adapter "
                        "dropdown says Ostris: it learns a video look faster than Circlestone when the dataset is clips "
                        "only.",
-                  download_note="~155MB — ostris/minimax_h3_training_adapter → minimax_h3_training_adapter_v1.safetensors"),
+                  download_note="~310MB — ostris/minimax_h3_training_adapter → minimax_h3_training_adapter_v3.safetensors"),
         ModelFile("minimax_ref_training_adapter", "Training adapter (Ostris ref2va)", False,
-                  "ostris/minimax_h3_training_adapter", "minimax_h3_ref2va_training_adapter_v1.safetensors", 0.16,
+                  "ostris/minimax_h3_training_adapter", "minimax_h3_ref2va_training_adapter_v3.safetensors", 0.31,
                   fetch_optional=False,
                   hint="OPTIONAL — Ostris's adapter for the Reference (ref2va) base: picked automatically when the "
                        "dropdown says Ostris and the Training Base is ref2va or the run is a distillation run.",
-                  download_note="~155MB — ostris/minimax_h3_training_adapter → "
-                                "minimax_h3_ref2va_training_adapter_v1.safetensors"),
+                  download_note="~310MB — ostris/minimax_h3_training_adapter → "
+                                "minimax_h3_ref2va_training_adapter_v3.safetensors"),
     ),
     prefs_title="Model Paths (MiniMax H3)",
     prefs_intro="Image-only LoRA training for MiniMax's ~33B H3 omni DiT. Train on the pruned int8 DiT — the same file "

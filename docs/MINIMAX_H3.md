@@ -90,7 +90,7 @@ Each has a **Download link on its row in Preferences**:
 | Turbo LoRA *(optional)* | ~780 MB | 6-step previews, `minimax_h3_turbo_v4_step600.safetensors` from [larryvrh/MiniMax-H3-Turbo-Lora](https://huggingface.co/larryvrh/MiniMax-H3-Turbo-Lora); you may already have it in ComfyUI's loras folder |
 | DiT — reference *(optional)* | ~21 GB | Only for reference distillation (`ref2va`) |
 | Training adapter (Circlestone) | ~620 MB | The default training adapter, one file for both bases |
-| Training adapter (Ostris) *(optional)* | ~155 MB each | fl2va and ref2va files, used when the dropdown says Ostris |
+| Training adapter (Ostris) *(optional)* | ~310 MB each | fl2va and ref2va files, used when the dropdown says Ostris |
 
 **You train on the pruned file.** "Pruned" here swaps the AdaLN modulation MLP for a curve table. That branch only sees the timestep, so nothing a LoRA learns lives there: you train against the exact weights you deploy on.
 

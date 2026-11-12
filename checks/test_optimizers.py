@@ -103,6 +103,14 @@ def test_automagic4_owns_its_rate():
     assert owns_its_rate(opt)
 
 
+def test_automagic4_ceiling():
+    """v4's rate stops at 2.5e-4 (a start above it is clamped too); max_lr= in Optimizer Args overrides it."""
+    opt, _ = create_optimizer("automagic4", [nn.Parameter(torch.randn(8, 8))], 1e-6)
+    assert opt.param_groups[0]["max_lr"] == 2.5e-4
+    opt, _ = create_optimizer("automagic4", [nn.Parameter(torch.randn(8, 8))], 1e-6, "max_lr=5e-4")
+    assert opt.param_groups[0]["max_lr"] == 5e-4
+
+
 def test_new_optimizers_never_fall_back_to_adamw():
     for name in NEW:
         with pytest.raises(ValueError):

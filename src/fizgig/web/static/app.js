@@ -2340,13 +2340,39 @@ function previewLabel(it) {
   return [`Epoch ${it.epoch}`, `Prompt ${it.idx + 1}`, it.strength != null && `strength ${it.strength}`]
     .filter(Boolean).join(" · ");
 }
+// a star on a preview (web/stars.py): kept with the previews; the checkpoint lists star that epoch's checkpoint
+function starButton(it, fig) {
+  if (!it.path) return null;
+  const b = el("button", {class: "star-btn", type: "button"});
+  const show = () => {
+    b.textContent = it.starred ? "★" : "☆";
+    b.title = it.starred ? "Starred - click to unstar" : "Star this preview (its epoch's checkpoint gets a star too)";
+    b.setAttribute("aria-pressed", it.starred ? "true" : "false");
+    fig.classList.toggle("starred", !!it.starred);
+  };
+  b.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    try {
+      const r = await api("/api/stars", {path: it.path, on: !it.starred});
+      it.starred = r.starred;
+      show();
+      if ($("checkpoints")) loadCheckpoints();
+    } catch (err) { b.textContent = "!"; b.title = `Couldn't star it: ${err.message}`; }
+  });
+  show();
+  return b;
+}
 function previewFigure(it, prompts, eager, byEpoch) {
   // its own epoch's prompt (recorded by the trainer, so a mid-run change shows), else the run's
   const own = byEpoch && it.epoch != null && byEpoch[String(it.epoch)];
   const prompt = it.idx == null ? "" : (own && own[it.idx]) || (prompts ? prompts[it.idx] : "");
-  return withMode(el("figure", {class: "gallery-item", title: it.name}, mediaFor(it, eager && eager.has(it)),
+  const fig = withMode(el("figure", {class: "gallery-item", title: it.name}, mediaFor(it, eager && eager.has(it)),
     el("figcaption", {}, el("b", {text: previewLabel(it)}), prompt ? el("span", {class: "preview-prompt", text: prompt, title: prompt}) : null,
       el("span", {class: "preview-file", text: it.name}), it.lora ? studioButton(it.lora, it.family) : null)), it);
+  const star = starButton(it, fig);
+  if (star) fig.append(star);
+  return fig;
 }
 // the family's line on how this preview was made (the run's record), shown over it in the lightbox
 function withMode(fig, it) {
@@ -2368,9 +2394,13 @@ function previewGrid(items, prompts, eager) {
       el("th", {class: "prompt-head"}, el("b", {text: `Prompt ${i + 1}`}),
         prompts[i] ? el("span", {class: "preview-prompt", text: prompts[i], title: prompts[i]}) : null),
       ...epochs.map((e) => { const it = at.get(e + ":" + i);
-        return el("td", {}, it ? withMode(el("figure", {class: "gallery-item", title: it.name}, mediaFor(it, eager && eager.has(it)),
+        if (!it) return el("td", {});
+        const fig = withMode(el("figure", {class: "gallery-item", title: it.name}, mediaFor(it, eager && eager.has(it)),
           el("figcaption", {class: "visually-hidden"}, el("b", {text: previewLabel(it)}),
-            prompts[i] ? el("span", {text: " · " + prompts[i]}) : null)), it) : null); })));
+            prompts[i] ? el("span", {text: " · " + prompts[i]}) : null)), it);
+        const star = starButton(it, fig);
+        if (star) fig.append(star);
+        return el("td", {}, fig); })));
   }
   // a second scroll bar over the grid, in step with the one under it (a long grid puts that one far down the page)
   const wrap = el("div", {class: "gallery prompt-grid-wrap"}, table);
@@ -2775,6 +2805,10 @@ async function rvFrame() {
   cv.toBlob((b) => rvDownload(b, `${S.gal.run || "run"}_epoch${fr.epoch}.png`), "image/png");
 }
 
+// a checkpoint's name, starred when its epoch's preview is (web/stars.starred_checkpoints)
+const ckptName = (it) => el("span", {class: "checkpoint-name" + (it.starred ? " starred" : ""), text: it.name,
+  title: it.starred ? "You starred this epoch's preview" : ""}, it.starred ? el("span", {class: "ckpt-star", text: " ★",
+  "aria-label": "starred"}) : null);
 async function loadCheckpoints() {
   const out = S.run.output_dir || S.values.LORA_OUTPUT_DIR;
   const host = $("checkpoints");
@@ -2788,7 +2822,7 @@ async function loadCheckpoints() {
   for (const it of shown) {
     const href = `/api/download?path=${encodeURIComponent(it.path)}&t=${encodeURIComponent(TOKEN)}`;
     host.append(el("div", {class: "checkpoint-row"},
-      el("span", {class: "checkpoint-name", text: it.name}),
+      ckptName(it),
       el("span", {class: "field-hint", text: `${it.kind === "finetune" ? "Fine-tune (whole model)" : "LoRA"} · ` +
         `${size(it.size)} · ${new Date(it.time * 1000).toLocaleString()}`}),
       it.kind === "finetune" ? null : studioButton(it.path, S.fam && S.fam.key),
@@ -4742,7 +4776,7 @@ async function runFiles(run) {
   const size = (b) => b >= 2 ** 30 ? (b / 2 ** 30).toFixed(1) + " GB" : (b / 2 ** 20).toFixed(0) + " MB";
   const ckpts = c.items.filter((it) => it.run === run.lora);
   if (ckpts.length) out.push(el("div", {class: "checkpoint-list"}, ckpts.map((it) => el("div", {class: "checkpoint-row"},
-    el("span", {class: "checkpoint-name", text: it.name}),
+    ckptName(it),
     el("span", {class: "field-hint", text: `${it.kind === "finetune" ? "Fine-tune" : "LoRA"} · ${size(it.size)}`}),
     it.kind === "finetune" ? null : studioButton(it.path, run.family),
     el("a", {class: "btn btn-sm btn-primary", download: it.name, text: "Download",

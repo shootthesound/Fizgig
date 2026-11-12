@@ -2209,6 +2209,15 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 
 /* Samples gallery: likeness to the subject (badge colours: >=45% match, 30-45% borderline, under 30% drift) */
 .gallery-item { position: relative; }
+/* a preview's star (top right; the likeness badge is top left, the Style score bottom left) */
+.star-btn { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%;
+  font-size: 17px; line-height: 30px; cursor: pointer; color: var(--pic-text); opacity: 0;
+  background: color-mix(in srgb, var(--pic-shade) 55%, transparent); transition: opacity .15s; }
+.gallery-item:hover .star-btn, .star-btn:focus-visible, .gallery-item.starred .star-btn { opacity: 1; }
+.gallery-item.starred .star-btn { color: var(--gold); }
+.gallery-item.starred { border-color: var(--gold); }
+.ckpt-star { color: var(--gold); }
+@media (hover: none) { .star-btn { opacity: 1; } }
 .lik-badge { position: absolute; top: 10px; left: 10px; padding: 2px 8px; border-radius: 4px; font-size: 9pt;
   font-weight: 700; color: var(--pic-text); background: color-mix(in srgb, var(--pic-shade) 60%, transparent); pointer-events: none; }
 .lik-badge.good { background: var(--success); } .lik-badge.mid { background: var(--warning); } .lik-badge.bad { background: var(--danger-strong); }

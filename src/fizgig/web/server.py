@@ -3659,6 +3659,10 @@ class Handler(BaseHTTPRequestHandler):
         if run:
             items = [e for e in items if infos[e.name].get("run") == run]
         out = pair_songs([(e.name, e.path, {"time": e.stat().st_mtime, **infos[e.name]}) for e in items[:1500]])
+        from fizgig.web import stars
+        starred = stars.read(folder)
+        for it in out:
+            it["starred"] = it["name"] in starred
         by_epoch = epoch_prompts(folder, run) if run else {}
         try:
             with open(os.path.join(folder, f".previews_{run}.json"), encoding="utf-8") as f:
@@ -3709,8 +3713,13 @@ class Handler(BaseHTTPRequestHandler):
                 stats.append((e, st))
         stats.sort(key=lambda x: x[1].st_mtime, reverse=True)
         base = lambda n: (lambda m: m.group(1) if m else n)(_CKPT.match(n[:-len(".safetensors")]))
-        return self.json({"items": [{"name": e.name, "path": e.path, "size": st.st_size, "time": st.st_mtime,
-                                     "kind": _checkpoint_kind(e.path), "run": base(e.name)} for e, st in stats]})
+        out = [{"name": e.name, "path": e.path, "size": st.st_size, "time": st.st_mtime,
+                "kind": _checkpoint_kind(e.path), "run": base(e.name)} for e, st in stats]
+        from fizgig.web import stars                  # a star on the epoch's own preview (stars.starred_checkpoints)
+        starred = stars.starred_checkpoints(folder, out, sample_info)
+        for it in out:
+            it["starred"] = it["name"] in starred
+        return self.json({"items": out})
 
     def _captions(self, folder, ext, family=""):
         from fizgig.dataset import detail_crops
@@ -4496,6 +4505,15 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json(gallery_style.switch(str(b.get("dir") or ""), str(b.get("run") or ""),
                                                           str(b.get("dataset") or ""), bool(b.get("on"))))
                 except ValueError as e:
+                    return self.json({"error": str(e)}, 400)
+            if path == "/api/stars":               # star / unstar one preview (web/stars.py)
+                from fizgig.web import stars
+                p = str(b.get("path") or "")
+                if os.path.splitext(p)[1].lower() not in MEDIA or                         os.path.basename(os.path.dirname(os.path.abspath(p))).lower() != "sample":
+                    return self.json({"error": "not a preview"}, 400)
+                try:
+                    return self.json({"starred": stars.toggle(p, bool(b.get("on")))})
+                except (ValueError, OSError) as e:
                     return self.json({"error": str(e)}, 400)
             if path == "/api/likeness":            # three dataset photos to score the samples against; [] clears
                 from fizgig.web import gallery_likeness

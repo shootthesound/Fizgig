@@ -2512,7 +2512,12 @@ async function likenessShow(dir, items, run, view) {
   $("likPanel").style.display = epochs.length ? "" : "none";
   if (!epochs.length) return;
   $("likPeak").textContent = adaPeak(d.embedder);
-  $("likRun").textContent = `${run} - best so far: epoch ${bestEpoch} (${Math.round(avgs[best] * 100)}% average likeness)`;
+  // the best epoch, and the mean over every trained epoch so far (epoch 0 - the model before training - left out)
+  const trained = avgs.filter((v, i) => epochs[i] > 0);
+  const mean = trained.length ? trained.reduce((a, b) => a + b, 0) / trained.length : null;
+  $("likRun").textContent = `${run} - best so far: epoch ${bestEpoch} (${Math.round(avgs[best] * 100)}% likeness)` +
+    (mean == null ? "" : ` · average over ${trained.length} epoch${trained.length === 1 ? "" : "s"}: ` +
+     `${Math.round(mean * 100)}%`);
   const cv = $("likChart");
   const w = cv.clientWidth || 900;
   if (cv.width !== w) cv.width = w;

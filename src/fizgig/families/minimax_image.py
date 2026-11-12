@@ -27,13 +27,14 @@ LIKENESS_DEFAULTS = {"BEFORE": "16.67", "BEFORE_END": "50", "HINGE": "6", "SLIDE
                      "ALTERNATE": "Before the hinge"}
 
 
-def _preset(rank, epochs=30, slider=False, mp="0.5", edit=False, likeness=False, optimizer="automagic3", lr=2.8e-4):
+def _preset(rank, epochs=30, slider=False, mp="0.25", edit=False, likeness=False, optimizer="automagic3", lr=2.8e-4):
     """Krea 2's presets (families/krea2.py _preset; Peter, 10 Nov 2026: "mirror the Krea 2 presets exactly"), plus the
     two this model needs: Fizgig's training adapter on (without it people turn into caricatures) and an edit flag for
     the Edit preset. Every preset trains on Automagic v3 (Peter, 11 Nov 2026), which starts at 2.8e-4 and finds its own
     rate from there (Peter, 11 Nov 2026: started at 1e-4 it climbed to ~1.8e-4 at once, then trickled down to ~9e-5
     over ~1,200 steps; started at 2.8e-4 it eased down ~20% over 400 steps with no overshoot cut, and the previews
     looked better - Automagic keeps roughly the level it starts from, so the start is the choice), and turns Adaptive LR off, so Krea 2's Ultra Fast preset (an LR choice) isn't here.
+    Every preset trains at 0.25 MP (Peter, 12 Nov 2026: the 0.5 MP theory of 11 Nov was proved wrong).
     Standard trains on Automagic v4 at 2.5e-4 (its ceiling; Peter, 12 Nov 2026: over ~30 runs v4 at the ceiling beat
     v3 and Muon by far, most on a set with few headshots), with Likeness optimization."""
     return {

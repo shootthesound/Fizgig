@@ -263,21 +263,34 @@ class H3RepairEngine(ClipContract):
     # GB plannable_free_vram reports. The base at rest beside its LoRA + Turbo nets measured
     # 22.0 GB fully resident (20.49 GiB). A reference render that peaked ~1 GB under the free
     # figure still paged (Windows starts before the card is full): 2 GB margin.
+    #
+    # Past 56 frames the per-frame slope above overstated it: the decode works in fixed chunks and tiles, so
+    # its peak barely grows with length, and a long clip's sampling runs with the decoder parked. Measured
+    # fully resident on the 5090 at 512x512 (12 Nov): 22, 56 and 124 frames all peak at the decode, 6.1-6.8
+    # GiB over the base at rest; sampling a 124-frame clip alone takes 4.6. The old slope asked 10.3 GiB for
+    # that clip and reloaded the base to stream 12 blocks it didn't need. So: the fitted line up to 56 frames,
+    # then per extra frame only the decoded clip itself (fp32 on the card), and never less than the sampling
+    # alone (2.3 + 0.052 per frame, plus a GiB).
     _INT8_REST_GB = 22.0
     _ROOM_MARGIN_GB = 2.0
+    _NEED_FIT_FRAMES = 56
 
     @classmethod
     def clip_need_gb(cls, width=768, height=640, frames=22, keyframes=2, references=0) -> float:
         s = int(width) * int(height) / float(768 * 640)
-        gib = 4.5 + s * (0.92 + 0.081 * int(frames) + 0.4 * int(keyframes) + 0.75 * int(references))
-        return gib * 2 ** 30 / 1e9
+        f, extra = min(int(frames), cls._NEED_FIT_FRAMES), max(0, int(frames) - cls._NEED_FIT_FRAMES)
+        conds = 0.4 * int(keyframes) + 0.75 * int(references)
+        decode = 4.5 + s * (0.92 + 0.081 * f + 0.006 * extra + conds)
+        sampling = 1.0 + s * (2.3 + 0.052 * int(frames) + conds)
+        return max(decode, sampling) * 2 ** 30 / 1e9
 
     @classmethod
-    def plan_base(cls, free_gb: float, mode: str = "auto", need_gb: float = None):
+    def plan_base(cls, free_gb: float, mode: str = "auto", need_gb: float = None, keep_int8: bool = False):
         """(base_quant, blocks_to_swap) for `free_gb` of plannable VRAM.
         mode: "auto" (by free VRAM, room for a clip needing `need_gb` - the default canvas when
         None), "stream" (int8, blocks streamed for big-clip room on any card), "nf4" (the 4-bit
-        base, smallest — 9.5% base error)."""
+        base, smallest — 9.5% base error). keep_int8: a session already on the int8 base stays on it
+        (a reload for more room streams more blocks; it never changes the base under the user)."""
         import math
         free_gb = float(free_gb or 0.0)
         mode = (mode or "auto").lower()
@@ -286,7 +299,7 @@ class H3RepairEngine(ClipContract):
         if mode == "stream":
             n = math.ceil((cls._INT8_RESIDENT_GB + cls._STREAM_HEADROOM_GB - free_gb) / cls._INT8_BLOCK_GB)
             return "int8", max(1, min(40, n))
-        if free_gb >= cls._INT8_SWAP_MIN_FREE_GB:
+        if free_gb >= cls._INT8_SWAP_MIN_FREE_GB or keep_int8:
             need = cls.clip_need_gb() if need_gb is None else float(need_gb)
             n = math.ceil((cls._INT8_REST_GB + need + cls._ROOM_MARGIN_GB - free_gb) / cls._INT8_BLOCK_GB)
             return "int8", max(0, min(40, n))
@@ -318,7 +331,11 @@ class H3RepairEngine(ClipContract):
             self.decoder = self.decoder.to("cpu")     # the plan judges free VRAM: not with the decoder on it
             self._decoder_resident = False
         self._dit_strip()
-        self._load_dit_and_turbo()
+        self._keep_int8 = True                       # more blocks streamed, never another base
+        try:
+            self._load_dit_and_turbo()
+        finally:
+            self._keep_int8 = False
         if self.primary_path:
             self._wire_primary(self.primary_path)
         if self.donor_path:
@@ -378,8 +395,13 @@ class H3RepairEngine(ClipContract):
         except Exception:
             free = 0.0
         canvas = getattr(self, "plan_canvas", None)        # the clip the caller expects to render first
+        keep = bool(getattr(self, "_keep_int8", False))
         base_quant, n_swap = self.plan_base(free, getattr(self, "base_mode", "auto"),
-                                            self.clip_need_gb(*canvas) if canvas else None)
+                                            self.clip_need_gb(*canvas) if canvas else None, keep_int8=keep)
+        if keep and free < float(getattr(self, "_plan_free", 0.0) or 0.0) - 4.0:
+            logger.warning("[h3-workbench] reloading for more room: %.1f GB free with the base unloaded, %.1f "
+                           "when it was first loaded - something else is holding the card's memory; the int8 "
+                           "base stays, with %d blocks streamed", free, self._plan_free, n_swap)
         self._plan_free = free
         self._blocks_swapped = int(n_swap)
         self.base_plan = (base_quant, int(n_swap))

@@ -243,8 +243,22 @@ def ensure_moss_previews(repo_dir: str = REPO_DIR, log=print):
         return None
 
 
+def ensure_face_models(log=print):
+    """The face models (InsightFace's finder files + AdaFace ViT, which replaced ArcFace on 12 Nov 2026) for an
+    updating install, so its first likeness score doesn't stop to download 0.5 GB. TEMPORARY (added 12 Nov 2026):
+    remove once updating installs have had it - new installs get it from the installer, and first use fetches it
+    anyway. Never raises; without a connection they download on first use."""
+    try:
+        from fizgig.face_utils import ensure_face_models as _ensure
+        return _ensure(log=log)
+    except Exception as e:
+        log(f"Face models (AdaFace): skipped, they'll download on first use ({type(e).__name__}: {e})")
+        return None
+
+
 if __name__ == "__main__":
     ensure_all()
     ensure_taeh3()
     ensure_moss_previews()
+    ensure_face_models()
     qwen_turbo_dit_hint()

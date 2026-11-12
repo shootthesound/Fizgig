@@ -254,24 +254,23 @@ class MiniMaxH3ImageDriver(FamilyDriver):
 
     def _clean_share(self):
         """The clean-end share for this epoch (percent) or None (the model's even draw). Likeness optimization:
-        likeness_first (75) up to and including epoch likeness_hinge (8), then likeness_alt (50) and the first share
-        in turn (the epoch after the hinge at likeness_alt). lownoise_pct=P (the CLI) still sets one share."""
+        likeness_before (75) for epochs 1 to likeness_hinge (8), likeness_after (50) after it; likeness_alternate
+        (after / before / off) makes that side switch between the two shares every epoch, starting with its own.
+        lownoise_pct=P (the CLI) still sets one share."""
         if str(self.options.get("likeness_opt", "")).strip() in ("1", "true", "True"):
             def num(key, default):
                 try:
                     return float(str(self.options.get(key, "") or default).rstrip("%").strip())
                 except ValueError:
                     return float(default)
-            first, alt = num("likeness_first", 75), num("likeness_alt", 50)
+            before, after = num("likeness_before", 75), num("likeness_after", 50)
             hinge = int(num("likeness_hinge", 8))
             e = int(getattr(self, "epoch", 1) or 1)
-            when = str(self.options.get("likeness_when", "") or "after").strip().lower()
-            if when == "off":                                            # one share each side of the hinge
-                pct = first if e <= hinge else alt
-            elif when == "before":
-                pct = first if e > hinge or (e - 1) % 2 == 0 else alt    # alternating up to the hinge, then held
+            alt = str(self.options.get("likeness_alternate", "") or "after").strip().lower()
+            if e <= hinge:
+                pct = after if alt == "before" and (e - 1) % 2 == 1 else before
             else:
-                pct = first if e <= hinge or (e - hinge) % 2 == 0 else alt
+                pct = before if alt == "after" and (e - hinge - 1) % 2 == 1 else after
             pct = int(pct) if float(pct).is_integer() else pct
             if getattr(self, "_share_said", None) != pct:
                 self._share_said = pct

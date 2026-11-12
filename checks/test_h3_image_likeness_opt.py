@@ -19,28 +19,30 @@ def test_schedule():
     assert [_share(on, e) for e in range(9, 15)] == [50, 75, 50, 75, 50, 75]
 
 
-def test_three_boxes():
-    o = {"likeness_opt": "1", "likeness_first": "80", "likeness_alt": "40", "likeness_hinge": "5"}
+def test_boxes():
+    o = {"likeness_opt": "1", "likeness_before": "80", "likeness_after": "40", "likeness_hinge": "5"}
     assert [_share(o, e) for e in range(1, 10)] == [80] * 5 + [40, 80, 40, 80]
-    blank = {"likeness_opt": "1", "likeness_first": "", "likeness_alt": "x", "likeness_hinge": ""}
+    blank = {"likeness_opt": "1", "likeness_before": "", "likeness_after": "x", "likeness_hinge": ""}
     assert [_share(blank, e) for e in (8, 9, 10)] == [75, 50, 75]
 
 
 def test_alternate_before_the_hinge():
-    o = {"likeness_opt": "1", "likeness_hinge": "6", "likeness_when": "before"}
-    assert [_share(o, e) for e in range(1, 10)] == [75, 50, 75, 50, 75, 50, 75, 75, 75]
+    o = {"likeness_opt": "1", "likeness_before": "50", "likeness_after": "75", "likeness_hinge": "6",
+         "likeness_alternate": "before"}
+    assert [_share(o, e) for e in range(1, 10)] == [50, 75, 50, 75, 50, 75, 75, 75, 75]
 
 
 def test_alternating_off():
-    o = {"likeness_opt": "1", "likeness_hinge": "3", "likeness_when": "off"}
-    assert [_share(o, e) for e in range(1, 7)] == [75, 75, 75, 50, 50, 50]
+    o = {"likeness_opt": "1", "likeness_before": "50", "likeness_after": "75", "likeness_hinge": "3",
+         "likeness_alternate": "off"}
+    assert [_share(o, e) for e in range(1, 7)] == [50, 50, 50, 75, 75, 75]
 
 
 def test_boxes_only_sent_while_ticked():
     from fizgig.families.minimax_image import MINIMAX_IMAGE as d
     keys = {o.key: o for o in d.options}
-    for k in ("MINIMAX_IMAGE_LIKENESS_FIRST", "MINIMAX_IMAGE_LIKENESS_ALT", "MINIMAX_IMAGE_LIKENESS_HINGE",
-              "MINIMAX_IMAGE_LIKENESS_WHEN"):
+    for k in ("MINIMAX_IMAGE_LIKENESS_BEFORE", "MINIMAX_IMAGE_LIKENESS_HINGE", "MINIMAX_IMAGE_LIKENESS_AFTER",
+              "MINIMAX_IMAGE_LIKENESS_ALTERNATE"):
         assert keys[k].requires == "MINIMAX_IMAGE_LIKENESS_OPT"
 
 

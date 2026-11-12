@@ -31,6 +31,11 @@ def test_alternate_before_the_hinge():
     assert [_share(o, e) for e in range(1, 10)] == [75, 50, 75, 50, 75, 50, 75, 75, 75]
 
 
+def test_alternating_off():
+    o = {"likeness_opt": "1", "likeness_hinge": "3", "likeness_when": "off"}
+    assert [_share(o, e) for e in range(1, 7)] == [75, 75, 75, 50, 50, 50]
+
+
 def test_boxes_only_sent_while_ticked():
     from fizgig.families.minimax_image import MINIMAX_IMAGE as d
     keys = {o.key: o for o in d.options}

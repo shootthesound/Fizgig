@@ -234,11 +234,13 @@ MINIMAX_IMAGE = FamilyDescription(
                      requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0)),
         FamilyOption("MINIMAX_IMAGE_LIKENESS_WHEN", "Alternate", choices=(
                          ("After the hinge", "likeness_when=after"),
-                         ("Before the hinge", "likeness_when=before")),
-                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), width=18,
+                         ("Before the hinge", "likeness_when=before"),
+                         ("Off (one share each side)", "likeness_when=off")),
+                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), width=24,
                      hint="After: the first share up to and including the hinge epoch, then alternating (the next "
                           "epoch at the alternate share). Before: alternating from epoch 1 (at the first share) up to "
-                          "and including the hinge epoch, then the first share for the rest of the run."),
+                          "and including the hinge epoch, then the first share for the rest of the run. Off: the "
+                          "first share up to and including the hinge epoch, then the second share for the rest."),
     ),
     workbench=("repair", "profiler", "extract", "royale"),
 

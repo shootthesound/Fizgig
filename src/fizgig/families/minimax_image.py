@@ -39,7 +39,7 @@ def _preset(rank, epochs=30, slider=False, mp="0.5", edit=False, likeness=False)
         # 75% clean end for 8 epochs, then 50 / 75 alternating: on in Standard only (Peter, 11 Nov 2026)
         "MINIMAX_IMAGE_LIKENESS_OPT": "1" if likeness else "",
         "MINIMAX_IMAGE_LIKENESS_BEFORE": "75", "MINIMAX_IMAGE_LIKENESS_HINGE": "8", "MINIMAX_IMAGE_LIKENESS_AFTER": "50",
-        "MINIMAX_IMAGE_LIKENESS_SLIDE": "0",
+        "MINIMAX_IMAGE_LIKENESS_SLIDE": "0", "MINIMAX_IMAGE_LIKENESS_BEFORE_END": "",
         "MINIMAX_IMAGE_LIKENESS_ALTERNATE": "After the hinge",
     }
 
@@ -224,6 +224,13 @@ MINIMAX_IMAGE = FamilyDescription(
         FamilyOption("MINIMAX_IMAGE_LIKENESS_BEFORE", "Before the hinge", kind="entry", tokens="likeness_before={}",
                      default="75", width=6, suffix="% of steps at the clean end, epoch 1 to the hinge",
                      requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0)),
+        # Peter, 12 Nov 2026: the Before share can climb (e.g. the model's own 16.67 up to 50) - the structure-heavy
+        # start of a low first share, landing at the hinge like a 50 / 75 alternation
+        FamilyOption("MINIMAX_IMAGE_LIKENESS_BEFORE_END", "Rises to", kind="entry", tokens="likeness_before_end={}",
+                     default="", width=6, suffix="% by the hinge (blank: stays at the Before figure)",
+                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0),
+                     hint="The Before share climbs evenly from its figure to this one, reaching it on its last epoch "
+                          "before the hinge. While the Before side alternates, only its own epochs climb."),
         FamilyOption("MINIMAX_IMAGE_LIKENESS_HINGE", "Hinge epoch", kind="entry", tokens="likeness_hinge={}",
                      default="8", width=6, suffix="the last epoch of Before",
                      requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0)),

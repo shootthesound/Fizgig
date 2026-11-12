@@ -46,11 +46,25 @@ def test_slide():
     assert [_share(o, e) for e in range(13, 17)] == [75, 75, 50, 75]
 
 
+def test_before_rises_to():
+    o = {"likeness_opt": "1", "likeness_before": "16.67", "likeness_before_end": "50", "likeness_after": "75",
+         "likeness_hinge": "8", "likeness_alternate": "before"}
+    got = [_share(o, e) for e in range(1, 11)]
+    assert got[1::2][:4] == [75, 75, 75, 75] and got[8:] == [75, 75]          # the 75 epochs and the hold untouched
+    assert [round(x, 1) for x in got[0:8:2]] == [16.7, 27.8, 38.9, 50]         # its own epochs climb, the last at 50
+    o.update(likeness_alternate="off", likeness_before="20", likeness_before_end="40", likeness_hinge="5")
+    assert [_share(o, e) for e in range(1, 7)] == [20, 25, 30, 35, 40, 75]     # not alternating: every epoch climbs
+    o.update(likeness_before_end="")
+    assert _share(o, 3) == 20                                                  # blank: no climb
+    o.update(likeness_before="50", likeness_after="50", likeness_before_end="70", likeness_alternate="before")
+    assert _share(o, 2) == 50                                                  # an After epoch never climbs
+
+
 def test_boxes_only_sent_while_ticked():
     from fizgig.families.minimax_image import MINIMAX_IMAGE as d
     keys = {o.key: o for o in d.options}
     for k in ("MINIMAX_IMAGE_LIKENESS_BEFORE", "MINIMAX_IMAGE_LIKENESS_HINGE", "MINIMAX_IMAGE_LIKENESS_AFTER",
-              "MINIMAX_IMAGE_LIKENESS_ALTERNATE", "MINIMAX_IMAGE_LIKENESS_SLIDE"):
+              "MINIMAX_IMAGE_LIKENESS_ALTERNATE", "MINIMAX_IMAGE_LIKENESS_SLIDE", "MINIMAX_IMAGE_LIKENESS_BEFORE_END"):
         assert keys[k].requires == "MINIMAX_IMAGE_LIKENESS_OPT"
 
 

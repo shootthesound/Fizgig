@@ -257,6 +257,7 @@ class MiniMaxH3ImageDriver(FamilyDriver):
         likeness_before (75) for epochs 1 to likeness_hinge (8), likeness_after (50) after it; likeness_alternate
         (after / before / off) makes that side switch between the two shares every epoch, starting with its own.
         likeness_slide=N: the N epochs after the hinge move evenly from Before to After (After's alternating after).
+        likeness_before_end=P: the Before share climbs evenly to P by the hinge (only its own epochs while alternating).
         lownoise_pct=P (the CLI) still sets one share."""
         if str(self.options.get("likeness_opt", "")).strip() in ("1", "true", "True"):
             def num(key, default):
@@ -269,7 +270,15 @@ class MiniMaxH3ImageDriver(FamilyDriver):
             e = int(getattr(self, "epoch", 1) or 1)
             alt = str(self.options.get("likeness_alternate", "") or "after").strip().lower()
             if e <= hinge:
-                pct = after if alt == "before" and (e - 1) % 2 == 1 else before
+                own = not (alt == "before" and (e - 1) % 2 == 1)      # a Before epoch (not its alternate's)
+                pct = before if own else after
+                end = str(self.options.get("likeness_before_end", "") or "").rstrip("%").strip()
+                if own and end:                 # the Before share climbing to likeness_before_end by the hinge:
+                    try:                        # evenly over its own epochs, the last one before the hinge at it
+                        k, n = ((e - 1) // 2, (hinge + 1) // 2) if alt == "before" else (e - 1, hinge)
+                        pct = round(before + (float(end) - before) * (k / (n - 1) if n > 1 else 0.0), 2)
+                    except ValueError:
+                        pass
             elif e <= hinge + slide:            # the slide: evenly from Before to After, at After on its last epoch
                 pct = round(before + (after - before) * (e - hinge) / slide, 1)
             else:

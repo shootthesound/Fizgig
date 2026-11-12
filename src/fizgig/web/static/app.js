@@ -1299,6 +1299,17 @@ function fetchRow(f) {
   return box;
 }
 
+// a download's line (#327): the file, how much of it is here, its speed and the time left once it's measured
+function fetchLine(st) {
+  const gb = (n) => (n / 1024 ** 3).toFixed(1);
+  const left = (t) => t >= 3600 ? `about ${Math.floor(t / 3600)} h ${Math.floor(t % 3600 / 60)} min` :
+    t >= 90 ? `about ${Math.round(t / 60)} min` : `about ${Math.max(1, Math.round(t))} s`;
+  let line = `${st.file}: ${gb(st.done)} of ${gb(st.total)} GB`;
+  if (st.rate > 0) line += ` · ${(st.rate / 1024 ** 2).toFixed(0)} MB/s`;
+  if (st.eta != null && st.rate > 0) line += ` · ${left(st.eta)} left`;
+  return line;
+}
+
 function paintFetch() {
   const st = S.fetch || {};
   const busy = st.state === "running";
@@ -1312,7 +1323,7 @@ function paintFetch() {
       const pct = st.total ? Math.min(100, (100 * st.done) / st.total) : 0;
       box.replaceChildren(
         el("div", {text: `${name}'s model files aren't downloaded yet: downloading them now, then training starts by itself.`}),
-        el("div", {class: "fetch-msg", text: st.file ? `${st.file}: ${gb(st.done)} of ${gb(st.total)} GB` :
+        el("div", {class: "fetch-msg", text: st.file ? fetchLine(st) :
           ((st.lines || []).slice(-1)[0] || "Starting…")}),
         el("div", {class: "fetch-bar"}, el("div", {style: `width:${pct.toFixed(1)}%`})),
         el("button", {class: "btn btn-sm", text: "Cancel download",
@@ -1335,7 +1346,7 @@ function paintFetch() {
     if (busy) {
       const pct = st.total ? Math.min(100, (100 * st.done) / st.total) : 0;
       r.status.append(
-        el("div", {class: "fetch-msg", text: st.file ? `${st.file}: ${gb(st.done)} of ${gb(st.total)} GB` :
+        el("div", {class: "fetch-msg", text: st.file ? fetchLine(st) :
           (st.lines[st.lines.length - 1] || "Starting…")}),
         el("div", {class: "fetch-bar"}, el("div", {style: `width:${pct.toFixed(1)}%`})),
         el("button", {class: "btn", text: "Cancel", onclick: () => api("/api/fetch/cancel", {}).then(watchFetch)}));

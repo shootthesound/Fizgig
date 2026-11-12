@@ -2691,7 +2691,8 @@ def _start_fetch(family, token="", optional=False, choices=None):
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
                             encoding="utf-8", errors="replace", env=env, cwd=BASE_DIR, **kw)
     with _lock:
-        _fetch.update(proc=proc, state="running", family=family, file="", done=0, total=0, lines=[], then_start=None)
+        _fetch.update(proc=proc, state="running", family=family, file="", done=0, total=0, lines=[], then_start=None,
+                      rate=0.0, eta=None, said=-1)
     threading.Thread(target=_fetch_watch, args=(proc,), daemon=True).start()
 
 
@@ -2755,18 +2756,50 @@ def _look_fetch(desc, values, path):
     return state, ((_on_use_gb(look), look.size_gb) if state == "running" else None)
 
 
+def _fmt_left(s):
+    s = int(max(0, s))
+    return f"about {s // 3600} h {s % 3600 // 60} min" if s >= 3600 else \
+        f"about {max(1, round(s / 60))} min" if s >= 90 else f"about {max(1, s)} s"
+
+
+def _fetch_progress(done, total, file, now):
+    """A [progress] line: the file's bytes, its speed (bytes/s since it started) and time left, and - while Start
+    waits on it (#327) - a line in the run's log as each file starts and at every tenth, so the log says what's
+    happening too. Under _lock, so it returns those lines for the caller to log once the lock is let go."""
+    say = []
+    if file != _fetch.get("file") or done < _fetch.get("done", 0):          # a new file
+        _fetch.update(file_t0=now, file_d0=done, rate=0.0, eta=None, said=-1)
+        if _fetch["then_start"] and total:
+            say.append(f"Downloading {file} ({total / 1024 ** 3:.1f} GB)…\n")
+    _fetch.update(done=done, total=total, file=file)
+    took = now - _fetch.get("file_t0", now)
+    if took >= 3 and done > _fetch.get("file_d0", 0):
+        rate = (done - _fetch["file_d0"]) / took
+        _fetch.update(rate=rate, eta=(total - done) / rate if total else None)
+    tenth = int(10 * done / total) if total else -1
+    if _fetch["then_start"] and total and 0 < tenth < 10 and tenth > _fetch.get("said", -1):
+        _fetch["said"] = tenth
+        speed = f", {_fetch['rate'] / 1024 ** 2:.0f} MB/s, {_fmt_left(_fetch['eta'])} left" \
+            if _fetch.get("rate") and _fetch.get("eta") is not None else ""
+        say.append(f"  {file}: {done / 1024 ** 3:.1f} of {total / 1024 ** 3:.1f} GB ({10 * tenth}%){speed}\n")
+    return say
+
+
 def _fetch_watch(proc):
     for line in proc.stdout:
         line = line.rstrip()
         if not line:
             continue
         m = re.match(r"\s*\[progress\] (\d+) (\d+) (.+)$", line)
+        say = []
         with _lock:
             if m:
-                _fetch.update(done=int(m.group(1)), total=int(m.group(2)), file=m.group(3))
+                say = _fetch_progress(int(m.group(1)), int(m.group(2)), m.group(3), time.time())
             else:
                 _fetch["lines"].append(line)
                 del _fetch["lines"][:-200]
+        for text in say:                  # the run's log (append_log takes _lock itself)
+            append_log(text)
     code = proc.wait()
     with _lock:
         if _fetch["state"] == "running":

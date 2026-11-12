@@ -26,10 +26,16 @@ def test_three_boxes():
     assert [_share(blank, e) for e in (8, 9, 10)] == [75, 50, 75]
 
 
+def test_alternate_before_the_hinge():
+    o = {"likeness_opt": "1", "likeness_hinge": "6", "likeness_when": "before"}
+    assert [_share(o, e) for e in range(1, 10)] == [75, 50, 75, 50, 75, 50, 75, 75, 75]
+
+
 def test_boxes_only_sent_while_ticked():
     from fizgig.families.minimax_image import MINIMAX_IMAGE as d
     keys = {o.key: o for o in d.options}
-    for k in ("MINIMAX_IMAGE_LIKENESS_FIRST", "MINIMAX_IMAGE_LIKENESS_ALT", "MINIMAX_IMAGE_LIKENESS_HINGE"):
+    for k in ("MINIMAX_IMAGE_LIKENESS_FIRST", "MINIMAX_IMAGE_LIKENESS_ALT", "MINIMAX_IMAGE_LIKENESS_HINGE",
+              "MINIMAX_IMAGE_LIKENESS_WHEN"):
         assert keys[k].requires == "MINIMAX_IMAGE_LIKENESS_OPT"
 
 

@@ -265,7 +265,10 @@ class MiniMaxH3ImageDriver(FamilyDriver):
             first, alt = num("likeness_first", 75), num("likeness_alt", 50)
             hinge = int(num("likeness_hinge", 8))
             e = int(getattr(self, "epoch", 1) or 1)
-            pct = first if e <= hinge or (e - hinge) % 2 == 0 else alt
+            if str(self.options.get("likeness_when", "") or "after").strip().lower() == "before":
+                pct = first if e > hinge or (e - 1) % 2 == 0 else alt    # alternating up to the hinge, then held
+            else:
+                pct = first if e <= hinge or (e - hinge) % 2 == 0 else alt
             pct = int(pct) if float(pct).is_integer() else pct
             if getattr(self, "_share_said", None) != pct:
                 self._share_said = pct

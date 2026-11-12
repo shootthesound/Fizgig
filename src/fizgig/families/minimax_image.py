@@ -39,6 +39,7 @@ def _preset(rank, epochs=30, slider=False, mp="0.5", edit=False, likeness=False)
         # 75% clean end for 8 epochs, then 50 / 75 alternating: on in Standard only (Peter, 11 Nov 2026)
         "MINIMAX_IMAGE_LIKENESS_OPT": "1" if likeness else "",
         "MINIMAX_IMAGE_LIKENESS_FIRST": "75", "MINIMAX_IMAGE_LIKENESS_ALT": "50", "MINIMAX_IMAGE_LIKENESS_HINGE": "8",
+        "MINIMAX_IMAGE_LIKENESS_WHEN": "After the hinge",
     }
 
 
@@ -220,16 +221,24 @@ MINIMAX_IMAGE = FamilyDescription(
         # its three numbers (Peter, 12 Nov 2026): the first share, the share it alternates with after the hinge, and
         # the hinge epoch. Shown while it's ticked.
         FamilyOption("MINIMAX_IMAGE_LIKENESS_FIRST", "Clean-end share", kind="entry", tokens="likeness_first={}",
-                     default="75", width=6, suffix="% of steps, up to the hinge epoch",
+                     default="75", width=6, suffix="% of steps",
                      requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0),
-                     hint="The share of steps on the nearly finished picture early in the run."),
+                     hint="The share of steps on the nearly finished picture, held on the side of the hinge that "
+                          "doesn't alternate."),
         FamilyOption("MINIMAX_IMAGE_LIKENESS_ALT", "Alternate with", kind="entry", tokens="likeness_alt={}",
-                     default="50", width=6, suffix="% of steps, every other epoch after the hinge",
+                     default="50", width=6, suffix="% of steps, every other epoch",
                      requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0),
-                     hint="After the hinge, epochs take this share and the first share in turn, starting with this one."),
+                     hint="On the alternating side of the hinge, epochs take this share and the first in turn."),
         FamilyOption("MINIMAX_IMAGE_LIKENESS_HINGE", "Hinge epoch", kind="entry", tokens="likeness_hinge={}",
-                     default="8", width=6, suffix="the last epoch at the first share",
+                     default="8", width=6, suffix="where the schedule changes",
                      requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0)),
+        FamilyOption("MINIMAX_IMAGE_LIKENESS_WHEN", "Alternate", choices=(
+                         ("After the hinge", "likeness_when=after"),
+                         ("Before the hinge", "likeness_when=before")),
+                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), width=18,
+                     hint="After: the first share up to and including the hinge epoch, then alternating (the next "
+                          "epoch at the alternate share). Before: alternating from epoch 1 (at the first share) up to "
+                          "and including the hinge epoch, then the first share for the rest of the run."),
     ),
     workbench=("repair", "profiler", "extract", "royale"),
 

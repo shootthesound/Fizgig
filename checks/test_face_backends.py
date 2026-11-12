@@ -1,5 +1,6 @@
-"""The face finder and look match (fizgig/face_utils.py) without any model: the defaults stay InsightFace + ArcFace and
-run exactly the steps Fizgig always ran, the opt-in YOLO / Auto finders and DINOv2 look match pick, merge and
+"""The face finder and look match (fizgig/face_utils.py) without any model: the defaults are InsightFace's finder +
+AdaFace ViT (the finder runs exactly the steps Fizgig always ran; AdaFace gets the largest face aligned by its
+landmarks), the opt-in YOLO / Auto finders and DINOv2 look match pick, merge and
 score as documented (docs/FACE_BACKENDS.md), YOLO ONNX outputs decode right, and saved scores record their embedder.
 InsightFace, onnxruntime and the embedding models are stood in for by small fakes, so this runs on any CPU with only
 checks/requirements.txt installed."""
@@ -31,7 +32,7 @@ def _clean_env(monkeypatch, tmp_path):
 # --------------------------------------------------------------------------------------------- settings / selection
 def test_settings_defaults_prefs_and_env(monkeypatch, tmp_path):
     st = F.load_face_settings({})
-    assert st["face_detector"] == "insightface" and st["face_identity"] == "arcface" and st["face_yolo_model"] == ""
+    assert st["face_detector"] == "insightface" and st["face_identity"] == "adaface" and st["face_yolo_model"] == ""
     assert st["face_yolo_conf"] == pytest.approx(0.35)
     (tmp_path / "prefs.json").write_text(json.dumps({"face_detector": "yolo", "face_yolo_model": ' "C:/m/f.onnx" ',
                                                      "face_yolo_conf": "0.5", "face_identity": "CLIP"}))
@@ -62,8 +63,8 @@ def test_local_fdetailer_is_the_default_yolo_model_when_present(tmp_path, monkey
 
 def test_resolve_identity_auto():
     assert F.resolve_identity({"face_detector": "yolo", "face_identity": "auto"}) == "dinov2"
-    assert F.resolve_identity({"face_detector": "auto", "face_identity": "auto"}) == "arcface"
-    assert F.resolve_identity({"face_detector": "insightface", "face_identity": "auto"}) == "arcface"
+    assert F.resolve_identity({"face_detector": "auto", "face_identity": "auto"}) == "adaface"
+    assert F.resolve_identity({"face_detector": "insightface", "face_identity": "auto"}) == "adaface"
     assert F.resolve_identity({"face_detector": "insightface", "face_identity": "clip"}) == "dinov2"
 
 
@@ -79,15 +80,23 @@ def test_retired_clip_falls_back_to_dinov2(monkeypatch):
     assert "clip" not in prep_jobs.FACE_IDENTITY_LABELS
 
 
+def test_retired_arcface_reads_as_adaface(monkeypatch):
+    """ArcFace was replaced by AdaFace ViT (12 Nov 2026): a saved "arcface" look match is AdaFace now."""
+    assert "arcface" not in F.IDENTITIES and "arcface" not in F.IDENTITY_THRESHOLDS and not hasattr(F, "_ArcFace")
+    assert F.load_face_settings({"face_identity": "arcface"})["face_identity"] == "adaface"
+    assert F.FaceEmbedder(backend="arcface", settings={}).name == "adaface"
+    assert not F.same_embedder(None, "adaface") and not F.same_embedder("arcface", "adaface")   # ArcFace scores redo
+
+
 # --------------------------------------------------------------------------------------------- the defaults = before
 # InsightFace stand-ins: Face objects as insightface.app.FaceAnalysis.get returns them, and an app that counts calls.
 class _Face(types.SimpleNamespace):
     pass
 
 
-def _face(bbox, gender=1, det_score=0.9, emb=None):
+def _face(bbox, gender=1, det_score=0.9, kps=None):
     f = _Face(bbox=np.asarray(bbox, dtype=np.float32), det_score=np.float32(det_score),
-              normed_embedding=None if emb is None else np.asarray(emb, np.float32))
+              kps=None if kps is None else np.asarray(kps, np.float32))
     if gender is not None:
         f.gender = gender
     return f
@@ -129,11 +138,11 @@ def _old_faceinfo(faces):
     return out
 
 
-def test_defaults_are_insightface_and_arcface():
+def test_defaults_are_insightface_and_adaface():
     det, emb = F.FaceDetector(settings={}), F.FaceEmbedder(settings={})
     assert det.backend_name == "insightface" and det.describe() == "InsightFace (people)"
-    assert emb.name == "arcface" and emb.cache_id == "arcface" and emb.thresholds == {"match": 0.45,
-                                                                                     "borderline": 0.30, "floor": 0.25}
+    assert emb.name == "adaface" and emb.cache_id == "adaface" and emb.thresholds == {"match": 0.42,
+                                                                                     "borderline": 0.36, "floor": 0.30}
     det._yolo = types.SimpleNamespace(available=lambda: True, load=lambda: 1 / 0, detect_bgr=lambda bgr: 1 / 0)
     det._insight = types.SimpleNamespace(available=lambda: True, load=lambda: None,
                                          detect_bgr=lambda bgr, pad_retry=False: [] if not pad_retry else 1 / 0)
@@ -174,39 +183,70 @@ def test_auto_retries_padded_and_maps_back(monkeypatch, fake_cv2):
     assert f[0].bbox == (15, 10, 60, 40)                                     # back in the picture, clamped
 
 
-def _old_arcface(app, bgr, cv2):
-    """The ArcFace embedding Fizgig made before (FaceEmbedder.embed / likeness._largest_embedding / embed_face_box)."""
-    faces = app.get(bgr)
-    if faces:
-        f = max(faces, key=lambda x: (x.bbox[2] - x.bbox[0]) * (x.bbox[3] - x.bbox[1]))
-        x1, y1, x2, y2 = (int(v) for v in f.bbox)
-        h, w = bgr.shape[:2]
-        return np.asarray(f.normed_embedding, np.float32), (max(0, x1), max(0, y1), min(w, x2), min(h, y2))
-    for pad in (0.25, 0.5):
-        h, w = bgr.shape[:2]
-        faces = app.get(cv2.copyMakeBorder(bgr, int(h * pad), int(h * pad), int(w * pad), int(w * pad), 1))
-        if faces:
-            f = max(faces, key=lambda x: (x.bbox[2] - x.bbox[0]) * (x.bbox[3] - x.bbox[1]))
-            return np.asarray(f.normed_embedding, np.float32), None
-    return None, None
+@pytest.fixture
+def fake_align(monkeypatch):
+    """insightface.utils.face_align.norm_crop and face_vit.embed stood in for: what they were given is recorded."""
+    import sys
+    seen = {}
+    align = types.SimpleNamespace(norm_crop=lambda img, kps, size: seen.update(img=img.shape, kps=kps.tolist(),
+                                                                              size=size) or
+                                  np.dstack([np.full((size, size), c, np.uint8) for c in (1, 2, 3)]))  # B, G, R
+    monkeypatch.setitem(sys.modules, "insightface", types.SimpleNamespace(utils=types.SimpleNamespace(face_align=align)))
+    monkeypatch.setitem(sys.modules, "insightface.utils", types.SimpleNamespace(face_align=align))
+    monkeypatch.setitem(sys.modules, "insightface.utils.face_align", align)
+    from fizgig import face_vit
+    monkeypatch.setattr(face_vit, "embed", lambda net, rgb: seen.update(net=net, rgb=rgb[0, 0].tolist()) or
+                        np.array([0.6, 0.8], np.float32))
+    monkeypatch.setattr(F._AdaFace, "net", classmethod(lambda cls: "NET"))
+    return seen
 
 
-@pytest.mark.parametrize("answers", [
-    [[_face([5, 5, 30, 40], emb=[1, 0, 0]), _face([-4, 10, 70, 90], emb=[0, 0.6, 0.8])]],   # the largest, clamped box
-    [[], [], [_face([10, 10, 50, 50], emb=[0, 1, 0])]],                     # found on the 50% padded retry: no box
-    [[], [], []],                                                           # no face at all
+K_SMALL, K_BIG = [[1, 1]] * 5, [[9, 9]] * 5
+
+
+@pytest.mark.parametrize("answers, shapes, kps, box", [
+    ([[_face([5, 5, 30, 40], kps=K_SMALL), _face([-4, 10, 70, 90], kps=K_BIG)]],       # the largest, its box clamped
+     [(64, 48, 3)], K_BIG, (0, 10, 48, 64)),
+    ([[], [], [_face([10, 10, 50, 50], kps=K_SMALL)]],                                  # the 50% padded retry: no box
+     [(64, 48, 3), (96, 72, 3), (128, 96, 3)], K_SMALL, None),
+    ([[], [], []], [(64, 48, 3), (96, 72, 3), (128, 96, 3)], None, None),               # no face at all
 ])
-def test_arcface_look_match_gives_the_same_embedding_as_before(monkeypatch, fake_cv2, answers):
+def test_adaface_embeds_the_largest_face_aligned(monkeypatch, fake_cv2, fake_align, answers, shapes, kps, box):
     import copy
     monkeypatch.setattr(F.InsightFaceBackend, "available", staticmethod(lambda: True))
-    bgr = np.random.default_rng(0).integers(0, 255, (64, 48, 3), dtype=np.uint8)
-    old_app, new_app = _App(*copy.deepcopy(answers)), _App(*copy.deepcopy(answers))
-    want = _old_arcface(old_app, bgr, fake_cv2)
-    monkeypatch.setitem(F.InsightFaceBackend._shared, ("detection", "recognition"), new_app)
-    got = F.FaceEmbedder(settings={}).embed_bgr(bgr)
-    assert old_app.shapes == new_app.shapes                                 # the same passes, the same padding
-    assert (got[1], None if got[0] is None else got[0].tolist()) == (want[1], None if want[0] is None else
-                                                                      want[0].tolist())
+    monkeypatch.setattr(F, "_importable", lambda *m: True)
+    app = _App(*copy.deepcopy(answers))
+    monkeypatch.setitem(F.InsightFaceBackend._shared, ("detection",), app)    # detection only: no ArcFace loaded
+    emb, bbox = F.FaceEmbedder(settings={}).embed_bgr(np.zeros((64, 48, 3), np.uint8))
+    assert app.shapes == shapes                                               # the finder's passes, as before
+    if kps is None:
+        assert (emb, bbox) == (None, None) and "kps" not in fake_align
+        return
+    assert fake_align["kps"] == kps and fake_align["size"] == 112 and fake_align["img"] == shapes[-1]
+    assert fake_align["rgb"] == [3, 2, 1] and fake_align["net"] == "NET"     # BGR crop handed over as RGB
+    assert bbox == box and emb.dtype == np.float32 and np.allclose(emb, [0.6, 0.8])
+
+
+def test_face_models_are_pinned_and_skip_arcface():
+    names = set(F.INSIGHTFACE_FILES["files"])
+    assert names == {"det_10g.onnx", "genderage.onnx"}                        # never w600k_r50 (ArcFace)
+    for sha in list(F.INSIGHTFACE_FILES["files"].values()) + [F.ADAFACE_FILE["sha256"]]:
+        assert len(sha) == 64
+    assert len(F.INSIGHTFACE_FILES["revision"]) == 40 and len(F.ADAFACE_FILE["revision"]) == 40
+
+
+def test_ensure_face_models_fetches_only_whats_missing(monkeypatch, tmp_path):
+    monkeypatch.setenv("INSIGHTFACE_HOME", str(tmp_path / "if"))
+    monkeypatch.setitem(F.ADAFACE_FILE, "dest", str(tmp_path / "models" / "face" / "adaface.safetensors"))
+    got = []
+    monkeypatch.setattr(F, "_fetch", lambda repo, rev, file, dest, sha, log: got.append(file) or
+                        (os.makedirs(os.path.dirname(dest), exist_ok=True), open(dest, "wb").close()))
+    F.ensure_face_models(log=None, adaface=False)
+    assert got == ["models/buffalo_l/det_10g.onnx", "models/buffalo_l/genderage.onnx"]
+    F.ensure_face_models(log=None)
+    assert got[2:] == ["model.safetensors"]
+    F.ensure_face_models(log=None)
+    assert len(got) == 3                                                      # all there: nothing fetched
 
 
 def test_pil_to_bgr_is_opencvs_channel_swap():
@@ -435,22 +475,22 @@ def test_pick_classes():
 
 # --------------------------------------------------------------------------------------------- identity embedder
 def test_thresholds_per_backend_and_verdicts():
-    th = {k: F.FaceEmbedder(backend=k, settings={}).thresholds for k in ("arcface", "dinov2")}
-    assert th["arcface"] == {"match": 0.45, "borderline": 0.30, "floor": 0.25}     # the old hard-coded values
+    th = {k: F.FaceEmbedder(backend=k, settings={}).thresholds for k in ("adaface", "dinov2")}
+    assert th["adaface"] == {"match": 0.42, "borderline": 0.36, "floor": 0.30}     # calibrated 12 Nov 2026
     for t in th.values():
         assert t["match"] > t["borderline"] > t["floor"]
-    assert th["dinov2"]["match"] > th["arcface"]["match"]
+    assert th["dinov2"]["match"] > th["adaface"]["match"]
     e = F.FaceEmbedder(backend="dinov2", settings={"face_detector": "yolo"})
     assert [e.verdict(s) for s in (0.7, 0.5, 0.3, None, float("nan"))] == \
         ["match", "borderline", "drift", "no face", "no face"]
-    a = F.FaceEmbedder(backend="arcface", settings={})
-    assert a.verdict(0.5) == "match" and a.verdict(0.35) == "borderline"
+    a = F.FaceEmbedder(backend="adaface", settings={})
+    assert a.verdict(0.5) == "match" and a.verdict(0.38) == "borderline" and a.verdict(0.33) == "drift"
 
 
 def test_look_cutoff_uses_the_embedder_floor():
     scores = [0.9, 0.88, 0.86, 0.85, 0.3, 0.84, 0.87]
     assert F.look_cutoff(scores[:3], 0.25) is None
-    arc = F.FaceEmbedder(backend="arcface", settings={}).cutoff(scores)
+    arc = F.FaceEmbedder(backend="adaface", settings={}).cutoff(scores)
     dino = F.FaceEmbedder(backend="dinov2", settings={}).cutoff([s - 0.4 for s in scores])
     assert arc == pytest.approx(0.86 - 1.5 * (0.88 - 0.84))
     assert dino == pytest.approx(F.IDENTITY_THRESHOLDS["dinov2"]["floor"])   # fence below the floor -> floor
@@ -462,11 +502,11 @@ def test_cache_id_and_settings_key_invalidate_across_backends():
     dino = F.FaceEmbedder(settings={"face_detector": "yolo", "face_yolo_model": "C:/m/fdetailer_v11.onnx",
                                     "face_identity": "auto"})
     dino_default = F.FaceEmbedder(settings={"face_detector": "yolo", "face_identity": "dinov2"})
-    assert arc.cache_id == arc2.cache_id == "arcface" and arc.settings_key == arc2.settings_key
+    assert arc.cache_id == arc2.cache_id == "adaface" and arc.settings_key == arc2.settings_key
     assert dino.cache_id == "dinov2@yolo:fdetailer_v11.onnx" and dino_default.cache_id == "dinov2@yolo:default"
     assert len({arc.cache_id, dino.cache_id, dino_default.cache_id}) == 3
-    assert F.same_embedder(None, "arcface") and F.same_embedder("arcface", "arcface")   # legacy files = ArcFace
-    assert not F.same_embedder(None, dino.cache_id) and not F.same_embedder("arcface", dino.cache_id)
+    assert F.same_embedder("adaface", "adaface") and not F.same_embedder(None, "adaface")   # legacy = ArcFace: redo
+    assert not F.same_embedder(None, dino.cache_id) and not F.same_embedder("adaface", dino.cache_id)
 
 
 class _FakeDetector:
@@ -496,16 +536,6 @@ def test_crop_embedder_crops_the_largest_face_and_normalises(monkeypatch):
 def test_crop_clamps_to_the_image():
     c = F._CropEmbedder.crop(Image.new("RGB", (100, 80)), (0, 0, 60, 70))
     assert c.size[0] <= 100 and c.size[1] <= 80
-
-
-def test_arcface_bbox_dropped_for_padded_detections():
-    face = types.SimpleNamespace(bbox=np.array([5, 5, 40, 50]), normed_embedding=np.ones(4) / 2)
-    a = F._ArcFace({})
-    a.backend = types.SimpleNamespace(raw_faces=lambda bgr: ([face], (0, 0)), available=lambda: True)
-    emb, bbox = a.embed_bgr(np.zeros((60, 60, 3), np.uint8))
-    assert bbox == (5, 5, 40, 50) and emb.dtype == np.float32
-    a.backend = types.SimpleNamespace(raw_faces=lambda bgr: ([face], (15, 15)), available=lambda: True)
-    assert a.embed_bgr(np.zeros((60, 60, 3), np.uint8))[1] is None
 
 
 def test_embedder_unavailable_raises_cleanly(monkeypatch):
@@ -561,11 +591,11 @@ def test_look_match_a_few_human_faces_still_dinov2(dataset):
     assert d.identity == "dinov2" and d.human == 3          # bystanders / weak RetinaFace hits don't block it
 
 
-def test_look_match_mostly_human_is_arcface(dataset):
+def test_look_match_mostly_human_is_adaface(dataset):
     msgs = []
     d = F.decide_look_match(dataset(h=21, n=2, f=1), AUTO, detector=_ProbeDetector(), log=msgs.append)
-    assert (d.identity, d.kind) == ("arcface", "human") and d.embedder().cache_id == "arcface"
-    assert msgs and "21/24" in msgs[0] and "ArcFace" in msgs[0]
+    assert (d.identity, d.kind) == ("adaface", "human") and d.embedder().cache_id == "adaface"
+    assert msgs and "21/24" in msgs[0] and "AdaFace" in msgs[0]
 
 
 def test_look_match_mixed_set_uses_dinov2_for_all(dataset):
@@ -581,9 +611,9 @@ def test_look_match_explicit_settings_bypass_the_probe(dataset):
     assert F.decide_look_match(paths, {"face_detector": "yolo", "face_identity": "auto"}, detector=det,
                                log=None).identity == "dinov2"
     assert F.decide_look_match(paths, {"face_detector": "insightface", "face_identity": "auto"}, detector=det,
-                               log=None).identity == "arcface"
-    d = F.decide_look_match(paths, {}, detector=det, log=None)              # the defaults: ArcFace, no probe
-    assert (d.identity, d.kind) == ("arcface", "explicit")
+                               log=None).identity == "adaface"
+    d = F.decide_look_match(paths, {}, detector=det, log=None)              # the defaults: AdaFace, no probe
+    assert (d.identity, d.kind) == ("adaface", "explicit")
     assert det.calls == 0
 
 
@@ -601,7 +631,7 @@ def test_look_match_is_cached_and_deterministic(dataset, monkeypatch):
 
 def test_look_match_threshold_knob(dataset, monkeypatch):
     paths = dataset(h=15, n=9)                              # 62% human, no furry faces
-    assert F.decide_look_match(paths, AUTO, detector=_ProbeDetector(), log=None).identity == "arcface"
+    assert F.decide_look_match(paths, AUTO, detector=_ProbeDetector(), log=None).identity == "adaface"
     monkeypatch.setenv("FIZGIG_FACE_AUTO_THRESHOLD", "0.8")
     d = F.decide_look_match(paths, AUTO, detector=_ProbeDetector(), log=None)
     assert d.identity == "dinov2" and "too few people's faces" in d.message
@@ -650,7 +680,7 @@ def test_likeness_rebuilds_the_embedder_when_settings_change():
     a = likeness.get_embedder({"face_detector": "yolo", "face_identity": "dinov2"})
     assert likeness.get_embedder({"face_detector": "yolo", "face_identity": "dinov2"}) is a
     b = likeness.get_embedder({"face_detector": "insightface"})
-    assert b is not a and b.name == "arcface"
+    assert b is not a and b.name == "adaface"
 
 
 def _warmup(tmp_path, payload):
@@ -696,9 +726,9 @@ def test_prep_verdicts_and_cutoff_follow_the_embedder():
     dino = F.IDENTITY_THRESHOLDS["dinov2"]
     assert prep.verdict(0.5)[0] == "match" and prep.verdict(0.5, dino)[0] == "borderline"
     assert prep.verdict(None, dino)[0] == "no face" and prep.verdict(0.3, dino)[0] == "drift"
-    assert prep.ARCFACE == F.IDENTITY_THRESHOLDS["arcface"]
+    assert prep.ADAFACE == F.IDENTITY_THRESHOLDS["adaface"]
     scores = {str(i): s for i, s in enumerate([0.9, 0.88, 0.87, 0.86, 0.1])}
-    assert prep.cutoff(scores)[1] == pytest.approx(max(0.87 - 1.5 * 0.02, 0.25))
+    assert prep.cutoff(scores)[1] == pytest.approx(max(0.87 - 1.5 * 0.02, 0.30))
     low = {str(i): s for i, s in enumerate([0.5, 0.3, 0.45, 0.2, 0.1])}
     assert prep.cutoff(low, dino["floor"])[1] == pytest.approx(0.40)
     assert prep.suggest(low, set(), dino["floor"]) == {"1", "3", "4"}
@@ -747,8 +777,8 @@ def test_web_face_settings_validate_and_report(tmp_path, monkeypatch):
     assert f["detector"] == "yolo" and f["yolo_model"] == "m.onnx" and f["has_gender"] is False
     assert sorted(k for k, _ in f["detectors"]) == sorted(F.DETECTORS)
     assert sorted(k for k, _ in f["identities"]) == sorted(F.IDENTITIES)
-    assert f["detectors"][0][0] == "insightface" and f["identities"][0][0] == "arcface"      # the defaults first
-    assert f["defaults"] == {"detector": "insightface", "identity": "arcface"}
+    assert f["detectors"][0][0] == "insightface" and f["identities"][0][0] == "adaface"      # the defaults first
+    assert f["defaults"] == {"detector": "insightface", "identity": "adaface"}
 
 
 def test_web_look_filter_uses_one_embedder_per_session(tmp_path, monkeypatch):

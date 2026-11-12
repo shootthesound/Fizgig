@@ -306,7 +306,7 @@ Captioning rules that come from real runs:
 
 Two JSON files can live alongside the images and travel with the dataset:
 
-- `fizgig_look_scores.json` — written by the GUI's Look Consistency Filter scan (ArcFace similarity of every image to 3 baseline picks). `--warmup_look_outliers` reads it to give real-but-unusual images a gentle LR ramp. Keys are image basenames, so the file survives the folder being moved or copied. There's no headless generator for it yet — run the Look Filter once in the GUI, or skip the flag.
+- `fizgig_look_scores.json` — written by the GUI's Look Consistency Filter scan (AdaFace similarity of every image to 3 baseline picks). `--warmup_look_outliers` reads it to give real-but-unusual images a gentle LR ramp. Keys are image basenames, so the file survives the folder being moved or copied. There's no headless generator for it yet — run the Look Filter once in the GUI, or skip the flag.
 - `fizgig_excluded.json` — the per-image watch's record of images it excluded, per model family. A later run of the same family still trains them from the start (they teach the run until they get stuck), but their two AI recaptions are spent, so if one is confirmed stuck again it is excluded at once. Editing an image's caption clears its record. Delete the file to give everything a clean slate.
 
 ---

@@ -241,8 +241,8 @@ if !ROCM_EXPERIMENTAL!==1 (
 if errorlevel 1 goto :install_failed
 
 echo.
-echo Downloading InsightFace models ^(CPU, ~300 MB^)...
-python -c "import os; os.environ['TF_CPP_MIN_LOG_LEVEL']='3'; from insightface.app import FaceAnalysis; app=FaceAnalysis(name='buffalo_l', allowed_modules=['detection','genderage','recognition'], providers=['CPUExecutionProvider']); app.prepare(ctx_id=-1); print('Models ready.')"
+echo Downloading the face models ^(face finder + AdaFace ViT, CPU, ~0.5 GB^)...
+python -c "import os, sys; os.environ['TF_CPP_MIN_LOG_LEVEL']='3'; sys.path.insert(0, r'%~dp0src'); from fizgig.face_utils import ensure_face_models; ensure_face_models(); print('Face models ready.')"
 
 echo.
 echo ============================================================

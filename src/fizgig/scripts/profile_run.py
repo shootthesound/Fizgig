@@ -34,7 +34,7 @@ def _auto_swap():
 def _embedder(baselines):
     """(embed_path, embed_pil, label) on one face model: the largest face's embedding (the desktop's
     _ff_embed_cached / _repair_embed_pil). The look match is Image Prep's; with Auto it is decided from the subject
-    photos (ArcFace for a person, DINOv2 for a furry / anime character), the same for every render."""
+    photos (AdaFace for a person, DINOv2 for a furry / anime character), the same for every render."""
     from fizgig.face_utils import decide_look_match
     fe = decide_look_match(baselines).embedder()
     return fe.embed, fe.embed_image, fe.label

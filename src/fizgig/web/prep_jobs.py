@@ -1,7 +1,7 @@
 """The web UI's Image Prep: a prep run (resize / PNG / face close-ups) and the Look Consistency Filter's scan, each
 in a background thread on the Fizgig machine, with their state for the page to poll. The work itself is
 fizgig/dataset/prep.py - the same code the desktop app's Image Prep tab runs. Face tools run on the CPU, with the face
-finder and look match Image Prep's face settings pick (face_utils: InsightFace / YOLO / Auto, ArcFace / DINOv2).
+finder and look match Image Prep's face settings pick (face_utils: InsightFace / YOLO / Auto, AdaFace / DINOv2).
 """
 import base64
 import io
@@ -54,7 +54,7 @@ def face_embedder(settings=None):
 
 
 def session_embedder(paths, log=None):
-    """(embedder, decision message) for one scoring session over these pictures: with Auto look match, ArcFace for a
+    """(embedder, decision message) for one scoring session over these pictures: with Auto look match, AdaFace for a
     human set and DINOv2 for a furry / anime / mixed one (face_utils.decide_look_match) - never a mix of the two."""
     from fizgig.face_utils import decide_look_match
     d = decide_look_match(list(paths), log=log)
@@ -64,7 +64,7 @@ def session_embedder(paths, log=None):
 FACE_DETECTOR_LABELS = {"insightface": "People (InsightFace, the default)",
                         "yolo": "Anime/furry/drawn (YOLO model)",
                         "auto": "Both, for sets with people and characters"}
-FACE_IDENTITY_LABELS = {"arcface": "People (the default)", "dinov2": "Anime/furry/drawn",
+FACE_IDENTITY_LABELS = {"adaface": "People (the default)", "dinov2": "Anime/furry/drawn",
                         "auto": "Auto (Decide for each set)"}
 
 
@@ -82,7 +82,7 @@ def face_settings():
     return {"detector": st["face_detector"], "identity": st["face_identity"],
             "yolo_model": str(saved.get("face_yolo_model") or ""), "auto_threshold": st["face_auto_threshold"],
             "detectors": [[k, FACE_DETECTOR_LABELS[k]] for k in ("insightface", "yolo", "auto")],
-            "identities": [[k, FACE_IDENTITY_LABELS[k]] for k in ("arcface", "dinov2", "auto")],
+            "identities": [[k, FACE_IDENTITY_LABELS[k]] for k in ("adaface", "dinov2", "auto")],
             "defaults": {"detector": F.FACE_SETTING_DEFAULTS["face_detector"],
                          "identity": F.FACE_SETTING_DEFAULTS["face_identity"]},
             "finder": det.describe(), "has_gender": det.has_gender,
@@ -220,7 +220,7 @@ def embed_face_box(path, embedder=None):
     from PIL import Image
     emb = embedder or face_embedder()
     try:
-        if emb.name == "arcface":       # read as before (OpenCV, unicode-safe): the same pixels, the same numbers
+        if emb.name == "adaface":       # OpenCV, unicode-safe: the BGR pixels InsightFace finds faces in
             import cv2
             import numpy as np
             raw = cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
@@ -241,7 +241,7 @@ def look_status():
         base = list(_look["baselines"])
         state, err, prog, folder = _look["state"], _look["error"], list(_look["progress"]), _look["folder"]
         thr, emb_label, decision = _look["thresholds"], _look["embedder"], _look["decision"]
-    floor = (thr or prep.ARCFACE)["floor"]
+    floor = (thr or prep.ADAFACE)["floor"]
     med, cut = prep.cutoff(scores, floor) if scores else (None, None)
     rows = []
     for p, s in scores.items():
@@ -252,7 +252,7 @@ def look_status():
     rows.sort(key=lambda r: (r["score"] is None, r["score"] if r["score"] is not None else 0.0))   # worst first
     return {"state": state, "error": err, "progress": prog, "folder": folder, "baselines": base, "rows": rows,
             "median": med, "cutoff": cut, "embedder": emb_label, "decision": decision,
-            "thresholds": thr or prep.ARCFACE}
+            "thresholds": thr or prep.ADAFACE}
 
 
 def look_scan(folder, baselines):

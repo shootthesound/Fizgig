@@ -249,8 +249,10 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
         for name, param in model.named_parameters():
             if name not in keys:
                 continue
-            if mode == "int8" and name.rsplit(".", 1)[0] in quant_conf:
-                continue                      # already placed as int8 buffers above
+            if mode == "int8" and name.endswith(".weight") and name[:-7] in quant_conf:
+                continue                      # already placed as int8 buffers above; its BIAS loads
+                                              # below (a fine-tune may quantize a biased Linear such
+                                              # as AdaLN - skipped, the bias stayed on meta)
             w = _read_weight(name)
             parent, leaf = _owner_and_leaf(model, name)
             if mode == "nf4" and _is_nf4_target(name) and not _is_adaln(name):
@@ -266,6 +268,18 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
                         else w.to(compute_dtype))
                 target = torch.device("cpu") if _parked(name) else dev
                 setattr(parent, leaf, nn.Parameter(keep.to(target), requires_grad=False))
+        # A dense Linear's weight and bias follow the file's dtypes, and fine-tunes store them
+        # differently: an int8 fine-tune can have bf16 IO weights next to fp32 biases ("Float and
+        # BFloat16" at video_patch_proj). Promote the pair to the wider one - lossless, and the
+        # forward already casts its input to the weight's dtype.
+        for module in model.modules():
+            if type(module) is not nn.Linear or module.bias is None:
+                continue
+            w, b = module.weight, module.bias
+            if w.dtype != b.dtype and w.is_floating_point() and b.is_floating_point():
+                wide = torch.promote_types(w.dtype, b.dtype)
+                module.weight = nn.Parameter(w.data.to(wide), requires_grad=False)
+                module.bias = nn.Parameter(b.data.to(wide), requires_grad=False)
         # buffers (rope.inv_freq, and adaln_t_table on a pruned file)
         for name, _ in model.named_buffers():
             if name in keys:

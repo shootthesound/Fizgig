@@ -3,7 +3,7 @@
 **MiniMax H3 Image now trains likeness at the very top end.** On our hardest test dataset (few headshots, mostly wider shots), the best previews look more like the person than all but two of their own 45 photos do, scored against the same reference photos. That held on two more datasets, one harder still. It comes from a day of side-by-side runs, and it's all in the Standard preset: load **✨ MiniMax H3 Image Standard** to pick it up.
 
 - **Likeness optimization has a new schedule.** Of every schedule we tried, it brought the person's face shape through earliest, reached the highest likeness, and kept backgrounds from the training pictures out of the results. Its controls are under **Advanced**, inside the Likeness optimization box, closed by default; most people won't need them.
-- **Automagic v4**, starting at 2.5e-4, which beat Automagic v3 and Muon by a wide margin in our tests, most of all on a dataset with few headshots.
+- **Automagic v4**, starting at 2.5e-4, which beat Automagic v3 and Muon by a wide margin in our tests, most of all on a dataset with few headshots. That 2.5e-4 is the most any weight can move, not the rate the whole LoRA trains at: Automagic v4 steps each weight down from it, most of all the sensitive ones, so most move much less. It isn't comparable to an AdamW learning rate, so don't carry it over to AdamW.
 - **0.25 MP and 30 epochs.** In our tests the best epochs came from the late teens to the late twenties.
 
 **Why back to 0.25 MP.** In 9.6.1 we moved the H3 Image presets up to 0.5 MP, because the model seemed to prefer it. It didn't: what was holding likeness back was the training schedule and the optimizer. With the new schedule and Automagic v4, 0.25 MP reaches the likeness above, and it trains faster on less VRAM. So the presets are back at 0.25 MP.
@@ -17,7 +17,7 @@
 **Element boost needs Target Megapixels 0.75 or more.** Below that, a face that's small in the frame is only a few pixels across, and boosting it teaches the LoRA pixelation, so the tick greys out and says why. MOSS-Image's 0.25 MP presets (Fast and Turbo Train) no longer turn it on; Standard (1 MP) keeps it.
 
 **Also in this release:**
-- **Automagic v4's learning rate stops at 2.5e-4.** Left alone it could climb well past what trains cleanly. Set `max_lr=` in Optimizer Args to change it.
+- **Automagic v4's learning rate stops at 2.5e-4.** Left alone it could climb well past what trains cleanly. Inside that ceiling it still steps each weight down by how sensitive it is, so the number on the run card is the most a weight moves, not what they all do. Set `max_lr=` in Optimizer Args to change it.
 - **The Samples gallery scores only the run you're looking at**, not every run's previews in the samples folder, and a new preview is scored straight away even while older ones are still being scored.
 - **MiniMax H3 Image training maps work with Compile Blocks on.** They were switching themselves off at the start of the run.
 - **Smaller face downloads.** Fizgig now fetches only InsightFace's face finder (18 MB) instead of its whole 300 MB pack, plus AdaFace ViT (460 MB). The updater fetches them, along with Make masks' person segmenter and your models' tokenizer files, so they're ready before you need them; anything missing still downloads the first time it's used.

@@ -2,7 +2,7 @@
 
 ## 12 Nov 2026: top-end likeness for MiniMax H3 Image
 
-**MiniMax H3 Image now trains likeness at the very top end.** On our hardest test dataset, the best previews look more like the person than all but two of their own 45 photos do, and that held on two more datasets, one harder still. Load **✨ MiniMax H3 Image Standard** (0.25 MP) and train with its settings as they are: a new Likeness optimization schedule (its controls under Advanced), Automagic v4 starting at 2.5e-4, and 30 epochs. The presets are back at 0.25 MP: the schedule and the optimizer were what held likeness back, not the picture size.
+**MiniMax H3 Image now trains likeness at the very top end.** On our hardest test dataset, the best previews look more like the person than all but two of their own 45 photos do, and that held on two more datasets, one harder still. Load **✨ MiniMax H3 Image Standard** (0.25 MP) and train with its settings as they are: a new Likeness optimization schedule (its controls under Advanced), Automagic v4 starting at 2.5e-4 (the most any weight can move, as it steps each one down from there: not comparable to an AdamW rate), and 30 epochs. The presets are back at 0.25 MP: the schedule and the optimizer were what held likeness back, not the picture size.
 
 **Likeness scores now come from AdaFace ViT instead of ArcFace**: its best epochs matched the ones we picked by eye every time. The Samples gallery also shows **your photos**: your own training photos scored against the same reference photos, as a green band on the likeness chart, the realistic top (real photos never score 100%). **Element boost** now needs Target Megapixels 0.75 or more.
 

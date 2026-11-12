@@ -26,6 +26,8 @@ import json
 
 import torch
 
+from fizgig.modules import int8_linear as _i8l
+
 _hadamard_cache = {}
 
 
@@ -290,5 +292,9 @@ class ConvRotInt8Linear(torch.nn.Linear):
         if self.bias is not None and self.bias.requires_grad:
             raise RuntimeError("ConvRotInt8Linear holds a FROZEN base weight; its bias must not "
                                "require grad (the custom backward returns no bias gradient)")
+        # a workbench render with the INT8 linear switch on: the int8 GEMM (modules/int8_linear.py)
+        y = _i8l.linear(x, self.qdata, self.wscale, self.bias, self.rot, self.compute_dtype)
+        if y is not None:
+            return y
         return _Int8RotLinearFn.apply(x, self.qdata, self.wscale, self.bias,
                                       self.rot, self.compute_dtype)

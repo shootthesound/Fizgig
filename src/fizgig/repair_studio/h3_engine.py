@@ -157,6 +157,8 @@ class H3RepairEngine(ClipContract):
         self._turbo_lora_strength = 0.75
         self.base_mode = "auto"          # the Base picker: auto / stream / nf4
         self.int8_attention = True       # comfy-kitchen's int8 attention wherever it exists
+        # comfy-kitchen's int8 GEMM for the int8 base's linears (modules/int8_linear.py): what ComfyUI runs
+        self.int8_linear = os.environ.get("FIZGIG_NO_INT8_LINEAR") != "1"
         self.base_plan = None            # (base_quant, blocks streamed) actually loaded
         self._te_parked_vision = False # ...built with the vision tower (serves text too)
         self.dit_path: Optional[str] = None
@@ -1267,9 +1269,10 @@ class H3RepairEngine(ClipContract):
 
         def _render(block_cache):
             from fizgig.minimax import model as _mm
+            from fizgig.modules import int8_linear as _i8l
             _mm.set_int8_attention(bool(getattr(self, "int8_attention", False)))
             try:
-                with torch.no_grad():
+                with torch.no_grad(), _i8l.renders(bool(getattr(self, "int8_linear", False))):
                     return _sample(block_cache)
             finally:
                 _mm.set_int8_attention(False)
@@ -1407,7 +1410,7 @@ class H3RepairEngine(ClipContract):
                round(float(getattr(state, "primary_scale", 1.0)), 4),
                round(float(getattr(state, "donor_scale", 1.0)), 4),
                getattr(self, "dit_path", None), bool(getattr(self, "int8_attention", False)),
-               bool(getattr(self, "speed_boost", False)))
+               bool(getattr(self, "speed_boost", False)), bool(getattr(self, "int8_linear", False)))
         resume_ok = (self.resume_enabled and not keyframes and not references and not no_lora
                      and not bare_refs and not getattr(self, "_blocks_swapped", 0)
                      and hasattr(self.dit, "forward_cached"))
@@ -1445,9 +1448,10 @@ class H3RepairEngine(ClipContract):
 
         def _render(block_cache):
             from fizgig.minimax import model as _mm
+            from fizgig.modules import int8_linear as _i8l
             _mm.set_int8_attention(bool(getattr(self, "int8_attention", False)))
             try:
-                with torch.no_grad():
+                with torch.no_grad(), _i8l.renders(bool(getattr(self, "int8_linear", False))):
                     return _sample(block_cache)
             finally:
                 _mm.set_int8_attention(False)

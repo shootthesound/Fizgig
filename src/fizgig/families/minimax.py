@@ -36,7 +36,7 @@ def _preset(rank, epochs, clip_still=True, slider=False, lr=1e-6, optimizer="aut
         "H3_ADAPTER_RAMP": "Off", "H3_CAPTION_DROPOUT": "0.05 (default)", "H3_STRUCTURE": _STRUCTURE[0][0],
         "H3_LOWNOISE_PCT": "60", "H3_HIGHNOISE_LR_PCT": "100",
         "H3_BLOCKS": "all", "H3_TRAIN_REFINER": "", "H3_LIKENESS_MODE": "Default",
-        "H3_ADAPTER": "On", "H3_TREAD": "1", "H3_CLIP_STILL": "1" if clip_still else "",
+        "H3_TREAD": "1", "H3_CLIP_STILL": "1" if clip_still else "",
         "H3_DISTILL": "",
     }
 
@@ -96,14 +96,9 @@ OPTIONS = (
             ("Off · hand-pick the blocks in Other Options", "The blocks are yours to pick, for experiments: Blocks to Train, in the Other Options section "
                                                    "further down this tab.")),
         summary="mode {}", setting="MINIMAX_LIKENESS_MODE", section="after", width=34, pady=(8, 2)),
-    # an older setting naming another adapter (Circlestone, removed 12 Nov 2026) picks the first choice, On
-    FamilyOption("H3_ADAPTER", "Training adapter", choices=(
-        ("On", f"--training_adapter={_OSTRIS}"),
-        ("Off", "")),
-        hint="Ostris's adapter, matched to the Training Base: the fl2va one for fl2va, the ref2va one for ref2va. "
-             "It de-distills the base while your LoRA learns: on for every training step, off for previews and "
-             "never in your saved file.",
-        setting="MINIMAX_ADAPTER", section="after", compact=True, width=46),
+    # the training adapter, always on, no control (Peter, 12 Nov 2026): Ostris's fl2va file on the fl2va base, his ref2va
+    # file on ref2va or a distillation run. It de-distills the base while the LoRA learns; off for previews, never saved.
+    FamilyOption("H3_ADAPTER", "", kind="fixed", tokens=f"--training_adapter={_OSTRIS}"),
     FamilyOption("H3_TREAD", "TREAD token routing — on clip steps, half the video tokens skip the middle blocks",
                  kind="check", tokens="tread=0.5@2-47", default="1",
                  hint="Faster clip steps: a random half of each clip's video tokens skips blocks 2-46 and rejoins "
@@ -252,7 +247,7 @@ MINIMAX = FamilyDescription(
                   "ostris/minimax_h3_training_adapter", "minimax_h3_training_adapter_v3.safetensors", 0.31,
                   role="training_adapter", fetch_optional=False,
                   announce="Training adapter (Ostris, ~310 MB) — de-distills the base while your LoRA learns",
-                  hint="NEEDED for runs on the standard fl2va base with the Training adapter on (the default). "
+                  hint="NEEDED for runs on the standard fl2va base. "
                        "Ostris's frozen LoRA that de-distills the base while yours learns: on for every training step, "
                        "off for previews, never in your saved LoRA. The updater fetches it; so does the download "
                        "button below.",
@@ -392,7 +387,7 @@ MINIMAX = FamilyDescription(
     ema_default="0.98",               # the old H3 default (v5.4.1)
     ema_short_run=True,
     resumes_untagged_states=True,     # an old H3 pause: same files, same parameter order (blocks, qkv/out/fc1/fc2)
-    # the training adapter is the MINIMAX_ADAPTER option (Ostris's, per base / Off), not the generic tick
+    # the training adapter is the fixed H3_ADAPTER option (Ostris's, per base), not the generic tick
     # the checkpoint's own int8 ConvRot codes, or a 4-bit base (NF4, HQQ); Auto is the driver's plan_run (the old
     # planner), which streams blocks H2D rather than giving up the int8 base
     precisions=("int8", "nf4", "hqq"),

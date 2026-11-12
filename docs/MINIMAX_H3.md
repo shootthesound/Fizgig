@@ -57,7 +57,7 @@ The Optimizer Type dropdown also offers full-precision **adamw**, which measured
 
 ## Training adapter
 
-A frozen LoRA rides at full strength on every training step, so the gradient goes into your subject rather than into undoing H3's guidance distillation. It is off for previews and never written into your LoRA. The adapter is [@ostris](https://github.com/ostris)'s ([training adapter](https://huggingface.co/ostris/minimax_h3_training_adapter)), in two files: an fl2va run gets the fl2va one and a ref2va run gets the ref2va one, picked from your Training Base. The **Training adapter** row turns it on (the default) or off.
+A frozen LoRA rides at full strength on every training step, so the gradient goes into your subject rather than into undoing H3's guidance distillation. It is off for previews and never written into your LoRA. The adapter is [@ostris](https://github.com/ostris)'s ([training adapter](https://huggingface.co/ostris/minimax_h3_training_adapter)), in two files: an fl2va run gets the fl2va one and a ref2va run gets the ref2va one, picked from your Training Base.
 
 The updater and the Preferences download buttons fetch the adapter files. The adapter used is recorded in the output metadata. It also rides under full fine-tuning (forward hooks, on by default, never in the checkpoint); see [FINETUNE.md](FINETUNE.md).
 

@@ -408,16 +408,9 @@ def form(desc):
     if desc.element_boost and desc.masked_training:   # Element boost: stills, with or without masks (a mask trims it)
         params += [
             _row("FACE_BOOST", "On", "check",
-                 "Early in the run, one part of each picture (the face and hair, unless you pick another below) "
-                 "counts much more than the rest, so it's learned faster - for a face, most of all when faces "
-                 "are small in the frame (medium and full-length shots). "
-                 "It runs 3 boosted stretches, then 1 normal, for the first 12 epochs or 600 steps, whichever "
-                 "is sooner; after that the run trains as normal, so the body and background catch up. Works "
-                 "with or without masks (a mask, if a picture has one, trims it). Pictures where it isn't found "
-                 "train as normal. Best on pictures of 1 MP or more where the boosted part (the face, the "
-                 "clothes and so on) is small in the frame: on small pictures, a small face or outfit is only a "
-                 "few pixels wide and the boost can teach the LoRA that pixelation. Smaller sizes (0.25 MP and "
-                 "so on) are fine when the boosted part is large in the frame."),
+                 "Early in the run, the face (or the part you pick below) counts for much more than the rest of "
+                 "the picture, so it's learned faster. For sets of medium and full-length shots, where the face is "
+                 "small in the frame. Needs Target Megapixels 0.75 or more."),
             _row("FACE_BOOST_AREA", "What it boosts", "choice",
                  "Face and hair (the default): the face and the hair around it. Face only: just the face, for when "
                  "the hair changes from picture to picture or shouldn't be learned. These two use the face "
@@ -1078,6 +1071,10 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             actions["TRAIN_SUBFOLDERS"] = act
     if not values.get("FACE_BOOST"):
         hidden.add("FACE_BOOST_AREA")
+    if desc.element_boost and launch.boost_too_small(desc, values):    # too few pixels in a small face: greyed, kept
+        disabled.add("FACE_BOOST")
+        hidden.add("FACE_BOOST_AREA")
+        notes["FACE_BOOST"] = launch.BOOST_TOO_SMALL.format(mp=launch.BOOST_MIN_MP)
     if desc.masked_training:
         prompt_slider = kind == "slider" and launch.slider_on(desc, {"FAMILY_SLIDER": True, "FAMILY_SLIDER_SOURCE": (
             "prompts" if values.get("FAMILY_SLIDER_SOURCE") == "Prompts" else "pairs")}, "prompts")

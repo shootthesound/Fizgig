@@ -1544,10 +1544,34 @@ FACE_AREA_KEYS = (("Face and hair", "head"), ("Face only", "face"), ("The person
 FACE_AREAS = tuple(k[0] for k in FACE_AREA_KEYS)
 
 
+# Element boost needs pictures of at least this size (Peter, 12 Nov 2026): the model sees a picture as 16-pixel patches
+# (8x VAE, 2x2 patches), and in a medium or full-length shot a face at 0.5 MP can be 1-3 patches wide - boosting
+# that teaches the LoRA pixelation; at 0.75 MP most are a few patches wide
+BOOST_MIN_MP = 0.75
+BOOST_TOO_SMALL = ("Needs Target Megapixels {mp:g} or more: below that a small face is too few pixels, and boosting it "
+                   "teaches the LoRA pixelation.")
+
+
+def boost_mp(desc, st):
+    """The picture size Element boost trains at: Start at a smaller size's while it's on (the boost runs early in the
+    run), else Target Megapixels; 0 when unknown."""
+    try:
+        mp = float(st.get("megapixels") or st.get("DATASET_MEGAPIXELS") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    return stage_mp(desc, {**st, "megapixels": mp}) or mp
+
+
+def boost_too_small(desc, st):
+    return 0 < boost_mp(desc, st) < BOOST_MIN_MP
+
+
 def face_weight(desc, st):
     """Boost the face: the face weight when ticked, else None. Stills of a family with masked training, not a
-    prompt slider (no photos)."""
+    prompt slider (no photos), at BOOST_MIN_MP or more."""
     if not (st.get("FACE_BOOST") and desc.element_boost and desc.masked_training) or slider_on(desc, st, "prompts"):
+        return None
+    if boost_too_small(desc, st):
         return None
     return FACE_BOOST
 

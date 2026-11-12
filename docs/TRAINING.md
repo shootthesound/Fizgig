@@ -6,7 +6,7 @@ Everything on this page works on every model unless it says otherwise: [Klein 9B
 
 ## The sample gallery is an instrument
 
-- **Live likeness scoring** — pick 3 dataset photos and every sample gets a colour-coded likeness badge (AdaFace ViT for people, DINOv2 for furry / anime: [face backends](FACE_BACKENDS.md); CPU — zero training-speed cost), with a per-epoch trend chart and best-epoch highlight, live while the run goes.
+- **Live likeness scoring** — pick 3 dataset photos and every sample gets a colour-coded likeness badge (AdaFace ViT for people, DINOv2 for furry / anime: [face backends](FACE_BACKENDS.md); CPU — zero training-speed cost), with a per-epoch trend chart and best-epoch highlight, live while the run goes. The chart also shows **your photos**: your own training photos scored against the same 3, the realistic top a preview can reach (even real photos of a person never score 100%), and the run line says whether the best epoch is within, level with or above them.
 - **Training Run Visualiser** — scrub the run epoch by epoch in the browser, Royale-style, with share-ready WebM/PNG export.
 - **Every epoch checkpoint carries its own preview as the thumbnail**, so file browsers and LoRA managers show what each epoch looks like.
 - **How often to preview** (Samples tab): **Every** N epochs, and, switched on, **then from epoch** Y, **every** Z epochs (whole multiples). Switching it on fills in every 5, then from epoch 10 every 1: few previews early, every epoch once the run gets close. Off, previews run every N epochs throughout.

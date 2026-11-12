@@ -2511,22 +2511,40 @@ async function likenessShow(dir, items, run, view) {
   }
   $("likPanel").style.display = epochs.length ? "" : "none";
   if (!epochs.length) return;
-  $("likPeak").textContent = adaPeak(d.embedder);
+  // the person's own training photos against the same 3 (gallery_likeness.real_photos): the realistic top, since
+  // real photos never score 100% either. Without it (still measuring, too few faces) the general note.
+  const real = d.real, pc = (v) => Math.round(v * 100) + "%";
+  $("likPeak").textContent = real ?
+    `Your ${real.n} training photos score ${pc(real.median)} against the 3 reference photos (most between ` +
+    `${pc(real.p25)} and ${pc(real.p75)}). A preview there looks as much like the person as a real photo does - ` +
+    `nothing reaches 100%, real photos don't either.` : adaPeak(d.embedder);
   // the best epoch, and the mean over every trained epoch so far (epoch 0 - the model before training - left out)
   const trained = avgs.filter((v, i) => epochs[i] > 0);
   const mean = trained.length ? trained.reduce((a, b) => a + b, 0) / trained.length : null;
-  $("likRun").textContent = `${run} - best so far: epoch ${bestEpoch} (${Math.round(avgs[best] * 100)}% likeness)` +
+  const vs = (v) => !real ? "" : v >= real.p75 ? " - above most of your photos" :
+    v >= real.median ? " - level with your photos" : v >= real.p25 ? " - within your photos' range" : "";
+  $("likRun").textContent = `${run} - best so far: epoch ${bestEpoch} (${pc(avgs[best])} likeness${vs(avgs[best])})` +
     (mean == null ? "" : ` · average over ${trained.length} epoch${trained.length === 1 ? "" : "s"}: ` +
-     `${Math.round(mean * 100)}%`);
+     `${pc(mean)}`);
   const cv = $("likChart");
   const w = cv.clientWidth || 900;
   if (cv.width !== w) cv.width = w;
   const g = cv.getContext("2d"), W = cv.width, H = cv.height, L = 42, R = 12, T = 12, B = 22;
   g.clearRect(0, 0, W, H);
-  const ymax = Math.min(1, Math.max(0.7, (d.thresholds || {}).match + 0.15 || 0, Math.max(...avgs) + 0.05));
+  const ymax = Math.min(1, Math.max(0.7, (d.thresholds || {}).match + 0.15 || 0, Math.max(...avgs) + 0.05,
+                                    real ? real.p75 + 0.05 : 0));
   const x = (i) => epochs.length === 1 ? L + (W - L - R) / 2 : L + (W - L - R) * i / (epochs.length - 1);
   const y = (v) => T + (H - T - B) * (1 - v / ymax);
   g.font = "11px sans-serif"; g.lineWidth = 1;
+  if (real) {                  // the training photos' middle half, their median a dashed line: where real photos land
+    g.fillStyle = themeColor("--success", 0.13);
+    g.fillRect(L, y(real.p75), W - L - R, y(real.p25) - y(real.p75));
+    g.strokeStyle = themeColor("--success"); g.setLineDash([5, 4]);
+    g.beginPath(); g.moveTo(L, y(real.median)); g.lineTo(W - R, y(real.median)); g.stroke();
+    g.setLineDash([]);
+    g.fillStyle = themeColor("--success");
+    g.fillText("your photos", W - R - 70, y(real.p75) - 4);
+  }
   const bands = d.thresholds || {match: 0.45, borderline: 0.30};
   for (const band of [bands.borderline, bands.match]) {         // the badge colour bands, for orientation
     g.strokeStyle = themeColor("--border"); g.fillStyle = themeColor("--text-muted");

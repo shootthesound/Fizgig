@@ -78,9 +78,62 @@ def state(samples_dir, dataset_dir):
         except ValueError as e:
             d["status"] = f"error: {e}"
     thr = d.get("thresholds") if isinstance(d.get("thresholds"), dict) else None
+    real = d.get("real") if isinstance(d.get("real"), dict) and d["real"].get("n") else None
     return {"baselines": names, "status": d.get("status", ""), "scores": d.get("scores") or {},
             "available": prep_jobs.faces_available(), "embedder": d.get("embedder_label") or "",
-            "thresholds": thr or {"match": 0.45, "borderline": 0.30}}
+            "thresholds": thr or {"match": 0.42, "borderline": 0.36}, "real": real}
+
+
+def _summary(vals):
+    """{n, median, p25, p75, best} of the training photos' scores (what a real photo of the person scores)."""
+    import numpy as np
+    v = np.asarray(sorted(vals), dtype=float)
+    return {"n": int(len(v)), "median": round(float(np.median(v)), 4), "p25": round(float(np.percentile(v, 25)), 4),
+            "p75": round(float(np.percentile(v, 75)), 4), "best": round(float(v.max()), 4)}
+
+
+def _dataset_sig(dataset_dir, names):
+    """What the training photos' measure depends on besides the model: the photos (names, sizes, times), not the 3."""
+    from fizgig.dataset import prep
+    out = []
+    for p in prep.look_files(dataset_dir):
+        if os.path.basename(p) in names:
+            continue
+        try:
+            st = os.stat(p)
+            out.append(f"{os.path.basename(p)}:{st.st_size}:{int(st.st_mtime)}")
+        except OSError:
+            pass
+    return "|".join(out)
+
+
+def real_photos(dataset_dir, names, base, emb, log=None):
+    """How much the person's own training photos look like the 3 reference photos (each photo's mean similarity to
+    them, the same measure as a sample's): the realistic top a preview can reach, since even real photos of the person
+    never score 100%. The 3 themselves and photos with no face found are left out. Reuses a Look Filter scan made with
+    the same 3 photos and the same model (fizgig_look_scores.json); otherwise embeds each photo once (CPU)."""
+    import numpy as np
+    from fizgig.dataset import prep
+    from fizgig.face_utils import same_embedder
+    files = [p for p in prep.look_files(dataset_dir) if os.path.basename(p) not in names]
+    try:
+        with open(os.path.join(dataset_dir, "fizgig_look_scores.json"), encoding="utf-8") as f:
+            look = json.load(f)
+        if sorted(look.get("baselines") or []) == sorted(names) and same_embedder(look.get("embedder"), emb.cache_id):
+            stems = {os.path.splitext(os.path.basename(p))[0] for p in files}
+            vals = [s for k, s in (look.get("scores") or {}).items() if k in stems and isinstance(s, (int, float))]
+            if len(vals) >= 4:
+                return _summary(vals)
+    except (OSError, ValueError, AttributeError):
+        pass
+    vals = []
+    for i, p in enumerate(files, 1):
+        e = prep_jobs._embed(p, emb)
+        if e is not None:
+            vals.append(float(np.mean([float(np.dot(b, e)) for b in base])))
+        if log and (i % 5 == 0 or i == len(files)):
+            log(i, len(files))
+    return _summary(vals) if len(vals) >= 4 else None
 
 
 def start(samples_dir, dataset_dir, names):
@@ -131,8 +184,13 @@ def _worker(samples_dir, gen, baselines):
     meta = {"embedder": emb.cache_id, "embedder_label": emb.label, "thresholds": dict(emb.thresholds)}
     old = read(samples_dir)
     # the same three photos AND the same embedder keep their scores (a file without one was ArcFace)
-    scores = old["scores"] if sorted(old.get("baselines") or []) == sorted(names) and isinstance(old.get("scores"), dict) \
-        and same_embedder(old.get("embedder"), emb.cache_id) else {}
+    same = sorted(old.get("baselines") or []) == sorted(names) and same_embedder(old.get("embedder"), emb.cache_id)
+    scores = old["scores"] if same and isinstance(old.get("scores"), dict) else {}
+    # the training photos' own range (real_photos), kept while the photos, the 3 and the model are the same
+    dataset_dir = os.path.dirname(baselines[0])
+    sig = _dataset_sig(dataset_dir, names)
+    if same and isinstance(old.get("real"), dict) and old.get("real_sig") == sig:
+        meta.update(real=old["real"], real_sig=sig)
     _write(samples_dir, names, "loading the face model…", scores, meta)
     base = [prep_jobs._embed(b, emb) for b in baselines]
     missing = [n for n, e in zip(names, base) if e is None]
@@ -175,6 +233,15 @@ def _worker(samples_dir, gen, baselines):
             scores[f] = None if e is None else round(float(np.mean([float(np.dot(b, e)) for b in base])), 4)
             if i % 2 == 0 or i == len(todo):
                 _write(samples_dir, names, f"scoring… {len(scores)}/{len(files)}", scores, meta)
+        if not todo and "real_sig" not in meta:       # once the previews are scored: the training photos' own range
+            def said(i, n):
+                _write(samples_dir, names, f"measuring your training photos… {i}/{n}", scores, meta)
+            try:
+                meta.update(real=real_photos(dataset_dir, names, base, emb, log=said), real_sig=sig)
+            except Exception as e:                         # never stops the samples' scoring
+                print(f"[likeness] couldn't measure the training photos: {type(e).__name__}: {e}", flush=True)
+                meta.update(real=None, real_sig=sig)
+            last = None                                    # written below, with the measure
         status = f"live - {len(scores)} sample(s) scored" + ("" if emb.name == "adaface" else f" ({emb.label})")
         if todo or status != last:
             _write(samples_dir, names, status, scores, meta)

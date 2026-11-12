@@ -3199,11 +3199,15 @@ class Handler(BaseHTTPRequestHandler):
             p = (it or {}).get("mp4" if (qs.get("mp4") or [""])[0] else "png") or ""
             if not p or not os.path.isfile(p):
                 return self.json({"error": "no picture"}, 404)
+            if (qs.get("pp") or [""])[0]:              # the page's Ping-pong loop
+                p = studio.pingpong(p)
             return self._stream(p, attachment=False)
         if path == "/api/studio/image":
             p = studio.image((qs.get("which") or [""])[0], (qs.get("gen") or [""])[0])
             if not p:
                 return self.json({"error": "no picture yet"}, 404)
+            if (qs.get("pp") or [""])[0]:              # the page's Ping-pong loop
+                p = studio.pingpong(p)
             dl = re.sub(r'[\\/:*?"<>|]+', "_", (qs.get("dl") or [""])[0])        # a Save / Download button
             if dl:                                    # the name the page asks for, with the file's own extension
                 dl = os.path.splitext(dl)[0] + os.path.splitext(p)[1]

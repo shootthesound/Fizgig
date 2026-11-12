@@ -737,6 +737,39 @@ def image(which, gen):
     return p if p and os.path.isfile(p) else ""
 
 
+_pp_lock = threading.Lock()
+
+
+def pingpong(path):
+    """A clip's ping-pong file: the clip forward then backward (the turn-around frame once), made once beside it
+    as <name>_pp.mp4 and looped by the page. Its sound plays on the way out only. The clip itself comes back when
+    ffmpeg is missing or fails."""
+    if not path.lower().endswith(".mp4"):
+        return path
+    out = path[:-4] + "_pp.mp4"
+    with _pp_lock:
+        try:
+            if os.path.isfile(out) and os.path.getmtime(out) >= os.path.getmtime(path):
+                return out
+            from fizgig.minimax.common import _find_ffmpeg
+            ff = _find_ffmpeg()
+            if not ff:
+                return path
+            tmp = path[:-4] + "_pp.tmp.mp4"
+            cmd = [ff, "-y", "-hide_banner", "-loglevel", "error", "-i", path, "-filter_complex",
+                   "[0:v]split[a][b];[b]reverse,trim=start_frame=1,setpts=PTS-STARTPTS[r];[a][r]concat=n=2:v=1:a=0[v]",
+                   "-map", "[v]", "-map", "0:a?", "-c:v", "libx264", "-crf", "18", "-preset", "veryfast",
+                   "-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart", tmp]
+            r = subprocess.run(cmd, capture_output=True, timeout=120,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            if r.returncode != 0 or not os.path.isfile(tmp):
+                return path
+            os.replace(tmp, out)
+            return out
+        except Exception:
+            return path
+
+
 SETUP_KEY = "fizgig_studio_setup"     # the PNG text chunk Download tweaked writes the setup into
 
 
@@ -881,6 +914,10 @@ def layout(desc, prefs, pref_path, samples=None):
     vc = desc.video_controls
     return {"key": desc.key, "name": desc.display_name, "groups": groups, "kind": kind,
             "video": {"lengths": [n for n, _ in vc.lengths], "length_frames": dict(vc.lengths),
+                      # the model's frame grid, for a length typed in seconds (the Clip row's Other…)
+                      "clip": {"fps": desc.clip_spec.fps, "step": desc.clip_spec.frame_step,
+                               "offset": desc.clip_spec.frame_offset, "max": desc.clip_spec.max_frames}
+                      if desc.clip_spec else None,
                       "length": vc.default_length or vc.lengths[0][0], "dims": [str(d) for d in vc.sizes],
                       "size": [str(d) for d in vc.default_size],
                       "scales": [n for n, _ in vc.scales], "scale_of": dict(vc.scales),

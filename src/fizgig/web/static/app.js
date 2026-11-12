@@ -5816,7 +5816,9 @@ function studioKind(L, sv) {
   const fill = (id, opts, val) => { const s = $(id); s.innerHTML = ""; for (const o of opts) s.append(el("option", {value: o, text: o})); s.value = opts.includes(val) ? val : opts[0]; };
   fill("stH3Model", V.models, h3.model || V.models[0]);
   fill("stH3Base", V.bases, h3.base);
-  fill("stH3Len", V.lengths, h3.len || V.length);
+  fill("stH3Len", V.clip ? [...V.lengths, ST_LEN_OTHER] : V.lengths, h3.len || V.length);
+  $("stH3LenS").value = h3.lenS || "";
+  studioLenOther();
   fill("stH3W", V.dims, h3.w || V.size[0]);
   fill("stH3H", V.dims, h3.h || V.size[1]);
   $("stH3ModelRow").style.display = (V.models || []).length || (V.bases || []).length ? "" : "none";
@@ -5983,7 +5985,8 @@ function studioH3Remember() {
   try {
     const d = stSaved();
     d.video = d.video || {};
-    d.video[(S.st.layout || {}).key || "minimax"] = {model: $("stH3Model").value, base: $("stH3Base").value, len: $("stH3Len").value, w: $("stH3W").value,
+    d.video[(S.st.layout || {}).key || "minimax"] = {model: $("stH3Model").value, base: $("stH3Base").value, len: $("stH3Len").value,
+      lenS: $("stH3LenS").value, w: $("stH3W").value,
       h: $("stH3H").value, steps: $("stH3Steps").value, turbo: $("stH3Turbo").value,
       sound: $("stH3Sound").checked, boost: $("stH3Boost").checked, early: $("stH3Early").checked, kf: S.st.kf,
       kfRect: S.st.kfRect};
@@ -6000,7 +6003,7 @@ function studioExtra() {
   const w = Number($("stH3W").value) || 640, h = Number($("stH3H").value) || 768;     // the clip at its Width x Height
   const ref = !!V.references[$("stH3Model").value];
   const slots = ref ? ["ref1", "ref2"] : (V.frame_slots || ["first", "last"]);
-  return {video: {frames: V.length_frames[$("stH3Len").value] || 22, width: w, height: h,
+  return {video: {frames: studioClipFrames(V), width: w, height: h,
     steps: Math.max(1, Math.min(40, parseInt($("stH3Steps").value, 10) || 4)),
     turbo: Math.max(0, Math.min(1.5, Number($("stH3Turbo").value) || 0)), sound: $("stH3Sound").checked,
     speed_boost: !!V.speed_boost && $("stH3Boost").checked, early: $("stH3Early").checked,
@@ -7008,6 +7011,29 @@ function studioCanvas() {
   return [x.video.width, x.video.height, x.video.frames, x.ref_mode ? 0 : n, x.ref_mode ? n : 0];
 }
 
+// The Clip row's length. "Other…" takes seconds and moves them to the nearest length on the model's frame grid
+// (H3: 17n + 5 frames at 24 fps). Past the model's own longest clip is allowed, up to four times it.
+const ST_LEN_OTHER = "Other…";
+function studioSnapFrames(V, sec) {
+  const c = V.clip, want = Math.max(0, Number(sec) || 0) * c.fps;
+  const most = Math.floor((4 * c.max - c.offset) / c.step);
+  return c.offset + Math.min(most, Math.max(0, Math.round((want - c.offset) / c.step))) * c.step;
+}
+function studioClipFrames(V) {
+  if ($("stH3Len").value !== ST_LEN_OTHER || !V.clip) return V.length_frames[$("stH3Len").value] || 22;
+  return $("stH3LenS").value.trim() ? studioSnapFrames(V, $("stH3LenS").value) : V.clip.offset + V.clip.step;
+}
+function studioLenOther(snap) {
+  const L = S.st.layout, V = L && L.kind === "video" ? L.video : null, box = $("stH3LenS"), note = $("stH3LenNote");
+  const other = !!V && !!V.clip && $("stH3Len").value === ST_LEN_OTHER;
+  box.style.display = other ? "" : "none";
+  note.textContent = "";
+  if (!other) return;
+  const f = studioClipFrames(V), c = V.clip, secs = (n) => String(Math.round(n / c.fps * 100) / 100);
+  if (snap && box.value.trim()) box.value = secs(f);
+  note.textContent = `${f} frames (${secs(f)} s)` + (f > c.max ? `, past the model's ${secs(c.max)} s range: untested` : "");
+}
+
 // the clip row's line under the boxes: what the Steps and speed-LoRA boxes give (a model with a speed LoRA)
 function studioClipNote() {
   const L = S.st.layout, V = L && L.kind === "video" ? L.video : null, note = $("stH3Note");
@@ -7502,7 +7528,7 @@ async function studioPoll() {
     $("stBase").src = q("baseline");
     $("stBaseVid").style.display = kind === "video" && has ? "" : "none";
     $("stBase").style.display = kind === "video" && has ? "none" : "";
-    if (kind === "video" && has) { $("stBaseVid").poster = q("baseline"); $("stBaseVid").src = q("baseline_media"); }
+    if (kind === "video" && has) { $("stBaseVid").poster = q("baseline"); $("stBaseVid").src = clipLoopSrc(q("baseline_media")); }
   }
   if (st.early && st.early !== S.st.earlyShown) {        // H3 Show early: the unfinished look, until the clip lands
     S.st.earlyShown = st.early;
@@ -7523,7 +7549,7 @@ async function studioPoll() {
       $(vid).style.display = kind === "video" && has ? "" : "none";
       $(aud).style.display = "none";
       $(img).style.display = kind === "video" && has ? "none" : "";
-      if (kind === "video" && has) { $(vid).poster = q(w); $(vid).src = q(w + "_media"); }
+      if (kind === "video" && has) { $(vid).poster = q(w); $(vid).src = clipLoopSrc(q(w + "_media")); }
       if (kind === "audio" && has) songLoad(w, q(w + "_media"), st.shown, st.act && st.act[w] ? q(w + "_act") : "");
     }
     studioMetrics();
@@ -7590,7 +7616,7 @@ function studioNoLoraPane(st) {
     $("stNolVid").style.display = kind === "video" && media ? "" : "none";
     $("stNolAud").style.display = "none";
     $("stNol").style.display = kind === "video" && media ? "none" : "";
-    if (kind === "video" && media) { $("stNolVid").poster = q("nolora"); $("stNolVid").src = q("nolora_media"); }
+    if (kind === "video" && media) { $("stNolVid").poster = q("nolora"); $("stNolVid").src = clipLoopSrc(q("nolora_media")); }
     if (kind === "audio" && media) songLoad("nolora", q("nolora_media"), st.nolora_gen);
   }
 }
@@ -7746,8 +7772,8 @@ function wireStudio() {
   window.addEventListener("resize", debounce(() => { const d = $("stDock"); if (d && d.classList.contains("floating")) studioDockClamp(d); }, 150));
   $("stFamily").addEventListener("change", () => { studioFamily(); stRemember(); });
   // the clip row: length / size / steps / speed LoRA / sound wait for Update, as Model and Base do
-  for (const id of ["stH3Len", "stH3W", "stH3H", "stH3Steps", "stH3Turbo", "stH3Sound", "stH3Boost"])
-    $(id).addEventListener("change", () => { studioH3Remember(); studioPending(); });
+  for (const id of ["stH3Len", "stH3LenS", "stH3W", "stH3H", "stH3Steps", "stH3Turbo", "stH3Sound", "stH3Boost"])
+    $(id).addEventListener("change", () => { if (id.startsWith("stH3Len")) studioLenOther(true); studioH3Remember(); studioPending(); });
   $("stH3Early").addEventListener("change", studioH3Remember);
   $("stH3Model").addEventListener("change", () => { studioH3Remember(); studioSlots(); $("stStart").textContent = "Update"; });
   $("stH3Base").addEventListener("change", () => { studioH3Remember(); $("stStart").textContent = "Update"; });
@@ -8637,7 +8663,7 @@ function rmShow(img, vid, it) {
   $(vid).style.display = clip ? "" : "none";
   $(img).style.display = clip ? "none" : "";
   if (!it) { $(img).removeAttribute("src"); $(vid).removeAttribute("src"); return; }
-  if (clip) { $(vid).poster = rmMedia(it); if ($(vid).dataset.src !== rmMedia(it, true)) { $(vid).dataset.src = rmMedia(it, true); $(vid).src = rmMedia(it, true); } }
+  if (clip) { $(vid).poster = rmMedia(it); if ($(vid).dataset.src !== rmMedia(it, true)) { $(vid).dataset.src = rmMedia(it, true); $(vid).src = clipLoopSrc(rmMedia(it, true)); } }
   else $(img).src = rmMedia(it);
 }
 function rmShowLeft(it, caption) {
@@ -8790,6 +8816,7 @@ function rmWire() {
     $("rmStatus").textContent = "Model unloaded - the next Render loads it again.";
   });
   playTogether($("rmPlayBothBtn"), () => ["rmTweakVid", "rmBaseVid"]);
+  clipLoopInit();
   // curve presets and the pack's graph presets
   $("rmCurvePreset").addEventListener("change", async () => {
     const name = $("rmCurvePreset").value;
@@ -8882,6 +8909,34 @@ function rmWire() {
 // Play together / Pause together: one button for the panes' players (ids() names the ones in use). Play starts
 // them from the top unless they were paused together (then they carry on, still in step); the label follows the
 // players, so pausing one by its own controls turns the button back to Play.
+// Repeat / Ping-pong for the Studio and RefMod Toolkit clip panes (one choice, kept in this browser). Ping-pong
+// plays a file the server makes from the clip (forward then backward: &pp=1), looped like any other.
+const CLIP_LOOP_KEY = "fizgig_clip_loop", CLIP_LOOP_VIDS = ["stBaseVid", "stTweakVid", "stNolVid", "rmTweakVid", "rmBaseVid"];
+function clipLoopMode() {
+  try { return localStorage.getItem(CLIP_LOOP_KEY) === "pingpong" ? "pingpong" : "repeat"; } catch (e) { return "repeat"; }
+}
+function clipLoopSrc(url) {
+  const bare = url.replace(/&pp=1/g, "");
+  return clipLoopMode() === "pingpong" ? bare + "&pp=1" : bare;
+}
+function clipLoopInit() {
+  const sels = [...document.querySelectorAll(".clip-loop-mode")];
+  for (const s of sels) {
+    s.value = clipLoopMode();
+    s.addEventListener("change", () => {
+      try { localStorage.setItem(CLIP_LOOP_KEY, s.value); } catch (e) { /* the choice lasts for this page only */ }
+      for (const o of sels) o.value = clipLoopMode();
+      for (const id of CLIP_LOOP_VIDS) {              // the clips on show swap to the other file, playing on if they were
+        const v = $(id), src = v && v.getAttribute("src");
+        if (!src || clipLoopSrc(src) === src) continue;
+        const playing = !v.paused;
+        v.src = clipLoopSrc(src);
+        if (playing) v.play().catch(() => {});
+      }
+    });
+  }
+}
+
 function playTogether(btn, ids) {
   const media = () => ids().map((id) => $(id)).filter((m) => m && m.getAttribute("src"));
   const label = () => { btn.textContent = media().some((m) => !m.paused) ? "⏸ Pause together" : "▶ Play together"; };

@@ -116,3 +116,19 @@ def test_updater_moves_the_fp16_video_vae_to_the_int8_one_and_leaves_other_choic
     assert F.ensure_h3_int8_vae(str(tmp_path), log=lambda *_: None) is None             # someone's own file: kept
     prefs.write_text(json.dumps({}))
     assert F.ensure_h3_int8_vae(str(tmp_path), log=lambda *_: None) is None             # H3 not set up: nothing fetched
+
+
+def test_pingpong_file_is_made_once_beside_the_clip(tmp_path):
+    import os
+    import pytest
+    from fizgig.minimax.common import _find_ffmpeg, write_preview_mp4
+    from fizgig.web import studio
+    assert studio.pingpong(str(tmp_path / "x.png")) == str(tmp_path / "x.png")          # not a clip: itself
+    if not _find_ffmpeg():
+        pytest.skip("no ffmpeg here")
+    clip = str(tmp_path / "tweaked_3.mp4")
+    write_preview_mp4(clip, torch.rand(3, 9, 64, 64), None, fps=24)
+    out = studio.pingpong(clip)
+    assert out == str(tmp_path / "tweaked_3_pp.mp4") and os.path.getsize(out) > 0
+    made = os.path.getmtime(out)
+    assert studio.pingpong(clip) == out and os.path.getmtime(out) == made               # the second ask reuses it

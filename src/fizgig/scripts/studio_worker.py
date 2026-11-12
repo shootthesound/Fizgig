@@ -507,7 +507,7 @@ def _tidy(out, gen):
     keep = {os.path.normcase(p) for k in ("nolora_out", "nolora_song") if S.get(k) for p in S[k][1].values() if p}
     try:
         for f in os.listdir(out):
-            m = re.match(r"(baseline|tweaked|nolora)_(\d+)\.(png|mp4|wav|json)$", f)
+            m = re.match(r"(baseline|tweaked|nolora)_(\d+)(?:_pp)?\.(png|mp4|wav|json)$", f)
             p = os.path.join(out, f)
             if m and int(m.group(2)) < gen - 1 and os.path.normcase(p) not in keep:
                 os.remove(p)

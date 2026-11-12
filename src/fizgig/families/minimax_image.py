@@ -232,33 +232,31 @@ MINIMAX_IMAGE = FamilyDescription(
         # its schedule (Peter, 12 Nov 2026): one share before the hinge, one after, and which side alternates (between
         # the two shares, starting with its own). Inside the tick's row, behind its Advanced toggle (closed by default).
         FamilyOption("MINIMAX_IMAGE_LIKENESS_BEFORE", "Before the hinge", kind="entry", tokens="likeness_before={}",
-                     default=LIKENESS_DEFAULTS["BEFORE"], width=6, suffix="% of steps at the clean end, epoch 1 to the hinge",
+                     default=LIKENESS_DEFAULTS["BEFORE"], width=6, suffix="% at the clean end, to the hinge",
                      requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), advanced=True),
         # Peter, 12 Nov 2026: the Before share can climb (e.g. the model's own 16.67 up to 50) - the structure-heavy
         # start of a low first share, landing at the hinge like a 50 / 75 alternation
         FamilyOption("MINIMAX_IMAGE_LIKENESS_BEFORE_END", "Rises to", kind="entry", tokens="likeness_before_end={}",
-                     default=LIKENESS_DEFAULTS["BEFORE_END"], width=6, suffix="% by the hinge (blank: stays at the Before figure)",
+                     default=LIKENESS_DEFAULTS["BEFORE_END"], width=6, suffix="% by the hinge (blank: no climb)",
                      requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), advanced=True,
-                     hint="The Before share climbs evenly from its figure to this one, reaching it on its last epoch "
-                          "before the hinge. While the Before side alternates, only its own epochs climb."),
+                     hint="Climbs evenly from Before to this by the hinge (only Before's own epochs while alternating)."),
         FamilyOption("MINIMAX_IMAGE_LIKENESS_HINGE", "Hinge epoch", kind="entry", tokens="likeness_hinge={}",
                      default=LIKENESS_DEFAULTS["HINGE"], width=6, suffix="the last epoch of Before",
                      requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), advanced=True),
         FamilyOption("MINIMAX_IMAGE_LIKENESS_SLIDE", "Slide over", kind="entry", tokens="likeness_slide={}",
-                     default=LIKENESS_DEFAULTS["SLIDE"], width=6, suffix="epochs from the Before share to the After share (0: a jump)",
+                     default=LIKENESS_DEFAULTS["SLIDE"], width=6, suffix="epochs from Before to After (0: a jump)",
                      requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), advanced=True,
-                     hint="Starts after the hinge epoch and reaches the After share on its last epoch; the After "
-                          "side's alternating, if picked, starts once the slide ends."),
+                     hint="Starts after the hinge; After's alternating, if picked, starts when it ends."),
         FamilyOption("MINIMAX_IMAGE_LIKENESS_AFTER", "After the hinge", kind="entry", tokens="likeness_after={}",
-                     default=LIKENESS_DEFAULTS["AFTER"], width=6, suffix="% of steps at the clean end, the hinge to the end",
+                     default=LIKENESS_DEFAULTS["AFTER"], width=6, suffix="% at the clean end, after the hinge",
                      requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), advanced=True),
         FamilyOption("MINIMAX_IMAGE_LIKENESS_ALTERNATE", "Alternate", choices=(       # the first is the default
                          ("Before the hinge", "likeness_alternate=before"),
                          ("After the hinge", "likeness_alternate=after"),
                          ("Off", "likeness_alternate=off")),
                      requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), width=18, advanced=True,
-                     hint="The side that alternates switches between the two shares every epoch, starting with its "
-                          "own; the other side holds its share. Off: each side holds its own share."),
+                     hint="That side switches between the two shares each epoch, starting with its own. Off: each "
+                          "side holds its own."),
     ),
     workbench=("repair", "profiler", "extract", "royale"),
 

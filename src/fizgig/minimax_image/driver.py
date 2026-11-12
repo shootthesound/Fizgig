@@ -392,7 +392,11 @@ class MiniMaxH3ImageDriver(FamilyDriver):
 
         @contextlib.contextmanager
         def hooks():
-            mods = [b.attn for b in dit.blocks]
+            def inner(b):        # Compile Blocks wraps each block (torch.compile's module, then CheckpointedBlock)
+                while not hasattr(b, "attn"):
+                    b = getattr(b, "_orig_mod", None) or getattr(b, "block")
+                return b
+            mods = [inner(b).attn for b in dit.blocks]
             saved = []
             for a in mods:
                 orig, fwd = wrap(a)

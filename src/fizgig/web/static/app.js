@@ -8816,7 +8816,6 @@ function rmWire() {
     $("rmStatus").textContent = "Model unloaded - the next Render loads it again.";
   });
   playTogether($("rmPlayBothBtn"), () => ["rmTweakVid", "rmBaseVid"]);
-  clipLoopInit();
   // curve presets and the pack's graph presets
   $("rmCurvePreset").addEventListener("change", async () => {
     const name = $("rmCurvePreset").value;
@@ -10367,6 +10366,7 @@ function wire() {
   window.addEventListener("focus", catchUp);
   wireLightbox();
   wireStudio();
+  clipLoopInit();                      // the clip panes' Repeat / Ping-pong (Studio and RefMod Toolkit)
   wirePrep();
   $("presetSave").addEventListener("click", presetSaveOpen);
   $("btnTrainMaps").addEventListener("click", async () => {      // the same view as Runs & outputs, for the run going now

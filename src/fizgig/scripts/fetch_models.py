@@ -97,8 +97,8 @@ FAMILIES = {
                "text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors", 15.7,
                "Qwen3-VL-32B text encoder (nvfp4 — the compact ComfyUI file)"),
         Weight("minimax_vae", "Comfy-Org/MiniMax-H3",
-               "vae/minimax_h3_video_vae_fp16.safetensors", 4.9,
-               "Video VAE — caching + preview decode"),
+               "vae/minimax_h3_video_vae_int8_convrot.safetensors", 2.8,
+               "Video VAE (int8 decoder) — caching + preview decode"),
         # Not behind --include-optional: 605 MB against this family's 47 GB is nothing, and a
         # user who adds video clips later would otherwise have to come back for one small file.
         Weight("minimax_audio_vae", "Comfy-Org/MiniMax-H3",

@@ -73,3 +73,46 @@ def test_a_reload_for_room_keeps_the_int8_base():
     assert quant == "int8" and 0 < n <= 40
     assert E.plan_base(31.0, "auto", need, keep_int8=True)[0] == "int8"
     assert E.plan_base(12.0, "nf4", need, keep_int8=True) == ("nf4", 0)         # the user's own pick stands
+
+
+def _engine(have, free=30.5):
+    e = E.__new__(E)
+    e.base_mode, e.dit, e.base_plan, e._plan_free = "auto", object(), ("int8", have), free
+    e.calls = []
+    e._stream_more = lambda want: e.calls.append(want) or True
+    return e
+
+
+def test_more_room_streams_blocks_in_place_and_stops_at_the_most_a_plan_gives():
+    e = _engine(6)
+    e.ensure_room(768, 640, 124)                     # needs more than 6 blocks leave
+    assert e.calls and 6 < e.calls[0] <= E._MAX_STREAMED
+    e = _engine(E._MAX_STREAMED)
+    e.ensure_room(1280, 960, 124)                    # asks past the most: nothing more to do, no reload each render
+    assert e.calls == []
+    e = _engine(20)
+    e.ensure_room(512, 512, 22)                      # a smaller clip keeps the plan
+    assert e.calls == []
+
+
+def test_updater_moves_the_fp16_video_vae_to_the_int8_one_and_leaves_other_choices(tmp_path, monkeypatch):
+    import json
+    import os
+    from fizgig.scripts import fetch_turbo_lora as F
+    monkeypatch.setattr(F, "_valid_safetensors", lambda *a, **k: True)
+    monkeypatch.setattr(F, "_download", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no download")))
+    models = tmp_path / "models"
+    models.mkdir()
+    (tmp_path / "user_data").mkdir()
+    prefs = tmp_path / "user_data" / "prefs.json"
+    fp16, int8 = models / F.H3_VAE_FP16, models / F.H3_VAE_INT8
+    fp16.write_bytes(b"x")
+    int8.write_bytes(b"x")
+    prefs.write_text(json.dumps({"minimax_vae": str(fp16), "other": 1}))
+    assert F.ensure_h3_int8_vae(str(tmp_path), log=lambda *_: None) == str(int8)
+    got = json.loads(prefs.read_text())
+    assert got == {"minimax_vae": str(int8), "other": 1} and os.path.isfile(fp16)      # fp16 file left in place
+    prefs.write_text(json.dumps({"minimax_vae": str(models / "my_own_vae.safetensors")}))
+    assert F.ensure_h3_int8_vae(str(tmp_path), log=lambda *_: None) is None             # someone's own file: kept
+    prefs.write_text(json.dumps({}))
+    assert F.ensure_h3_int8_vae(str(tmp_path), log=lambda *_: None) is None             # H3 not set up: nothing fetched

@@ -15,6 +15,7 @@ clip of T frames yields ceil(T/4) latent frames.
 """
 
 import math
+import os
 
 import torch
 import torch.nn as nn
@@ -646,7 +647,12 @@ class MiniMaxH3VideoVAEDecoder(nn.Module):
 
     def _decode_tile(self, zz):
         """One spatial tile: the full decoded clip [B, 3, 4*T, h*16, w*16] — temporal selection
-        is the caller's job (single-frame keeps one frame; decode_clip slices per chunk)."""
+        is the caller's job (single-frame keeps one frame; decode_clip slices per chunk). The int8 ConvRot
+        decoder's Linears take the int8 GEMM here (FIZGIG_NO_INT8_LINEAR=1 keeps them on their own path)."""
+        if getattr(self, "int8", False):
+            from fizgig.modules import int8_linear as _i8l
+            with torch.no_grad(), _i8l.renders(True):
+                return self.decoder(zz)
         return self.decoder(zz)
 
     def _split_tiles(self, input_len):
@@ -720,3 +726,85 @@ class MiniMaxH3VideoVAEDecoder(nn.Module):
             row_tails = new_tails
             out_y += tile.shape[-2]
         return canvas
+
+
+def load_video_decoder(path, dtype=torch.float16):
+    """The decoder half of an H3 video VAE file, in `dtype` on the CPU, eval mode. Two files load:
+
+      * the fp16 file (minimax_h3_video_vae_fp16): dense weights, 4.5 GB on the card;
+      * the int8 ConvRot file (minimax_h3_video_vae_int8_convrot): the ViT's 144 Linears as int8 codes + a scale
+        per row, each marked by a `.comfy_quant` blob - the DiT's own storage, so they become ConvRotInt8Linear
+        and a render with the INT8 linear switch on (modules/int8_linear.py) runs them on the int8 GEMM.
+
+    Only the decoder's own tensors are read (the file's encoder half stays on disk). The scales stay fp32: a
+    module-wide .to(fp16) would round them, so the int8 Linears go in after the cast.
+
+    Without the int8 GEMM (no NVIDIA CUDA card, comfy-kitchen missing, FIZGIG_NO_INT8_LINEAR=1) the int8 file's
+    Linears are dequantized to dense fp16 here instead: kept as int8 they would run the rotate-and-cast path,
+    measured 1.5x slower than the fp16 file (12 Nov 2026, 5090: 7.2 s against 4.7 s for a 124-frame 512x512
+    clip; on the kernel 2.8 s). Dense, the decode costs what the fp16 file's does."""
+    from safetensors import safe_open
+    from fizgig.minimax.convrot import ConvRotInt8Linear, dequantize_int8_convrot, parse_comfy_quant
+    keep_int8 = int8_gemm_usable()
+    dec = MiniMaxH3VideoVAEDecoder()
+    own = set(dec.state_dict().keys())
+    with safe_open(path, framework="pt", device="cpu") as f:
+        keys = set(f.keys())
+        quant = sorted(k[:-len(".comfy_quant")] for k in keys if k.endswith(".comfy_quant")
+                       and k[:-len(".comfy_quant")] + ".weight" in own)
+        held = {q + sfx for q in quant for sfx in (".weight", ".bias")}
+        dec.load_state_dict({k: f.get_tensor(k) for k in keys if k in own and k not in held}, strict=False)
+        dec = dec.to(dtype).eval()
+        for q in quant:
+            conf = parse_comfy_quant(f.get_tensor(q + ".comfy_quant"))
+            if conf.get("format") != "int8_tensorwise":
+                raise ValueError(f"{q}: unsupported quant format {conf.get('format')!r} in {path}")
+            codes = f.get_tensor(q + ".weight")
+            has_bias = q + ".bias" in keys
+            parent, _, name = q.rpartition(".")
+            if not keep_int8:
+                old = dec.get_submodule(q)
+                old.weight.data = dequantize_int8_convrot(codes, f.get_tensor(q + ".weight_scale"), conf, dtype)
+                if has_bias:
+                    old.bias.data = f.get_tensor(q + ".bias").to(dtype)
+                continue
+            # built 1x1 and resized: a full-size Linear would allocate and initialise a dense weight it then drops
+            lin = ConvRotInt8Linear(1, 1, bias=has_bias,
+                                    rot=int(conf.get("convrot_groupsize", 256)) if conf.get("convrot") else 1,
+                                    compute_dtype=dtype)
+            lin.out_features, lin.in_features = int(codes.shape[0]), int(codes.shape[1])
+            lin.qdata = codes.to(torch.int8)
+            lin.wscale = f.get_tensor(q + ".weight_scale").to(torch.float32).reshape(-1, 1)
+            if has_bias:
+                lin.bias = nn.Parameter(f.get_tensor(q + ".bias").to(dtype), requires_grad=False)
+            setattr(dec.get_submodule(parent), name, lin)
+    dec.int8 = bool(quant) and keep_int8
+    return dec.requires_grad_(False).eval()
+
+
+def int8_gemm_usable() -> bool:
+    """Whether a decode here would run int8 Linears on comfy-kitchen's int8 GEMM: an NVIDIA CUDA build with the
+    kernel importable, and the switch not turned off."""
+    if os.environ.get("FIZGIG_NO_INT8_LINEAR") == "1":
+        return False
+    try:
+        if not torch.cuda.is_available() or not getattr(torch.version, "cuda", None):
+            return False
+        from fizgig.modules import int8_linear as _i8l
+        return bool(_i8l.kernel_available())
+    except Exception:
+        return False
+
+
+def video_decoder_is_int8(path) -> bool:
+    """Whether an H3 video VAE file's decoder will sit on the card as int8 (its header has the int8 ConvRot
+    Linears and the int8 GEMM is usable here; False for a missing file)."""
+    if not int8_gemm_usable():
+        return False
+    try:
+        from safetensors import safe_open
+        with safe_open(path, framework="pt", device="cpu") as f:
+            return any(k.startswith("decoder.") and k.endswith(".comfy_quant") for k in f.keys())
+    except Exception:
+        return False
+

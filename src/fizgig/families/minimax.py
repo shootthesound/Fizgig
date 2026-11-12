@@ -220,10 +220,12 @@ MINIMAX = FamilyDescription(
                                 "conditioning to bf16 (validated), just a slower one-off load",
                   alt_repo=_H, alt_path="text_encoders/qwen3vl_32b_minimax_h3_bf16.safetensors", alt_label="bf16",
                   alt_note="~51.5GB bf16 — the full-precision original; loads faster, 3.3x the disk"),
-        ModelFile("minimax_vae", "Video VAE", True, _H, "vae/minimax_h3_video_vae_fp16.safetensors", 4.9, role="vae",
-                  hint="The H3 video VAE — encodes each training image to a 24-channel latent (used only during "
-                       "caching).",
-                  download_note="~4.9GB — Comfy-Org/MiniMax-H3 → vae/minimax_h3_video_vae_fp16.safetensors"),
+        ModelFile("minimax_vae", "Video VAE", True, _H, "vae/minimax_h3_video_vae_int8_convrot.safetensors", 2.8,
+                  role="vae",
+                  hint="The H3 video VAE — encodes each training image to a 24-channel latent while caching, and "
+                       "decodes previews and Studio clips. The int8 file decodes faster and takes half the VRAM; "
+                       "the fp16 file (minimax_h3_video_vae_fp16) works here too.",
+                  download_note="~2.8GB — Comfy-Org/MiniMax-H3 → vae/minimax_h3_video_vae_int8_convrot.safetensors"),
         ModelFile("minimax_audio_vae", "Audio VAE", False, _H, "vae/minimax_h3_audio_vae_fp32.safetensors", 0.61,
                   role="audio_vae", fetch_optional=False,
                   announce="Audio VAE (~605 MB) — train on the sound in video clips, and on voices",

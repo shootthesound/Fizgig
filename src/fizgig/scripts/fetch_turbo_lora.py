@@ -219,6 +219,38 @@ def ensure_taeh3(repo_dir: str = REPO_DIR, log=print):
         return None
 
 
+H3_VAE_FP16 = "minimax_h3_video_vae_fp16.safetensors"
+H3_VAE_INT8 = "minimax_h3_video_vae_int8_convrot.safetensors"
+H3_VAE_INT8_URL = "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/" + H3_VAE_INT8
+
+
+def ensure_h3_int8_vae(repo_dir: str = REPO_DIR, log=print):
+    """MiniMax H3's int8 video VAE (2.8 GB) for an install whose Video VAE is the fp16 file: the same encoder, a
+    decoder that decodes a clip in about 60% of the time and takes half the room on the card. Downloaded beside
+    the fp16 file and Preferences moved to it; the fp16 file is left where it is. A Video VAE that is any other
+    file is someone's own choice and kept. Never raises."""
+    try:
+        prefs_file = _prefs_file(repo_dir)
+        current = str(_load_prefs(prefs_file).get("minimax_vae") or "").strip()
+        if os.path.basename(current) != H3_VAE_FP16:
+            return None
+        probe, size = "decoder.transformer_blocks.0.attn.to_qkv.comfy_quant", 2600 * 1024 * 1024
+        dest = os.path.join(os.path.dirname(current) if os.path.isfile(current)
+                            else os.path.join(repo_dir, "user_data", "models"), H3_VAE_INT8)
+        if not (os.path.isfile(dest) and _valid_safetensors(dest, probe, size)):
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            log(f"Downloading MiniMax H3 int8 video VAE (~2.8 GB: faster clip decodes, half the VRAM) -> {dest}")
+            log(f"  from {H3_VAE_INT8_URL}")
+            if not _download(H3_VAE_INT8_URL, dest, log, probe, size):
+                return None
+        _save_pref(prefs_file, "minimax_vae", dest)
+        log(f"Preferences updated: minimax_vae -> {dest} (the fp16 file is still at {current})")
+        return dest
+    except Exception as e:
+        log(f"MiniMax H3 int8 video VAE: skipped ({type(e).__name__}: {e})")
+        return None
+
+
 def ensure_moss_previews(repo_dir: str = REPO_DIR, log=print):
     """MOSS-Image's preview recipe (Turbo LoRA at 0.6 with the SFT look LoRA) for an install with MOSS-Image set up,
     so updating users' previews use it from the start. Never raises; without them previews render at full quality."""
@@ -303,6 +335,7 @@ def ensure_text_helpers(repo_dir: str = REPO_DIR, log=print):
 if __name__ == "__main__":
     ensure_all()
     ensure_taeh3()
+    ensure_h3_int8_vae()
     ensure_moss_previews()
     ensure_face_models()
     ensure_mask_segmenter()

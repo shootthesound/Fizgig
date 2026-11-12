@@ -275,12 +275,23 @@ class H3RepairEngine(ClipContract):
     _ROOM_MARGIN_GB = 2.0
     _NEED_FIT_FRAMES = 56
 
+    # The decoder's weights on the card: the fp16 file 4.5 GiB, the int8 ConvRot file 2.3 (measured 12 Nov).
+    _DECODER_FP16_GIB, _DECODER_INT8_GIB = 4.5, 2.3
+
+    def _decoder_gib(self) -> float:
+        d = getattr(self, "_decoder_gib_cached", None)
+        if d is None:
+            from fizgig.minimax.vae import video_decoder_is_int8
+            d = self._decoder_gib_cached = (self._DECODER_INT8_GIB if video_decoder_is_int8(
+                getattr(self, "_vae_path", "") or "") else self._DECODER_FP16_GIB)
+        return d
+
     @classmethod
-    def clip_need_gb(cls, width=768, height=640, frames=22, keyframes=2, references=0) -> float:
+    def clip_need_gb(cls, width=768, height=640, frames=22, keyframes=2, references=0, decoder_gib=None) -> float:
         s = int(width) * int(height) / float(768 * 640)
         f, extra = min(int(frames), cls._NEED_FIT_FRAMES), max(0, int(frames) - cls._NEED_FIT_FRAMES)
         conds = 0.4 * int(keyframes) + 0.75 * int(references)
-        decode = 4.5 + s * (0.92 + 0.081 * f + 0.006 * extra + conds)
+        decode = (cls._DECODER_FP16_GIB if decoder_gib is None else float(decoder_gib))             + s * (0.92 + 0.081 * f + 0.006 * extra + conds)
         sampling = 1.0 + s * (2.3 + 0.052 * int(frames) + conds)
         return max(decode, sampling) * 2 ** 30 / 1e9
 
@@ -302,14 +313,14 @@ class H3RepairEngine(ClipContract):
         if free_gb >= cls._INT8_SWAP_MIN_FREE_GB or keep_int8:
             need = cls.clip_need_gb() if need_gb is None else float(need_gb)
             n = math.ceil((cls._INT8_REST_GB + need + cls._ROOM_MARGIN_GB - free_gb) / cls._INT8_BLOCK_GB)
-            return "int8", max(0, min(40, n))
+            return "int8", max(0, min(cls._MAX_STREAMED, n))
         return "nf4", 0
 
     def ensure_room(self, width, height, frames, keyframes=0, references=0, state=None) -> None:
         """Before a render, under Auto on the int8 base: when this clip needs more room than the load planned
-        for, reload the base planned for it (~45 s once, against minutes of the driver paging). Never for less
-        room - a smaller clip keeps the plan it has. Streaming more blocks into the loaded base mid-session
-        didn't free the card (12 Oct), so it is a reload."""
+        for, stream more of the loaded base's blocks from system RAM (_stream_more: a second or two, nothing
+        re-read from disk). Never for less room - a smaller clip keeps the plan it has. If the card's free
+        memory doesn't rise by what those blocks hold, the base is reloaded planned for the clip instead."""
         import math
         if getattr(self, "base_mode", "auto") != "auto" or self.dit is None:
             return
@@ -317,10 +328,13 @@ class H3RepairEngine(ClipContract):
         free = getattr(self, "_plan_free", None)
         if not plan or plan[0] != "int8" or not free:
             return
-        need = self.clip_need_gb(width, height, frames, keyframes, references)
+        need = self.clip_need_gb(width, height, frames, keyframes, references, decoder_gib=self._decoder_gib())
         want = math.ceil((self._INT8_REST_GB + need + self._ROOM_MARGIN_GB - free) / self._INT8_BLOCK_GB)
+        want = min(self._MAX_STREAMED, want)         # what plan_base can give: asking past it reloaded every render
         have = int(plan[1])
         if want <= have:
+            return
+        if self._stream_more(want):
             return
         logger.info("[h3-workbench] %dx%d x%d, %d keyframe(s), %d reference(s) needs ~%.1f GB: more than the "
                     "%d-block plan leaves - reloading the base for it", int(width), int(height), int(frames),
@@ -346,6 +360,42 @@ class H3RepairEngine(ClipContract):
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
+    _MAX_STREAMED = 40
+
+    def _stream_more(self, want: int) -> bool:
+        """`want` of the loaded int8 base's blocks streamed instead of the count it has now, without unloading
+        it: enable_block_swap rebuilds the ring over the longer tail, the newly streamed blocks' int8 weights
+        are copied to RAM and their copies on the card dropped. True when torch's allocation fell by what those
+        blocks hold; False (the caller reloads) when it didn't or anything failed. Judged by the allocation, not
+        the driver's free figure: about a third of the freed memory stays in torch's pool as free pieces between
+        weights still in use (measured 12 Nov: 6 blocks, 1.8 GiB out of the allocation, 1.2 back to the driver) -
+        the render and the decoder allocate from that pool, so it is room all the same. Judging by the driver's
+        figure is why this was a reload from 12 Oct."""
+        have = int(self.base_plan[1])
+        self._status("Making room on the card for this clip…")
+        try:
+            self._invalidate_activation_cache()      # the pass-1 resume sits out on a streamed plan
+            gc.collect()
+            torch.cuda.empty_cache()
+            before = torch.cuda.memory_allocated()
+            got = int(self.dit.enable_block_swap(int(want), h2d_only=True, ring_size=2))
+            gc.collect()
+            torch.cuda.empty_cache()
+            freed = (before - torch.cuda.memory_allocated()) / 1e9
+        except Exception:
+            logger.exception("[h3-workbench] streaming more blocks into the loaded base failed - reloading it")
+            return False
+        ring = min(2, got) - min(2, have)            # the ring's slots are on the card too
+        expect = (got - have - ring) * self._INT8_BLOCK_GB
+        if got < want or freed < 0.8 * expect:
+            logger.warning("[h3-workbench] %d -> %d blocks streamed freed %.1f GB of the ~%.1f expected - "
+                           "reloading the base instead", have, got, freed, expect)
+            return False
+        logger.info("[h3-workbench] %d -> %d blocks streamed in place: %.1f GB freed on the card", have, got, freed)
+        self._blocks_swapped = got
+        self.base_plan = ("int8", got)
+        return True
 
     def _dit_strip(self) -> None:
         """The base and its LoRA / Turbo nets off the card for good, as reset() does it (their storages
@@ -397,7 +447,8 @@ class H3RepairEngine(ClipContract):
         canvas = getattr(self, "plan_canvas", None)        # the clip the caller expects to render first
         keep = bool(getattr(self, "_keep_int8", False))
         base_quant, n_swap = self.plan_base(free, getattr(self, "base_mode", "auto"),
-                                            self.clip_need_gb(*canvas) if canvas else None, keep_int8=keep)
+                                            self.clip_need_gb(*(canvas or ()), decoder_gib=self._decoder_gib()),
+                                            keep_int8=keep)
         if keep and free < float(getattr(self, "_plan_free", 0.0) or 0.0) - 4.0:
             logger.warning("[h3-workbench] reloading for more room: %.1f GB free with the base unloaded, %.1f "
                            "when it was first loaded - something else is holding the card's memory; the int8 "
@@ -481,6 +532,7 @@ class H3RepairEngine(ClipContract):
         self.te_path = text_encoder_path
         self.dit_path = dit_path
         self._vae_path = vae_path
+        self._decoder_gib_cached = None
         self._audio_vae_path = audio_vae_path or None
         self._te_cache_dir = te_cache_dir or None
 
@@ -519,14 +571,11 @@ class H3RepairEngine(ClipContract):
     def _ensure_decoder(self):
         if self.decoder is not None:
             return self.decoder
-        from safetensors import safe_open
-        from fizgig.minimax.vae import MiniMaxH3VideoVAEDecoder
-        dec = MiniMaxH3VideoVAEDecoder()
-        with safe_open(self._vae_path, framework="pt", device="cpu") as f:
-            dec.load_state_dict({k: f.get_tensor(k) for k in f.keys()}, strict=False)
+        from fizgig.minimax.vae import load_video_decoder
         # FP16, not bf16 — the weights ship fp16 and this decoder was excluded from bf16 by
-        # ComfyUI on purpose (see the trainer's decode-phase comment for the full story).
-        self.decoder = dec.to(torch.float16).eval()
+        # ComfyUI on purpose (see the trainer's decode-phase comment for the full story). The
+        # int8 ConvRot decoder file loads here too (its Linears as int8 codes).
+        self.decoder = load_video_decoder(self._vae_path)
         return self.decoder
 
     def _ensure_audio_decoder(self):

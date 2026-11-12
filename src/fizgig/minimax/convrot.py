@@ -220,7 +220,8 @@ class _Int8RotLinearFn(torch.autograd.Function):
         # materialized at all, which is the 308 MB-per-layer transient this Function exists to
         # avoid. Structurally this is also what ComfyUI's int8 kernel does: accumulate, then
         # apply the fp32 scale.
-        y = torch.nn.functional.linear(xr, qdata.to(dt))
+        mm = torch.bfloat16 if dt == torch.float16 else dt      # fp16 (the video decoder) overflows on the code sums
+        y = torch.nn.functional.linear(xr.to(mm), qdata.to(mm))
         y = (y.float() * wscale.reshape(-1).float()).to(dt)
         return y if bias is None else y + bias.to(dt)
 

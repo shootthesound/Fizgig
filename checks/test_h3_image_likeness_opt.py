@@ -1,4 +1,5 @@
-"""MiniMax H3 Image's Likeness optimization: 75% of steps at the clean end for epochs 1-8, then 50 and 75 in turn."""
+"""MiniMax H3 Image's Likeness optimization: its default schedule (run six, 12 Nov 2026 - the Before share from 16.67
+climbing to 50, alternating with 75, hinge at epoch 6, 75 held after) and every box of its Advanced section."""
 import os
 import sys
 
@@ -13,17 +14,34 @@ def _share(opts, epoch):
     return d._clean_share()
 
 
-def test_schedule():
-    on = {"likeness_opt": "1"}
-    assert [_share(on, e) for e in range(1, 9)] == [75] * 8
-    assert [_share(on, e) for e in range(9, 15)] == [50, 75, 50, 75, 50, 75]
+def test_default_schedule_is_run_six():
+    on = {"likeness_opt": "1"}                                       # the CLI's plain tick: the whole default
+    assert [_share(on, e) for e in range(1, 11)] == [16.67, 75, 33.34, 75, 50, 75, 75, 75, 75, 75]
+
+
+def test_the_form_sends_run_six():
+    from fizgig.families import minimax_image as M
+    preset = dict(M.MINIMAX_IMAGE.presets)["✨ MiniMax H3 Image Standard (rank 32, full model)"]
+    toks = {"likeness_opt": "1", "likeness_before": preset["MINIMAX_IMAGE_LIKENESS_BEFORE"],
+            "likeness_before_end": preset["MINIMAX_IMAGE_LIKENESS_BEFORE_END"],
+            "likeness_hinge": preset["MINIMAX_IMAGE_LIKENESS_HINGE"], "likeness_after": preset["MINIMAX_IMAGE_LIKENESS_AFTER"],
+            "likeness_alternate": "before"}
+    assert [_share(toks, e) for e in range(1, 9)] == [_share({"likeness_opt": "1"}, e) for e in range(1, 9)]
+    keys = {o.key: o for o in M.MINIMAX_IMAGE.options}
+    assert keys["MINIMAX_IMAGE_LIKENESS_ALTERNATE"].choice_labels()[0] == M.LIKENESS_DEFAULTS["ALTERNATE"]
+    for k, v in M.LIKENESS_DEFAULTS.items():
+        if k != "ALTERNATE":
+            assert keys["MINIMAX_IMAGE_LIKENESS_" + k].default == v
 
 
 def test_boxes():
-    o = {"likeness_opt": "1", "likeness_before": "80", "likeness_after": "40", "likeness_hinge": "5"}
+    o = {"likeness_opt": "1", "likeness_before": "80", "likeness_after": "40", "likeness_hinge": "5",
+         "likeness_alternate": "after"}
     assert [_share(o, e) for e in range(1, 10)] == [80] * 5 + [40, 80, 40, 80]
     blank = {"likeness_opt": "1", "likeness_before": "", "likeness_after": "x", "likeness_hinge": ""}
-    assert [_share(blank, e) for e in (8, 9, 10)] == [75, 50, 75]
+    assert [_share(blank, e) for e in (1, 2, 6, 7)] == [16.67, 75, 75, 75]       # blanks fall back to the defaults
+    o = {"likeness_opt": "1", "likeness_before": "40", "likeness_alternate": "off"}
+    assert _share(o, 3) == 40                                        # a schedule given: no default climb
 
 
 def test_alternate_before_the_hinge():
@@ -60,12 +78,15 @@ def test_before_rises_to():
     assert _share(o, 2) == 50                                                  # an After epoch never climbs
 
 
-def test_boxes_only_sent_while_ticked():
+def test_boxes_only_sent_while_ticked_and_behind_advanced():
+    from fizgig.families.form import _option_row
     from fizgig.families.minimax_image import MINIMAX_IMAGE as d
     keys = {o.key: o for o in d.options}
+    assert "advanced_of" not in _option_row(keys["MINIMAX_IMAGE_LIKENESS_OPT"])
     for k in ("MINIMAX_IMAGE_LIKENESS_BEFORE", "MINIMAX_IMAGE_LIKENESS_HINGE", "MINIMAX_IMAGE_LIKENESS_AFTER",
               "MINIMAX_IMAGE_LIKENESS_ALTERNATE", "MINIMAX_IMAGE_LIKENESS_SLIDE", "MINIMAX_IMAGE_LIKENESS_BEFORE_END"):
         assert keys[k].requires == "MINIMAX_IMAGE_LIKENESS_OPT"
+        assert _option_row(keys[k])["advanced_of"] == "MINIMAX_IMAGE_LIKENESS_OPT"   # inside the tick's row
 
 
 def test_off_is_the_model_default_and_cli_share_still_works():

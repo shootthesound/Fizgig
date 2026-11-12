@@ -1196,6 +1196,15 @@ input[type="range"] {
 .collapsible-header { cursor: pointer; user-select: none; }
 .form-row { margin: 2px 0; }
 /* a control worth noticing (FamilyOption featured): a soft accent panel with a bright edge */
+/* a row with an Advanced toggle (FamilyOption.advanced): a panel that grows to hold its advanced rows */
+.form-row.row-has-advanced { border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px;
+  background: var(--bg-inset); }
+.adv-toggle { margin-top: 6px; padding: 2px 0; border: 0; background: none; color: var(--accent); font: inherit;
+  font-size: 0.9em; cursor: pointer; }
+.adv-toggle:hover { text-decoration: underline; }
+.row-advanced { margin-top: 6px; padding-top: 4px; border-top: 1px solid var(--border); }
+.row-advanced[hidden] { display: none !important; }
+.row-advanced > .form-row { margin: 0; }
 .form-row.row-featured {
   padding: 8px 10px; margin: 4px 0; border-radius: 8px;
   background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 16%, transparent), color-mix(in srgb, var(--accent) 4%, transparent));

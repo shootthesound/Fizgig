@@ -266,6 +266,8 @@ class FamilyOption:
     batch_off: bool = False           # a check that reads one picture a step: off and greyed while Batch size is above 1
     requires: str = ""                # shown (and sent) only while this check is ticked ("KEY") or this choice is
     #                                   picked ("KEY=LABEL", matched as pick() matches)
+    advanced: bool = False            # web: drawn inside the row it `requires`, behind that row's Advanced toggle
+    #                                   (closed by default) - a tuned default whose numbers most people leave alone
     suggestions: tuple = ()           # entry: ready-made values offered in an editable dropdown ("6-49 · why")
     mode: str = ""                    # "finetune": shown and sent for a fine-tune only; "lora": for a LoRA only
     # a queued run's one-line summary shows this while the option is away from its default ("{}" = its value;

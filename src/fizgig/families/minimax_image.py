@@ -18,6 +18,15 @@ _H = "Comfy-Org/MiniMax-H3"
 _PDD_SIGMAS = (1.0, 0.9675236940383911, 0.8875485062599182, 0.75, 0.5327739119529724, 0.23200887441635132, 0.0)
 
 
+# Likeness optimization's schedule (Peter, 12 Nov 2026: "this number 6 setup is the exact setup"): won a day of runs on
+# the Nicola set (Automagic v4, 0.25 MP) - the Before share starts at the model's own (1 in 6) and climbs to 50 by the
+# hinge at epoch 6, alternating with 75; 75 held after. Its face shape came earliest, it scored highest at matched
+# framing (AdaFace ViT 0.689, above all but 2 of her 45 photos) and kept the backgrounds clean. The boxes hold these
+# numbers behind the row's Advanced toggle; minimax_image/driver.py's defaults are the same.
+LIKENESS_DEFAULTS = {"BEFORE": "16.67", "BEFORE_END": "50", "HINGE": "6", "SLIDE": "0", "AFTER": "75",
+                     "ALTERNATE": "Before the hinge"}
+
+
 def _preset(rank, epochs=30, slider=False, mp="0.5", edit=False, likeness=False):
     """Krea 2's presets (families/krea2.py _preset; Peter, 10 Nov 2026: "mirror the Krea 2 presets exactly"), plus the
     two this model needs: Fizgig's training adapter on (without it people turn into caricatures) and an edit flag for
@@ -36,11 +45,9 @@ def _preset(rank, epochs=30, slider=False, mp="0.5", edit=False, likeness=False)
         "KREA2_LOSS_WATCH": True, "KREA2_PER_IMAGE_LR": True, "KREA2_AUTO_RECAPTION": False,
         "KREA2_WARMUP_LOOK": False,
         "FAMILY_SLIDER_GUIDANCE": "3",    # Krea 2's prompt-slider push strength
-        # 75% clean end for 8 epochs, then 50 / 75 alternating: on in Standard only (Peter, 11 Nov 2026)
+        # on in Standard only (Peter, 11 Nov 2026), on run six's schedule (12 Nov 2026, LIKENESS_DEFAULTS)
         "MINIMAX_IMAGE_LIKENESS_OPT": "1" if likeness else "",
-        "MINIMAX_IMAGE_LIKENESS_BEFORE": "75", "MINIMAX_IMAGE_LIKENESS_HINGE": "8", "MINIMAX_IMAGE_LIKENESS_AFTER": "50",
-        "MINIMAX_IMAGE_LIKENESS_SLIDE": "0", "MINIMAX_IMAGE_LIKENESS_BEFORE_END": "",
-        "MINIMAX_IMAGE_LIKENESS_ALTERNATE": "After the hinge",
+        **{"MINIMAX_IMAGE_LIKENESS_" + k: v for k, v in LIKENESS_DEFAULTS.items()},
     }
 
 
@@ -210,8 +217,8 @@ MINIMAX_IMAGE = FamilyDescription(
     preview_height=2048,
     repair_size=1024,
     # Likeness optimization (H3 Image's own, in place of the Clean-end share box, Peter 11 Nov 2026): the share of
-    # steps at the noise level below sigma 0.5 (0.232, the last of the 6) is 75% for epochs 1-8, then 50% and 75% in
-    # turn (epoch 9 at 50); the rest spread evenly over the 5 above. Off = the model's own even draw, 1 in 6 (~17%).
+    # steps at the noise level below sigma 0.5 (0.232, the last of the 6) follows LIKENESS_DEFAULTS' schedule; the
+    # rest spread evenly over the 5 above. Off = the model's own even draw, 1 in 6 (~17%).
     options=(
         FamilyOption("MINIMAX_IMAGE_LIKENESS_OPT", "Likeness optimization", kind="check",
                      tokens="likeness_opt=1", default="1",
@@ -220,33 +227,33 @@ MINIMAX_IMAGE = FamilyDescription(
                           "(pose, layout, the shape of things) keep up. Untick for H3 Image's own even share.",
                      summary="likeness optimization"),
         # its schedule (Peter, 12 Nov 2026): one share before the hinge, one after, and which side alternates (between
-        # the two shares, starting with its own). Shown while it's ticked.
+        # the two shares, starting with its own). Inside the tick's row, behind its Advanced toggle (closed by default).
         FamilyOption("MINIMAX_IMAGE_LIKENESS_BEFORE", "Before the hinge", kind="entry", tokens="likeness_before={}",
-                     default="75", width=6, suffix="% of steps at the clean end, epoch 1 to the hinge",
-                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0)),
+                     default=LIKENESS_DEFAULTS["BEFORE"], width=6, suffix="% of steps at the clean end, epoch 1 to the hinge",
+                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), advanced=True),
         # Peter, 12 Nov 2026: the Before share can climb (e.g. the model's own 16.67 up to 50) - the structure-heavy
         # start of a low first share, landing at the hinge like a 50 / 75 alternation
         FamilyOption("MINIMAX_IMAGE_LIKENESS_BEFORE_END", "Rises to", kind="entry", tokens="likeness_before_end={}",
-                     default="", width=6, suffix="% by the hinge (blank: stays at the Before figure)",
-                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0),
+                     default=LIKENESS_DEFAULTS["BEFORE_END"], width=6, suffix="% by the hinge (blank: stays at the Before figure)",
+                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), advanced=True,
                      hint="The Before share climbs evenly from its figure to this one, reaching it on its last epoch "
                           "before the hinge. While the Before side alternates, only its own epochs climb."),
         FamilyOption("MINIMAX_IMAGE_LIKENESS_HINGE", "Hinge epoch", kind="entry", tokens="likeness_hinge={}",
-                     default="8", width=6, suffix="the last epoch of Before",
-                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0)),
+                     default=LIKENESS_DEFAULTS["HINGE"], width=6, suffix="the last epoch of Before",
+                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), advanced=True),
         FamilyOption("MINIMAX_IMAGE_LIKENESS_SLIDE", "Slide over", kind="entry", tokens="likeness_slide={}",
-                     default="0", width=6, suffix="epochs from the Before share to the After share (0: a jump)",
-                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0),
+                     default=LIKENESS_DEFAULTS["SLIDE"], width=6, suffix="epochs from the Before share to the After share (0: a jump)",
+                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), advanced=True,
                      hint="Starts after the hinge epoch and reaches the After share on its last epoch; the After "
                           "side's alternating, if picked, starts once the slide ends."),
         FamilyOption("MINIMAX_IMAGE_LIKENESS_AFTER", "After the hinge", kind="entry", tokens="likeness_after={}",
-                     default="50", width=6, suffix="% of steps at the clean end, the hinge to the end",
-                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0)),
-        FamilyOption("MINIMAX_IMAGE_LIKENESS_ALTERNATE", "Alternate", choices=(
-                         ("After the hinge", "likeness_alternate=after"),
+                     default=LIKENESS_DEFAULTS["AFTER"], width=6, suffix="% of steps at the clean end, the hinge to the end",
+                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), advanced=True),
+        FamilyOption("MINIMAX_IMAGE_LIKENESS_ALTERNATE", "Alternate", choices=(       # the first is the default
                          ("Before the hinge", "likeness_alternate=before"),
+                         ("After the hinge", "likeness_alternate=after"),
                          ("Off", "likeness_alternate=off")),
-                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), width=18,
+                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), width=18, advanced=True,
                      hint="The side that alternates switches between the two shares every epoch, starting with its "
                           "own; the other side holds its share. Off: each side holds its own share."),
     ),

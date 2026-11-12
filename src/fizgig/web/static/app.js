@@ -290,6 +290,7 @@ function renderSections(tab, host) {
     const groups = {};
     for (const r of sec.rows) {
       const row = renderRow(r);
+      if (r && r.advanced_of && advancedInto(body, r.advanced_of, row)) continue;
       if (!r || !r.group) { body.append(row); continue; }
       let g = groups[r.group];
       if (!g) {
@@ -313,6 +314,33 @@ function renderSections(tab, host) {
     else if (host.querySelector(".extras-divider")) card.classList.add("sec-extra");
     host.append(card);
   }
+}
+
+// an option's advanced rows (FamilyOption.advanced): inside the row they belong to, behind its Advanced toggle, closed
+// until opened (remembered in this browser). The owner row becomes a panel that grows to hold them.
+function advancedInto(body, ownerKey, row) {
+  const owner = body.querySelector(`.form-row[data-key="${ownerKey}"]`);
+  if (!owner) return false;
+  let box = owner.querySelector(":scope > .row-advanced");
+  if (!box) {
+    const mem = "fizgig.adv." + ownerKey;
+    let open = false;
+    try { open = localStorage.getItem(mem) === "1"; } catch (e) { /* private window: closed */ }
+    box = el("div", {class: "row-advanced", hidden: !open});
+    const btn = el("button", {type: "button", class: "adv-toggle", "aria-expanded": String(open),
+      text: (open ? "▾" : "▸") + " Advanced"});
+    btn.addEventListener("click", () => {
+      const now = box.hidden;
+      box.hidden = !now;
+      btn.textContent = (now ? "▾" : "▸") + " Advanced";
+      btn.setAttribute("aria-expanded", String(now));
+      try { localStorage.setItem(mem, now ? "1" : "0"); } catch (e) { /* not kept */ }
+    });
+    owner.classList.add("row-has-advanced");
+    owner.append(btn, box);
+  }
+  box.append(row);
+  return true;
 }
 
 function renderRow(r) {
@@ -864,7 +892,8 @@ async function refreshState() {
     if (grp) grp.style.display = [...grp.querySelectorAll(".form-row[data-key]")]
       .some((x) => !hidden.has(x.dataset.key)) ? "" : "none";
     // a label the state renumbers (the Edit pairs steps when an extra-pictures folder joins), else the form's own
-    const lab = row.querySelector(".field-label"), rowDef = (S.fam.form.sections.flatMap((s) => s.rows)
+    // its own label (not one of the advanced rows inside it)
+    const lab = row.querySelector(":scope > .field-row > .field-label"), rowDef = (S.fam.form.sections.flatMap((s) => s.rows)
       .find((r) => r && r.key === k));
     if (lab && rowDef) lab.textContent = ((S.state.labels || {})[k] || rowDef.label) + ":";
     // a control of several values greys and hides each of its parts by its own key
@@ -901,6 +930,12 @@ async function refreshState() {
       if (act) n.append(" ", el("button", {class: "btn btn-sm", text: act.label, onclick: () => {
         Object.assign(S.values, act.values); syncInputs(Object.keys(act.values)); refreshStateSoon(); saveStateSoon(); }}));
     }
+  });
+  // an Advanced toggle shows while any of its rows can (Likeness optimization ticked)
+  document.querySelectorAll(".form-row.row-has-advanced").forEach((o) => {
+    const any = [...o.querySelectorAll(":scope > .row-advanced > .form-row[data-key]")].some((x) => !hidden.has(x.dataset.key));
+    o.querySelector(":scope > .adv-toggle").style.display = any ? "" : "none";
+    o.querySelector(":scope > .row-advanced").style.display = any ? "" : "none";
   });
   document.querySelectorAll(".section-card[data-section]").forEach((c) => {
     c.style.display = hidden.has(c.dataset.section) ? "none" : "";

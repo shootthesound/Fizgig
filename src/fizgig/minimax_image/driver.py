@@ -254,8 +254,8 @@ class MiniMaxH3ImageDriver(FamilyDriver):
 
     def _clean_share(self):
         """The clean-end share for this epoch (percent) or None (the model's even draw). Likeness optimization:
-        likeness_before (75) for epochs 1 to likeness_hinge (8), likeness_after (50) after it; likeness_alternate
-        (after / before / off) makes that side switch between the two shares every epoch, starting with its own.
+        likeness_before (16.67) for epochs 1 to likeness_hinge (6), likeness_after (75) after it; likeness_alternate
+        (before / after / off) makes that side switch between the two shares every epoch, starting with its own.
         likeness_slide=N: the N epochs after the hinge move evenly from Before to After (After's alternating after).
         likeness_before_end=P: the Before share climbs evenly to P by the hinge (only its own epochs while alternating).
         lownoise_pct=P (the CLI) still sets one share."""
@@ -265,14 +265,17 @@ class MiniMaxH3ImageDriver(FamilyDriver):
                     return float(str(self.options.get(key, "") or default).rstrip("%").strip())
                 except ValueError:
                     return float(default)
-            before, after = num("likeness_before", 75), num("likeness_after", 50)
-            hinge, slide = int(num("likeness_hinge", 8)), max(int(num("likeness_slide", 0)), 0)
+            # the schedule's defaults (families/minimax_image.py LIKENESS_DEFAULTS, run six): a run given none of
+            # its numbers (the CLI's plain likeness_opt=1) gets the whole of it, the climb to 50 included
+            bare = not any(k.startswith("likeness_") and k != "likeness_opt" for k in self.options)
+            before, after = num("likeness_before", 16.67), num("likeness_after", 75)
+            hinge, slide = int(num("likeness_hinge", 6)), max(int(num("likeness_slide", 0)), 0)
             e = int(getattr(self, "epoch", 1) or 1)
-            alt = str(self.options.get("likeness_alternate", "") or "after").strip().lower()
+            alt = str(self.options.get("likeness_alternate", "") or "before").strip().lower()
             if e <= hinge:
                 own = not (alt == "before" and (e - 1) % 2 == 1)      # a Before epoch (not its alternate's)
                 pct = before if own else after
-                end = str(self.options.get("likeness_before_end", "") or "").rstrip("%").strip()
+                end = str(self.options.get("likeness_before_end", "") or ("50" if bare else "")).rstrip("%").strip()
                 if own and end:                 # the Before share climbing to likeness_before_end by the hinge:
                     try:                        # evenly over its own epochs, the last one before the hinge at it
                         k, n = ((e - 1) // 2, (hinge + 1) // 2) if alt == "before" else (e - 1, hinge)

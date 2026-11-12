@@ -174,6 +174,7 @@ def _option_row(opt):
                 **({"labels": list(opt.suggestions)} if kind == "combo" else {}),
                 **({"warn": opt.warn, "warn_link": opt.warn_link} if opt.warn else {}),
                 **({"featured": True} if opt.featured else {}),
+                **({"advanced_of": opt.requires.partition("=")[0]} if opt.advanced and opt.requires else {}),
                 **({"split": list(opt.split), "split_hint": opt.split_hint} if kind == "split" and opt.split else {}),
                 **({"slide": list(opt.slide), "slide_hint": opt.slide_hint,
                     **({"slide_alt": list(opt.slide_alt)} if opt.slide_alt else {})} if kind == "split" and opt.slide else {}),

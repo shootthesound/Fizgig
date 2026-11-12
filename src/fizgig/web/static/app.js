@@ -2583,10 +2583,23 @@ async function likenessShow(dir, items, run, view) {
     g.fillText("your photos", W - R - 70, y(real.p75) - 4);
   }
   const bands = d.thresholds || {match: 0.45, borderline: 0.30};
+  // your photos' numbers on the axis (their middle half's edges and median, in the band's green); a badge band's
+  // number that would sit on top of one of them gives way
+  const realMarks = real ? [real.p25, real.median, real.p75] : [];
+  const clear = (v) => realMarks.every((r) => Math.abs(y(v) - y(r)) >= 11);
   for (const band of [bands.borderline, bands.match]) {         // the badge colour bands, for orientation
     g.strokeStyle = themeColor("--border"); g.fillStyle = themeColor("--text-muted");
     g.beginPath(); g.moveTo(L, y(band)); g.lineTo(W - R, y(band)); g.stroke();
-    g.fillText(Math.round(band * 100) + "%", 8, y(band) + 4);
+    if (clear(band)) g.fillText(Math.round(band * 100) + "%", 8, y(band) + 4);
+  }
+  if (real) {
+    g.fillStyle = themeColor("--success");
+    let last = -Infinity;
+    for (const v of [real.p75, real.median, real.p25]) {        // top down, each clear of the one above
+      const yy = Math.max(y(v) + 4, last + 11);
+      g.fillText(Math.round(v * 100) + "%", 8, yy);
+      last = yy;
+    }
   }
   g.strokeStyle = themeColor("--accent"); g.lineWidth = 2; g.beginPath();
   avgs.forEach((v, i) => (i ? g.lineTo(x(i), y(v)) : g.moveTo(x(i), y(v))));

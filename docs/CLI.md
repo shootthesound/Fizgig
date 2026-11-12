@@ -125,8 +125,7 @@ Headless, there is no Preferences tab: **model locations are passed as flags on 
 | Video VAE | [minimax_h3_video_vae_fp16.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/vae/minimax_h3_video_vae_fp16.safetensors) | `--vae` |
 | Audio VAE *(optional)* | [minimax_h3_audio_vae_fp32.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/vae/minimax_h3_audio_vae_fp32.safetensors) | `--aux audio_vae=` (caching) and `--family_option audio_vae=` (training) — sound in clips, voice recordings, previews with sound |
 | Turbo LoRA *(optional)* | [minimax_h3_turbo_v4_step600.safetensors](https://huggingface.co/larryvrh/MiniMax-H3-Turbo-Lora/blob/main/minimax_h3_turbo_v4_step600.safetensors) | 6-step previews (`--speed_lora`) |
-| Training adapter *(recommended)* | [minimax_h3_image_training_adapter.safetensors](https://huggingface.co/circlestone-labs/MiniMax-H3-Image-Training-Adapter/blob/main/minimax_h3_image_training_adapter.safetensors) (Circlestone, the GUI default — one file for both bases) | `--training_adapter` |
-| Training adapter, Ostris *(best for videos)* | [minimax_h3_training_adapter_v3.safetensors](https://huggingface.co/ostris/minimax_h3_training_adapter/blob/main/minimax_h3_training_adapter_v3.safetensors) (fl2va) · [ref2va file](https://huggingface.co/ostris/minimax_h3_training_adapter/blob/main/minimax_h3_ref2va_training_adapter_v3.safetensors) | `--training_adapter` — match it to `--dit` |
+| Training adapter *(recommended)* | [minimax_h3_training_adapter_v3.safetensors](https://huggingface.co/ostris/minimax_h3_training_adapter/blob/main/minimax_h3_training_adapter_v3.safetensors) (fl2va) · [ref2va file](https://huggingface.co/ostris/minimax_h3_training_adapter/blob/main/minimax_h3_ref2va_training_adapter_v3.safetensors) | `--training_adapter` — match it to `--dit` |
 
 **MiniMax H3 Image:**
 
@@ -638,7 +637,7 @@ H3's own settings are `--family_option name=value` pairs (the GUI's Training-tab
 - `adapter_ramp=R` — adapter-relative LR: the Learning Rate becomes a ceiling the run climbs toward.
 - `preview_frames=N preview_audio=1` — previews as clips on the 17n+5 frame grid (1 = a still), with their sound.
 
-`--training_adapter` is frozen at 1.0 for every training step, off for previews and absent from the saved LoRA; with Ostris's adapters, use the fl2va or ref2va file to match `--dit`. `--ema_decay 0.98` saves a smoothed average of the weights. `--precision auto --blocks_to_swap -1` picks the base precision (int8 ~21 GB resident, NF4 ~11 GB, HQQ by hand) and the swap together from free VRAM. Full fine-tuning (`--finetune`) trains the base in component windows on an NF4-resident trunk and saves exact int8 checkpoints; the GUI's Fine-tune choice builds it — see `docs/FINETUNE_HOWDOI.md` before running one headless.
+`--training_adapter` is frozen at 1.0 for every training step, off for previews and absent from the saved LoRA; use the fl2va or ref2va file to match `--dit`. `--ema_decay 0.98` saves a smoothed average of the weights. `--precision auto --blocks_to_swap -1` picks the base precision (int8 ~21 GB resident, NF4 ~11 GB, HQQ by hand) and the swap together from free VRAM. Full fine-tuning (`--finetune`) trains the base in component windows on an NF4-resident trunk and saves exact int8 checkpoints; the GUI's Fine-tune choice builds it — see `docs/FINETUNE_HOWDOI.md` before running one headless.
 
 ---
 

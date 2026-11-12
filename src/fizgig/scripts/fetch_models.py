@@ -108,12 +108,8 @@ FAMILIES = {
         Weight("minimax_turbo_lora", "larryvrh/MiniMax-H3-Turbo-Lora",
                "minimax_h3_turbo_v4_step600.safetensors", 0.78,
                "Turbo LoRA — fast 6-step in-training previews"),
-        # Training adapters, picked by the Training tab's dropdown: Circlestone (the default, one
-        # 620 MB file for both bases) and Ostris's pair (310 MB each, one per base, for video-only
-        # datasets). All fetched — small next to the DiT.
-        Weight("minimax_circlestone_adapter", "circlestone-labs/MiniMax-H3-Image-Training-Adapter",
-               "minimax_h3_image_training_adapter.safetensors", 0.62,
-               "Training adapter (Circlestone) — the default, one file for both bases"),
+        # Ostris's training adapters (310 MB each, one per base, picked by the Training Base). Both
+        # fetched — small next to the DiT.
         Weight("minimax_training_adapter", "ostris/minimax_h3_training_adapter",
                "minimax_h3_training_adapter_v3.safetensors", 0.31,
                "Training adapter (fl2va) — de-distills the base while your LoRA learns (Ostris)"),

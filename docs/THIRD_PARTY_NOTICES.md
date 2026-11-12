@@ -506,7 +506,7 @@ SOFTWARE.
 
 The third-party notices above cover **source code** only. Krea 2 / FLUX.2 model
 weights, the Qwen-Image VAE weights, the Qwen3-VL text-encoder weights, and the
-MiniMax H3 training adapters (circlestone-labs and Ostris), Meta's SAM 3.1 weights (the SAM License), the taeh3 weights (MIT, above), and the face models (InsightFace's
+MiniMax H3 training adapters (Ostris), Meta's SAM 3.1 weights (the SAM License), the taeh3 weights (MIT, above), and the face models (InsightFace's
 face finder and the AdaFace ViT weights, both for non-commercial research use) are distributed by their respective publishers under their own model licenses, which
 the user accepts when downloading them. Fizgig does not redistribute any model
 weights.

@@ -176,6 +176,8 @@ def _event(ev):
                 _S["status"] = "The No-LoRA render failed: " + ev["msg"]
         elif kind == "aborted":
             _S.update(rendering=False, progress=None)
+            if _S.pop("cancel_asked", False):    # the Cancel button: said so, and the early look goes
+                _S.update(status="Cancelled.", early="")
             nxt, _S["pending"] = _S["pending"], None
         elif kind == "error":
             where = ev.get("where")
@@ -358,7 +360,7 @@ def render(state, extra=None):
         else:
             _S["gen"] += 1
             gen = _S["gen"]
-            _S.update(rendering=True, progress=None, status="Generating preview…")
+            _S.update(rendering=True, progress=None, status="Generating preview…", cancel_asked=False)
             busy = False
             cut = _S.get("nolora_busy")
     if busy or cut:                              # the newest edit takes the engine (from a No-LoRA render too)
@@ -367,6 +369,20 @@ def render(state, extra=None):
         return {"ok": True, "queued": True}
     _send({"cmd": "render", "gen": gen, "state": state, "out_dir": OUT_DIR, **(extra or {})})
     return {"ok": True, "gen": gen}
+
+
+def cancel():
+    """The Cancel button: the render going stops within a block, and nothing waiting takes its place. True when
+    there was one to stop."""
+    with _lock:
+        busy = bool(_S.get("rendering") or _S.get("nolora_busy"))
+        if busy:
+            _S["pending"] = None
+            _S["cancel_asked"] = bool(_S.get("rendering"))
+            _S["status"] = "Cancelling…"
+    if busy:
+        _send({"cmd": "cancel"})
+    return busy
 
 
 def lora_trigger(path):

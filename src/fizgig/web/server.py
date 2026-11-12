@@ -815,6 +815,8 @@ def _studio_post(what, b):
     if what == "reset":
         studio.reset()
         return {"ok": True}
+    if what == "cancel":
+        return {"ok": studio.cancel()}
     if what in ("preset_save", "preset_load"):
         key = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(b.get("family") or ""))
         name = str(b.get("name") or "").strip()        # any name a file can have, as the desktop's

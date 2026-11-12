@@ -7507,6 +7507,7 @@ async function studioPoll() {
   $("stBar").style.width = p && p[1] ? `${Math.round(100 * p[0] / p[1])}%` : st.rendering || st.state === "loading" ? "100%" : "0";
   $("stBar").parentElement.classList.toggle("indeterminate", !(p && p[1]) && (st.rendering || st.state === "loading"));
   $("stStart").textContent = S.st.ready ? "Update" : "Start";
+  $("stCancel").disabled = !(st.rendering || st.pending);
   if (S.st.ready && !wasReady) {
     studioActivity();
     if (!$("stOut").value) S.st.autoOut = "";
@@ -7790,6 +7791,7 @@ function wireStudio() {
   wireStudioMetrics();
   wireStudioSetups();
   $("stEqD").addEventListener("click", () => studioEq("donor", !S.st.eq.donor));
+  $("stCancel").addEventListener("click", () => api("/api/studio/cancel", {}).then(studioPoll).catch(() => {}));
   $("stUnload").addEventListener("click", async () => { await api("/api/studio/reset", {}); S.st.ready = false; S.st.loadedKey = ""; studioPoll(); });
   $("stPrimaryPick").addEventListener("click", () => pick($("stPrimary").value || loraStart(), false, (p) => { $("stPrimary").value = p; stRemember(); }));
   $("stDonorPick").addEventListener("click", () => pick($("stDonor").value || $("stPrimary").value, false, (p) => { $("stDonor").value = p; stRemember();

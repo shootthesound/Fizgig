@@ -306,7 +306,7 @@ Captioning rules that come from real runs:
 
 Two JSON files can live alongside the images and travel with the dataset:
 
-- `fizgig_look_scores.json` — written by the GUI's Look Consistency Filter scan (ArcFace similarity of every image to 3 baseline picks). `--warmup_look_outliers` reads it to give real-but-unusual images a gentle LR ramp. Keys are image basenames, so the file survives the folder being moved or copied. There's no headless generator for it yet — run the Look Filter once in the GUI, or skip the flag.
+- `fizgig_look_scores.json` — written by the GUI's Look Consistency Filter scan (AdaFace similarity of every image to 3 baseline picks). `--warmup_look_outliers` reads it to give real-but-unusual images a gentle LR ramp. Keys are image basenames, so the file survives the folder being moved or copied. There's no headless generator for it yet — run the Look Filter once in the GUI, or skip the flag.
 - `fizgig_excluded.json` — the per-image watch's record of images it excluded, per model family. A later run of the same family still trains them from the start (they teach the run until they get stuck), but their two AI recaptions are spent, so if one is confirmed stuck again it is excluded at once. Editing an image's caption clears its record. Delete the file to give everything a clean slate.
 
 ---
@@ -716,7 +716,7 @@ The other two presets change only a few flags. **Standard** is `--network_dim 16
 
 - `--training_adapter FILE` — the Fizgig training adapter, frozen for every training step, off for previews and absent from the saved LoRA. Without it Qwen 2.1 LoRAs tend to collapse into texture or wobble part-way through.
 - `--ema_decay 0.98` — weight averaging: checkpoints and previews come from a smoothed average of the weights. `0` (the CLI default) turns it off.
-- `--optimizer_type adamw8bit|adamw|automagic3|automagic4|prodigy|muon` — `automagic3` and `automagic4` set their own learning rate from `--learning_rate` as a start, and turn off `--adaptive_lr`, `--per_image_lr` and `--warmup_look_outliers`. `prodigy` finds its own rate too: give `--learning_rate 1.0` (a multiplier); Adaptive LR and the look warm-up stand down, per-image LR stays. `muon` takes AdamW's learning rates.
+- `--optimizer_type adamw8bit|adamw|automagic3|automagic4|prodigy|muon` — `automagic3` and `automagic4` set their own learning rate from `--learning_rate` as a start, and turn off `--adaptive_lr`, `--per_image_lr` and `--warmup_look_outliers`; `automagic4` never climbs past 2.5e-4 unless `--optimizer_args` sets `max_lr=`. `prodigy` finds its own rate too: give `--learning_rate 1.0` (a multiplier); Adaptive LR and the look warm-up stand down, per-image LR stays. `muon` takes AdamW's learning rates.
 - `--network_type lokr --lokr_factor 8` — LoKR instead of LoRA.
 - `--min_timestep` / `--max_timestep` — restrict training to a noise band, on a 0-1 scale.
 

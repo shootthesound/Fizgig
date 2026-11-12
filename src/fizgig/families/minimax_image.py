@@ -38,6 +38,9 @@ def _preset(rank, epochs=30, slider=False, mp="0.5", edit=False, likeness=False)
         "FAMILY_SLIDER_GUIDANCE": "3",    # Krea 2's prompt-slider push strength
         # 75% clean end for 8 epochs, then 50 / 75 alternating: on in Standard only (Peter, 11 Nov 2026)
         "MINIMAX_IMAGE_LIKENESS_OPT": "1" if likeness else "",
+        "MINIMAX_IMAGE_LIKENESS_BEFORE": "75", "MINIMAX_IMAGE_LIKENESS_HINGE": "8", "MINIMAX_IMAGE_LIKENESS_AFTER": "50",
+        "MINIMAX_IMAGE_LIKENESS_SLIDE": "0",
+        "MINIMAX_IMAGE_LIKENESS_ALTERNATE": "After the hinge",
     }
 
 
@@ -216,6 +219,29 @@ MINIMAX_IMAGE = FamilyDescription(
                           "where skin, eyes and fine detail are made, changing over the run so the earlier steps "
                           "(pose, layout, the shape of things) keep up. Untick for H3 Image's own even share.",
                      summary="likeness optimization"),
+        # its schedule (Peter, 12 Nov 2026): one share before the hinge, one after, and which side alternates (between
+        # the two shares, starting with its own). Shown while it's ticked.
+        FamilyOption("MINIMAX_IMAGE_LIKENESS_BEFORE", "Before the hinge", kind="entry", tokens="likeness_before={}",
+                     default="75", width=6, suffix="% of steps at the clean end, epoch 1 to the hinge",
+                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0)),
+        FamilyOption("MINIMAX_IMAGE_LIKENESS_HINGE", "Hinge epoch", kind="entry", tokens="likeness_hinge={}",
+                     default="8", width=6, suffix="the last epoch of Before",
+                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0)),
+        FamilyOption("MINIMAX_IMAGE_LIKENESS_SLIDE", "Slide over", kind="entry", tokens="likeness_slide={}",
+                     default="0", width=6, suffix="epochs from the Before share to the After share (0: a jump)",
+                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0),
+                     hint="Starts after the hinge epoch and reaches the After share on its last epoch; the After "
+                          "side's alternating, if picked, starts once the slide ends."),
+        FamilyOption("MINIMAX_IMAGE_LIKENESS_AFTER", "After the hinge", kind="entry", tokens="likeness_after={}",
+                     default="50", width=6, suffix="% of steps at the clean end, the hinge to the end",
+                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0)),
+        FamilyOption("MINIMAX_IMAGE_LIKENESS_ALTERNATE", "Alternate", choices=(
+                         ("After the hinge", "likeness_alternate=after"),
+                         ("Before the hinge", "likeness_alternate=before"),
+                         ("Off", "likeness_alternate=off")),
+                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), width=18,
+                     hint="The side that alternates switches between the two shares every epoch, starting with its "
+                          "own; the other side holds its share. Off: each side holds its own share."),
     ),
     workbench=("repair", "profiler", "extract", "royale"),
 

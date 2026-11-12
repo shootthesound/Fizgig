@@ -471,10 +471,42 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 ```
 
+## CVLface / AdaFace (Minchul Kim) — MIT License
+
+The AdaFace ViT-Base network in `src/fizgig/face_vit.py` (Fizgig's look match for people) is rebuilt from
+CVLface's ViT code (https://github.com/mk-minchul/CVLface), inference parts only. Its weights
+(`minchul/cvlface_adaface_vit_base_webface4m`, trained on WebFace4M) are downloaded on first use, not
+redistributed: see the note on model weights below.
+
+```
+MIT License
+
+Copyright (c) 2022 Minchul Kim
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## Note on model weights
 
 The third-party notices above cover **source code** only. Krea 2 / FLUX.2 model
 weights, the Qwen-Image VAE weights, the Qwen3-VL text-encoder weights, and the
-MiniMax H3 training adapters (circlestone-labs and Ostris), Meta's SAM 3.1 weights (the SAM License) and the taeh3 weights (MIT, above) are distributed by their respective publishers under their own model licenses, which
+MiniMax H3 training adapters (circlestone-labs and Ostris), Meta's SAM 3.1 weights (the SAM License), the taeh3 weights (MIT, above), and the face models (InsightFace's
+face finder and the AdaFace ViT weights, both for non-commercial research use) are distributed by their respective publishers under their own model licenses, which
 the user accepts when downloading them. Fizgig does not redistribute any model
 weights.

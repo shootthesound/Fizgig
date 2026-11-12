@@ -156,7 +156,7 @@ More: [docs/WEB_UI.md](docs/WEB_UI.md).
 
 Face crops, the Look Consistency Filter and every likeness score can work on anime, furry and drawn characters and fursuits too, not just people.
 
-**The defaults are InsightFace (face finder) and ArcFace (look match), the same as before.** People's sets need nothing changed. Everything else is opt-in: open **Image Prep → Anime/furry/drawn characters** and pick:
+**The defaults are InsightFace (face finder) and AdaFace ViT (look match).** People's sets need nothing changed. Everything else is opt-in: open **Image Prep → Anime/furry/drawn characters** and pick:
 
 - **Face finder**: **Anime/furry/drawn (YOLO model)** for characters, or **Both** for a set with people and characters in it.
 - **Look match**: **Anime/furry/drawn** for characters, or **Auto (Decide for each set)**. Each look match has its own thresholds, and saved scores record which one made them.
@@ -238,7 +238,7 @@ Renting through the [RunPod link](https://console.runpod.io/deploy?type=GPU&gpu=
 | [Install and requirements](docs/INSTALL.md) | Hardware, system RAM, AMD ROCm, model downloads, VRAM tables |
 | [Klein 9B](docs/KLEIN.md) · [Flux 3 Image Klein](docs/FLUX3.md) · [Fibo 2.0](docs/FIBO2.md) · [Krea 2](docs/KREA2.md) · [MiniMax H3](docs/MINIMAX_H3.md) · [MiniMax H3 Image](docs/MINIMAX_IMAGE.md) · [Qwen Image 2.1](docs/QWEN_IMAGE.md) · [MOSS-Image](docs/MOSS_IMAGE.md) · [Z-Image Turbo](docs/ZIMAGE.md) · [SDXL](docs/SDXL.md) · [Anima](docs/ANIMA.md) · [ACE-Step](docs/ACESTEP.md) | Each model: presets, features, memory |
 | [Training and the workbench](docs/TRAINING.md) | The shared features and tools in detail |
-| [Face backends](docs/FACE_BACKENDS.md) | Face finder (InsightFace / YOLO) and look match (ArcFace / DINOv2) for people, anime and furry |
+| [Face backends](docs/FACE_BACKENDS.md) | Face finder (InsightFace / YOLO) and look match (AdaFace / DINOv2) for people, anime and furry |
 | [Full fine-tuning](docs/FINETUNE.md) · [How do I…?](docs/FINETUNE_HOWDOI.md) | Training the base model itself |
 | [RefMods](docs/REFMOD_HOWDOI.md) | RefMods for MiniMax H3 |
 | [Command line](docs/CLI.md) | Every trainer, headless |

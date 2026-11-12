@@ -19,6 +19,41 @@ def test_schedule():
     assert [_share(on, e) for e in range(9, 15)] == [50, 75, 50, 75, 50, 75]
 
 
+def test_boxes():
+    o = {"likeness_opt": "1", "likeness_before": "80", "likeness_after": "40", "likeness_hinge": "5"}
+    assert [_share(o, e) for e in range(1, 10)] == [80] * 5 + [40, 80, 40, 80]
+    blank = {"likeness_opt": "1", "likeness_before": "", "likeness_after": "x", "likeness_hinge": ""}
+    assert [_share(blank, e) for e in (8, 9, 10)] == [75, 50, 75]
+
+
+def test_alternate_before_the_hinge():
+    o = {"likeness_opt": "1", "likeness_before": "50", "likeness_after": "75", "likeness_hinge": "6",
+         "likeness_alternate": "before"}
+    assert [_share(o, e) for e in range(1, 10)] == [50, 75, 50, 75, 50, 75, 75, 75, 75]
+
+
+def test_alternating_off():
+    o = {"likeness_opt": "1", "likeness_before": "50", "likeness_after": "75", "likeness_hinge": "3",
+         "likeness_alternate": "off"}
+    assert [_share(o, e) for e in range(1, 7)] == [50, 50, 50, 75, 75, 75]
+
+
+def test_slide():
+    o = {"likeness_opt": "1", "likeness_before": "50", "likeness_after": "75", "likeness_hinge": "8",
+         "likeness_slide": "5", "likeness_alternate": "off"}
+    assert [_share(o, e) for e in range(7, 16)] == [50, 50, 55, 60, 65, 70, 75, 75, 75]
+    o["likeness_alternate"] = "after"          # the After side's alternating starts once the slide ends
+    assert [_share(o, e) for e in range(13, 17)] == [75, 75, 50, 75]
+
+
+def test_boxes_only_sent_while_ticked():
+    from fizgig.families.minimax_image import MINIMAX_IMAGE as d
+    keys = {o.key: o for o in d.options}
+    for k in ("MINIMAX_IMAGE_LIKENESS_BEFORE", "MINIMAX_IMAGE_LIKENESS_HINGE", "MINIMAX_IMAGE_LIKENESS_AFTER",
+              "MINIMAX_IMAGE_LIKENESS_ALTERNATE", "MINIMAX_IMAGE_LIKENESS_SLIDE"):
+        assert keys[k].requires == "MINIMAX_IMAGE_LIKENESS_OPT"
+
+
 def test_off_is_the_model_default_and_cli_share_still_works():
     assert _share({}, 3) is None
     assert _share({"lownoise_pct": "40"}, 3) == 40.0

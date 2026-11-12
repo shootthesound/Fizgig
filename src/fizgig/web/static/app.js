@@ -2489,11 +2489,12 @@ function viewJob(job) {
 // ---- likeness to the subject (fizgig/web/gallery_likeness.py; the desktop gallery's likeness.json) ------------
 S.lik = {dir: "", picked: []};
 const LIK_PICS = /\.(png|jpe?g|webp)$/i;
-// ArcFace never reaches 100%: two photos of the same person score about 72% against each other. Shown wherever ArcFace
-// scores are (a scorer label that isn't ArcFace's means another embedder, on its own scale; none recorded = ArcFace).
-const ARC_PEAK = "Peak ArcFace is about 72%: that's what two photos of the same person score against each other, " +
+// AdaFace never reaches 100%: two photos of the same person score about 70% against each other (measured 12 Nov 2026
+// on 6 people's datasets: a photo vs one of the set's own, 75th percentile 0.69). Shown wherever AdaFace scores are (a
+// scorer label that isn't AdaFace's means another embedder, on its own scale).
+const ADA_PEAK = "Peak AdaFace is about 70%: that's what two photos of the same person score against each other, " +
   "so no picture reaches 100%.";
-function arcPeak(label) { return !label || String(label).startsWith("ArcFace") ? ARC_PEAK : ""; }
+function adaPeak(label) { return label && String(label).startsWith("AdaFace") ? ADA_PEAK : ""; }
 
 // the gallery's Style score (web/gallery_style.py): each preview against the training pictures' look as a whole
 async function styleShow(dir, items, run) {
@@ -2546,24 +2547,47 @@ async function likenessShow(dir, items, run, view) {
     const it = pics.find((p) => p.name === fig.title);
     if (!on || !it) continue;
     const s = d.scores[it.name];
-    const t = d.thresholds || {match: 0.45, borderline: 0.30};     // the embedder's own bands (ArcFace / DINOv2 / CLIP)
+    const t = d.thresholds || {match: 0.42, borderline: 0.36};     // the embedder's own bands (AdaFace / DINOv2)
     const cls = s === undefined || s === null ? "na" : s >= t.match ? "good" : s >= t.borderline ? "mid" : "bad";
     fig.append(el("span", {class: `lik-badge ${cls}${it.epoch === bestEpoch && bestEpoch != null ? " best" : ""}`,
       text: s === undefined ? "…" : s === null ? "no face" : `${Math.round(s * 100)}%`}));
   }
   $("likPanel").style.display = epochs.length ? "" : "none";
   if (!epochs.length) return;
-  $("likPeak").textContent = arcPeak(d.embedder);
-  $("likRun").textContent = `${run} - best so far: epoch ${bestEpoch} (${Math.round(avgs[best] * 100)}% average likeness)`;
+  // the person's own training photos against the same 3 (gallery_likeness.real_photos): the realistic top, since
+  // real photos never score 100% either. Without it (still measuring, too few faces) the general note.
+  const real = d.real, pc = (v) => Math.round(v * 100) + "%";
+  $("likPeak").textContent = real ?
+    `Your ${real.n} training photos score ${pc(real.median)} against the 3 reference photos (most between ` +
+    `${pc(real.p25)} and ${pc(real.p75)}). A preview there looks as much like the person as a real photo does - ` +
+    `nothing reaches 100%, real photos don't either.` : adaPeak(d.embedder);
+  // the best epoch, and the mean over every trained epoch so far (epoch 0 - the model before training - left out)
+  const trained = avgs.filter((v, i) => epochs[i] > 0);
+  const mean = trained.length ? trained.reduce((a, b) => a + b, 0) / trained.length : null;
+  const vs = (v) => !real ? "" : v >= real.p75 ? " - above most of your photos" :
+    v >= real.median ? " - level with your photos" : v >= real.p25 ? " - within your photos' range" : "";
+  $("likRun").textContent = `${run} - best so far: epoch ${bestEpoch} (${pc(avgs[best])} likeness${vs(avgs[best])})` +
+    (mean == null ? "" : ` · average over ${trained.length} epoch${trained.length === 1 ? "" : "s"}: ` +
+     `${pc(mean)}`);
   const cv = $("likChart");
   const w = cv.clientWidth || 900;
   if (cv.width !== w) cv.width = w;
   const g = cv.getContext("2d"), W = cv.width, H = cv.height, L = 42, R = 12, T = 12, B = 22;
   g.clearRect(0, 0, W, H);
-  const ymax = Math.min(1, Math.max(0.7, (d.thresholds || {}).match + 0.15 || 0, Math.max(...avgs) + 0.05));
+  const ymax = Math.min(1, Math.max(0.7, (d.thresholds || {}).match + 0.15 || 0, Math.max(...avgs) + 0.05,
+                                    real ? real.p75 + 0.05 : 0));
   const x = (i) => epochs.length === 1 ? L + (W - L - R) / 2 : L + (W - L - R) * i / (epochs.length - 1);
   const y = (v) => T + (H - T - B) * (1 - v / ymax);
   g.font = "11px sans-serif"; g.lineWidth = 1;
+  if (real) {                  // the training photos' middle half, their median a dashed line: where real photos land
+    g.fillStyle = themeColor("--success", 0.13);
+    g.fillRect(L, y(real.p75), W - L - R, y(real.p25) - y(real.p75));
+    g.strokeStyle = themeColor("--success"); g.setLineDash([5, 4]);
+    g.beginPath(); g.moveTo(L, y(real.median)); g.lineTo(W - R, y(real.median)); g.stroke();
+    g.setLineDash([]);
+    g.fillStyle = themeColor("--success");
+    g.fillText("your photos", W - R - 70, y(real.p75) - 4);
+  }
   const bands = d.thresholds || {match: 0.45, borderline: 0.30};
   for (const band of [bands.borderline, bands.match]) {         // the badge colour bands, for orientation
     g.strokeStyle = themeColor("--border"); g.fillStyle = themeColor("--text-muted");
@@ -3909,8 +3933,8 @@ async function royaleScore() {
     $("ryBest").disabled = false;
     $("ryLikeStatus").textContent = `Best: ${ryLabel(r.best).toLowerCase()} (${r.scores[r.best].toFixed(3)})` +
       (r.no_face ? `  (${r.no_face} no-face)` : "") +
-      (r.embedder && !r.embedder.startsWith("ArcFace") ? `  · ${r.embedder}` : "");     // named when it isn't the usual one
-    $("ryLikePeak").textContent = arcPeak(r.embedder).replace("72%", "0.72 (72%)");
+      (r.embedder && !r.embedder.startsWith("AdaFace") ? `  · ${r.embedder}` : "");     // named when it isn't the usual one
+    $("ryLikePeak").textContent = adaPeak(r.embedder).replace("70%", "0.70 (70%)");
     royaleBest();
   } catch (e) { $("ryLikeStatus").textContent = e.message; }
 }
@@ -5368,7 +5392,7 @@ async function prepRun() {
 }
 
 // Image Prep's "Anime/furry/drawn characters" (fizgig/face_utils.py, prefs.json face_*): saved as soon as they
-// change. InsightFace + ArcFace are the defaults; the section opens by itself when something else is chosen.
+// change. InsightFace's finder + AdaFace are the defaults; the section opens by itself when something else is chosen.
 const FACE_HINTS = {
   insightface: "For people. It can tell men from women, for Largest Male / Female Face. It doesn't see anime, furry " +
     "or drawn faces.",
@@ -5376,7 +5400,7 @@ const FACE_HINTS = {
     "Male / Female Face use the largest face.",
   auto: "For a set with both people and characters in it. Both finders look at every picture, so it's a little slower."};
 const LOOK_HINTS = {
-  arcface: "For people's faces. For anime, furry or drawn characters, pick Anime/furry/drawn.",
+  adaface: "For people's faces. For anime, furry or drawn characters, pick Anime/furry/drawn.",
   dinov2: "For anime, furry or drawn characters, and fursuits; it works on people too. Its scores run higher than the people setting's, and " +
     "the colours follow.",
   auto: "Fizgig looks at some of the pictures each time it scores: People (the default) for a set of people, " +
@@ -5409,7 +5433,7 @@ function faceSettingsWire() {
   $("prepDetector").addEventListener("change", () => {
     const det = $("prepDetector").value, f = S.prep.face || {};
     // a YOLO face finder with the people-only look match would score nothing: the look match follows, said aloud
-    if (det !== "insightface" && f.identity === "arcface") {
+    if (det !== "insightface" && f.identity === "adaface") {
       const ident = det === "yolo" ? "dinov2" : "auto";
       return faceSettingsSave({detector: det, identity: ident}, `Look match changed to ${ident === "dinov2" ?
         "Anime/furry/drawn" : "Auto (Decide for each set)"}, so characters' faces get scored too.`);
@@ -5504,7 +5528,7 @@ async function lookPoll() {
   $("lookScan").disabled = S.prep.lookRunning || S.prep.bases.length !== 3;
   $("lookPick").disabled = S.prep.lookRunning;
   $("lookDecision").textContent = r.decision ? r.decision.replace("[faces] ", "") : "";
-  $("lookPeak").textContent = r.state === "done" && r.rows && r.rows.length ? arcPeak(r.embedder) : "";
+  $("lookPeak").textContent = r.state === "done" && r.rows && r.rows.length ? adaPeak(r.embedder) : "";
   const mine = r.folder === S.imageFolder;        // the last scan may be of another folder
   if (r.state === "running") {
     $("lookStatus").textContent = r.progress[0] ? `Scoring faces… ${r.progress[0]}/${r.progress[1]}` :

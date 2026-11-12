@@ -295,7 +295,7 @@ def _score_badge(score) -> Tuple[str, tuple]:
 def build_likeness_frames(ref_image: Image.Image, images: List[Tuple], scores: dict,
                           speed: str = "Normal", pingpong: bool = True, brand: bool = True,
                           max_size: Optional[int] = 768) -> List[Image.Image]:
-    """Side-by-side likeness clip: [ reference | epoch ] with the ArcFace likeness
+    """Side-by-side likeness clip: [ reference | epoch ] with the likeness
     score burned in, morphing epoch-by-epoch like the crossfade — the reference panel
     stays fixed while the epoch panel blends and the score ticks. `scores` maps the
     epoch label to its cosine (NaN / missing → 'NO FACE'). Mirrors build_frames'

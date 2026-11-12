@@ -1,7 +1,7 @@
 """The web UI's LoRA Royale (the desktop tab's): render every epoch of a run on one seed, crossfade between them, score
 their likeness to the subject, export the morph, promote the winner. The renders run on the GPU worker
 (fizgig.web.studio royale_render); everything here is CPU work in the server - scanning, picking the epochs, likeness
-(ArcFace), the clips (fizgig.lora_royale.export), copies."""
+(AdaFace), the clips (fizgig.lora_royale.export), copies."""
 
 import os
 import re
@@ -74,7 +74,7 @@ def _images(rendered):
 
 def score(gen, rendered, refs):
     """Each render's face against up to 3 photos of the subject, the mean of its similarities (Image Prep's look
-    match - with Auto, ArcFace for a person and DINOv2 for a furry / anime face - on the CPU, as the Samples gallery
+    match - with Auto, AdaFace for a person and DINOv2 for a furry / anime face - on the CPU, as the Samples gallery
     scores against its 3 baselines): {label: score or None (no face)}, and the best."""
     from fizgig.lora_royale import likeness
     if not likeness.available():

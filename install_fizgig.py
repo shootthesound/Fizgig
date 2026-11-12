@@ -387,42 +387,26 @@ else:
 
 
 def download_insightface_models():
-    """Trigger InsightFace model download by running a test detection"""
+    """The face models: InsightFace's face finder (its detector + gender/age files only) and AdaFace ViT, the
+    likeness model (face_utils.ensure_face_models: pinned, checksummed). Never fatal: they also fetch on first use."""
     python_path = get_python_path()
 
-    print("Downloading InsightFace models (buffalo_l)...")
-    print("(First-time download, ~300MB)")
+    print("Downloading the face models (face finder + AdaFace ViT likeness model, ~0.5 GB)...")
 
-    # Python script to download models
-    download_script = '''
+    download_script = f'''
 import os
 import sys
 os.environ.setdefault("ORT_DISABLE_TELEMETRY", "1")   # no onnxruntime telemetry (Linux builds 1.29+)
-
-# Suppress TensorFlow warnings
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
+sys.path.insert(0, {str(SCRIPT_DIR / "src")!r})
 try:
-    try:
-        import onnxruntime
-        onnxruntime.disable_telemetry_events()        # the Windows builds' switch
-    except Exception:
-        pass
-    from insightface.app import FaceAnalysis
-
-    print("Initializing FaceAnalysis (this downloads models)...")
-    app = FaceAnalysis(
-        name='buffalo_l',
-        allowed_modules=['detection', 'genderage', 'recognition'],
-        providers=['CPUExecutionProvider']
-    )
-    app.prepare(ctx_id=-1)  # -1 = CPU only
-    print("Models downloaded successfully!")
-    sys.exit(0)
+    from fizgig.face_utils import ensure_face_models
+    ensure_face_models()
+    print("Face models ready.")
 except Exception as e:
-    print(f"Warning: Could not download models: {e}")
-    print("Models will be downloaded on first use.")
-    sys.exit(0)  # Don't fail installation
+    print(f"Warning: Could not download the face models: {{e}}")
+    print("They will download on first use.")
+sys.exit(0)  # Don't fail installation
 '''
 
     try:
@@ -486,7 +470,7 @@ def print_summary():
         print("  Run: ./launch_fizgig.sh  (its own window)  or  ./launch_fizgig_browser.sh  (in your web browser)")
 
     print("\nFace Detection:")
-    print("  - InsightFace models will download on first use (~300MB)")
+    print("  - Face finder + AdaFace ViT likeness model (~0.5 GB, downloaded above or on first use)")
     print("  - Uses CPU for detection (works on any GPU)")
     print("  - Supports gender classification for face filtering")
     print("  - Furry / anime: pick a YOLO face model on the Image Prep tab (docs/FACE_BACKENDS.md)")

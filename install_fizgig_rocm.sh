@@ -524,18 +524,13 @@ else:
 PY
 
 echo
-echo "Downloading InsightFace models (CPU, ~300 MB)..."
-python - <<'PY'
+echo "Downloading the face models (face finder + AdaFace ViT, CPU, ~0.5 GB)..."
+PYTHONPATH="$(pwd)/src" python - <<'PY'
 import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-from insightface.app import FaceAnalysis
-app = FaceAnalysis(
-    name="buffalo_l",
-    allowed_modules=["detection", "genderage", "recognition"],
-    providers=["CPUExecutionProvider"],
-)
-app.prepare(ctx_id=-1)
-print("Models ready.")
+from fizgig.face_utils import ensure_face_models
+ensure_face_models()
+print("Face models ready.")
 PY
 
 echo

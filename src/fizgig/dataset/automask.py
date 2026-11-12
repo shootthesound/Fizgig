@@ -12,7 +12,7 @@ other (accessories), so one pass gives:
 - "background": the background only, every person left out (a place or scene LoRA).
 
 With several people in a picture, "subject_only" keeps just the one whose face matches the Look Filter's three
-baselines (ArcFace, as the filter scores them): the person outline is split into figures - each pixel goes to the face
+baselines (AdaFace, as the filter scores them): the person outline is split into figures - each pixel goes to the face
 nearest it inside its own connected shape - and the figure around the best-matching face is kept.
 
 Masks are written beside their pictures as photo-masklabel.png (dataset/masks.py), never over an existing one unless

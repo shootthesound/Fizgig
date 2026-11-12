@@ -1,7 +1,7 @@
 """Face-likeness scoring for LoRA Royale.
 
 Given a reference (training) image and a set of rendered epoch images, score how closely each render's face matches
-the reference. The identity embedder is face_utils.FaceEmbedder - ArcFace for human faces, DINOv2 (or CLIP) on the
+the reference. The identity embedder is face_utils.FaceEmbedder - AdaFace for human faces, DINOv2 (or CLIP) on the
 face crop for furry / anime faces - picked in Image Prep's face settings (prefs.json face_detector /
 face_identity). Higher cosine similarity = more alike; scores are only comparable within one embedder.
 
@@ -33,7 +33,7 @@ def get_embedder(settings: Optional[dict] = None):
 
 
 def available(settings: Optional[dict] = None) -> bool:
-    """True if the configured identity embedder can run (InsightFace for ArcFace; a face detector + transformers for
+    """True if the configured identity embedder can run (InsightFace + torch for AdaFace; a face detector + transformers for
     DINOv2 / CLIP)."""
     try:
         return get_embedder(settings).available
@@ -75,7 +75,7 @@ def score_renders(ref_paths, renders: List[Tuple], settings: Optional[dict] = No
     [(label, score)] with score in [-1, 1]: the mean of the render's similarity to each reference with a face (NaN
     where no reference or the render has a detectable face), as the Samples gallery scores against its 3 baselines.
     References are embedded once; one embedder for all of them - with Auto look match, decided from the reference
-    photos (ArcFace for a human face, DINOv2 otherwise)."""
+    photos (AdaFace for a human face, DINOv2 otherwise)."""
     global last_embedder_label
     from fizgig.face_utils import decide_look_match
     refs = [ref_paths] if isinstance(ref_paths, str) else list(ref_paths)

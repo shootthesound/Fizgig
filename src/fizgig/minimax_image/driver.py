@@ -253,11 +253,28 @@ class MiniMaxH3ImageDriver(FamilyDriver):
         return float(keep[int(torch.randint(len(keep), (1,), generator=generator))])
 
     def _clean_share(self):
-        """The clean-end share for this epoch (percent) or None (the model's even draw). Likeness optimization: 75
-        for epochs 1-8, then 50 and 75 in turn (epoch 9 at 50). lownoise_pct=P (the CLI) still sets one share."""
+        """The clean-end share for this epoch (percent) or None (the model's even draw). Likeness optimization:
+        likeness_before (75) for epochs 1 to likeness_hinge (8), likeness_after (50) after it; likeness_alternate
+        (after / before / off) makes that side switch between the two shares every epoch, starting with its own.
+        likeness_slide=N: the N epochs after the hinge move evenly from Before to After (After's alternating after).
+        lownoise_pct=P (the CLI) still sets one share."""
         if str(self.options.get("likeness_opt", "")).strip() in ("1", "true", "True"):
+            def num(key, default):
+                try:
+                    return float(str(self.options.get(key, "") or default).rstrip("%").strip())
+                except ValueError:
+                    return float(default)
+            before, after = num("likeness_before", 75), num("likeness_after", 50)
+            hinge, slide = int(num("likeness_hinge", 8)), max(int(num("likeness_slide", 0)), 0)
             e = int(getattr(self, "epoch", 1) or 1)
-            pct = 75 if e <= 8 or (e - 8) % 2 == 0 else 50
+            alt = str(self.options.get("likeness_alternate", "") or "after").strip().lower()
+            if e <= hinge:
+                pct = after if alt == "before" and (e - 1) % 2 == 1 else before
+            elif e <= hinge + slide:            # the slide: evenly from Before to After, at After on its last epoch
+                pct = round(before + (after - before) * (e - hinge) / slide, 1)
+            else:
+                pct = before if alt == "after" and (e - hinge - slide - 1) % 2 == 1 else after
+            pct = int(pct) if float(pct).is_integer() else pct
             if getattr(self, "_share_said", None) != pct:
                 self._share_said = pct
                 logger.info(f"MiniMax H3 Image: Likeness optimization - {pct}% of steps at the clean end from epoch {e}")
@@ -392,7 +409,11 @@ class MiniMaxH3ImageDriver(FamilyDriver):
 
         @contextlib.contextmanager
         def hooks():
-            mods = [b.attn for b in dit.blocks]
+            def inner(b):        # Compile Blocks wraps each block (torch.compile's module, then CheckpointedBlock)
+                while not hasattr(b, "attn"):
+                    b = getattr(b, "_orig_mod", None) or getattr(b, "block")
+                return b
+            mods = [inner(b).attn for b in dit.blocks]
             saved = []
             for a in mods:
                 orig, fwd = wrap(a)

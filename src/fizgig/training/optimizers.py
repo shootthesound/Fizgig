@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 PRODIGY_DEFAULT_ARGS = "decouple=True weight_decay=0.01 d_coef=1.0 use_bias_correction=True safeguard_warmup=True"
 MUON_DEFAULT_ARGS = "adjust_lr_fn=match_rms_adamw weight_decay=0.01 momentum=0.95 nesterov=True ns_steps=5"
 NEW_OPTIMIZERS = ("prodigy", "muon", "automagic4")    # added with #292; they never fall back to AdamW
+AUTOMAGIC4_MAX_LR = 2.5e-4    # Automagic v4's rate never climbs past this unless Optimizer Args sets max_lr
 
 
 # name -> (import to test, one-line description shown in the GUI/CLI help)
@@ -71,7 +72,8 @@ _CATALOG = {
     # sensitive weights and a rate controller that settles instead of annealing to zero.
     "automagic4":         (None,           "Automagic v4 (Ostris) — like v3, sets its own learning rate, and evens "
                                             "out how hard each weight is pushed; the LR box is its start, 1e-6 "
-                                            "recommended"),
+                                            "recommended; it never climbs past 2.5e-4 (max_lr= in "
+                                            "Optimizer Args changes that)"),
 }
 
 DEFAULT_OPTIMIZER = "adamw8bit"
@@ -328,6 +330,10 @@ def create_optimizer(name: str, params, lr: float, args_str: str = "",
         elif key == "automagic4":
             from fizgig.training.automagic4 import Automagic4
             kwargs.setdefault("fused", False)     # as v3: the H3 loop works on grads between backward and step
+            # a ceiling: upstream's max_lr default (1e3) is only an overflow guard, and v4's controller doesn't
+            # anneal, so it can climb far past what trains cleanly (Peter, 12 Nov 2026). max_lr= in Optimizer
+            # Args overrides it.
+            kwargs.setdefault("max_lr", AUTOMAGIC4_MAX_LR)
             opt = Automagic4(params, lr=lr, **kwargs)
         elif "." in name:
             module_path, cls_name = name.rsplit(".", 1)

@@ -2478,9 +2478,11 @@ async function styleShow(dir, items) {
 
 async function likenessShow(dir, items, run, view) {
   S.lik.dir = dir;
+  S.lik.run = run || "";                              // the scorer scores only this run's previews
   const ask = S.lik.ask = (S.lik.ask || 0) + 1;     // an older refresh's answer arriving late changes nothing
   let d;
-  try { d = await api(`/api/likeness?dir=${encodeURIComponent(dir)}&dataset=${encodeURIComponent(S.imageFolder || "")}`); }
+  try { d = await api(`/api/likeness?dir=${encodeURIComponent(dir)}&dataset=${encodeURIComponent(S.imageFolder || "")}` +
+                      `&run=${encodeURIComponent(run || "")}`); }
   catch (e) { return; }
   if (ask !== S.lik.ask) return;
   S.lik.data = d;
@@ -2608,7 +2610,7 @@ function likenessMarks() {
 async function likenessSet(names) {
   $("likPickStatus").textContent = "Starting…";
   try {
-    await api("/api/likeness", {dir: S.lik.dir, dataset: S.imageFolder || "", baselines: names});
+    await api("/api/likeness", {dir: S.lik.dir, dataset: S.imageFolder || "", baselines: names, run: S.lik.run || ""});
     $("likModal").classList.remove("active");
     loadGallery();
   } catch (e) { $("likPickStatus").textContent = e.message; }

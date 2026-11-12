@@ -3516,7 +3516,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(gallery_style.state((qs.get("dir") or [""])[0], (qs.get("dataset") or [""])[0]))
         if path == "/api/likeness":                 # the gallery's likeness scores (resumes the scorer)
             from fizgig.web import gallery_likeness
-            return self.json(gallery_likeness.state((qs.get("dir") or [""])[0], (qs.get("dataset") or [""])[0]))
+            return self.json(gallery_likeness.state((qs.get("dir") or [""])[0], (qs.get("dataset") or [""])[0],
+                                                    (qs.get("run") or [""])[0]))
         if path == "/api/thumb":
             p = (qs.get("path") or [""])[0]
             if os.path.splitext(p)[1].lower() not in _PIC or not os.path.isfile(p):
@@ -4496,7 +4497,8 @@ class Handler(BaseHTTPRequestHandler):
                 from fizgig.web import gallery_likeness
                 try:
                     return self.json({"ok": True, "msg": gallery_likeness.start(
-                        str(b.get("dir") or ""), str(b.get("dataset") or ""), b.get("baselines") or [])})
+                        str(b.get("dir") or ""), str(b.get("dataset") or ""), b.get("baselines") or [],
+                        run=str(b.get("run") or ""))})
                 except ValueError as e:
                     return self.json({"error": str(e)}, 400)
             if path == "/api/masks/sam_fetch":      # SAM 3.1 into the models folder (1.75 GB, once)

@@ -62,20 +62,28 @@ def _owns(samples_dir):
         return True
 
 
-def state(samples_dir, dataset_dir):
+def _run_of(name):
+    from fizgig.web.server import sample_info          # here, not at the top: server imports this module
+    return (sample_info(name) or {}).get("run")
+
+
+def state(samples_dir, dataset_dir, run=""):
     """likeness.json for the page, resuming the scorer when baselines were chosen (here or in the desktop) and nothing
-    scores this folder in this server yet."""
+    scores this folder in this server yet. run: the run the gallery shows - only its previews are scored (the folder
+    holds every run's; the others keep the scores they have); blank: the whole folder."""
     d = read(samples_dir)
     names = d.get("baselines") or []
     with _lock:
         running = samples_dir in _runs
+        if running:
+            _runs[samples_dir]["run"] = run or ""        # the scorer follows the run on show
     if names and not running and dataset_dir and os.path.isdir(dataset_dir) \
             and not all(os.path.exists(os.path.join(dataset_dir, os.path.basename(str(n)))) for n in names):
         names = []                                    # another run's pick (a different dataset): not chosen yet
         d["status"] = ""
     if len(names) == 3 and not running and dataset_dir and os.path.isdir(samples_dir)             and not str(d.get("status", "")).startswith("error"):     # a failed pick waits for a new one
         try:
-            start(samples_dir, dataset_dir, names)    # opening the gallery claims it (the desktop's rule)
+            start(samples_dir, dataset_dir, names, run=run)    # opening the gallery claims it (the desktop's rule)
         except ValueError as e:
             d["status"] = f"error: {e}"
     thr = d.get("thresholds") if isinstance(d.get("thresholds"), dict) else None
@@ -137,7 +145,7 @@ def real_photos(dataset_dir, names, base, emb, log=None):
     return _summary(vals) if len(vals) >= 4 else None
 
 
-def start(samples_dir, dataset_dir, names):
+def start(samples_dir, dataset_dir, names, run=""):
     """Score this samples folder against three dataset photos (names in the dataset folder); none = clear."""
     names = [os.path.basename(str(n)) for n in names or []]
     with _lock:
@@ -161,7 +169,7 @@ def start(samples_dir, dataset_dir, names):
     if not os.path.isdir(samples_dir):
         raise ValueError("No samples folder yet - the run makes it with its first previews.")
     with _lock:
-        _runs[samples_dir] = {"gen": gen, "dataset": dataset_dir}
+        _runs[samples_dir] = {"gen": gen, "dataset": dataset_dir, "run": run or ""}
     _claim(samples_dir)
     threading.Thread(target=_worker, args=(samples_dir, gen, paths), daemon=True).start()
     return "scoring started"
@@ -218,10 +226,13 @@ def _worker(samples_dir, gen, baselines):
                     _runs.pop(samples_dir, None)
             return
         try:
-            files = [f for f in os.listdir(samples_dir) if f.lower().endswith(PICS)]
+            every = [f for f in os.listdir(samples_dir) if f.lower().endswith(PICS)]
         except OSError:
-            files = []
-        have = set(files)
+            every = []
+        have = set(every)
+        with _lock:
+            want = (_runs.get(samples_dir) or {}).get("run") or ""
+        files = [f for f in every if _run_of(f) == want] if want else every     # the run on show, not the folder
         scores = {k: v for k, v in scores.items() if k in have}          # deleted samples drop out
         now = time.time()
         todo = [f for f in files if now - mtime(f) > 5.0

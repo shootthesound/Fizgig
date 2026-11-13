@@ -62,16 +62,20 @@ def sections(total: int, section: int = SECTION) -> "list[tuple[int, int]]":
     return out
 
 
-def low_sigmas(denoise: float, steps: int) -> "list[float]":
-    """`steps` noise levels from `denoise` down to 0, spaced as the model's own schedule spaces them (shift 12)."""
+def low_sigmas(denoise: float, steps: int, bias: float = 0.0) -> "list[float]":
+    """`steps` noise levels from `denoise` down to 0, spaced as the model's own schedule spaces them (shift 12).
+    bias (-1 to 1) moves the levels between the two ends: above 0 they crowd toward 0 (more of the steps on fine
+    detail), below 0 toward `denoise` (more of them on the larger changes). 0 is the model's own spacing."""
     s0, k = min(1.0, max(0.02, float(denoise))), max(1, int(steps))
+    p = 3.0 ** min(1.0, max(-1.0, float(bias or 0.0)))
     t0 = s0 / (SHIFT - (SHIFT - 1.0) * s0)
-    return [SHIFT * t / (1.0 + (SHIFT - 1.0) * t) for t in (t0 * (1.0 - i / k) for i in range(k + 1))]
+    return [SHIFT * t / (1.0 + (SHIFT - 1.0) * t) for t in (t0 * (1.0 - i / k) ** p for i in range(k + 1))]
 
 
 def tile_for(free_gib: float) -> int:
-    """The encoder's tile, in pixels, for the memory free on the card (a 17-frame tile: 384 px 8.2 GiB, 256 px 4.0)."""
-    return 384 if free_gib >= 10.0 else 256 if free_gib >= 5.5 else 192
+    """The encoder's tile, in pixels, for the memory free on the card (a 17-frame tile: 384 px 8.2 GiB, 256 px 4.0,
+    192 px about 2.8, 128 px about 1.8)."""
+    return 384 if free_gib >= 10.0 else 256 if free_gib >= 5.5 else 192 if free_gib >= 3.5 else 128
 
 
 def _positions(size: int, tile: int, overlap: int) -> "list[int]":
@@ -90,6 +94,7 @@ def encode_tiled(encoder, frames, device, tile: int = 384, overlap: int = 64):
     if f < 5 or (f - 5) % 17:
         raise ValueError(f"{f} frames is not on the model's 17n+5 grid")
     th, tw = min(tile, h), min(tile, w)
+    overlap = min(overlap, (tile // 64) * 16)          # a small tile blends over a quarter of itself
     k = overlap // 16
     edge = torch.linspace(0, 1, k + 2)[1:-1]
     lat, wsum, i, ti = None, torch.zeros(1, 1, 1, h // 16, w // 16), 0, 0

@@ -5853,6 +5853,7 @@ function studioKind(L, sv) {
   $("stUpDen").value = up.den || "0.4"; $("stUpSteps").value = up.steps || "3"; $("stUpSec").value = up.sec || "";
   $("stUpAuto").checked = up.auto === true;
   $("stUpFirst").checked = up.first !== false;
+  $("stUpBias").value = up.bias || "0";
   $("stUpOwnPrompt").checked = up.ownPrompt === true;
   $("stUpPrompt").value = up.prompt || "";
   $("stUpPromptRow").hidden = $("stUpPromptCopy").hidden = !$("stUpOwnPrompt").checked;
@@ -6010,7 +6011,7 @@ function studioH3Remember() {
       lenS: $("stH3LenS").value, w: $("stH3W").value,
       h: $("stH3H").value, steps: $("stH3Steps").value, turbo: $("stH3Turbo").value,
       sound: $("stH3Sound").checked, boost: $("stH3Boost").checked, early: $("stH3Early").checked, pieces: $("stH3Pieces").checked, pieceS: $("stH3PieceS").value, only: $("stH3Only").checked, loopPrompt: $("stLoopPrompt").value, loopS: $("stLoopS").value,
-      up: {w: $("stUpW").value, h: $("stUpH").value, den: $("stUpDen").value, steps: $("stUpSteps").value, sec: $("stUpSec").value, auto: $("stUpAuto").checked, first: $("stUpFirst").checked, last: $("stUpLast").checked, ownPrompt: $("stUpOwnPrompt").checked, prompt: $("stUpPrompt").value, which: $("stUpWhich").value, prevN: $("stUpPrevN").value, open: $("stUpBox").open}, kf: S.st.kf,
+      up: {w: $("stUpW").value, h: $("stUpH").value, den: $("stUpDen").value, steps: $("stUpSteps").value, sec: $("stUpSec").value, auto: $("stUpAuto").checked, first: $("stUpFirst").checked, last: $("stUpLast").checked, bias: $("stUpBias").value, ownPrompt: $("stUpOwnPrompt").checked, prompt: $("stUpPrompt").value, which: $("stUpWhich").value, prevN: $("stUpPrevN").value, open: $("stUpBox").open}, kf: S.st.kf,
       kfRect: S.st.kfRect};
     localStorage.setItem(ST_KEY, JSON.stringify(d));
   } catch (e) { /* private window */ }
@@ -7064,16 +7065,27 @@ function studioUpscale(V) {
     steps: Math.max(1, Math.min(20, parseInt($("stUpSteps").value, 10) || 3)),
     section: sec > 0 && V.clip ? Math.max(22, studioSnapFrames(V, sec)) : 0, auto: $("stUpAuto").checked,
     which: $("stUpWhich").value, first_guide: $("stUpFirst").checked, last_guide: $("stUpLast").checked,
-    prompt: $("stUpOwnPrompt").checked ? $("stUpPrompt").value.trim() : ""};
+    prompt: $("stUpOwnPrompt").checked ? $("stUpPrompt").value.trim() : "",
+    bias: Math.max(-1, Math.min(1, Number($("stUpBias").value) || 0))};
+}
+// the noise levels an upscale's steps run through (minimax/upscale.py low_sigmas: the model's shift-12 spacing)
+function studioUpLevels(u) {
+  const p = Math.pow(3, u.bias), t0 = u.denoise / (12 - 11 * u.denoise), out = [];
+  for (let i = 0; i <= u.steps; i++) {
+    const t = t0 * Math.pow(1 - i / u.steps, p);
+    out.push(Math.round(12 * t / (1 + 11 * t) * 100) / 100);
+  }
+  return out;
 }
 // the fold's heading says what is set, so it reads without being opened
 function studioUpSummary() {
   const L = S.st.layout, V = L && L.kind === "video" ? L.video : null;
   if (!V || !V.upscale) return;
   const u = studioUpscale(V);
+  $("stUpLevels").textContent = "noise levels " + studioUpLevels(u).join(" → ");
   $("stUpSum").textContent = `to ${u.width} × ${u.height}, denoise ${u.denoise}, ${u.steps} step${u.steps === 1 ? "" : "s"}`
     + (u.first_guide ? (u.last_guide ? "" : ", no last guide frame") : (u.last_guide ? ", no first guide frame" : ", no guide frames"))
-    + (u.prompt ? ", its own prompt" : "")
+    + (u.bias > 0 ? ", steps weighted low" : u.bias < 0 ? ", steps weighted high" : "") + (u.prompt ? ", its own prompt" : "")
     + ({baseline: ", the Baseline clip", both: ", both clips"}[u.which] || "") + (u.auto ? ", after every render" : "");
 }
 function studioPieceFrames(V) {
@@ -7853,13 +7865,14 @@ function wireStudio() {
   for (const id of ["stLoopPrompt", "stLoopS"]) $(id).addEventListener("change", studioH3Remember);
   // Upscale: the fold's boxes are remembered and its heading follows them; they wait for Update only while After
   // every render is on. Upscale this clip sends them with an ordinary render request, for the clip in the Tweaked pane
-  for (const id of ["stUpW", "stUpH", "stUpDen", "stUpSteps", "stUpSec", "stUpAuto", "stUpWhich", "stUpFirst", "stUpLast"])
+  for (const id of ["stUpW", "stUpH", "stUpDen", "stUpSteps", "stUpSec", "stUpAuto", "stUpWhich", "stUpFirst", "stUpLast", "stUpBias"])
     $(id).addEventListener("change", () => {
       const V = S.st.layout.video, u = studioUpscale(V);
       if (id === "stUpW" && $(id).value.trim()) $(id).value = u.width;
       if (id === "stUpH" && $(id).value.trim()) $(id).value = u.height;
       if (id === "stUpDen") $(id).value = u.denoise;
       if (id === "stUpSteps") $(id).value = u.steps;
+      if (id === "stUpBias") $(id).value = u.bias;
       if (id === "stUpSec" && u.section) $(id).value = String(Math.round(u.section / V.clip.fps * 100) / 100);
       studioUpSummary(); studioH3Remember();
       if (id === "stUpAuto" || $("stUpAuto").checked) studioPending();

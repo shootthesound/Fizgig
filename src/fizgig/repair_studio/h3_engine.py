@@ -1689,7 +1689,7 @@ class H3RepairEngine(ClipContract):
 
     @_locked
     def upscale_clip(self, state, clip, *, width, height, denoise=None, steps=None, section=0, turbo_strength=None,
-                     preview=0, first_guide=True, last_guide=True, **_ignored):
+                     preview=0, first_guide=True, last_guide=True, bias=0.0, **_ignored):
         """Studio's Upscale: `clip` (a render_clip dict) made again at width x height, on the state's prompt. The
         clip's frames are stretched and finished a section at a time at a low denoise (minimax/upscale.py): each
         section is a first / last frame clip pinned to its own two end frames, upscaled on their own first, and
@@ -1720,7 +1720,7 @@ class H3RepairEngine(ClipContract):
             n = min(_up.grid_floor(pv), _up.grid_floor(len(frames)))
             plan = [(max(0, min(mid - n // 2, len(frames) - n)), n)]
         den = float(denoise) if denoise not in (None, "") else _up.DENOISE
-        sig = _up.low_sigmas(den, int(steps or _up.STEPS))
+        sig = _up.low_sigmas(den, int(steps or _up.STEPS), bias)   # bias: the steps' weighting (-1 to 1)
         den, k = sig[0], len(sig) - 1
         seed = int(state.seed)
         self.apply_state(state)
@@ -1790,7 +1790,8 @@ class H3RepairEngine(ClipContract):
             sub = [im.convert("RGB").resize((w, h), Image.LANCZOS) for im in frames[a:a + n]]
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-                free = torch.cuda.mem_get_info()[0] / 2 ** 30
+                from fizgig.utils.device import plannable_free_vram
+                free = min(torch.cuda.mem_get_info()[0], plannable_free_vram() * 1e9) / 2 ** 30
             else:
                 free = 99.0
             enc = self._ensure_encoder().to(self.device)

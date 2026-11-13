@@ -407,6 +407,28 @@ def _start_server(port, key):
                             stderr=subprocess.DEVNULL, **kw)
 
 
+def quit_text(busy) -> str:
+    """What quitting with a run training does, for the window's OK / Cancel question: what stops, what is kept and
+    lost, what Fizgig asks at its next start, and the way to stop with nothing lost. busy: the server's
+    /api/app/busy answer (lora, saved epoch, epochs, queued runs)."""
+    name = busy.get("lora") or "The run"
+    saved, of, queued = int(busy.get("saved") or 0), int(busy.get("of") or 0), int(busy.get("queued") or 0)
+    waiting = f"{queued} queued run{'' if queued == 1 else 's'}"
+    if saved:
+        kept = (f"{name} stops now. It is saved at epoch {saved}" + (f" of {of}" if of else "") +
+                ": that stays, and what it has trained since that save is lost.")
+        after = (f"Next time Fizgig opens, it asks what to do: carry {name} on from epoch {saved}, " +
+                 (f"start the next of your {waiting}, or clear the queue and start fresh." if queued else
+                  "or start fresh."))
+    else:
+        kept = f"{name} stops now. It has not saved an epoch yet, so all of its training so far is lost."
+        after = (f"Next time Fizgig opens, it asks whether to start the next of your {waiting} or clear the queue."
+                 if queued else "Next time Fizgig opens as usual, with nothing running.")
+    return (f"{kept}\n\n{after}\n\nTo stop without losing anything, press Cancel and use Pause instead: it saves at the "
+            f"end of the current epoch and resumes exactly from there.\n\nOK: quit Fizgig and stop the run.\n"
+            f"Cancel: keep Fizgig open and training.")
+
+
 def _stop(proc):
     if proc is None or proc.poll() is not None:
         return
@@ -835,10 +857,7 @@ def main():
             if not busy.get("training"):
                 return True
             name = busy.get("lora") or "A run"
-            if not window.create_confirmation_dialog(
-                    "Quit Fizgig?", f"{name} is training. Quitting stops it: the epochs it has saved stay, and you "
-                    f"can pick it up again from its last saved state.\n\nPause it first instead to resume it "
-                    f"exactly. Quit and stop the run?"):
+            if not window.create_confirmation_dialog(f"Quit while {name} is training?", quit_text(busy)):
                 return False                              # stay open
             try:
                 req = urllib.request.Request(f"http://127.0.0.1:{port}/api/app/stop_run", data=b"{}", method="POST",

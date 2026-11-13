@@ -3932,7 +3932,20 @@ class Handler(BaseHTTPRequestHandler):
                 busy = _run["proc"] is not None and _run["proc"].poll() is None
                 lora = _run.get("lora") or ""
             if path == "/api/app/busy":
-                return self.json({"training": busy, "lora": lora})
+                # for the window's question on quitting: where the run is saved, and what waits behind it
+                saved, of, queued = 0, 0, len(webqueue.status()["items"])
+                if busy:
+                    with _lock:
+                        out, vals, began = _run.get("output_dir") or "", dict(_run.get("values") or {}), \
+                            _run.get("started_at") or 0
+                    rec = history.get(_run.get("history_id")) or {}
+                    m = re.search(r"-(\d{6})-state$", launch.latest_state(out, lora, rec.get("started_at") or began))
+                    saved = int(m.group(1)) if m else 0
+                    try:
+                        of = int(str(vals.get("MAX_TRAIN_EPOCHS") or "0").strip())
+                    except ValueError:
+                        of = 0
+                return self.json({"training": busy, "lora": lora, "saved": saved, "of": of, "queued": queued})
             if busy:                              # cut off by quitting: offered again at the next start
                 with _lock:
                     cut = str(_run.get("history_id") or "")

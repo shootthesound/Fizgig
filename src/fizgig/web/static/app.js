@@ -2590,7 +2590,11 @@ async function loadGallery() {
 // Prep, Captions, Samples and Training tabs. While another job is on show your own setup is kept aside (S.draft) and
 // nothing of the job is saved over it.
 const ctxKind = () => (S.ctx && S.ctx.kind) || "draft";
-const runKey = (r) => (r && r.lora ? `${r.lora}|${r.started_at || ""}` : "");
+// the run's own record names it (a pause and its Resume keep one record), else its name and start
+const runKey = (r) => (r && r.lora ? String(r.history_id || `${r.lora}|${r.started_at || ""}`) : "");
+// the job behind the pill: a run training, or one paused (it is still that job, waiting for Resume)
+const paused = () => !!(S.run && S.run.state === "paused" && S.run.lora);
+const jobAlive = () => training() || paused();
 const baseName = (p) => String(p || "").replace(/[\\/]+$/, "").split(/[\\/]/).pop();
 const CTX_TABS = ["start", "prep", "captions", "samples", "training"];
 const activeTab = () => ((document.querySelector(".tab-panel.active") || {}).id || "").replace(/^tab-/, "");
@@ -2617,7 +2621,9 @@ const ctxIsLiveRun = () => training() && ((ctxKind() === "run" && !(S.ctx || {})
 // the run on show can be looked at, not changed: its training settings, the model and preset pickers and the Start
 // tab's folder. Its Samples tab stays changeable: the prompts and preview settings go to its next previews
 function ctxLock() {
-  const on = ctxKind() === "run";
+  // paused: nothing is locked. What a Resume takes from the form (the previews, the size, block swap, the save
+  // schedule, the learning rate) is changed here, on the paused run's own settings
+  const on = ctxKind() === "run" && training();
   const parts = [$("trainingForm"), $("datasetsCard"), $("imageFolder").closest(".section-card"),
     ...document.querySelectorAll(".preset-row"), ...[...document.querySelectorAll(".family-pick")].map((x) => x.parentElement)];
   for (const p of parts) if (p) p.inert = on;
@@ -2646,7 +2652,7 @@ async function ctxSwitch(to) {
       S.draft = {family: S.family, values: {...S.values}, image_folder: S.imageFolder, all: {...S.all}};
     }
     if (from === "queue") queueEditing(null);                            // an edit not saved is left as it was
-    if (to.kind === "run" && training()) {
+    if (to.kind === "run" && jobAlive()) {
       S.ctx = {kind: "run", key: runKey(S.run), lora: S.run.lora};
       await ctxLoad({family: S.run.family, values: S.run.values, image_folder: S.run.image_folder});
       S.values.__SAMPLE_LIVE = true;                 // a change on its Samples tab goes to its next previews
@@ -2688,7 +2694,7 @@ async function ctxSwitch(to) {
 // your own setup IS the run training now (you pressed Start on it and haven't set up anything else since): then
 // there is one job to show, not two, and the list has no entry of its own for the setup
 function ctxSetupIsRun() {
-  if (!training()) return false;
+  if (!jobAlive()) return false;
   const d = S.draft || {image_folder: S.imageFolder, values: S.values || {}};
   return (d.image_folder || "") === (S.run.image_folder || "") && ((d.values || {}).LORA_NAME || "") === (S.run.lora || "");
 }
@@ -2697,7 +2703,7 @@ function ctxSetupIsRun() {
 function ctxTick() {
   const c = S.ctx = S.ctx || {kind: "draft"};
   if (S.ctxBusy) return;
-  const liveKey = training() ? runKey(S.run) : "";
+  const liveKey = jobAlive() ? runKey(S.run) : "";
   if (c.kind === "run") {
     if (liveKey !== c.key) { c.ended = true; c.next = liveKey ? S.run.lora : ""; }
   } else if (c.kind === "queue") {
@@ -2716,7 +2722,7 @@ function ctxTick() {
 function ctxOnTab() {
   const c = S.ctx;
   if (!c || !c.ended || S.ctxBusy) return;
-  if (training()) ctxSwitch({kind: "run"});
+  if (jobAlive()) ctxSwitch({kind: "run"});
   else if (c.kind === "run") ctxSwitch({kind: "draft"});
   else { c.ended = false; c.next = ""; jobPillShow(); }
 }
@@ -2727,7 +2733,8 @@ function jobPillShow() {
   const p = $("jobPill");
   if (!p) return;
   ctxTick();
-  const c = S.ctx, live = training() && S.run && S.run.lora;
+  ctxLock();                                   // a run that paused (or resumed) while on show: its form opens (or locks)
+  const c = S.ctx, live = jobAlive() && S.run && S.run.lora;
   const items = (S.run && S.run.web_queue && S.run.web_queue.items) || [];
   const show = !!live || items.length > 0 || c.kind !== "draft" || !!c.ended;
   p.style.display = show ? "" : "none";
@@ -2736,7 +2743,7 @@ function jobPillShow() {
   const [label, name] = c.ended ? ["Finished", c.lora] :
     c.kind === "run" ? ["Viewing", c.lora] :
     c.kind === "queue" ? [`Viewing queued ${c.n || ""}`.trim(), c.lora] :
-    live ? [ctxSetupIsRun() ? "Training now" : "Training", S.run.lora] :
+    live ? [paused() ? "Paused" : ctxSetupIsRun() ? "Training now" : "Training", S.run.lora] :
     ["Queued", `${items.length} run${items.length === 1 ? "" : "s"}`];
   p.classList.toggle("attention", !!c.ended);
   $("jobPillText").replaceChildren(el("b", {text: label + ": "}), name || "",
@@ -2748,6 +2755,8 @@ function jobPillShow() {
   // the line at the top of each tab saying whose content it is, while it is another job's than your own setup
   const say = c.kind === "run" ? (c.ended ? `${c.lora} is finished` + (c.next ? `, and ${c.next} is training now.` : ".") +
       " These tabs still show it until you change tab or switch with the pill."
+      : paused() ? `Showing the paused run: ${c.lora}. Change here what Resume should take up: the previews, the size, ` +
+        "block swap, the save schedule and the learning rate go with the resume."
       : `Showing the run training now: ${c.lora}. Its training settings can be looked at, not changed; a change on ` +
         "the Samples tab goes to its next previews.") :
     c.kind === "queue" ? `Showing queued run ${c.n}: ${c.lora}. Changes are kept with Save to queue.` : "";
@@ -2767,7 +2776,7 @@ function jobPillMenu(open) {
   if (!menu) return;
   menu.hidden = shade.hidden = !open;
   if (!open) return;
-  const c = S.ctx || {kind: "draft"}, live = training() && S.run && S.run.lora;
+  const c = S.ctx || {kind: "draft"}, live = jobAlive() && S.run && S.run.lora;
   const items = (S.run && S.run.web_queue && S.run.web_queue.items) || [];
   const row = (label, name, on, go, strong) => el("button", {class: "job-pill-row" + (on ? " on" : "") + (strong ? " strong" : ""),
     type: "button", onclick: on ? () => jobPillMenu(false) : go},
@@ -2776,7 +2785,7 @@ function jobPillMenu(open) {
   if (c.ended && live) rows.push(row("Switch this tab to", S.run.lora, false, () => ctxSwitch({kind: "run"}), true));
   if (c.ended) rows.push(row("Finished", c.lora, true));
   // the run training now: your own setup when that is what is training (it stays changeable for the next run)
-  else if (live) rows.push(row("Training now", S.run.lora, c.kind === "run" || (c.kind === "draft" && same),
+  else if (live) rows.push(row(paused() ? "Paused" : "Training now", S.run.lora, c.kind === "run" || (c.kind === "draft" && same),
     () => ctxSwitch(same ? {kind: "draft"} : {kind: "run"})));
   items.forEach((it, i) => rows.push(row(`Queued ${i + 1}`, it.lora, c.kind === "queue" && c.id === it.id,
     () => ctxSwitch({kind: "queue", id: it.id}))));

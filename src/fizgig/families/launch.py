@@ -160,13 +160,24 @@ STATE_MARKERS = ("training_state.json", "random_states_0.pkl")   # written last:
                                                                   # half-written save
 
 
-def latest_state(out_dir, name):
-    """The run's newest complete state folder (<name>-NNNNNN-state with its commit marker), or ""."""
+def latest_state(out_dir, name, since=0.0):
+    """The run's newest complete state folder (<name>-NNNNNN-state with its commit marker), or "". since: the time the
+    run started; a state saved before it belongs to an earlier run that had the same name and folder, and is left out
+    (it used to be taken for this run's, so a 20-epoch run read as 50 epochs done)."""
+    def saved(d):
+        times = []
+        for m in STATE_MARKERS:
+            try:
+                times.append(os.path.getmtime(os.path.join(out_dir, d, m)))
+            except OSError:
+                pass
+        return max(times) if times else None
+
     try:
-        found = [d for d in os.listdir(out_dir) if re.fullmatch(re.escape(name) + r"-\d{6}-state", d)
-                 and any(os.path.isfile(os.path.join(out_dir, d, m)) for m in STATE_MARKERS)]
+        found = [d for d in os.listdir(out_dir) if re.fullmatch(re.escape(name) + r"-\d{6}-state", d)]
     except OSError:
         return ""
+    found = [d for d in found if (saved(d) or -1.0) >= (float(since or 0) - 2 if since else 0)]
     return os.path.join(out_dir, max(found)) if found else ""
 
 
@@ -1544,10 +1555,34 @@ FACE_AREA_KEYS = (("Face and hair", "head"), ("Face only", "face"), ("The person
 FACE_AREAS = tuple(k[0] for k in FACE_AREA_KEYS)
 
 
+# Element boost needs pictures of at least this size (Peter, 12 Nov 2026): the model sees a picture as 16-pixel patches
+# (8x VAE, 2x2 patches), and in a medium or full-length shot a face at 0.5 MP can be 1-3 patches wide - boosting
+# that teaches the LoRA pixelation; at 0.75 MP most are a few patches wide
+BOOST_MIN_MP = 0.75
+BOOST_TOO_SMALL = ("Needs Target Megapixels {mp:g} or more: below that a small face is too few pixels, and boosting it "
+                   "teaches the LoRA pixelation.")
+
+
+def boost_mp(desc, st):
+    """The picture size Element boost trains at: Start at a smaller size's while it's on (the boost runs early in the
+    run), else Target Megapixels; 0 when unknown."""
+    try:
+        mp = float(st.get("megapixels") or st.get("DATASET_MEGAPIXELS") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    return stage_mp(desc, {**st, "megapixels": mp}) or mp
+
+
+def boost_too_small(desc, st):
+    return 0 < boost_mp(desc, st) < BOOST_MIN_MP
+
+
 def face_weight(desc, st):
     """Boost the face: the face weight when ticked, else None. Stills of a family with masked training, not a
-    prompt slider (no photos)."""
+    prompt slider (no photos), at BOOST_MIN_MP or more."""
     if not (st.get("FACE_BOOST") and desc.element_boost and desc.masked_training) or slider_on(desc, st, "prompts"):
+        return None
+    if boost_too_small(desc, st):
         return None
     return FACE_BOOST
 

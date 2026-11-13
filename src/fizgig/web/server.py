@@ -383,7 +383,7 @@ def _write_json(path, data):
 # the desktop's DEFAULT_PREFS that aren't empty: a web-only install starts where the desktop app would
 PREF_DEFAULTS = {"lora_output_dir": "output_loras", "profiles_dir": "user_data/profiles", "cache_dir": "user_data/cache",
                  "runpod_stop_when_done": "0", "inference_blocks_to_swap": "Auto (detect from GPU)",
-                 "inference_int8": "1", "lan_discovery": "1", "update_check": "1"}
+                 "inference_int8": "1", "lan_discovery": "1", "update_check": "1", "window_no_gpu": "0"}
 
 
 LAST_USED_FILE = user_data.LAST_USED_FILE           # the training folder, each folder's trigger word
@@ -445,7 +445,7 @@ def set_folder_trigger(folder, word):
 
 # the Preferences settings Reset to defaults puts back (the model files are never reset)
 SETTING_PREFS = ("lora_output_dir", "profiles_dir", "cache_dir", "input_lora_dir", "input_ref_dir",
-                 "inference_blocks_to_swap", "inference_int8", "lan_discovery", "update_check")
+                 "inference_blocks_to_swap", "inference_int8", "lan_discovery", "update_check", "window_no_gpu")
 
 
 def load_prefs() -> dict:
@@ -1472,7 +1472,8 @@ def _record_pause(out_dir):
         fam, values, folder, name = _run["family"], dict(_run["values"]), _run["image_folder"], _run["lora"]
     desc = get_family(fam)
     ft = bool(desc is not None and desc.finetune and form._kind(desc, values) == "finetune")
-    path = launch.latest_ft_checkpoint(out_dir, name) if ft else launch.latest_state(out_dir, name)
+    began = (history.get(_run.get("history_id")) or {}).get("started_at") or 0     # an earlier run's states don't count
+    path = launch.latest_ft_checkpoint(out_dir, name) if ft else launch.latest_state(out_dir, name, began)
     if not path:
         return False
     side = {"mode": "ft" if ft else "state", "state_path": path, "output_name": name,
@@ -1535,7 +1536,7 @@ def _continue_point(rec):
                                                   values.get("FAMILY_FT_ROTATE_EVERY"))
         return {"kind": "ft", "path": path, "done": done, "of": done + left, "key": "FAMILY_FT_ROTATIONS",
                 "unit": "rotation"}
-    path = launch.latest_state(out, name)
+    path = launch.latest_state(out, name, rec.get("started_at") or 0)     # not an earlier run's, same name and folder
     m = re.search(r"-(\d{6})-state$", path)
     if not m:
         return None
@@ -2691,7 +2692,8 @@ def _start_fetch(family, token="", optional=False, choices=None):
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
                             encoding="utf-8", errors="replace", env=env, cwd=BASE_DIR, **kw)
     with _lock:
-        _fetch.update(proc=proc, state="running", family=family, file="", done=0, total=0, lines=[], then_start=None)
+        _fetch.update(proc=proc, state="running", family=family, file="", done=0, total=0, lines=[], then_start=None,
+                      rate=0.0, eta=None, said=-1)
     threading.Thread(target=_fetch_watch, args=(proc,), daemon=True).start()
 
 
@@ -2755,18 +2757,50 @@ def _look_fetch(desc, values, path):
     return state, ((_on_use_gb(look), look.size_gb) if state == "running" else None)
 
 
+def _fmt_left(s):
+    s = int(max(0, s))
+    return f"about {s // 3600} h {s % 3600 // 60} min" if s >= 3600 else \
+        f"about {max(1, round(s / 60))} min" if s >= 90 else f"about {max(1, s)} s"
+
+
+def _fetch_progress(done, total, file, now):
+    """A [progress] line: the file's bytes, its speed (bytes/s since it started) and time left, and - while Start
+    waits on it (#327) - a line in the run's log as each file starts and at every tenth, so the log says what's
+    happening too. Under _lock, so it returns those lines for the caller to log once the lock is let go."""
+    say = []
+    if file != _fetch.get("file") or done < _fetch.get("done", 0):          # a new file
+        _fetch.update(file_t0=now, file_d0=done, rate=0.0, eta=None, said=-1)
+        if _fetch["then_start"] and total:
+            say.append(f"Downloading {file} ({total / 1024 ** 3:.1f} GB)…\n")
+    _fetch.update(done=done, total=total, file=file)
+    took = now - _fetch.get("file_t0", now)
+    if took >= 3 and done > _fetch.get("file_d0", 0):
+        rate = (done - _fetch["file_d0"]) / took
+        _fetch.update(rate=rate, eta=(total - done) / rate if total else None)
+    tenth = int(10 * done / total) if total else -1
+    if _fetch["then_start"] and total and 0 < tenth < 10 and tenth > _fetch.get("said", -1):
+        _fetch["said"] = tenth
+        speed = f", {_fetch['rate'] / 1024 ** 2:.0f} MB/s, {_fmt_left(_fetch['eta'])} left" \
+            if _fetch.get("rate") and _fetch.get("eta") is not None else ""
+        say.append(f"  {file}: {done / 1024 ** 3:.1f} of {total / 1024 ** 3:.1f} GB ({10 * tenth}%){speed}\n")
+    return say
+
+
 def _fetch_watch(proc):
     for line in proc.stdout:
         line = line.rstrip()
         if not line:
             continue
         m = re.match(r"\s*\[progress\] (\d+) (\d+) (.+)$", line)
+        say = []
         with _lock:
             if m:
-                _fetch.update(done=int(m.group(1)), total=int(m.group(2)), file=m.group(3))
+                say = _fetch_progress(int(m.group(1)), int(m.group(2)), m.group(3), time.time())
             else:
                 _fetch["lines"].append(line)
                 del _fetch["lines"][:-200]
+        for text in say:                  # the run's log (append_log takes _lock itself)
+            append_log(text)
     code = proc.wait()
     with _lock:
         if _fetch["state"] == "running":
@@ -4348,7 +4382,7 @@ class Handler(BaseHTTPRequestHandler):
                                                                   if k in SETTING_PREFS}}
                 if "inference_int8" in ch:
                     ch["inference_int8"] = "1" if ch["inference_int8"] in (True, "1", 1) else "0"
-                for k in ("lan_discovery", "update_check"):
+                for k in ("lan_discovery", "update_check", "window_no_gpu"):
                     if k in ch:
                         ch[k] = "1" if ch[k] in (True, "1", 1) else "0"
                 upd = {k: str(v) for k, v in ch.items() if k in allowed}

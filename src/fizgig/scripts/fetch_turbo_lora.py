@@ -10,8 +10,7 @@ For each entry:
   - neither ................................... downloads with progress, verifies, populates
 
 Entries: the Krea 2 Turbo LoRA (previews render on RAW + Turbo LoRA, no model swapping), the
-Qwen Image 2.1 Turbo LoRA and Fizgig's Qwen Image 2.1 training adapter (v2), and the MiniMax H3 training adapters — Circlestone's (the default, one file for both bases) and
-Ostris's two (per base) — which the Training tab's adapter dropdown chooses between. Always fetched when missing,
+Qwen Image 2.1 Turbo LoRA and Fizgig's Qwen Image 2.1 training adapter (v2), and Ostris's two MiniMax H3 training adapters (one per base). Always fetched when missing,
 whatever family is configured (Peter, 2 Sep 2026: no "not a Krea 2 install" gate, ever).
 The GUI calls ensure_turbo_lora() again at Krea 2 training start as a fallback.
 """
@@ -44,21 +43,19 @@ LORAS = [
      "krea2_turbo_lora_rank_64_bf16.safetensors",
      "diffusion_model.blocks.0.attn.wq.lora_down.weight", 400 * 1024 * 1024,
      "Krea 2 Turbo LoRA (~470 MB)"),
-    ("minimax_circlestone_adapter", "minimax_h3_image_training_adapter.safetensors",
-     "https://huggingface.co/circlestone-labs/MiniMax-H3-Image-Training-Adapter/resolve/main/"
-     "minimax_h3_image_training_adapter.safetensors",
-     "diffusion_model.blocks.0.attn.out_proj.lora_A.weight", 580 * 1024 * 1024,
-     "MiniMax H3 training adapter, Circlestone (~620 MB, the default)"),
-    ("minimax_training_adapter", "minimax_h3_training_adapter_v1.safetensors",
+    # Ostris's adapters, v3 (Nov 2026, rank 32): a pref on v1 / v2 moves to it, the old file stays on disk
+    ("minimax_training_adapter", "minimax_h3_training_adapter_v3.safetensors",
      "https://huggingface.co/ostris/minimax_h3_training_adapter/resolve/main/"
-     "minimax_h3_training_adapter_v1.safetensors",
-     "diffusion_model.blocks.0.attn.out_proj.lora_A.weight", 140 * 1024 * 1024,
-     "MiniMax H3 training adapter, fl2va (~155 MB, Ostris)"),
-    ("minimax_ref_training_adapter", "minimax_h3_ref2va_training_adapter_v1.safetensors",
+     "minimax_h3_training_adapter_v3.safetensors",
+     "diffusion_model.blocks.0.attn.out_proj.lora_A.weight", 290 * 1024 * 1024,
+     "MiniMax H3 training adapter v3, fl2va (~310 MB, Ostris)",
+     ("minimax_h3_training_adapter_v1.safetensors", "minimax_h3_training_adapter_v2.safetensors")),
+    ("minimax_ref_training_adapter", "minimax_h3_ref2va_training_adapter_v3.safetensors",
      "https://huggingface.co/ostris/minimax_h3_training_adapter/resolve/main/"
-     "minimax_h3_ref2va_training_adapter_v1.safetensors",
-     "diffusion_model.blocks.0.attn.out_proj.lora_A.weight", 140 * 1024 * 1024,
-     "MiniMax H3 training adapter, ref2va (~155 MB, Ostris)"),
+     "minimax_h3_ref2va_training_adapter_v3.safetensors",
+     "diffusion_model.blocks.0.attn.out_proj.lora_A.weight", 290 * 1024 * 1024,
+     "MiniMax H3 training adapter v3, ref2va (~310 MB, Ostris)",
+     ("minimax_h3_ref2va_training_adapter_v1.safetensors", "minimax_h3_ref2va_training_adapter_v2.safetensors")),
     # Qwen Image 2.1's Turbo LoRA (Comfy-Org) replaced Viggle's in the same pref: an install still pointing at
     # another file gets this one (the old file stays on disk)
     ("qwen21_turbo_lora", "qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors",

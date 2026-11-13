@@ -54,8 +54,9 @@ def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="1.0", slider=False, ft=
         # the Clean-end share: Slide, 11% until epoch 7, 40% from epoch 8, then 40% with every 3rd at 11% (_LORA_SHARE);
         # every preset sets it
         "MOSS_LOWNOISE_PCT": _FT_SHARE if ft else _LORA_SHARE,
-        # Boost the face: on in the likeness presets (Fast, Standard, Turbo Train), off where it works against the
-        # preset - Style (no one face), Slider, Fine-tune (Peter, 10 Nov 2026)
+        # Boost the face: on in Standard, off where it works against the preset - Style (no one face), Slider,
+        # Fine-tune (Peter, 10 Nov 2026) - and in the 0.25 MP presets (Fast, Turbo Train): Element boost needs 0.75 MP
+        # or more (launch.BOOST_MIN_MP; Peter, 12 Nov 2026: "keep the limit everywhere")
         "FACE_BOOST": face,
         **({"FAMILY_FT_ROTATIONS": "10"} if ft else {}),
     }
@@ -320,7 +321,8 @@ MOSS_IMAGE = FamilyDescription(
     preview_look_hint="For previews on your Base (the SFT tick above off): the SFT look LoRA gives them much of SFT's "
                       "look. Not as good as SFT itself, but a really good indicator, and previews are much quicker "
                       "with no model swap. Previews only, never training. Downloaded for you the first time (about "
-                      "2.1 GB).",
+                      "2.1 GB). It's made for Fizgig's previews: don't load it in ComfyUI, where you run MOSS-Image "
+                      "SFT itself.",
     preview_look_on=True,             # part of the preview recipe (Peter, 8 Nov 2026)
     preview_look_strength=1.5,
     # Studio / Royale / Profiler follow the Samples tab only (SFT while its tick is on): no separate SFT choice
@@ -359,13 +361,13 @@ MOSS_IMAGE = FamilyDescription(
         # a fixed learning rate: Adaptive LR walks to its floor on MOSS-Image's flat loss (@Murf-Code's runs, PR
         # #195; Peter's runs agree that 1e-4 suits it). Adaptive LR stays on the Training tab, off by default
         # Fast first, so a first visit applies it (Peter, 27 Oct 2026)
-        ("✨ MOSS-Image Fast (rank 16, 0.25 MP)", _preset(16, epochs=70, mp="0.25", face=True)),
+        ("✨ MOSS-Image Fast (rank 16, 0.25 MP)", _preset(16, epochs=70, mp="0.25")),
         ("✨ MOSS-Image Standard (rank 32, 1e-4)", _preset(32, epochs=70, face=True)),
         ("✨ MOSS-Image Style (rank 16, 5e-5)", {**_preset(16, lr=5e-5, epochs=50), "FAMILY_EMA": "Off"}),   # no EMA: a style at 5e-5 is slow enough
         ("✨ MOSS-Image Slider (rank 8, 2e-4)", _preset(8, lr=2e-4, epochs=20, slider=True)),
         # Fast with Adaptive LR (2e-4 to 4e-4) and the per-image loss watch + per-image LR (Peter, 8 Nov 2026); rank 32
         # alpha 16 (Peter, 9 Nov); just above Fine-tune
-        ("✨ MOSS-Image Turbo Train (Experimental)", {**_preset(32, adaptive=("2e-4", "4e-4"), epochs=70, mp="0.25", face=True),
+        ("✨ MOSS-Image Turbo Train (Experimental)", {**_preset(32, adaptive=("2e-4", "4e-4"), epochs=70, mp="0.25"),
                                                      "NETWORK_ALPHA": 16,
                                                      "KREA2_LOSS_WATCH": True, "KREA2_PER_IMAGE_LR": True}),
         ("✨ MOSS-Image Fine-tune (1e-5)", _preset(16, lr=1e-5, ft=True)),

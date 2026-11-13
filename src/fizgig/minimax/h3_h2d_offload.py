@@ -112,8 +112,8 @@ class H3Int8H2DOffloader:
         permanently — norms and AdaLN are ~1.7 MB a block, not worth a single PCIe trip."""
         for block_idx in range(self.swap_from, len(self.blocks)):
             for module in self.blocks[block_idx].modules():
-                if module.__class__.__name__ == "ConvRotInt8Linear":
-                    continue
+                # an int8 Linear's bias (a fine-tune may quantize the biased AdaLN) moves here too;
+                # only its qdata/wscale ride the ring
                 for param in module.parameters(recurse=False):
                     if param is not None:
                         param.data = param.data.to(self.device, non_blocking=True)

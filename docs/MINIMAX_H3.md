@@ -57,13 +57,9 @@ The Optimizer Type dropdown also offers full-precision **adamw**, which measured
 
 ## Training adapter
 
-A frozen LoRA rides at full strength on every training step, so the gradient goes into your subject rather than into undoing H3's guidance distillation. It is off for previews and never written into your LoRA. The **Training adapter** dropdown picks which one:
+A frozen LoRA rides at full strength on every training step, so the gradient goes into your subject rather than into undoing H3's guidance distillation. It is off for previews and never written into your LoRA. The adapter is [@ostris](https://github.com/ostris)'s ([training adapter](https://huggingface.co/ostris/minimax_h3_training_adapter)), in two files: an fl2va run gets the fl2va one and a ref2va run gets the ref2va one, picked from your Training Base.
 
-- **Circlestone** ([circlestone-labs](https://huggingface.co/circlestone-labs/MiniMax-H3-Image-Training-Adapter)) is the default and the one for photos. In A/Bs on the same data it trained sharper, cleaner LoRAs that follow the prompt better. One file serves both the fl2va and ref2va bases.
-- **Ostris** ([@ostris](https://github.com/ostris), [training adapter](https://huggingface.co/ostris/minimax_h3_training_adapter)) is the one for videos: on a video-only style run it learned the look about three times faster. The Training tab suggests it when it sees a clips-only dataset. It comes as fl2va and ref2va files; the one matching your Training Base is used. Against no adapter, with likeness mode on, it reached 50% likeness seven epochs sooner and peaked higher, and its best window arrives earlier, so watch the gallery.
-- **Off** trains without one.
-
-For a mixed dataset, choose by whether the photos or the videos are the priority. The updater and the Preferences download buttons fetch the adapter files. The adapter used is recorded in the output metadata. It also rides under full fine-tuning (forward hooks, on by default, never in the checkpoint); see [FINETUNE.md](FINETUNE.md).
+The updater and the Preferences download buttons fetch the adapter files. The adapter used is recorded in the output metadata. It also rides under full fine-tuning (forward hooks, on by default, never in the checkpoint); see [FINETUNE.md](FINETUNE.md).
 
 ## Context LoRA
 
@@ -89,8 +85,7 @@ Each has a **Download link on its row in Preferences**:
 | Audio VAE *(optional)* | ~605 MB | Sound training and previews with sound |
 | Turbo LoRA *(optional)* | ~780 MB | 6-step previews, `minimax_h3_turbo_v4_step600.safetensors` from [larryvrh/MiniMax-H3-Turbo-Lora](https://huggingface.co/larryvrh/MiniMax-H3-Turbo-Lora); you may already have it in ComfyUI's loras folder |
 | DiT — reference *(optional)* | ~21 GB | Only for reference distillation (`ref2va`) |
-| Training adapter (Circlestone) | ~620 MB | The default training adapter, one file for both bases |
-| Training adapter (Ostris) *(optional)* | ~155 MB each | fl2va and ref2va files, used when the dropdown says Ostris |
+| Training adapter (fl2va, ref2va) | ~310 MB each | Ostris's, one per base; the one matching your Training Base is used |
 
 **You train on the pruned file.** "Pruned" here swaps the AdaLN modulation MLP for a curve table. That branch only sees the timestep, so nothing a LoRA learns lives there: you train against the exact weights you deploy on.
 

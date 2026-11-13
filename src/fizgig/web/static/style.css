@@ -1196,6 +1196,34 @@ input[type="range"] {
 .collapsible-header { cursor: pointer; user-select: none; }
 .form-row { margin: 2px 0; }
 /* a control worth noticing (FamilyOption featured): a soft accent panel with a bright edge */
+/* a row with an Advanced toggle (FamilyOption.advanced): a panel that grows to hold its advanced rows */
+.form-row.row-has-advanced { border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px;
+  background: var(--bg-inset); }
+.adv-toggle { margin: 6px 0 0 40px; padding: 2px 0; border: 0; background: none; color: var(--accent); font: inherit;
+  font-size: 0.9em; cursor: pointer; }
+.adv-toggle:hover { text-decoration: underline; }
+.adv-toggle:focus:not(:focus-visible) { outline: none; }
+/* open: the panel takes the card's whole width, its rows in columns, each a short box with its note beside it */
+.section-card[id^="sec-"] > .card-content > .form-row.row-has-advanced:has(> .row-advanced:not([hidden])) {
+  grid-column: 1 / -1; }
+.row-advanced { margin-top: 10px; padding-top: 12px; border-top: 1px solid var(--border);
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px 28px; }
+.row-advanced[hidden] { display: none !important; }
+.section-card[id^="sec-"] .row-advanced > .form-row { margin: 0; padding: 0; border: 0; background: none; }
+/* (these beat the form's general rules: a field row's box stretching, a switch tile's indented, clamped hints) */
+.section-card[id^="sec-"] .row-advanced { align-items: start; }
+.section-card[id^="sec-"] .row-advanced .form-row .field-row { flex-wrap: nowrap; gap: 4px 10px; display: grid;
+  grid-template-columns: auto 1fr; align-items: center; }
+.section-card[id^="sec-"] .row-advanced .form-row .field-row > .field-label { grid-column: 1 / -1; margin: 0; }
+.section-card[id^="sec-"] .row-advanced .form-row .field-row > input { width: 5.5em !important; flex: none; }
+.section-card[id^="sec-"] .row-advanced .form-row .field-row > select { width: auto !important; min-width: 10em; flex: none; }
+.section-card[id^="sec-"] .form-row .row-advanced .form-row .field-row > .field-hint { margin: 0; padding-left: 0;
+  line-height: 1.35; }
+.section-card[id^="sec-"] .form-row.kind-check .row-advanced .form-row > .field-hint { padding-left: 0; margin-top: 6px;
+  display: block; -webkit-line-clamp: unset; overflow: visible; cursor: default; }
+.section-card[id^="sec-"] .form-row .adv-toggle { border: 0 !important; box-shadow: none !important; outline: none;
+  background: none !important; border-radius: 4px; }
+.section-card[id^="sec-"] .form-row .adv-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .form-row.row-featured {
   padding: 8px 10px; margin: 4px 0; border-radius: 8px;
   background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 16%, transparent), color-mix(in srgb, var(--accent) 4%, transparent));
@@ -2031,6 +2059,8 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 .st-pane video { width: 100%; aspect-ratio: 1; object-fit: contain; background: var(--bg-deep); display: block; }
 .st-pane audio { width: 100%; margin-top: 6px; }
 .st-pane.audio img { aspect-ratio: 4 / 1; }
+.start-resume { color: var(--warning); margin: 6px 0 2px; }
+.start-resume .btn { margin-left: 6px; }
 .st-slot { display: grid; grid-template-columns: 110px 72px 1fr; gap: 10px; align-items: center; margin: 6px 0; }
 .st-slot img { width: 72px; height: 72px; object-fit: cover; border-radius: 6px; background: var(--bg-deep); }
 .st-slot .field-row { margin: 0; }

@@ -1,6 +1,7 @@
 """Continue on Runs & outputs: a run trains on from its newest save, with its own settings and into its own record; a
 run that trained all its epochs asks how far to go first; a run training here puts it on the queue."""
 import os
+import time
 
 import pytest
 
@@ -8,11 +9,14 @@ from fizgig.web import history, server
 from fizgig.web import queue as webqueue
 
 
-def _state(out, name, epoch, done=True):
+def _state(out, name, epoch, done=True, age=0):
     d = os.path.join(out, f"{name}-{epoch:06d}-state")
     os.makedirs(d)
     if done:                                    # the commit marker, written last
-        open(os.path.join(d, "training_state.json"), "w").close()
+        marker = os.path.join(d, "training_state.json")
+        open(marker, "w").close()
+        if age:                                 # saved that many seconds ago
+            os.utime(marker, (time.time() - age, time.time() - age))
     return d
 
 
@@ -21,11 +25,12 @@ def run(tmp_path, monkeypatch):
     monkeypatch.setattr(history, "HISTORY_FILE", str(tmp_path / "runs.json"))
     out = str(tmp_path / "out")
     os.makedirs(out)
+    _state(out, "mine", 50, age=3600)           # an earlier run with the same name and folder: not this run's save
+    rid = history.start("web", "krea2", "mine", out, str(tmp_path / "data"),
+                        {"LORA_NAME": "mine", "LORA_OUTPUT_DIR": out, "MAX_TRAIN_EPOCHS": "10"})
     _state(out, "mine", 4)
     newest = _state(out, "mine", 6)
     _state(out, "mine", 8, done=False)          # still being written: not a save to continue from
-    rid = history.start("web", "krea2", "mine", out, str(tmp_path / "data"),
-                        {"LORA_NAME": "mine", "LORA_OUTPUT_DIR": out, "MAX_TRAIN_EPOCHS": "10"})
     history.end(rid, "stopped")
     started = []
     monkeypatch.setattr(server, "_start", lambda fam, values, folder, **kw: started.append((fam, values, kw))

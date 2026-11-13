@@ -36,7 +36,7 @@ def _preset(rank, epochs, clip_still=True, slider=False, lr=1e-6, optimizer="aut
         "H3_ADAPTER_RAMP": "Off", "H3_CAPTION_DROPOUT": "0.05 (default)", "H3_STRUCTURE": _STRUCTURE[0][0],
         "H3_LOWNOISE_PCT": "60", "H3_HIGHNOISE_LR_PCT": "100",
         "H3_BLOCKS": "all", "H3_TRAIN_REFINER": "", "H3_LIKENESS_MODE": "Default",
-        "H3_ADAPTER": "Circlestone — best for photos", "H3_TREAD": "1", "H3_CLIP_STILL": "1" if clip_still else "",
+        "H3_TREAD": "1", "H3_CLIP_STILL": "1" if clip_still else "",
         "H3_DISTILL": "",
     }
 
@@ -96,15 +96,9 @@ OPTIONS = (
             ("Off · hand-pick the blocks in Other Options", "The blocks are yours to pick, for experiments: Blocks to Train, in the Other Options section "
                                                    "further down this tab.")),
         summary="mode {}", setting="MINIMAX_LIKENESS_MODE", section="after", width=34, pady=(8, 2)),
-    FamilyOption("H3_ADAPTER", "Training adapter", choices=(
-        ("Circlestone — best for photos", "--training_adapter=pref:minimax_circlestone_adapter"),
-        ("Ostris — best for videos", f"--training_adapter={_OSTRIS}"),
-        ("Off", "")),
-        hint="De-distills the base while your LoRA learns: frozen at 1.0 for every training step, off for previews "
-             "and never in your saved file. Circlestone (one file for fl2va and ref2va) trains sharper LoRAs from "
-             "photos; Ostris learns a video look faster. For mixed datasets, choose by whether the photos or the videos are "
-             "the priority.",
-        setting="MINIMAX_ADAPTER", section="after", compact=True, width=46),
+    # the training adapter, always on, no control (Peter, 12 Nov 2026): Ostris's fl2va file on the fl2va base, his ref2va
+    # file on ref2va or a distillation run. It de-distills the base while the LoRA learns; off for previews, never saved.
+    FamilyOption("H3_ADAPTER", "", kind="fixed", tokens=f"--training_adapter={_OSTRIS}"),
     FamilyOption("H3_TREAD", "TREAD token routing — on clip steps, half the video tokens skip the middle blocks",
                  kind="check", tokens="tread=0.5@2-47", default="1",
                  hint="Faster clip steps: a random half of each clip's video tokens skips blocks 2-46 and rejoins "
@@ -249,31 +243,22 @@ MINIMAX = FamilyDescription(
                        "saved LoRA never contains it. Steps and strength are adjustable on the Samples tab.",
                   download_note="~780MB — larryvrh/MiniMax-H3-Turbo-Lora → minimax_h3_turbo_v4_step600.safetensors "
                                 "(you may already have it in ComfyUI's loras folder)"),
-        ModelFile("minimax_circlestone_adapter", "Training adapter (Circlestone)", False,
-                  "circlestone-labs/MiniMax-H3-Image-Training-Adapter", "minimax_h3_image_training_adapter.safetensors",
-                  0.62, role="training_adapter", fetch_optional=False,
-                  announce="Training adapter (Circlestone, ~620 MB) — sharper, higher likeness",
-                  hint="NEEDED when the Training adapter dropdown says Circlestone (the default) — one file for both "
-                       "bases (fl2va and ref2va). A frozen LoRA that de-distills the base while yours learns: sharper "
-                       "eyes, cleaner skin and better prompt-following than Ostris's on any dataset with stills. On for "
-                       "every training step, off for previews, never in your saved LoRA. The updater fetches it; so "
-                       "does the download button below.",
-                  download_note="~620MB — circlestone-labs/MiniMax-H3-Image-Training-Adapter → "
-                                "minimax_h3_image_training_adapter.safetensors"),
-        ModelFile("minimax_training_adapter", "Training adapter (Ostris fl2va)", False,
-                  "ostris/minimax_h3_training_adapter", "minimax_h3_training_adapter_v1.safetensors", 0.16,
+        ModelFile("minimax_training_adapter", "Training adapter (fl2va)", False,
+                  "ostris/minimax_h3_training_adapter", "minimax_h3_training_adapter_v3.safetensors", 0.31,
+                  role="training_adapter", fetch_optional=False,
+                  announce="Training adapter (Ostris, ~310 MB) — de-distills the base while your LoRA learns",
+                  hint="NEEDED for runs on the standard fl2va base. "
+                       "Ostris's frozen LoRA that de-distills the base while yours learns: on for every training step, "
+                       "off for previews, never in your saved LoRA. The updater fetches it; so does the download "
+                       "button below.",
+                  download_note="~310MB — ostris/minimax_h3_training_adapter → minimax_h3_training_adapter_v3.safetensors"),
+        ModelFile("minimax_ref_training_adapter", "Training adapter (ref2va)", False,
+                  "ostris/minimax_h3_training_adapter", "minimax_h3_ref2va_training_adapter_v3.safetensors", 0.31,
                   fetch_optional=False,
-                  hint="OPTIONAL — Ostris's adapter for the standard fl2va base, used when the Training tab's adapter "
-                       "dropdown says Ostris: it learns a video look faster than Circlestone when the dataset is clips "
-                       "only.",
-                  download_note="~155MB — ostris/minimax_h3_training_adapter → minimax_h3_training_adapter_v1.safetensors"),
-        ModelFile("minimax_ref_training_adapter", "Training adapter (Ostris ref2va)", False,
-                  "ostris/minimax_h3_training_adapter", "minimax_h3_ref2va_training_adapter_v1.safetensors", 0.16,
-                  fetch_optional=False,
-                  hint="OPTIONAL — Ostris's adapter for the Reference (ref2va) base: picked automatically when the "
-                       "dropdown says Ostris and the Training Base is ref2va or the run is a distillation run.",
-                  download_note="~155MB — ostris/minimax_h3_training_adapter → "
-                                "minimax_h3_ref2va_training_adapter_v1.safetensors"),
+                  hint="Ostris's adapter for the Reference (ref2va) base: used instead of the fl2va one when the "
+                       "Training Base is ref2va or the run is a distillation run.",
+                  download_note="~310MB — ostris/minimax_h3_training_adapter → "
+                                "minimax_h3_ref2va_training_adapter_v3.safetensors"),
     ),
     prefs_title="Model Paths (MiniMax H3)",
     prefs_intro="Image-only LoRA training for MiniMax's ~33B H3 omni DiT. Train on the pruned int8 DiT — the same file "
@@ -281,7 +266,7 @@ MINIMAX = FamilyDescription(
                 "encoder and the video VAE are only needed for the one-time caching pass; the compact nvfp4 TE is "
                 "recommended. Trains on stills, or on short video clips — and with the audio VAE set, on their sound "
                 "too.",
-    fetch_note="Fetches the DiT, text encoder, both VAEs, the Turbo LoRA and the three training adapters above, plus "
+    fetch_note="Fetches the DiT, text encoder, both VAEs, the Turbo LoRA and the two training adapters above, plus "
                "the Krea 2 Qwen3-VL captioning text encoder (~47 GB all in), and fills in these paths for you — plus "
                "the small helper models (Florence-2 captioner, face model for the Look Filter and likeness scoring, "
                "EN→ZH translator, Gizmo's Whisper transcriber — ~1.9 GB) so nothing stalls to download later and "
@@ -402,7 +387,7 @@ MINIMAX = FamilyDescription(
     ema_default="0.98",               # the old H3 default (v5.4.1)
     ema_short_run=True,
     resumes_untagged_states=True,     # an old H3 pause: same files, same parameter order (blocks, qkv/out/fc1/fc2)
-    # the training adapter is the MINIMAX_ADAPTER option (Circlestone / Ostris per base / Off), not the generic tick
+    # the training adapter is the fixed H3_ADAPTER option (Ostris's, per base), not the generic tick
     # the checkpoint's own int8 ConvRot codes, or a 4-bit base (NF4, HQQ); Auto is the driver's plan_run (the old
     # planner), which streams blocks H2D rather than giving up the int8 base
     precisions=("int8", "nf4", "hqq"),

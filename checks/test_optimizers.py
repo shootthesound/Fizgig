@@ -37,6 +37,8 @@ def test_new_optimizers_listed():
 # presets that pick a new optimizer by decision (Peter, 6 Nov 2026 - Muon's source-matching detail)
 CHOSEN = {k: "muon" for k in ("qwen_image21", "krea2", "moss_image", "vimoo", "zimage", "zimage_base",
                                     "klein", "sdxl", "flux3", "anima", "fibo2")}
+# single presets chosen on a new optimizer (Peter, 12 Nov 2026: H3 Image Standard on Automagic v4 at its 2.5e-4 ceiling)
+PRESET_CHOSEN = {("minimax_image", "✨ MiniMax H3 Image Standard (rank 32, full model)"): "automagic4"}
 
 
 def test_no_preset_picks_a_new_optimizer():
@@ -47,6 +49,8 @@ def test_no_preset_picks_a_new_optimizer():
             opt = str(p.get("OPTIMIZER_TYPE") or "").lower()
             if p.get("FAMILY_FT"):
                 assert opt == "adafactor", (desc.key, name)
+            elif (desc.key, name) in PRESET_CHOSEN:
+                assert opt == PRESET_CHOSEN[(desc.key, name)], (desc.key, name)
             elif desc.key in CHOSEN:
                 assert opt == CHOSEN[desc.key], (desc.key, name)
                 if opt == "muon":

@@ -16,6 +16,7 @@ import time
 from fizgig.web import prep_jobs
 
 PICS = (".png", ".jpg", ".jpeg", ".webp")
+BATCH = 20                     # previews scored between looks at the folder
 _lock = threading.Lock()
 _runs = {}                     # (samples dir, run) -> {"gen", "dataset"}
 PICK_FILE = "fizgig_likeness_baselines.json"
@@ -252,6 +253,7 @@ def _worker(samples_dir, run, gen, baselines):
                 _runs.pop(key, None)
         return
     last, seen = None, {}
+    measuring, wrote_real = [], "real_sig" in meta      # the training photos' measure: started / written
 
     def mtime(f):
         try:
@@ -276,6 +278,10 @@ def _worker(samples_dir, run, gen, baselines):
         todo = [f for f in files if now - mtime(f) > 5.0
                 and (f not in scores or (scores[f] is None and seen.get(f) != mtime(f)))]
         todo.sort(key=mtime, reverse=True)
+        # a batch at a time, the folder looked at again between batches: a preview the run writes meanwhile is next,
+        # not behind the whole run's rescore (a model change rescores every preview of the run)
+        more = len(todo) > BATCH
+        todo = todo[:BATCH]
         for i, f in enumerate(todo, 1):
             if not _live(samples_dir, run, gen):
                 return
@@ -284,16 +290,24 @@ def _worker(samples_dir, run, gen, baselines):
             scores[f] = None if e is None else round(float(np.mean([float(np.dot(b, e)) for b in base])), 4)
             if i % 2 == 0 or i == len(todo):
                 _write(samples_dir, run, names, f"scoring… {len(scores)}/{len(files)}", scores, meta)
-        if not todo and "real_sig" not in meta:       # once the previews are scored: the training photos' own range
-            def said(i, n):
-                _write(samples_dir, run, names, f"measuring your training photos… {i}/{n}", scores, meta)
-            try:
-                meta.update(real=real_photos(dataset_dir, names, base, emb, log=said), real_sig=sig)
-            except Exception as e:                         # never stops the samples' scoring
-                print(f"[likeness] couldn't measure the training photos: {type(e).__name__}: {e}", flush=True)
-                meta.update(real=None, real_sig=sig)
-            last = None                                    # written below, with the measure
+        if not todo and "real_sig" not in meta and not measuring:
+            # once the previews are scored: the training photos' own range, on a thread of its own, so a new preview
+            # never waits for it (the two share the face model, its lock interleaving them a picture at a time)
+            measuring.append(True)
+
+            def measure():
+                try:
+                    real = real_photos(dataset_dir, names, base, emb)
+                except Exception as e:                     # never stops the samples' scoring
+                    print(f"[likeness] couldn't measure the training photos: {type(e).__name__}: {e}", flush=True)
+                    real = None
+                meta.update(real=real, real_sig=sig)       # the loop writes it with its next status
+            threading.Thread(target=measure, daemon=True).start()
+        if "real_sig" in meta and not wrote_real:
+            wrote_real, last = True, None                  # written below, with the measure
         status = f"live - {len(scores)} sample(s) scored" + ("" if emb.name == "adaface" else f" ({emb.label})")
+        if more:
+            continue                                       # straight on with the next batch, the folder looked at again
         if todo or status != last:
             _write(samples_dir, run, names, status, scores, meta)
             last = status

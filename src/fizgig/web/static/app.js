@@ -290,6 +290,7 @@ function renderSections(tab, host) {
     const groups = {};
     for (const r of sec.rows) {
       const row = renderRow(r);
+      if (r && r.advanced_of && advancedInto(body, r.advanced_of, row)) continue;
       if (!r || !r.group) { body.append(row); continue; }
       let g = groups[r.group];
       if (!g) {
@@ -313,6 +314,33 @@ function renderSections(tab, host) {
     else if (host.querySelector(".extras-divider")) card.classList.add("sec-extra");
     host.append(card);
   }
+}
+
+// an option's advanced rows (FamilyOption.advanced): inside the row they belong to, behind its Advanced toggle, closed
+// until opened (remembered in this browser). The owner row becomes a panel that grows to hold them.
+function advancedInto(body, ownerKey, row) {
+  const owner = body.querySelector(`.form-row[data-key="${ownerKey}"]`);
+  if (!owner) return false;
+  let box = owner.querySelector(":scope > .row-advanced");
+  if (!box) {
+    const mem = "fizgig.adv." + ownerKey;
+    let open = false;
+    try { open = localStorage.getItem(mem) === "1"; } catch (e) { /* private window: closed */ }
+    box = el("div", {class: "row-advanced", hidden: !open});
+    const btn = el("button", {type: "button", class: "adv-toggle", "aria-expanded": String(open),
+      text: (open ? "▾" : "▸") + " Advanced"});
+    btn.addEventListener("click", () => {
+      const now = box.hidden;
+      box.hidden = !now;
+      btn.textContent = (now ? "▾" : "▸") + " Advanced";
+      btn.setAttribute("aria-expanded", String(now));
+      try { localStorage.setItem(mem, now ? "1" : "0"); } catch (e) { /* not kept */ }
+    });
+    owner.classList.add("row-has-advanced");
+    owner.append(btn, box);
+  }
+  box.append(row);
+  return true;
 }
 
 function renderRow(r) {
@@ -791,6 +819,23 @@ function optimizerPicked(prev, opt) {
   if (touched.length) syncInputs(touched);
 }
 
+// The Resume Training box (Memory section) holds a state: say so by Start, where it is seen before pressing it. A
+// state left there from an earlier run carried that run on by surprise (#317)
+function startResumeNote(live) {
+  const box = $("startResumeNote"), path = String(S.values.RESUME_TRAINING || "").trim();
+  const row = document.querySelector('.form-row[data-key="RESUME_TRAINING"]');
+  if (live || !path || !row || row.style.display === "none") { box.style.display = "none"; return; }
+  const name = path.replace(/[\\/]+$/, "").split(/[\\/]/).pop(), m = name.match(/-(\d{6})-state$/);
+  box.style.display = "";
+  if (box.dataset.path === path) return;
+  box.dataset.path = path;
+  box.replaceChildren(
+    el("span", {text: `Start will carry on from ${name}` + (m ? ` (epoch ${Number(m[1])})` : "") +
+      ", not begin a new run: the Resume Training box holds it. "}),
+    el("button", {class: "btn btn-sm", type: "button", text: "Clear it: start a new run", onclick: () => {
+      S.values.RESUME_TRAINING = ""; syncInputs(["RESUME_TRAINING"]); saveStateSoon(); startResumeNote(false); }}));
+}
+
 function onValue(r, val) {
   const prev = S.values[r.key];
   S.values[r.key] = val;
@@ -864,7 +909,8 @@ async function refreshState() {
     if (grp) grp.style.display = [...grp.querySelectorAll(".form-row[data-key]")]
       .some((x) => !hidden.has(x.dataset.key)) ? "" : "none";
     // a label the state renumbers (the Edit pairs steps when an extra-pictures folder joins), else the form's own
-    const lab = row.querySelector(".field-label"), rowDef = (S.fam.form.sections.flatMap((s) => s.rows)
+    // its own label (not one of the advanced rows inside it)
+    const lab = row.querySelector(":scope > .field-row > .field-label"), rowDef = (S.fam.form.sections.flatMap((s) => s.rows)
       .find((r) => r && r.key === k));
     if (lab && rowDef) lab.textContent = ((S.state.labels || {})[k] || rowDef.label) + ":";
     // a control of several values greys and hides each of its parts by its own key
@@ -901,6 +947,12 @@ async function refreshState() {
       if (act) n.append(" ", el("button", {class: "btn btn-sm", text: act.label, onclick: () => {
         Object.assign(S.values, act.values); syncInputs(Object.keys(act.values)); refreshStateSoon(); saveStateSoon(); }}));
     }
+  });
+  // an Advanced toggle shows while any of its rows can (Likeness optimization ticked)
+  document.querySelectorAll(".form-row.row-has-advanced").forEach((o) => {
+    const any = [...o.querySelectorAll(":scope > .row-advanced > .form-row[data-key]")].some((x) => !hidden.has(x.dataset.key));
+    o.querySelector(":scope > .adv-toggle").style.display = any ? "" : "none";
+    o.querySelector(":scope > .row-advanced").style.display = any ? "" : "none";
   });
   document.querySelectorAll(".section-card[data-section]").forEach((c) => {
     c.style.display = hidden.has(c.dataset.section) ? "none" : "";
@@ -1006,7 +1058,7 @@ function renderPrefs() {
   host.innerHTML = "";
   if (S.pod) host.append(podCard());
   host.append(webPortCard());
-  if (!S.pod) host.append(networkCard());
+  if (!S.pod) host.append(networkCard(), windowCard());
   host.append(dataFolderCard());
   host.append(outputFolderCard());
   host.append(foldersCard());
@@ -1264,6 +1316,17 @@ function fetchRow(f) {
   return box;
 }
 
+// a download's line (#327): the file, how much of it is here, its speed and the time left once it's measured
+function fetchLine(st) {
+  const gb = (n) => (n / 1024 ** 3).toFixed(1);
+  const left = (t) => t >= 3600 ? `about ${Math.floor(t / 3600)} h ${Math.floor(t % 3600 / 60)} min` :
+    t >= 90 ? `about ${Math.round(t / 60)} min` : `about ${Math.max(1, Math.round(t))} s`;
+  let line = `${st.file}: ${gb(st.done)} of ${gb(st.total)} GB`;
+  if (st.rate > 0) line += ` · ${(st.rate / 1024 ** 2).toFixed(0)} MB/s`;
+  if (st.eta != null && st.rate > 0) line += ` · ${left(st.eta)} left`;
+  return line;
+}
+
 function paintFetch() {
   const st = S.fetch || {};
   const busy = st.state === "running";
@@ -1277,7 +1340,7 @@ function paintFetch() {
       const pct = st.total ? Math.min(100, (100 * st.done) / st.total) : 0;
       box.replaceChildren(
         el("div", {text: `${name}'s model files aren't downloaded yet: downloading them now, then training starts by itself.`}),
-        el("div", {class: "fetch-msg", text: st.file ? `${st.file}: ${gb(st.done)} of ${gb(st.total)} GB` :
+        el("div", {class: "fetch-msg", text: st.file ? fetchLine(st) :
           ((st.lines || []).slice(-1)[0] || "Starting…")}),
         el("div", {class: "fetch-bar"}, el("div", {style: `width:${pct.toFixed(1)}%`})),
         el("button", {class: "btn btn-sm", text: "Cancel download",
@@ -1300,7 +1363,7 @@ function paintFetch() {
     if (busy) {
       const pct = st.total ? Math.min(100, (100 * st.done) / st.total) : 0;
       r.status.append(
-        el("div", {class: "fetch-msg", text: st.file ? `${st.file}: ${gb(st.done)} of ${gb(st.total)} GB` :
+        el("div", {class: "fetch-msg", text: st.file ? fetchLine(st) :
           (st.lines[st.lines.length - 1] || "Starting…")}),
         el("div", {class: "fetch-bar"}, el("div", {style: `width:${pct.toFixed(1)}%`})),
         el("button", {class: "btn", text: "Cancel", onclick: () => api("/api/fetch/cancel", {}).then(watchFetch)}));
@@ -1624,6 +1687,22 @@ function networkCard() {
         "box says when one is out). Off: no check unless you press Check for updates in the About box."})));
 }
 
+// the app window's own drawing: on the graphics card (the usual way), or without it
+function windowCard() {
+  const on = el("input", {type: "checkbox"});
+  on.checked = String(S.set.window_no_gpu ?? "0") === "1";
+  on.addEventListener("change", () => api("/api/prefs", {changes: {window_no_gpu: on.checked}})
+    .then(() => { S.set.window_no_gpu = on.checked ? "1" : "0"; }));
+  return el("div", {class: "section-card"}, el("div", {class: "card-title"}, el("span", {text: "App window"})),
+    el("div", {class: "card-desc", text: "For Fizgig in its own window. In a browser, the browser's own hardware " +
+      "acceleration setting does this."}),
+    el("div", {class: "card-content"},
+      el("label", {class: "checkbox-label"}, on, " Draw the window without the graphics card"),
+      el("div", {class: "field-hint", text: "The window then holds none of the card's memory, which helps a run that " +
+        "needs nearly all of it (a 16 GB card at its limit). The page may scroll and play clips less smoothly. " +
+        "It takes effect the next time Fizgig starts."})));
+}
+
 // the web UI's port: saved by the first launch (8081, or the next free port if 8081 was taken)
 function webPortCard() {
   const input = el("input", {type: "number", min: "1024", max: "65535", class: "w-port", value: S.webPort || 8081});
@@ -1825,6 +1904,7 @@ async function pollRun() {
   showProgress(r.progress, r.state, r.lora, r.stage);
   const moveBusy = !!(r.move && ["moving", "back", "moved"].includes(r.move.state));
   $("btnStart").disabled = live || moveBusy || !!S.starting;
+  startResumeNote(live);
   $("btnPause").disabled = !r.running;
   // a model that can't pause (a RefMod is made in one go): no Pause button for its runs
   const runFam = S.schema.families.find((f) => f.key === (r.family || S.family)) || {};
@@ -2247,6 +2327,7 @@ function runSummary() {
     cell("Training", r.training_at && end ? dur(end - r.training_at) : ""),
     cell("Total", r.started_at && end ? dur(end - r.started_at) : ""),
     cell("Speed", p.speed), cell("Epoch", p.epoch ? `${p.epoch} of ${p.total_epochs}` : ""),
+    live && epochStepsLeft(p) ? cell("Steps left in epoch", epochStepsLeft(p)) : null,
     cell("Peak VRAM", live ? gb(s.vram_peak) : ""), cell(live ? "Time left" : "Steps",
       live ? p.eta : (p.total_steps ? `${p.step} of ${p.total_steps}` : "")),
   ]);
@@ -2306,6 +2387,13 @@ function sideSpark(d) {
   box.title = `Loss, smoothed: ${ys[ys.length - 1].toFixed(4)} now`;
 }
 
+// the steps left in the epoch that is training ("12 of 40"), or "" when the run's steps don't divide into its epochs
+function epochStepsLeft(p) {
+  const total = Number(p && p.total_steps) || 0, epochs = Number(p && p.total_epochs) || 0, epoch = Number(p && p.epoch) || 0;
+  if (!total || !epochs || !epoch || total % epochs) return "";
+  const per = total / epochs, done = Number(p.step) - (epoch - 1) * per;
+  return done >= 0 && done <= per ? `${per - done} of ${per}` : "";
+}
 // the run's figures (the same from a web run and from a desktop run): the bar, the tiles, the sidebar
 function showProgress(p, state, name, extraNote) {
   const pct = p ? p.percent : (["completed"].includes(state) ? 100 : 0);
@@ -2319,6 +2407,7 @@ function showProgress(p, state, name, extraNote) {
   if (p) {
     tile("Epoch", p.epoch ? `${p.epoch} / ${p.total_epochs}` : "");
     tile("Step", p.total_steps ? `${p.step} / ${p.total_steps}` : "");
+    if (["running", "pausing"].includes(state)) tile("Left in epoch", epochStepsLeft(p));
     tile("Speed", p.speed);
     tile("Loss", p.loss);
     tile("Time left", p.eta);
@@ -2549,9 +2638,9 @@ async function styleShow(dir, items, run) {
 
 async function likenessShow(dir, items, run, view) {
   S.lik.dir = dir;
+  S.lik.run = run || "";                              // the run whose scores these are
   const ask = S.lik.ask = (S.lik.ask || 0) + 1;     // an older refresh's answer arriving late changes nothing
   let d;
-  S.lik.run = run;
   try { d = await api(`/api/likeness?dir=${encodeURIComponent(dir)}&run=${encodeURIComponent(run || "")}` +
                       `&dataset=${encodeURIComponent(S.galDataset || "")}`); }
   catch (e) { return; }
@@ -2604,8 +2693,9 @@ async function likenessShow(dir, items, run, view) {
   if (cv.width !== w) cv.width = w;
   const g = cv.getContext("2d"), W = cv.width, H = cv.height, L = 42, R = 12, T = 12, B = 22;
   g.clearRect(0, 0, W, H);
-  const ymax = Math.min(1, Math.max(0.7, (d.thresholds || {}).match + 0.15 || 0, Math.max(...avgs) + 0.05,
-                                    real ? real.p75 + 0.05 : 0));
+  // headroom above the band and the run's best, so the part that matters isn't pressed against the top
+  const ymax = Math.min(1, Math.max(0.7, (d.thresholds || {}).match + 0.15 || 0, Math.max(...avgs) + 0.08,
+                                    real ? real.p75 + 0.1 : 0));
   const x = (i) => epochs.length === 1 ? L + (W - L - R) / 2 : L + (W - L - R) * i / (epochs.length - 1);
   const y = (v) => T + (H - T - B) * (1 - v / ymax);
   g.font = "11px sans-serif"; g.lineWidth = 1;
@@ -2619,10 +2709,23 @@ async function likenessShow(dir, items, run, view) {
     g.fillText("your photos", W - R - 70, y(real.p75) - 4);
   }
   const bands = d.thresholds || {match: 0.45, borderline: 0.30};
+  // your photos' numbers on the axis (their middle half's edges and median, in the band's green); a badge band's
+  // number that would sit on top of one of them gives way
+  const realMarks = real ? [real.p25, real.median, real.p75] : [];
+  const clear = (v) => realMarks.every((r) => Math.abs(y(v) - y(r)) >= 11);
   for (const band of [bands.borderline, bands.match]) {         // the badge colour bands, for orientation
     g.strokeStyle = themeColor("--border"); g.fillStyle = themeColor("--text-muted");
     g.beginPath(); g.moveTo(L, y(band)); g.lineTo(W - R, y(band)); g.stroke();
-    g.fillText(Math.round(band * 100) + "%", 8, y(band) + 4);
+    if (clear(band)) g.fillText(Math.round(band * 100) + "%", 8, y(band) + 4);
+  }
+  if (real) {
+    g.fillStyle = themeColor("--success");
+    let last = -Infinity;
+    for (const v of [real.p75, real.median, real.p25]) {        // top down, each clear of the one above
+      const yy = Math.max(y(v) + 4, last + 11);
+      g.fillText(Math.round(v * 100) + "%", 8, yy);
+      last = yy;
+    }
   }
   g.strokeStyle = themeColor("--accent"); g.lineWidth = 2; g.beginPath();
   avgs.forEach((v, i) => (i ? g.lineTo(x(i), y(v)) : g.moveTo(x(i), y(v))));

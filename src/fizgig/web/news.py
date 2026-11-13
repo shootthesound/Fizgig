@@ -8,7 +8,7 @@ NEWS = [
         "date": "13 Nov 2026",
         "title": "Every job keeps its own view",
         "body": (
-            "A pill at the top right (bottom right on a phone) names the job the tabs are showing. Press it to switch "
+            "A pill at the top right (bottom right on a phone) says what the tabs are showing. Press it to switch "
             "between the run training now, the runs in your queue and a clean start: the Start, Image Prep, Captions, "
             "Samples and Training tabs all change to that job's folder, captions, prompts, settings and previews.\n\n"
             "Likeness and Style scores now belong to each run, with your three reference photos remembered per training "

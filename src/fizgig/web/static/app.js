@@ -2739,19 +2739,22 @@ function jobPillShow() {
   const show = !!live || items.length > 0 || c.kind !== "draft" || !!c.ended;
   p.style.display = show ? "" : "none";
   if (!show) { jobPillMenu(false); return; }
-  // a job on show: Viewing. Ordinary use (no job on show) only says what is going on: the run training, or the queue
-  const [label, name] = c.ended ? ["Finished", c.lora] :
-    c.kind === "run" ? ["Viewing", c.lora] :
-    c.kind === "queue" ? [`Viewing queued ${c.n || ""}`.trim(), c.lora] :
-    live ? [paused() ? "Paused" : ctxSetupIsRun() ? "Training now" : "Training", S.run.lora] :
-    ["Queued", `${items.length} run${items.length === 1 ? "" : "s"}`];
+  // Always "Viewing: <what the tabs show>": a job's name, or "new run" (the form is no job yet). After it, what that
+  // is doing (training, paused, queued 2, finished) - or, on a new run, what is going on meanwhile (Training: name)
+  const same = ctxSetupIsRun(), doing = paused() ? "paused" : "training";
+  const [name, state] = c.ended ? [c.lora, "finished"] :
+    c.kind === "run" ? [c.lora, doing] :
+    c.kind === "queue" ? [c.lora, `queued ${c.n || ""}`.trim()] :
+    same ? [S.run.lora, doing] :
+    ["new run", live ? `${paused() ? "Paused" : "Training"}: ${S.run.lora}` :
+      `${items.length} queued`];
   p.classList.toggle("attention", !!c.ended);
-  $("jobPillText").replaceChildren(el("b", {text: label + ": "}), name || "",
-    el("span", {class: "job-pill-caret", text: " ▾"}));
+  $("jobPillText").replaceChildren(el("b", {text: "Viewing: "}), name || "",
+    el("span", {class: "job-pill-state", text: " · " + state}), el("span", {class: "job-pill-caret", text: " ▾"}));
   $("jobPillText").title = c.ended
     ? `${c.lora} is finished` + (c.next ? `, and ${c.next} is training. Press to switch.` : ".")
-    : c.kind === "draft" ? "Press to look at a job on these tabs: the run training now, or a queued run."
-    : "The job these tabs show. Press to switch to another, or back to the normal view.";
+    : c.kind === "draft" && !same ? "These tabs show a new run: one not started or queued yet. Press to look at a job instead."
+    : "The job these tabs show. Press to switch to another, or to a new run.";
   // the line at the top of each tab saying whose content it is, while it is another job's than your own setup
   const say = c.kind === "run" ? (c.ended ? `${c.lora} is finished` + (c.next ? `, and ${c.next} is training now.` : ".") +
       " These tabs still show it until you change tab or switch with the pill."
@@ -2791,10 +2794,12 @@ function jobPillMenu(open) {
     () => ctxSwitch({kind: "queue", id: it.id}))));
   // a run is training: another like it, without going back to Start for the folder
   if (live && activeTab() === "training") rows.push(row("Set up a new run with these settings", "", false, ctxNewLike));
-  // out of the job: a clean start (the Start tab, no training folder, the model's defaults, no name). Always there
-  // unless the form is that clean start already: a run just set up and queued leaves its settings in the form too
-  const clean = c.kind === "draft" && !S.imageFolder && !String((S.values || {}).LORA_NAME || "").trim();
-  if (!clean) rows.push(row("Back to the normal view", "", false, ctxNormal));
+  // New run: where you are when the form is no job (marked then), and the way out of a job - a clean start (the
+  // Start tab, no training folder, the model's defaults, no name). A new run already filled in can be cleared
+  const onNew = c.kind === "draft" && !same && !c.ended;
+  const clean = !S.imageFolder && !String((S.values || {}).LORA_NAME || "").trim();
+  rows.push(row("New run", onNew ? "" : "a clean start", onNew, ctxNormal));
+  if (onNew && !clean) rows.push(row("Clear the new run", "back to a clean start", false, ctxNormal));
   menu.replaceChildren(...rows);
 }
 
@@ -2841,7 +2846,7 @@ async function startupChoose(choice) {
   }
 }
 
-// Back to the normal view: out of the job on show, to a clean start - the Start tab with no training folder picked,
+// New run (the pill's list): out of the job on show, to a clean start - the Start tab with no training folder picked,
 // and the Training tab at the model's own defaults (its first preset, as a first visit) with no LoRA name. Nothing of
 // the job is left in the form. The Samples tab's prompts and preview settings are yours, not the job's: they stay
 async function ctxNormal() {

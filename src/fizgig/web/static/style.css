@@ -2299,6 +2299,7 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
   border: 0; color: var(--text-primary); font-size: 12.5px; padding: 2px 8px; cursor: pointer; text-align: left; }
 .job-pill-text b { color: var(--accent); font-weight: 600; }
 .job-pill-caret { color: var(--text-muted); }
+.job-pill-state { color: var(--text-secondary); }
 /* the job on show has finished (or another has started): the pill pulses in the theme's --pulse until you switch */
 .job-pill.attention { border-color: var(--pulse); animation: job-pill-pulse 1.4s ease-out infinite; }
 .job-pill.attention .job-pill-text b { color: var(--pulse); }

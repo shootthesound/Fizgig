@@ -5953,7 +5953,7 @@ function studioCrop(path, initial, ok, cancel, opt) {
     cv.width = dw; cv.height = dh;
     const HANDLE = 9, MIN_W = 32 * scale * 4;
     let box;
-    const centre = () => { const bw = o.fit ? dw : dw / dh >= aspect ? dh * aspect : dw, bh = o.fit ? dh : bw / aspect;
+    const centre = () => { const bw = dw / dh >= aspect ? dh * aspect : dw, bh = bw / aspect;
       box = {x0: (dw - bw) / 2, y0: (dh - bh) / 2, x1: (dw + bw) / 2, y1: (dh + bh) / 2}; };
     if (initial) box = {x0: initial[0] * scale, y0: initial[1] * scale, x1: initial[2] * scale, y1: initial[3] * scale};
     else centre();
@@ -7159,15 +7159,15 @@ async function studioUpVideoSet(path, saved) {
   const b = Number(keep.b) > 0 ? Math.min(Number(keep.b), info.seconds) : info.seconds;
   S.st.upVideo = {path, info, rect: Array.isArray(keep.rect) ? keep.rect : null, a: Math.max(0, Math.min(Number(keep.a) || 0, b)), b};
   if (box) box.value = path;
+  studioUpVideoDraw(true);
   if (!saved) {
-    // a new video: the To size is the video's own shape (never the clip's Width x Height, which are for clips made
-    // here), near a megapixel or its own size when it is smaller, on the model's 32-px grid
-    const k = Math.min(1, Math.sqrt(1100000 / Math.max(1, info.width * info.height)));
-    const snap = (n) => Math.max(256, Math.round(n / 32) * 32);
-    $("stUpW").value = snap(info.width * k); $("stUpH").value = snap(info.height * k);
-  }
-  studioUpVideoDraw(true);                                  // (adds The loaded video to the list beside Upscale now)
-  if (!saved || saved.which === "video") $("stUpWhich").value = "video";
+    // a new video is what Upscale works on, at its own shape and near a megapixel (or its own size when smaller)
+    $("stUpWhich").value = "video";
+    const fits = [...$("stUpVideoSize").options].filter((o) => o.value && Number(o.dataset.k) <= 1)
+      .map((o) => o.value.split("x").map(Number)).sort((p, q) => q[0] * q[1] - p[0] * p[1]);
+    const pickd = fits.find(([w, h]) => w * h <= 1100000) || fits[fits.length - 1];
+    if (pickd) [$("stUpW").value, $("stUpH").value] = pickd;
+  } else if (saved.which === "video") $("stUpWhich").value = "video";
   studioUpVideoSizes(); studioUpSummary(); studioH3Remember();
   // a new video: choose what of the frame is used straight away, as a photo's crop is placed when it is picked. The
   // box starts as the whole frame in the nearest shape the model's sizes allow; Cancel keeps that

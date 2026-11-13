@@ -5863,7 +5863,6 @@ function studioKind(L, sv) {
   $("stUpPromptRow").hidden = $("stUpPromptCopy").hidden = !$("stUpOwnPrompt").checked;
   $("stUpLast").checked = up.last !== false;
   $("stUpWhich").value = ["baseline", "both"].includes(up.which) ? up.which : "tweaked";
-  $("stUpPrevN").value = "22";                 // Preview always opens on 0.9 seconds
   $("stUpBox").open = up.open === true;
   $("stH3Pieces").checked = h3.pieces === true;          // off unless turned on
   $("stH3PiecesBox").style.display = V.pieces ? "" : "none";                  // a family ability (H3 has it)
@@ -6015,7 +6014,7 @@ function studioH3Remember() {
       lenS: $("stH3LenS").value, w: $("stH3W").value,
       h: $("stH3H").value, steps: $("stH3Steps").value, turbo: $("stH3Turbo").value,
       sound: $("stH3Sound").checked, boost: $("stH3Boost").checked, early: $("stH3Early").checked, pieces: $("stH3Pieces").checked, pieceS: $("stH3PieceS").value, only: $("stH3Only").checked, loopPrompt: $("stLoopPrompt").value, loopS: $("stLoopS").value,
-      up: {w: $("stUpW").value, h: $("stUpH").value, den: $("stUpDen").value, steps: $("stUpSteps").value, sec: $("stUpSec").value, auto: $("stUpAuto").checked, first: $("stUpFirst").checked, last: $("stUpLast").checked, bias: $("stUpBias").value, adv: $("stUpAdv").checked, low: S.st.upLow || 0, ownPrompt: $("stUpOwnPrompt").checked, prompt: $("stUpPrompt").value, which: $("stUpWhich").value, prevN: $("stUpPrevN").value, open: $("stUpBox").open}, kf: S.st.kf,
+      up: {w: $("stUpW").value, h: $("stUpH").value, den: $("stUpDen").value, steps: $("stUpSteps").value, sec: $("stUpSec").value, auto: $("stUpAuto").checked, first: $("stUpFirst").checked, last: $("stUpLast").checked, bias: $("stUpBias").value, adv: $("stUpAdv").checked, low: S.st.upLow || 0, ownPrompt: $("stUpOwnPrompt").checked, prompt: $("stUpPrompt").value, which: $("stUpWhich").value, open: $("stUpBox").open}, kf: S.st.kf,
       kfRect: S.st.kfRect};
     localStorage.setItem(ST_KEY, JSON.stringify(d));
   } catch (e) { /* private window */ }
@@ -7936,7 +7935,6 @@ function wireStudio() {
       studioUpSummary(); studioH3Remember();
       if ($("stUpAuto").checked) studioPending();
     });
-  $("stUpPrevN").addEventListener("change", studioH3Remember);
   // Presets: tested sets of the fold's values. The prompt, which clip and After every render are left alone
   $("stUpPreset").addEventListener("change", async () => {
     const v = $("stUpPreset").value;
@@ -8029,7 +8027,7 @@ function wireStudio() {
   // Both go by way of Update's check (studioStart): a primary or donor LoRA changed since the clip was rendered is
   // loaded first, then the clip already rendered is upscaled on it. The request is held until it has been sent
   $("stUpPrev").addEventListener("click", () => {
-    S.st.upPrev = Number($("stUpPrevN").value) || 1; S.st.upNow = 0; S.st.upHold = 1;
+    S.st.upPrev = 22; S.st.upNow = 0; S.st.upHold = 1;       // 0.9 seconds: the shortest clip the model makes
     studioStart();
   });
   $("stUpGo").addEventListener("click", () => {

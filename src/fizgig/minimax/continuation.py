@@ -183,10 +183,6 @@ def render_long(eng, state, *, frames, steps, turbo_strength, with_audio=True, n
     ctx_a = audio_latents_for_frames(ctx_f)
     user_kf = list(getattr(state, "keyframes", None) or ())
     starts = [0] + [j - ctx_f for j in joins(lengths)]            # each piece's first frame in the whole clip
-    # End on the first frame (Studio's tick) with no last-frame picture of the user's: the last piece is guided to
-    # the clip's own opening frame - the first piece's first latent, as it is (no decode, no encode)
-    end = (bool(getattr(eng, "clip_end_on_first", False)) and len(lengths) > 1
-           and not any(g == int(frames) - 1 for g, _z in user_kf))
     boost = getattr(eng, "speed_boost", False)
     eng.speed_boost = False             # a piece is pinned at full size from the first step
     lats, auds, out = [], [], []
@@ -199,8 +195,6 @@ def render_long(eng, state, *, frames, steps, turbo_strength, with_audio=True, n
             # a first / last frame picture belongs to the piece its frame falls in (a later piece: its new frames)
             st.keyframes = [(g - starts[i], z) for g, z in user_kf
                             if (starts[i] + (ctx_f if i else 0)) <= g < starts[i] + n] or None
-            if end and i == len(lengths) - 1:
-                st.keyframes = list(st.keyframes or ()) + [(n - 1, lats[0][:, :, :1].clone())]
             model = None
             if i:
                 kl = lats[-1][:, :, -CTX:].float()

@@ -5844,8 +5844,6 @@ function studioKind(L, sv) {
   $("stH3Boost").parentElement.style.display = V.speed_boost ? "" : "none";   // a family ability (H3 has it)
   $("stH3Early").checked = h3.early !== false;
   $("stH3Only").checked = h3.only === true;
-  $("stH3End").checked = h3.end === true;
-  $("stH3EndBox").style.display = (V.frame_slots || []).includes("last") ? "" : "none";   // a model that can pin a last frame
   $("stH3Pieces").checked = h3.pieces === true;          // off unless turned on
   $("stH3PiecesBox").style.display = V.pieces ? "" : "none";                  // a family ability (H3 has it)
   $("stH3PieceS").value = h3.pieceS || "";
@@ -5995,8 +5993,7 @@ function studioH3Remember() {
     d.video[(S.st.layout || {}).key || "minimax"] = {model: $("stH3Model").value, base: $("stH3Base").value, len: $("stH3Len").value,
       lenS: $("stH3LenS").value, w: $("stH3W").value,
       h: $("stH3H").value, steps: $("stH3Steps").value, turbo: $("stH3Turbo").value,
-      sound: $("stH3Sound").checked, boost: $("stH3Boost").checked, early: $("stH3Early").checked, pieces: $("stH3Pieces").checked, pieceS: $("stH3PieceS").value, only: $("stH3Only").checked,
-      end: $("stH3End").checked, kf: S.st.kf,
+      sound: $("stH3Sound").checked, boost: $("stH3Boost").checked, early: $("stH3Early").checked, pieces: $("stH3Pieces").checked, pieceS: $("stH3PieceS").value, only: $("stH3Only").checked, kf: S.st.kf,
       kfRect: S.st.kfRect};
     localStorage.setItem(ST_KEY, JSON.stringify(d));
   } catch (e) { /* private window */ }
@@ -6016,7 +6013,7 @@ function studioExtra() {
     turbo: Math.max(0, Math.min(1.5, Number($("stH3Turbo").value) || 0)), sound: $("stH3Sound").checked,
     speed_boost: !!V.speed_boost && $("stH3Boost").checked, early: $("stH3Early").checked,
     pieces: !!V.pieces && $("stH3Pieces").checked, piece: studioPieceFrames(V),
-    tweaked_only: $("stH3Only").checked, end_on_first: !ref && slots.includes("last") && $("stH3End").checked,
+    tweaked_only: $("stH3Only").checked,
     negative: $("stNeg").value.trim()},
     keyframes: slots.filter((s) => S.st.kf[s]).map((s) => ({slot: s, path: S.st.kf[s], rect: S.st.kfRect[s] || null})),
     ref_mode: ref};
@@ -7807,7 +7804,7 @@ function wireStudio() {
   $("stH3Early").addEventListener("change", studioH3Remember);
   // the swap buttons between a width and a height (pictures and clips): the two values change places, and each
   // picker reports its change as if picked by hand
-  for (const id of ["stH3Only", "stH3End"]) $(id).addEventListener("change", () => { studioH3Remember(); studioPending(); });
+  $("stH3Only").addEventListener("change", () => { studioH3Remember(); studioPending(); });
   // the Aspect lists: the longer side stays, the other goes to the nearest size on offer for that shape; a portrait
   // size stays portrait
   for (const [a, w, h] of [["stAspect", "stW", "stH"], ["stH3Aspect", "stH3W", "stH3H"]])

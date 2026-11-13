@@ -284,13 +284,6 @@ def _render_clips(eng, desc, st, c, out, gen):
     width, height = int(v.get("width") or 768), int(v.get("height") or 640)
     st.preview_width, st.preview_height, st.preview_frames = width, height, frames
     st.keyframes, st.references = _cond(eng, c, width, height, frames)
-    # End on the first frame: a First frame picture is the last frame too (unless a Last frame picture is set). With
-    # no picture, a clip in pieces steers its last piece back to its own opening frame (the engine: clip_end_on_first)
-    eng.clip_end_on_first = bool(v.get("end_on_first"))
-    if eng.clip_end_on_first and st.keyframes and frames > 1:
-        first = next((z for i, z in st.keyframes if i == 0), None)
-        if first is not None and not any(i == frames - 1 for i, _z in st.keyframes):
-            st.keyframes = list(st.keyframes) + [(frames - 1, first)]
     eng.speed_boost = bool(v.get("speed_boost"))      # the Studio's H3 tick: the first half of the steps at half size
     eng.clip_pieces = bool(v.get("pieces"))           # the Studio's In pieces tick: a long clip built piece by piece
     eng.clip_piece_frames = int(v.get("piece") or 0)  # each piece's length (the box beside the tick); 0 = 124

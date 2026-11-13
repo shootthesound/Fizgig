@@ -2739,6 +2739,7 @@ function jobPillShow() {
   const show = !!live || items.length > 0 || c.kind !== "draft" || !!c.ended;
   p.style.display = show ? "" : "none";
   if (!show) { jobPillMenu(false); return; }
+  if (S.pillPlace && !p.classList.contains("dragging")) S.pillPlace();
   // Always "Viewing: <what the tabs show>": a job's name, or "new run" (the form is no job yet). After it, what that
   // is doing (training, paused, queued 2, finished) - or, on a new run, what is going on meanwhile (Training: name)
   const same = ctxSetupIsRun(), doing = paused() ? "paused" : "training";
@@ -2753,8 +2754,9 @@ function jobPillShow() {
     el("span", {class: "job-pill-state", text: " · " + state}), el("span", {class: "job-pill-caret", text: " ▾"}));
   $("jobPillText").title = c.ended
     ? `${c.lora} is finished` + (c.next ? `, and ${c.next} is training. Press to switch.` : ".")
-    : c.kind === "draft" && !same ? "These tabs show a new run: one not started or queued yet. Press to look at a job instead."
-    : "The job these tabs show. Press to switch to another, or to a new run.";
+    : (c.kind === "draft" && !same ? "These tabs show a new run: one not started or queued yet. Press to look at a job instead."
+    : "The job these tabs show. Press to switch to another, or to a new run.") +
+      (window.innerWidth > 900 ? " Drag it to move it; double-click puts it back." : "");
   // the line at the top of each tab saying whose content it is, while it is another job's than your own setup
   const say = c.kind === "run" ? (c.ended ? `${c.lora} is finished` + (c.next ? `, and ${c.next} is training now.` : ".") +
       " These tabs still show it until you change tab or switch with the pill."
@@ -2801,6 +2803,12 @@ function jobPillMenu(open) {
   rows.push(row("New run", onNew ? "" : "a clean start", onNew, ctxNormal));
   if (onNew && !clean) rows.push(row("Clear the new run", "back to a clean start", false, ctxNormal));
   menu.replaceChildren(...rows);
+  menu.classList.remove("up", "left");
+  if (window.innerWidth > 900) {                // the pill may have been dragged near an edge
+    const b = $("jobPill").getBoundingClientRect();
+    menu.classList.toggle("up", b.bottom + menu.offsetHeight + 12 > window.innerHeight && b.top > menu.offsetHeight + 12);
+    menu.classList.toggle("left", b.right - menu.offsetWidth < 8);
+  }
 }
 
 // At start-up, after Fizgig was closed (or stopped) while a run trained: carry that run on from its last save, start
@@ -10942,7 +10950,54 @@ function wire() {
   $("btnStart").addEventListener("click", () => start("/api/start"));
   $("galleryRun").addEventListener("change", () => { S.galleryRun = $("galleryRun").value; loadGallery(); });
   $("likBtn").addEventListener("click", likenessPicker);
-  $("jobPillText").addEventListener("click", () => jobPillMenu($("jobPillMenu").hidden));
+  // the pill can be dragged anywhere on a wide window (kept in this browser; a double-click puts it back). A press
+  // that didn't move it opens its list. A narrow window or a phone keeps it where it is
+  {
+    const pill = $("jobPill"), KEY = "fizgig.pill", wide = () => window.innerWidth > 900;
+    const place = (x, y) => {
+      const b = pill.getBoundingClientRect();
+      pill.style.left = Math.max(4, Math.min(window.innerWidth - b.width - 4, x)) + "px";
+      pill.style.top = Math.max(4, Math.min(window.innerHeight - b.height - 4, y)) + "px";
+      pill.style.right = "auto";
+    };
+    const home = () => { pill.style.left = pill.style.top = pill.style.right = ""; };
+    const saved = () => { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { return null; } };
+    S.pillPlace = () => { const at = saved(); if (at && wide() && pill.style.display !== "none") place(at[0], at[1]); };
+    window.addEventListener("resize", () => S.pillPlace());
+    let drag = null;
+    $("jobPillText").addEventListener("pointerdown", (e) => {
+      if (!wide() || e.button) return;
+      const b = pill.getBoundingClientRect();
+      drag = {x: e.clientX, y: e.clientY, l: b.left, t: b.top, moved: false};
+      e.currentTarget.setPointerCapture(e.pointerId);
+    });
+    $("jobPillText").addEventListener("pointermove", (e) => {
+      if (!drag) return;
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (!drag.moved && Math.hypot(dx, dy) < 5) return;
+      if (!drag.moved) { drag.moved = true; pill.classList.add("dragging"); jobPillMenu(false); }
+      place(drag.l + dx, drag.t + dy);
+    });
+    const drop = () => {
+      if (drag && drag.moved) {
+        const b = pill.getBoundingClientRect();
+        try { localStorage.setItem(KEY, JSON.stringify([Math.round(b.left), Math.round(b.top)])); } catch (e) { /* private window */ }
+        S.pillDragged = true;                       // the click that ends a drag opens nothing
+      }
+      pill.classList.remove("dragging");
+      drag = null;
+    };
+    $("jobPillText").addEventListener("pointerup", drop);
+    $("jobPillText").addEventListener("pointercancel", drop);
+    $("jobPillText").addEventListener("dblclick", () => {
+      try { localStorage.removeItem(KEY); } catch (e) { /* private window */ }
+      home(); jobPillMenu(false);
+    });
+  }
+  $("jobPillText").addEventListener("click", () => {
+    if (S.pillDragged) { S.pillDragged = false; return; }
+    jobPillMenu($("jobPillMenu").hidden);
+  });
   $("jobPillShade").addEventListener("click", () => jobPillMenu(false));
   $("startupLater").addEventListener("click", () => $("startupModal").classList.remove("active"));
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") jobPillMenu(false); });

@@ -2293,11 +2293,17 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
    (top middle, up to 60% of the window); under modals and lightboxes. A narrow window or a phone has it bottom right,
    above the status bar, and its list comes up from the bottom as a sheet */
 .job-pill { position: fixed; top: 10px; right: 16px; z-index: 30; display: flex; align-items: center; gap: 4px;
-  max-width: min(22vw, 320px); padding: 3px 4px 3px 4px; border-radius: 999px; background: var(--bg-surface);
+  max-width: min(34vw, 460px); padding: 5px 6px; border-radius: 999px; background: var(--bg-surface);
   border: 1px solid var(--accent); box-shadow: 0 2px 10px color-mix(in srgb, var(--shadow) 40%, transparent); }
 .job-pill-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none;
-  border: 0; color: var(--text-primary); font-size: 12.5px; padding: 2px 8px; cursor: pointer; text-align: left; }
+  border: 0; color: var(--text-primary); font-size: 13.5px; padding: 4px 12px; cursor: pointer; text-align: left;
+  touch-action: none; user-select: none; }
 .job-pill-text b { color: var(--accent); font-weight: 600; }
+.job-pill.dragging { cursor: grabbing; }
+.job-pill.dragging .job-pill-text { cursor: grabbing; }
+/* dragged somewhere its list would run off the window: the list opens upward, or from the pill's left edge */
+.job-pill-menu.up { top: auto; bottom: calc(100% + 8px); }
+.job-pill-menu.left { right: auto; left: 0; }
 .job-pill-caret { color: var(--text-muted); }
 .job-pill-state { color: var(--text-secondary); }
 /* the job on show has finished (or another has started): the pill pulses in the theme's --pulse until you switch */
@@ -2340,7 +2346,9 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 .ctx-line { margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--accent);
   background: var(--accent-subtle); color: var(--text-primary); font-size: 13px; }
 @media (max-width: 900px) {
-  .job-pill { top: auto; bottom: 112px; max-width: min(78vw, 340px); }
+  /* a phone: where it is (never dragged there), whatever place a wider window left it */
+  .job-pill { top: auto !important; left: auto !important; right: 16px !important; bottom: 112px; padding: 3px 4px;
+    max-width: min(78vw, 340px); }
   .job-pill-text { font-size: 14px; padding: 8px 12px; }
   .job-pill-menu { position: fixed; top: auto; left: 0; right: 0; bottom: 0; max-width: none; min-width: 0;
     border-radius: 16px 16px 0 0; padding: 12px 12px calc(16px + env(safe-area-inset-bottom)); gap: 6px; }

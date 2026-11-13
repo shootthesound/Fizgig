@@ -67,3 +67,20 @@ def test_deflicker_touches_only_the_frames_near_a_join():
     assert all(np.array_equal(a, b) for a, b in zip(frames[84:], before[84:]))
     step = lambda fs: abs(float(fs[60].mean() - fs[59].mean()))
     assert step(frames) < 0.35 * step(before)
+
+
+def test_the_donor_strength_does_not_render_the_baseline_again():
+    from types import SimpleNamespace as NS
+    from fizgig.families.video_workbench import ClipContract
+
+    class Engine(ClipContract):
+        primary_path, donor_path = "p.safetensors", "d.safetensors"
+
+    key = lambda st, **k: Engine().clip_key(st, frames=22, steps=4, turbo_strength=1.0, with_audio=True, **k)
+    st = lambda **k: NS(seed=1, prompt="a", preview_width=512, preview_height=512, primary_scale=1.0, donor_scale=1.0,
+                        **k)
+    a, b = st(), st()
+    b.donor_scale = 0.4
+    assert key(a) == key(b)                             # the donor is off in the Baseline clip
+    b.primary_scale = 0.8
+    assert key(a) != key(b) and key(a, primary_scale=False) == key(b, primary_scale=False)

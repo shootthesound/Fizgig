@@ -313,6 +313,7 @@ def _render_clips(eng, desc, st, c, out, gen):
                                    loop=loop, **opts)
         if not loop:
             last["clip"], last["base"] = tweak, None
+        last["shown"] = tweak                           # what Upscale works on: the clip in the pane, return included
         png = os.path.join(out, f"tweaked_{gen}.png")
         paths = {"baseline": "", "baseline_media": "", "tweaked": png,
                  "tweaked_media": _write_clip(tweak, png, os.path.join(out, f"tweaked_{gen}.mp4"), fps, rate)}
@@ -362,9 +363,10 @@ def _render_clips(eng, desc, st, c, out, gen):
         last = S.get("last_clip")
         if not last or last.get("engine") is not eng:
             raise ValueError("Render a clip first: the preview is made from the middle of a clip you have rendered.")
-        of_base = str(up.get("which")) == "baseline" and last.get("base") is not None
+        shown = last.get("shown") or last["clip"]
+        of_base = str(up.get("which")) == "baseline" and last.get("base") is not None and shown is last["clip"]
         big = upscaled(eng._base_like(st, last["base_frames"], True) if of_base else st,
-                       last["base"] if of_base else last["clip"], last["width"], last["height"],
+                       last["base"] if of_base else shown, last["width"], last["height"],
                        preview=max(1, int(up["preview"])))
         was = {"frames": big["before"], "middle": big["before"][len(big["before"]) // 2], "wav": big.get("wav")}
         paths = {}
@@ -380,7 +382,9 @@ def _render_clips(eng, desc, st, c, out, gen):
         last = S.get("last_clip")
         if not last or last.get("engine") is not eng:
             raise ValueError("Render a clip first: Upscale makes a larger copy of a clip you have rendered.")
-        paths = up_panes(last["clip"], last.get("base"), last["width"], last["height"], last["base_frames"])
+        shown = last.get("shown") or last["clip"]       # after Loop back: the clip with its return (no Baseline then)
+        paths = up_panes(shown, last.get("base") if shown is last["clip"] else None, last["width"], last["height"],
+                         last["base_frames"])
         torch.cuda.empty_cache()
         return paths, None
     same = _clip_same_as_baseline(eng, st)

@@ -817,7 +817,7 @@ def _studio_post(what, b):
         return {"ok": True}
     if what == "cancel":
         return {"ok": studio.cancel()}
-    if what in ("preset_save", "preset_load"):
+    if what in ("preset_save", "preset_load", "preset_delete"):
         key = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(b.get("family") or ""))
         name = str(b.get("name") or "").strip()        # any name a file can have, as the desktop's
         if not name or name.startswith("✨") or any(c in name for c in '<>:"/\\|?*') or name in (".", ".."):
@@ -826,6 +826,10 @@ def _studio_post(what, b):
         if what == "preset_load":
             with open(path_, encoding="utf-8") as f:
                 return {"blocks": (json.load(f) or {}).get("blocks") or {}}
+        if what == "preset_delete":                      # one of your own presets (the Upscale fold's Delete)
+            if os.path.isfile(path_):
+                os.remove(path_)
+            return {"ok": True}
         if os.path.exists(path_) and not b.get("overwrite"):
             return {"exists": True}
         os.makedirs(os.path.dirname(path_), exist_ok=True)

@@ -5855,6 +5855,7 @@ function studioKind(L, sv) {
   $("stUpFirst").checked = up.first !== false;
   $("stUpBias").value = up.bias || "0";
   $("stUpAdv").checked = up.adv === true;
+  studioUpPresets("");
   S.st.upLow = Math.max(0, Math.min(0.95, Number(up.low) || 0));
   $("stUpRangeRow").hidden = !$("stUpAdv").checked;
   $("stUpOwnPrompt").checked = up.ownPrompt === true;
@@ -7072,6 +7073,23 @@ function studioUpscale(V) {
     bias: Math.max(-1, Math.min(1, Number($("stUpBias").value) || 0)),
     low: $("stUpAdv").checked ? Math.max(0, Math.min(S.st.upLow || 0, (den > 0 ? den : 0.4) - 0.02)) : 0};
 }
+// The fold's presets: the built-in ones, then your own (kept on the server beside Studio's block presets, under the
+// model's key + "_upscale"). A preset holds the look, never the prompt or which clip
+const UP_PRESETS = {
+  standard: {k: 0, den: 0.4, steps: 3, sec: "", bias: 0, adv: false, low: 0, first: true, last: true},
+  creative: {k: 2, den: 0.97, steps: 2, sec: "2.33", bias: 0.8, adv: true, low: 0, first: false, last: false},
+};
+function studioUpPresetKey() { return ((S.st.layout || {}).key || "minimax") + "_upscale"; }
+async function studioUpPresets(pick) {
+  const sel = $("stUpPreset");
+  const user = (await api("/api/studio/presets?family=" + encodeURIComponent(studioUpPresetKey())).catch(() => ({user: []}))).user;
+  sel.innerHTML = "";
+  sel.append(el("option", {value: "", text: "Pick a preset…"}), el("option", {value: "standard", text: "✨ Standard"}),
+    el("option", {value: "creative", text: "✨ Creative upscale"}));
+  if (user.length) sel.append(el("optgroup", {label: "Your presets"}, ...user.map((n) => el("option", {value: "u:" + n, text: n}))));
+  sel.value = pick && [...sel.options].some((o) => o.value === pick) ? pick : "";
+  $("stUpPresetDel").hidden = !sel.value.startsWith("u:");
+}
 // the noise levels an upscale's steps run through (minimax/upscale.py low_sigmas: the model's shift-12 spacing)
 function studioUpLevels(u) {
   const p = Math.pow(3, u.bias), tOf = (s) => s / (12 - 11 * s), t0 = tOf(u.denoise), tl = tOf(u.low || 0), out = [];
@@ -7902,7 +7920,7 @@ function wireStudio() {
       if (id === "stUpSteps") $(id).value = u.steps;
       if (id === "stUpBias") $(id).value = u.bias;
       if (id === "stUpSec" && u.section) $(id).value = String(Math.round(u.section / V.clip.fps * 100) / 100);
-      if (id !== "stUpAuto" && id !== "stUpWhich") $("stUpPreset").value = "";     // no longer the preset's values
+      if (id !== "stUpAuto" && id !== "stUpWhich") { $("stUpPreset").value = ""; $("stUpPresetDel").hidden = true; }   // no longer the preset's values
       studioUpSummary(); studioH3Remember();
       if (id === "stUpAuto" || $("stUpAuto").checked) studioPending();
     });
@@ -7916,22 +7934,61 @@ function wireStudio() {
     });
   $("stUpPrevN").addEventListener("change", studioH3Remember);
   // Presets: tested sets of the fold's values. The prompt, which clip and After every render are left alone
-  const UP_PRESETS = {
-    standard: {k: 0, den: 0.4, steps: 3, sec: "", bias: 0, adv: false, low: 0, first: true, last: true},
-    creative: {k: 2, den: 0.97, steps: 2, sec: "2.33", bias: 0.8, adv: true, low: 0, first: false, last: false},
-  };
-  $("stUpPreset").addEventListener("change", () => {
-    const p = UP_PRESETS[$("stUpPreset").value];
+  $("stUpPreset").addEventListener("change", async () => {
+    const v = $("stUpPreset").value;
+    $("stUpPresetDel").hidden = !v.startsWith("u:");
+    let p = UP_PRESETS[v];
+    if (v.startsWith("u:")) {
+      try { p = (await api("/api/studio/preset_load", {family: studioUpPresetKey(), name: v.slice(2)})).blocks; }
+      catch (e) { $("stStatus").textContent = e.message; return; }
+    }
     if (!p) return;
-    [$("stUpW").value, $("stUpH").value] = p.k ? studioUpSize(p.k) : ["", ""];
-    $("stUpDen").value = p.den; $("stUpSteps").value = p.steps; $("stUpSec").value = p.sec; $("stUpBias").value = p.bias;
-    $("stUpAdv").checked = p.adv; S.st.upLow = p.low; $("stUpRangeRow").hidden = !p.adv;
-    $("stUpFirst").checked = p.first; $("stUpLast").checked = p.last;
+    [$("stUpW").value, $("stUpH").value] = p.k ? studioUpSize(p.k) : [p.w || "", p.h || ""];
+    $("stUpDen").value = p.den; $("stUpSteps").value = p.steps; $("stUpSec").value = p.sec || ""; $("stUpBias").value = p.bias || 0;
+    $("stUpAdv").checked = !!p.adv; S.st.upLow = Number(p.low) || 0; $("stUpRangeRow").hidden = !p.adv;
+    $("stUpFirst").checked = p.first !== false; $("stUpLast").checked = p.last !== false;
     studioUpSummary(); studioH3Remember();
     if ($("stUpAuto").checked) studioPending();
   });
+  // Save preset…: the fold's values under a name of your own (a name box opens under the row, as Studio's block
+  // presets do). The size is kept as a multiple of the clip's when both sides share one
+  $("stUpPresetSave").addEventListener("click", () => {
+    const host = $("stUpPresetSaveRow");
+    if (host.childNodes.length) { host.innerHTML = ""; return; }
+    const name = el("input", {type: "text", class: "w-path", placeholder: "A name for these upscale settings"});
+    const msg = el("span", {class: "field-hint"});
+    const save = async (overwrite) => {
+      const u = studioUpscale(S.st.layout.video), cw = Number($("stH3W").value) || 768, ch = Number($("stH3H").value) || 448;
+      const kx = u.width / cw, ky = u.height / ch, same = Math.abs(kx - ky) < 0.06;
+      const blank = !$("stUpW").value.trim() && !$("stUpH").value.trim();
+      const data = {den: u.denoise, steps: u.steps, sec: $("stUpSec").value.trim(), bias: u.bias, adv: $("stUpAdv").checked,
+        low: u.low, first: u.first_guide, last: u.last_guide};
+      if (!blank && same) data.k = Math.round((kx + ky) / 2 * 100) / 100;
+      else if (!blank) { data.w = u.width; data.h = u.height; }
+      try {
+        const r = await api("/api/studio/preset_save", {family: studioUpPresetKey(), name: name.value, blocks: data, overwrite: !!overwrite});
+        if (r.exists) { msg.replaceChildren(document.createTextNode("That name is taken. "), el("button", {class: "btn btn-sm btn-danger", text: "Replace it", onclick: () => save(true)})); return; }
+        const kept = name.value.trim();
+        host.innerHTML = "";
+        await studioUpPresets("u:" + kept);
+        $("stStatus").textContent = "Upscale preset saved.";
+      } catch (e) { msg.textContent = e.message; }
+    };
+    host.append(el("div", {class: "field-row"}, el("span", {class: "field-label"}), name,
+      el("button", {class: "btn btn-primary", text: "Save", onclick: () => save(false)}),
+      el("button", {class: "btn", text: "Cancel", onclick: () => { host.innerHTML = ""; }}), msg));
+    name.focus();
+  });
+  $("stUpPresetDel").addEventListener("click", async () => {
+    const v = $("stUpPreset").value;
+    if (!v.startsWith("u:")) return;
+    try { await api("/api/studio/preset_delete", {family: studioUpPresetKey(), name: v.slice(2)}); }
+    catch (e) { $("stStatus").textContent = e.message; return; }
+    await studioUpPresets("");
+    $("stStatus").textContent = "Upscale preset deleted.";
+  });
   // Advanced: the noise range bar. Dragging the section moves both ends, a handle moves one; the high end is Denoise
-  const upRange = () => { $("stUpPreset").value = ""; studioUpSummary(); studioH3Remember(); if ($("stUpAuto").checked) studioPending(); };
+  const upRange = () => { $("stUpPreset").value = ""; $("stUpPresetDel").hidden = true; studioUpSummary(); studioH3Remember(); if ($("stUpAuto").checked) studioPending(); };
   $("stUpAdv").addEventListener("change", () => { $("stUpRangeRow").hidden = !$("stUpAdv").checked; upRange(); });
   $("stUpRange").addEventListener("pointerdown", (e) => {
     const bar = $("stUpRange"), box = bar.getBoundingClientRect(), u0 = studioUpscale(S.st.layout.video);

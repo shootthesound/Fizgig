@@ -7937,7 +7937,7 @@ function wireStudio() {
     });
   for (const id of ["stH3W", "stH3H"]) $(id).addEventListener("change", studioUpSummary);
   $("stUpBox").addEventListener("toggle", studioH3Remember);
-  for (const [id, k] of [["stUp15", 1.5], ["stUp2", 2]])
+  for (const [id, k] of [["stUp1", 1], ["stUp15", 1.5], ["stUp2", 2]])
     $(id).addEventListener("click", () => {
       [$("stUpW").value, $("stUpH").value] = studioUpSize(k);
       studioUpSummary(); studioH3Remember();

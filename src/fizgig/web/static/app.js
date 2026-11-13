@@ -7808,15 +7808,16 @@ function wireStudio() {
   // the swap buttons between a width and a height (pictures and clips): the two values change places, and each
   // picker reports its change as if picked by hand
   $("stH3Only").addEventListener("change", () => { studioH3Remember(); studioPending(); });
-  // Loop back: a return for the clip in the Tweaked pane, on its own prompt: a first / last frame clip from the
-  // clip's last frame to its first. Its length is the seconds box on the frame grid (empty: the clip's own length,
+  // Continue and Loop back: a new clip after the one in the Tweaked pane, on its own prompt, starting on its last
+  // frame (Loop back: and ending on its first). Its length is the seconds box on the frame grid (empty: the rendered clip's own length,
   // sent as 0), sent with an ordinary render request
   for (const id of ["stLoopPrompt", "stLoopS"]) $(id).addEventListener("change", studioH3Remember);
-  $("stLoopBack").addEventListener("click", async () => {
-    const V = S.st.layout.video, sec = Number($("stLoopS").value) || 0;
-    S.st.loopBack = {prompt: $("stLoopPrompt").value.trim(), frames: sec > 0 ? studioSnapFrames(V, sec) : 0};
-    try { await studioRender(); } finally { S.st.loopBack = null; }
-  });
+  for (const [id, loop] of [["stContinue", false], ["stLoopBack", true]])
+    $(id).addEventListener("click", async () => {
+      const V = S.st.layout.video, sec = Number($("stLoopS").value) || 0;
+      S.st.loopBack = {prompt: $("stLoopPrompt").value.trim(), frames: sec > 0 ? studioSnapFrames(V, sec) : 0, loop};
+      try { await studioRender(); } finally { S.st.loopBack = null; }
+    });
   // the Aspect lists: the longer side stays, the other goes to the nearest size on offer for that shape; a portrait
   // size stays portrait
   for (const [a, w, h] of [["stAspect", "stW", "stH"], ["stH3Aspect", "stH3W", "stH3H"]])

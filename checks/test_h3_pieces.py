@@ -120,3 +120,5 @@ def test_loop_back_is_a_first_last_frame_clip_from_the_clips_end_to_its_start():
     assert got["wav"].shape[1] == 12400 + 12300
     H3RepairEngine.loop_back_clip(Engine(), st, clip, frames_new=60, steps=4, turbo_strength=1.0)
     assert calls["frames"] == 56                                 # a length of your own goes to the frame grid
+    got = H3RepairEngine.loop_back_clip(Engine(), st, clip, frames_new=0, steps=4, turbo_strength=1.0, loop=False)
+    assert calls["keyframes"] == [(0, 123)] and len(got["frames"]) == 247        # Continue: no last frame

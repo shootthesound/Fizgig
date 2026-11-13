@@ -898,10 +898,11 @@
                     <label class="checkbox-label" id="stH3OnlyBox" title="Skip the Baseline clip when a slider or the donor has moved: only the Tweaked clip renders, in half the time. For exploring prompts and motion; untick it to compare against the Baseline again."><input type="checkbox" id="stH3Only"> Tweaked only</label>
                     <label class="checkbox-label" id="stH3EarlyBox" title="Put up the pass-2 estimate in the Tweaked pane while the remaining passes run"><input type="checkbox" id="stH3Early" checked> Show early</label></span></div>
                 <div class="field-row"><span class="field-label"></span><span class="field-hint" id="stH3Note"></span></div>
-                <div class="field-row" id="stLoopRow" title="Adds a return to the clip in the Tweaked pane. The return is a new clip made on this prompt whose first frame is your clip's last frame and whose last frame is your clip's first frame, so the two together end where they began and loop. Like ping-pong, but the way back is made new, not played backwards. Your clip is not rendered again; pressing Loop back again with another prompt makes another return for the same clip."><span class="field-label">Loop back:</span>
-                  <input type="text" id="stLoopPrompt" class="w-path" placeholder="the prompt for the way back (empty: the prompt above)">
-                  <span class="st-inline"><input type="text" id="stLoopS" placeholder="seconds" title="How long the return is, in seconds. Leave it empty and the return is the same length as your clip."><span class="field-hint">s</span>
-                    <button class="btn" id="stLoopBack" type="button">Loop back</button></span></div>
+                <div class="field-row" id="stLoopRow"><span class="field-label">Then:</span>
+                  <input type="text" id="stLoopPrompt" class="w-path" placeholder="the prompt for what comes next (empty: the prompt above)" title="The prompt for the clip that Continue or Loop back adds after the one in the Tweaked pane.">
+                  <span class="st-inline"><input type="text" id="stLoopS" placeholder="seconds" title="How long the added clip is, in seconds. Leave it empty and it is the same length as the clip you rendered."><span class="field-hint">s</span>
+                    <button class="btn" id="stContinue" type="button" title="Adds a new clip after the one in the Tweaked pane, made on this prompt and starting on its last frame. Your clip is not rendered again. Press it again to carry on further.">Continue</button>
+                    <button class="btn" id="stLoopBack" type="button" title="Adds a return after the clip in the Tweaked pane: a new clip made on this prompt that starts on its last frame and ends on its first, so the whole thing ends where it began and loops. Like ping-pong, but the way back is made new. Pressing it again with another prompt makes another return for the same clip.">Loop back</button></span></div>
               </div>
               <div class="field-row" id="stNegRow"><span class="field-label">Negative:</span>
                 <textarea id="stNeg" rows="2" spellcheck="false"></textarea></div>

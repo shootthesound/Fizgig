@@ -298,16 +298,21 @@ def _render_clips(eng, desc, st, c, out, gen):
     rest = torch.cuda.memory_allocated() / 2**30
     lb = v.get("loop_back")
     if lb:
-        # Loop back: the clip in the Tweaked pane gets a return after it on this prompt - a first / last frame clip
-        # from its last frame to its first. The kept clip stays the one before the return, so another prompt makes
-        # another return
+        # Continue / Loop back: the clip in the Tweaked pane gets a new clip after it on this prompt, starting on
+        # its last frame. Loop back also ends it on the clip's first frame, and the kept clip stays the one before
+        # the return (another prompt makes another return). Continue keeps its result, so pressing it again carries
+        # on from there and a Loop back after it returns to the very start
         last = S.get("last_clip")
         if not last or last.get("engine") is not eng or not hasattr(eng, "loop_back_clip"):
-            raise ValueError("Render a clip first: Loop back adds a return to the clip in the Tweaked pane.")
+            raise ValueError("Render a clip first: Continue and Loop back add to the clip in the Tweaked pane.")
         st.preview_width, st.preview_height, st.keyframes = last["width"], last["height"], None
         if str(lb.get("prompt") or "").strip():
             st.prompt = str(lb["prompt"]).strip()
-        tweak = eng.loop_back_clip(st, last["clip"], frames_new=int(lb.get("frames") or 0), **opts)
+        loop = bool(lb.get("loop", True))
+        tweak = eng.loop_back_clip(st, last["clip"], frames_new=int(lb.get("frames") or 0) or last["base_frames"],
+                                   loop=loop, **opts)
+        if not loop:
+            last["clip"] = tweak
         png = os.path.join(out, f"tweaked_{gen}.png")
         paths = {"baseline": "", "baseline_media": "", "tweaked": png,
                  "tweaked_media": _write_clip(tweak, png, os.path.join(out, f"tweaked_{gen}.mp4"), fps, rate)}
@@ -345,7 +350,8 @@ def _render_clips(eng, desc, st, c, out, gen):
     png = os.path.join(out, f"tweaked_{gen}.png")
     paths["tweaked"], paths["tweaked_media"] = png, _write_clip(tweak, png, os.path.join(out, f"tweaked_{gen}.mp4"),
                                                                 fps, rate)
-    S["last_clip"] = {"clip": tweak, "width": width, "height": height, "engine": eng}     # what Loop back adds to
+    # what Continue and Loop back add to (base_frames: the length they add when the seconds box is empty)
+    S["last_clip"] = {"clip": tweak, "width": width, "height": height, "engine": eng, "base_frames": frames}
 
     # hand the render's cached memory back (the model stays loaded): the page plays these clips next, and a card the
     # worker leaves full - Vimoo bf16 + the decode's cache held 30.5 of 32 GB - gives the video decode and the desktop

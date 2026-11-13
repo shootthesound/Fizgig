@@ -1762,6 +1762,7 @@ function checkModels() {
 
 // ---- saved state -------------------------------------------------------------------------------------------
 function saveState() {
+  if (ctxKind() !== "draft") return;                // another job is on show: your own setup is kept as it was
   S.all[S.family] = S.values;
   // only the model on show: another open page (a phone, another tab) keeps the models it changed
   api("/api/state", {family: S.family, image_folder: S.imageFolder,
@@ -1903,7 +1904,7 @@ async function pollRun() {
   $("runCardBadge").dataset.state = r.state;
   showProgress(r.progress, r.state, r.lora, r.stage);
   const moveBusy = !!(r.move && ["moving", "back", "moved"].includes(r.move.state));
-  $("btnStart").disabled = live || moveBusy || !!S.starting;
+  $("btnStart").disabled = live || moveBusy || !!S.starting || ctxKind() === "run";
   startResumeNote(live);
   $("btnPause").disabled = !r.running;
   // a model that can't pause (a RefMod is made in one go): no Pause button for its runs
@@ -2216,8 +2217,7 @@ function renderWebQueue(q) {
         title: "Load its settings into the form on the Training tab; Save to queue puts them back in its place",
         onclick: async () => {
           try {
-            await loadIntoForm(await api("/api/queue/item?id=" + encodeURIComponent(it.id)));
-            queueEditing({id: it.id, n: i + 1, lora: it.lora});
+            await ctxSwitch({kind: "queue", id: it.id});
             showTab("training");
             $("runStatus").textContent = `Editing queued run ${i + 1} (${it.lora}): change what you like, then Save to queue.` +
               (it.continues ? " It still continues from its last save, so keep its LoRA name and output folder." : "");
@@ -2581,23 +2581,183 @@ async function loadGallery() {
     el("a", {href: "#", text: "Back to the run training now", onclick: (e) => { e.preventDefault(); viewJob(null); }})] : []));
 }
 
-// the pill (top right) naming the job the tabs show: the run training now, a job loaded with Edit / Start again (✕
-// goes back to the run now), or a queued run being edited (its bar at the bottom has Cancel edit)
+// ---- the job the tabs show, and the pill that switches it --------------------------------------------------------
+// S.ctx: {kind: "draft"} - what you are setting up (the folder selected on Start, the form as you left it); {kind:
+// "run", key, lora} - the run training now, to look at (its settings can't be changed); {kind: "queue", id, n, lora}
+// - a queued run, to look at or change (Save to queue keeps the changes). The view follows you across the Start, Image
+// Prep, Captions, Samples and Training tabs. While another job is on show your own setup is kept aside (S.draft) and
+// nothing of the job is saved over it.
+const ctxKind = () => (S.ctx && S.ctx.kind) || "draft";
+const runKey = (r) => (r && r.lora ? `${r.lora}|${r.started_at || ""}` : "");
+const baseName = (p) => String(p || "").replace(/[\\/]+$/, "").split(/[\\/]/).pop();
+const CTX_TABS = ["start", "prep", "captions", "samples", "training"];
+const activeTab = () => ((document.querySelector(".tab-panel.active") || {}).id || "").replace(/^tab-/, "");
+
+// a job's model, training folder and settings into the form, saved nowhere (values: exactly these, for your own setup)
+async function ctxLoad(s, exact) {
+  if (s.family && s.family !== S.family) await chooseFamily(s.family);
+  const kept = Object.fromEntries(Object.entries(s.values || {}).filter(([, v]) => v != null));
+  S.values = exact ? {...(s.values || {})} : {...S.values, ...kept};
+  if (!exact && !("FAMILY_TURBO_STRENGTH" in kept)) delete S.values.__turbo_live;
+  if (s.image_folder !== undefined && s.image_folder !== S.imageFolder) {
+    $("imageFolder").value = s.image_folder || ""; S.imageFolder = s.image_folder || "";
+    await loadTrigger(); lookForget();
+  }
+  renderSections("samples", $("samplesForm"));
+  renderSections("training", $("trainingForm"));
+  await refreshState();
+}
+
+// the run on show can be looked at, not changed: its form, the model and preset pickers and the Start tab's folder
+function ctxLock() {
+  const on = ctxKind() === "run";
+  const parts = [$("trainingForm"), $("samplesForm"), $("datasetsCard"), $("imageFolder").closest(".section-card"),
+    ...document.querySelectorAll(".preset-row"), ...[...document.querySelectorAll(".family-pick")].map((x) => x.parentElement)];
+  for (const p of parts) if (p) p.inert = on;
+  for (const id of ["btnQueue", "btnCheck"]) $(id).disabled = on;
+  document.body.classList.toggle("ctx-view", ctxKind() !== "draft");
+}
+
+// the open tab's content again, for the job now on show
+function ctxRefreshTab() {
+  const t = activeTab();
+  if (t === "captions") loadCaptions();
+  if (t === "prep") loadPrep();
+  if (t === "samples") loadGallery();
+  if (t === "training") loadCheckpoints();
+}
+
+// switch the view: {kind: "draft"}, {kind: "run"} (the run training now) or {kind: "queue", id}
+async function ctxSwitch(to) {
+  if (S.ctxBusy) return;
+  S.ctxBusy = true;
+  jobPillMenu(false);
+  try {
+    const from = ctxKind();
+    if (from === "draft" && to.kind !== "draft") {
+      if (S.saveWaiting) { S.saveWaiting = false; saveState(); }        // your setup as it is now, kept
+      S.draft = {family: S.family, values: {...S.values}, image_folder: S.imageFolder, all: {...S.all}};
+    }
+    if (from === "queue") queueEditing(null);                            // an edit not saved is left as it was
+    if (to.kind === "run" && training()) {
+      S.ctx = {kind: "run", key: runKey(S.run), lora: S.run.lora};
+      await ctxLoad({family: S.run.family, values: S.run.values, image_folder: S.run.image_folder});
+      S.viewJob = null;
+    } else if (to.kind === "queue") {
+      const items = (S.run.web_queue && S.run.web_queue.items) || [], n = items.findIndex((i) => i.id === to.id) + 1;
+      const item = await api("/api/queue/item?id=" + encodeURIComponent(to.id));
+      const lora = (items[n - 1] || {}).lora || (item.values || {}).LORA_NAME || "";
+      S.ctx = {kind: "queue", id: to.id, n, lora};
+      await ctxLoad(item);
+      S.viewJob = {lora: S.values.LORA_NAME || "", output_dir: S.values.LORA_OUTPUT_DIR || S.outputDefault || ""};
+      queueEditing({id: to.id, n, lora});
+    } else {
+      S.ctx = {kind: "draft"};
+      const d = S.draft;
+      S.draft = null;
+      if (d) {
+        S.ctx = {kind: "loading"};                // nothing is saved while your setup goes back into the form
+        S.all = d.all;
+        await ctxLoad(d, true);
+        S.all[S.family] = S.values;
+        S.ctx = {kind: "draft"};
+      }
+      S.viewJob = null;
+    }
+    S.galleryRun = ""; S.gal = null;
+  } catch (e) {
+    $("runStatus").textContent = e.message;
+    if (ctxKind() !== "draft" && !S.draft) S.ctx = {kind: "draft"};
+  } finally {
+    S.ctxBusy = false;
+  }
+  ctxLock();
+  jobPillShow();
+  ctxRefreshTab();
+}
+
+// each status poll: the job on show ended, or a queued one on show started or left the queue
+function ctxTick() {
+  const c = S.ctx;
+  if (!c || S.ctxBusy) return;
+  const liveKey = training() ? runKey(S.run) : "";
+  if (c.kind === "run") {
+    if (liveKey !== c.key) { c.ended = true; c.next = liveKey ? S.run.lora : ""; }
+  } else if (c.kind === "queue") {
+    const items = (S.run.web_queue && S.run.web_queue.items) || [], at = items.findIndex((i) => i.id === c.id);
+    if (at >= 0) c.n = at + 1;
+    else if (liveKey && S.run.lora === c.lora) ctxSwitch({kind: "run"});      // its turn came: it is the run now
+    else ctxSwitch({kind: "draft"});
+  }
+}
+
+// a change of tab after the job on show finished: on to the run that followed it, else back to your own setup
+function ctxOnTab() {
+  const c = S.ctx;
+  if (c && c.kind === "run" && c.ended && !S.ctxBusy) ctxSwitch(training() ? {kind: "run"} : {kind: "draft"});
+}
+
+// the pill: names the job on show; a press opens the list of jobs to switch to (a sheet from the bottom on a phone).
+// It pulses when the job on show has finished, until you switch
 function jobPillShow() {
   const p = $("jobPill");
   if (!p) return;
-  const vj = S.viewJob, live = training() && S.run && S.run.lora;
-  const [label, name] = S.editQueue ? ["Editing queued", S.editQueue.lora || (vj && vj.lora) || ""] :
-    vj ? ["Viewing", vj.lora] : live ? ["Training", S.run.lora] : ["", ""];
-  p.style.display = label ? "" : "none";
-  if (!label) return;
-  $("jobPillText").replaceChildren(el("b", {text: label + ": "}), name);
-  $("jobPillText").title = `${label}: ${name}. Open its previews on the Samples tab.`;
-  $("jobPillBack").style.display = vj && !S.editQueue ? "" : "none";
+  ctxTick();
+  const c = S.ctx || {kind: "draft"}, live = training() && S.run && S.run.lora;
+  const items = (S.run && S.run.web_queue && S.run.web_queue.items) || [];
+  const show = !!live || items.length > 0 || c.kind !== "draft";
+  p.style.display = show ? "" : "none";
+  if (!show) { jobPillMenu(false); return; }
+  const mine = baseName((S.draft || {}).image_folder !== undefined ? S.draft.image_folder : S.imageFolder) || "no folder yet";
+  const [label, name] = c.kind === "run" ? (c.ended ? ["Finished", c.lora] : ["Training now", c.lora]) :
+    c.kind === "queue" ? [`Queued ${c.n || ""}`.trim(), c.lora] : ["Setting up", mine];
+  p.classList.toggle("attention", c.kind === "run" && !!c.ended);
+  $("jobPillText").replaceChildren(el("b", {text: label + ": "}), name || "",
+    el("span", {class: "job-pill-caret", text: " ▾"}));
+  $("jobPillText").title = c.kind === "run" && c.ended
+    ? `${c.lora} is finished` + (c.next ? `, and ${c.next} is training. Press to switch.` : ". Press to switch.")
+    : "The job these tabs show. Press to switch to another: the run training now, a queued run, or your own setup.";
+  // the line under each tab's heading saying whose content it is
+  const say = c.kind === "run" ? (c.ended ? `${c.lora} is finished` + (c.next ? `, and ${c.next} is training now.` : ".") +
+      " These tabs still show it until you change tab or switch with the pill."
+      : `Showing the run training now: ${c.lora}. Its settings can be looked at here, not changed.`) :
+    c.kind === "queue" ? `Showing queued run ${c.n}: ${c.lora}. Changes are kept with Save to queue.` : "";
+  for (const t of CTX_TABS) {
+    const panel = $("tab-" + t);
+    if (!panel) continue;
+    let line = panel.querySelector(":scope > .ctx-line");
+    if (!line) { line = el("div", {class: "ctx-line"}); panel.prepend(line); }
+    line.textContent = say;
+    line.style.display = say ? "" : "none";
+  }
+  if (!$("jobPillMenu").hidden) jobPillMenu(true);         // open: its rows follow what changed
 }
 
-// the job the tabs follow: one loaded into the form (Edit on a queued run, Start again on a past one) shows its own
-// previews and scores in the Samples gallery; null = the run training now (or the last one)
+function jobPillMenu(open) {
+  const menu = $("jobPillMenu"), shade = $("jobPillShade");
+  if (!menu) return;
+  menu.hidden = shade.hidden = !open;
+  if (!open) return;
+  const c = S.ctx || {kind: "draft"}, live = training() && S.run && S.run.lora;
+  const items = (S.run && S.run.web_queue && S.run.web_queue.items) || [];
+  const row = (label, name, on, go, strong) => el("button", {class: "job-pill-row" + (on ? " on" : "") + (strong ? " strong" : ""),
+    type: "button", onclick: on ? () => jobPillMenu(false) : go},
+    el("span", {class: "job-pill-row-k", text: label}), el("span", {class: "job-pill-row-v", text: name || ""}));
+  const rows = [el("div", {class: "job-pill-head", text: "Show on these tabs"})];
+  const onRun = c.kind === "run" && !c.ended;
+  if (c.kind === "run" && c.ended && live)
+    rows.push(row("Switch this tab to", S.run.lora, false, () => ctxSwitch({kind: "run"}), true));
+  if (c.kind === "run" && c.ended) rows.push(row("Finished", c.lora, true));
+  if (live && !(c.kind === "run" && c.ended)) rows.push(row("Training now", S.run.lora, onRun, () => ctxSwitch({kind: "run"})));
+  items.forEach((it, i) => rows.push(row(`Queued ${i + 1}`, it.lora, c.kind === "queue" && c.id === it.id,
+    () => ctxSwitch({kind: "queue", id: it.id}))));
+  const mine = baseName((S.draft || {}).image_folder !== undefined ? S.draft.image_folder : S.imageFolder) || "no folder yet";
+  rows.push(row("Selected on Start", mine, c.kind === "draft", () => ctxSwitch({kind: "draft"})));
+  menu.replaceChildren(...rows);
+}
+
+// the job the gallery follows inside your own setup: one loaded into the form with Start again shows its own previews
+// and scores in the Samples gallery; null = the run training now (or the last one)
 function viewJob(job) {
   S.viewJob = job && job.lora ? job : null;
   S.galleryRun = ""; S.gal = null;
@@ -4831,6 +4991,7 @@ function liveNote(live) {
 
 // a run's model, training folder and settings into the form (Start again, a queued run's Edit)
 async function loadIntoForm(s) {
+  if (ctxKind() !== "draft") await ctxSwitch({kind: "draft"});
   if (s.family !== S.family) await chooseFamily(s.family);
   const kept = Object.fromEntries(Object.entries(s.values || {}).filter(([, v]) => v != null));
   S.values = {...S.values, ...kept};
@@ -4855,8 +5016,9 @@ async function loadIntoForm(s) {
 // editing a queued run: a bar at the bottom of the window, on every tab, with Save to queue and Cancel edit, until
 // one of them (or a Start) ends it; the Training tab's Add to queue steps aside meanwhile
 function queueEditing(item) {
-  if (!item && S.editQueue && S.viewJob) viewJob(null);   // the edit ended: the gallery goes back to the run now
+  if (!item && S.editQueue && S.viewJob) S.viewJob = null;   // the edit ended: the gallery goes back to the run now
   S.editQueue = item;
+  if (!item && ctxKind() === "queue" && !S.ctxBusy) ctxSwitch({kind: "draft"});   // Cancel edit, Save to queue
   jobPillShow();
   $("btnQueue").textContent = item ? `Save to queue (run ${item.n})` : "Add to queue";
   $("btnQueue").style.display = item ? "none" : "";
@@ -9891,6 +10053,7 @@ function tabsMenu(open) {
 
 function showTab(name) {
   if (name !== "prep" && S.me && S.me.dirty) meSave();      // leaving Image Prep saves the mask being edited
+  if (name !== activeTab()) ctxOnTab();                     // the job on show finished: the view moves on now
   // each tab keeps its own scroll place: back on Training, the loss chart is where you left it (the tabs share one
   // scrolling pane; a phone scrolls the page itself). Read before anything below scrolls (the tab button's
   // scrollIntoView can move a phone's page)
@@ -10600,8 +10763,9 @@ function wire() {
   $("btnStart").addEventListener("click", () => start("/api/start"));
   $("galleryRun").addEventListener("change", () => { S.galleryRun = $("galleryRun").value; loadGallery(); });
   $("likBtn").addEventListener("click", likenessPicker);
-  $("jobPillText").addEventListener("click", () => showTab("samples"));
-  $("jobPillBack").addEventListener("click", () => viewJob(null));
+  $("jobPillText").addEventListener("click", () => jobPillMenu($("jobPillMenu").hidden));
+  $("jobPillShade").addEventListener("click", () => jobPillMenu(false));
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") jobPillMenu(false); });
   $("styBtn").addEventListener("click", async () => {       // the Style score on or off for the shown run's folder
     const dir = S.lik && S.lik.dir;
     if (!dir) return;

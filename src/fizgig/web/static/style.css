@@ -37,6 +37,7 @@
   --warning-text: #FCD34D;
   --warning-text-soft: #FCD9A0; /* In a boxed note */
   --danger: #EF4444;
+  --pulse: #EF4444;      /* the pill's pulse when the job on show has finished: a theme sets its own */
   --danger-strong: #DC2626;
   --danger-text: #FCA5A5;
   --gold: #F1C40F;             /* Chosen, best */
@@ -2288,19 +2289,53 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 #rvModal .rv-window { max-width: 96vw; }
 #rvModal select.st-small-select { width: auto !important; min-width: 0; }
 
-/* the job the tabs show: top right, narrow enough to stay clear of the app window's bar (top middle, up to 60% of the
-   window); under modals and lightboxes. A narrow window or a phone has it bottom right, above the status bar */
+/* the job the tabs show, and the switch to another: top right, narrow enough to stay clear of the app window's bar
+   (top middle, up to 60% of the window); under modals and lightboxes. A narrow window or a phone has it bottom right,
+   above the status bar, and its list comes up from the bottom as a sheet */
 .job-pill { position: fixed; top: 10px; right: 16px; z-index: 30; display: flex; align-items: center; gap: 4px;
-  max-width: min(18vw, 280px); padding: 3px 4px 3px 4px; border-radius: 999px; background: var(--bg-surface);
+  max-width: min(22vw, 320px); padding: 3px 4px 3px 4px; border-radius: 999px; background: var(--bg-surface);
   border: 1px solid var(--accent); box-shadow: 0 2px 10px color-mix(in srgb, var(--shadow) 40%, transparent); }
 .job-pill-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none;
   border: 0; color: var(--text-primary); font-size: 12.5px; padding: 2px 8px; cursor: pointer; text-align: left; }
 .job-pill-text b { color: var(--accent); font-weight: 600; }
-.job-pill-x { flex: none; background: none; border: 0; color: var(--text-muted); cursor: pointer; padding: 2px 8px;
-  border-radius: 999px; }
-.job-pill-x:hover { color: var(--text-primary); background: var(--bg-hover); }
+.job-pill-caret { color: var(--text-muted); }
+/* the job on show has finished (or another has started): the pill pulses in the theme's --pulse until you switch */
+.job-pill.attention { border-color: var(--pulse); animation: job-pill-pulse 1.4s ease-out infinite; }
+.job-pill.attention .job-pill-text b { color: var(--pulse); }
+@keyframes job-pill-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--pulse) 70%, transparent); }
+  70% { box-shadow: 0 0 0 12px color-mix(in srgb, var(--pulse) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--pulse) 0%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .job-pill.attention { animation: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--pulse) 55%, transparent); }
+}
+.job-pill-menu { position: absolute; top: calc(100% + 8px); right: 0; z-index: 31; min-width: 300px; max-width: min(92vw, 420px);
+  padding: 6px; border-radius: 12px; background: var(--bg-raised); border: 1px solid var(--border);
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--shadow) 55%, transparent); display: flex; flex-direction: column; gap: 2px; }
+.job-pill-menu[hidden] { display: none; }
+.job-pill-head { color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; padding: 4px 10px 6px; }
+.job-pill-row { display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px;
+  background: none; color: var(--text-primary); font-size: 13px; text-align: left; cursor: pointer; }
+.job-pill-row:hover { background: var(--bg-hover); }
+.job-pill-row.on { background: var(--accent-subtle); cursor: default; }
+.job-pill-row.strong { border: 1px solid var(--pulse); }
+.job-pill-row-k { flex: none; color: var(--text-secondary); font-size: 12px; min-width: 104px; }
+.job-pill-row.strong .job-pill-row-k { color: var(--pulse); font-weight: 600; }
+.job-pill-row-v { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.job-pill-shade { position: fixed; inset: 0; z-index: 29; background: transparent; }
+.job-pill-shade[hidden] { display: none; }
+/* whose content a tab shows, while it isn't your own setup */
+.ctx-line { margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--accent);
+  background: var(--accent-subtle); color: var(--text-primary); font-size: 13px; }
 @media (max-width: 900px) {
-  .job-pill { top: auto; bottom: 112px; max-width: min(70vw, 320px); }
+  .job-pill { top: auto; bottom: 112px; max-width: min(78vw, 340px); }
+  .job-pill-text { font-size: 14px; padding: 8px 12px; }
+  .job-pill-menu { position: fixed; top: auto; left: 0; right: 0; bottom: 0; max-width: none; min-width: 0;
+    border-radius: 16px 16px 0 0; padding: 12px 12px calc(16px + env(safe-area-inset-bottom)); gap: 6px; }
+  .job-pill-row { padding: 14px 12px; font-size: 15px; min-height: 52px; }
+  .job-pill-row-k { font-size: 13px; }
+  .job-pill-shade { background: color-mix(in srgb, var(--overlay) 55%, transparent); }
 }
 /* a pod's auto-stop countdown, over every tab */
 .pod-stop-bar { position: sticky; top: 0; z-index: 20; }
@@ -2657,6 +2692,7 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   --special-strong: #1F1F1F; --special: #4A4A4A; --special-soft: #7A7A7A; --special-text: #2A2A2A; --special-light: #111111;
   --data-blue: #3F7FBF; --data-teal: #3A9488; --data-green: #4E8F2A; --data-olive: #9A8A2A; --data-orange: #E0661A;
   --radius: 4px; --radius-sm: 2px;
+  --pulse: #DC2626;
 }
 
 /* Light n’ Orange's news card: white, with the one hot mark */
@@ -2679,6 +2715,7 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   --special-strong: #C2501A; --special: #E0701F; --special-soft: #E89A5A; --special-text: #F2A65A; --special-light: #F8C68F;
   --data-blue: #6A9FB5; --data-teal: #5FA89A; --data-green: #8FA34A; --data-olive: #C4A23A; --data-orange: #E0701F;
   --radius: 16px; --radius-sm: 10px;
+  --pulse: #C8452B;
 }
 /* Seventies' orange on the brown: titles, the sidebar's edge, the top edge of each card (colours only, the same widths) */
 :root[data-theme="seventies"] h1, :root[data-theme="seventies"] .card-title { color: var(--accent-text); }
@@ -2698,6 +2735,7 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   --danger-text: #FF9AA4; --gold: #FFD23F;
   --special-strong: #0891B2; --special: #22D3EE; --special-soft: #67D8EA; --special-text: #A5F3FC; --special-light: #CFFAFE;
   --data-blue: #4D8DFF; --data-teal: #22D3EE; --data-green: #2EE6A6; --data-olive: #E6D04D; --data-orange: #FF8A3D;
+  --pulse: #FF4D5E;
 }
 
 /* Cosmic Pigeon: deep space navy, nebula purple, iridescent pigeon-neck green, soft pigeon greys, a touch of starlight pink */
@@ -2713,6 +2751,7 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   --danger-text: #FF9CA9; --gold: #F5D06B;
   --special-strong: #C0368A; --special: #E879C6; --special-soft: #EE9AD4; --special-text: #F6C2E6; --special-light: #FBE0F2;
   --data-blue: #6E8BFF; --data-teal: #4FC9B8; --data-green: #5FB88A; --data-olive: #D8C86A; --data-orange: #F29A5C;
+  --pulse: #F0566A;
 }
 
 /* Deep Space: Graphite's restraint, near-black with a faint blue-violet tint, a sparing nebula violet, a faint star-glow cyan */
@@ -2728,6 +2767,7 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   --danger-text: #F09AA8; --gold: #E3C565;
   --special-strong: #0E8FA8; --special: #4CC6DB; --special-soft: #7BD3E2; --special-text: #A9E4EE; --special-light: #D3F2F7;
   --data-blue: #6A86E8; --data-teal: #4CC6DB; --data-green: #5DB08A; --data-olive: #C9BC66; --data-orange: #E0915A;
+  --pulse: #D9536A;
 }
 
 /* Graphite: plain neutral greys, a teal accent */
@@ -2737,6 +2777,7 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   --text-primary: #EDEDED; --text-secondary: #A3A3A3; --text-explain: #CFCFCF; --text-muted: #707070;
   --accent: #0D9488; --accent-hover: #14B8A6; --accent-subtle: #134E4A; --accent-text: #5EEAD4; --accent-text-hover: #99F6E4;
   --border: #303030; --border-strong: #8A8A8A;
+  --pulse: #EF4444;
 }
 
 /* Colour-blind safe (red-green: deuteranopia, protanopia): the Fizgig look, with good / bad / middling and the chart
@@ -2749,6 +2790,7 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   --danger: #D55E00; --danger-strong: #B34E00; --danger-text: #F5A56B; --gold: #F0E442;
   --special-strong: #A8578A; --special: #CC79A7; --special-soft: #D89BBE; --special-text: #E5B5D0; --special-light: #F0D3E3;
   --data-blue: #0072B2; --data-teal: #56B4E9; --data-green: #009E73; --data-olive: #F0E442; --data-orange: #D55E00;
+  --pulse: #D55E00;
 }
 
 /* High contrast (low vision): black, white text, a bright yellow accent with black text on it, heavier lines */
@@ -2764,6 +2806,7 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   --danger-text: #FF9B9B; --gold: #FFE45C;
   --special-strong: #C9A8FF; --special: #D6BBFF; --special-soft: #E2CEFF; --special-text: #EBDDFF; --special-light: #F5EEFF;
   --data-blue: #6CB4FF; --data-teal: #4DE8D8; --data-green: #7DFF7D; --data-olive: #FFE45C; --data-orange: #FF9E4D;
+  --pulse: #FF6B6B;
 }
 /* High contrast's brand buttons keep white text; links are underlined; a clear focus ring */
 :root[data-theme="high-contrast"] .runpod-btn, :root[data-theme="high-contrast"] .runpod-btn:hover,
@@ -2784,6 +2827,7 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   --danger-text: #D49A92; --gold: #C4A858;
   --special-strong: #6E5F8C; --special: #8A7AA8; --special-soft: #A396BD; --special-text: #B0A5C8; --special-light: #C2B9D4;
   --data-blue: #6E8FAD; --data-teal: #6E9E96; --data-green: #7E9A62; --data-olive: #A8985E; --data-orange: #B8805A;
+  --pulse: #A35850;
 }
 
 /* the theme picker: the Theme card at the top of Preferences, a tile per theme */
@@ -2863,6 +2907,7 @@ label[title]:has(.tip-mark) { cursor: help; }
 :root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"] {
   --fx-glow: color-mix(in srgb, var(--accent) 45%, transparent);
   --fx-bar: linear-gradient(90deg, #7C4DEA, #A855F7 45%, #E879C6 80%, #7C4DEA);
+  --pulse: #EF4444;
 }
 :root[data-theme="deep-space"] { --fx-glow: color-mix(in srgb, var(--accent) 35%, transparent);
   --fx-bar: linear-gradient(90deg, #6D4FD6, #7A5AE0 40%, #4CC6DB 80%, #6D4FD6); }

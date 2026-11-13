@@ -7048,7 +7048,7 @@ function studioLenOther(snap) {
   const f = studioClipFrames(V), c = V.clip, secs = (n) => String(Math.round(n / c.fps * 100) / 100);
   if (snap && box.value.trim()) box.value = secs(f);
   const pf = studioPieceFrames(V), P = V.pieces && $("stH3Pieces").checked && f > pf ? 1 + Math.ceil((f - pf) / (pf - 39)) : 0;
-  note.textContent = `${f} frames (${secs(f)} s)` + (P ? `, in ${P} pieces` : f > c.max ? `, past the model's ${secs(c.max)} s range` : "");
+  note.textContent = `${f} frames (${secs(f)} s)` + (P ? `, in ${P} pieces of up to ${secs(pf)} s` : f > c.max ? `, past the model's ${secs(c.max)} s range` : "");
 }
 
 // the clip row's line under the boxes: what the Steps and speed-LoRA boxes give (a model with a speed LoRA)
@@ -7793,6 +7793,9 @@ function wireStudio() {
   for (const id of ["stH3Len", "stH3LenS", "stH3W", "stH3H", "stH3Steps", "stH3Turbo", "stH3Sound", "stH3Boost", "stH3Pieces", "stH3PieceS"])
     $(id).addEventListener("change", () => { if (id.startsWith("stH3Len") || id === "stH3PieceS") studioLenOther(true); if (id === "stH3Pieces") studioLenOther(); studioH3Remember(); studioPending(); });
   $("stH3Early").addEventListener("change", studioH3Remember);
+  // the note beside the length follows the two seconds boxes as they are typed in (the box itself moves to the
+  // nearest length when it is left)
+  for (const id of ["stH3LenS", "stH3PieceS"]) $(id).addEventListener("input", () => studioLenOther());
   $("stH3Model").addEventListener("change", () => { studioH3Remember(); studioSlots(); $("stStart").textContent = "Update"; });
   $("stH3Base").addEventListener("change", () => { studioH3Remember(); $("stStart").textContent = "Update"; });
   playTogether($("stPlayBothBtn"), () => {

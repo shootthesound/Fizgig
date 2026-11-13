@@ -286,6 +286,7 @@ def _render_clips(eng, desc, st, c, out, gen):
     st.keyframes, st.references = _cond(eng, c, width, height, frames)
     eng.speed_boost = bool(v.get("speed_boost"))      # the Studio's H3 tick: the first half of the steps at half size
     eng.clip_pieces = bool(v.get("pieces"))           # the Studio's In pieces tick: a long clip built piece by piece
+    eng.clip_piece_frames = int(v.get("piece") or 0)  # each piece's length (the box beside the tick); 0 = 124
     eng.clip_negative = v.get("negative")             # the page's Negative (used when the render runs with CFG)
     opts = dict(frames=frames, regime="custom", steps=int(v.get("steps") or 4),
                 turbo_strength=float(v.get("turbo") if v.get("turbo") not in (None, "") else 1.0),

@@ -1640,14 +1640,15 @@ class H3RepairEngine(ClipContract):
         kept in the render library (its joins are made on the decoded frames, not in the latent)."""
         from fizgig.minimax import continuation as _co
         n = self._clip_frames(state, frames)
-        if not (getattr(self, "clip_pieces", False) and decode and n > _co.PIECE):
+        piece = _co.piece_frames(getattr(self, "clip_piece_frames", 0))       # the page's piece length box
+        if not (getattr(self, "clip_pieces", False) and decode and n > piece):
             return super().render_clip(state, frames=frames, regime=regime, with_audio=with_audio, cache=cache,
                                        no_lora=no_lora, steps=steps, turbo_strength=turbo_strength, decode=decode,
                                        **kw)
         from fizgig.repair_studio.h3_render_cache import NOLORA_SIG, signature
         st, strength = self.regime_params(regime, steps, turbo_strength)
         lat, aud, imgs = _co.render_long(self, state, frames=n, steps=st, turbo_strength=strength,
-                                         with_audio=with_audio, no_lora=no_lora)
+                                         with_audio=with_audio, no_lora=no_lora, piece=piece)
         return {"latent": lat, "audio_rows": aud, "frames": imgs, "wav": self.decode_audio(aud) if with_audio else None,
                 "middle": imgs[len(imgs) // 2], "regime": regime, "steps": st, "turbo_strength": strength,
                 "frames_n": n, "cached": False, "sig": NOLORA_SIG if no_lora else signature(state),

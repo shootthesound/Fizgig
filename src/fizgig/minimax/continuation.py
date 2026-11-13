@@ -14,7 +14,7 @@ area against the same area in the neighbouring frames; nothing is averaged over 
 corrected and nothing is re-encoded except the two bridge frames per join.
 
 A prompt can change through the clip: a line that starts with a time ("8s: ...") is the prompt from that time on;
-a change arrives at the nearest start of a piece (5.2 s, then every 3.5 s).
+a change arrives at the nearest start of a piece (with 5.2 s pieces: 5.2 s, then every 3.5 s).
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ import re
 
 import torch
 
-PIECE = 124                 # frames in a full piece
+PIECE = 124                 # frames in a full piece, unless the caller names another length
 CTX = 12                    # latents of the piece before that the next one is shown (39 frames)
 PIN = 7                     # of those, the latents kept as they are (22 frames); the other 5 (17 frames) are re-made
 BRIDGE = 5                  # frames of the clip laid over each join
@@ -37,14 +37,22 @@ def _frames_of(latents: int) -> int:
     return pixel_frames_for_latent(latents)
 
 
-def piece_lengths(frames: int) -> list:
-    """A clip of `frames` (on the model's 17n + 5 grid) as pieces: the first up to 124 frames, each later one its 39
-    shown frames plus up to 85 new ones (so every piece is itself on the grid)."""
-    frames = int(frames)
-    if frames <= PIECE:
+def piece_frames(piece=None) -> int:
+    """A piece's length in frames: the caller's, moved onto the grid and no shorter than the 39 shown frames plus 17
+    new ones; 124 when none is named."""
+    n = int(piece or PIECE)
+    return max(_frames_of(CTX) + 17, 17 * round((n - 5) / 17) + 5)
+
+
+def piece_lengths(frames: int, piece=None) -> list:
+    """A clip of `frames` (on the model's 17n + 5 grid) as pieces: the first up to `piece` frames (124 unless
+    named), each later one its 39 shown frames plus up to piece - 39 new ones (so every piece is itself on the
+    grid)."""
+    frames, piece = int(frames), piece_frames(piece)
+    if frames <= piece:
         return [frames]
-    ctx, new = _frames_of(CTX), PIECE - _frames_of(CTX)
-    out, left = [PIECE], frames - PIECE
+    ctx, new = _frames_of(CTX), piece - _frames_of(CTX)
+    out, left = [piece], frames - piece
     while left > 0:
         n = min(new, left)
         out.append(n + ctx)
@@ -163,12 +171,13 @@ def deflicker(frames, join_frames, sigma_t: float = 4.0, reach: int = 24):
     return frames
 
 
-def render_long(eng, state, *, frames, steps, turbo_strength, with_audio=True, no_lora=False):
-    """The clip in pieces -> (latent of the whole clip, audio rows, [PIL frames]). `eng` is the H3 Studio engine."""
+def render_long(eng, state, *, frames, steps, turbo_strength, with_audio=True, no_lora=False, piece=None):
+    """The clip in pieces of `piece` frames (124 unless named) -> (latent of the whole clip, audio rows, [PIL
+    frames]). `eng` is the H3 Studio engine."""
     import numpy as np
     from PIL import Image
     from fizgig.minimax.model import audio_latents_for_frames
-    lengths = piece_lengths(frames)
+    lengths = piece_lengths(frames, piece)
     prompts = piece_prompts(state.prompt, lengths)
     ctx_f, pin_f = _frames_of(CTX), _frames_of(PIN)
     ctx_a = audio_latents_for_frames(ctx_f)

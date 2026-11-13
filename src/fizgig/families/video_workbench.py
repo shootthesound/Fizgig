@@ -111,7 +111,7 @@ class ClipContract:
                 round(float(getattr(state, "primary_scale", 1.0)), 4),
                 round(float(getattr(state, "donor_scale", 1.0)), 4),
                 bool(getattr(self, "int8_attention", False)), bool(getattr(self, "speed_boost", False)),
-                bool(getattr(self, "clip_pieces", False)))
+                bool(getattr(self, "clip_pieces", False)), int(getattr(self, "clip_piece_frames", 0) or 0))
 
     def cache_key_for(self, state, *, frames, regime, steps=None, turbo_strength=None, **_ignored):
         """The render library's setup key for this state's render setup, or None before a primary is loaded. Sound

@@ -17,6 +17,13 @@ def test_pieces_cover_the_clip_on_the_frame_grid():
         assert co.joins(lengths) == [124 + 85 * k for k in range(len(lengths) - 1)]
 
 
+def test_a_piece_length_of_your_own():
+    assert co.piece_frames(None) == 124 and co.piece_frames(240) == 243 and co.piece_frames(10) == 56
+    lengths = co.piece_lengths(549, 243)
+    assert lengths == [243, 243, 141] and co.joins(lengths) == [243, 447]
+    assert co.piece_lengths(243, 243) == [243]
+
+
 def test_timed_prompt_lines():
     assert co.timed_prompts("a beach") == [(0.0, "a beach")]
     assert co.timed_prompts("a\nb\n8s: c\n 12.5 s: d") == [(0.0, "a\nb"), (8.0, "c"), (12.5, "d")]

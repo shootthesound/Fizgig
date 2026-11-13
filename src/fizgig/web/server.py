@@ -1446,6 +1446,11 @@ def delete_run(run_id, confirm=False) -> dict:
         os.remove(step_log.loss_path(folder, name))
     except OSError:
         pass
+    for left in (f"likeness_{name}.json", f"style_{name}.json", f"gallery_{name}.owner"):   # its gallery scores
+        try:
+            os.remove(os.path.join(folder, "sample", left))
+        except OSError:
+            pass
     try:                                       # a pause record for this run would offer a Resume that can't work
         side = os.path.join(folder, ".fizgig_paused.json")
         with open(side, encoding="utf-8") as f:
@@ -3939,7 +3944,12 @@ class Handler(BaseHTTPRequestHandler):
                         out, vals, began = _run.get("output_dir") or "", dict(_run.get("values") or {}), \
                             _run.get("started_at") or 0
                     rec = history.get(_run.get("history_id")) or {}
-                    m = re.search(r"-(\d{6})-state$", launch.latest_state(out, lora, rec.get("started_at") or began))
+                    fdesc = get_family(_run.get("family") or "")
+                    if fdesc is not None and fdesc.finetune and form._kind(fdesc, vals) == "finetune":
+                        # a fine-tune saves checkpoints, not states: its newest one's epoch
+                        m = re.search(r"-(\d{6})\.safetensors$", launch.latest_ft_checkpoint(out, lora))
+                    else:
+                        m = re.search(r"-(\d{6})-state$", launch.latest_state(out, lora, rec.get("started_at") or began))
                     saved = int(m.group(1)) if m else 0
                     try:
                         of = int(str(vals.get("MAX_TRAIN_EPOCHS") or "0").strip())
@@ -4435,6 +4445,13 @@ class Handler(BaseHTTPRequestHandler):
                     fam = _run["family"]
                 if not out:
                     return self.json({"error": "Nothing is training right now."}, 400)
+                form_now = b.get("form") if isinstance(b.get("form"), dict) else {}
+                if form_now:                     # the run's Samples values as changed: what a look at the run shows
+                    ok_keys = {k: v for k, v in form_now.items()
+                               if str(k).startswith("SAMPLE_") or k in ("FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_ON",
+                                                                         "FAMILY_PREVIEW_LOOK", "__SAMPLE_LIVE")}
+                    with _lock:
+                        _run["values"] = {**(_run.get("values") or {}), **ok_keys}
                 side = os.path.join(out, ".sample_override.json")
                 prompts = [ln.strip() for ln in str(b.get("prompts") or "").splitlines() if ln.strip()]
                 if not b.get("on") or not prompts:

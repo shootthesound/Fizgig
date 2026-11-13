@@ -841,7 +841,8 @@ function onValue(r, val) {
   S.values[r.key] = val;
   if (r.key === "FAMILY_PREVIEW_SMALL") S.values._chosen_FAMILY_PREVIEW_SMALL = true;   // the person's own choice: kept
   if (r.key === "OPTIMIZER_TYPE" && prev !== val) optimizerPicked(String(prev || ""), String(val || ""));
-  if (r.key === "__SAMPLE_LIVE" || (S.values.__SAMPLE_LIVE &&
+  if (!ctxIsLiveRun()) { /* the form isn't the run training: nothing of it goes to that run's previews */ }
+  else if (r.key === "__SAMPLE_LIVE" || (S.values.__SAMPLE_LIVE &&
       ["SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS", "SAMPLE_CFG_SCALE",
        "FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_ON", "SAMPLE_EVERY_N_EPOCHS", "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH",
        "SAMPLE_EVERY_AFTER", "FAMILY_PREVIEW_LOOK", "SAMPLE_CHECKPOINT"].includes(r.key))) sampleLiveSoon();
@@ -1895,7 +1896,7 @@ async function pollRun() {
   $("podStopKeep").textContent = ps.counting ? "Keep the pod running" : "OK";      // a result note: dismissed
   $("podStopText").textContent = ps.counting ? `Stopping this pod in ${ps.left} s so it stops billing.` : ps.note || "";
   const r = S.run, live = r.running || r.state === "starting";
-  liveNote(live);
+  liveNote(live && ctxIsLiveRun());
   $("runPodNote").style.display = S.onPod && live ? "" : "none";     // a pod's run doesn't need this page open
   const label = RUN_LABELS[r.state] || r.state;
   $("runStatus").textContent = r.lora ? `${label}: ${r.lora}${r.stage ? " · " + r.stage : ""}` : label;
@@ -2609,10 +2610,15 @@ async function ctxLoad(s, exact) {
   await refreshState();
 }
 
-// the run on show can be looked at, not changed: its form, the model and preset pickers and the Start tab's folder
+// the form is the run training now: the run on show, or your own setup when that is what is training. Only then
+// does a change on the Samples tab go to the run's next previews
+const ctxIsLiveRun = () => training() && ((ctxKind() === "run" && !(S.ctx || {}).ended) || (ctxKind() === "draft" && ctxSetupIsRun()));
+
+// the run on show can be looked at, not changed: its training settings, the model and preset pickers and the Start
+// tab's folder. Its Samples tab stays changeable: the prompts and preview settings go to its next previews
 function ctxLock() {
   const on = ctxKind() === "run";
-  const parts = [$("trainingForm"), $("samplesForm"), $("datasetsCard"), $("imageFolder").closest(".section-card"),
+  const parts = [$("trainingForm"), $("datasetsCard"), $("imageFolder").closest(".section-card"),
     ...document.querySelectorAll(".preset-row"), ...[...document.querySelectorAll(".family-pick")].map((x) => x.parentElement)];
   for (const p of parts) if (p) p.inert = on;
   for (const id of ["btnQueue", "btnCheck"]) $(id).disabled = on;
@@ -2643,6 +2649,8 @@ async function ctxSwitch(to) {
     if (to.kind === "run" && training()) {
       S.ctx = {kind: "run", key: runKey(S.run), lora: S.run.lora};
       await ctxLoad({family: S.run.family, values: S.run.values, image_folder: S.run.image_folder});
+      S.values.__SAMPLE_LIVE = true;                 // a change on its Samples tab goes to its next previews
+      syncInputs(["__SAMPLE_LIVE"]);
       S.viewJob = null;
     } else if (to.kind === "queue") {
       const items = (S.run.web_queue && S.run.web_queue.items) || [], n = items.findIndex((i) => i.id === to.id) + 1;
@@ -2740,7 +2748,8 @@ function jobPillShow() {
   // the line at the top of each tab saying whose content it is, while it is another job's than your own setup
   const say = c.kind === "run" ? (c.ended ? `${c.lora} is finished` + (c.next ? `, and ${c.next} is training now.` : ".") +
       " These tabs still show it until you change tab or switch with the pill."
-      : `Showing the run training now: ${c.lora}. Its settings can be looked at here, not changed.`) :
+      : `Showing the run training now: ${c.lora}. Its training settings can be looked at, not changed; a change on ` +
+        "the Samples tab goes to its next previews.") :
     c.kind === "queue" ? `Showing queued run ${c.n}: ${c.lora}. Changes are kept with Save to queue.` : "";
   for (const t of CTX_TABS) {
     const panel = $("tab-" + t);
@@ -5117,7 +5126,13 @@ function valueOrDefault(key) {
 const sampleLiveSoon = debounce(async () => {
   const v = S.values, note = $("note___SAMPLE_LIVE");
   try {
-    const r = await api("/api/run/sample_override", {on: !!v.__SAMPLE_LIVE, prompts: v.SAMPLE_PROMPT || "",
+    if (!ctxIsLiveRun()) return;
+    // form: the Samples values as they now are, kept with the run so every page (and a later look at it) shows them
+    const keep = ["SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS", "SAMPLE_CFG_SCALE",
+      "FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_ON", "SAMPLE_EVERY_N_EPOCHS", "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH",
+      "SAMPLE_EVERY_AFTER", "FAMILY_PREVIEW_LOOK", "SAMPLE_CHECKPOINT", "__SAMPLE_LIVE"];
+    const r = await api("/api/run/sample_override", {form: Object.fromEntries(keep.filter((k) => k in v).map((k) => [k, v[k]])),
+      on: !!v.__SAMPLE_LIVE, prompts: v.SAMPLE_PROMPT || "",
       seed: v.SAMPLE_SEED, width: v.SAMPLE_WIDTH, height: v.SAMPLE_HEIGHT, steps: v.SAMPLE_STEPS,
       cfg: v.SAMPLE_CFG_SCALE, turbo: v.FAMILY_TURBO_ON === false ? "0" : v.FAMILY_TURBO_STRENGTH,
       every: v.SAMPLE_EVERY_N_EPOCHS,

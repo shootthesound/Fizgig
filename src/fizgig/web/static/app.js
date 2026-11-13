@@ -5843,7 +5843,7 @@ function studioKind(L, sv) {
   $("stH3Boost").checked = h3.boost !== false;           // on unless turned off
   $("stH3Boost").parentElement.style.display = V.speed_boost ? "" : "none";   // a family ability (H3 has it)
   $("stH3Early").checked = h3.early !== false;
-  $("stH3Pieces").checked = h3.pieces !== false;         // on unless turned off
+  $("stH3Pieces").checked = h3.pieces === true;          // off unless turned on
   $("stH3PiecesBox").style.display = V.pieces ? "" : "none";                  // a family ability (H3 has it)
   $("stH3PieceS").value = h3.pieceS || "";
   studioLenOther();

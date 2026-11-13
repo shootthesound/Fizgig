@@ -284,6 +284,13 @@ def _render_clips(eng, desc, st, c, out, gen):
     width, height = int(v.get("width") or 768), int(v.get("height") or 640)
     st.preview_width, st.preview_height, st.preview_frames = width, height, frames
     st.keyframes, st.references = _cond(eng, c, width, height, frames)
+    # End on the first frame: a First frame picture is the last frame too (unless a Last frame picture is set). With
+    # no picture, a clip in pieces steers its last piece back to its own opening frame (the engine: clip_end_on_first)
+    eng.clip_end_on_first = bool(v.get("end_on_first"))
+    if eng.clip_end_on_first and st.keyframes and frames > 1:
+        first = next((z for i, z in st.keyframes if i == 0), None)
+        if first is not None and not any(i == frames - 1 for i, _z in st.keyframes):
+            st.keyframes = list(st.keyframes) + [(frames - 1, first)]
     eng.speed_boost = bool(v.get("speed_boost"))      # the Studio's H3 tick: the first half of the steps at half size
     eng.clip_pieces = bool(v.get("pieces"))           # the Studio's In pieces tick: a long clip built piece by piece
     eng.clip_piece_frames = int(v.get("piece") or 0)  # each piece's length (the box beside the tick); 0 = 124
@@ -296,12 +303,11 @@ def _render_clips(eng, desc, st, c, out, gen):
     import torch
     torch.cuda.reset_peak_memory_stats()
     rest = torch.cuda.memory_allocated() / 2**30
-    base = eng.baseline_clip(st, cache=None, **opts)
-    if _clip_same_as_baseline(eng, st):
-        # nothing moved: the tweaked clip IS the baseline - one render for both panes, as the picture path does
-        tweak = base
-    else:
-        tweak = None
+    same = _clip_same_as_baseline(eng, st)
+    # Tweaked only (the page's tick): with something moved, the Baseline clip is not rendered at all
+    base = None if (v.get("tweaked_only") and not same) else eng.baseline_clip(st, cache=None, **opts)
+    # nothing moved: the tweaked clip IS the baseline - one render for both panes, as the picture path does
+    tweak = base if same else None
     early = {}
     if v.get("early") and opts["steps"] > 2:     # Show early: the pass-2 estimate while the rest runs (the desktop's)
         def on_early(img, step, n):
@@ -313,12 +319,14 @@ def _render_clips(eng, desc, st, c, out, gen):
             img.save(p)
             emit(ev="early", gen=gen, png=p, step=step, n=n)
         early = dict(early_step=2, on_early=on_early)
-    paths = {}
-    png = os.path.join(out, f"baseline_{gen}.png")
-    paths["baseline"], paths["baseline_media"] = png, _write_clip(base, png, os.path.join(out, f"baseline_{gen}.mp4"),
-                                                                  fps, rate)
+    paths = {"baseline": "", "baseline_media": ""}
+    if base is not None:
+        png = os.path.join(out, f"baseline_{gen}.png")
+        paths["baseline"], paths["baseline_media"] = png, _write_clip(base, png,
+                                                                      os.path.join(out, f"baseline_{gen}.mp4"), fps, rate)
     if tweak is None:                                   # the Baseline plays while the Tweaked clip renders
-        emit(ev="baseline_ready", gen=gen, baseline=paths["baseline"], baseline_media=paths["baseline_media"])
+        if base is not None:
+            emit(ev="baseline_ready", gen=gen, baseline=paths["baseline"], baseline_media=paths["baseline_media"])
         tweak = eng.render_clip(st, cache=None, **opts, **early)
     print(f"[studio] clip {width}x{height} x{frames}, {len(st.keyframes or [])} keyframe(s), "
           f"{len(st.references or [])} reference(s): peak {torch.cuda.max_memory_allocated() / 2**30:.2f} GB allocated, "

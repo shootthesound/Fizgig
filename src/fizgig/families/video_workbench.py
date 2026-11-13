@@ -113,7 +113,8 @@ class ClipContract:
                 turbo_strength, bool(with_audio), self.keyframe_signature(state),
                 round(float(getattr(state, "primary_scale", 1.0)), 4) if primary_scale else None,
                 bool(getattr(self, "int8_attention", False)), bool(getattr(self, "speed_boost", False)),
-                bool(getattr(self, "clip_pieces", False)), int(getattr(self, "clip_piece_frames", 0) or 0))
+                bool(getattr(self, "clip_pieces", False)), int(getattr(self, "clip_piece_frames", 0) or 0),
+                bool(getattr(self, "clip_end_on_first", False)))
 
     def cache_key_for(self, state, *, frames, regime, steps=None, turbo_strength=None, **_ignored):
         """The render library's setup key for this state's render setup, or None before a primary is loaded. Sound

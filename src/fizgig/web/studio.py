@@ -737,6 +737,8 @@ def status():
         d["same"] = bool(_S.get("same"))           # the Tweaked render on screen is the Baseline
         d["eq"] = _S.get("eq") or {}
         d["media"] = {k: bool(_S.get(k + "_media")) for k in ("baseline", "tweaked", "nolora")}
+        # a clip rendered with Tweaked only ticked: there is no Baseline to show beside it
+        d["baseline_skipped"] = bool(_S.get("shown")) and bool(_S.get("tweaked")) and not _S.get("baseline")
         d["act"] = {k: bool(_S.get(k + "_act")) for k in ("baseline", "tweaked")}
         d["nolora_gen"], d["nolora_busy"] = _S.get("nolora_gen", 0), bool(_S.get("nolora_busy"))
         d["pending"] = _S["pending"] is not None

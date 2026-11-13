@@ -873,7 +873,8 @@
                 <span class="field-label" id="stResLabel">Length (s):</span><select id="stRes" class="w-combo st-small-select"></select>
                 <span class="st-inline" id="stSizeRow"><span class="field-hint">Width</span><select id="stW" class="w-combo st-small-select"></select>
                   <button class="btn" id="stSwap" type="button" title="Swap the width and the height (landscape to portrait and back)">⇄</button>
-                  <span class="field-hint">Height</span><select id="stH" class="w-combo st-small-select"></select></span>
+                  <span class="field-hint">Height</span><select id="stH" class="w-combo st-small-select"></select>
+                  <select id="stAspect" class="w-combo st-small-select" title="Set the width and height to a shape. The longer side stays as it is and the other moves to the nearest size in the list; portrait stays portrait (the swap button turns it)."><option value="">Aspect…</option><option>1:1</option><option>5:4</option><option>4:3</option><option>3:2</option><option>16:9</option><option>21:9</option></select></span>
                 <label class="checkbox-label" id="stTurboRow" title="Keeps the results of the blocks before the one you moved, so the next render only reruns from there. The same picture as a full render. Uses extra memory (in system RAM when the card is tight): untick it if memory is short."><input type="checkbox" id="stTurbo" checked> Reuse unchanged blocks
                   (a late-block change renders almost at once; the same picture as a full render)</label></div>
               <div id="stVideoRows" style="display:none">
@@ -887,12 +888,15 @@
                     <span class="field-hint" id="stH3LenNote"></span>
                     <span class="field-hint">W</span><select id="stH3W" class="w-combo st-small-select"></select>
                     <button class="btn" id="stH3Swap" type="button" title="Swap the width and the height (landscape to portrait and back)">⇄</button>
-                    <span class="field-hint">H</span><select id="stH3H" class="w-combo st-small-select"></select></span></div>
+                    <span class="field-hint">H</span><select id="stH3H" class="w-combo st-small-select"></select>
+                    <select id="stH3Aspect" class="w-combo st-small-select" title="Set the width and height to a shape. The longer side stays as it is and the other moves to the nearest size in the list; portrait stays portrait (the swap button turns it)."><option value="">Aspect…</option><option>1:1</option><option>5:4</option><option>4:3</option><option>3:2</option><option>16:9</option><option>21:9</option></select></span></div>
                 <div class="field-row"><span class="field-label"></span>
                   <span class="st-inline"><span class="field-hint">Steps</span><input type="text" id="stH3Steps" value="4" title="Sampling steps for the clip. With Turbo at 1.0, 4 steps is the fast loop; Turbo 0 needs about 20.">
                     <span class="field-hint" id="stH3TurboLabel">Turbo</span><input type="text" id="stH3Turbo" value="1" title="Strength of the built-in Turbo LoRA: 1.0 for the fast loop, 0.75 matches the in-training previews. 0 switches it off - the render is the base plus your LoRAs at the steps set. That is how you edit a Turbo LoRA: load it as the primary and set this to 0.">
                     <label class="checkbox-label" id="stH3SoundBox"><input type="checkbox" id="stH3Sound" checked> Sound</label>
                     <label class="checkbox-label" title="The first half of the steps (rounded down: 7 steps gives 3) render at half size, then the clip grows to full size for the rest - a faster render. The layout is worked out at half size, so a seed frames differently with it on. From Fizgig's H3 Speed Boost node (SPEED, Xiao et al. 2026, via LC Speed Boost)."><input type="checkbox" id="stH3Boost" checked> Speed Boost</label>
+                    <label class="checkbox-label" id="stH3OnlyBox" title="Skip the Baseline clip when a slider or the donor has moved: only the Tweaked clip renders, in half the time. For exploring prompts and motion; untick it to compare against the Baseline again."><input type="checkbox" id="stH3Only"> Tweaked only</label>
+                    <label class="checkbox-label" id="stH3EndBox" title="The clip ends on the picture it starts on, so it loops without a jump, and with timed prompt lines the way back can be prompted differently from the way out. With a First frame picture set, that picture is also the last frame. Without one it needs In pieces and a clip longer than one piece: the last piece is steered back to the clip's opening frame."><input type="checkbox" id="stH3End"> End on the first frame</label>
                     <label class="checkbox-label" id="stH3EarlyBox" title="Put up the pass-2 estimate in the Tweaked pane while the remaining passes run"><input type="checkbox" id="stH3Early" checked> Show early</label></span></div>
                 <div class="field-row"><span class="field-label"></span><span class="field-hint" id="stH3Note"></span></div>
               </div>

@@ -5843,6 +5843,9 @@ function studioKind(L, sv) {
   $("stH3Boost").checked = h3.boost !== false;           // on unless turned off
   $("stH3Boost").parentElement.style.display = V.speed_boost ? "" : "none";   // a family ability (H3 has it)
   $("stH3Early").checked = h3.early !== false;
+  $("stH3Only").checked = h3.only === true;
+  $("stH3End").checked = h3.end === true;
+  $("stH3EndBox").style.display = (V.frame_slots || []).includes("last") ? "" : "none";   // a model that can pin a last frame
   $("stH3Pieces").checked = h3.pieces === true;          // off unless turned on
   $("stH3PiecesBox").style.display = V.pieces ? "" : "none";                  // a family ability (H3 has it)
   $("stH3PieceS").value = h3.pieceS || "";
@@ -5992,7 +5995,8 @@ function studioH3Remember() {
     d.video[(S.st.layout || {}).key || "minimax"] = {model: $("stH3Model").value, base: $("stH3Base").value, len: $("stH3Len").value,
       lenS: $("stH3LenS").value, w: $("stH3W").value,
       h: $("stH3H").value, steps: $("stH3Steps").value, turbo: $("stH3Turbo").value,
-      sound: $("stH3Sound").checked, boost: $("stH3Boost").checked, early: $("stH3Early").checked, pieces: $("stH3Pieces").checked, pieceS: $("stH3PieceS").value, kf: S.st.kf,
+      sound: $("stH3Sound").checked, boost: $("stH3Boost").checked, early: $("stH3Early").checked, pieces: $("stH3Pieces").checked, pieceS: $("stH3PieceS").value, only: $("stH3Only").checked,
+      end: $("stH3End").checked, kf: S.st.kf,
       kfRect: S.st.kfRect};
     localStorage.setItem(ST_KEY, JSON.stringify(d));
   } catch (e) { /* private window */ }
@@ -6012,6 +6016,7 @@ function studioExtra() {
     turbo: Math.max(0, Math.min(1.5, Number($("stH3Turbo").value) || 0)), sound: $("stH3Sound").checked,
     speed_boost: !!V.speed_boost && $("stH3Boost").checked, early: $("stH3Early").checked,
     pieces: !!V.pieces && $("stH3Pieces").checked, piece: studioPieceFrames(V),
+    tweaked_only: $("stH3Only").checked, end_on_first: !ref && slots.includes("last") && $("stH3End").checked,
     negative: $("stNeg").value.trim()},
     keyframes: slots.filter((s) => S.st.kf[s]).map((s) => ({slot: s, path: S.st.kf[s], rect: S.st.kfRect[s] || null})),
     ref_mode: ref};
@@ -7557,7 +7562,8 @@ async function studioPoll() {
     S.st.shown = st.shown;
     const q = (w) => `/api/studio/image?which=${w}&gen=${st.shown}&t=${encodeURIComponent(TOKEN)}`;
     const keepBase = S.st.baseEarlyShown === st.shown;      // the Baseline already showed (and plays): left alone
-    if (!keepBase) $("stBase").src = q("baseline");
+    const noBase = !!st.baseline_skipped;                   // Tweaked only: no Baseline clip was rendered
+    if (!keepBase && !noBase) $("stBase").src = q("baseline");
     $("stTweak").src = q("tweaked");
     // a clip plays in its pane (the picture its poster); a song gets its player under the waveform
     const kind = S.st.layout && S.st.layout.kind;
@@ -7570,12 +7576,17 @@ async function studioPoll() {
       if (kind === "video" && has) { $(vid).poster = q(w); $(vid).src = clipLoopSrc(q(w + "_media")); }
       if (kind === "audio" && has) songLoad(w, q(w + "_media"), st.shown, st.act && st.act[w] ? q(w + "_act") : "");
     }
+    if (noBase) {
+      $("stBase").style.display = $("stBaseVid").style.display = "none";
+      $("stBaseVid").removeAttribute("src"); $("stBaseVid").load();
+    }
     studioMetrics();
     S.st.same = !!st.same;
     studioMapsAfterRender(S.st.same);
     studioDownloads(st, q);
     const ps = Number($("stPScale").value) || 1;
-    $("stBaseCap").textContent = (ps === 1 ? "Baseline (LoRA at default 1.0)" : `Baseline (LoRA at ${ps})`) +
+    $("stBaseCap").textContent = noBase ? "Baseline (not rendered: Tweaked only is ticked)" :
+      (ps === 1 ? "Baseline (LoRA at default 1.0)" : `Baseline (LoRA at ${ps})`) +
       (st.donor ? " - the donor is not in the baseline" : "");
     $("stTweakCap").textContent = "Tweaked (current sliders)" + (st.donor ? " - includes the donor" : "");
   }
@@ -7612,6 +7623,7 @@ function studioDownloads(st, q) {
   for (const [w, id, word] of [["baseline", "stDlBase", "original"], ["tweaked", "stDlTweak", "tweaked"]]) {
     const video = kind === "video" && st.media && st.media[w];
     const name = `${lora}_${word}${seed ? "_seed" + seed : ""}${video ? ".mp4" : ".png"}`;
+    $(id).style.display = w === "baseline" && st.baseline_skipped ? "none" : "";
     $(id).href = q(video ? w + "_media" : w) + "&dl=" + encodeURIComponent(name);
     $(id).setAttribute("download", name);
   }
@@ -7795,6 +7807,20 @@ function wireStudio() {
   $("stH3Early").addEventListener("change", studioH3Remember);
   // the swap buttons between a width and a height (pictures and clips): the two values change places, and each
   // picker reports its change as if picked by hand
+  for (const id of ["stH3Only", "stH3End"]) $(id).addEventListener("change", () => { studioH3Remember(); studioPending(); });
+  // the Aspect lists: the longer side stays, the other goes to the nearest size on offer for that shape; a portrait
+  // size stays portrait
+  for (const [a, w, h] of [["stAspect", "stW", "stH"], ["stH3Aspect", "stH3W", "stH3H"]])
+    $(a).addEventListener("change", () => {
+      const [x, y] = $(a).value.split(":").map(Number);
+      $(a).value = "";
+      if (!x || !y) return;
+      const W = Number($(w).value), H = Number($(h).value), long = Math.max(W, H), want = long * y / x;
+      const sizes = [...$(w).options].map((o) => Number(o.value)).filter((n) => n > 0);
+      const short = sizes.reduce((best, n) => (Math.abs(n - want) < Math.abs(best - want) ? n : best), sizes[0]);
+      $(w).value = String(H > W ? short : long); $(h).value = String(H > W ? long : short);
+      for (const id of [w, h]) $(id).dispatchEvent(new Event("change", {bubbles: true}));
+    });
   for (const [b, w, h] of [["stSwap", "stW", "stH"], ["stH3Swap", "stH3W", "stH3H"]])
     $(b).addEventListener("click", () => {
       const a = $(w).value;

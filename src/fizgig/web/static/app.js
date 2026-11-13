@@ -2676,10 +2676,18 @@ async function ctxSwitch(to) {
   ctxRefreshTab();
 }
 
+// your own setup IS the run training now (you pressed Start on it and haven't set up anything else since): then
+// there is one job to show, not two, and the list has no entry of its own for the setup
+function ctxSetupIsRun() {
+  if (!training()) return false;
+  const d = S.draft || {image_folder: S.imageFolder, values: S.values || {}};
+  return (d.image_folder || "") === (S.run.image_folder || "") && ((d.values || {}).LORA_NAME || "") === (S.run.lora || "");
+}
+
 // each status poll: the job on show ended, or a queued one on show started or left the queue
 function ctxTick() {
-  const c = S.ctx;
-  if (!c || S.ctxBusy) return;
+  const c = S.ctx = S.ctx || {kind: "draft"};
+  if (S.ctxBusy) return;
   const liveKey = training() ? runKey(S.run) : "";
   if (c.kind === "run") {
     if (liveKey !== c.key) { c.ended = true; c.next = liveKey ? S.run.lora : ""; }
@@ -2688,13 +2696,20 @@ function ctxTick() {
     if (at >= 0) c.n = at + 1;
     else if (liveKey && S.run.lora === c.lora) ctxSwitch({kind: "run"});      // its turn came: it is the run now
     else ctxSwitch({kind: "draft"});
+  } else if (c.kind === "draft") {
+    // your setup was the run training: when that run ends, the pill says so, as for any job on show
+    if (ctxSetupIsRun()) { c.key = liveKey; c.lora = S.run.lora; c.ended = false; }
+    else if (c.key && liveKey !== c.key) { c.ended = true; c.next = liveKey ? S.run.lora : ""; c.key = ""; }
   }
 }
 
 // a change of tab after the job on show finished: on to the run that followed it, else back to your own setup
 function ctxOnTab() {
   const c = S.ctx;
-  if (c && c.kind === "run" && c.ended && !S.ctxBusy) ctxSwitch(training() ? {kind: "run"} : {kind: "draft"});
+  if (!c || !c.ended || S.ctxBusy) return;
+  if (training()) ctxSwitch({kind: "run"});
+  else if (c.kind === "run") ctxSwitch({kind: "draft"});
+  else { c.ended = false; c.next = ""; jobPillShow(); }
 }
 
 // the pill: names the job on show; a press opens the list of jobs to switch to (a sheet from the bottom on a phone).
@@ -2703,21 +2718,22 @@ function jobPillShow() {
   const p = $("jobPill");
   if (!p) return;
   ctxTick();
-  const c = S.ctx || {kind: "draft"}, live = training() && S.run && S.run.lora;
+  const c = S.ctx, live = training() && S.run && S.run.lora;
   const items = (S.run && S.run.web_queue && S.run.web_queue.items) || [];
-  const show = !!live || items.length > 0 || c.kind !== "draft";
+  const show = !!live || items.length > 0 || c.kind !== "draft" || !!c.ended;
   p.style.display = show ? "" : "none";
   if (!show) { jobPillMenu(false); return; }
-  const mine = baseName((S.draft || {}).image_folder !== undefined ? S.draft.image_folder : S.imageFolder) || "no folder yet";
-  const [label, name] = c.kind === "run" ? (c.ended ? ["Finished", c.lora] : ["Training now", c.lora]) :
+  const mine = baseName(S.draft ? S.draft.image_folder : S.imageFolder) || "no folder yet";
+  const [label, name] = c.ended ? ["Finished", c.lora] :
+    c.kind === "run" || (c.kind === "draft" && ctxSetupIsRun()) ? ["Training now", S.run.lora] :
     c.kind === "queue" ? [`Queued ${c.n || ""}`.trim(), c.lora] : ["Setting up", mine];
-  p.classList.toggle("attention", c.kind === "run" && !!c.ended);
+  p.classList.toggle("attention", !!c.ended);
   $("jobPillText").replaceChildren(el("b", {text: label + ": "}), name || "",
     el("span", {class: "job-pill-caret", text: " ▾"}));
-  $("jobPillText").title = c.kind === "run" && c.ended
-    ? `${c.lora} is finished` + (c.next ? `, and ${c.next} is training. Press to switch.` : ". Press to switch.")
-    : "The job these tabs show. Press to switch to another: the run training now, a queued run, or your own setup.";
-  // the line under each tab's heading saying whose content it is
+  $("jobPillText").title = c.ended
+    ? `${c.lora} is finished` + (c.next ? `, and ${c.next} is training. Press to switch.` : ".")
+    : "The job these tabs show. Press to switch to another.";
+  // the line at the top of each tab saying whose content it is, while it is another job's than your own setup
   const say = c.kind === "run" ? (c.ended ? `${c.lora} is finished` + (c.next ? `, and ${c.next} is training now.` : ".") +
       " These tabs still show it until you change tab or switch with the pill."
       : `Showing the run training now: ${c.lora}. Its settings can be looked at here, not changed.`) :
@@ -2743,16 +2759,18 @@ function jobPillMenu(open) {
   const row = (label, name, on, go, strong) => el("button", {class: "job-pill-row" + (on ? " on" : "") + (strong ? " strong" : ""),
     type: "button", onclick: on ? () => jobPillMenu(false) : go},
     el("span", {class: "job-pill-row-k", text: label}), el("span", {class: "job-pill-row-v", text: name || ""}));
-  const rows = [el("div", {class: "job-pill-head", text: "Show on these tabs"})];
-  const onRun = c.kind === "run" && !c.ended;
-  if (c.kind === "run" && c.ended && live)
-    rows.push(row("Switch this tab to", S.run.lora, false, () => ctxSwitch({kind: "run"}), true));
-  if (c.kind === "run" && c.ended) rows.push(row("Finished", c.lora, true));
-  if (live && !(c.kind === "run" && c.ended)) rows.push(row("Training now", S.run.lora, onRun, () => ctxSwitch({kind: "run"})));
+  const rows = [], same = ctxSetupIsRun();
+  if (c.ended && live) rows.push(row("Switch this tab to", S.run.lora, false, () => ctxSwitch({kind: "run"}), true));
+  if (c.ended) rows.push(row("Finished", c.lora, true));
+  // the run training now: your own setup when that is what is training (it stays changeable for the next run)
+  else if (live) rows.push(row("Training now", S.run.lora, c.kind === "run" || (c.kind === "draft" && same),
+    () => ctxSwitch(same ? {kind: "draft"} : {kind: "run"})));
   items.forEach((it, i) => rows.push(row(`Queued ${i + 1}`, it.lora, c.kind === "queue" && c.id === it.id,
     () => ctxSwitch({kind: "queue", id: it.id}))));
-  const mine = baseName((S.draft || {}).image_folder !== undefined ? S.draft.image_folder : S.imageFolder) || "no folder yet";
-  rows.push(row("Selected on Start", mine, c.kind === "draft", () => ctxSwitch({kind: "draft"})));
+  // what you are setting up, when it is something other than the run training now
+  if (!same && !(c.kind === "draft" && c.ended))
+    rows.push(row("Setting up", baseName(S.draft ? S.draft.image_folder : S.imageFolder) || "no folder yet",
+      c.kind === "draft", () => ctxSwitch({kind: "draft"})));
   menu.replaceChildren(...rows);
 }
 

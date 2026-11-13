@@ -7073,12 +7073,12 @@ function studioUpscale(V) {
     low: $("stUpAdv").checked ? Math.max(0, Math.min(S.st.upLow || 0, (den > 0 ? den : 0.4) - 0.02)) : 0};
 }
 // The fold's presets: the built-in ones, then your own (kept on the server beside Studio's block presets, under the
-// model's key + "_upscale"). A preset holds the look, never the prompt or which clip
+// model's key + "_upscale"). A preset holds the look, never the size, the prompt or which clip
 const UP_PRESETS = {
-  standard: {k: 0, den: 0.4, steps: 3, sec: "", bias: 0, adv: false, low: 0, first: true, last: true},
-  creative: {k: 2, den: 0.97, steps: 2, sec: "2.33", bias: 0.8, adv: true, low: 0, first: false, last: false},
-  creative2: {k: 2, den: 0.99, steps: 2, sec: "2.33", bias: 0, adv: true, low: 0, first: false, last: false},
-  creative3: {k: 2, den: 0.99, steps: 4, sec: "2.33", bias: -0.5, adv: true, low: 0, first: false, last: false},
+  standard: {den: 0.4, steps: 3, sec: "", bias: 0, adv: false, low: 0, first: true, last: true},
+  creative: {den: 0.97, steps: 2, sec: "2.33", bias: 0.8, adv: true, low: 0, first: false, last: false},
+  creative2: {den: 0.99, steps: 2, sec: "2.33", bias: 0, adv: true, low: 0, first: false, last: false},
+  creative3: {den: 0.99, steps: 4, sec: "2.33", bias: -0.5, adv: true, low: 0, first: false, last: false},
 };
 function studioUpPresetKey() { return ((S.st.layout || {}).key || "minimax") + "_upscale"; }
 async function studioUpPresets(pick) {
@@ -7953,28 +7953,23 @@ function wireStudio() {
       catch (e) { $("stStatus").textContent = e.message; return; }
     }
     if (!p) return;
-    [$("stUpW").value, $("stUpH").value] = p.k ? studioUpSize(p.k) : [p.w || "", p.h || ""];
-    $("stUpDen").value = p.den; $("stUpSteps").value = p.steps; $("stUpSec").value = p.sec || ""; $("stUpBias").value = p.bias || 0;
+    $("stUpDen").value = p.den;                                // the size is yours: no preset sets it $("stUpSteps").value = p.steps; $("stUpSec").value = p.sec || ""; $("stUpBias").value = p.bias || 0;
     $("stUpAdv").checked = !!p.adv; S.st.upLow = Number(p.low) || 0; $("stUpRangeRow").hidden = !p.adv;
     $("stUpFirst").checked = p.first !== false; $("stUpLast").checked = p.last !== false;
     studioUpSummary(); studioH3Remember();
     if ($("stUpAuto").checked) studioPending();
   });
   // Save preset…: the fold's values under a name of your own (a name box opens under the row, as Studio's block
-  // presets do). The size is kept as a multiple of the clip's when both sides share one
+  // presets do). The size is not part of a preset
   $("stUpPresetSave").addEventListener("click", () => {
     const host = $("stUpPresetSaveRow");
     if (host.childNodes.length) { host.innerHTML = ""; return; }
     const name = el("input", {type: "text", class: "w-path", placeholder: "A name for these upscale settings"});
     const msg = el("span", {class: "field-hint"});
     const save = async (overwrite) => {
-      const u = studioUpscale(S.st.layout.video), cw = Number($("stH3W").value) || 768, ch = Number($("stH3H").value) || 448;
-      const kx = u.width / cw, ky = u.height / ch, same = Math.abs(kx - ky) < 0.06;
-      const blank = !$("stUpW").value.trim() && !$("stUpH").value.trim();
+      const u = studioUpscale(S.st.layout.video);
       const data = {den: u.denoise, steps: u.steps, sec: $("stUpSec").value.trim(), bias: u.bias, adv: $("stUpAdv").checked,
         low: u.low, first: u.first_guide, last: u.last_guide};
-      if (!blank && same) data.k = Math.round((kx + ky) / 2 * 100) / 100;
-      else if (!blank) { data.w = u.width; data.h = u.height; }
       try {
         const r = await api("/api/studio/preset_save", {family: studioUpPresetKey(), name: name.value, blocks: data, overwrite: !!overwrite});
         if (r.exists) { msg.replaceChildren(document.createTextNode("That name is taken. "), el("button", {class: "btn btn-sm btn-danger", text: "Replace it", onclick: () => save(true)})); return; }

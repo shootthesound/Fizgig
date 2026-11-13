@@ -318,6 +318,32 @@ def _render_clips(eng, desc, st, c, out, gen):
                  "tweaked_media": _write_clip(tweak, png, os.path.join(out, f"tweaked_{gen}.mp4"), fps, rate)}
         torch.cuda.empty_cache()
         return paths, None
+    up = v.get("upscale") if hasattr(eng, "upscale_clip") else None
+
+    def upscaled(clip, w0, h0):
+        """Upscale (the page's fold): the clip made again at the fold's size, a section at a time."""
+        big = eng.upscale_clip(st, clip, width=int(up.get("width") or 0) or int(w0 * 1.5),
+                               height=int(up.get("height") or 0) or int(h0 * 1.5), denoise=up.get("denoise"),
+                               steps=int(up.get("steps") or 0) or None, section=int(up.get("section") or 0),
+                               turbo_strength=opts["turbo_strength"])
+        print(f"[studio] upscale to {big['upscaled'][0]}x{big['upscaled'][1]}, denoise {big['upscaled'][2]}, "
+              f"{big['upscaled'][3]} step(s), {big['upscaled'][4]} section(s): peak "
+              f"{torch.cuda.max_memory_allocated() / 2**30:.2f} GB allocated (base {getattr(eng, 'base_plan', None)})",
+              flush=True)
+        return big
+
+    if up and up.get("now"):
+        # Upscale this clip: the clip in the Tweaked pane, as it was rendered, made again larger. The kept clip stays
+        # the one it was made from, so another denoise or size is another press
+        last = S.get("last_clip")
+        if not last or last.get("engine") is not eng:
+            raise ValueError("Render a clip first: Upscale makes a larger copy of the clip in the Tweaked pane.")
+        tweak = upscaled(last["clip"], last["width"], last["height"])
+        png = os.path.join(out, f"tweaked_{gen}.png")
+        paths = {"baseline": "", "baseline_media": "", "tweaked": png,
+                 "tweaked_media": _write_clip(tweak, png, os.path.join(out, f"tweaked_{gen}.mp4"), fps, rate)}
+        torch.cuda.empty_cache()
+        return paths, None
     same = _clip_same_as_baseline(eng, st)
     # Tweaked only (the page's tick): with something moved, the Baseline clip is not rendered at all
     base = None if (v.get("tweaked_only") and not same) else eng.baseline_clip(st, cache=None, **opts)
@@ -352,6 +378,9 @@ def _render_clips(eng, desc, st, c, out, gen):
                                                                 fps, rate)
     # what Continue and Loop back add to (base_frames: the length they add when the seconds box is empty)
     S["last_clip"] = {"clip": tweak, "width": width, "height": height, "engine": eng, "base_frames": frames}
+    if up and up.get("auto"):                           # After every render: the Tweaked pane gets the larger clip
+        big = upscaled(tweak, width, height)
+        paths["tweaked_media"] = _write_clip(big, png, os.path.join(out, f"tweaked_{gen}.mp4"), fps, rate)
 
     # hand the render's cached memory back (the model stays loaded): the page plays these clips next, and a card the
     # worker leaves full - Vimoo bf16 + the decode's cache held 30.5 of 32 GB - gives the video decode and the desktop

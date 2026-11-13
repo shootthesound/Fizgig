@@ -122,3 +122,48 @@ def test_loop_back_is_a_first_last_frame_clip_from_the_clips_end_to_its_start():
     assert calls["frames"] == 56                                 # a length of your own goes to the frame grid
     got = H3RepairEngine.loop_back_clip(Engine(), st, clip, frames_new=0, steps=4, turbo_strength=1.0, loop=False)
     assert calls["keyframes"] == [(0, 123)] and len(got["frames"]) == 247        # Continue: no last frame
+
+
+def test_upscale_sections_share_a_frame_and_end_on_the_clips_last_frame():
+    from fizgig.minimax import upscale as up
+    assert up.sections(124) == [(0, 124)]
+    assert up.sections(370) == [(0, 124), (123, 124), (246, 124)]
+    assert up.sections(383, 192) == [(0, 192), (191, 192)]
+    for total in (22, 100, 140, 247, 379, 396, 500):
+        for sec in (0, 56, 192):
+            plan = up.sections(total, sec)
+            done = 0
+            for a, n in plan:
+                assert n >= 22 and (n - 5) % 17 == 0                   # a length the model makes
+                assert a <= max(0, done - 1)                           # starts on a frame already finished
+                done = a + n
+            assert done == total                                       # every frame of the clip, none past it
+    assert all(n >= 56 for _a, n in up.sections(379))                  # no leftover of a few frames
+    assert up.section_frames(0) == 124 and up.section_frames(190) == 175
+
+
+def test_upscale_noise_levels_start_at_the_denoise_and_end_at_zero():
+    from fizgig.minimax import upscale as up
+    sig = up.low_sigmas(0.4, 3)
+    assert len(sig) == 4 and abs(sig[0] - 0.4) < 1e-6 and sig[-1] == 0.0
+    assert all(a > b for a, b in zip(sig, sig[1:]))
+    assert abs(up.low_sigmas(1.0, 2)[0] - 1.0) < 1e-6
+
+
+def test_upscale_encodes_in_tiles_that_add_up_to_the_whole_frame():
+    """An encoder that only averages 16-px cells gives the same latent whole or in tiles; 17 + 5 frames give 5 + 2."""
+    from PIL import Image
+    from fizgig.minimax import upscale as up
+
+    class Enc:
+        def encode(self, x):                                           # [1, 3, F, h, w] -> [1, 24, 5 or 2, h/16, w/16]
+            f = x.shape[2]
+            t = torch.stack([x[:, :, i].mean(1) for i in ([0, 4, 8, 12, 16] if f == 17 else [0, 4])], 1)
+            return torch.nn.functional.avg_pool2d(t, 16).unsqueeze(1).repeat(1, 24, 1, 1, 1)
+
+    rng = np.random.default_rng(0)
+    frames = [Image.fromarray(rng.integers(0, 255, (160, 224, 3), dtype=np.uint8)) for _ in range(22)]
+    whole = up.encode_tiled(Enc(), frames, "cpu", tile=512)
+    tiled = up.encode_tiled(Enc(), frames, "cpu", tile=96, overlap=32)
+    assert tuple(whole.shape) == (1, 24, 7, 10, 14)
+    assert float((whole - tiled).abs().max()) < 1e-5

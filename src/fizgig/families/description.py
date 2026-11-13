@@ -214,6 +214,9 @@ class VideoWorkbench:
     # Studio's In pieces tick: a clip longer than `pieces` frames built piece by piece, each shown the end of the one
     # before, so memory stays at one piece's worth (H3: minimax/continuation.py). 0 = the family has none
     pieces: int = 0
+    # Studio's Upscale fold: the clip in the Tweaked pane made again at a larger size, a section at a time, at a low
+    # denoise (H3: minimax/upscale.py, the engine's upscale_clip)
+    upscale: bool = False
 
     def checkpoint(self, label, refmod=False) -> VideoCheckpoint:
         """The checkpoint a picker label names (the first when it names none)."""

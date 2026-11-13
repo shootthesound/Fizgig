@@ -359,7 +359,7 @@ MINIMAX = FamilyDescription(
                             VideoCheckpoint("First / Last Frame (fl2va)", "dit")),
         refmod_lengths=(("Still (1 frame)", 1), ("22 frames (~1s)", 22), ("39 frames (~1.6s)", 39),
                         ("56 frames (~2.3s)", 56), ("73 frames (~3s)", 73)),
-        refmod_size=(640, 768), sweep_frames=22, speed_boost=True, pieces=124),
+        refmod_size=(640, 768), sweep_frames=22, speed_boost=True, pieces=124, upscale=True),
 
     latent_channels=24,
     spatial_factor=16,                # dataset/image_dataset.py LATENT_SPATIAL_FACTOR[minimaxh3]

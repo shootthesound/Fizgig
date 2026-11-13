@@ -2555,6 +2555,21 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 #maskMethod { margin-bottom: 4px; }
 .mask-sam-state { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0 2px; }
 
+/* Studio's clip settings: a fold for a group of extra controls (Upscale). Closed, its heading says what is set */
+.st-fold { margin: 8px 0 2px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-raised); }
+.st-fold > summary { list-style: none; cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline;
+  gap: 2px 12px; padding: 8px 12px 8px 32px; position: relative; border-radius: var(--radius-sm); }
+.st-fold > summary::-webkit-details-marker { display: none; }
+.st-fold > summary::before { content: "▶"; position: absolute; left: 12px; top: 10px; color: var(--accent);
+  font-size: 8.5pt; }
+.st-fold[open] > summary::before { content: "▼"; }
+.st-fold > summary:hover { background: var(--bg-hover); }
+.st-fold[open] > summary { border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+.st-fold[open] { padding-bottom: 8px; }
+.st-fold > .field-row { padding: 0 12px; }
+.st-fold-title { font-weight: 600; color: var(--text-primary); }
+.st-fold-sub { color: var(--text-secondary); font-size: 9.5pt; }
+
 /* the masks card's Edit masks: a picture at a time with its mask, painted on a canvas */
 .mask-edit { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 12px; }
 /* its heading: a bar that reads as something to open */

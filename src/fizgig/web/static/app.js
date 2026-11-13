@@ -5847,6 +5847,12 @@ function studioKind(L, sv) {
   $("stLoopRow").style.display = V.pieces ? "" : "none";                      // with the In pieces ability (H3)
   $("stLoopPrompt").value = h3.loopPrompt || "";
   $("stLoopS").value = h3.loopS || "";
+  const up = h3.up || {};                                                     // the Upscale fold (a family ability)
+  $("stUpBox").style.display = V.upscale ? "" : "none";
+  $("stUpW").value = up.w || ""; $("stUpH").value = up.h || "";
+  $("stUpDen").value = up.den || "0.4"; $("stUpSteps").value = up.steps || "3"; $("stUpSec").value = up.sec || "";
+  $("stUpAuto").checked = up.auto === true;
+  $("stUpBox").open = up.open === true;
   $("stH3Pieces").checked = h3.pieces === true;          // off unless turned on
   $("stH3PiecesBox").style.display = V.pieces ? "" : "none";                  // a family ability (H3 has it)
   $("stH3PieceS").value = h3.pieceS || "";
@@ -5996,7 +6002,8 @@ function studioH3Remember() {
     d.video[(S.st.layout || {}).key || "minimax"] = {model: $("stH3Model").value, base: $("stH3Base").value, len: $("stH3Len").value,
       lenS: $("stH3LenS").value, w: $("stH3W").value,
       h: $("stH3H").value, steps: $("stH3Steps").value, turbo: $("stH3Turbo").value,
-      sound: $("stH3Sound").checked, boost: $("stH3Boost").checked, early: $("stH3Early").checked, pieces: $("stH3Pieces").checked, pieceS: $("stH3PieceS").value, only: $("stH3Only").checked, loopPrompt: $("stLoopPrompt").value, loopS: $("stLoopS").value, kf: S.st.kf,
+      sound: $("stH3Sound").checked, boost: $("stH3Boost").checked, early: $("stH3Early").checked, pieces: $("stH3Pieces").checked, pieceS: $("stH3PieceS").value, only: $("stH3Only").checked, loopPrompt: $("stLoopPrompt").value, loopS: $("stLoopS").value,
+      up: {w: $("stUpW").value, h: $("stUpH").value, den: $("stUpDen").value, steps: $("stUpSteps").value, sec: $("stUpSec").value, auto: $("stUpAuto").checked, open: $("stUpBox").open}, kf: S.st.kf,
       kfRect: S.st.kfRect};
     localStorage.setItem(ST_KEY, JSON.stringify(d));
   } catch (e) { /* private window */ }
@@ -6017,6 +6024,7 @@ function studioExtra() {
     speed_boost: !!V.speed_boost && $("stH3Boost").checked, early: $("stH3Early").checked,
     pieces: !!V.pieces && $("stH3Pieces").checked, piece: studioPieceFrames(V),
     tweaked_only: $("stH3Only").checked, loop_back: S.st.loopBack || null,
+    upscale: V.upscale && (S.st.upNow || $("stUpAuto").checked) ? Object.assign(studioUpscale(V), {now: !!S.st.upNow}) : null,
     negative: $("stNeg").value.trim()},
     keyframes: slots.filter((s) => S.st.kf[s]).map((s) => ({slot: s, path: S.st.kf[s], rect: S.st.kfRect[s] || null})),
     ref_mode: ref};
@@ -7037,6 +7045,26 @@ function studioClipFrames(V) {
 }
 // a piece's length in frames for a clip In pieces: the box's seconds on the frame grid (no shorter than the 39 frames
 // a piece is shown plus 17 new ones), the model's own when the box is empty
+// Upscale (the fold under the Then row). Its size: the two boxes on the 32-px grid, an empty one the clip's side x 1.5
+function studioUpSize(k) {
+  const snap = (n) => Math.max(256, Math.round(n / 32) * 32);
+  const w = Number($("stH3W").value) || 768, h = Number($("stH3H").value) || 448;
+  return k ? [snap(w * k), snap(h * k)] : [snap(Number($("stUpW").value) || w * 1.5), snap(Number($("stUpH").value) || h * 1.5)];
+}
+function studioUpscale(V) {
+  const [width, height] = studioUpSize(), sec = Number($("stUpSec").value) || 0, den = Number($("stUpDen").value);
+  return {width, height, denoise: Math.max(0.05, Math.min(1, den > 0 ? den : 0.4)),
+    steps: Math.max(1, Math.min(20, parseInt($("stUpSteps").value, 10) || 3)),
+    section: sec > 0 && V.clip ? Math.max(22, studioSnapFrames(V, sec)) : 0, auto: $("stUpAuto").checked};
+}
+// the fold's heading says what is set, so it reads without being opened
+function studioUpSummary() {
+  const L = S.st.layout, V = L && L.kind === "video" ? L.video : null;
+  if (!V || !V.upscale) return;
+  const u = studioUpscale(V);
+  $("stUpSum").textContent = `to ${u.width} × ${u.height}, denoise ${u.denoise}, ${u.steps} step${u.steps === 1 ? "" : "s"}`
+    + (u.auto ? ", after every render" : "");
+}
 function studioPieceFrames(V) {
   const s = $("stH3PieceS").value.trim();
   return V.pieces && V.clip && s ? Math.max(56, studioSnapFrames(V, s)) : (V.pieces || 0);
@@ -7812,6 +7840,31 @@ function wireStudio() {
   // frame (Loop back: and ending on its first). Its length is the seconds box on the frame grid (empty: the rendered clip's own length,
   // sent as 0), sent with an ordinary render request
   for (const id of ["stLoopPrompt", "stLoopS"]) $(id).addEventListener("change", studioH3Remember);
+  // Upscale: the fold's boxes are remembered and its heading follows them; they wait for Update only while After
+  // every render is on. Upscale this clip sends them with an ordinary render request, for the clip in the Tweaked pane
+  for (const id of ["stUpW", "stUpH", "stUpDen", "stUpSteps", "stUpSec", "stUpAuto"])
+    $(id).addEventListener("change", () => {
+      const V = S.st.layout.video, u = studioUpscale(V);
+      if (id === "stUpW" && $(id).value.trim()) $(id).value = u.width;
+      if (id === "stUpH" && $(id).value.trim()) $(id).value = u.height;
+      if (id === "stUpDen") $(id).value = u.denoise;
+      if (id === "stUpSteps") $(id).value = u.steps;
+      if (id === "stUpSec" && u.section) $(id).value = String(Math.round(u.section / V.clip.fps * 100) / 100);
+      studioUpSummary(); studioH3Remember();
+      if (id === "stUpAuto" || $("stUpAuto").checked) studioPending();
+    });
+  for (const id of ["stH3W", "stH3H"]) $(id).addEventListener("change", studioUpSummary);
+  $("stUpBox").addEventListener("toggle", studioH3Remember);
+  for (const [id, k] of [["stUp15", 1.5], ["stUp2", 2]])
+    $(id).addEventListener("click", () => {
+      [$("stUpW").value, $("stUpH").value] = studioUpSize(k);
+      studioUpSummary(); studioH3Remember();
+      if ($("stUpAuto").checked) studioPending();
+    });
+  $("stUpGo").addEventListener("click", async () => {
+    S.st.upNow = true;
+    try { await studioRender(); } finally { S.st.upNow = false; }
+  });
   for (const [id, loop] of [["stContinue", false], ["stLoopBack", true]])
     $(id).addEventListener("click", async () => {
       const V = S.st.layout.video, sec = Number($("stLoopS").value) || 0;

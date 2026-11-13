@@ -1687,6 +1687,112 @@ class H3RepairEngine(ClipContract):
                 "regime": regime, "steps": sts, "turbo_strength": strength, "frames_n": len(imgs), "cached": False,
                 "sig": signature(state), "int8_attention": self._int8_tag()}
 
+    @_locked
+    def upscale_clip(self, state, clip, *, width, height, denoise=None, steps=None, section=0, turbo_strength=None,
+                     **_ignored):
+        """Studio's Upscale: `clip` (a render_clip dict) made again at width x height, on the state's prompt. The
+        clip's frames are stretched and finished a section at a time at a low denoise (minimax/upscale.py): each
+        section is a first / last frame clip pinned to its own two end frames, upscaled on their own first, and
+        starts on the finished last frame of the section before. denoise: the noise level the stretched frames start
+        from (0-1); steps: the passes from there; section: a section's frames (0 = 124). The sound is the clip's
+        own, left as it is. The clip itself is not rendered again."""
+        from fizgig.minimax import model as _mm
+        from fizgig.minimax import sampling
+        from fizgig.minimax import upscale as _up
+        from fizgig.minimax.model import AUDIO_CHANNELS, audio_latents_for_frames
+        from fizgig.modules import int8_linear as _i8l
+        from fizgig.repair_studio.h3_render_cache import signature
+        frames = list(clip.get("frames") or [])
+        if len(frames) < 2:
+            raise ValueError("Render a clip first: Upscale makes a larger copy of the clip in the Tweaked pane.")
+        w, h = max(256, (int(width) // 32) * 32), max(256, (int(height) // 32) * 32)
+        plan = _up.sections(len(frames), section)
+        den = float(denoise) if denoise not in (None, "") else _up.DENOISE
+        sig = _up.low_sigmas(den, int(steps or _up.STEPS))
+        den, k = sig[0], len(sig) - 1
+        seed = int(state.seed)
+        self.apply_state(state)
+        if turbo_strength is not None:
+            self.set_turbo_strength(turbo_strength)
+        emb = self._encode_prompt(state.prompt).to(self.device, self.dtype)
+        n_max = max(n for _a, n in plan)
+        self._invalidate_activation_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        self._last_canvas = (w, h, n_max)
+        self.ensure_room(w, h, n_max, 2, 0, state)
+        self._park_decoder_if_tight(w, h, n_max)
+        self._evict_gpu_cache_if_tight(w, h, n_max)
+        d_a = int(self.dit.config.audio_latents_dim) if getattr(self.dit, "pack_audio_rows", False) else 0
+        rows, n_all = clip.get("audio_rows"), audio_latents_for_frames(len(frames))
+        if rows is not None and (not d_a or rows.shape[0] != n_all * AUDIO_CHANNELS):
+            rows = None                        # a clip with something added after it: its rows are not the whole sound
+        done, total = [0], (2 * len(plan) + 1) * k
+
+        def tick(_i, _n):
+            if self._cancel_event.is_set():
+                raise sampling.PreviewAborted("upscale cancelled")
+            done[0] += 1
+            cb = self.on_step
+            if cb is not None:
+                try:
+                    cb(done[0], total)
+                except Exception:
+                    pass
+
+        def noise(shape, s):
+            return torch.randn(shape, generator=torch.Generator("cpu").manual_seed(int(s) & 0xFFFFFFFF),
+                               dtype=torch.float32)
+
+        def run(x, **kw):
+            _mm.set_int8_attention(bool(getattr(self, "int8_attention", False)))
+            try:
+                with torch.no_grad(), _i8l.renders(bool(getattr(self, "int8_linear", False))):
+                    return _up.finish(self.dit, x.to(self.device), emb, sig, dtype=self.dtype, on_step=tick, **kw)
+            finally:
+                _mm.set_int8_attention(False)
+
+        def still(img, s):
+            """One frame upscaled on its own: stretched, then finished as a single-frame clip."""
+            z = self.encode_keyframe(img, w, h)
+            an = (noise((audio_latents_for_frames(1) * AUDIO_CHANNELS, d_a), s + 1).to(self.device) if d_a else None)
+            return run((1.0 - den) * z + den * noise(z.shape, s), audio_noise=an).float().cpu()
+
+        out = []
+        for j, (a, n) in enumerate(plan):
+            self._status(f"Upscale to {w} x {h}: section {j + 1} of {len(plan)}")
+            sub = [im.convert("RGB").resize((w, h), Image.LANCZOS) for im in frames[a:a + n]]
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                free = torch.cuda.mem_get_info()[0] / 2 ** 30
+            else:
+                free = 99.0
+            enc = self._ensure_encoder().to(self.device)
+            try:
+                up = _up.encode_tiled(enc, sub, self.device, tile=_up.tile_for(free - 1.5))
+            finally:
+                self.encoder = enc.to("cpu")
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            first = still(sub[0], seed + 100) if not out else self.encode_keyframe(out[a], w, h)
+            last = still(sub[-1], seed + 101 + j)
+            kf = [(0, first.to(self.device, torch.float32)), (n - 1, last.to(self.device, torch.float32))]
+            audio = an = None
+            if d_a:
+                n_a = audio_latents_for_frames(n)
+                an = noise((n_a * AUDIO_CHANNELS, d_a), seed + 12 + j).to(self.device)
+                if rows is not None:
+                    r0 = max(0, min(int(round(a * n_all / len(frames))), n_all - n_a))
+                    audio = rows.reshape(AUDIO_CHANNELS, n_all, d_a)[:, r0:r0 + n_a].reshape(-1, d_a).to(self.device)
+            x = run((1.0 - den) * up + den * noise(up.shape, seed + 11 + j), audio=audio, audio_noise=an, keyframes=kf)
+            self._last_canvas = (w, h, n)
+            imgs = self.decode_clip_frames(x.float().cpu())
+            out = (out[:a + 1] + imgs[1:]) if out else imgs
+        return {"latent": None, "audio_rows": clip.get("audio_rows"), "frames": out, "wav": clip.get("wav"),
+                "middle": out[len(out) // 2], "regime": "custom", "steps": k, "turbo_strength": self._turbo_strength,
+                "frames_n": len(out), "cached": False, "sig": signature(state), "int8_attention": self._int8_tag(),
+                "upscaled": (w, h, round(den, 3), k, len(plan))}
+
     def _clip_regimes(self):
         from fizgig.families.minimax import MINIMAX
         return {n: (st, tu) for n, st, tu in MINIMAX.clip_regimes}

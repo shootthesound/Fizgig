@@ -954,7 +954,7 @@ def layout(desc, prefs, pref_path, samples=None):
                       # the clip row's line on what Steps and the speed LoRA give: for the shared video engine's sampling
                       "clip_note": _shared_clip_engine(desc),
                       "bases": [n for n, _ in vc.bases], "speed_boost": bool(vc.speed_boost),
-                      "pieces": int(vc.pieces),
+                      "pieces": int(vc.pieces), "upscale": bool(vc.upscale),
                       "sound": bool(audio_vae and os.path.exists(audio_vae))} if kind == "video" and vc else None,
             "song_lengths": SONG_LENGTHS if kind == "audio" else None,
             "prompt_blend": bool(getattr(desc.load_driver(), "supports_prompt_blend", False)),

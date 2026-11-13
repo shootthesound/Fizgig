@@ -2772,8 +2772,10 @@ function jobPillMenu(open) {
     () => ctxSwitch({kind: "queue", id: it.id}))));
   // a run is training: another like it, without going back to Start for the folder
   if (live && activeTab() === "training") rows.push(row("Set up a new run with these settings", "", false, ctxNewLike));
-  // out of the job: the Start tab, its Training folder empty, ready for something else
-  if (c.kind !== "draft" || same) rows.push(row("Back to the normal view", "", false, ctxNormal));
+  // out of the job: a clean start (the Start tab, no training folder, the model's defaults, no name). Always there
+  // unless the form is that clean start already: a run just set up and queued leaves its settings in the form too
+  const clean = c.kind === "draft" && !S.imageFolder && !String((S.values || {}).LORA_NAME || "").trim();
+  if (!clean) rows.push(row("Back to the normal view", "", false, ctxNormal));
   menu.replaceChildren(...rows);
 }
 

@@ -1378,7 +1378,7 @@ class H3RepairEngine(ClipContract):
                       steps: Optional[int] = None, turbo_strength: Optional[float] = None,
                       keyframes=None, on_denoised=None, no_lora: bool = False,
                       references=None, ref_latents=None, ref_schedule=None, ref_images=None,
-                      ref_items=None):
+                      ref_items=None, model=None, guide_rows: int = 0):
         """Apply the slider state and sample ONE clip: returns (latent [1,24,T,H/16,W/16] on
         CPU fp32, audio_rows [2*A, 32] on CPU fp32 or None). No decode — the caller decides
         (decode_clip_frames / decode_audio, or store it in the render cache).
@@ -1406,7 +1406,11 @@ class H3RepairEngine(ClipContract):
         ref_latents: bare reference latents ([1,24,T,h,w] each — RefMods) riding as condition
         rows with the prompt encoded WITHOUT pictures (no vision side, no token tags), what
         refmod.render_previews does; ref_schedule(step, n, sigma) -> that step's list (the
-        RefMod Toolkit's step curve). Either one turns the pass-1 resume off."""
+        RefMod Toolkit's step curve). Either one turns the pass-1 resume off.
+
+        model: what the sampler calls in place of the loaded model (a clip in pieces: minimax/continuation.py's
+        Continue, which calls the loaded model itself); guide_rows: the condition rows it adds, for the room this
+        render needs. The pass-1 resume sits out."""
         from fizgig.minimax import sampling
         self.apply_state(state)
         if no_lora and self.primary_network is not None:
@@ -1473,7 +1477,7 @@ class H3RepairEngine(ClipContract):
                bool(getattr(self, "speed_boost", False)), bool(getattr(self, "int8_linear", False)))
         resume_ok = (self.resume_enabled and not keyframes and not references and not no_lora
                      and not bare_refs and not getattr(self, "_blocks_swapped", 0)
-                     and hasattr(self.dit, "forward_cached"))
+                     and model is None and hasattr(self.dit, "forward_cached"))
         if self._act_cache and not (resume_ok and self._act_cache_key == key):
             # Another setup's cache is dead weight — on the GPU it can be several GB
             # (56 frames at 768² records ~5.1 GB), and it must go BEFORE the free-VRAM
@@ -1487,7 +1491,8 @@ class H3RepairEngine(ClipContract):
         # (These sat inside the resume branch until 4 Sep — on the streamed-block tier,
         # and for keyframe / reference / no-LoRA renders, the rule ran on a 2 GB guess.)
         self._last_canvas = (int(width), int(height), int(frames))
-        self.ensure_room(width, height, frames, len(keyframes or ()), len(ref_latents or ()), state)
+        self.ensure_room(width, height, frames, len(keyframes or ()) + int(guide_rows), len(ref_latents or ()),
+                         state)
         self._park_decoder_if_tight(width, height, frames)
         self._evict_gpu_cache_if_tight(width, height, frames)
         if resume_ok:
@@ -1519,7 +1524,7 @@ class H3RepairEngine(ClipContract):
         def _sample(block_cache):
             with torch.no_grad():
                 return sampling.sample_image(
-                    self.dit, emb.to(self.device, self.dtype),
+                    model if model is not None else self.dit, emb.to(self.device, self.dtype),
                     width=width, height=height, steps=steps, cfg_scale=1.0,
                     seed=int(seed), device=self.device, dtype=self.dtype,
                     num_frames=frames, on_slow_step=_abort_check, slow_step_s=0.0,
@@ -1627,6 +1632,26 @@ class H3RepairEngine(ClipContract):
     default_clip_frames = H3_PREVIEW_FRAMES
     supports_keyframes = supports_base_modes = supports_banks = True
     supports_show_early = True
+
+    def render_clip(self, state, *, frames=None, regime="confirm", with_audio=True, cache=None, no_lora=False,
+                    steps=None, turbo_strength=None, decode=True, **kw):
+        """The contract's render_clip; a clip longer than one piece with Studio's In pieces tick on (clip_pieces)
+        is built by minimax/continuation.py instead: the same dict, its frames already joined. Such a clip is not
+        kept in the render library (its joins are made on the decoded frames, not in the latent)."""
+        from fizgig.minimax import continuation as _co
+        n = self._clip_frames(state, frames)
+        if not (getattr(self, "clip_pieces", False) and decode and n > _co.PIECE):
+            return super().render_clip(state, frames=frames, regime=regime, with_audio=with_audio, cache=cache,
+                                       no_lora=no_lora, steps=steps, turbo_strength=turbo_strength, decode=decode,
+                                       **kw)
+        from fizgig.repair_studio.h3_render_cache import NOLORA_SIG, signature
+        st, strength = self.regime_params(regime, steps, turbo_strength)
+        lat, aud, imgs = _co.render_long(self, state, frames=n, steps=st, turbo_strength=strength,
+                                         with_audio=with_audio, no_lora=no_lora)
+        return {"latent": lat, "audio_rows": aud, "frames": imgs, "wav": self.decode_audio(aud) if with_audio else None,
+                "middle": imgs[len(imgs) // 2], "regime": regime, "steps": st, "turbo_strength": strength,
+                "frames_n": n, "cached": False, "sig": NOLORA_SIG if no_lora else signature(state),
+                "int8_attention": self._int8_tag()}
 
     def _clip_regimes(self):
         from fizgig.families.minimax import MINIMAX

@@ -211,6 +211,9 @@ class VideoWorkbench:
     # Studio's Speed Boost tick (on by default): the first half of a clip's steps at half size, then full size. The
     # family's sampler honours speed_boost=True (H3: minimax/sampling.py with minimax/speed_boost.py)
     speed_boost: bool = False
+    # Studio's In pieces tick: a clip longer than `pieces` frames built piece by piece, each shown the end of the one
+    # before, so memory stays at one piece's worth (H3: minimax/continuation.py). 0 = the family has none
+    pieces: int = 0
 
     def checkpoint(self, label, refmod=False) -> VideoCheckpoint:
         """The checkpoint a picker label names (the first when it names none)."""

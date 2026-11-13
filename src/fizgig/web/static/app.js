@@ -5843,6 +5843,8 @@ function studioKind(L, sv) {
   $("stH3Boost").checked = h3.boost !== false;           // on unless turned off
   $("stH3Boost").parentElement.style.display = V.speed_boost ? "" : "none";   // a family ability (H3 has it)
   $("stH3Early").checked = h3.early !== false;
+  $("stH3Pieces").checked = h3.pieces !== false;         // on unless turned off
+  $("stH3PiecesBox").style.display = V.pieces ? "" : "none";                  // a family ability (H3 has it)
   S.st.kf = h3.kf || {};
   S.st.kfRect = h3.kfRect || {};
   studioClipNote();
@@ -5988,7 +5990,7 @@ function studioH3Remember() {
     d.video[(S.st.layout || {}).key || "minimax"] = {model: $("stH3Model").value, base: $("stH3Base").value, len: $("stH3Len").value,
       lenS: $("stH3LenS").value, w: $("stH3W").value,
       h: $("stH3H").value, steps: $("stH3Steps").value, turbo: $("stH3Turbo").value,
-      sound: $("stH3Sound").checked, boost: $("stH3Boost").checked, early: $("stH3Early").checked, kf: S.st.kf,
+      sound: $("stH3Sound").checked, boost: $("stH3Boost").checked, early: $("stH3Early").checked, pieces: $("stH3Pieces").checked, kf: S.st.kf,
       kfRect: S.st.kfRect};
     localStorage.setItem(ST_KEY, JSON.stringify(d));
   } catch (e) { /* private window */ }
@@ -6007,6 +6009,7 @@ function studioExtra() {
     steps: Math.max(1, Math.min(40, parseInt($("stH3Steps").value, 10) || 4)),
     turbo: Math.max(0, Math.min(1.5, Number($("stH3Turbo").value) || 0)), sound: $("stH3Sound").checked,
     speed_boost: !!V.speed_boost && $("stH3Boost").checked, early: $("stH3Early").checked,
+    pieces: !!V.pieces && $("stH3Pieces").checked,
     negative: $("stNeg").value.trim()},
     keyframes: slots.filter((s) => S.st.kf[s]).map((s) => ({slot: s, path: S.st.kf[s], rect: S.st.kfRect[s] || null})),
     ref_mode: ref};
@@ -7007,8 +7010,10 @@ function wireStudioSetups() {
 function studioCanvas() {
   // H3: [width, height, frames, keyframes, references] of the first clip, so Auto loads the base with room for it
   if (S.st.layout.kind !== "video") return null;
-  const x = studioExtra(), n = x.keyframes.length;
-  return [x.video.width, x.video.height, x.video.frames, x.ref_mode ? 0 : n, x.ref_mode ? n : 0];
+  const x = studioExtra(), n = x.keyframes.length, P = S.st.layout.video.pieces;
+  // a clip in pieces: the room one piece needs (with the 12 frames of the piece before it is shown), not the whole clip
+  const long = x.video.pieces && x.video.frames > P, kf = (x.ref_mode ? 0 : n) + (long ? 12 : 0);
+  return [x.video.width, x.video.height, long ? P : x.video.frames, kf, x.ref_mode ? n : 0];
 }
 
 // The Clip row's length. "Other…" takes seconds and moves them to the nearest length on the model's frame grid
@@ -7031,7 +7036,8 @@ function studioLenOther(snap) {
   if (!other) return;
   const f = studioClipFrames(V), c = V.clip, secs = (n) => String(Math.round(n / c.fps * 100) / 100);
   if (snap && box.value.trim()) box.value = secs(f);
-  note.textContent = `${f} frames (${secs(f)} s)` + (f > c.max ? `, past the model's ${secs(c.max)} s range` : "");
+  const P = V.pieces && $("stH3Pieces").checked && f > V.pieces ? 1 + Math.ceil((f - V.pieces) / (V.pieces - 39)) : 0;
+  note.textContent = `${f} frames (${secs(f)} s)` + (P ? `, in ${P} pieces` : f > c.max ? `, past the model's ${secs(c.max)} s range` : "");
 }
 
 // the clip row's line under the boxes: what the Steps and speed-LoRA boxes give (a model with a speed LoRA)
@@ -7773,8 +7779,8 @@ function wireStudio() {
   window.addEventListener("resize", debounce(() => { const d = $("stDock"); if (d && d.classList.contains("floating")) studioDockClamp(d); }, 150));
   $("stFamily").addEventListener("change", () => { studioFamily(); stRemember(); });
   // the clip row: length / size / steps / speed LoRA / sound wait for Update, as Model and Base do
-  for (const id of ["stH3Len", "stH3LenS", "stH3W", "stH3H", "stH3Steps", "stH3Turbo", "stH3Sound", "stH3Boost"])
-    $(id).addEventListener("change", () => { if (id.startsWith("stH3Len")) studioLenOther(true); studioH3Remember(); studioPending(); });
+  for (const id of ["stH3Len", "stH3LenS", "stH3W", "stH3H", "stH3Steps", "stH3Turbo", "stH3Sound", "stH3Boost", "stH3Pieces"])
+    $(id).addEventListener("change", () => { if (id.startsWith("stH3Len")) studioLenOther(true); if (id === "stH3Pieces") studioLenOther(); studioH3Remember(); studioPending(); });
   $("stH3Early").addEventListener("change", studioH3Remember);
   $("stH3Model").addEventListener("change", () => { studioH3Remember(); studioSlots(); $("stStart").textContent = "Update"; });
   $("stH3Base").addEventListener("change", () => { studioH3Remember(); $("stStart").textContent = "Update"; });

@@ -5863,7 +5863,7 @@ function studioKind(L, sv) {
   $("stUpPromptRow").hidden = $("stUpPromptCopy").hidden = !$("stUpOwnPrompt").checked;
   $("stUpLast").checked = up.last !== false;
   $("stUpWhich").value = ["baseline", "both"].includes(up.which) ? up.which : "tweaked";
-  $("stUpPrevN").value = up.prevN === "22" ? "22" : "1";
+  $("stUpPrevN").value = "22";                 // Preview always opens on 0.9 seconds
   $("stUpBox").open = up.open === true;
   $("stH3Pieces").checked = h3.pieces === true;          // off unless turned on
   $("stH3PiecesBox").style.display = V.pieces ? "" : "none";                  // a family ability (H3 has it)

@@ -2770,9 +2770,62 @@ function jobPillMenu(open) {
     () => ctxSwitch(same ? {kind: "draft"} : {kind: "run"})));
   items.forEach((it, i) => rows.push(row(`Queued ${i + 1}`, it.lora, c.kind === "queue" && c.id === it.id,
     () => ctxSwitch({kind: "queue", id: it.id}))));
-  // out of a job's view, when the tabs' ordinary content is something other than the run training now
-  if (c.kind !== "draft" && !same) rows.push(row("Back to the normal view", "", false, () => ctxSwitch({kind: "draft"})));
+  // a run is training: another like it, without going back to Start for the folder
+  if (live) rows.push(row("Set up a new run with these settings", "", false, ctxNewLike));
+  // out of the job: the Start tab, its Training folder empty, ready for something else
+  if (c.kind !== "draft" || same) rows.push(row("Back to the normal view", "", false, ctxNormal));
   menu.replaceChildren(...rows);
+}
+
+// Back to the normal view: out of the job on show, to the Start tab with no training folder picked (the settings
+// stay as they are)
+async function ctxNormal() {
+  jobPillMenu(false);
+  if (ctxKind() !== "draft") await ctxSwitch({kind: "draft"});
+  if ($("imageFolder").value || S.imageFolder) {
+    $("imageFolder").value = "";
+    $("imageFolder").dispatchEvent(new Event("change"));
+  }
+  S.viewJob = null;
+  showTab("start");
+  jobPillShow();
+}
+
+// a name for another run of the same thing: name_2, then _3..., past the run training and the queued ones
+function nextRunName(name) {
+  const taken = new Set([training() ? S.run.lora : "", ...(((S.run || {}).web_queue || {}).items || []).map((i) => i.lora)]);
+  let n = String(name || "").trim() || "my_lora";
+  do {
+    const m = n.match(/^(.*)_(\d+)$/);
+    n = m ? `${m[1]}_${Number(m[2]) + 1}` : `${n}_2`;
+  } while (taken.has(n));
+  return n;
+}
+// the form's run gets the next name (and never carries on from a saved state): a new run, not that one again
+function renameForNew(from) {
+  S.values.LORA_NAME = nextRunName(from || S.values.LORA_NAME);
+  S.values.RESUME_TRAINING = "";
+  syncInputs(["LORA_NAME", "RESUME_TRAINING"]);
+  refreshStateSoon(); saveState();
+  return S.values.LORA_NAME;
+}
+
+// Set up a new run with these settings: the job on show (the run training, or the queued run you are looking at)
+// becomes your own setup under the next name, on the Training tab; nothing starts until Start or Add to queue
+async function ctxNewLike() {
+  jobPillMenu(false);
+  const c = S.ctx || {kind: "draft"};
+  const src = c.kind === "queue" ? {family: S.family, values: {...S.values}, image_folder: S.imageFolder}
+    : {family: S.run.family, values: {...(S.run.values || {})}, image_folder: S.run.image_folder};
+  for (const k of ["__continue", "__more"]) delete src.values[k];
+  const was = src.values.LORA_NAME || S.run.lora || "";
+  try {
+    await loadIntoForm(src);                       // (a job on show gives way to your own setup first)
+    const name = renameForNew(was);
+    S.viewJob = null;
+    jobPillShow();
+    $("runStatus").textContent = `A new run set up from ${was}, named ${name}: change what you like, then Start or Add to queue.`;
+  } catch (e) { $("runStatus").textContent = e.message; }
 }
 
 // the job the gallery follows inside your own setup: one loaded into the form with Start again shows its own previews
@@ -3279,7 +3332,8 @@ async function loadRuns() {
       onclick: async () => {
         try {
           await loadIntoForm(await api("/api/runs/settings", {id: run.id}));
-          $("runStatus").textContent = `Loaded the settings of ${run.lora || "that run"}: check them, then Start.`;
+          const name = renameForNew(run.lora);       // a new run, under the next name (name_2), not over that one
+          $("runStatus").textContent = `Loaded the settings of ${run.lora || "that run"}, named ${name}: check them, then Start.`;
         } catch (e) { alertRow.textContent = e.message; }
       }});
     // Continue: on from the run's newest save, with its own settings (only when that save is still there); a run that

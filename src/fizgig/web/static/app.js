@@ -7081,23 +7081,21 @@ function studioUpLevels(u) {
   out.push(0);
   return out;
 }
-// Advanced: the noise range bar. Left is no noise, right is all of it; the section runs from the low end to Denoise
+// Advanced: the noise range bar. Left is all noise, right is none; the section runs from Denoise to the low end
 function studioUpRangeDraw(u) {
-  if ($("stUpRangeRow").hidden) return;
   const sel = $("stUpRangeSel"), lv = studioUpLevels(u);
-  sel.style.left = (u.low * 100) + "%";
+  sel.style.left = ((1 - u.denoise) * 100) + "%";
   sel.style.width = ((u.denoise - u.low) * 100) + "%";
-  $("stUpRangeDots").innerHTML = lv.slice(0, u.steps).map((s) => `<i style="left:${s * 100}%"></i>`).join("");
+  $("stUpRangeDots").innerHTML = lv.slice(0, u.steps).map((s) => `<i style="left:${(1 - s) * 100}%"></i>`).join("");
   $("stUpRangeSay").textContent = u.low > 0
     ? `${u.steps} step${u.steps === 1 ? "" : "s"} between ${u.denoise} and ${u.low}, then straight to clean`
     : `${u.steps} step${u.steps === 1 ? "" : "s"} from ${u.denoise} all the way down to clean`;
 }
-// the longest section that fits this card at the fold's size (minimax/upscale.py room_frames), beside the Sections box
+// the longest section that fits this card at the fold's size (minimax/upscale.py room_positions), beside the Sections box
 function studioUpRoom(V, u) {
-  const free = S.st.upRoom, el = $("stUpRoom");
-  if (!free || !V.clip) { el.textContent = ""; return; }
-  const k = Math.max(0, 210 + 15 * (free - 23.35)) * 1000;
-  const n = Math.floor((Math.floor(k / ((u.width >> 4) * (u.height >> 4))) - 2) / 5), frames = n >= 1 ? 17 * n + 5 : 0;
+  const [k, kf] = S.st.upRoom || [0, 0], el = $("stUpRoom");   // the card's room in latent positions, guide frames
+  if (!k || !V.clip) { el.textContent = ""; return; }
+  const n = Math.floor((Math.floor(k / ((u.width >> 4) * (u.height >> 4))) - kf - 2) / 5), frames = n >= 1 ? 17 * n + 5 : 0;
   const secs = (f) => Math.round(f / V.clip.fps * 10) / 10, want = u.section || 124;
   el.textContent = !frames ? `${u.width} × ${u.height} is too large for this card`
     : want > frames ? `too long for this card at ${u.width} × ${u.height}: up to about ${secs(frames)} s fits`
@@ -7598,7 +7596,7 @@ async function studioPoll() {
   const actKey = [S.st.ready, st.donor || "", (st.primary_blocks || []).length, (st.donor_blocks || []).length].join("|");
   if (wasReady && S.st.ready && actKey !== S.st.actKey) studioActivity();
   S.st.actKey = actKey;
-  if (st.up_room !== S.st.upRoom) { S.st.upRoom = st.up_room; studioUpSummary(); }
+  if (String(st.up_room) !== String(S.st.upRoom)) { S.st.upRoom = st.up_room; studioUpSummary(); }
   // loaded with nothing to render yet: say what it waits for (a prompt), not that a preview is coming
   const waiting = st.state === "ready" && !st.rendering && !st.shown && !$("stPrompt").value.trim();
   $("stStatus").textContent = (waiting ? "Loaded. Enter a prompt (include the LoRA's trigger word), then press Update." :
@@ -7904,6 +7902,7 @@ function wireStudio() {
       if (id === "stUpSteps") $(id).value = u.steps;
       if (id === "stUpBias") $(id).value = u.bias;
       if (id === "stUpSec" && u.section) $(id).value = String(Math.round(u.section / V.clip.fps * 100) / 100);
+      if (id !== "stUpAuto" && id !== "stUpWhich") $("stUpPreset").value = "";     // no longer the preset's values
       studioUpSummary(); studioH3Remember();
       if (id === "stUpAuto" || $("stUpAuto").checked) studioPending();
     });
@@ -7916,8 +7915,23 @@ function wireStudio() {
       if ($("stUpAuto").checked) studioPending();
     });
   $("stUpPrevN").addEventListener("change", studioH3Remember);
+  // Presets: tested sets of the fold's values. The prompt, which clip and After every render are left alone
+  const UP_PRESETS = {
+    standard: {k: 0, den: 0.4, steps: 3, sec: "", bias: 0, adv: false, low: 0, first: true, last: true},
+    creative: {k: 2, den: 0.97, steps: 2, sec: "2.33", bias: 0.8, adv: true, low: 0, first: false, last: false},
+  };
+  $("stUpPreset").addEventListener("change", () => {
+    const p = UP_PRESETS[$("stUpPreset").value];
+    if (!p) return;
+    [$("stUpW").value, $("stUpH").value] = p.k ? studioUpSize(p.k) : ["", ""];
+    $("stUpDen").value = p.den; $("stUpSteps").value = p.steps; $("stUpSec").value = p.sec; $("stUpBias").value = p.bias;
+    $("stUpAdv").checked = p.adv; S.st.upLow = p.low; $("stUpRangeRow").hidden = !p.adv;
+    $("stUpFirst").checked = p.first; $("stUpLast").checked = p.last;
+    studioUpSummary(); studioH3Remember();
+    if ($("stUpAuto").checked) studioPending();
+  });
   // Advanced: the noise range bar. Dragging the section moves both ends, a handle moves one; the high end is Denoise
-  const upRange = () => { studioUpSummary(); studioH3Remember(); if ($("stUpAuto").checked) studioPending(); };
+  const upRange = () => { $("stUpPreset").value = ""; studioUpSummary(); studioH3Remember(); if ($("stUpAuto").checked) studioPending(); };
   $("stUpAdv").addEventListener("change", () => { $("stUpRangeRow").hidden = !$("stUpAdv").checked; upRange(); });
   $("stUpRange").addEventListener("pointerdown", (e) => {
     const bar = $("stUpRange"), box = bar.getBoundingClientRect(), u0 = studioUpscale(S.st.layout.video);
@@ -7927,7 +7941,7 @@ function wireStudio() {
     bar.setPointerCapture(e.pointerId);
     const x0 = e.clientX, r2 = (v) => Math.round(v * 100) / 100;
     const move = (ev) => {
-      const d = (ev.clientX - x0) / box.width;
+      const d = (x0 - ev.clientX) / box.width;            // rightward is less noise
       let lo = u0.low, hi = u0.denoise;
       if (end === "lo") lo = Math.max(0, Math.min(hi - 0.02, lo + d));
       else if (end === "hi") hi = Math.max(Math.max(0.05, lo + 0.02), Math.min(1, hi + d));

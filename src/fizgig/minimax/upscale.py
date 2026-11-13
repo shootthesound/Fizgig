@@ -91,9 +91,18 @@ def room_positions(free_gb: float) -> int:
     return int(max(0.0, 210.0 + 15.0 * (float(free_gb) - 23.35)) * 1000)
 
 
-def room_frames(free_gb: float, width: int, height: int) -> int:
+def room_positions_nf4(free_gb: float) -> int:
+    """The same on the 4-bit base (16 GB cards), which stays whole on the card: what is left beside it, counting
+    the two guide frames' rows as two more latent frames (room_frames takes them off). Measured on a card held to
+    16 GB (13 Nov, 15.6 GB plannable): 27k with its guide rows ran (1152x672, 22 frames, a whole clip); 32k and
+    33k failed in the steps by 0.2 GiB."""
+    return int(max(0.0, 6.6 * (float(free_gb) - 11.4)) * 1000)
+
+
+def room_frames(free_gb: float, width: int, height: int, nf4: bool = False) -> int:
     """The longest section, in frames on the grid, that fits at this size (0: not even the shortest clip)."""
-    t = room_positions(free_gb) // max(1, (int(width) // 16) * (int(height) // 16))
+    room = room_positions_nf4(free_gb) if nf4 else room_positions(free_gb)
+    t = room // max(1, (int(width) // 16) * (int(height) // 16)) - (2 if nf4 else 0)
     n = (t - 2) // 5
     return 17 * n + 5 if n >= 1 else 0
 
@@ -149,6 +158,39 @@ def encode_tiled(encoder, frames, device, tile: int = 384, overlap: int = 64):
                     wsum[:, :, :, ys, xs] += m
         i += size
         ti += n_t
+    return lat / wsum
+
+
+@torch.no_grad()
+def encode_still_tiled(encoder, image, device, tile: int = 256, overlap: int = 64):
+    """One PIL frame -> its keyframe latent [1, 24, 1, H/16, W/16] on the CPU, encoded in tiles of `tile` pixels
+    blended over `overlap`: a whole frame at an upscale's size costs 5 GiB, more than a 16 GB card has beside the
+    base."""
+    import numpy as np
+    arr = torch.from_numpy(np.asarray(image.convert("RGB")).copy()).float().permute(2, 0, 1).div(127.5).sub(1.0)
+    h, w = arr.shape[1:]
+    th, tw = min(tile, h), min(tile, w)
+    k = min(overlap, (tile // 64) * 16) // 16
+    edge = torch.linspace(0, 1, k + 2)[1:-1]
+    lat, wsum = None, torch.zeros(1, 1, 1, h // 16, w // 16)
+    for y0 in _positions(h, th, k * 16):
+        for x0 in _positions(w, tw, k * 16):
+            z = encoder.encode(arr[:, y0:y0 + th, x0:x0 + tw].unsqueeze(0).to(device)).float().cpu()
+            if lat is None:
+                lat = torch.zeros(1, z.shape[1], 1, h // 16, w // 16)
+            wy, wx = torch.ones(th // 16), torch.ones(tw // 16)
+            if y0 > 0:
+                wy[:k] = edge
+            if y0 + th < h:
+                wy[-k:] = torch.minimum(wy[-k:], edge.flip(0))
+            if x0 > 0:
+                wx[:k] = edge
+            if x0 + tw < w:
+                wx[-k:] = torch.minimum(wx[-k:], edge.flip(0))
+            m = (wy.view(-1, 1) * wx.view(1, -1)).view(1, 1, 1, th // 16, tw // 16)
+            ys, xs = slice(y0 // 16, (y0 + th) // 16), slice(x0 // 16, (x0 + tw) // 16)
+            lat[:, :, :, ys, xs] += z * m
+            wsum[:, :, :, ys, xs] += m
     return lat / wsum
 
 

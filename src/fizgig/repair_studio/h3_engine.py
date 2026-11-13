@@ -1714,6 +1714,17 @@ class H3RepairEngine(ClipContract):
         if len(frames) < 2:
             raise ValueError("Render a clip first: Upscale makes a larger copy of the clip in the Tweaked pane.")
         w, h = max(256, (int(width) // 32) * 32), max(256, (int(height) // 32) * 32)
+        # The 4-bit base (16 GB cards) stays whole on the card, so a section is held to what fits beside it and
+        # the base leaves the card for each decode. Only here, and only on that base
+        nf4 = (getattr(self, "base_plan", None) or ("",))[0] == "nf4" and bool(getattr(self, "_plan_free", None))
+        if nf4:
+            fit = _up.room_frames(self._plan_free, w, h, nf4=True)
+            if not fit:
+                raise ValueError(f"{w} x {h} is too large to upscale on this card. Set a smaller size in the "
+                                 f"Upscale fold's To boxes.")
+            if _up.section_frames(section) > fit:
+                section = fit
+                self._status(f"Upscale: sections of {fit} frames, the longest this card fits at {w} x {h}")
         plan = _up.sections(len(frames), section)
         pv, mid = int(preview or 0), len(frames) // 2
         if pv:
@@ -1766,9 +1777,24 @@ class H3RepairEngine(ClipContract):
             finally:
                 _mm.set_int8_attention(False)
 
+        def keyframe(img):
+            """A frame's keyframe latent at the upscale's size. On the 4-bit base it is encoded in tiles: a whole
+            frame at this size does not fit beside that base."""
+            if not nf4:
+                return self.encode_keyframe(img, w, h)
+            img = img.convert("RGB")
+            enc = self._ensure_encoder().to(self.device)
+            try:
+                return _up.encode_still_tiled(enc, img if img.size == (w, h) else img.resize((w, h), Image.LANCZOS),
+                                              self.device)
+            finally:
+                self.encoder = enc.to("cpu")
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
         def still(img, s):
             """One frame upscaled on its own: stretched, then finished as a single-frame clip."""
-            z = self.encode_keyframe(img, w, h)
+            z = keyframe(img)
             an = (noise((audio_latents_for_frames(1) * AUDIO_CHANNELS, d_a), s + 1).to(self.device) if d_a else None)
             return run((1.0 - den) * z + den * noise(z.shape, s), audio_noise=an).float().cpu()
 
@@ -1802,7 +1828,7 @@ class H3RepairEngine(ClipContract):
                 self.encoder = enc.to("cpu")
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-            first = (self.encode_keyframe(out[a], w, h) if out else
+            first = (keyframe(out[a]) if out else
                      still(sub[0], seed + 100) if first_guide else None)
             last = still(sub[-1], seed + 101 + j) if last_guide else None
             kf = [(i, z.to(self.device, torch.float32)) for i, z in ((0, first), (n - 1, last)) if z is not None]
@@ -1815,7 +1841,14 @@ class H3RepairEngine(ClipContract):
                     audio = rows.reshape(AUDIO_CHANNELS, n_all, d_a)[:, r0:r0 + n_a].reshape(-1, d_a).to(self.device)
             x = run((1.0 - den) * up + den * noise(up.shape, seed + 11 + j), audio=audio, audio_noise=an, keyframes=kf or None)
             self._last_canvas = (w, h, n)
-            imgs = self.decode_clip_frames(x.float().cpu())
+            token = self._dit_offload() if nf4 else None
+            try:
+                imgs = self.decode_clip_frames(x.float().cpu())
+            finally:
+                if token is not None:
+                    self._dit_restore(token)
+                    self._last_state = None
+                    self.apply_state(state)
             out = (out[:a + 1] + imgs[1:]) if out else imgs
         if pv:
             a, n = plan[0]
@@ -1827,10 +1860,14 @@ class H3RepairEngine(ClipContract):
         return result(out)
 
     def upscale_room(self):
-        """Plannable memory (GB) the Upscale fold's section hint is worked out from: the int8 base's, as planned at
-        load. None on another base (not measured)."""
+        """[positions, guide frames] for the fold's section hint: the largest section Upscale fits on this card, in
+        latent positions (frames x width/16 x height/16), from the memory planned at load, and the latent frames
+        the guide rows take from it (the 4-bit base: 2). None unplanned."""
+        from fizgig.minimax import upscale as _up
         plan, free = getattr(self, "base_plan", None), getattr(self, "_plan_free", None)
-        return float(free) if plan and plan[0] == "int8" and free else None
+        if not plan or not free:
+            return None
+        return [_up.room_positions_nf4(free), 2] if plan[0] == "nf4" else [_up.room_positions(free), 0]
 
     def _clip_regimes(self):
         from fizgig.families.minimax import MINIMAX

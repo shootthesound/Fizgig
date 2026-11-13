@@ -910,6 +910,23 @@
                       <button class="btn" id="stUpPresetSave" type="button" title="Keep the values below as a preset of your own, under a name. It keeps the denoise, steps, section length, step weighting, noise range and guide frames. The size, your prompt and which clip is upscaled are not part of a preset.">Save preset…</button>
                       <button class="btn" id="stUpPresetDel" type="button" hidden title="Delete the preset of yours that is picked">Delete</button></span></div>
                   <div id="stUpPresetSaveRow"></div>
+                  <div class="field-row"><span class="field-label">Video:</span>
+                    <div class="st-up-video" id="stUpVideoSlot" title="Optional: a video of your own to upscale in place of a clip rendered here. It is cut to the shape of the To size below (as close to its own shape as the model's sizes allow), read at the model's 24 frames a second, and keeps its sound. Most videos need a prompt of their own: tick Edit prompt and describe it."></div></div>
+                  <div id="stUpVideoBox" hidden>
+                    <div class="field-row"><span class="field-label"></span>
+                      <span class="st-inline"><span class="field-hint" id="stUpVideoInfo"></span>
+                        <span class="field-hint">Size</span><select id="stUpVideoSize" class="w-combo st-small-select" title="The size the video is made at, in its own shape as closely as the model's sizes allow (each side a multiple of 32). It fills the To boxes. Pick a smaller one for a video too large to work on at its own size, a larger one to upscale it."></select>
+                        <button class="btn" id="stUpVideoCrop" type="button" title="Place the part of the picture that is kept: a box in the shape of the To size, over a frame of the video. Without it the middle is kept.">Crop…</button>
+                        <span class="field-hint" id="stUpVideoCropSay"></span></span></div>
+                    <div class="field-row"><span class="field-label"></span>
+                      <div class="st-up-video-ends">
+                        <div><img id="stUpVideoAImg" alt=""><span class="st-inline"><span class="field-hint">From</span><input type="text" id="stUpVideoA" value="0" title="Where the part to upscale starts, in seconds from the start of the video"><span class="field-hint">s</span></span>
+                          <input type="range" id="stUpVideoAR" min="0" max="1" step="0.01" value="0" title="Drag to choose where the part to upscale starts"></div>
+                        <div><img id="stUpVideoBImg" alt=""><span class="st-inline"><span class="field-hint">to</span><input type="text" id="stUpVideoB" value="" title="Where the part to upscale ends, in seconds from the start of the video"><span class="field-hint">s</span></span>
+                          <input type="range" id="stUpVideoBR" min="0" max="1" step="0.01" value="1" title="Drag to choose where the part to upscale ends"></div>
+                      </div></div>
+                    <div class="field-row"><span class="field-label"></span><span class="field-hint" id="stUpVideoLen"></span></div>
+                  </div>
                   <div class="field-row"><span class="field-label">To:</span>
                     <span class="st-inline"><input type="text" id="stUpW" placeholder="width" title="The width of the larger clip, in pixels (it moves to a multiple of 32). Empty: the clip's width times 1.5."><span class="field-hint">×</span><input type="text" id="stUpH" placeholder="height" title="The height of the larger clip, in pixels (it moves to a multiple of 32). Empty: the clip's height times 1.5.">
                       <button class="btn" id="stUp1" type="button" title="Fill the two boxes with the clip's own Width and Height: the clip is made again at the same size, to change it without making it larger (the creative presets, or a low denoise for a clean-up)">×1</button>

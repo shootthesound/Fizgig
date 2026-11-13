@@ -5863,6 +5863,9 @@ function studioKind(L, sv) {
   $("stUpPromptRow").hidden = $("stUpPromptCopy").hidden = !$("stUpOwnPrompt").checked;
   $("stUpLast").checked = up.last !== false;
   $("stUpWhich").value = ["baseline", "both"].includes(up.which) ? up.which : "tweaked";
+  S.st.upVideo = null; studioUpVideoDraw();                                   // the fold's own video, as remembered
+  if ($("stUpVideoPath")) $("stUpVideoPath").value = "";
+  if (V.upscale && up.video && up.video.path) studioUpVideoSet(up.video.path, Object.assign({which: up.which}, up.video));
   $("stUpBox").open = up.open === true;
   $("stH3Pieces").checked = h3.pieces === true;          // off unless turned on
   $("stH3PiecesBox").style.display = V.pieces ? "" : "none";                  // a family ability (H3 has it)
@@ -5933,15 +5936,17 @@ function studioSlotThumb(cv, path, rect) {
   img.src = mediaUrl(path);
 }
 
-function studioCrop(path, initial, ok, cancel) {
+function studioCrop(path, initial, ok, cancel, opt) {
   // the desktop's crop window: the photo fitted, a box locked to the clip's shape (W x H) - drag to move, drag a
   // corner to resize. ok([x0, y0, x1, y1] in the photo's pixels); cancel() leaves things as they were.
-  const W = Number($("stH3W").value) || 640, H = Number($("stH3H").value) || 768, aspect = W / H;
+  // opt (Upscale's own video): {url: the picture shown, W, H: the shape, sw, sh: the size the box is measured in}
+  const o = opt || {};
+  const W = o.W || Number($("stH3W").value) || 640, H = o.H || Number($("stH3H").value) || 768, aspect = W / H;
   const cv = $("cropCanvas"), ctx = cv.getContext("2d"), img = new Image();
-  $("cropTitle").textContent = `Crop to the clip's shape (${W}×${H})`;
+  $("cropTitle").textContent = o.title || `Crop to the clip's shape (${W}×${H})`;
   img.onerror = () => { $("stStatus").textContent = "Couldn't open that photo."; if (cancel) cancel(); };
   img.onload = () => {
-    const sw = img.naturalWidth, sh = img.naturalHeight;
+    const sw = o.sw || img.naturalWidth, sh = o.sh || img.naturalHeight;
     const scale = Math.min((window.innerWidth * 0.9 - 40) / sw, (window.innerHeight * 0.85 - 200) / sh, 1);
     const dw = Math.max(1, Math.round(sw * scale)), dh = Math.max(1, Math.round(sh * scale));
     cv.width = dw; cv.height = dh;
@@ -6003,7 +6008,7 @@ function studioCrop(path, initial, ok, cancel) {
     draw();
     $("cropModal").classList.add("active");
   };
-  img.src = mediaUrl(path);
+  img.src = o.url || mediaUrl(path);
 }
 
 function studioH3Remember() {
@@ -6014,7 +6019,7 @@ function studioH3Remember() {
       lenS: $("stH3LenS").value, w: $("stH3W").value,
       h: $("stH3H").value, steps: $("stH3Steps").value, turbo: $("stH3Turbo").value,
       sound: $("stH3Sound").checked, boost: $("stH3Boost").checked, early: $("stH3Early").checked, pieces: $("stH3Pieces").checked, pieceS: $("stH3PieceS").value, only: $("stH3Only").checked, loopPrompt: $("stLoopPrompt").value, loopS: $("stLoopS").value,
-      up: {w: $("stUpW").value, h: $("stUpH").value, den: $("stUpDen").value, steps: $("stUpSteps").value, sec: $("stUpSec").value, auto: $("stUpAuto").checked, first: $("stUpFirst").checked, last: $("stUpLast").checked, bias: $("stUpBias").value, adv: $("stUpAdv").checked, low: S.st.upLow || 0, ownPrompt: $("stUpOwnPrompt").checked, prompt: $("stUpPrompt").value, which: $("stUpWhich").value, open: $("stUpBox").open}, kf: S.st.kf,
+      up: {w: $("stUpW").value, h: $("stUpH").value, den: $("stUpDen").value, steps: $("stUpSteps").value, sec: $("stUpSec").value, auto: $("stUpAuto").checked, first: $("stUpFirst").checked, last: $("stUpLast").checked, bias: $("stUpBias").value, adv: $("stUpAdv").checked, low: S.st.upLow || 0, ownPrompt: $("stUpOwnPrompt").checked, prompt: $("stUpPrompt").value, which: $("stUpWhich").value, open: $("stUpBox").open, video: S.st.upVideo ? {path: S.st.upVideo.path, rect: S.st.upVideo.rect, a: S.st.upVideo.a, b: S.st.upVideo.b} : null}, kf: S.st.kf,
       kfRect: S.st.kfRect};
     localStorage.setItem(ST_KEY, JSON.stringify(d));
   } catch (e) { /* private window */ }
@@ -7059,7 +7064,8 @@ function studioClipFrames(V) {
 // Upscale (the fold under the Then row). Its size: the two boxes on the 32-px grid, an empty one the clip's side x 1.5
 function studioUpSize(k) {
   const snap = (n) => Math.max(256, Math.round(n / 32) * 32);
-  const w = Number($("stH3W").value) || 768, h = Number($("stH3H").value) || 448;
+  const vb = $("stUpWhich").value === "video" ? studioUpVideoBase() : null;      // the loaded video's own size
+  const w = vb ? vb[0] : Number($("stH3W").value) || 768, h = vb ? vb[1] : Number($("stH3H").value) || 448;
   return k ? [snap(w * k), snap(h * k)] : [snap(Number($("stUpW").value) || w * 1.5), snap(Number($("stUpH").value) || h * 1.5)];
 }
 function studioUpscale(V) {
@@ -7070,7 +7076,83 @@ function studioUpscale(V) {
     which: $("stUpWhich").value, first_guide: $("stUpFirst").checked, last_guide: $("stUpLast").checked,
     prompt: $("stUpOwnPrompt").checked ? $("stUpPrompt").value.trim() : "",
     bias: Math.max(-1, Math.min(1, Number($("stUpBias").value) || 0)),
-    low: $("stUpAdv").checked ? Math.max(0, Math.min(S.st.upLow || 0, (den > 0 ? den : 0.4) - 0.02)) : 0};
+    low: $("stUpAdv").checked ? Math.max(0, Math.min(S.st.upLow || 0, (den > 0 ? den : 0.4) - 0.02)) : 0,
+    video: $("stUpWhich").value === "video" && S.st.upVideo
+      ? {path: S.st.upVideo.path, rect: S.st.upVideo.rect, start: S.st.upVideo.a, end: S.st.upVideo.b} : null};
+}
+// Upscale's own video (the fold's Video row): a file upscaled in place of a rendered clip. S.st.upVideo = {path, info
+// (its size, seconds, sound), rect (the crop placed, in its pixels; none = the middle), a, b (From and to, seconds)}
+const upVideoUrl = (p, at, side) =>
+  `/api/studio/video_frame?path=${encodeURIComponent(p)}&at=${at}&side=${side}&t=${encodeURIComponent(TOKEN)}`;
+function studioUpVideoBase() {
+  const v = S.st.upVideo;
+  if (!v || !v.info) return null;
+  return v.rect ? [v.rect[2] - v.rect[0], v.rect[3] - v.rect[1]] : [v.info.width, v.info.height];
+}
+// the Size list: the video's shape at the model's sizes (sides on the 32-px grid, one side at 768 or more)
+function studioUpVideoSizes() {
+  const sel = $("stUpVideoSize"), b = studioUpVideoBase();
+  sel.innerHTML = "";
+  if (!b) return;
+  const snap = (n) => Math.max(256, Math.round(n / 32) * 32), seen = new Set();
+  sel.append(el("option", {value: "", text: "Pick a size…"}));
+  for (const k of [2, 1.5, 1, 0.75, 2 / 3, 0.5, 0.375, 1 / 3, 0.25]) {
+    const w = snap(b[0] * k), h = snap(b[1] * k), key = w + "x" + h;
+    if (seen.has(key) || (Math.max(w, h) < 768 && k !== 1)) continue;
+    seen.add(key);
+    const o = el("option", {value: key, text: `${w} × ${h}` + (k === 1 ? " (the video's size)" : k > 1 ? ` (×${k})` : ` (${Math.round(k * 100)}%)`)});
+    o.dataset.k = k;
+    sel.append(o);
+  }
+  const now = (k) => studioUpSize(k).join("x");
+  sel.value = [...sel.options].some((o) => o.value === now()) ? now() : "";
+}
+function studioUpVideoDraw(thumbs) {
+  const v = S.st.upVideo, on = !!(v && v.info), sel = $("stUpWhich");
+  $("stUpVideoBox").hidden = !on;
+  const opt = [...sel.options].find((o) => o.value === "video");
+  if (on && !opt) sel.append(el("option", {value: "video", text: "The loaded video"}));
+  if (!on && opt) { if (sel.value === "video") sel.value = "tweaked"; opt.remove(); }
+  if (!on) return;
+  const i = v.info, fps = S.st.layout.video.clip.fps, r2 = (n) => Math.round(n * 100) / 100;
+  $("stUpVideoInfo").textContent = `${i.width} × ${i.height}, ${r2(i.seconds)} s` + (i.has_audio ? "" : ", no sound");
+  $("stUpVideoCropSay").textContent = v.rect ? `crop ${v.rect[2] - v.rect[0]} × ${v.rect[3] - v.rect[1]}` : "the middle is kept";
+  studioUpVideoSizes();
+  for (const [k, box, rng] of [["a", "stUpVideoA", "stUpVideoAR"], ["b", "stUpVideoB", "stUpVideoBR"]]) {
+    $(rng).max = i.seconds; $(rng).value = v[k]; $(box).value = r2(v[k]);
+  }
+  const want = Math.floor((v.b - v.a) * fps + 1e-3), n = want >= 22 ? 17 * Math.floor((want - 5) / 17) + 5 : 0;
+  $("stUpVideoLen").textContent = n
+    ? `${r2(n / fps)} seconds from ${r2(v.a)} s are upscaled (${n} frames, the nearest length the model makes)`
+    : `Too short: it needs at least ${r2(22 / fps)} seconds between From and to`;
+  if (thumbs) { $("stUpVideoAImg").src = upVideoUrl(v.path, v.a, 440); $("stUpVideoBImg").src = upVideoUrl(v.path, v.b, 440); }
+}
+// a video picked (saved: the one remembered, with its crop and its From and to), or "" to take it away
+async function studioUpVideoSet(path, saved) {
+  const box = $("stUpVideoPath");
+  if (!path) {
+    S.st.upVideo = null;
+    if (box) box.value = "";
+    studioUpVideoDraw(); studioUpSummary(); studioH3Remember();
+    return;
+  }
+  let info;
+  try { info = await api("/api/studio/video_info?path=" + encodeURIComponent(path)); }
+  catch (e) { if (!saved) $("stStatus").textContent = e.message; return; }
+  const keep = saved && saved.path === path ? saved : {};
+  const b = Number(keep.b) > 0 ? Math.min(Number(keep.b), info.seconds) : info.seconds;
+  S.st.upVideo = {path, info, rect: Array.isArray(keep.rect) ? keep.rect : null, a: Math.max(0, Math.min(Number(keep.a) || 0, b)), b};
+  if (box) box.value = path;
+  studioUpVideoDraw(true);
+  if (!saved) {
+    // a new video is what Upscale works on, at its own shape and near a megapixel (or its own size when smaller)
+    $("stUpWhich").value = "video";
+    const fits = [...$("stUpVideoSize").options].filter((o) => o.value && Number(o.dataset.k) <= 1)
+      .map((o) => o.value.split("x").map(Number)).sort((p, q) => q[0] * q[1] - p[0] * p[1]);
+    const pickd = fits.find(([w, h]) => w * h <= 1100000) || fits[fits.length - 1];
+    if (pickd) [$("stUpW").value, $("stUpH").value] = pickd;
+  } else if (saved.which === "video") $("stUpWhich").value = "video";
+  studioUpVideoSizes(); studioUpSummary(); studioH3Remember();
 }
 // The fold's presets: the built-in ones, then your own (kept on the server beside Studio's block presets, under the
 // model's key + "_upscale"). A preset holds the look, never the size, the prompt or which clip
@@ -7134,7 +7216,8 @@ function studioUpSummary() {
     + (u.first_guide ? (u.last_guide ? "" : ", no last guide frame") : (u.last_guide ? ", no first guide frame" : ", no guide frames"))
     + (u.low > 0 ? `, noise range ${u.low} to ${u.denoise}` : "")
     + (u.bias > 0 ? ", steps weighted low" : u.bias < 0 ? ", steps weighted high" : "") + (u.prompt ? ", its own prompt" : "")
-    + ({baseline: ", the Baseline clip", both: ", both clips"}[u.which] || "") + (u.auto ? ", after every render" : "");
+    + ({baseline: ", the Baseline clip", both: ", both clips", video: ", the loaded video"}[u.which] || "") + (u.auto ? ", after every render" : "");
+  if (S.st.upVideo) studioUpVideoSizes();
 }
 function studioPieceFrames(V) {
   const s = $("stH3PieceS").value.trim();
@@ -7936,6 +8019,43 @@ function wireStudio() {
       if (id === "stUpAuto" || $("stUpAuto").checked) studioPending();
     });
   for (const id of ["stH3W", "stH3H"]) $(id).addEventListener("change", studioUpSummary);
+  // Upscale's own video: its row (a path, Choose, Upload, Clear), its Size, Crop, and the From / to boxes and sliders
+  {
+    const input = el("input", {type: "text", class: "w-path", id: "stUpVideoPath", placeholder: "a video file (optional)"});
+    const set = (p) => studioUpVideoSet(String(p || "").trim());
+    input.addEventListener("change", () => set(input.value));
+    const up = uploadButton({kind: "path", key: "STUDIO_upvideo", accept: "video/*,.mp4,.mov,.m4v,.mkv,.webm,.avi"}, input, set);
+    $("stUpVideoSlot").append(el("div", {class: "field-row"}, input,
+      el("button", {class: "btn", type: "button", text: "Choose…", onclick: () => pick(input.value || S.imageFolder, false, set)}), up.btn,
+      el("button", {class: "btn", type: "button", text: "Clear", onclick: () => set("")})), up.status);
+    const changed = (thumbs) => { studioUpVideoDraw(thumbs); studioUpSummary(); studioH3Remember(); };
+    $("stUpVideoSize").addEventListener("change", () => {
+      const v = $("stUpVideoSize").value;
+      if (!v) return;
+      [$("stUpW").value, $("stUpH").value] = v.split("x");
+      changed();
+    });
+    $("stUpVideoCrop").addEventListener("click", () => {
+      const v = S.st.upVideo;
+      if (!v) return;
+      const [W, H] = studioUpSize();
+      studioCrop(v.path, v.rect, (rect) => { v.rect = rect; changed(); }, null,
+        {url: upVideoUrl(v.path, v.a, 1600), W, H, sw: v.info.width, sh: v.info.height,
+         title: `Crop the video to the To size's shape (${W}×${H})`});
+    });
+    // From and to: the slider moves the number as it is dragged; the frame shown follows when it is let go
+    const ends = (k, val) => {
+      const v = S.st.upVideo;
+      if (!v) return;
+      const t = Math.max(0, Math.min(v.info.seconds, Number(val) || 0));
+      if (k === "a") v.a = Math.min(t, v.b); else v.b = Math.max(t, v.a);
+    };
+    for (const [k, box, rng] of [["a", "stUpVideoA", "stUpVideoAR"], ["b", "stUpVideoB", "stUpVideoBR"]]) {
+      $(rng).addEventListener("input", () => { ends(k, $(rng).value); studioUpVideoDraw(); });
+      $(rng).addEventListener("change", () => { ends(k, $(rng).value); changed(true); });
+      $(box).addEventListener("change", () => { ends(k, $(box).value); changed(true); });
+    }
+  }
   $("stUpBox").addEventListener("toggle", studioH3Remember);
   for (const [id, k] of [["stUp1", 1], ["stUp15", 1.5], ["stUp2", 2]])
     $(id).addEventListener("click", () => {

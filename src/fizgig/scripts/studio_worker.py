@@ -363,6 +363,78 @@ def _render_clips(eng, desc, st, c, out, gen):
                                                                  rate)
         return got
 
+    def video_clip():
+        """Upscale's own video (the fold's Video row): the picked stretch of the file, cut to the placed box in the
+        upscale's shape, at the model's frame rate, with its sound -> (clip, its width, its height). Never made
+        larger here (the upscale does that); read once per file, stretch, box and size."""
+        from fizgig.minimax import upscale as _up
+        from fizgig.utils import video_in
+        lv = up.get("video") or {}
+        path = str(lv.get("path") or "")
+        if not os.path.isfile(path):
+            raise ValueError("The video to upscale isn't there any more. Choose it again in the Upscale fold.")
+        info = video_in.info(path)
+        vw, vh = info["width"], info["height"]
+
+        def snap(n):
+            return max(256, int(round(float(n) / 32)) * 32)
+        to_w, to_h = snap(up.get("width") or vw), snap(up.get("height") or vh)
+        rect = lv.get("rect")
+        if rect:                                 # the box placed for another shape: this shape, centred inside it
+            x0, y0, x1, y1 = (int(v) for v in rect)
+            x0, y0, x1, y1 = max(0, x0), max(0, y0), min(vw, x1), min(vh, y1)
+            c = _centre_crop((x1 - x0, y1 - y0), to_w, to_h)
+            rect = (x0 + c[0], y0 + c[1], x0 + c[2], y0 + c[3])
+        else:
+            rect = _centre_crop((vw, vh), to_w, to_h)
+        cw, ch = rect[2] - rect[0], rect[3] - rect[1]
+        dw, dh = (to_w, to_h) if cw >= to_w and ch >= to_h else (max(2, cw // 2 * 2), max(2, ch // 2 * 2))
+        a = max(0.0, float(lv.get("start") or 0))
+        b = float(lv.get("end") or 0) or info["seconds"] or a + 3600
+        if info["seconds"]:
+            b = min(b, info["seconds"])
+        want = int((b - a) * fps + 1e-3)
+        if want < _up.MIN_SECTION:
+            raise ValueError(f"The part of the video to upscale is too short: it needs at least "
+                             f"{_up.MIN_SECTION / fps:.2f} seconds between From and to.")
+        n = _up.grid_floor(want)
+        key = (path, os.path.getmtime(path), round(a, 3), n, rect, dw, dh)
+        hit = S.get("up_video")
+        if hit and hit[0] == key:
+            return hit[1]
+        S["up_video"] = None
+        emit(ev="status", text=f"Reading {n} frames of the video…")
+        frames, wav = video_in.read(path, a, n, rect, dw, dh, fps, rate)
+        if len(frames) < _up.MIN_SECTION:
+            raise ValueError(f"Only {len(frames)} frames could be read from that part of the video: it needs at "
+                             f"least {_up.MIN_SECTION}. Move From earlier.")
+        if len(frames) < n:                                  # the file ended first: the longest length on the grid
+            frames = frames[:_up.grid_floor(len(frames))]
+            if wav is not None:
+                wav = wav[:, :int(round(rate * len(frames) / fps))]
+        got = ({"frames": frames, "wav": wav, "audio_rows": None, "middle": frames[len(frames) // 2]}, snap(cw),
+               snap(ch))
+        S["up_video"] = (key, got)
+        return got
+
+    def show(base_clip, tweak_clip):
+        paths = {}
+        for pane, clip in (("baseline", base_clip), ("tweaked", tweak_clip)):
+            p = os.path.join(out, f"{pane}_{gen}.png")
+            paths[pane], paths[pane + "_media"] = p, _write_clip(clip, p, os.path.join(out, f"{pane}_{gen}.mp4"), fps,
+                                                                 rate)
+        torch.cuda.empty_cache()
+        return paths, None
+
+    if up and str(up.get("which")) == "video" and (up.get("preview") or up.get("now")):
+        # The fold's own video, not a rendered clip: the Baseline pane shows it as read (cut, scaled, From to to), the
+        # Tweaked pane what the upscale made of it. A preview is the middle of that part. The rendered clips are kept
+        src, w0, h0 = video_clip()
+        big = upscaled(st, src, w0, h0, preview=max(1, int(up["preview"])) if up.get("preview") else 0)
+        if up.get("preview"):
+            return show({"frames": big["before"], "middle": big["before"][len(big["before"]) // 2],
+                         "wav": big.get("wav")}, big)
+        return show(src, big)
     if up and up.get("preview"):
         # Preview: the middle of the picked clip (its middle frame, or the shortest clip around it) upscaled with the
         # fold's settings. The Tweaked pane shows it and the Baseline pane the same frames as rendered, to compare;

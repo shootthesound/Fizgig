@@ -2002,6 +2002,7 @@ UPLOAD_EXTS = (MEDIA - {".gif", ".webm"}) | {".txt", ".caption", ".json", ".zip"
 UPLOAD_DEFAULT = os.path.join(BASE_DIR, "training_data")     # when Preferences has no input folder set
 UPLOAD_FILES = os.path.join(BASE_DIR, "uploads")              # single files: a context LoRA, a test photo
 UPLOAD_FILE_EXTS = (UPLOAD_EXTS - {".zip"}) | {".safetensors", ".onnx"}      # .onnx: a YOLO face model (Image Prep)
+UPLOAD_FILE_EXTS |= {".mov", ".m4v", ".mkv", ".webm", ".avi"}                 # a video for Studio's Upscale to read
 
 
 def uploads_root() -> str:
@@ -3224,6 +3225,18 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, png, "image/png",
                                       [("Content-Disposition", f"attachment; filename=\"{dl}\"")])
             return self._stream(p, attachment=bool(dl), filename=dl or None, keep=bool((qs.get("gen") or [""])[0]))
+        if path in ("/api/studio/video_info", "/api/studio/video_frame"):     # Upscale's own video (its fold)
+            from fizgig.utils import video_in
+            p = (qs.get("path") or [""])[0]
+            if os.path.splitext(p)[1].lower() not in video_in.VIDEO_EXT or not os.path.isfile(p):
+                return self.json({"error": "Not a video Fizgig can read here (mp4, mov, m4v, mkv, webm or avi)."}, 404)
+            try:
+                if path.endswith("_info"):
+                    return self.json(video_in.info(p))
+                at, side = (qs.get("at") or ["0"])[0], (qs.get("side") or ["1280"])[0]
+                return self._send(200, video_in.frame_jpeg(p, float(at or 0), int(side or 1280)), "image/jpeg")
+            except (ValueError, OSError) as e:
+                return self.json({"error": str(e)}, 404)
         if path == "/api/studio/peaks":             # a song's waveform for the player's strip
             p = studio.image((qs.get("which") or [""])[0], (qs.get("gen") or [""])[0])
             if not p or not p.lower().endswith(".wav"):

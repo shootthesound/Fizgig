@@ -7078,6 +7078,7 @@ const UP_PRESETS = {
   standard: {k: 0, den: 0.4, steps: 3, sec: "", bias: 0, adv: false, low: 0, first: true, last: true},
   creative: {k: 2, den: 0.97, steps: 2, sec: "2.33", bias: 0.8, adv: true, low: 0, first: false, last: false},
   creative2: {k: 2, den: 0.99, steps: 2, sec: "2.33", bias: 0, adv: true, low: 0, first: false, last: false},
+  creative3: {k: 2, den: 0.99, steps: 4, sec: "2.33", bias: -0.5, adv: true, low: 0, first: false, last: false},
 };
 function studioUpPresetKey() { return ((S.st.layout || {}).key || "minimax") + "_upscale"; }
 async function studioUpPresets(pick) {
@@ -7085,8 +7086,9 @@ async function studioUpPresets(pick) {
   const user = (await api("/api/studio/presets?family=" + encodeURIComponent(studioUpPresetKey())).catch(() => ({user: []}))).user;
   sel.innerHTML = "";
   sel.append(el("option", {value: "", text: "Pick a preset…"}), el("option", {value: "standard", text: "✨ Standard"}),
-    el("option", {value: "creative", text: "✨ Creative upscale"}),
-    el("option", {value: "creative2", text: "✨ Creative upscale, more scene change"}));
+    el("option", {value: "creative", text: "✨ Creative: light"}),
+    el("option", {value: "creative2", text: "✨ Creative: strong"}),
+    el("option", {value: "creative3", text: "✨ Creative: maximum"}));
   if (user.length) sel.append(el("optgroup", {label: "Your presets"}, ...user.map((n) => el("option", {value: "u:" + n, text: n}))));
   sel.value = pick && [...sel.options].some((o) => o.value === pick) ? pick : "";
   $("stUpPresetDel").hidden = !sel.value.startsWith("u:");

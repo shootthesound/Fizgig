@@ -2895,6 +2895,12 @@ async function ctxNewLike() {
     const name = await renameForNew(was);
     S.viewJob = null;
     jobPillShow();
+    // to the top of the Training tab: the new run's settings start there, and the press came from the run card at
+    // the bottom
+    if (S.tabScroll) delete S.tabScroll["tab-training"];
+    const pane = document.querySelector(".notebook-pane");
+    if (pane) pane.scrollTop = 0;
+    window.scrollTo(0, 0);
     $("runStatus").textContent = `A new run set up from ${was}, named ${name}: change what you like, then Start or Add to queue.`;
   } catch (e) { $("runStatus").textContent = e.message; }
 }

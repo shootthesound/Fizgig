@@ -46,6 +46,27 @@ def test_read_cuts_scales_and_keeps_the_sound(clip):
     assert frames[0].tobytes() != frames[-1].tobytes()      # the picture moves
 
 
+def test_pixels_that_are_not_square(tmp_path):
+    """A portrait clip stored wide (1920x1080 shown 9:16, here 320x180): its size, its frames and its box are in
+    the shape it plays in. Read as stored, it came out squashed."""
+    from PIL import Image
+    from fizgig.minimax.common import _find_ffmpeg
+    ff = _find_ffmpeg()
+    if not ff:
+        pytest.skip("no ffmpeg here")
+    path = str(tmp_path / "tall.mp4")
+    made = subprocess.run([ff, "-v", "error", "-f", "lavfi", "-i", "testsrc=size=320x180:rate=24:duration=2",
+                           "-vf", "setsar=81/256", "-pix_fmt", "yuv420p", path], capture_output=True)
+    if made.returncode or not os.path.isfile(path):
+        pytest.skip("this ffmpeg can't make the test clip")
+    i = video_in.info(path)
+    assert (i["width"], i["height"]) == (180, 320)
+    with Image.open(io.BytesIO(video_in.frame_jpeg(path, 0.5, side=160))) as im:
+        assert im.size == (90, 160)
+    frames, _wav = video_in.read(path, 0, 22, (0, 0, 180, 320), 90, 160, 24)
+    assert len(frames) == 22 and frames[0].size == (90, 160)
+
+
 def test_read_stops_where_the_video_ends(clip):
     frames, _wav = video_in.read(clip, 2.5, 39, (0, 0, 320, 180), 64, 32, 24)
     assert 5 <= len(frames) < 39

@@ -8,6 +8,10 @@ import re
 import subprocess
 
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi"}
+# A file whose pixels are not square (a portrait clip stored 1920x1080 and shown 9:16) is first made the shape it
+# plays in, at the same number of pixels (that one: 1080x1920). Every size and box here is in those square pixels
+SQUARE = ("scale='if(eq(sar,1)+eq(sar,0),iw,round(sqrt(iw*ih*dar)/2)*2)':"
+          "'if(eq(sar,1)+eq(sar,0),ih,round(sqrt(iw*ih/dar)/2)*2)',setsar=1")
 _INFO = {}
 
 
@@ -35,7 +39,8 @@ def info(path: str) -> dict:
     m = re.search(r"(\d+(?:\.\d+)?)\s+fps", banner)
     fps = float(m.group(1)) if m else 0.0
     from PIL import Image
-    shot = _run(["-v", "error", "-i", path, "-frames:v", "1", "-f", "image2pipe", "-vcodec", "bmp", "-"]).stdout
+    shot = _run(["-v", "error", "-i", path, "-frames:v", "1", "-vf", SQUARE, "-f", "image2pipe", "-vcodec", "bmp",
+                 "-"]).stdout
     if not shot:
         raise ValueError(f"{os.path.basename(path)}: no video in this file that Fizgig can read.")
     with Image.open(io.BytesIO(shot)) as im:
@@ -51,7 +56,8 @@ def info(path: str) -> dict:
 def frame_jpeg(path: str, at: float = 0.0, side: int = 1280) -> bytes:
     """The frame at `at` seconds as a JPEG, its longer side at most `side` pixels."""
     side = max(64, int(side))
-    vf = f"scale='min({side},iw)':'min({side},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2"
+    vf = (f"{SQUARE},scale='min({side},iw)':'min({side},ih)':force_original_aspect_ratio=decrease:"
+          f"force_divisible_by=2")
     got = _run(["-v", "error", "-ss", f"{max(0.0, float(at)):.3f}", "-i", path, "-frames:v", "1", "-vf", vf,
                 "-f", "image2pipe", "-vcodec", "mjpeg", "-q:v", "3", "-"]).stdout
     if not got and at > 0:              # asked for the very end: the last frame there is
@@ -69,7 +75,7 @@ def read(path: str, start: float, frames: int, rect, width: int, height: int, fp
     from PIL import Image
     x0, y0, x1, y1 = (int(v) for v in rect)
     width, height, frames = int(width), int(height), int(frames)
-    vf = f"crop={x1 - x0}:{y1 - y0}:{x0}:{y0},scale={width}:{height}:flags=lanczos,fps={fps:g}"
+    vf = f"{SQUARE},crop={x1 - x0}:{y1 - y0}:{x0}:{y0},scale={width}:{height}:flags=lanczos,fps={fps:g}"
     proc = subprocess.Popen([_ffmpeg(), "-hide_banner", "-v", "error", "-ss", f"{max(0.0, float(start)):.3f}",
                              "-i", path, "-an", "-vf", vf, "-frames:v", str(frames), "-f", "rawvideo",
                              "-pix_fmt", "rgb24", "-"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)

@@ -5853,6 +5853,7 @@ function studioKind(L, sv) {
   $("stUpDen").value = up.den || "0.4"; $("stUpSteps").value = up.steps || "3"; $("stUpSec").value = up.sec || "";
   $("stUpAuto").checked = up.auto === true;
   $("stUpWhich").value = ["baseline", "both"].includes(up.which) ? up.which : "tweaked";
+  $("stUpPrevN").value = up.prevN === "22" ? "22" : "1";
   $("stUpBox").open = up.open === true;
   $("stH3Pieces").checked = h3.pieces === true;          // off unless turned on
   $("stH3PiecesBox").style.display = V.pieces ? "" : "none";                  // a family ability (H3 has it)
@@ -6004,7 +6005,7 @@ function studioH3Remember() {
       lenS: $("stH3LenS").value, w: $("stH3W").value,
       h: $("stH3H").value, steps: $("stH3Steps").value, turbo: $("stH3Turbo").value,
       sound: $("stH3Sound").checked, boost: $("stH3Boost").checked, early: $("stH3Early").checked, pieces: $("stH3Pieces").checked, pieceS: $("stH3PieceS").value, only: $("stH3Only").checked, loopPrompt: $("stLoopPrompt").value, loopS: $("stLoopS").value,
-      up: {w: $("stUpW").value, h: $("stUpH").value, den: $("stUpDen").value, steps: $("stUpSteps").value, sec: $("stUpSec").value, auto: $("stUpAuto").checked, which: $("stUpWhich").value, open: $("stUpBox").open}, kf: S.st.kf,
+      up: {w: $("stUpW").value, h: $("stUpH").value, den: $("stUpDen").value, steps: $("stUpSteps").value, sec: $("stUpSec").value, auto: $("stUpAuto").checked, which: $("stUpWhich").value, prevN: $("stUpPrevN").value, open: $("stUpBox").open}, kf: S.st.kf,
       kfRect: S.st.kfRect};
     localStorage.setItem(ST_KEY, JSON.stringify(d));
   } catch (e) { /* private window */ }
@@ -6025,7 +6026,7 @@ function studioExtra() {
     speed_boost: !!V.speed_boost && $("stH3Boost").checked, early: $("stH3Early").checked,
     pieces: !!V.pieces && $("stH3Pieces").checked, piece: studioPieceFrames(V),
     tweaked_only: $("stH3Only").checked, loop_back: S.st.loopBack || null,
-    upscale: V.upscale && (S.st.upNow || $("stUpAuto").checked) ? Object.assign(studioUpscale(V), {now: !!S.st.upNow}) : null,
+    upscale: V.upscale && (S.st.upNow || S.st.upPrev || $("stUpAuto").checked) ? Object.assign(studioUpscale(V), {now: !!S.st.upNow, preview: S.st.upPrev || 0}) : null,
     negative: $("stNeg").value.trim()},
     keyframes: slots.filter((s) => S.st.kf[s]).map((s) => ({slot: s, path: S.st.kf[s], rect: S.st.kfRect[s] || null})),
     ref_mode: ref};
@@ -7863,6 +7864,12 @@ function wireStudio() {
       studioUpSummary(); studioH3Remember();
       if ($("stUpAuto").checked) studioPending();
     });
+  $("stUpPrevN").addEventListener("change", studioH3Remember);
+  // Preview: the middle of the clip (1 frame, or the shortest clip) with the fold's settings, sent like Upscale now
+  $("stUpPrev").addEventListener("click", async () => {
+    S.st.upPrev = Number($("stUpPrevN").value) || 1;
+    try { await studioRender(); } finally { S.st.upPrev = 0; }
+  });
   $("stUpGo").addEventListener("click", async () => {
     S.st.upNow = true;
     try { await studioRender(); } finally { S.st.upNow = false; }

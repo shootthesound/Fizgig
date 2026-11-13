@@ -1689,13 +1689,17 @@ class H3RepairEngine(ClipContract):
 
     @_locked
     def upscale_clip(self, state, clip, *, width, height, denoise=None, steps=None, section=0, turbo_strength=None,
-                     **_ignored):
+                     preview=0, **_ignored):
         """Studio's Upscale: `clip` (a render_clip dict) made again at width x height, on the state's prompt. The
         clip's frames are stretched and finished a section at a time at a low denoise (minimax/upscale.py): each
         section is a first / last frame clip pinned to its own two end frames, upscaled on their own first, and
         starts on the finished last frame of the section before. denoise: the noise level the stretched frames start
         from (0-1); steps: the passes from there; section: a section's frames (0 = 124). The sound is the clip's
-        own, left as it is. The clip itself is not rendered again."""
+        own, left as it is. The clip itself is not rendered again.
+
+        preview: a quick look at these settings on the middle of the clip. 1 = its middle frame alone, upscaled the
+        way a section's end frames are; more = one section of that many frames (22 is the shortest clip) around the
+        middle. The dict then also carries "before": the same frame(s) of the clip as rendered."""
         from fizgig.minimax import model as _mm
         from fizgig.minimax import sampling
         from fizgig.minimax import upscale as _up
@@ -1707,6 +1711,10 @@ class H3RepairEngine(ClipContract):
             raise ValueError("Render a clip first: Upscale makes a larger copy of the clip in the Tweaked pane.")
         w, h = max(256, (int(width) // 32) * 32), max(256, (int(height) // 32) * 32)
         plan = _up.sections(len(frames), section)
+        pv, mid = int(preview or 0), len(frames) // 2
+        if pv:
+            n = min(_up.grid_floor(pv), _up.grid_floor(len(frames)))
+            plan = [(max(0, min(mid - n // 2, len(frames) - n)), n)]
         den = float(denoise) if denoise not in (None, "") else _up.DENOISE
         sig = _up.low_sigmas(den, int(steps or _up.STEPS))
         den, k = sig[0], len(sig) - 1
@@ -1758,9 +1766,22 @@ class H3RepairEngine(ClipContract):
             an = (noise((audio_latents_for_frames(1) * AUDIO_CHANNELS, d_a), s + 1).to(self.device) if d_a else None)
             return run((1.0 - den) * z + den * noise(z.shape, s), audio_noise=an).float().cpu()
 
+        def result(imgs, **more):
+            return {"latent": None, "audio_rows": clip.get("audio_rows"), "frames": imgs, "wav": clip.get("wav"),
+                    "middle": imgs[len(imgs) // 2], "regime": "custom", "steps": k,
+                    "turbo_strength": self._turbo_strength, "frames_n": len(imgs), "cached": False,
+                    "sig": signature(state), "int8_attention": self._int8_tag(),
+                    "upscaled": (w, h, round(den, 3), k, len(plan)), **more}
+
+        if pv == 1:
+            self._status(f"Upscale preview: the middle frame at {w} x {h}")
+            z = still(frames[mid].convert("RGB").resize((w, h), Image.LANCZOS), seed + 100)
+            self._last_canvas = (w, h, 1)
+            return result(self.decode_clip_frames(z), wav=None, before=[frames[mid]])
         out = []
         for j, (a, n) in enumerate(plan):
-            self._status(f"Upscale to {w} x {h}: section {j + 1} of {len(plan)}")
+            self._status(f"Upscale preview: {n} frames from the middle at {w} x {h}" if pv else
+                         f"Upscale to {w} x {h}: section {j + 1} of {len(plan)}")
             sub = [im.convert("RGB").resize((w, h), Image.LANCZOS) for im in frames[a:a + n]]
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -1788,10 +1809,14 @@ class H3RepairEngine(ClipContract):
             self._last_canvas = (w, h, n)
             imgs = self.decode_clip_frames(x.float().cpu())
             out = (out[:a + 1] + imgs[1:]) if out else imgs
-        return {"latent": None, "audio_rows": clip.get("audio_rows"), "frames": out, "wav": clip.get("wav"),
-                "middle": out[len(out) // 2], "regime": "custom", "steps": k, "turbo_strength": self._turbo_strength,
-                "frames_n": len(out), "cached": False, "sig": signature(state), "int8_attention": self._int8_tag(),
-                "upscaled": (w, h, round(den, 3), k, len(plan))}
+        if pv:
+            a, n = plan[0]
+            wav = clip.get("wav")
+            if wav is not None:                # the sound of those frames
+                per = wav.shape[1] / float(len(frames))
+                wav = wav[:, int(round(a * per)):int(round((a + n) * per))]
+            return result(out, wav=wav, before=frames[a:a + n])
+        return result(out)
 
     def _clip_regimes(self):
         from fizgig.families.minimax import MINIMAX

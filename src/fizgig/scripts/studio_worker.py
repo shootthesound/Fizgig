@@ -320,9 +320,9 @@ def _render_clips(eng, desc, st, c, out, gen):
         return paths, None
     up = v.get("upscale") if hasattr(eng, "upscale_clip") else None
 
-    def upscaled(state, clip, w0, h0):
+    def upscaled(state, clip, w0, h0, preview=0):
         """Upscale (the page's fold): the clip made again at the fold's size, a section at a time."""
-        big = eng.upscale_clip(state, clip, width=int(up.get("width") or 0) or int(w0 * 1.5),
+        big = eng.upscale_clip(state, clip, preview=preview, width=int(up.get("width") or 0) or int(w0 * 1.5),
                                height=int(up.get("height") or 0) or int(h0 * 1.5), denoise=up.get("denoise"),
                                steps=int(up.get("steps") or 0) or None, section=int(up.get("section") or 0),
                                turbo_strength=opts["turbo_strength"])
@@ -354,6 +354,25 @@ def _render_clips(eng, desc, st, c, out, gen):
                                                                  rate)
         return got
 
+    if up and up.get("preview"):
+        # Preview: the middle of the picked clip (its middle frame, or the shortest clip around it) upscaled with the
+        # fold's settings. The Tweaked pane shows it and the Baseline pane the same frames as rendered, to compare;
+        # the kept clips are untouched, so Upscale now and another Preview work from them
+        last = S.get("last_clip")
+        if not last or last.get("engine") is not eng:
+            raise ValueError("Render a clip first: the preview is made from the middle of a clip you have rendered.")
+        of_base = str(up.get("which")) == "baseline" and last.get("base") is not None
+        big = upscaled(eng._base_like(st, last["base_frames"], True) if of_base else st,
+                       last["base"] if of_base else last["clip"], last["width"], last["height"],
+                       preview=max(1, int(up["preview"])))
+        was = {"frames": big["before"], "middle": big["before"][len(big["before"]) // 2], "wav": big.get("wav")}
+        paths = {}
+        for pane, clip in (("baseline", was), ("tweaked", big)):
+            p = os.path.join(out, f"{pane}_{gen}.png")
+            paths[pane], paths[pane + "_media"] = p, _write_clip(clip, p, os.path.join(out, f"{pane}_{gen}.mp4"), fps,
+                                                                 rate)
+        torch.cuda.empty_cache()
+        return paths, None
     if up and up.get("now"):
         # Upscale now: the clips in the panes, as they were rendered, made again larger. The kept clips stay the ones
         # they were made from, so another denoise or size is another press

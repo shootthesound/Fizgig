@@ -2569,6 +2569,22 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 .st-fold > .field-row { padding: 0 12px; }
 .st-fold-title { font-weight: 600; color: var(--text-primary); }
 .st-fold-sub { color: var(--text-secondary); font-size: 9.5pt; }
+/* Upscale, Advanced: the noise range bar (a section dragged along a track, two ends to resize, a dot per step) */
+.st-range-box { flex: 1; min-width: 260px; max-width: 560px; }
+.st-range { position: relative; height: 26px; border-radius: 13px; background: var(--bg-inset); border: 1px solid var(--border);
+  touch-action: none; user-select: none; }
+.st-range-sel { position: absolute; top: 2px; bottom: 2px; border-radius: 11px; background: var(--accent-subtle);
+  border: 1px solid var(--accent); cursor: grab; }
+.st-range-sel:active { cursor: grabbing; }
+.st-range-h { position: absolute; top: -3px; bottom: -3px; width: 12px; border-radius: 6px; background: var(--accent);
+  cursor: ew-resize; }
+.st-range-h[data-end="lo"] { left: -6px; }
+.st-range-h[data-end="hi"] { right: -6px; }
+.st-range-h:hover { background: var(--accent-hover); }
+.st-range-dots { position: absolute; inset: 0; pointer-events: none; }
+.st-range-dots > i { position: absolute; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%;
+  background: var(--text-primary); }
+.st-range-ends { display: flex; justify-content: space-between; color: var(--text-secondary); font-size: 9pt; margin-top: 3px; }
 
 /* the masks card's Edit masks: a picture at a time with its mask, painted on a canvas */
 .mask-edit { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 12px; }

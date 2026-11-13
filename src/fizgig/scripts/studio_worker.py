@@ -95,7 +95,8 @@ def cmd_load(c):
         eng.load_primary(c["primary"])
         if c.get("donor"):
             eng.load_donor(c["donor"])
-        emit(ev="loaded", family=desc.key, primary=c["primary"], donor=c.get("donor") or "", **_blocks(eng))
+        emit(ev="loaded", family=desc.key, primary=c["primary"], donor=c.get("donor") or "",
+             up_room=eng.upscale_room() if hasattr(eng, "upscale_room") else None, **_blocks(eng))
 
 
 def cmd_donor(c):
@@ -332,7 +333,7 @@ def _render_clips(eng, desc, st, c, out, gen):
                                height=int(up.get("height") or 0) or int(h0 * 1.5), denoise=up.get("denoise"),
                                steps=int(up.get("steps") or 0) or None, section=int(up.get("section") or 0),
                                first_guide=up.get("first_guide", True), last_guide=up.get("last_guide", True),
-                               bias=float(up.get("bias") or 0.0),
+                               bias=float(up.get("bias") or 0.0), low=float(up.get("low") or 0.0),
                                turbo_strength=opts["turbo_strength"])
         print(f"[studio] upscale to {big['upscaled'][0]}x{big['upscaled'][1]}, denoise {big['upscaled'][2]}, "
               f"{big['upscaled'][3]} step(s), {big['upscaled'][4]} section(s): peak "

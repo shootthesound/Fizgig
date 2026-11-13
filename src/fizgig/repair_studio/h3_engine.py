@@ -1689,7 +1689,7 @@ class H3RepairEngine(ClipContract):
 
     @_locked
     def upscale_clip(self, state, clip, *, width, height, denoise=None, steps=None, section=0, turbo_strength=None,
-                     preview=0, first_guide=True, last_guide=True, bias=0.0, **_ignored):
+                     preview=0, first_guide=True, last_guide=True, bias=0.0, low=0.0, **_ignored):
         """Studio's Upscale: `clip` (a render_clip dict) made again at width x height, on the state's prompt. The
         clip's frames are stretched and finished a section at a time at a low denoise (minimax/upscale.py): each
         section is a first / last frame clip pinned to its own two end frames, upscaled on their own first, and
@@ -1720,7 +1720,8 @@ class H3RepairEngine(ClipContract):
             n = min(_up.grid_floor(pv), _up.grid_floor(len(frames)))
             plan = [(max(0, min(mid - n // 2, len(frames) - n)), n)]
         den = float(denoise) if denoise not in (None, "") else _up.DENOISE
-        sig = _up.low_sigmas(den, int(steps or _up.STEPS), bias)   # bias: the steps' weighting (-1 to 1)
+        # bias: the steps' weighting (-1 to 1); low: the low end of the range the steps are taken in (0 = to clean)
+        sig = _up.low_sigmas(den, int(steps or _up.STEPS), bias, low)
         den, k = sig[0], len(sig) - 1
         seed = int(state.seed)
         self.apply_state(state)
@@ -1824,6 +1825,12 @@ class H3RepairEngine(ClipContract):
                 wav = wav[:, int(round(a * per)):int(round((a + n) * per))]
             return result(out, wav=wav, before=frames[a:a + n])
         return result(out)
+
+    def upscale_room(self):
+        """Plannable memory (GB) the Upscale fold's section hint is worked out from: the int8 base's, as planned at
+        load. None on another base (not measured)."""
+        plan, free = getattr(self, "base_plan", None), getattr(self, "_plan_free", None)
+        return float(free) if plan and plan[0] == "int8" and free else None
 
     def _clip_regimes(self):
         from fizgig.families.minimax import MINIMAX

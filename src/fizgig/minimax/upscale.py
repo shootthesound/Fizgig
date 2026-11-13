@@ -62,14 +62,40 @@ def sections(total: int, section: int = SECTION) -> "list[tuple[int, int]]":
     return out
 
 
-def low_sigmas(denoise: float, steps: int, bias: float = 0.0) -> "list[float]":
+def low_sigmas(denoise: float, steps: int, bias: float = 0.0, low: float = 0.0) -> "list[float]":
     """`steps` noise levels from `denoise` down to 0, spaced as the model's own schedule spaces them (shift 12).
-    bias (-1 to 1) moves the levels between the two ends: above 0 they crowd toward 0 (more of the steps on fine
-    detail), below 0 toward `denoise` (more of them on the larger changes). 0 is the model's own spacing."""
+    bias (-1 to 1) moves the levels between the two ends: above 0 they crowd toward the low end (more of the steps
+    on fine detail), below 0 toward `denoise` (more of them on the larger changes). 0 is the model's own spacing.
+    low above 0 is a range: every step is taken between `denoise` and `low` (the last one at `low`), and that last
+    step goes straight to 0."""
     s0, k = min(1.0, max(0.02, float(denoise))), max(1, int(steps))
     p = 3.0 ** min(1.0, max(-1.0, float(bias or 0.0)))
-    t0 = s0 / (SHIFT - (SHIFT - 1.0) * s0)
-    return [SHIFT * t / (1.0 + (SHIFT - 1.0) * t) for t in (t0 * (1.0 - i / k) ** p for i in range(k + 1))]
+    sl = min(max(0.0, float(low or 0.0)), s0)
+
+    def t_of(s):
+        return s / (SHIFT - (SHIFT - 1.0) * s)
+
+    def s_of(t):
+        return SHIFT * t / (1.0 + (SHIFT - 1.0) * t)
+
+    t0, tl = t_of(s0), t_of(sl)
+    if sl <= 0.0:
+        return [s_of(t0 * (1.0 - i / k) ** p) for i in range(k + 1)]
+    return [s0 if i == 0 else s_of(tl + (t0 - tl) * (1.0 - i / (k - 1)) ** p) for i in range(k)] + [0.0]
+
+
+def room_positions(free_gb: float) -> int:
+    """The largest section, in latent positions (latent frames x width/16 x height/16), that Upscale fits on a card
+    with `free_gb` of plannable memory on the int8 base. A line under the measured limits (13 Nov, a 5090 and the
+    same card held to 24 and 20 GB): 23.3 GB took 210k and failed at 283k, 33.1 GB took 357k and failed at 414k."""
+    return int(max(0.0, 210.0 + 15.0 * (float(free_gb) - 23.35)) * 1000)
+
+
+def room_frames(free_gb: float, width: int, height: int) -> int:
+    """The longest section, in frames on the grid, that fits at this size (0: not even the shortest clip)."""
+    t = room_positions(free_gb) // max(1, (int(width) // 16) * (int(height) // 16))
+    n = (t - 2) // 5
+    return 17 * n + 5 if n >= 1 else 0
 
 
 def tile_for(free_gib: float) -> int:

@@ -912,10 +912,21 @@
                   <div class="field-row"><span class="field-label"></span>
                     <span class="st-inline"><span class="field-hint">Denoise</span><input type="text" id="stUpDen" value="0.4" title="How much of the stretched clip is made again, from 0 to 1. Low values (0.3) stay closest to the clip you rendered and add the least; higher values (0.5 and up) add more detail and change more.">
                       <span class="field-hint">Steps</span><input type="text" id="stUpSteps" value="3" title="The passes the larger clip is finished in. 3 is the tested value; more takes longer in proportion.">
-                      <span class="field-hint">Sections of</span><input type="text" id="stUpSec" placeholder="5.2" title="How long each section is, in seconds (it moves to the nearest length the model can make; empty is 5.2). Longer sections mean fewer joins and need more memory."><span class="field-hint">s</span></span></div>
+                      <span class="field-hint">Sections of</span><input type="text" id="stUpSec" placeholder="5.2" title="How long each section is, in seconds (it moves to the nearest length the model can make; empty is 5.2). Longer sections mean fewer joins and need more memory."><span class="field-hint">s</span>
+                      <span class="field-hint" id="stUpRoom"></span></span></div>
                   <div class="field-row"><span class="field-label"></span>
                     <span class="st-inline"><span class="field-hint">Step weighting</span><input type="text" id="stUpBias" value="0" title="Where the steps are spent, from -1 to 1. 0 is the model's own spacing. Above 0 the steps crowd toward the low end, so more of them go on fine detail; below 0 they crowd toward the high end, so more go on the larger changes. The noise levels beside the box show the result. It matters more with 4 or more steps.">
-                      <span class="field-hint" id="stUpLevels"></span></span></div>
+                      <span class="field-hint" id="stUpLevels"></span>
+                      <label class="checkbox-label" title="Choose the range of noise the steps work in. A bar opens: drag the section, or its two ends. The high noise end is the Denoise above. The low noise end is where the last step is taken; from there the clip goes straight to clean. Unticked, the steps run all the way down, as usual."><input type="checkbox" id="stUpAdv"> Advanced: noise range</label></span></div>
+                  <div class="field-row" id="stUpRangeRow" hidden><span class="field-label"></span>
+                    <div class="st-range-box">
+                      <div class="st-range" id="stUpRange" title="Drag the section to move it, or drag an end. The dots are the steps.">
+                        <div class="st-range-sel" id="stUpRangeSel"><span class="st-range-h" data-end="lo"></span><span class="st-range-h" data-end="hi"></span></div>
+                        <div class="st-range-dots" id="stUpRangeDots"></div>
+                      </div>
+                      <div class="st-range-ends"><span>Low noise: fine detail</span><span>High noise: bigger changes</span></div>
+                      <div class="field-hint" id="stUpRangeSay"></div>
+                    </div></div>
                   <div class="field-row"><span class="field-label"></span>
                     <span class="st-inline"><span class="field-hint">Guide frames</span>
                       <label class="checkbox-label" title="The clip's first frame is upscaled on its own as a still and shown to the model as the first frame. Unticked, the first frame is made like every other frame, from the stretched clip. Untick it if the first frame's detail jumps against the second."><input type="checkbox" id="stUpFirst" checked> First</label>

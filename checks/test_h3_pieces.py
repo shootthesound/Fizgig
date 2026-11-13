@@ -150,6 +150,26 @@ def test_upscale_noise_levels_start_at_the_denoise_and_end_at_zero():
     assert abs(up.low_sigmas(1.0, 2)[0] - 1.0) < 1e-6
 
 
+def test_upscale_step_weighting_and_noise_range():
+    from fizgig.minimax import upscale as up
+    even, low_end, high_end = up.low_sigmas(0.4, 6), up.low_sigmas(0.4, 6, 1.0), up.low_sigmas(0.4, 6, -1.0)
+    assert low_end[0] == even[0] == high_end[0] and low_end[-1] == high_end[-1] == 0.0
+    assert low_end[3] < even[3] < high_end[3]                  # the levels crowd to one end or the other
+    rng = up.low_sigmas(0.6, 4, 0.0, 0.3)                      # a range: 4 steps between 0.6 and 0.3, then clean
+    assert len(rng) == 5 and abs(rng[0] - 0.6) < 1e-6 and abs(rng[3] - 0.3) < 1e-6 and rng[4] == 0.0
+    assert all(a > b for a, b in zip(rng, rng[1:]))
+    assert up.low_sigmas(0.4, 1, 0.0, 0.2) == [0.4, 0.0]
+
+
+def test_upscale_section_hint_stays_under_the_measured_limits():
+    from fizgig.minimax import upscale as up
+    # a 5090 (33.1 GB plannable): 1536x896 took 192 frames and failed at 260; 1920x1088 took 124, failed at 192
+    assert 192 <= up.room_frames(33.1, 1536, 896) < 260 and 124 <= up.room_frames(33.1, 1920, 1088) < 192
+    # held to 24 GB: 1280x736 took 192 and failed at 260; 1536x896 took 124 and failed at 192
+    assert 192 <= up.room_frames(23.35, 1280, 736) < 260 and 124 <= up.room_frames(23.35, 1536, 896) < 192
+    assert up.room_frames(8.0, 1920, 1088) == 0
+
+
 def test_upscale_encodes_in_tiles_that_add_up_to_the_whole_frame():
     """An encoder that only averages 16-px cells gives the same latent whole or in tiles; 17 + 5 frames give 5 + 2."""
     from PIL import Image

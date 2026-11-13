@@ -5854,6 +5854,9 @@ function studioKind(L, sv) {
   $("stUpAuto").checked = up.auto === true;
   $("stUpFirst").checked = up.first !== false;
   $("stUpBias").value = up.bias || "0";
+  $("stUpAdv").checked = up.adv === true;
+  S.st.upLow = Math.max(0, Math.min(0.95, Number(up.low) || 0));
+  $("stUpRangeRow").hidden = !$("stUpAdv").checked;
   $("stUpOwnPrompt").checked = up.ownPrompt === true;
   $("stUpPrompt").value = up.prompt || "";
   $("stUpPromptRow").hidden = $("stUpPromptCopy").hidden = !$("stUpOwnPrompt").checked;
@@ -6011,7 +6014,7 @@ function studioH3Remember() {
       lenS: $("stH3LenS").value, w: $("stH3W").value,
       h: $("stH3H").value, steps: $("stH3Steps").value, turbo: $("stH3Turbo").value,
       sound: $("stH3Sound").checked, boost: $("stH3Boost").checked, early: $("stH3Early").checked, pieces: $("stH3Pieces").checked, pieceS: $("stH3PieceS").value, only: $("stH3Only").checked, loopPrompt: $("stLoopPrompt").value, loopS: $("stLoopS").value,
-      up: {w: $("stUpW").value, h: $("stUpH").value, den: $("stUpDen").value, steps: $("stUpSteps").value, sec: $("stUpSec").value, auto: $("stUpAuto").checked, first: $("stUpFirst").checked, last: $("stUpLast").checked, bias: $("stUpBias").value, ownPrompt: $("stUpOwnPrompt").checked, prompt: $("stUpPrompt").value, which: $("stUpWhich").value, prevN: $("stUpPrevN").value, open: $("stUpBox").open}, kf: S.st.kf,
+      up: {w: $("stUpW").value, h: $("stUpH").value, den: $("stUpDen").value, steps: $("stUpSteps").value, sec: $("stUpSec").value, auto: $("stUpAuto").checked, first: $("stUpFirst").checked, last: $("stUpLast").checked, bias: $("stUpBias").value, adv: $("stUpAdv").checked, low: S.st.upLow || 0, ownPrompt: $("stUpOwnPrompt").checked, prompt: $("stUpPrompt").value, which: $("stUpWhich").value, prevN: $("stUpPrevN").value, open: $("stUpBox").open}, kf: S.st.kf,
       kfRect: S.st.kfRect};
     localStorage.setItem(ST_KEY, JSON.stringify(d));
   } catch (e) { /* private window */ }
@@ -7066,16 +7069,40 @@ function studioUpscale(V) {
     section: sec > 0 && V.clip ? Math.max(22, studioSnapFrames(V, sec)) : 0, auto: $("stUpAuto").checked,
     which: $("stUpWhich").value, first_guide: $("stUpFirst").checked, last_guide: $("stUpLast").checked,
     prompt: $("stUpOwnPrompt").checked ? $("stUpPrompt").value.trim() : "",
-    bias: Math.max(-1, Math.min(1, Number($("stUpBias").value) || 0))};
+    bias: Math.max(-1, Math.min(1, Number($("stUpBias").value) || 0)),
+    low: $("stUpAdv").checked ? Math.max(0, Math.min(S.st.upLow || 0, (den > 0 ? den : 0.4) - 0.02)) : 0};
 }
 // the noise levels an upscale's steps run through (minimax/upscale.py low_sigmas: the model's shift-12 spacing)
 function studioUpLevels(u) {
-  const p = Math.pow(3, u.bias), t0 = u.denoise / (12 - 11 * u.denoise), out = [];
-  for (let i = 0; i <= u.steps; i++) {
-    const t = t0 * Math.pow(1 - i / u.steps, p);
-    out.push(Math.round(12 * t / (1 + 11 * t) * 100) / 100);
-  }
+  const p = Math.pow(3, u.bias), tOf = (s) => s / (12 - 11 * s), t0 = tOf(u.denoise), tl = tOf(u.low || 0), out = [];
+  const add = (t) => out.push(Math.round(12 * t / (1 + 11 * t) * 100) / 100);
+  if (!(u.low > 0)) { for (let i = 0; i <= u.steps; i++) add(t0 * Math.pow(1 - i / u.steps, p)); return out; }
+  for (let i = 0; i < u.steps; i++) add(i === 0 ? t0 : tl + (t0 - tl) * Math.pow(1 - i / (u.steps - 1), p));
+  out.push(0);
   return out;
+}
+// Advanced: the noise range bar. Left is no noise, right is all of it; the section runs from the low end to Denoise
+function studioUpRangeDraw(u) {
+  if ($("stUpRangeRow").hidden) return;
+  const sel = $("stUpRangeSel"), lv = studioUpLevels(u);
+  sel.style.left = (u.low * 100) + "%";
+  sel.style.width = ((u.denoise - u.low) * 100) + "%";
+  $("stUpRangeDots").innerHTML = lv.slice(0, u.steps).map((s) => `<i style="left:${s * 100}%"></i>`).join("");
+  $("stUpRangeSay").textContent = u.low > 0
+    ? `${u.steps} step${u.steps === 1 ? "" : "s"} between ${u.denoise} and ${u.low}, then straight to clean`
+    : `${u.steps} step${u.steps === 1 ? "" : "s"} from ${u.denoise} all the way down to clean`;
+}
+// the longest section that fits this card at the fold's size (minimax/upscale.py room_frames), beside the Sections box
+function studioUpRoom(V, u) {
+  const free = S.st.upRoom, el = $("stUpRoom");
+  if (!free || !V.clip) { el.textContent = ""; return; }
+  const k = Math.max(0, 210 + 15 * (free - 23.35)) * 1000;
+  const n = Math.floor((Math.floor(k / ((u.width >> 4) * (u.height >> 4))) - 2) / 5), frames = n >= 1 ? 17 * n + 5 : 0;
+  const secs = (f) => Math.round(f / V.clip.fps * 10) / 10, want = u.section || 124;
+  el.textContent = !frames ? `${u.width} × ${u.height} is too large for this card`
+    : want > frames ? `too long for this card at ${u.width} × ${u.height}: up to about ${secs(frames)} s fits`
+    : `up to about ${secs(frames)} s fits this card at ${u.width} × ${u.height}`;
+  el.style.color = !frames || want > frames ? "var(--warning, var(--accent-text))" : "";
 }
 // the fold's heading says what is set, so it reads without being opened
 function studioUpSummary() {
@@ -7083,8 +7110,10 @@ function studioUpSummary() {
   if (!V || !V.upscale) return;
   const u = studioUpscale(V);
   $("stUpLevels").textContent = "noise levels " + studioUpLevels(u).join(" → ");
+  studioUpRangeDraw(u); studioUpRoom(V, u);
   $("stUpSum").textContent = `to ${u.width} × ${u.height}, denoise ${u.denoise}, ${u.steps} step${u.steps === 1 ? "" : "s"}`
     + (u.first_guide ? (u.last_guide ? "" : ", no last guide frame") : (u.last_guide ? ", no first guide frame" : ", no guide frames"))
+    + (u.low > 0 ? `, noise range ${u.low} to ${u.denoise}` : "")
     + (u.bias > 0 ? ", steps weighted low" : u.bias < 0 ? ", steps weighted high" : "") + (u.prompt ? ", its own prompt" : "")
     + ({baseline: ", the Baseline clip", both: ", both clips"}[u.which] || "") + (u.auto ? ", after every render" : "");
 }
@@ -7569,6 +7598,7 @@ async function studioPoll() {
   const actKey = [S.st.ready, st.donor || "", (st.primary_blocks || []).length, (st.donor_blocks || []).length].join("|");
   if (wasReady && S.st.ready && actKey !== S.st.actKey) studioActivity();
   S.st.actKey = actKey;
+  if (st.up_room !== S.st.upRoom) { S.st.upRoom = st.up_room; studioUpSummary(); }
   // loaded with nothing to render yet: say what it waits for (a prompt), not that a preview is coming
   const waiting = st.state === "ready" && !st.rendering && !st.shown && !$("stPrompt").value.trim();
   $("stStatus").textContent = (waiting ? "Loaded. Enter a prompt (include the LoRA's trigger word), then press Update." :
@@ -7886,6 +7916,30 @@ function wireStudio() {
       if ($("stUpAuto").checked) studioPending();
     });
   $("stUpPrevN").addEventListener("change", studioH3Remember);
+  // Advanced: the noise range bar. Dragging the section moves both ends, a handle moves one; the high end is Denoise
+  const upRange = () => { studioUpSummary(); studioH3Remember(); if ($("stUpAuto").checked) studioPending(); };
+  $("stUpAdv").addEventListener("change", () => { $("stUpRangeRow").hidden = !$("stUpAdv").checked; upRange(); });
+  $("stUpRange").addEventListener("pointerdown", (e) => {
+    const bar = $("stUpRange"), box = bar.getBoundingClientRect(), u0 = studioUpscale(S.st.layout.video);
+    const end = e.target.dataset && e.target.dataset.end, inSel = e.target === $("stUpRangeSel");
+    if (!end && !inSel) return;
+    e.preventDefault();
+    bar.setPointerCapture(e.pointerId);
+    const x0 = e.clientX, r2 = (v) => Math.round(v * 100) / 100;
+    const move = (ev) => {
+      const d = (ev.clientX - x0) / box.width;
+      let lo = u0.low, hi = u0.denoise;
+      if (end === "lo") lo = Math.max(0, Math.min(hi - 0.02, lo + d));
+      else if (end === "hi") hi = Math.max(Math.max(0.05, lo + 0.02), Math.min(1, hi + d));
+      else { const w = hi - lo, a = Math.max(0, Math.min(1 - w, lo + d)); lo = a; hi = a + w; }
+      S.st.upLow = r2(lo);
+      $("stUpDen").value = r2(Math.max(0.05, hi));
+      studioUpSummary();
+    };
+    const up = () => { bar.removeEventListener("pointermove", move); bar.removeEventListener("pointerup", up);
+      bar.removeEventListener("pointercancel", up); upRange(); };
+    bar.addEventListener("pointermove", move); bar.addEventListener("pointerup", up); bar.addEventListener("pointercancel", up);
+  });
   // Edit prompt: the upscale's own prompt. Ticking it opens the box, filled with the main Prompt when it is empty
   const upPrompt = () => { studioUpSummary(); studioH3Remember(); if ($("stUpAuto").checked) studioPending(); };
   $("stUpOwnPrompt").addEventListener("change", () => {

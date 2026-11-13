@@ -5939,7 +5939,8 @@ function studioSlotThumb(cv, path, rect) {
 function studioCrop(path, initial, ok, cancel, opt) {
   // the desktop's crop window: the photo fitted, a box locked to the clip's shape (W x H) - drag to move, drag a
   // corner to resize. ok([x0, y0, x1, y1] in the photo's pixels); cancel() leaves things as they were.
-  // opt (Upscale's own video): {url: the picture shown, W, H: the shape, sw, sh: the size the box is measured in}
+  // opt (Upscale's own video): {url: the picture shown, W, H: the shape, sw, sh: the size the box is measured in,
+  // fit(w, h): the size a box that large is made at - given, a corner changes the box's shape as well as its size}
   const o = opt || {};
   const W = o.W || Number($("stH3W").value) || 640, H = o.H || Number($("stH3H").value) || 768, aspect = W / H;
   const cv = $("cropCanvas"), ctx = cv.getContext("2d"), img = new Image();
@@ -5967,7 +5968,8 @@ function studioCrop(path, initial, ok, cancel, opt) {
       for (const [hx, hy] of [[box.x0, box.y0], [box.x1, box.y0], [box.x0, box.y1], [box.x1, box.y1]])
         ctx.fillRect(hx - HANDLE, hy - HANDLE, HANDLE * 2, HANDLE * 2);
       const r = src();
-      $("cropSize").textContent = `crop ${r[2] - r[0]}×${r[3] - r[1]} of ${sw}×${sh} → ${W}×${H}`;
+      const to = o.fit ? o.fit(r[2] - r[0], r[3] - r[1]) : [W, H];
+      $("cropSize").textContent = `crop ${r[2] - r[0]}×${r[3] - r[1]} of ${sw}×${sh} → ${to[0]}×${to[1]}`;
     };
     const at = (e) => { const b = cv.getBoundingClientRect(); return [(e.clientX - b.left) * dw / b.width, (e.clientY - b.top) * dh / b.height]; };
     let drag = null;
@@ -5992,10 +5994,13 @@ function studioCrop(path, initial, ok, cancel, opt) {
         const c = drag.c, east = c === "ne" || c === "se", south = c === "sw" || c === "se";
         const ax = east ? box.x0 : box.x1, ay = south ? box.y0 : box.y1;
         let w = Math.abs(Math.min(Math.max(x, 0), dw) - ax), h = Math.abs(Math.min(Math.max(y, 0), dh) - ay);
-        w = Math.max(MIN_W, w, h * aspect); h = w / aspect;
         const maxW = east ? dw - ax : ax, maxH = south ? dh - ay : ay;
-        if (w > maxW) { w = maxW; h = w / aspect; }
-        if (h > maxH) { h = maxH; w = h * aspect; }
+        if (o.fit) { w = Math.min(maxW, Math.max(MIN_W, w)); h = Math.min(maxH, Math.max(MIN_W, h)); }   // any shape
+        else {
+          w = Math.max(MIN_W, w, h * aspect); h = w / aspect;
+          if (w > maxW) { w = maxW; h = w / aspect; }
+          if (h > maxH) { h = maxH; w = h * aspect; }
+        }
         box = {x0: east ? ax : ax - w, x1: east ? ax + w : ax, y0: south ? ay : ay - h, y1: south ? ay + h : ay};
       }
       draw();
@@ -7089,6 +7094,11 @@ function studioUpVideoBase() {
   if (!v || !v.info) return null;
   return v.rect ? [v.rect[2] - v.rect[0], v.rect[3] - v.rect[1]] : [v.info.width, v.info.height];
 }
+function studioUpVideoFit(cw, ch) {
+  const [w0, h0] = studioUpSize(), k = Math.sqrt(w0 * h0 / Math.max(1, cw * ch));
+  const snap = (n) => Math.max(256, Math.round(n / 32) * 32);
+  return [snap(cw * k), snap(ch * k)];
+}
 // the Size list: the video's shape at the model's sizes (sides on the 32-px grid, one side at 768 or more)
 function studioUpVideoSizes() {
   const sel = $("stUpVideoSize"), b = studioUpVideoBase();
@@ -7118,8 +7128,14 @@ function studioUpVideoDraw(thumbs) {
   $("stUpVideoInfo").textContent = `${i.width} × ${i.height}, ${r2(i.seconds)} s` + (i.has_audio ? "" : ", no sound");
   $("stUpVideoCropSay").textContent = v.rect ? `crop ${v.rect[2] - v.rect[0]} × ${v.rect[3] - v.rect[1]}` : "the middle is kept";
   studioUpVideoSizes();
-  for (const [k, box, rng] of [["a", "stUpVideoA", "stUpVideoAR"], ["b", "stUpVideoB", "stUpVideoBR"]]) {
-    $(rng).max = i.seconds; $(rng).value = v[k]; $(box).value = r2(v[k]);
+  $("stUpVideoA").value = r2(v.a); $("stUpVideoB").value = r2(v.b);
+  // the strip: frames across the whole video (made once per file), the part to upscale bright over it
+  const len = Math.max(0.01, i.seconds), sel2 = $("stUpVideoSel"), pics = $("stUpVideoPics");
+  sel2.style.left = (v.a / len * 100) + "%"; sel2.style.width = (Math.max(0, v.b - v.a) / len * 100) + "%";
+  if (pics.dataset.path !== v.path) {
+    pics.dataset.path = v.path;
+    pics.innerHTML = "";
+    for (let j = 0; j < 12; j++) pics.append(el("img", {alt: "", loading: "lazy", src: upVideoUrl(v.path, r2((j + 0.5) / 12 * len), 200)}));
   }
   const want = Math.floor((v.b - v.a) * fps + 1e-3), n = want >= 22 ? 17 * Math.floor((want - 5) / 17) + 5 : 0;
   $("stUpVideoLen").textContent = n
@@ -8038,10 +8054,15 @@ function wireStudio() {
     $("stUpVideoCrop").addEventListener("click", () => {
       const v = S.st.upVideo;
       if (!v) return;
+      // the box starts in the To size's shape (the video's own, as near as the sizes allow); a corner changes its
+      // shape, and the To size follows it at the area it has now
       const [W, H] = studioUpSize();
-      studioCrop(v.path, v.rect, (rect) => { v.rect = rect; changed(); }, null,
-        {url: upVideoUrl(v.path, v.a, 1600), W, H, sw: v.info.width, sh: v.info.height,
-         title: `Crop the video to the To size's shape (${W}×${H})`});
+      studioCrop(v.path, v.rect, (rect) => {
+        v.rect = rect;
+        [$("stUpW").value, $("stUpH").value] = studioUpVideoFit(rect[2] - rect[0], rect[3] - rect[1]);
+        changed();
+      }, null, {url: upVideoUrl(v.path, v.a, 1600), W, H, sw: v.info.width, sh: v.info.height, fit: studioUpVideoFit,
+                title: "Crop the video: drag the box to move it, a corner to change its size and shape"});
     });
     // From and to: the slider moves the number as it is dragged; the frame shown follows when it is let go
     const ends = (k, val) => {
@@ -8050,11 +8071,39 @@ function wireStudio() {
       const t = Math.max(0, Math.min(v.info.seconds, Number(val) || 0));
       if (k === "a") v.a = Math.min(t, v.b); else v.b = Math.max(t, v.a);
     };
-    for (const [k, box, rng] of [["a", "stUpVideoA", "stUpVideoAR"], ["b", "stUpVideoB", "stUpVideoBR"]]) {
-      $(rng).addEventListener("input", () => { ends(k, $(rng).value); studioUpVideoDraw(); });
-      $(rng).addEventListener("change", () => { ends(k, $(rng).value); changed(true); });
+    for (const [k, box] of [["a", "stUpVideoA"], ["b", "stUpVideoB"]])
       $(box).addEventListener("change", () => { ends(k, $(box).value); changed(true); });
-    }
+    // the strip: drag an end, drag the section, or click outside it to bring the nearer end there. The two pictures
+    // follow a moment behind the drag
+    const shots = debounce((k) => {
+      const v = S.st.upVideo;
+      if (!v) return;
+      if (k !== "b") $("stUpVideoAImg").src = upVideoUrl(v.path, v.a, 440);
+      if (k !== "a") $("stUpVideoBImg").src = upVideoUrl(v.path, v.b, 440);
+    }, 180);
+    $("stUpVideoFilm").addEventListener("pointerdown", (e) => {
+      const v = S.st.upVideo;
+      if (!v) return;
+      const film = $("stUpVideoFilm"), box = film.getBoundingClientRect(), len = v.info.seconds;
+      const tAt = (ev) => Math.max(0, Math.min(len, (ev.clientX - box.left) / box.width * len));
+      let end = e.target.dataset && e.target.dataset.end;
+      const inSel = e.target === $("stUpVideoSel");
+      if (!end && !inSel) end = Math.abs(tAt(e) - v.a) <= Math.abs(tAt(e) - v.b) ? "a" : "b";
+      e.preventDefault();
+      film.setPointerCapture(e.pointerId);
+      const t0 = tAt(e), a0 = v.a, b0 = v.b;
+      const move = (ev) => {
+        const t = tAt(ev);
+        if (end === "a") v.a = Math.min(t, v.b);
+        else if (end === "b") v.b = Math.max(t, v.a);
+        else { const w = b0 - a0, a = Math.max(0, Math.min(len - w, a0 + t - t0)); v.a = a; v.b = a + w; }
+        studioUpVideoDraw(); shots(end);
+      };
+      const up = () => { film.removeEventListener("pointermove", move); film.removeEventListener("pointerup", up);
+        film.removeEventListener("pointercancel", up); changed(true); };
+      film.addEventListener("pointermove", move); film.addEventListener("pointerup", up); film.addEventListener("pointercancel", up);
+      move(e);
+    });
   }
   $("stUpBox").addEventListener("toggle", studioH3Remember);
   for (const [id, k] of [["stUp1", 1], ["stUp15", 1.5], ["stUp2", 2]])

@@ -2050,7 +2050,16 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 .st-up-video-ends { display: flex; gap: 18px; flex-wrap: wrap; }
 .st-up-video-ends > div { display: flex; flex-direction: column; gap: 6px; width: 220px; }
 .st-up-video-ends img { width: 220px; height: 124px; object-fit: contain; border-radius: 6px; background: var(--bg-deep); }
-.st-up-video-ends input[type="range"] { width: 100%; }
+.st-film { position: relative; flex: 1; min-width: 260px; max-width: 760px; height: 64px; border-radius: 6px; background: var(--bg-deep);
+  touch-action: none; user-select: none; cursor: pointer; }
+.st-film-pics { position: absolute; inset: 0; display: flex; overflow: hidden; border-radius: 6px; pointer-events: none; }
+.st-film-pics img { flex: 1 1 0; min-width: 0; height: 100%; object-fit: cover; opacity: 0.45; }
+.st-film-sel { position: absolute; top: 0; bottom: 0; box-sizing: border-box; border: 2px solid var(--accent); border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent); cursor: grab; }
+.st-film-sel:active { cursor: grabbing; }
+.st-film-sel .st-range-h { cursor: ew-resize; }
+.st-film-sel .st-range-h[data-end="a"] { left: -7px; }
+.st-film-sel .st-range-h[data-end="b"] { right: -7px; }
 .st-slot { display: grid; grid-template-columns: 110px 72px 1fr; gap: 10px; align-items: center; margin: 6px 0; }
 .st-slot img { width: 72px; height: 72px; object-fit: cover; border-radius: 6px; background: var(--bg-deep); }
 .st-slot .field-row { margin: 0; }

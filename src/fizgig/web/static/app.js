@@ -7793,6 +7793,14 @@ function wireStudio() {
   for (const id of ["stH3Len", "stH3LenS", "stH3W", "stH3H", "stH3Steps", "stH3Turbo", "stH3Sound", "stH3Boost", "stH3Pieces", "stH3PieceS"])
     $(id).addEventListener("change", () => { if (id.startsWith("stH3Len") || id === "stH3PieceS") studioLenOther(true); if (id === "stH3Pieces") studioLenOther(); studioH3Remember(); studioPending(); });
   $("stH3Early").addEventListener("change", studioH3Remember);
+  // the swap buttons between a width and a height (pictures and clips): the two values change places, and each
+  // picker reports its change as if picked by hand
+  for (const [b, w, h] of [["stSwap", "stW", "stH"], ["stH3Swap", "stH3W", "stH3H"]])
+    $(b).addEventListener("click", () => {
+      const a = $(w).value;
+      $(w).value = $(h).value; $(h).value = a;
+      for (const id of [w, h]) $(id).dispatchEvent(new Event("change", {bubbles: true}));
+    });
   // the note beside the length follows the two seconds boxes as they are typed in (the box itself moves to the
   // nearest length when it is left)
   for (const id of ["stH3LenS", "stH3PieceS"]) $(id).addEventListener("input", () => studioLenOther());

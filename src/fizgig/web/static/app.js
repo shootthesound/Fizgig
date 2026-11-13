@@ -5852,6 +5852,7 @@ function studioKind(L, sv) {
   $("stUpW").value = up.w || ""; $("stUpH").value = up.h || "";
   $("stUpDen").value = up.den || "0.4"; $("stUpSteps").value = up.steps || "3"; $("stUpSec").value = up.sec || "";
   $("stUpAuto").checked = up.auto === true;
+  $("stUpWhich").value = ["baseline", "both"].includes(up.which) ? up.which : "tweaked";
   $("stUpBox").open = up.open === true;
   $("stH3Pieces").checked = h3.pieces === true;          // off unless turned on
   $("stH3PiecesBox").style.display = V.pieces ? "" : "none";                  // a family ability (H3 has it)
@@ -6003,7 +6004,7 @@ function studioH3Remember() {
       lenS: $("stH3LenS").value, w: $("stH3W").value,
       h: $("stH3H").value, steps: $("stH3Steps").value, turbo: $("stH3Turbo").value,
       sound: $("stH3Sound").checked, boost: $("stH3Boost").checked, early: $("stH3Early").checked, pieces: $("stH3Pieces").checked, pieceS: $("stH3PieceS").value, only: $("stH3Only").checked, loopPrompt: $("stLoopPrompt").value, loopS: $("stLoopS").value,
-      up: {w: $("stUpW").value, h: $("stUpH").value, den: $("stUpDen").value, steps: $("stUpSteps").value, sec: $("stUpSec").value, auto: $("stUpAuto").checked, open: $("stUpBox").open}, kf: S.st.kf,
+      up: {w: $("stUpW").value, h: $("stUpH").value, den: $("stUpDen").value, steps: $("stUpSteps").value, sec: $("stUpSec").value, auto: $("stUpAuto").checked, which: $("stUpWhich").value, open: $("stUpBox").open}, kf: S.st.kf,
       kfRect: S.st.kfRect};
     localStorage.setItem(ST_KEY, JSON.stringify(d));
   } catch (e) { /* private window */ }
@@ -7055,7 +7056,8 @@ function studioUpscale(V) {
   const [width, height] = studioUpSize(), sec = Number($("stUpSec").value) || 0, den = Number($("stUpDen").value);
   return {width, height, denoise: Math.max(0.05, Math.min(1, den > 0 ? den : 0.4)),
     steps: Math.max(1, Math.min(20, parseInt($("stUpSteps").value, 10) || 3)),
-    section: sec > 0 && V.clip ? Math.max(22, studioSnapFrames(V, sec)) : 0, auto: $("stUpAuto").checked};
+    section: sec > 0 && V.clip ? Math.max(22, studioSnapFrames(V, sec)) : 0, auto: $("stUpAuto").checked,
+    which: $("stUpWhich").value};
 }
 // the fold's heading says what is set, so it reads without being opened
 function studioUpSummary() {
@@ -7063,7 +7065,7 @@ function studioUpSummary() {
   if (!V || !V.upscale) return;
   const u = studioUpscale(V);
   $("stUpSum").textContent = `to ${u.width} × ${u.height}, denoise ${u.denoise}, ${u.steps} step${u.steps === 1 ? "" : "s"}`
-    + (u.auto ? ", after every render" : "");
+    + ({baseline: ", the Baseline clip", both: ", both clips"}[u.which] || "") + (u.auto ? ", after every render" : "");
 }
 function studioPieceFrames(V) {
   const s = $("stH3PieceS").value.trim();
@@ -7842,7 +7844,7 @@ function wireStudio() {
   for (const id of ["stLoopPrompt", "stLoopS"]) $(id).addEventListener("change", studioH3Remember);
   // Upscale: the fold's boxes are remembered and its heading follows them; they wait for Update only while After
   // every render is on. Upscale this clip sends them with an ordinary render request, for the clip in the Tweaked pane
-  for (const id of ["stUpW", "stUpH", "stUpDen", "stUpSteps", "stUpSec", "stUpAuto"])
+  for (const id of ["stUpW", "stUpH", "stUpDen", "stUpSteps", "stUpSec", "stUpAuto", "stUpWhich"])
     $(id).addEventListener("change", () => {
       const V = S.st.layout.video, u = studioUpscale(V);
       if (id === "stUpW" && $(id).value.trim()) $(id).value = u.width;

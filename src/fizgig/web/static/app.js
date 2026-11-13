@@ -7126,7 +7126,7 @@ function studioUpVideoDraw(thumbs) {
   if (!on) return;
   const i = v.info, fps = S.st.layout.video.clip.fps, r2 = (n) => Math.round(n * 100) / 100;
   $("stUpVideoInfo").textContent = `${i.width} × ${i.height}, ${r2(i.seconds)} s` + (i.has_audio ? "" : ", no sound");
-  $("stUpVideoCropSay").textContent = v.rect ? `crop ${v.rect[2] - v.rect[0]} × ${v.rect[3] - v.rect[1]}` : "the middle is kept";
+  $("stUpVideoCropSay").textContent = v.rect ? `crop ${v.rect[2] - v.rect[0]} × ${v.rect[3] - v.rect[1]}` : "the whole frame";
   studioUpVideoSizes();
   $("stUpVideoA").value = r2(v.a); $("stUpVideoB").value = r2(v.b);
   // the strip: frames across the whole video (made once per file), the part to upscale bright over it
@@ -7169,6 +7169,9 @@ async function studioUpVideoSet(path, saved) {
     if (pickd) [$("stUpW").value, $("stUpH").value] = pickd;
   } else if (saved.which === "video") $("stUpWhich").value = "video";
   studioUpVideoSizes(); studioUpSummary(); studioH3Remember();
+  // a new video: choose what of the frame is used straight away, as a photo's crop is placed when it is picked. The
+  // box starts as the whole frame in the nearest shape the model's sizes allow; Cancel keeps that
+  if (!saved) $("stUpVideoCrop").click();
 }
 // The fold's presets: the built-in ones, then your own (kept on the server beside Studio's block presets, under the
 // model's key + "_upscale"). A preset holds the look, never the size, the prompt or which clip

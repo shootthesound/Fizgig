@@ -911,12 +911,12 @@
                       <button class="btn" id="stUpPresetDel" type="button" hidden title="Delete the preset of yours that is picked">Delete</button></span></div>
                   <div id="stUpPresetSaveRow"></div>
                   <div class="field-row"><span class="field-label">Video:</span>
-                    <div class="st-up-video" id="stUpVideoSlot" title="Optional: a video of your own to upscale in place of a clip rendered here. It is cut to the shape of the To size below (as close to its own shape as the model's sizes allow), read at the model's 24 frames a second, and keeps its sound. Most videos need a prompt of their own: tick Edit prompt and describe it."></div></div>
+                    <div class="st-up-video" id="stUpVideoSlot" title="Optional: a video of your own to upscale in place of a clip rendered here. When you pick one, a window opens to choose the part of the frame that is used: it starts as the whole frame, in the nearest shape the model's sizes allow, and you can move the box anywhere and change its size and shape. The video is read at the model's 24 frames a second and keeps its sound. Most videos need a prompt of their own: tick Edit prompt and describe it."></div></div>
                   <div id="stUpVideoBox" hidden>
                     <div class="field-row"><span class="field-label"></span>
                       <span class="st-inline"><span class="field-hint" id="stUpVideoInfo"></span>
                         <span class="field-hint">Size</span><select id="stUpVideoSize" class="w-combo st-small-select" title="The size the video is made at, in its own shape as closely as the model's sizes allow (each side a multiple of 32). It fills the To boxes. Pick a smaller one for a video too large to work on at its own size, a larger one to upscale it."></select>
-                        <button class="btn" id="stUpVideoCrop" type="button" title="Place the part of the picture that is kept, over a frame of the video. The box starts in the video's own shape: drag it to move it, drag a corner to change its size and its shape. The To size then follows the box's shape, on the model's sizes. Without a crop the middle is kept.">Crop…</button>
+                        <button class="btn" id="stUpVideoCrop" type="button" title="Choose the part of the frame that is used, over a frame of the video. Drag the box anywhere on the frame to move it, and drag a corner to change its size and its shape. The To size then follows the box's shape, on the model's sizes. Until you place a box, the whole frame is used (trimmed by a few pixels where its shape is not one the model makes).">Crop…</button>
                         <span class="field-hint" id="stUpVideoCropSay"></span></span></div>
                     <div class="field-row"><span class="field-label"></span>
                       <div class="st-up-video-ends">

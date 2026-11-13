@@ -2777,11 +2777,29 @@ function jobPillMenu(open) {
   menu.replaceChildren(...rows);
 }
 
-// Back to the normal view: out of the job on show, to the Start tab with no training folder picked (the settings
-// stay as they are)
+// Back to the normal view: out of the job on show, to a clean start - the Start tab with no training folder picked,
+// and the Training tab at the model's own defaults (its first preset, as a first visit) with no LoRA name. Nothing of
+// the job is left in the form. The Samples tab's prompts and preview settings are yours, not the job's: they stay
 async function ctxNormal() {
   jobPillMenu(false);
   if (ctxKind() !== "draft") await ctxSwitch({kind: "draft"});
+  try {
+    const keep = {};
+    for (const sec of S.fam.form.sections.filter((x) => x.tab !== "training"))
+      for (const r of sec.rows) for (const k of [r.key, ...(r.parts || []).map((p) => p.key)])
+        if (k && S.values[k] !== undefined) keep[k] = S.values[k];
+    let v = {...defaults()};
+    const first = S.fam.form.presets[0];
+    if (first) {
+      v = (await api("/api/preset", {family: S.family, name: first.name, values: v})).values;
+      v.__preset = first.name;
+    }
+    S.values = {...v, ...keep, LORA_NAME: "", RESUME_TRAINING: "", __SAMPLE_LIVE: true};
+    S.all[S.family] = S.values;
+    renderAll();
+    await refreshState();
+    saveState();
+  } catch (e) { $("runStatus").textContent = e.message; }
   if ($("imageFolder").value || S.imageFolder) {
     $("imageFolder").value = "";
     $("imageFolder").dispatchEvent(new Event("change"));

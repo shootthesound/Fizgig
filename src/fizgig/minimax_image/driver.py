@@ -186,13 +186,20 @@ class MiniMaxH3ImageDriver(FamilyDriver):
             t = tok(cap, add_special_tokens=False)["input_ids"]
             ids += t
             tags += [TEXT_TAG] * len(t)
-            kw = {}
-            if pix:
-                kw = {"pixel_values": torch.cat(pix).to(te.device, torch.bfloat16),
-                      "image_grid_thw": torch.cat(grids).to(te.device)}
             ids = torch.tensor([ids], dtype=torch.long)
-            h = te.model(input_ids=ids.to(te.device), attention_mask=torch.ones_like(ids).to(te.device),
-                         **kw).last_hidden_state.to(DTYPE)
+            if hasattr(te, "_reference_forward"):
+                # the streamed encoder (a card too small to hold it): its layers wait in system RAM, so the model
+                # can't be called whole; its own forward brings each layer over in turn (#334)
+                h = te._reference_forward(input_ids=ids, attention_mask=torch.ones_like(ids),
+                                          pixel_values=torch.cat(pix) if pix else None,
+                                          image_grid_thw=torch.cat(grids) if pix else None).to(DTYPE)
+            else:
+                kw = {}
+                if pix:
+                    kw = {"pixel_values": torch.cat(pix).to(te.device, torch.bfloat16),
+                          "image_grid_thw": torch.cat(grids).to(te.device)}
+                h = te.model(input_ids=ids.to(te.device), attention_mask=torch.ones_like(ids).to(te.device),
+                             **kw).last_hidden_state.to(DTYPE)
             out.append({"hidden_states": h[0].cpu(), "token_tags": torch.tensor(tags, dtype=torch.long)})
         return out
 

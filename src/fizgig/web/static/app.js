@@ -7112,7 +7112,7 @@ function studioUpRangeDraw(u) {
 }
 // the longest section that fits this card at the fold's size (minimax/upscale.py room_positions), beside the Sections box
 function studioUpRoom(V, u) {
-  const [k, kf] = S.st.upRoom || [0, 0], el = $("stUpRoom");   // the card's room in latent positions, guide frames
+  const [k, kf] = Array.isArray(S.st.upRoom) ? S.st.upRoom : [0, 0], el = $("stUpRoom");   // the card's room in latent positions, guide frames
   if (!k || !V.clip) { el.textContent = ""; return; }
   const n = Math.floor((Math.floor(k / ((u.width >> 4) * (u.height >> 4))) - kf - 2) / 5), frames = n >= 1 ? 17 * n + 5 : 0;
   const secs = (f) => Math.round(f / V.clip.fps * 10) / 10, want = u.section || 124;
@@ -7605,10 +7605,17 @@ async function studioStart() {
   } catch (e) { $("stStatus").textContent = e.message; S.st.upHold = S.st.upNow = S.st.upPrev = 0; }
 }
 
+// Studio's status poll. It always comes round again while the tab is open: a status request that failed, or an error
+// while drawing one, used to end it, and then a finished render never showed until something else polled (Cancel did)
 async function studioPoll() {
   clearTimeout(S.st.poll);
-  let st;
-  try { st = await api("/api/studio/status"); } catch (e) { return; }
+  let active = false;
+  try { active = await studioPollOnce(); }
+  catch (e) { console.error("[studio] status poll", e); }
+  if ($("tab-studio").classList.contains("active")) S.st.poll = setTimeout(studioPoll, active ? 400 : 2000);
+}
+async function studioPollOnce() {
+  const st = await api("/api/studio/status");
   const wasReady = S.st.ready;
   S.st.ready = st.state === "ready";
   S.st.donor = !!st.donor;
@@ -7707,8 +7714,7 @@ async function studioPoll() {
     $("stReport").href = `/api/studio/report?t=${encodeURIComponent(TOKEN)}`;
   }
   if (st.saved && st.saved.out !== S.st.savedShown) { S.st.savedShown = st.saved.out; studioSavedSay(st.saved); }
-  const active = st.state === "loading" || st.rendering || st.pending;
-  if ($("tab-studio").classList.contains("active")) S.st.poll = setTimeout(studioPoll, active ? 400 : 2000);
+  return st.state === "loading" || st.rendering || !!st.pending;
 }
 
 // Download original / Download tweaked: the pair as rendered (a still's picture, a clip's mp4); songs have their

@@ -8027,7 +8027,7 @@ function wireStudio() {
   // Both go by way of Update's check (studioStart): a primary or donor LoRA changed since the clip was rendered is
   // loaded first, then the clip already rendered is upscaled on it. The request is held until it has been sent
   $("stUpPrev").addEventListener("click", () => {
-    S.st.upPrev = 22; S.st.upNow = 0; S.st.upHold = 1;       // 0.9 seconds: the shortest clip the model makes
+    S.st.upPrev = Number($("stUpPrevN").value) || 22; S.st.upNow = 0; S.st.upHold = 1;   // 22 or 39 frames
     studioStart();
   });
   $("stUpGo").addEventListener("click", () => {

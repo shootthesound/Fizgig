@@ -946,8 +946,9 @@
                       <button class="btn" id="stUpGo" type="button" title="Upscale now, with these settings. The clip is not rendered again, and the clip as rendered stays what an upscale is made from: change the denoise or the size and press again to compare.">Upscale now</button>
                       <label class="checkbox-label" title="Every clip you render is upscaled straight after, and its pane shows the larger clip."><input type="checkbox" id="stUpAuto"> After every render</label></span></div>
                   <div class="field-row"><span class="field-label">Preview:</span>
-                    <span class="st-inline"><button class="btn" id="stUpPrev" type="button" title="Try the settings above on 0.9 seconds from the middle of the clip (the shortest clip the model makes) before upscaling all of it. The Tweaked pane shows the preview and the Baseline pane the same frames as rendered, to compare. Your clips are kept: press again with other values, then Upscale now.">Preview</button>
-                      <span class="field-hint">0.9 seconds from the middle of the clip, with the settings above</span></span></div>
+                    <span class="st-inline"><select id="stUpPrevN" class="w-combo st-small-select" title="How much of the clip the preview is made of, always from its middle. 0.9 seconds is the shortest clip the model makes; 1.6 seconds is the next length up, and takes longer."><option value="22" selected>0.9 seconds</option><option value="39">1.6 seconds</option></select>
+                      <button class="btn" id="stUpPrev" type="button" title="Try the settings above on a short piece from the middle of the clip before upscaling all of it. The Tweaked pane shows the preview and the Baseline pane the same frames as rendered, to compare. Your clips are kept: press again with other values, then Upscale now.">Preview</button>
+                      <span class="field-hint">from the middle of the clip, with the settings above</span></span></div>
                 </details>
               </div>
               <div class="field-row" id="stNegRow"><span class="field-label">Negative:</span>

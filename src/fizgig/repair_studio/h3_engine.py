@@ -1654,6 +1654,24 @@ class H3RepairEngine(ClipContract):
                 "frames_n": n, "cached": False, "sig": NOLORA_SIG if no_lora else signature(state),
                 "int8_attention": self._int8_tag()}
 
+    def loop_back_clip(self, state, clip, *, frames_new, regime="confirm", with_audio=True, steps=None,
+                       turbo_strength=None, **_ignored):
+        """Studio's Loop back: `clip` (a render_clip dict) with a return made after it on the state's prompt, ending
+        on the clip's own opening frame, so the whole thing ends where it began. The new frames are made in pieces
+        (minimax/continuation.py: shown the end of the clip, joins blended); the clip itself is not rendered again."""
+        from fizgig.minimax import continuation as _co
+        from fizgig.repair_studio.h3_render_cache import signature
+        if not clip.get("frames") or clip.get("latent") is None:
+            raise ValueError("Render a clip first: Loop back adds a return to the clip in the Tweaked pane.")
+        st, strength = self.regime_params(regime, steps, turbo_strength)
+        lat, aud, imgs = _co.render_long(self, state, frames=0, steps=st, turbo_strength=strength, with_audio=with_audio,
+                                         piece=_co.piece_frames(getattr(self, "clip_piece_frames", 0)),
+                                         prior=(clip["latent"], clip.get("audio_rows"), clip["frames"]),
+                                         add=frames_new, end_on_first=True)
+        return {"latent": lat, "audio_rows": aud, "frames": imgs, "wav": self.decode_audio(aud) if with_audio else None,
+                "middle": imgs[len(imgs) // 2], "regime": regime, "steps": st, "turbo_strength": strength,
+                "frames_n": len(imgs), "cached": False, "sig": signature(state), "int8_attention": self._int8_tag()}
+
     def _clip_regimes(self):
         from fizgig.families.minimax import MINIMAX
         return {n: (st, tu) for n, st, tu in MINIMAX.clip_regimes}

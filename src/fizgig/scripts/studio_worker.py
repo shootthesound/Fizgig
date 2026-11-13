@@ -296,6 +296,22 @@ def _render_clips(eng, desc, st, c, out, gen):
     import torch
     torch.cuda.reset_peak_memory_stats()
     rest = torch.cuda.memory_allocated() / 2**30
+    lb = v.get("loop_back")
+    if lb:
+        # Loop back: the clip in the Tweaked pane gets a return made after it on this prompt, ending on its own
+        # opening frame. The kept clip stays the one before the return, so another prompt makes another return
+        last = S.get("last_clip")
+        if not last or last.get("engine") is not eng or not hasattr(eng, "loop_back_clip"):
+            raise ValueError("Render a clip first: Loop back adds a return to the clip in the Tweaked pane.")
+        st.preview_width, st.preview_height, st.keyframes = last["width"], last["height"], None
+        if str(lb.get("prompt") or "").strip():
+            st.prompt = str(lb["prompt"]).strip()
+        tweak = eng.loop_back_clip(st, last["clip"], frames_new=int(lb.get("frames") or 0), **opts)
+        png = os.path.join(out, f"tweaked_{gen}.png")
+        paths = {"baseline": "", "baseline_media": "", "tweaked": png,
+                 "tweaked_media": _write_clip(tweak, png, os.path.join(out, f"tweaked_{gen}.mp4"), fps, rate)}
+        torch.cuda.empty_cache()
+        return paths, None
     same = _clip_same_as_baseline(eng, st)
     # Tweaked only (the page's tick): with something moved, the Baseline clip is not rendered at all
     base = None if (v.get("tweaked_only") and not same) else eng.baseline_clip(st, cache=None, **opts)
@@ -328,6 +344,7 @@ def _render_clips(eng, desc, st, c, out, gen):
     png = os.path.join(out, f"tweaked_{gen}.png")
     paths["tweaked"], paths["tweaked_media"] = png, _write_clip(tweak, png, os.path.join(out, f"tweaked_{gen}.mp4"),
                                                                 fps, rate)
+    S["last_clip"] = {"clip": tweak, "width": width, "height": height, "engine": eng}     # what Loop back adds to
 
     # hand the render's cached memory back (the model stays loaded): the page plays these clips next, and a card the
     # worker leaves full - Vimoo bf16 + the decode's cache held 30.5 of 32 GB - gives the video decode and the desktop

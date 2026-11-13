@@ -5844,6 +5844,9 @@ function studioKind(L, sv) {
   $("stH3Boost").parentElement.style.display = V.speed_boost ? "" : "none";   // a family ability (H3 has it)
   $("stH3Early").checked = h3.early !== false;
   $("stH3Only").checked = h3.only === true;
+  $("stLoopRow").style.display = V.pieces ? "" : "none";                      // with the In pieces ability (H3)
+  $("stLoopPrompt").value = h3.loopPrompt || "";
+  $("stLoopS").value = h3.loopS || "";
   $("stH3Pieces").checked = h3.pieces === true;          // off unless turned on
   $("stH3PiecesBox").style.display = V.pieces ? "" : "none";                  // a family ability (H3 has it)
   $("stH3PieceS").value = h3.pieceS || "";
@@ -5993,7 +5996,7 @@ function studioH3Remember() {
     d.video[(S.st.layout || {}).key || "minimax"] = {model: $("stH3Model").value, base: $("stH3Base").value, len: $("stH3Len").value,
       lenS: $("stH3LenS").value, w: $("stH3W").value,
       h: $("stH3H").value, steps: $("stH3Steps").value, turbo: $("stH3Turbo").value,
-      sound: $("stH3Sound").checked, boost: $("stH3Boost").checked, early: $("stH3Early").checked, pieces: $("stH3Pieces").checked, pieceS: $("stH3PieceS").value, only: $("stH3Only").checked, kf: S.st.kf,
+      sound: $("stH3Sound").checked, boost: $("stH3Boost").checked, early: $("stH3Early").checked, pieces: $("stH3Pieces").checked, pieceS: $("stH3PieceS").value, only: $("stH3Only").checked, loopPrompt: $("stLoopPrompt").value, loopS: $("stLoopS").value, kf: S.st.kf,
       kfRect: S.st.kfRect};
     localStorage.setItem(ST_KEY, JSON.stringify(d));
   } catch (e) { /* private window */ }
@@ -6013,7 +6016,7 @@ function studioExtra() {
     turbo: Math.max(0, Math.min(1.5, Number($("stH3Turbo").value) || 0)), sound: $("stH3Sound").checked,
     speed_boost: !!V.speed_boost && $("stH3Boost").checked, early: $("stH3Early").checked,
     pieces: !!V.pieces && $("stH3Pieces").checked, piece: studioPieceFrames(V),
-    tweaked_only: $("stH3Only").checked,
+    tweaked_only: $("stH3Only").checked, loop_back: S.st.loopBack || null,
     negative: $("stNeg").value.trim()},
     keyframes: slots.filter((s) => S.st.kf[s]).map((s) => ({slot: s, path: S.st.kf[s], rect: S.st.kfRect[s] || null})),
     ref_mode: ref};
@@ -7582,7 +7585,7 @@ async function studioPoll() {
     studioMapsAfterRender(S.st.same);
     studioDownloads(st, q);
     const ps = Number($("stPScale").value) || 1;
-    $("stBaseCap").textContent = noBase ? "Baseline (not rendered: Tweaked only is ticked)" :
+    $("stBaseCap").textContent = noBase ? "Baseline (not rendered for this clip)" :
       (ps === 1 ? "Baseline (LoRA at default 1.0)" : `Baseline (LoRA at ${ps})`) +
       (st.donor ? " - the donor is not in the baseline" : "");
     $("stTweakCap").textContent = "Tweaked (current sliders)" + (st.donor ? " - includes the donor" : "");
@@ -7805,6 +7808,14 @@ function wireStudio() {
   // the swap buttons between a width and a height (pictures and clips): the two values change places, and each
   // picker reports its change as if picked by hand
   $("stH3Only").addEventListener("change", () => { studioH3Remember(); studioPending(); });
+  // Loop back: a return for the clip in the Tweaked pane, on its own prompt, ending on the clip's opening frame. Its
+  // length is the seconds box (in steps of 17 frames; empty: about 5 seconds), sent with an ordinary render request
+  for (const id of ["stLoopPrompt", "stLoopS"]) $(id).addEventListener("change", studioH3Remember);
+  $("stLoopBack").addEventListener("click", async () => {
+    const c = S.st.layout.video.clip, sec = Number($("stLoopS").value) || 5;
+    S.st.loopBack = {prompt: $("stLoopPrompt").value.trim(), frames: Math.max(1, Math.round(sec * c.fps / c.step)) * c.step};
+    try { await studioRender(); } finally { S.st.loopBack = null; }
+  });
   // the Aspect lists: the longer side stays, the other goes to the nearest size on offer for that shape; a portrait
   // size stays portrait
   for (const [a, w, h] of [["stAspect", "stW", "stH"], ["stH3Aspect", "stH3W", "stH3H"]])

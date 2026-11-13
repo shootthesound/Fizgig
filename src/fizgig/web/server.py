@@ -1690,6 +1690,26 @@ def _continue_run(run_id, more="", queue_ok=True, values=None):
     return r
 
 
+def name_taken(values, inputs) -> str:
+    """Why a new run can't take this name ("" = it can): a run of that name already has files in the same output
+    folder - its LoRAs, saved states or previews. Two runs sharing a name share those files, so one would write over
+    the other and Delete run on either would take both's. A run carrying that same run on is not a new one: the
+    Resume Training box, Continue, a fine-tune's continuation. A run that made nothing (it failed before its first
+    save) leaves the name free."""
+    values = values or {}
+    if str(values.get("RESUME_TRAINING") or "").strip() or values.get("__continue") or values.get("FAMILY_FT_CONTINUE"):
+        return ""
+    out, name = str(inputs.get("LORA_OUTPUT_DIR") or ""), str(inputs.get("LORA_NAME") or "")
+    if not out or not name:
+        return ""
+    found = run_outputs(out, name)
+    if not (found["checkpoints"] or found["states"] or found["previews"]):
+        return ""
+    return (f"A run named {name} already has files in {out}. Give this one another LoRA name ({next_run_name(name, out)} "
+            f"is free), or delete that run on Runs & outputs first. To train that run further, use Continue on Runs & "
+            f"outputs.")
+
+
 def next_run_name(name, out_dir=""):
     """A name for another run of the same thing: name_2, then _3 and on, past every name in use - the run training,
     the queued runs, the runs in the history, and anything of that name in the output folder (a LoRA, its epochs, its
@@ -4154,6 +4174,10 @@ class Handler(BaseHTTPRequestHandler):
                 if plan.problems:
                     return self.json({"problems": plan.problems})
                 out_dir, lora = inputs["LORA_OUTPUT_DIR"], inputs["LORA_NAME"]
+                was_cont = bool(editing and ((webqueue.get(editing) or {}).get("values") or {}).get("__continue"))
+                taken = "" if was_cont else name_taken(vals, inputs)
+                if taken:
+                    return self.json({"problems": [taken]})
                 n = webqueue.clashes(out_dir, lora, skip=editing)
                 with _lock:
                     live_clash = (_run["proc"] is not None and _run["proc"].poll() is None
@@ -4237,6 +4261,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(r, 400 if r.get("error") else 200)
             if path == "/api/plan":
                 desc, inputs, plan = _plan(b.get("family", ""), b.get("values") or {}, b.get("image_folder") or "")
+                taken = name_taken(b.get("values") or {}, inputs) if desc is not None and not plan.problems else ""
+                if taken:
+                    plan.problems.append(taken)
                 return self.json({"problems": plan.problems, "stages": [{"name": s.name, "cmd": s.cmd}
                                                                          for s in plan.stages],
                                   "dataset_toml": plan.dataset_toml,
@@ -4244,8 +4271,12 @@ class Handler(BaseHTTPRequestHandler):
                                   if desc is not None and not plan.problems else []})
             if path == "/api/start":
                 fam, vals, folder = b.get("family", ""), b.get("values") or {}, b.get("image_folder") or ""
+                _d0, _in0, _p0 = _plan(fam, vals, folder)
+                taken = name_taken(vals, _in0) if _d0 is not None else ""
+                if taken:                        # a name already used in that output folder: never a second run of it
+                    return self.json({"problems": [taken]})
                 if not b.get("anyway"):          # the Start checks first: warnings come back, nothing starts
-                    desc, inputs, plan = _plan(fam, vals, folder)
+                    desc, inputs, plan = _d0, _in0, _p0
                     fetch = desc is not None and _only_downloads(desc, plan.problems)
                     warn = launch.start_checks(desc, inputs, folder) \
                         if desc is not None and (not plan.problems or fetch) else []

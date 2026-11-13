@@ -1,5 +1,13 @@
 # Fizgig news
 
+## 13 Nov 2026: every job keeps its own view
+
+**Switch between the run that's training, the runs in your queue and what you're setting up, without losing your place.** A pill at the top right (bottom right on a phone) names the job the tabs are showing. Press it and pick another, and the Start, Image Prep, Captions, Samples and Training tabs all change to that job's training folder, captions, masks, sample prompts, settings and previews. The run training now is there to look at, with its Samples tab still changeable; a queued run can be changed and saved back; a paused run takes what you change before Resume. **Set up a new run with these settings** copies the job on show into a new setup named with `_2`, and **Back to the normal view** gives you a clean start.
+
+**Likeness and Style scores belong to the run**: pick your three reference photos once per training folder, and each run keeps its own scores over its own previews. **Star the previews you like**, and the matching checkpoint gets a star too. **A run cut off when Fizgig closed** is offered again at the next start: carry it on, start the next in the queue, or start fresh. And a LoRA name can only be used once per output folder, so two runs never write over each other.
+
+[Fizgig v9.7.1 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.7.1)
+
 ## 12 Nov 2026: top-end likeness for MiniMax H3 Image
 
 **MiniMax H3 Image now trains likeness at the very top end.** On our hardest test dataset, the best previews look more like the person than all but two of their own 45 photos do, and that held on two more datasets, one harder still. Load **✨ MiniMax H3 Image Standard** (0.25 MP) and train with its settings as they are: a new Likeness optimization schedule (its controls under Advanced), Automagic v4 starting at 2.5e-4 (the most any weight can move, as it steps each one down from there: not comparable to an AdamW rate), and 30 epochs. The presets are back at 0.25 MP: the schedule and the optimizer were what held likeness back, not the picture size.

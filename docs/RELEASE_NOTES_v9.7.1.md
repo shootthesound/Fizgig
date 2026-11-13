@@ -22,7 +22,6 @@
 **MiniMax H3:**
 - **Ostris's training adapters move to v3.** The updater switches Preferences over from v1 or v2 and leaves the old file on disk; an adapter you chose by hand is kept. The Training adapter row is gone: the adapter is always on, and the right file is picked for your Training Base.
 - **The Circlestone adapter is removed.** Ostris's v3 adapters did better in our tests. Its file is left on disk.
-- **Fine-tunes of H3 video load as a base.** Checkpoints that quantize layers the original doesn't now load, with block swap too.
 - **H3 Image edit LoRAs cache on 24 GB cards.** Caching the before-pictures crashed when the text encoder was streamed from system RAM (#334, thanks @DaRoamer for the diagnosis).
 - **Studio frees the card properly before a text-encoder pass,** so a 24 GB card no longer runs out of memory there.
 

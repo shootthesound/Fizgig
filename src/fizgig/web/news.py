@@ -5,6 +5,20 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 
 NEWS = [
     {
+        "date": "13 Nov 2026",
+        "title": "Every job keeps its own view",
+        "body": (
+            "A pill at the top right (bottom right on a phone) names the job the tabs are showing. Press it to switch "
+            "between the run training now, the runs in your queue and a clean start: the Start, Image Prep, Captions, "
+            "Samples and Training tabs all change to that job's folder, captions, prompts, settings and previews.\n\n"
+            "Likeness and Style scores now belong to each run, with your three reference photos remembered per training "
+            "folder. You can star the previews you like, and a run cut off when Fizgig closed is offered again at the "
+            "next start."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#13-nov-2026-every-job-keeps-its-own-view"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.7.1"}],
+    },
+    {
         "date": "12 Nov 2026",
         "title": "Top-end likeness for MiniMax H3 Image",
         "body": (

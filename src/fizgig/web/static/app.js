@@ -7568,13 +7568,15 @@ async function studioRender() {
   }
   try { await api("/api/studio/render", {state, ...studioExtra(), ...studioMixExtra()}); studioPoll(); }
   catch (e) { $("stStatus").textContent = e.message; }
+  finally { if (S.st.upHold) S.st.upHold = S.st.upNow = S.st.upPrev = 0; }     // the held Upscale request has gone
 }
 
 function studioRollSeed() { S.st.seedUsed = 1 + Math.floor(Math.random() * (2 ** 31 - 2)); }
 
 async function studioStart() {
   stRemember();
-  if (seedOf("stSeed") === 0) studioRollSeed();      // Update with seed 0: a new random picture
+  // Update with seed 0: a new random picture (not for an Upscale: it works on the clip already rendered)
+  if (seedOf("stSeed") === 0 && !S.st.upHold) studioRollSeed();
   const L = S.st.layout;
   try {
     const st = await api("/api/studio/status");
@@ -7601,7 +7603,7 @@ async function studioStart() {
     S.st.loadedKey = key;
     S.st.pendingFirst = true;
     studioPoll();
-  } catch (e) { $("stStatus").textContent = e.message; }
+  } catch (e) { $("stStatus").textContent = e.message; S.st.upHold = S.st.upNow = S.st.upPrev = 0; }
 }
 
 async function studioPoll() {
@@ -8024,13 +8026,15 @@ function wireStudio() {
   $("stUpPrompt").addEventListener("change", upPrompt);
   $("stUpPromptCopy").addEventListener("click", () => { $("stUpPrompt").value = $("stPrompt").value; upPrompt(); });
   // Preview: the middle of the clip (1 frame, or the shortest clip) with the fold's settings, sent like Upscale now
-  $("stUpPrev").addEventListener("click", async () => {
-    S.st.upPrev = Number($("stUpPrevN").value) || 1;
-    try { await studioRender(); } finally { S.st.upPrev = 0; }
+  // Both go by way of Update's check (studioStart): a primary or donor LoRA changed since the clip was rendered is
+  // loaded first, then the clip already rendered is upscaled on it. The request is held until it has been sent
+  $("stUpPrev").addEventListener("click", () => {
+    S.st.upPrev = Number($("stUpPrevN").value) || 1; S.st.upNow = 0; S.st.upHold = 1;
+    studioStart();
   });
-  $("stUpGo").addEventListener("click", async () => {
-    S.st.upNow = true;
-    try { await studioRender(); } finally { S.st.upNow = false; }
+  $("stUpGo").addEventListener("click", () => {
+    S.st.upNow = 1; S.st.upPrev = 0; S.st.upHold = 1;
+    studioStart();
   });
   for (const [id, loop] of [["stContinue", false], ["stLoopBack", true]])
     $(id).addEventListener("click", async () => {
@@ -8067,7 +8071,7 @@ function wireStudio() {
     if ($("stNolPane").style.display !== "none") ids.unshift(v ? "stNolVid" : "stNolAud");
     return ids;
   });
-  $("stStart").addEventListener("click", studioStart);
+  $("stStart").addEventListener("click", () => { S.st.upHold = S.st.upNow = S.st.upPrev = 0; studioStart(); });
   wireStudioAce();
   S.st.eq = {primary: false, donor: false}; S.st.eqSaved = {};
   $("stEqP").addEventListener("click", () => studioEq("primary", !S.st.eq.primary));

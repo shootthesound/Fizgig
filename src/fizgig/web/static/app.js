@@ -10925,7 +10925,14 @@ function wire() {
         showProblems([], ed ? `Saved: queued run ${r.position} has these settings now.` :
           `Added to the queue as number ${r.position}` + (before ? `: it starts after ${before}` + (eta ? ` (about ${eta})` : "") :
           ": it starts as soon as nothing else is training") + ".");
-        queueEditing(null);
+        await pollRun();
+        const queued = ((S.run.web_queue || {}).items || []).some((i) => i.id === r.id);
+        if (ed && queued) {                                   // saved: still that queued run, as it now is
+          queueEditing({...ed, n: r.position || ed.n});
+          $("queueEditText").replaceChildren(el("b", {text: `Saved: queued run ${r.position || ed.n}`}),
+            el("span", {text: (ed.lora ? `: ${ed.lora}. ` : ". ") + "Change more and Save to queue again, or leave with the pill."}));
+        } else if (!ed && queued) await ctxSwitch({kind: "queue", id: r.id});   // added: the tabs show that job now
+        else if (ed) queueEditing(null);                      // it started meanwhile: it is the run now
       } else {
         showProblems(r.problems || (r.error ? [r.error] : []));
         if (ed) $("queueEditText").replaceChildren(el("b", {text: `Not saved: `}),   // the bar is where you pressed it
@@ -10938,7 +10945,12 @@ function wire() {
     }
   });
   $("queueEditSave").addEventListener("click", () => $("btnQueue").click());
-  $("btnQueueCancel").addEventListener("click", () => { queueEditing(null); $("runStatus").textContent = "Edit cancelled: the queued run is as it was."; });
+  $("btnQueueCancel").addEventListener("click", async () => {
+    const c = S.ctx || {};
+    if (c.kind === "queue") await ctxSwitch({kind: "queue", id: c.id});    // its settings as queued, back in the form
+    else queueEditing(null);
+    $("runStatus").textContent = "Edit cancelled: the queued run is as it was.";
+  });
   $("webQueueStart").addEventListener("click", () => api("/api/queue/start", {}).then(pollRun)
     .catch((e) => { $("runStatus").textContent = e.message; }));
   $("webQueueHold").addEventListener("click", () => api("/api/queue/hold", {}).then(pollRun));

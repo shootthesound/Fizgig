@@ -160,13 +160,24 @@ STATE_MARKERS = ("training_state.json", "random_states_0.pkl")   # written last:
                                                                   # half-written save
 
 
-def latest_state(out_dir, name):
-    """The run's newest complete state folder (<name>-NNNNNN-state with its commit marker), or ""."""
+def latest_state(out_dir, name, since=0.0):
+    """The run's newest complete state folder (<name>-NNNNNN-state with its commit marker), or "". since: the time the
+    run started; a state saved before it belongs to an earlier run that had the same name and folder, and is left out
+    (it used to be taken for this run's, so a 20-epoch run read as 50 epochs done)."""
+    def saved(d):
+        times = []
+        for m in STATE_MARKERS:
+            try:
+                times.append(os.path.getmtime(os.path.join(out_dir, d, m)))
+            except OSError:
+                pass
+        return max(times) if times else None
+
     try:
-        found = [d for d in os.listdir(out_dir) if re.fullmatch(re.escape(name) + r"-\d{6}-state", d)
-                 and any(os.path.isfile(os.path.join(out_dir, d, m)) for m in STATE_MARKERS)]
+        found = [d for d in os.listdir(out_dir) if re.fullmatch(re.escape(name) + r"-\d{6}-state", d)]
     except OSError:
         return ""
+    found = [d for d in found if (saved(d) or -1.0) >= (float(since or 0) - 2 if since else 0)]
     return os.path.join(out_dir, max(found)) if found else ""
 
 

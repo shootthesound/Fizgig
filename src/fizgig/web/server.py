@@ -1472,7 +1472,8 @@ def _record_pause(out_dir):
         fam, values, folder, name = _run["family"], dict(_run["values"]), _run["image_folder"], _run["lora"]
     desc = get_family(fam)
     ft = bool(desc is not None and desc.finetune and form._kind(desc, values) == "finetune")
-    path = launch.latest_ft_checkpoint(out_dir, name) if ft else launch.latest_state(out_dir, name)
+    began = (history.get(_run.get("history_id")) or {}).get("started_at") or 0     # an earlier run's states don't count
+    path = launch.latest_ft_checkpoint(out_dir, name) if ft else launch.latest_state(out_dir, name, began)
     if not path:
         return False
     side = {"mode": "ft" if ft else "state", "state_path": path, "output_name": name,
@@ -1535,7 +1536,7 @@ def _continue_point(rec):
                                                   values.get("FAMILY_FT_ROTATE_EVERY"))
         return {"kind": "ft", "path": path, "done": done, "of": done + left, "key": "FAMILY_FT_ROTATIONS",
                 "unit": "rotation"}
-    path = launch.latest_state(out, name)
+    path = launch.latest_state(out, name, rec.get("started_at") or 0)     # not an earlier run's, same name and folder
     m = re.search(r"-(\d{6})-state$", path)
     if not m:
         return None

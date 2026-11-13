@@ -321,7 +321,8 @@ MOSS_IMAGE = FamilyDescription(
     preview_look_hint="For previews on your Base (the SFT tick above off): the SFT look LoRA gives them much of SFT's "
                       "look. Not as good as SFT itself, but a really good indicator, and previews are much quicker "
                       "with no model swap. Previews only, never training. Downloaded for you the first time (about "
-                      "2.1 GB).",
+                      "2.1 GB). It's made for Fizgig's previews: don't load it in ComfyUI, where you run MOSS-Image "
+                      "SFT itself.",
     preview_look_on=True,             # part of the preview recipe (Peter, 8 Nov 2026)
     preview_look_strength=1.5,
     # Studio / Royale / Profiler follow the Samples tab only (SFT while its tick is on): no separate SFT choice

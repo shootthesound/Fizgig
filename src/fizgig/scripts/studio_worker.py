@@ -325,6 +325,7 @@ def _render_clips(eng, desc, st, c, out, gen):
         big = eng.upscale_clip(state, clip, preview=preview, width=int(up.get("width") or 0) or int(w0 * 1.5),
                                height=int(up.get("height") or 0) or int(h0 * 1.5), denoise=up.get("denoise"),
                                steps=int(up.get("steps") or 0) or None, section=int(up.get("section") or 0),
+                               first_guide=up.get("first_guide", True), last_guide=up.get("last_guide", True),
                                turbo_strength=opts["turbo_strength"])
         print(f"[studio] upscale to {big['upscaled'][0]}x{big['upscaled'][1]}, denoise {big['upscaled'][2]}, "
               f"{big['upscaled'][3]} step(s), {big['upscaled'][4]} section(s): peak "

@@ -1689,13 +1689,17 @@ class H3RepairEngine(ClipContract):
 
     @_locked
     def upscale_clip(self, state, clip, *, width, height, denoise=None, steps=None, section=0, turbo_strength=None,
-                     preview=0, **_ignored):
+                     preview=0, first_guide=True, last_guide=True, **_ignored):
         """Studio's Upscale: `clip` (a render_clip dict) made again at width x height, on the state's prompt. The
         clip's frames are stretched and finished a section at a time at a low denoise (minimax/upscale.py): each
         section is a first / last frame clip pinned to its own two end frames, upscaled on their own first, and
         starts on the finished last frame of the section before. denoise: the noise level the stretched frames start
         from (0-1); steps: the passes from there; section: a section's frames (0 = 124). The sound is the clip's
         own, left as it is. The clip itself is not rendered again.
+
+        first_guide / last_guide: the end frames upscaled on their own and shown to the model. Without first_guide
+        the clip's first frame is finished like every other frame; without last_guide so is each section's last
+        frame. A later section always starts on the finished last frame of the one before (that is the join).
 
         preview: a quick look at these settings on the middle of the clip. 1 = its middle frame alone, upscaled the
         way a section's end frames are; more = one section of that many frames (22 is the shortest clip) around the
@@ -1735,7 +1739,8 @@ class H3RepairEngine(ClipContract):
         rows, n_all = clip.get("audio_rows"), audio_latents_for_frames(len(frames))
         if rows is not None and (not d_a or rows.shape[0] != n_all * AUDIO_CHANNELS):
             rows = None                        # a clip with something added after it: its rows are not the whole sound
-        done, total = [0], (2 * len(plan) + 1) * k
+        first_guide, last_guide = bool(first_guide), bool(last_guide)
+        done, total = [0], (len(plan) * (2 if last_guide else 1) + (1 if first_guide else 0)) * k
 
         def tick(_i, _n):
             if self._cancel_event.is_set():
@@ -1795,9 +1800,10 @@ class H3RepairEngine(ClipContract):
                 self.encoder = enc.to("cpu")
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-            first = still(sub[0], seed + 100) if not out else self.encode_keyframe(out[a], w, h)
-            last = still(sub[-1], seed + 101 + j)
-            kf = [(0, first.to(self.device, torch.float32)), (n - 1, last.to(self.device, torch.float32))]
+            first = (self.encode_keyframe(out[a], w, h) if out else
+                     still(sub[0], seed + 100) if first_guide else None)
+            last = still(sub[-1], seed + 101 + j) if last_guide else None
+            kf = [(i, z.to(self.device, torch.float32)) for i, z in ((0, first), (n - 1, last)) if z is not None]
             audio = an = None
             if d_a:
                 n_a = audio_latents_for_frames(n)
@@ -1805,7 +1811,7 @@ class H3RepairEngine(ClipContract):
                 if rows is not None:
                     r0 = max(0, min(int(round(a * n_all / len(frames))), n_all - n_a))
                     audio = rows.reshape(AUDIO_CHANNELS, n_all, d_a)[:, r0:r0 + n_a].reshape(-1, d_a).to(self.device)
-            x = run((1.0 - den) * up + den * noise(up.shape, seed + 11 + j), audio=audio, audio_noise=an, keyframes=kf)
+            x = run((1.0 - den) * up + den * noise(up.shape, seed + 11 + j), audio=audio, audio_noise=an, keyframes=kf or None)
             self._last_canvas = (w, h, n)
             imgs = self.decode_clip_frames(x.float().cpu())
             out = (out[:a + 1] + imgs[1:]) if out else imgs

@@ -16,6 +16,7 @@ import torch
 SHIFT = 12.0                 # the sampler's schedule shift (sampling.sample_schedule's)
 SECTION = 124                # frames in a section unless the page sets another length
 MIN_SECTION = 22
+GUIDE_DENOISE = 0.4       # a guide frame is made again at no more than this, so it stays the clip's own frame
 TAIL = 56                    # the last section is at least this long: a leftover of a few frames is not a clip
 DENOISE, STEPS = 0.4, 3
 

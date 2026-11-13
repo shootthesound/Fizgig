@@ -5853,6 +5853,8 @@ function studioKind(L, sv) {
   $("stUpDen").value = up.den || "0.4"; $("stUpSteps").value = up.steps || "3"; $("stUpSec").value = up.sec || "";
   $("stUpAuto").checked = up.auto === true;
   $("stUpFirst").checked = up.first !== false;
+  $("stUpGuide").value = ["full", "source"].includes(up.guide) ? up.guide : "light";
+  $("stUpGuideL").value = ["full", "source"].includes(up.guideL) ? up.guideL : "light";
   $("stUpBias").value = up.bias || "0";
   $("stUpAdv").checked = up.adv === true;
   studioUpPresets("");
@@ -6024,7 +6026,7 @@ function studioH3Remember() {
       lenS: $("stH3LenS").value, w: $("stH3W").value,
       h: $("stH3H").value, steps: $("stH3Steps").value, turbo: $("stH3Turbo").value,
       sound: $("stH3Sound").checked, boost: $("stH3Boost").checked, early: $("stH3Early").checked, pieces: $("stH3Pieces").checked, pieceS: $("stH3PieceS").value, only: $("stH3Only").checked, loopPrompt: $("stLoopPrompt").value, loopS: $("stLoopS").value,
-      up: {w: $("stUpW").value, h: $("stUpH").value, den: $("stUpDen").value, steps: $("stUpSteps").value, sec: $("stUpSec").value, auto: $("stUpAuto").checked, first: $("stUpFirst").checked, last: $("stUpLast").checked, bias: $("stUpBias").value, adv: $("stUpAdv").checked, low: S.st.upLow || 0, ownPrompt: $("stUpOwnPrompt").checked, prompt: $("stUpPrompt").value, which: $("stUpWhich").value, open: $("stUpBox").open, video: S.st.upVideo ? {path: S.st.upVideo.path, rect: S.st.upVideo.rect, a: S.st.upVideo.a, b: S.st.upVideo.b} : null}, kf: S.st.kf,
+      up: {w: $("stUpW").value, h: $("stUpH").value, den: $("stUpDen").value, steps: $("stUpSteps").value, sec: $("stUpSec").value, auto: $("stUpAuto").checked, first: $("stUpFirst").checked, last: $("stUpLast").checked, guide: $("stUpGuide").value, guideL: $("stUpGuideL").value, bias: $("stUpBias").value, adv: $("stUpAdv").checked, low: S.st.upLow || 0, ownPrompt: $("stUpOwnPrompt").checked, prompt: $("stUpPrompt").value, which: $("stUpWhich").value, open: $("stUpBox").open, video: S.st.upVideo ? {path: S.st.upVideo.path, rect: S.st.upVideo.rect, a: S.st.upVideo.a, b: S.st.upVideo.b} : null}, kf: S.st.kf,
       kfRect: S.st.kfRect};
     localStorage.setItem(ST_KEY, JSON.stringify(d));
   } catch (e) { /* private window */ }
@@ -7079,6 +7081,7 @@ function studioUpscale(V) {
     steps: Math.max(1, Math.min(20, parseInt($("stUpSteps").value, 10) || 3)),
     section: sec > 0 && V.clip ? Math.max(22, studioSnapFrames(V, sec)) : 0, auto: $("stUpAuto").checked,
     which: $("stUpWhich").value, first_guide: $("stUpFirst").checked, last_guide: $("stUpLast").checked,
+    guide: [$("stUpGuide").value, $("stUpGuideL").value],
     prompt: $("stUpOwnPrompt").checked ? $("stUpPrompt").value.trim() : "",
     bias: Math.max(-1, Math.min(1, Number($("stUpBias").value) || 0)),
     low: $("stUpAdv").checked ? Math.max(0, Math.min(S.st.upLow || 0, (den > 0 ? den : 0.4) - 0.02)) : 0,
@@ -7233,6 +7236,8 @@ function studioUpSummary() {
   studioUpRangeDraw(u); studioUpRoom(V, u);
   $("stUpSum").textContent = `to ${u.width} × ${u.height}, denoise ${u.denoise}, ${u.steps} step${u.steps === 1 ? "" : "s"}`
     + (u.first_guide ? (u.last_guide ? "" : ", no last guide frame") : (u.last_guide ? ", no first guide frame" : ", no guide frames"))
+    + (u.first_guide && u.guide[0] !== "light" ? (u.guide[0] === "source" ? ", first frame as the source" : ", first frame at the Denoise") : "")
+    + (u.last_guide && u.guide[1] !== "light" ? (u.guide[1] === "source" ? ", last frame as the source" : ", last frame at the Denoise") : "")
     + (u.low > 0 ? `, noise range ${u.low} to ${u.denoise}` : "")
     + (u.bias > 0 ? ", steps weighted low" : u.bias < 0 ? ", steps weighted high" : "") + (u.prompt ? ", its own prompt" : "")
     + ({baseline: ", the Baseline clip", both: ", both clips", video: ", the loaded video"}[u.which] || "") + (u.auto ? ", after every render" : "");
@@ -8024,7 +8029,7 @@ function wireStudio() {
   for (const id of ["stLoopPrompt", "stLoopS"]) $(id).addEventListener("change", studioH3Remember);
   // Upscale: the fold's boxes are remembered and its heading follows them; they wait for Update only while After
   // every render is on. Upscale this clip sends them with an ordinary render request, for the clip in the Tweaked pane
-  for (const id of ["stUpW", "stUpH", "stUpDen", "stUpSteps", "stUpSec", "stUpAuto", "stUpWhich", "stUpFirst", "stUpLast", "stUpBias"])
+  for (const id of ["stUpW", "stUpH", "stUpDen", "stUpSteps", "stUpSec", "stUpAuto", "stUpWhich", "stUpFirst", "stUpLast", "stUpGuide", "stUpGuideL", "stUpBias"])
     $(id).addEventListener("change", () => {
       const V = S.st.layout.video, u = studioUpscale(V);
       if (id === "stUpW" && $(id).value.trim()) $(id).value = u.width;
@@ -8128,6 +8133,8 @@ function wireStudio() {
     $("stUpDen").value = p.den;                                // the size is yours: no preset sets it $("stUpSteps").value = p.steps; $("stUpSec").value = p.sec || ""; $("stUpBias").value = p.bias || 0;
     $("stUpAdv").checked = !!p.adv; S.st.upLow = Number(p.low) || 0; $("stUpRangeRow").hidden = !p.adv;
     $("stUpFirst").checked = p.first !== false; $("stUpLast").checked = p.last !== false;
+    for (const [id, g] of [["stUpGuide", p.guide], ["stUpGuideL", p.guideL]])                       // a preset of yours
+      if (g) $(id).value = ["full", "source"].includes(g) ? g : "light";
     studioUpSummary(); studioH3Remember();
     if ($("stUpAuto").checked) studioPending();
   });
@@ -8141,7 +8148,7 @@ function wireStudio() {
     const save = async (overwrite) => {
       const u = studioUpscale(S.st.layout.video);
       const data = {den: u.denoise, steps: u.steps, sec: $("stUpSec").value.trim(), bias: u.bias, adv: $("stUpAdv").checked,
-        low: u.low, first: u.first_guide, last: u.last_guide};
+        low: u.low, first: u.first_guide, last: u.last_guide, guide: u.guide[0], guideL: u.guide[1]};
       try {
         const r = await api("/api/studio/preset_save", {family: studioUpPresetKey(), name: name.value, blocks: data, overwrite: !!overwrite});
         if (r.exists) { msg.replaceChildren(document.createTextNode("That name is taken. "), el("button", {class: "btn btn-sm btn-danger", text: "Replace it", onclick: () => save(true)})); return; }

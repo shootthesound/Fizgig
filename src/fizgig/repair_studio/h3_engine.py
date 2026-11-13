@@ -1689,7 +1689,7 @@ class H3RepairEngine(ClipContract):
 
     @_locked
     def upscale_clip(self, state, clip, *, width, height, denoise=None, steps=None, section=0, turbo_strength=None,
-                     preview=0, first_guide=True, last_guide=True, bias=0.0, low=0.0, **_ignored):
+                     preview=0, first_guide=True, last_guide=True, bias=0.0, low=0.0, guide="light", **_ignored):
         """Studio's Upscale: `clip` (a render_clip dict) made again at width x height, on the state's prompt. The
         clip's frames are stretched and finished a section at a time at a low denoise (minimax/upscale.py): each
         section is a first / last frame clip pinned to its own two end frames, upscaled on their own first, and
@@ -1700,6 +1700,10 @@ class H3RepairEngine(ClipContract):
         first_guide / last_guide: the end frames upscaled on their own and shown to the model. Without first_guide
         the clip's first frame is finished like every other frame; without last_guide so is each section's last
         frame. A later section always starts on the finished last frame of the one before (that is the join).
+        guide: how a guide frame is made from the clip's frame, one value for both or (first, last). "light" (the default): made again on its own at the
+        denoise or GUIDE_DENOISE, whichever is lower, so it stays that frame however high the denoise goes; "full":
+        at the denoise itself (at 1.0 that is a new picture from the prompt); "source": the frame as it is, only
+        stretched.
 
         preview: a quick look at these settings on the middle of the clip. 1 = its middle frame alone, upscaled the
         way a section's end frames are; more = one section of that many frames (22 is the shortest clip) around the
@@ -1752,7 +1756,13 @@ class H3RepairEngine(ClipContract):
         if rows is not None and (not d_a or rows.shape[0] != n_all * AUDIO_CHANNELS):
             rows = None                        # a clip with something added after it: its rows are not the whole sound
         first_guide, last_guide = bool(first_guide), bool(last_guide)
-        done, total = [0], (len(plan) * (2 if last_guide else 1) + (1 if first_guide else 0)) * k
+        g_first, g_last = [g if g in ("full", "source") else "light"
+                           for g in (guide if isinstance(guide, (list, tuple)) and len(guide) == 2 else (guide, guide))]
+        den_g = min(den, _up.GUIDE_DENOISE)
+        sig_g = sig if den_g >= den else _up.low_sigmas(den_g, k)      # a lighter guide: the model's own spacing
+        stills = ((1 if first_guide and g_first != "source" else 0)
+                  + (len(plan) if last_guide and g_last != "source" else 0))
+        done, total = [0], (len(plan) + stills) * k
 
         def tick(_i, _n):
             if self._cancel_event.is_set():
@@ -1769,11 +1779,12 @@ class H3RepairEngine(ClipContract):
             return torch.randn(shape, generator=torch.Generator("cpu").manual_seed(int(s) & 0xFFFFFFFF),
                                dtype=torch.float32)
 
-        def run(x, **kw):
+        def run(x, levels=None, **kw):
             _mm.set_int8_attention(bool(getattr(self, "int8_attention", False)))
             try:
                 with torch.no_grad(), _i8l.renders(bool(getattr(self, "int8_linear", False))):
-                    return _up.finish(self.dit, x.to(self.device), emb, sig, dtype=self.dtype, on_step=tick, **kw)
+                    return _up.finish(self.dit, x.to(self.device), emb, levels or sig, dtype=self.dtype, on_step=tick,
+                                      **kw)
             finally:
                 _mm.set_int8_attention(False)
 
@@ -1792,11 +1803,19 @@ class H3RepairEngine(ClipContract):
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
 
-        def still(img, s):
-            """One frame upscaled on its own: stretched, then finished as a single-frame clip."""
+        def still(img, s, d=None, levels=None):
+            """One frame upscaled on its own: stretched, then finished as a single-frame clip (d: from that noise
+            level, over those levels; the upscale's own without)."""
+            d = den if d is None else d
             z = keyframe(img)
             an = (noise((audio_latents_for_frames(1) * AUDIO_CHANNELS, d_a), s + 1).to(self.device) if d_a else None)
-            return run((1.0 - den) * z + den * noise(z.shape, s), audio_noise=an).float().cpu()
+            return run((1.0 - d) * z + d * noise(z.shape, s), levels=levels, audio_noise=an).float().cpu()
+
+        def guide_frame(img, s, how):
+            """A guide frame from the clip's frame: as it is, or made again on its own (see guide)."""
+            if how == "source":
+                return keyframe(img)
+            return still(img, s) if how == "full" else still(img, s, den_g, sig_g)
 
         def result(imgs, **more):
             return {"latent": None, "audio_rows": clip.get("audio_rows"), "frames": imgs, "wav": clip.get("wav"),
@@ -1829,8 +1848,8 @@ class H3RepairEngine(ClipContract):
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
             first = (keyframe(out[a]) if out else
-                     still(sub[0], seed + 100) if first_guide else None)
-            last = still(sub[-1], seed + 101 + j) if last_guide else None
+                     guide_frame(sub[0], seed + 100, g_first) if first_guide else None)
+            last = guide_frame(sub[-1], seed + 101 + j, g_last) if last_guide else None
             kf = [(i, z.to(self.device, torch.float32)) for i, z in ((0, first), (n - 1, last)) if z is not None]
             audio = an = None
             if d_a:

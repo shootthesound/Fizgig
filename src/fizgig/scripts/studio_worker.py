@@ -333,6 +333,7 @@ def _render_clips(eng, desc, st, c, out, gen):
                                height=int(up.get("height") or 0) or int(h0 * 1.5), denoise=up.get("denoise"),
                                steps=int(up.get("steps") or 0) or None, section=int(up.get("section") or 0),
                                first_guide=up.get("first_guide", True), last_guide=up.get("last_guide", True),
+                               guide=up.get("guide") or "light",
                                bias=float(up.get("bias") or 0.0), low=float(up.get("low") or 0.0),
                                turbo_strength=opts["turbo_strength"])
         print(f"[studio] upscale to {big['upscaled'][0]}x{big['upscaled'][1]}, denoise {big['upscaled'][2]}, "

@@ -7078,7 +7078,7 @@ const UP_PRESETS = {
   standard: {den: 0.4, steps: 3, sec: "", bias: 0, adv: false, low: 0, first: true, last: true},
   creative: {den: 0.97, steps: 2, sec: "2.33", bias: 0.8, adv: true, low: 0, first: false, last: false},
   creative2: {den: 0.99, steps: 2, sec: "2.33", bias: 0, adv: true, low: 0, first: false, last: false},
-  creative3: {den: 0.99, steps: 4, sec: "2.33", bias: -0.5, adv: true, low: 0, first: false, last: false},
+  creative3: {den: 0.98, steps: 4, sec: "2.33", bias: -0.4, adv: true, low: 0, first: false, last: false},
 };
 function studioUpPresetKey() { return ((S.st.layout || {}).key || "minimax") + "_upscale"; }
 async function studioUpPresets(pick) {

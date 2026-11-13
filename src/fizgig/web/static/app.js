@@ -819,6 +819,23 @@ function optimizerPicked(prev, opt) {
   if (touched.length) syncInputs(touched);
 }
 
+// The Resume Training box (Memory section) holds a state: say so by Start, where it is seen before pressing it. A
+// state left there from an earlier run carried that run on by surprise (#317)
+function startResumeNote(live) {
+  const box = $("startResumeNote"), path = String(S.values.RESUME_TRAINING || "").trim();
+  const row = document.querySelector('.form-row[data-key="RESUME_TRAINING"]');
+  if (live || !path || !row || row.style.display === "none") { box.style.display = "none"; return; }
+  const name = path.replace(/[\\/]+$/, "").split(/[\\/]/).pop(), m = name.match(/-(\d{6})-state$/);
+  box.style.display = "";
+  if (box.dataset.path === path) return;
+  box.dataset.path = path;
+  box.replaceChildren(
+    el("span", {text: `Start will carry on from ${name}` + (m ? ` (epoch ${Number(m[1])})` : "") +
+      ", not begin a new run: the Resume Training box holds it. "}),
+    el("button", {class: "btn btn-sm", type: "button", text: "Clear it: start a new run", onclick: () => {
+      S.values.RESUME_TRAINING = ""; syncInputs(["RESUME_TRAINING"]); saveStateSoon(); startResumeNote(false); }}));
+}
+
 function onValue(r, val) {
   const prev = S.values[r.key];
   S.values[r.key] = val;
@@ -1041,7 +1058,7 @@ function renderPrefs() {
   host.innerHTML = "";
   if (S.pod) host.append(podCard());
   host.append(webPortCard());
-  if (!S.pod) host.append(networkCard());
+  if (!S.pod) host.append(networkCard(), windowCard());
   host.append(dataFolderCard());
   host.append(outputFolderCard());
   host.append(foldersCard());
@@ -1670,6 +1687,22 @@ function networkCard() {
         "box says when one is out). Off: no check unless you press Check for updates in the About box."})));
 }
 
+// the app window's own drawing: on the graphics card (the usual way), or without it
+function windowCard() {
+  const on = el("input", {type: "checkbox"});
+  on.checked = String(S.set.window_no_gpu ?? "0") === "1";
+  on.addEventListener("change", () => api("/api/prefs", {changes: {window_no_gpu: on.checked}})
+    .then(() => { S.set.window_no_gpu = on.checked ? "1" : "0"; }));
+  return el("div", {class: "section-card"}, el("div", {class: "card-title"}, el("span", {text: "App window"})),
+    el("div", {class: "card-desc", text: "For Fizgig in its own window. In a browser, the browser's own hardware " +
+      "acceleration setting does this."}),
+    el("div", {class: "card-content"},
+      el("label", {class: "checkbox-label"}, on, " Draw the window without the graphics card"),
+      el("div", {class: "field-hint", text: "The window then holds none of the card's memory, which helps a run that " +
+        "needs nearly all of it (a 16 GB card at its limit). The page may scroll and play clips less smoothly. " +
+        "It takes effect the next time Fizgig starts."})));
+}
+
 // the web UI's port: saved by the first launch (8081, or the next free port if 8081 was taken)
 function webPortCard() {
   const input = el("input", {type: "number", min: "1024", max: "65535", class: "w-port", value: S.webPort || 8081});
@@ -1869,6 +1902,7 @@ async function pollRun() {
   showProgress(r.progress, r.state, r.lora, r.stage);
   const moveBusy = !!(r.move && ["moving", "back", "moved"].includes(r.move.state));
   $("btnStart").disabled = live || moveBusy || !!S.starting;
+  startResumeNote(live);
   $("btnPause").disabled = !r.running;
   // a model that can't pause (a RefMod is made in one go): no Pause button for its runs
   const runFam = S.schema.families.find((f) => f.key === (r.family || S.family)) || {};
@@ -2291,6 +2325,7 @@ function runSummary() {
     cell("Training", r.training_at && end ? dur(end - r.training_at) : ""),
     cell("Total", r.started_at && end ? dur(end - r.started_at) : ""),
     cell("Speed", p.speed), cell("Epoch", p.epoch ? `${p.epoch} of ${p.total_epochs}` : ""),
+    live && epochStepsLeft(p) ? cell("Steps left in epoch", epochStepsLeft(p)) : null,
     cell("Peak VRAM", live ? gb(s.vram_peak) : ""), cell(live ? "Time left" : "Steps",
       live ? p.eta : (p.total_steps ? `${p.step} of ${p.total_steps}` : "")),
   ]);
@@ -2350,6 +2385,13 @@ function sideSpark(d) {
   box.title = `Loss, smoothed: ${ys[ys.length - 1].toFixed(4)} now`;
 }
 
+// the steps left in the epoch that is training ("12 of 40"), or "" when the run's steps don't divide into its epochs
+function epochStepsLeft(p) {
+  const total = Number(p && p.total_steps) || 0, epochs = Number(p && p.total_epochs) || 0, epoch = Number(p && p.epoch) || 0;
+  if (!total || !epochs || !epoch || total % epochs) return "";
+  const per = total / epochs, done = Number(p.step) - (epoch - 1) * per;
+  return done >= 0 && done <= per ? `${per - done} of ${per}` : "";
+}
 // the run's figures (the same from a web run and from a desktop run): the bar, the tiles, the sidebar
 function showProgress(p, state, name, extraNote) {
   const pct = p ? p.percent : (["completed"].includes(state) ? 100 : 0);
@@ -2363,6 +2405,7 @@ function showProgress(p, state, name, extraNote) {
   if (p) {
     tile("Epoch", p.epoch ? `${p.epoch} / ${p.total_epochs}` : "");
     tile("Step", p.total_steps ? `${p.step} / ${p.total_steps}` : "");
+    if (["running", "pausing"].includes(state)) tile("Left in epoch", epochStepsLeft(p));
     tile("Speed", p.speed);
     tile("Loss", p.loss);
     tile("Time left", p.eta);

@@ -2045,6 +2045,8 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 .st-pane video { width: 100%; aspect-ratio: 1; object-fit: contain; background: var(--bg-deep); display: block; }
 .st-pane audio { width: 100%; margin-top: 6px; }
 .st-pane.audio img { aspect-ratio: 4 / 1; }
+.start-resume { color: var(--warning); margin: 6px 0 2px; }
+.start-resume .btn { margin-left: 6px; }
 .st-slot { display: grid; grid-template-columns: 110px 72px 1fr; gap: 10px; align-items: center; margin: 6px 0; }
 .st-slot img { width: 72px; height: 72px; object-fit: cover; border-radius: 6px; background: var(--bg-deep); }
 .st-slot .field-row { margin: 0; }

@@ -171,30 +171,14 @@ def deflicker(frames, join_frames, sigma_t: float = 4.0, reach: int = 24):
     return frames
 
 
-def render_long(eng, state, *, frames, steps, turbo_strength, with_audio=True, no_lora=False, piece=None,
-                prior=None, add=0, end_on_first=False):
+def render_long(eng, state, *, frames, steps, turbo_strength, with_audio=True, no_lora=False, piece=None):
     """The clip in pieces of `piece` frames (124 unless named) -> (latent of the whole clip, audio rows, [PIL
-    frames]). `eng` is the H3 Studio engine.
-
-    prior = (latent, audio rows, [PIL frames]) of a clip already made: it stands as the first piece and `add` new
-    frames (a multiple of 17) are made after it on the state's prompt, `frames` ignored. end_on_first: the last
-    piece is guided to the clip's own opening frame (the first piece's first latent, as it is - no decode, no
-    encode), so the clip ends where it began (Studio's Loop back)."""
+    frames]). `eng` is the H3 Studio engine."""
     import numpy as np
     from PIL import Image
     from fizgig.minimax.model import audio_latents_for_frames
-    if prior is not None:
-        if prior[0].shape[2] < CTX:
-            raise ValueError(f"The clip is too short to continue: it needs at least {_frames_of(CTX)} frames.")
-        new, left = piece_frames(piece) - _frames_of(CTX), max(17, 17 * round(int(add) / 17))
-        lengths = [len(prior[2])]
-        while left > 0:
-            lengths.append(min(new, left) + _frames_of(CTX))
-            left -= min(new, left)
-        prompts = [state.prompt] * len(lengths)
-    else:
-        lengths = piece_lengths(frames, piece)
-        prompts = piece_prompts(state.prompt, lengths)
+    lengths = piece_lengths(frames, piece)
+    prompts = piece_prompts(state.prompt, lengths)
     ctx_f, pin_f = _frames_of(CTX), _frames_of(PIN)
     ctx_a = audio_latents_for_frames(ctx_f)
     user_kf = list(getattr(state, "keyframes", None) or ())
@@ -204,21 +188,13 @@ def render_long(eng, state, *, frames, steps, turbo_strength, with_audio=True, n
     lats, auds, out = [], [], []
     try:
         for i, (n, prompt) in enumerate(zip(lengths, prompts)):
-            if prior is not None and not i:              # the clip already made is the first piece
-                lats.append(prior[0].float())
-                auds.append(prior[1].float() if prior[1] is not None else None)
-                out = [np.asarray(im.convert("RGB")).astype(np.float32) for im in prior[2]]
-                continue
-            made = 1 if prior is not None else 0
-            eng._status(f"Piece {i + 1 - made} of {len(lengths) - made}…")
+            eng._status(f"Piece {i + 1} of {len(lengths)}…")
             st = state.copy()
             st.prompt, st.preview_frames = prompt, n
             st.references = getattr(state, "references", None)
             # a first / last frame picture belongs to the piece its frame falls in (a later piece: its new frames)
             st.keyframes = [(g - starts[i], z) for g, z in user_kf
                             if (starts[i] + (ctx_f if i else 0)) <= g < starts[i] + n] or None
-            if end_on_first and i == len(lengths) - 1 and i:
-                st.keyframes = list(st.keyframes or ()) + [(n - 1, lats[0][:, :, :1].clone())]
             model = None
             if i:
                 kl = lats[-1][:, :, -CTX:].float()

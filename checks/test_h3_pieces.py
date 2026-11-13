@@ -86,39 +86,37 @@ def test_the_donor_strength_does_not_render_the_baseline_again():
     assert key(a) != key(b) and key(a, primary_scale=False) == key(b, primary_scale=False)
 
 
-def test_loop_back_adds_pieces_after_the_clip_and_ends_on_its_first_frame():
+def test_loop_back_is_a_first_last_frame_clip_from_the_clips_end_to_its_start():
     from types import SimpleNamespace as NS
     from PIL import Image
-    calls = []
+    from fizgig.repair_studio.h3_engine import H3RepairEngine
+    calls = {}
 
     class Engine:
-        speed_boost = True
+        regime_params = lambda self, regime, steps, turbo: (steps, turbo)
+        _int8_tag = lambda self: False
+        encode_keyframe = lambda self, im, w, h: im.getpixel((0, 0))[0]          # which picture it was
 
-        def _status(self, _t):
-            pass
-
-        def render_latent(self, st, *, frames, model=None, guide_rows=0, **_k):
-            calls.append((frames, st.prompt, [(i, tuple(z.shape)) for i, z in (st.keyframes or ())], model is not None))
-            t = (frames - 5) // 17 * 5 + 2
-            return torch.zeros(1, 24, t, 2, 2), None
+        def render_latent(self, st, *, frames, **_k):
+            calls.update(frames=frames, prompt=st.prompt, keyframes=st.keyframes)
+            return torch.zeros(1, 24, 2, 2, 2), None
 
         def decode_clip_frames(self, lat):
-            n = (lat.shape[2] - 2) // 5 * 17 + 5
-            return [Image.new("RGB", (32, 32)) for _ in range(n)]
+            return [Image.new("RGB", (8, 8), (200, 0, 0)) for _ in range(calls["frames"])]
 
-        def encode_keyframe(self, im, w, h):
-            return torch.zeros(1, 24, 1, 2, 2)
+        def decode_audio(self, aud):
+            return torch.ones(2, 100 * calls["frames"])
 
     class State(NS):
         def copy(self):
             return State(**self.__dict__)
 
-    st = State(prompt="back", seed=1, preview_width=32, preview_height=32, keyframes=None, references=None)
-    prior = (torch.ones(1, 24, 37, 2, 2), None, [Image.new("RGB", (32, 32)) for _ in range(124)])
-    eng = Engine()
-    lat, aud, imgs = co.render_long(eng, st, frames=0, steps=4, turbo_strength=1.0, prior=prior, add=119,
-                                    end_on_first=True)
-    pieces = [c for c in calls if c[0] != co.BRIDGE]
-    assert [c[0] for c in pieces] == [124, 73] and all(c[3] and c[1] == "back" for c in pieces)
-    assert pieces[0][2] == [] and pieces[1][2] == [(72, (1, 24, 1, 2, 2))]       # the last piece aims at frame 0
-    assert len(imgs) == 124 + 119 and lat.shape[2] == 37 + 35 and aud is None and eng.speed_boost
+    clip = {"frames": [Image.new("RGB", (8, 8), (i, 0, 0)) for i in range(124)], "wav": torch.zeros(2, 12400)}
+    st = State(prompt="back", seed=1, preview_width=8, preview_height=8, keyframes=None, references=None, blocks={})
+    got = H3RepairEngine.loop_back_clip(Engine(), st, clip, frames_new=0, steps=4, turbo_strength=1.0)
+    assert calls["frames"] == 124 and calls["prompt"] == "back"
+    assert calls["keyframes"] == [(0, 123), (123, 0)]            # from the clip's last frame to its first
+    assert len(got["frames"]) == 124 + 123 and got["frames"][123].getpixel((0, 0))[0] == 123
+    assert got["wav"].shape[1] == 12400 + 12300
+    H3RepairEngine.loop_back_clip(Engine(), st, clip, frames_new=60, steps=4, turbo_strength=1.0)
+    assert calls["frames"] == 56                                 # a length of your own goes to the frame grid

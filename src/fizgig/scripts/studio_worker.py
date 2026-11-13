@@ -298,8 +298,9 @@ def _render_clips(eng, desc, st, c, out, gen):
     rest = torch.cuda.memory_allocated() / 2**30
     lb = v.get("loop_back")
     if lb:
-        # Loop back: the clip in the Tweaked pane gets a return made after it on this prompt, ending on its own
-        # opening frame. The kept clip stays the one before the return, so another prompt makes another return
+        # Loop back: the clip in the Tweaked pane gets a return after it on this prompt - a first / last frame clip
+        # from its last frame to its first. The kept clip stays the one before the return, so another prompt makes
+        # another return
         last = S.get("last_clip")
         if not last or last.get("engine") is not eng or not hasattr(eng, "loop_back_clip"):
             raise ValueError("Render a clip first: Loop back adds a return to the clip in the Tweaked pane.")

@@ -1654,23 +1654,35 @@ class H3RepairEngine(ClipContract):
                 "frames_n": n, "cached": False, "sig": NOLORA_SIG if no_lora else signature(state),
                 "int8_attention": self._int8_tag()}
 
-    def loop_back_clip(self, state, clip, *, frames_new, regime="confirm", with_audio=True, steps=None,
+    def loop_back_clip(self, state, clip, *, frames_new=0, regime="confirm", with_audio=True, steps=None,
                        turbo_strength=None, **_ignored):
-        """Studio's Loop back: `clip` (a render_clip dict) with a return made after it on the state's prompt, ending
-        on the clip's own opening frame, so the whole thing ends where it began. The new frames are made in pieces
-        (minimax/continuation.py: shown the end of the clip, joins blended); the clip itself is not rendered again."""
-        from fizgig.minimax import continuation as _co
+        """Studio's Loop back: `clip` (a render_clip dict) with a return after it. The return is an ordinary first /
+        last frame clip on the state's prompt: its first frame is the clip's last frame and its last frame is the
+        clip's first, so the two together end where they began. Nothing else is done to the join, and the clip
+        itself is not rendered again. frames_new: the return's length (0 = the clip's own), on the frame grid."""
         from fizgig.repair_studio.h3_render_cache import signature
-        if not clip.get("frames") or clip.get("latent") is None:
+        frames = clip.get("frames") or []
+        if len(frames) < 2:
             raise ValueError("Render a clip first: Loop back adds a return to the clip in the Tweaked pane.")
-        st, strength = self.regime_params(regime, steps, turbo_strength)
-        lat, aud, imgs = _co.render_long(self, state, frames=0, steps=st, turbo_strength=strength, with_audio=with_audio,
-                                         piece=_co.piece_frames(getattr(self, "clip_piece_frames", 0)),
-                                         prior=(clip["latent"], clip.get("audio_rows"), clip["frames"]),
-                                         add=frames_new, end_on_first=True)
-        return {"latent": lat, "audio_rows": aud, "frames": imgs, "wav": self.decode_audio(aud) if with_audio else None,
-                "middle": imgs[len(imgs) // 2], "regime": regime, "steps": st, "turbo_strength": strength,
-                "frames_n": len(imgs), "cached": False, "sig": signature(state), "int8_attention": self._int8_tag()}
+        w, h = int(state.preview_width), int(state.preview_height)
+        n = max(22, 17 * round((int(frames_new or len(frames)) - 5) / 17) + 5)
+        sts, strength = self.regime_params(regime, steps, turbo_strength)
+        st = state.copy()
+        st.references = getattr(state, "references", None)
+        st.preview_frames = n
+        st.keyframes = [(0, self.encode_keyframe(frames[-1], w, h)), (n - 1, self.encode_keyframe(frames[0], w, h))]
+        lat, aud = self.render_latent(st, frames=n, steps=sts, turbo_strength=strength)
+        back = self.decode_clip_frames(lat)
+        wav = self.decode_audio(aud) if with_audio else None
+        if wav is not None and clip.get("wav") is not None:
+            # the return's first frame is the clip's last one, shown once: its sound starts one frame in
+            wav = torch.cat([clip["wav"], wav[:, round(wav.shape[1] / len(back)):]], dim=1)
+        elif clip.get("wav") is not None:
+            wav = clip["wav"]
+        imgs = list(frames) + back[1:]
+        return {"latent": lat, "audio_rows": aud, "frames": imgs, "wav": wav, "middle": imgs[len(imgs) // 2],
+                "regime": regime, "steps": sts, "turbo_strength": strength, "frames_n": len(imgs), "cached": False,
+                "sig": signature(state), "int8_attention": self._int8_tag()}
 
     def _clip_regimes(self):
         from fizgig.families.minimax import MINIMAX

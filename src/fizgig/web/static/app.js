@@ -7808,12 +7808,13 @@ function wireStudio() {
   // the swap buttons between a width and a height (pictures and clips): the two values change places, and each
   // picker reports its change as if picked by hand
   $("stH3Only").addEventListener("change", () => { studioH3Remember(); studioPending(); });
-  // Loop back: a return for the clip in the Tweaked pane, on its own prompt, ending on the clip's opening frame. Its
-  // length is the seconds box (in steps of 17 frames; empty: about 5 seconds), sent with an ordinary render request
+  // Loop back: a return for the clip in the Tweaked pane, on its own prompt: a first / last frame clip from the
+  // clip's last frame to its first. Its length is the seconds box on the frame grid (empty: the clip's own length,
+  // sent as 0), sent with an ordinary render request
   for (const id of ["stLoopPrompt", "stLoopS"]) $(id).addEventListener("change", studioH3Remember);
   $("stLoopBack").addEventListener("click", async () => {
-    const c = S.st.layout.video.clip, sec = Number($("stLoopS").value) || 5;
-    S.st.loopBack = {prompt: $("stLoopPrompt").value.trim(), frames: Math.max(1, Math.round(sec * c.fps / c.step)) * c.step};
+    const V = S.st.layout.video, sec = Number($("stLoopS").value) || 0;
+    S.st.loopBack = {prompt: $("stLoopPrompt").value.trim(), frames: sec > 0 ? studioSnapFrames(V, sec) : 0};
     try { await studioRender(); } finally { S.st.loopBack = null; }
   });
   // the Aspect lists: the longer side stays, the other goes to the nearest size on offer for that shape; a portrait

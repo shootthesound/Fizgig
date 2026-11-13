@@ -1882,6 +1882,7 @@ const RUN_LABELS = {idle: "Idle", starting: "Starting", running: "Running", paus
 
 async function pollRun() {
   try { S.run = await api("/api/run"); } catch (e) { return; }
+  startupOffer();
   resumeMarks();
   jobPillShow();
   runSummary();
@@ -2777,6 +2778,49 @@ function jobPillMenu(open) {
   const clean = c.kind === "draft" && !S.imageFolder && !String((S.values || {}).LORA_NAME || "").trim();
   if (!clean) rows.push(row("Back to the normal view", "", false, ctxNormal));
   menu.replaceChildren(...rows);
+}
+
+// At start-up, after Fizgig was closed (or stopped) while a run trained: carry that run on from its last save, start
+// the next queued run, or clear the queue and start fresh. Asked once a page load; ✕ decides later (the queue stays
+// held, as it always is after a restart)
+function startupOffer() {
+  const o = S.run && S.run.startup;
+  if (!o) { if (S.startupSeen) $("startupModal").classList.remove("active"); return; }
+  if (S.startupSeen === o.id) return;
+  S.startupSeen = o.id;
+  const name = o.lora || "A run", n = o.queued;
+  $("startupTitle").textContent = `${name} was cut off`;
+  $("startupText").textContent = `${name} was training when Fizgig closed. ` +
+    (o.can_continue ? `It is saved at ${o.unit} ${o.done}` + (o.of ? ` of ${o.of}` : "") + `: carrying on starts from there, and anything it trained after that save is gone. `
+      : "It had not saved anything yet, so it can't be carried on. ") +
+    (n ? `${n} run${n === 1 ? " is" : "s are"} waiting in the queue.` : "");
+  const pick = (cls, title, text, choice) => el("button", {class: "startup-choice" + cls, type: "button",
+    onclick: () => startupChoose(choice)}, el("b", {text: title}), el("span", {text}));
+  const rows = [];
+  if (o.can_continue) rows.push(pick(" main", `Carry on with ${name}`,
+    `From ${o.unit} ${o.done}, with its own settings.` + (n ? " The queue follows after it." : ""), "continue"));
+  if (n) rows.push(pick(o.can_continue ? "" : " main", "Start the next in the queue",
+    `${name} stays on Runs & outputs, where Continue still carries it on later.`, "queue"));
+  rows.push(pick("", n ? "Clear the queue and start fresh" : "Start fresh",
+    (n ? `The ${n} queued run${n === 1 ? " is" : "s are"} removed. ` : "") +
+    `${name} and what it saved stay on Runs & outputs.`, "fresh"));
+  $("startupChoices").replaceChildren(...rows);
+  $("startupNote").textContent = "Nothing starts until you choose.";
+  $("startupModal").classList.add("active");
+}
+async function startupChoose(choice) {
+  for (const b of $("startupChoices").querySelectorAll("button")) b.disabled = true;
+  try {
+    const r = await api("/api/startup", {choice});
+    $("startupModal").classList.remove("active");
+    if (choice === "fresh") await ctxNormal();
+    else showTab("training");
+    if (r && r.form && choice === "continue") $("runStatus").textContent = "Carrying on from its last save.";
+    pollRun();
+  } catch (e) {
+    $("startupNote").textContent = e.message;
+    for (const b of $("startupChoices").querySelectorAll("button")) b.disabled = false;
+  }
 }
 
 // Back to the normal view: out of the job on show, to a clean start - the Start tab with no training folder picked,
@@ -10865,6 +10909,7 @@ function wire() {
   $("likBtn").addEventListener("click", likenessPicker);
   $("jobPillText").addEventListener("click", () => jobPillMenu($("jobPillMenu").hidden));
   $("jobPillShade").addEventListener("click", () => jobPillMenu(false));
+  $("startupLater").addEventListener("click", () => $("startupModal").classList.remove("active"));
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") jobPillMenu(false); });
   $("styBtn").addEventListener("click", async () => {       // the Style score on or off for the shown run's folder
     const dir = S.lik && S.lik.dir;

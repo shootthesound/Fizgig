@@ -142,6 +142,12 @@ def schedule(delay_s, starter):
         t.start()
 
 
+def unhold():
+    """No longer held, without starting anything: a run is about to start, and the queue follows it as any run."""
+    with _lock:
+        _q.update(held=False, reason="", waiting="", for_pause=False)
+
+
 def release(starter):
     """Start queue: no longer held; the next run starts now if it can."""
     with _lock:

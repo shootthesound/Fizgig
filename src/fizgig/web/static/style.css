@@ -2325,6 +2325,16 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 .job-pill-row-v { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .job-pill-shade { position: fixed; inset: 0; z-index: 29; background: transparent; }
 .job-pill-shade[hidden] { display: none; }
+/* the start-up question after a run was cut off: carry it on, the next in the queue, or a fresh start */
+.startup-window { max-width: 560px; }
+.startup-choices { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 6px; }
+.startup-choice { display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 12px 14px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--bg-raised); color: var(--text-primary); text-align: left; cursor: pointer; }
+.startup-choice:hover { border-color: var(--accent); background: var(--bg-hover); }
+.startup-choice:disabled { opacity: 0.6; cursor: default; }
+.startup-choice b { font-size: 14px; }
+.startup-choice span { color: var(--text-secondary); font-size: 12.5px; }
+.startup-choice.main { border-color: var(--accent); }
 /* whose content a tab shows, while it isn't your own setup */
 .ctx-line { margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--accent);
   background: var(--accent-subtle); color: var(--text-primary); font-size: 13px; }

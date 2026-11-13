@@ -1690,6 +1690,63 @@ def _continue_run(run_id, more="", queue_ok=True, values=None):
     return r
 
 
+# The run Fizgig was training when it was closed (or stopped, or crashed), offered again at the next start: carry it
+# on, start the next queued run, or clear the queue. STATE_FILE's "interrupted" holds its history id until a choice is
+# made or any run starts
+_startup = {"offer": None}
+
+
+def _startup_offer():
+    """What the page asks at start-up, or None: {id, lora, can_continue, done, of, unit, queued}."""
+    rid = str(load_state().get("interrupted") or "")
+    rec = history.get(rid) if rid else None
+    if rec is None or rec.get("result") != "stopped":
+        if rid:
+            save_state({"interrupted": ""})
+        return None
+    pt = _continue_point(rec)
+    queued = len(webqueue.status()["items"])
+    can = bool(pt and (not pt["of"] or pt["done"] < pt["of"]))
+    if not can and not queued:
+        save_state({"interrupted": ""})
+        return None
+    return {"id": rid, "lora": str(rec.get("lora") or ""), "can_continue": can, "done": pt["done"] if pt else 0,
+            "of": pt["of"] if pt else 0, "unit": pt["unit"] if pt else "epoch", "queued": queued}
+
+
+def _startup_done():
+    _startup["offer"] = None
+    save_state({"interrupted": ""})
+
+
+def startup_choice(choice) -> dict:
+    """The start-up question answered: "continue" (the interrupted run, from its last save; the queue follows it),
+    "queue" (the next queued run starts; the interrupted one stays on Runs & outputs) or "fresh" (the queue emptied)."""
+    offer = _startup["offer"]
+    if not offer:
+        return {"error": "Nothing is waiting to be decided."}
+    if choice == "continue":
+        if not offer.get("can_continue"):
+            return {"error": "That run has no saved state to carry on from."}
+        webqueue.unhold()
+        r = _continue_run(offer["id"], queue_ok=False)
+        if not isinstance(r, dict) or r.get("error") or r.get("problems"):
+            webqueue.hold("The run before couldn't be carried on. Press Start queue to carry on with the next.")
+            return r if isinstance(r, dict) else {"error": "It couldn't be carried on."}
+        _startup_done()
+        return {"ok": True, **{k: v for k, v in r.items() if k == "form"}}
+    if choice == "queue":
+        _startup_done()
+        webqueue.release(_queue_starter)
+        return {"ok": True}
+    if choice == "fresh":
+        for i in list(webqueue.status()["items"]):
+            webqueue.remove(i["id"])
+        _startup_done()
+        return {"ok": True}
+    return {"error": "Not a choice."}
+
+
 def name_taken(values, inputs) -> str:
     """Why a new run can't take this name ("" = it can): a run of that name already has files in the same output
     folder - its LoRAs, saved states or previews. Two runs sharing a name share those files, so one would write over
@@ -1822,6 +1879,8 @@ def _start_one(family_key, values, image_folder, resume, ft_continue, note, mode
         _run.update(state="starting", stage="", lora=inputs["LORA_NAME"], output_dir=out_dir, family=family_key,
                     values=dict(values), image_folder=image_folder, pause=False, resume="", resume_mode="")
     save_state({"last_run": {"family": family_key, "values": values, "image_folder": image_folder}})
+    if _startup["offer"] or load_state().get("interrupted"):
+        _startup_done()                              # a run is starting: the start-up question is answered
     hid = history.start("web", family_key, inputs["LORA_NAME"], out_dir, image_folder, dict(values),
                         resume=bool(resume or ft_continue), carry=carry)
     with _lock:
@@ -3583,6 +3642,7 @@ class Handler(BaseHTTPRequestHandler):
             _bd = get_family(r.get("family") or "")         # Move to...'s batch tick: why a batch can't go (or [])
             r["move_batch"] = form.batch_blockers(_bd, r.get("values") or {}) if _bd is not None else ["no run"]
             r["web_queue"] = webqueue.status()
+            r["startup"] = _startup["offer"]
             from fizgig.web import pod_stop
             r["pod_stop"] = pod_stop.status()
             r["slider_live"] = _slider_live_status(r) if r["running"] else None
@@ -3873,6 +3933,10 @@ class Handler(BaseHTTPRequestHandler):
                 lora = _run.get("lora") or ""
             if path == "/api/app/busy":
                 return self.json({"training": busy, "lora": lora})
+            if busy:                              # cut off by quitting: offered again at the next start
+                with _lock:
+                    cut = str(_run.get("history_id") or "")
+                save_state({"interrupted": cut})
             return self.json({"stopped": _stop_and_wait()})
         if path == "/api/login":
             if self.headers.get("X-Fizgig-Token") != TOKEN:
@@ -4226,6 +4290,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/runs/notes":
                 history.set_notes(str(b.get("id") or ""), str(b.get("text") or ""))
                 return self.json({"ok": True})
+            if path == "/api/startup":                  # the start-up question's answer
+                r = startup_choice(str(b.get("choice") or ""))
+                return self.json(r, 400 if r.get("error") else 200)
             if path == "/api/queue/remove":
                 webqueue.remove(str(b.get("id") or ""))
                 return self.json({"ok": True})
@@ -5153,7 +5220,10 @@ def run_server(host, port=None, password=None, password_arg=False, open_browser=
     _SRV[0] = srv
     if history.close_orphans():                        # a run left "running" by a stopped or crashed server
         logger.info("A run from before was still recorded as running: it is recorded as stopped now")
+        if history.last_orphan[0]:
+            save_state({"interrupted": history.last_orphan[0]})
     webqueue.load()                                    # held if it holds anything: a restart never launches a run
+    _startup["offer"] = _startup_offer()               # the run that was cut off: the page asks what to do
     _restore_pause()                                   # a run paused before the restart can still be resumed
     __import__("fizgig.web.helpers", fromlist=["x"]).ensure_home()   # pods' checkpoints still coming home
     __import__("fizgig.web.helpers", fromlist=["x"]).local_restore()  # this computer's other GPU, as a helper

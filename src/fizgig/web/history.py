@@ -245,6 +245,9 @@ def _server_alive(pid):
         return False
 
 
+last_orphan = [""]          # the newest run close_orphans closed (the one Fizgig was training when it went away)
+
+
 def close_orphans():
     """At the server's start: a run still recorded as running has nothing behind it now (its server stopped or
     crashed, and the training process went with it), so it is recorded as stopped - unless the server that started it
@@ -257,6 +260,7 @@ def close_orphans():
                 if r.get("result") == "running" and not _server_alive(r.get("server_pid")):
                     r["result"] = "stopped"
                     r["ended_at"] = r.get("ended_at") or time.time()
+                    last_orphan[0] = str(r.get("id") or "")
                     n += 1
             if n:
                 _write(rs)

@@ -323,6 +323,11 @@ def _render_clips(eng, desc, st, c, out, gen):
 
     def upscaled(state, clip, w0, h0, preview=0):
         """Upscale (the page's fold): the clip made again at the fold's size, a section at a time."""
+        own = str(up.get("prompt") or "").strip()
+        if own:                                         # Edit prompt: the upscale's own prompt, the sliders as they are
+            import copy
+            state = copy.copy(state)
+            state.prompt = own
         big = eng.upscale_clip(state, clip, preview=preview, width=int(up.get("width") or 0) or int(w0 * 1.5),
                                height=int(up.get("height") or 0) or int(h0 * 1.5), denoise=up.get("denoise"),
                                steps=int(up.get("steps") or 0) or None, section=int(up.get("section") or 0),

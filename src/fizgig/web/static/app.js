@@ -5853,6 +5853,9 @@ function studioKind(L, sv) {
   $("stUpDen").value = up.den || "0.4"; $("stUpSteps").value = up.steps || "3"; $("stUpSec").value = up.sec || "";
   $("stUpAuto").checked = up.auto === true;
   $("stUpFirst").checked = up.first !== false;
+  $("stUpOwnPrompt").checked = up.ownPrompt === true;
+  $("stUpPrompt").value = up.prompt || "";
+  $("stUpPromptRow").hidden = $("stUpPromptCopy").hidden = !$("stUpOwnPrompt").checked;
   $("stUpLast").checked = up.last !== false;
   $("stUpWhich").value = ["baseline", "both"].includes(up.which) ? up.which : "tweaked";
   $("stUpPrevN").value = up.prevN === "22" ? "22" : "1";
@@ -6007,7 +6010,7 @@ function studioH3Remember() {
       lenS: $("stH3LenS").value, w: $("stH3W").value,
       h: $("stH3H").value, steps: $("stH3Steps").value, turbo: $("stH3Turbo").value,
       sound: $("stH3Sound").checked, boost: $("stH3Boost").checked, early: $("stH3Early").checked, pieces: $("stH3Pieces").checked, pieceS: $("stH3PieceS").value, only: $("stH3Only").checked, loopPrompt: $("stLoopPrompt").value, loopS: $("stLoopS").value,
-      up: {w: $("stUpW").value, h: $("stUpH").value, den: $("stUpDen").value, steps: $("stUpSteps").value, sec: $("stUpSec").value, auto: $("stUpAuto").checked, first: $("stUpFirst").checked, last: $("stUpLast").checked, which: $("stUpWhich").value, prevN: $("stUpPrevN").value, open: $("stUpBox").open}, kf: S.st.kf,
+      up: {w: $("stUpW").value, h: $("stUpH").value, den: $("stUpDen").value, steps: $("stUpSteps").value, sec: $("stUpSec").value, auto: $("stUpAuto").checked, first: $("stUpFirst").checked, last: $("stUpLast").checked, ownPrompt: $("stUpOwnPrompt").checked, prompt: $("stUpPrompt").value, which: $("stUpWhich").value, prevN: $("stUpPrevN").value, open: $("stUpBox").open}, kf: S.st.kf,
       kfRect: S.st.kfRect};
     localStorage.setItem(ST_KEY, JSON.stringify(d));
   } catch (e) { /* private window */ }
@@ -7060,7 +7063,8 @@ function studioUpscale(V) {
   return {width, height, denoise: Math.max(0.05, Math.min(1, den > 0 ? den : 0.4)),
     steps: Math.max(1, Math.min(20, parseInt($("stUpSteps").value, 10) || 3)),
     section: sec > 0 && V.clip ? Math.max(22, studioSnapFrames(V, sec)) : 0, auto: $("stUpAuto").checked,
-    which: $("stUpWhich").value, first_guide: $("stUpFirst").checked, last_guide: $("stUpLast").checked};
+    which: $("stUpWhich").value, first_guide: $("stUpFirst").checked, last_guide: $("stUpLast").checked,
+    prompt: $("stUpOwnPrompt").checked ? $("stUpPrompt").value.trim() : ""};
 }
 // the fold's heading says what is set, so it reads without being opened
 function studioUpSummary() {
@@ -7069,6 +7073,7 @@ function studioUpSummary() {
   const u = studioUpscale(V);
   $("stUpSum").textContent = `to ${u.width} × ${u.height}, denoise ${u.denoise}, ${u.steps} step${u.steps === 1 ? "" : "s"}`
     + (u.first_guide ? (u.last_guide ? "" : ", no last guide frame") : (u.last_guide ? ", no first guide frame" : ", no guide frames"))
+    + (u.prompt ? ", its own prompt" : "")
     + ({baseline: ", the Baseline clip", both: ", both clips"}[u.which] || "") + (u.auto ? ", after every render" : "");
 }
 function studioPieceFrames(V) {
@@ -7868,6 +7873,16 @@ function wireStudio() {
       if ($("stUpAuto").checked) studioPending();
     });
   $("stUpPrevN").addEventListener("change", studioH3Remember);
+  // Edit prompt: the upscale's own prompt. Ticking it opens the box, filled with the main Prompt when it is empty
+  const upPrompt = () => { studioUpSummary(); studioH3Remember(); if ($("stUpAuto").checked) studioPending(); };
+  $("stUpOwnPrompt").addEventListener("change", () => {
+    const on = $("stUpOwnPrompt").checked;
+    if (on && !$("stUpPrompt").value.trim()) $("stUpPrompt").value = $("stPrompt").value;
+    $("stUpPromptRow").hidden = $("stUpPromptCopy").hidden = !on;
+    upPrompt();
+  });
+  $("stUpPrompt").addEventListener("change", upPrompt);
+  $("stUpPromptCopy").addEventListener("click", () => { $("stUpPrompt").value = $("stPrompt").value; upPrompt(); });
   // Preview: the middle of the clip (1 frame, or the shortest clip) with the fold's settings, sent like Upscale now
   $("stUpPrev").addEventListener("click", async () => {
     S.st.upPrev = Number($("stUpPrevN").value) || 1;

@@ -1690,6 +1690,32 @@ def _continue_run(run_id, more="", queue_ok=True, values=None):
     return r
 
 
+def next_run_name(name, out_dir=""):
+    """A name for another run of the same thing: name_2, then _3 and on, past every name in use - the run training,
+    the queued runs, the runs in the history, and anything of that name in the output folder (a LoRA, its epochs, its
+    saved states, a folder)."""
+    name = str(name or "").strip() or "my_lora"
+    used = {str(r.get("lora") or "").lower() for r in history.runs()}
+    used |= {str(i.get("lora") or "").lower() for i in webqueue.status()["items"]}
+    with _lock:
+        used.add(str(_run.get("lora") or "").lower())
+    out = str(out_dir or "").strip() or default_output_dir()
+    try:
+        there = [e.lower() for e in os.listdir(out)]
+    except OSError:
+        there = []
+
+    def taken(n):
+        low = n.lower()
+        return low in used or any(e == low or e.startswith(low + ".") or e.startswith(low + "-") for e in there)
+    for _ in range(10000):
+        m = re.fullmatch(r"(.*)_(\d+)", name)
+        name = f"{m.group(1)}_{int(m.group(2)) + 1}" if m else f"{name}_2"
+        if not taken(name):
+            break
+    return name
+
+
 LOG_CLEAR = "\x00clear\n"      # in the log where a run starts: the page's console begins again from there
 
 
@@ -3171,6 +3197,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({"builtin": built, "user": [n for n in user_presets(desc) if n not in built]})
         if path == "/api/prompt_sets":           # the Samples tab's saved prompt sets
             return self.json({"sets": prompt_sets()})
+        if path == "/api/runs/next_name":           # the next free name for another run of the same thing (name_2)
+            return self.json({"name": next_run_name((qs.get("name") or [""])[0], (qs.get("dir") or [""])[0])})
         if path == "/api/studio/families":
             return self.json({"families": [{"key": d.key, "name": d.display_name} for d in studio.families()]})
         if path == "/api/studio/layout":

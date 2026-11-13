@@ -2771,7 +2771,7 @@ function jobPillMenu(open) {
   items.forEach((it, i) => rows.push(row(`Queued ${i + 1}`, it.lora, c.kind === "queue" && c.id === it.id,
     () => ctxSwitch({kind: "queue", id: it.id}))));
   // a run is training: another like it, without going back to Start for the folder
-  if (live) rows.push(row("Set up a new run with these settings", "", false, ctxNewLike));
+  if (live && activeTab() === "training") rows.push(row("Set up a new run with these settings", "", false, ctxNewLike));
   // out of the job: the Start tab, its Training folder empty, ready for something else
   if (c.kind !== "draft" || same) rows.push(row("Back to the normal view", "", false, ctxNormal));
   menu.replaceChildren(...rows);
@@ -2801,9 +2801,16 @@ function nextRunName(name) {
   } while (taken.has(n));
   return n;
 }
-// the form's run gets the next name (and never carries on from a saved state): a new run, not that one again
-function renameForNew(from) {
-  S.values.LORA_NAME = nextRunName(from || S.values.LORA_NAME);
+// the form's run gets the next name (and never carries on from a saved state): a new run, not that one again. The
+// server picks it: past the names in use here and whatever is in the output folder already
+async function renameForNew(from) {
+  const base = from || S.values.LORA_NAME;
+  let name;
+  try {
+    name = (await api("/api/runs/next_name?name=" + encodeURIComponent(base || "") +
+      "&dir=" + encodeURIComponent(S.values.LORA_OUTPUT_DIR || ""))).name;
+  } catch (e) { name = ""; }
+  S.values.LORA_NAME = name || nextRunName(base);
   S.values.RESUME_TRAINING = "";
   syncInputs(["LORA_NAME", "RESUME_TRAINING"]);
   refreshStateSoon(); saveState();
@@ -2821,7 +2828,7 @@ async function ctxNewLike() {
   const was = src.values.LORA_NAME || S.run.lora || "";
   try {
     await loadIntoForm(src);                       // (a job on show gives way to your own setup first)
-    const name = renameForNew(was);
+    const name = await renameForNew(was);
     S.viewJob = null;
     jobPillShow();
     $("runStatus").textContent = `A new run set up from ${was}, named ${name}: change what you like, then Start or Add to queue.`;
@@ -3332,7 +3339,7 @@ async function loadRuns() {
       onclick: async () => {
         try {
           await loadIntoForm(await api("/api/runs/settings", {id: run.id}));
-          const name = renameForNew(run.lora);       // a new run, under the next name (name_2), not over that one
+          const name = await renameForNew(run.lora);  // a new run, under the next free name (name_2), not over that one
           $("runStatus").textContent = `Loaded the settings of ${run.lora || "that run"}, named ${name}: check them, then Start.`;
         } catch (e) { alertRow.textContent = e.message; }
       }});

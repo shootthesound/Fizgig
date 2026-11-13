@@ -2723,16 +2723,19 @@ function jobPillShow() {
   const show = !!live || items.length > 0 || c.kind !== "draft" || !!c.ended;
   p.style.display = show ? "" : "none";
   if (!show) { jobPillMenu(false); return; }
-  const mine = baseName(S.draft ? S.draft.image_folder : S.imageFolder) || "no folder yet";
+  // a job on show: Viewing. Ordinary use (no job on show) only says what is going on: the run training, or the queue
   const [label, name] = c.ended ? ["Finished", c.lora] :
-    c.kind === "run" || (c.kind === "draft" && ctxSetupIsRun()) ? ["Training now", S.run.lora] :
-    c.kind === "queue" ? [`Queued ${c.n || ""}`.trim(), c.lora] : ["Setting up", mine];
+    c.kind === "run" ? ["Viewing", c.lora] :
+    c.kind === "queue" ? [`Viewing queued ${c.n || ""}`.trim(), c.lora] :
+    live ? [ctxSetupIsRun() ? "Training now" : "Training", S.run.lora] :
+    ["Queued", `${items.length} run${items.length === 1 ? "" : "s"}`];
   p.classList.toggle("attention", !!c.ended);
   $("jobPillText").replaceChildren(el("b", {text: label + ": "}), name || "",
     el("span", {class: "job-pill-caret", text: " ▾"}));
   $("jobPillText").title = c.ended
     ? `${c.lora} is finished` + (c.next ? `, and ${c.next} is training. Press to switch.` : ".")
-    : "The job these tabs show. Press to switch to another.";
+    : c.kind === "draft" ? "Press to look at a job on these tabs: the run training now, or a queued run."
+    : "The job these tabs show. Press to switch to another, or back to the normal view.";
   // the line at the top of each tab saying whose content it is, while it is another job's than your own setup
   const say = c.kind === "run" ? (c.ended ? `${c.lora} is finished` + (c.next ? `, and ${c.next} is training now.` : ".") +
       " These tabs still show it until you change tab or switch with the pill."
@@ -2767,10 +2770,8 @@ function jobPillMenu(open) {
     () => ctxSwitch(same ? {kind: "draft"} : {kind: "run"})));
   items.forEach((it, i) => rows.push(row(`Queued ${i + 1}`, it.lora, c.kind === "queue" && c.id === it.id,
     () => ctxSwitch({kind: "queue", id: it.id}))));
-  // what you are setting up, when it is something other than the run training now
-  if (!same && !(c.kind === "draft" && c.ended))
-    rows.push(row("Setting up", baseName(S.draft ? S.draft.image_folder : S.imageFolder) || "no folder yet",
-      c.kind === "draft", () => ctxSwitch({kind: "draft"})));
+  // out of a job's view, when the tabs' ordinary content is something other than the run training now
+  if (c.kind !== "draft" && !same) rows.push(row("Back to the normal view", "", false, () => ctxSwitch({kind: "draft"})));
   menu.replaceChildren(...rows);
 }
 

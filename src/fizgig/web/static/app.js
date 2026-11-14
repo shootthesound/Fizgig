@@ -2755,7 +2755,7 @@ function jobPillShow() {
   $("jobPillText").title = c.ended
     ? `${c.lora} is finished` + (c.next ? `, and ${c.next} is training. Press to switch.` : ".")
     : (c.kind === "draft" && !same ? "These tabs show a new run: one not started or queued yet. Press to look at a job instead."
-    : "The job these tabs show. Press to switch to another, or to a new run.") +
+    : "The job these tabs show. Press to switch to another, or back to the normal view.") +
       (window.innerWidth > 900 ? " Drag it to move it; double-click puts it back." : "");
   // the line at the top of each tab saying whose content it is, while it is another job's than your own setup
   const say = c.kind === "run" ? (c.ended ? `${c.lora} is finished` + (c.next ? `, and ${c.next} is training now.` : ".") +
@@ -2796,12 +2796,10 @@ function jobPillMenu(open) {
     () => ctxSwitch({kind: "queue", id: it.id}))));
   // a run is training: another like it, without going back to Start for the folder
   if (live && activeTab() === "training") rows.push(row("Set up a new run with these settings", "", false, ctxNewLike));
-  // New run: where you are when the form is no job (marked then), and the way out of a job - a clean start (the
-  // Start tab, no training folder, the model's defaults, no name). A new run already filled in can be cleared
-  const onNew = c.kind === "draft" && !same && !c.ended;
-  const clean = !S.imageFolder && !String((S.values || {}).LORA_NAME || "").trim();
-  rows.push(row("New run", onNew ? "" : "a clean start", onNew, ctxNormal));
-  if (onNew && !clean) rows.push(row("Clear the new run", "back to a clean start", false, ctxNormal));
+  // Back to the normal view: out of the job, to a clean start (the Start tab, no training folder, the model's
+  // defaults, no name). There unless the form is that clean start already
+  const clean = c.kind === "draft" && !S.imageFolder && !String((S.values || {}).LORA_NAME || "").trim();
+  if (!clean) rows.push(row("Back to the normal view", "", false, ctxNormal));
   menu.replaceChildren(...rows);
   menu.classList.remove("up", "left");
   if (window.innerWidth > 900) {                // the pill may have been dragged near an edge
@@ -2854,7 +2852,7 @@ async function startupChoose(choice) {
   }
 }
 
-// New run (the pill's list): out of the job on show, to a clean start - the Start tab with no training folder picked,
+// Back to the normal view (the pill's list): out of the job on show, to a clean start - the Start tab with no training folder picked,
 // and the Training tab at the model's own defaults (its first preset, as a first visit) with no LoRA name. Nothing of
 // the job is left in the form. The Samples tab's prompts and preview settings are yours, not the job's: they stay
 async function ctxNormal() {

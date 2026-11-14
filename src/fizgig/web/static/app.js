@@ -287,10 +287,25 @@ function renderSections(tab, host) {
           el("span", {class: "sec-video-sub", text: sec.help.sub || "Watch on YouTube"}))));
     }
     // a group's rows (form.py ROW_GROUPS) in one box where its first row is, side by side; their hints behind ?
-    const groups = {};
+    const groups = {}, folds = {};
     for (const r of sec.rows) {
       const row = renderRow(r);
       if (r && r.advanced_of && advancedInto(body, r.advanced_of, row)) continue;
+      if (r && r.fold) {                 // a fold of its own at the card's end, closed unless its tick is on
+        let f = folds[r.fold];
+        if (!f) {
+          const inner = el("div", {class: "form-fold-rows"});
+          const d = el("details", {class: "tc-box form-fold", "data-fold": r.fold},
+            el("summary", {text: r.fold_label || r.label}), inner);
+          S.foldOpen = S.foldOpen || {};
+          d.open = r.fold in S.foldOpen ? S.foldOpen[r.fold] : !!(r.fold_on && S.values[r.fold_on]);
+          d.addEventListener("toggle", () => { S.foldOpen[r.fold] = d.open; });
+          f = folds[r.fold] = {d, inner};
+          body.append(d);
+        }
+        f.inner.append(row);
+        continue;
+      }
       if (!r || !r.group) { body.append(row); continue; }
       let g = groups[r.group];
       if (!g) {
@@ -306,7 +321,11 @@ function renderSections(tab, host) {
       if (r.hint) g.help.append(el("div", {}, el("b", {text: r.label.replace(/:$/, "") + ": "}), r.hint));
     }
     for (const g of Object.values(groups)) if (!g.help.children.length) g.q.remove();
-    if (sec.id === "subjects" && !S.family.startsWith("acestep")) body.append(triggerCheckBlock());
+    // Check a trigger word: after the card's rows, above any fold of its own (the Regularisation dataset)
+    if (sec.id === "subjects" && !S.family.startsWith("acestep")) {
+      const fold = body.querySelector(":scope > .form-fold");
+      if (fold) body.insertBefore(triggerCheckBlock(), fold); else body.append(triggerCheckBlock());
+    }
     const card = el("div", {class: "section-card", id: "sec-" + sec.id, "data-section": sec.id}, head, body);
     show();
     if (sec.extras) host.append(el("div", {class: "extras-divider", "data-extras": "1"}, el("span", {text: "✦ Extras ✦"})));
@@ -954,6 +973,10 @@ async function refreshState() {
     const any = [...o.querySelectorAll(":scope > .row-advanced > .form-row[data-key]")].some((x) => !hidden.has(x.dataset.key));
     o.querySelector(":scope > .adv-toggle").style.display = any ? "" : "none";
     o.querySelector(":scope > .row-advanced").style.display = any ? "" : "none";
+  });
+  // a card's own fold shows while any of its rows can (the Regularisation dataset: Standard LoRA and LoKR only)
+  document.querySelectorAll(".form-fold").forEach((f) => {
+    f.style.display = [...f.querySelectorAll(".form-row[data-key]")].some((x) => !hidden.has(x.dataset.key)) ? "" : "none";
   });
   document.querySelectorAll(".section-card[data-section]").forEach((c) => {
     c.style.display = hidden.has(c.dataset.section) ? "none" : "";

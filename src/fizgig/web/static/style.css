@@ -424,6 +424,9 @@ body {
 .tc-box { grid-column: 1 / -1; margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }   /* Check a trigger word */
 .tc-box > summary { cursor: pointer; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; }
 .tc-box > .field-hint { max-width: 760px; margin: 4px 0 8px; line-height: 1.45; }
+/* a card's own fold (form.py rows with fold=): its rows laid out as the card's, under Check a trigger word */
+.form-fold-rows { display: grid; gap: 14px 24px; align-items: start; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.tc-box + .tc-box { margin-top: 10px; }
 .tc-verdict { margin: 10px 0 6px; font-weight: 600; }      /* Check a trigger word's answer */
 .tc-good { color: var(--success); }
 .tc-warn { color: var(--warning); }

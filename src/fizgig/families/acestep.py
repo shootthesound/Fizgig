@@ -174,6 +174,7 @@ ACESTEP15 = FamilyDescription(
     adaptive_lr=False,
     loss_watch=False,
     training_maps=False,             # songs: the maps draw on a picture
+    lora_regularisation=False,       # songs: the regularisation dataset is for still-picture LoRAs
     helper_files=(("ACE-Step/Ace-Step1.5", ("Qwen3-Embedding-0.6B/*.json", "Qwen3-Embedding-0.6B/*.txt",
                                             "Qwen3-Embedding-0.6B/*.jinja", "acestep-v15-turbo/silence_latent.pt")),),
 

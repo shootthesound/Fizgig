@@ -469,6 +469,10 @@ class FamilyDescription:
     # Clean-end share differs for a fine-tune and a LoRA
     kind_values: tuple = ()
     ft_regularisation: bool = True    # the fine-tune card offers a regularisation set (photos of the broad class)
+    # the Subjects card's Regularisation dataset (Standard LoRA and LoKR): a folder of ordinary pictures of the same
+    # kind of thing, trained alongside at its own LR multiplier, in place of DOP / Fizgig LoRA Isolation (#332). Off for
+    # the families whose items are clips or songs
+    lora_regularisation: bool = True
     # the Training tab's large-dataset hint: (rate, steps per epoch) - a standard LoRA whose learning rate (or
     # adaptive Min LR) is at least `rate`, on more than `steps` steps an epoch, gets a tip suggesting a cooler rate,
     # so the best point doesn't fall between two saved epochs. None turns the hint off for the family

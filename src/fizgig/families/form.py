@@ -37,6 +37,10 @@ SIZES = ("512", "640", "768", "1024", "1280", "1536", "2048")
 KINDS = (("standard", "Standard LoRA"), ("edit", "Edit (original + edited photo pairs)"),
          ("slider", "Slider (a dial between two looks)"), ("finetune", "Fine-tune the whole model"))
 FT_REG_MULT = ("0.05", "0.1", "0.2", "0.3", "0.5", "0.75", "1.0")
+# the Subjects card's Regularisation dataset (a LoRA's): how much of its folder each epoch uses
+REG_MATCH = "Match my training pictures"
+REG_USES = (REG_MATCH, "10%", "25%", "50%", "75%", "100%")
+REG_FOLD = "Regularisation dataset (optional)"
 CAPTION_DROPOUTS = ("Off", "0.05", "0.10 (strong)")
 # rows that belong together, drawn as one box each on the Training tab (app.js renderSection): the box sits where its
 # first row is, its rows side by side, their hints behind its ?
@@ -105,6 +109,7 @@ DEFAULTS = {
     "FAMILY_SLIDER_ANCHOR_WEIGHT": "1", "FAMILY_SLIDER_ULTRA": False,
     "FAMILY_FT_ROTATIONS": "10", "FAMILY_FT_SAVE_EVERY": "1", "FAMILY_FT_ROTATE_EVERY": "1",
     "FAMILY_FT_FUSED": True, "FAMILY_FT_REG_DIR": "", "FAMILY_FT_REG_MULT": "0.2",
+    "FAMILY_REG_ON": False, "FAMILY_REG_DIR": "", "FAMILY_REG_MULT": "1.0", "FAMILY_REG_USE": REG_MATCH,
     "DATASET_MEGAPIXELS": "0.25", "DATASET_CAPTION_EXT": ".txt", "ENABLE_BUCKET": True, "BUCKET_NO_UPSCALE": True,
     "ENABLE_CACHE": True, "MASKED_TRAINING": False, "MASK_FLOOR": "0.1 (recommended)", "MASK_PRIOR": "Off", "FACE_BOOST": False, "FACE_BOOST_AREA": "Face and hair",
     "METADATA_TITLE": "", "METADATA_AUTHOR": "", "METADATA_DESCRIPTION": "", "METADATA_LICENSE": "",
@@ -481,6 +486,26 @@ def form(desc):
         # last, under everything that changes them: what training will use, per subject (one of its own captions)
         *[_row(f"_subject{n}_as", f"Subject {n} - what training will use", "note", hint_labels=True)
           for n in ((1, 2, 3, 4) if desc.multi_concept else (1,))],
+        # the card's last part, in a fold of its own (closed until the tick is on), under Check a trigger word: a
+        # regularisation dataset, which sets everything above aside for the run (#332)
+        *([_row("FAMILY_REG_ON", "Train with a regularisation dataset", "check",
+                "For a LoRA that changes too much besides its subject. Alongside your training pictures, Fizgig "
+                "trains on a second folder of ordinary pictures of the same kind of thing (other people for a "
+                "person, other characters for a character, other pictures in the genre for a style). They hold the "
+                "model's idea of that kind of thing in place while your subject trains. It is an alternative to DOP "
+                "and Fizgig LoRA Isolation, so the choices above are set aside while it is on.",
+                fold="lorareg", fold_label=REG_FOLD, fold_on="FAMILY_REG_ON"),
+           _row("FAMILY_REG_DIR", "Regularisation pictures", "folder",
+                "Real pictures, each with a caption file that describes it and does not use your trigger word. Not "
+                "pictures the model made: those teach it its own mistakes. Aim for at least as many as your "
+                "training pictures.", upload=True, start="data", fold="lorareg"),
+           _row("FAMILY_REG_MULT", "Regularisation LR ×", "combo",
+                "The regularisation pictures train at this fraction of the learning rate. 1.0 trains them as firmly "
+                "as your own pictures; lower makes them a lighter anchor.", choices=FT_REG_MULT, fold="lorareg"),
+           _row("FAMILY_REG_USE", "Use each epoch", "choice",
+                "How many of the regularisation pictures each epoch trains on: a different handful each epoch, so "
+                "over a run the whole folder is used.", REG_USES, fold="lorareg")]
+          if desc.lora_regularisation else []),
     ]
     if desc.training_adapter:
         params.append(_row("FAMILY_TRAINING_ADAPTER", "Training adapter (recommended)", "check",

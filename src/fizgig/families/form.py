@@ -975,6 +975,44 @@ CONCEPT_ROWS = (("FAMILY_CONCEPT_DIR", "FAMILY_DOP_TRIGGER2", "FAMILY_DOP_CLASS2
 DOP_EXTRA_ROWS = {k for _d, t, c in CONCEPT_ROWS for k in (t, c)}
 
 
+REG_KEYS = ("FAMILY_REG_ON", "FAMILY_REG_DIR", "FAMILY_REG_MULT", "FAMILY_REG_USE")
+REG_GREYED = "Greyed out: a regularisation dataset is on (at the bottom of this card). Untick it to use these."
+_SUBJECT_KEYS = {}
+
+
+def _subject_keys(desc):
+    """The Subjects card's own settings, every one above its Regularisation dataset fold: what turning that on greys.
+    Read from the card (form()), so a row added to it later is greyed too."""
+    if desc.key not in _SUBJECT_KEYS:
+        sec = next((s for s in form(desc)["sections"] if s["id"] == "subjects"), {"rows": []})
+        _SUBJECT_KEYS[desc.key] = tuple(r["key"] for r in sec["rows"]
+                                        if r["kind"] not in ("note", "shown") and not r.get("fold"))
+    return _SUBJECT_KEYS[desc.key]
+
+
+def reg_ticked(desc, values):
+    """The Subjects card's Regularisation dataset is ticked and applies (a family with it, a Standard LoRA or LoKR)."""
+    return bool(getattr(desc, "lora_regularisation", False)) and _kind(desc, values) == "standard" \
+        and bool(values.get("FAMILY_REG_ON"))
+
+
+def _reg_budget_note(desc, values, image_folder):
+    """The figure beside Use each epoch: how many regularisation pictures an epoch takes, and what that does to an
+    epoch's length (launch.lora_reg_budget: the number the trainer is given)."""
+    st = {**values, "image_folder": image_folder, "subfolders": bool(values.get("TRAIN_SUBFOLDERS")),
+          "FAMILY_FT": False, "FAMILY_SLIDER": False, "FAMILY_EDIT": False}
+    if not launch.lora_reg_dir(desc, st):
+        return "Pick the folder to see how many that is."
+    per, have, train = launch.lora_reg_budget(desc, st)
+    if not have:
+        return "That folder has no pictures yet."
+    said = (f"all {have} pictures, every epoch" if per >= have else
+            f"{per} of {have} pictures, a different {per} each epoch" +
+            (" (as many as your training pictures)" if not str(values.get("FAMILY_REG_USE") or "").strip()[:1].isdigit()
+             else ""))
+    return said[0].upper() + said[1:] + (f". Each epoch goes from {train} pictures to {train + per}." if train else ".")
+
+
 def concept_count(values):
     """Subjects in a Multi Concept run, the training folder included (2-4)."""
     v = str(values.get("FAMILY_CONCEPT_COUNT") or CONCEPT_COUNTS[0])
@@ -1086,9 +1124,13 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     if not captioner or not values.get("KREA2_AUTO_RECAPTION"):
         hidden |= {"RECAPTION_FIRST", "RECAPTION_SECOND"}
     kind = _kind(desc, values)
+    # a regularisation dataset (the Subjects card's last fold, #332): the rest of the card is set aside for the run -
+    # greyed, its values kept - so nothing it would switch on elsewhere (Isolation's loss watch off) applies either
+    reg = reg_ticked(desc, values)
     # Also train on its sub-folders: a plain LoRA or a fine-tune (Subjects 2-4, DOP and Isolation keep one folder per
     # subject; an edit or a slider pairs files)
-    if kind in ("edit", "slider") or values.get("FAMILY_MULTICONCEPT") or values.get("FAMILY_DOP")             or values.get("FAMILY_MULTI_PERSON"):
+    if kind in ("edit", "slider") or (not reg and (values.get("FAMILY_MULTICONCEPT") or values.get("FAMILY_DOP")
+                                                   or values.get("FAMILY_MULTI_PERSON"))):
         hidden.add("TRAIN_SUBFOLDERS")
     else:
         notes["TRAIN_SUBFOLDERS"], act = subfolders_note(desc, values, image_folder)
@@ -1185,7 +1227,8 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     # Fizgig LoRA Isolation needs two or more subjects (its recipe teaches a face to belong to one trigger, against
     # a second one): with one, Off and Leave the rest of the model alone stay, Isolation is greyed, and a saved
     # one-subject form on Isolation moves to Leave the rest of the model alone (the nearest: it keeps the DOP pass)
-    one_sub = kind == "standard" and (concept_count(values) if values.get("FAMILY_MULTICONCEPT") else 1) == 1
+    one_sub = kind == "standard" and not reg and \
+        (concept_count(values) if values.get("FAMILY_MULTICONCEPT") else 1) == 1
     if one_sub:
         disabled_choices["FAMILY_PEOPLE_MODE"] = {PEOPLE_MODES[2]: "Needs two or more subjects: add one under Who or "
                                                                    "what is this LoRA of?"}
@@ -1199,7 +1242,7 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
                                            "subjects. Pick 2 subjects above to use it.")
     if kind != "standard":                            # multi-person mode: a LoRA (its LR boost is per step)
         hidden.add("FAMILY_MULTI_PERSON")
-    elif values.get("FAMILY_MULTI_PERSON"):           # it runs on DOP
+    elif values.get("FAMILY_MULTI_PERSON") and not reg:     # it runs on DOP
         force["FAMILY_DOP"] = True
         disabled.add("FAMILY_DOP")
         if desc.loss_watch:             # a new AI caption would be encoded with the trigger unfused
@@ -1250,6 +1293,17 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     for i, (d, t, c) in enumerate(CONCEPT_ROWS, start=2):     # subject i's folder, line and words, up to the count
         if i > n_sub:
             hidden |= {d, t, c, f"_subject{i}_as", KIND_ROWS[i - 1]}
+    # the Regularisation dataset fold: a family with it, a Standard LoRA or LoKR (a fine-tune has its own folder)
+    if not getattr(desc, "lora_regularisation", False) or kind != "standard":
+        hidden |= set(REG_KEYS)
+    elif reg:
+        disabled |= set(_subject_keys(desc))
+        for k in ("FAMILY_SUBJECTS", "FAMILY_PEOPLE_MODE"):
+            notes[k] = REG_GREYED
+        hidden |= {f"_subject{i}_as" for i in (2, 3, 4)}       # one subject trains: the training folder
+        notes["FAMILY_REG_USE"] = _reg_budget_note(desc, values, image_folder)
+    else:
+        disabled |= {"FAMILY_REG_DIR", "FAMILY_REG_MULT", "FAMILY_REG_USE"}
     
     kn = _kind_notes(desc)
     if len(kinds(desc)) > 1:
@@ -1631,6 +1685,8 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
         subfolders=b("TRAIN_SUBFOLDERS"),
         FAMILY_OPTIONS=_option_values(desc, v),
     )
+    if launch.lora_reg_on(desc, d):        # a regularisation dataset: the rest of the Subjects card gives way (#332)
+        d.update(multiconcept=False, extra_folders=[], FAMILY_DOP=False, FAMILY_MULTI_PERSON=False)
     return d
 
 

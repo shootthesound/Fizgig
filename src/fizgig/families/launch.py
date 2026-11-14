@@ -236,6 +236,69 @@ def _ft_reg_mult(inputs):
         return None
 
 
+# ---- a LoRA's regularisation dataset (the Subjects card's, #332) ---------------------------------------------------
+def lora_reg_on(desc, st):
+    """The Subjects card's Regularisation dataset ticked, on a family that offers it, for a Standard LoRA or LoKR run
+    (a fine-tune has its own; a slider or an edit trains pairs). While it is on, the rest of the Subjects card gives
+    way: no second subject, no DOP, no Fizgig LoRA Isolation (dop_on, multi_person_on, form.inputs)."""
+    return (bool(getattr(desc, "lora_regularisation", False)) and bool(st.get("FAMILY_REG_ON"))
+            and not (ft_on(desc, st) or slider_on(desc, st) or edit_on(desc, st)))
+
+
+def lora_reg_dir(desc, st):
+    """A LoRA run's regularisation folder, when it is on and one is set (else "")."""
+    return _s(st.get("FAMILY_REG_DIR")) if lora_reg_on(desc, st) else ""
+
+
+def reg_folder(desc, st):
+    """The run's regularisation folder, a fine-tune's or a LoRA's ("" = none): its own dataset block, never a
+    sub-folder of the training folder."""
+    return ft_reg_dir(desc, st) or lora_reg_dir(desc, st)
+
+
+def _lora_reg_mult(st):
+    try:
+        return max(0.0, float(str(st.get("FAMILY_REG_MULT", "") or 1.0)))
+    except ValueError:
+        return None
+
+
+def _training_items(desc, st):
+    """The run's own training items: the training folder's, its sub-folders' when it trains on them, and its detail
+    crops' (the size it trains at). Counted only: no folder is made."""
+    folder = _s(st.get("image_folder"))
+    if not folder or not os.path.isdir(folder):
+        return 0
+    n = _media_count(folder)
+    if subfolders_on(desc, st):
+        n += sum(_media_count(f) for _r, f in subfolders(folder, (_s(st.get("LORA_OUTPUT_DIR")),
+                                                                   _s(st.get("cache_root")), reg_folder(desc, st))))
+    if detail_crops_on(desc, st):
+        from fizgig.dataset import detail_crops
+        try:
+            d = detail_crops.size_dir(folder, float(st.get("megapixels") or st.get("DATASET_MEGAPIXELS") or 0))
+            n += _media_count(d) if os.path.isdir(d) else 0
+        except (TypeError, ValueError):
+            pass
+    return n
+
+
+def lora_reg_budget(desc, st):
+    """(regularisation pictures an epoch uses, pictures in the folder, the run's training items), from the Subjects
+    card's Use each epoch: Match my training pictures = as many as the training items (all of the folder when it has
+    fewer); a share = that share of the folder (at least 1). The one figure the form shows and the trainer is given
+    (--reg_per_epoch), a different handful each epoch."""
+    folder = lora_reg_dir(desc, st)
+    have = _media_count(folder) if folder and os.path.isdir(folder) else 0
+    train = _training_items(desc, st)
+    m = re.match(r"\s*(\d+)\s*%", _s(st.get("FAMILY_REG_USE")))
+    if m:
+        per = min(have, max(1, round(have * int(m.group(1)) / 100))) if have else 0
+    else:
+        per = min(have, train)
+    return per, have, train
+
+
 def _ft_int(inputs, key, default):
     try:
         return max(1, int(float(str(inputs.get(key, "") or default))))
@@ -1506,7 +1569,8 @@ def dop_rules(st):
 def dop_on(desc, st):
     """DOP (the Subjects card's "Leave the rest of the model alone", and under Fizgig LoRA Isolation): a family that
     offers it (description subject_isolation), never an edit or a slider."""
-    return bool(st.get("FAMILY_DOP")) and desc.subject_isolation and not (slider_on(desc, st) or edit_on(desc, st))
+    return bool(st.get("FAMILY_DOP")) and desc.subject_isolation and not (slider_on(desc, st) or edit_on(desc, st)
+                                                                          or lora_reg_on(desc, st))
 
 
 MASK_FLOORS = ("0 - not at all", "0.05", "0.1 (recommended)", "0.2", "0.3", "0.5")
@@ -1603,7 +1667,7 @@ def mask_report(desc, st):
 def multi_person_on(desc, st):
     """Fizgig LoRA Isolation (multi-person mode, families/multi_person.py): a standard LoRA run with the tick on, on a
     family that offers it."""
-    return bool(st.get("FAMILY_MULTI_PERSON")) and desc.subject_isolation and         not (slider_on(desc, st) or edit_on(desc, st) or ft_on(desc, st))
+    return bool(st.get("FAMILY_MULTI_PERSON")) and desc.subject_isolation and         not (slider_on(desc, st) or edit_on(desc, st) or ft_on(desc, st) or lora_reg_on(desc, st))
 
 
 def isolation_photos_only(desc):

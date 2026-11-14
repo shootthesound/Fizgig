@@ -1725,7 +1725,9 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
   border-color: var(--border); color: var(--text-explain); }
 .note-grid { border-collapse: collapse; margin: 6px 0; font-variant-numeric: tabular-nums; }
 .note-grid th, .note-grid td { padding: 2px 12px 2px 0; text-align: right; white-space: nowrap; }
-.note-grid th:first-child, .note-grid td:first-child { text-align: left; white-space: normal; word-break: break-word; }
+.note-grid th:first-child, .note-grid td:first-child { text-align: left; white-space: normal; overflow-wrap: anywhere; }
+/* a row whose note is a table (Repeats from folder names) takes the section's full width while the table shows */
+.section-card[id^="sec-"] .form-row:has(.note-table:not(:empty)) { grid-column: 1 / -1; }
 .note-grid th { color: var(--text-secondary); font-weight: 600; }
 .note-grid tr.note-grid-flag td { color: var(--warning); }
 

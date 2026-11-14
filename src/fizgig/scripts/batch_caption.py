@@ -91,8 +91,17 @@ def _load_image_list(list_file: str) -> list[str]:
     return out
 
 
-def _write_caption(path: str, caption: str, ext: str = ".txt") -> None:
-    with open(os.path.splitext(path)[0] + (ext or ".txt"), "w", encoding="utf-8") as f:
+def _write_caption(path: str, caption: str, ext: str = ".txt", add_line: bool = False) -> None:
+    """Write a picture's caption file; add_line (Several captions per picture): keep what it says and add the caption
+    on a line of its own (not when that line is already there)."""
+    p = os.path.splitext(path)[0] + (ext or ".txt")
+    if add_line and os.path.exists(p):
+        with open(p, encoding="utf-8", errors="replace") as f:
+            lines = [ln.strip() for ln in f.read().splitlines() if ln.strip()]
+        if caption.strip() in lines:
+            return
+        caption = "\n".join(lines + [caption])
+    with open(p, "w", encoding="utf-8") as f:
         f.write(caption)
 
 
@@ -178,7 +187,7 @@ def _run_job(state: CaptionState, job: dict) -> bool:
             if not caption:
                 print(f"FAIL: {base} (empty caption)", flush=True)
                 continue
-            _write_caption(path, caption, job.get("caption_ext") or ".txt")
+            _write_caption(path, caption, job.get("caption_ext") or ".txt", bool(job.get("add_line")))
             print(f"OK: {base}", flush=True)
         except Exception as exc:
             print(f"FAIL: {base} ({exc})", flush=True)

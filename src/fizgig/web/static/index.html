@@ -556,6 +556,11 @@
               </div>
               <label class="checkbox-label"><input type="checkbox" id="capOverwrite" checked>
                 Overwrite existing captions (untick to caption only the files without one)</label>
+              <label class="checkbox-label" title="Keeps what each caption file already says and adds this model's caption on a new line: run a tagger, then a model that writes sentences, and every picture has both. Training reads each line as a caption of its own when Several captions per picture is ticked on the Training tab."><input type="checkbox" id="capAddLine">
+                Add as another line (keep the captions already there)</label>
+              <div class="field-hint" id="capAddLineNote" hidden>Each file keeps its caption and gets this model's on a
+                new line; a file without one gets its first. A line already in the file isn't added twice. To train on
+                each line, tick Several captions per picture on the Training tab.</div>
             </div>
           </div>
           <div class="section-card accent-card">
@@ -612,6 +617,10 @@
                 <input type="text" id="frEnd" class="w-path" placeholder="e.g. soft window light"></div>
               <div class="field-hint">Added after the trigger word when a caption starts with it, so the trigger stays
                 first. A caption that already has the words is left as it is.</div>
+              <div id="frEachLineRow" hidden><label class="checkbox-label"><input type="checkbox" id="frEachLine">
+                To every line (for files with several captions, one a line)</label>
+                <div class="field-hint">Unticked, a file is one caption: the start goes on its first line and the end
+                on its last.</div></div>
               <div class="field-row"><button class="btn" id="frAddPreview">Preview</button>
                 <button class="btn btn-primary" id="frAdd">Add to all captions</button></div>
               <div id="frChanges" class="checkpoint-list"></div>

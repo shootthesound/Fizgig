@@ -8569,7 +8569,8 @@ function capJobBody(extra = {}) {
     max_tokens: Number($("capTokens").value) || 120,
     threshold: Number($("capThreshold").value) || 0.35, leave_out: $("capLeaveOut").value,
     underscores: $("capUnderscores").checked,
-    trigger: $("capTrigger").value, overwrite: $("capOverwrite").checked, ...extra};
+    trigger: $("capTrigger").value, overwrite: $("capOverwrite").checked, add_line: $("capAddLine").checked,
+    ...extra};
 }
 
 async function capRun(path, body) {
@@ -8679,6 +8680,10 @@ function renderCaptions() {
   const pages = Math.max(1, Math.ceil(items.length / CAP_PAGE));
   S.cap.page = Math.min(S.cap.page, pages - 1);
   const missing = all.filter((i) => i.caption === null).length;
+  // Add text's Every line choice: only where some caption has several lines
+  const multi = all.filter((i) => capLines(i.caption) > 1).length;
+  $("frEachLineRow").hidden = !multi;
+  if (!multi) $("frEachLine").checked = false;
   $("captionsSummary").textContent = `${all.length} files${missing ? `, ${missing} without a caption` : ""}` +
     (q ? ` · ${items.length} match` : "") + (pages > 1 ? ` · page ${S.cap.page + 1} of ${pages}` : "");
   $("capPrev").disabled = S.cap.page === 0; $("capNext").disabled = S.cap.page >= pages - 1;
@@ -8705,7 +8710,7 @@ function renderCaptions() {
     const trainsPictures = !S.fam || !S.fam.media || S.fam.media.includes("photo") || kind === "mp4";
     const recapRun = async (say = (t) => { status.textContent = t; }) => {
       say("Re-captioning…");
-      const r = await capRun("/api/captions/ai", capJobBody({only: [it.path], overwrite: true}));
+      const r = await capRun("/api/captions/ai", capJobBody({only: [it.path], overwrite: true, add_line: false}));
       if (r && r.error) say(r.error);
     };
     const recap = isAudio || !trainsPictures ? null : el("button", {class: "btn btn-sm", text: "Re-caption",
@@ -8733,7 +8738,9 @@ function renderCaptions() {
     const remove = it.crop ? null : el("button", {class: "btn btn-sm", text: "Remove",
       title: "Take it out of the training set: it and its caption move into the folder's removed subfolder (nothing is deleted).",
       onclick: () => capRemove(it, card, status)});
-    const size = it.size ? `${it.size[0]}×${it.size[1]} · ${(it.size[0] * it.size[1] / 1e6).toFixed(1)} MP` : "";
+    const lines = capLines(it.caption);         // several captions per picture: one a line
+    const size = [it.size ? `${it.size[0]}×${it.size[1]} · ${(it.size[0] * it.size[1] / 1e6).toFixed(1)} MP` : "",
+      lines > 1 ? `${lines} captions (one a line)` : ""].filter(Boolean).join(" · ");
     // masked training: the picture's mask (photo-masklabel.png), shown in its place on a click
     const pic = it.mask ? media.querySelector("img") || (media.tagName === "IMG" ? media : null) : null;
     const maskBtn = pic ? el("button", {class: "btn btn-sm", text: "Show mask",
@@ -8754,6 +8761,9 @@ function renderCaptions() {
   }
   fitTexts(host);
 }
+
+// a caption file's non-blank lines: more than one = several captions (the Training tab's Several captions per picture)
+const capLines = (text) => String(text || "").split(/\r?\n/).filter((l) => l.trim()).length;
 
 // the table view: one row a file, sorted by a click on a column's head (again: the other way)
 const capWords = (i) => (i.caption || "").trim() ? (i.caption || "").trim().split(/\s+/).length : 0;
@@ -8795,7 +8805,8 @@ async function addText(apply) {
   const host = $("frChanges");
   try {
     const r = await api("/api/captions/add", {family: S.family, folder: capFolder(), start: $("frStart").value,
-      end: $("frEnd").value, trigger: $("capTrigger").value, apply, ext: capExt()});
+      end: $("frEnd").value, trigger: $("capTrigger").value, apply, ext: capExt(),
+      each_line: $("frEachLine").checked});
     host.innerHTML = "";
     $("frStatus").textContent = r.changes.length ? (apply ? `Added to ${r.changes.length} captions.` :
       `${r.changes.length} captions would change:`) : "Every caption already has that.";
@@ -8852,6 +8863,14 @@ function wireCaptions() {
     CAP_PAGE = Number($("capPerPage").value) || 12; S.cap.page = 0; renderCaptions(); saveCapSoon(); });
   $("capTask").addEventListener("change", onCapTask);
   $("capConcept").addEventListener("input", saveCapSoon);
+  // Add as another line: not remembered (left on, a later Caption All would add lines nobody asked for); while it's
+  // on, Overwrite has no say
+  $("capAddLine").addEventListener("change", () => {
+    const on = $("capAddLine").checked;
+    $("capOverwrite").disabled = on;
+    $("capOverwrite").closest("label").style.opacity = on ? "0.5" : "";
+    $("capAddLineNote").hidden = !on;
+  });
   for (const id of ["capTrigger", "capTokens", "capOverwrite", "capSongWords", "capSkipCjk", "capThreshold", "capLeaveOut",
                     "capUnderscores"])
     $(id).addEventListener("change", saveCapSoon);

@@ -98,3 +98,24 @@ def test_trigger_checked_per_line(folder):
     assert not any("trigger" in w for w in off)                  # off: the file as a whole has it
     on = launch.start_checks(desc, {**st, "MULTI_CAPTION": True}, str(folder))
     assert any(w.startswith("1 caption line in 1 picture doesn't contain the trigger word 'zwx'") for w in on)
+
+
+def test_add_text_every_line_only_when_asked(tmp_path):
+    from fizgig.web import captions
+    d = tmp_path / "c"
+    _pic(str(d / "a.png"), "zwx, tags\nzwx, a sentence")
+    off = captions.add_text(str(d), "photo", "", "zwx", False)["changes"][0]["new"].replace(chr(13), "")
+    assert off == "zwx, photo, tags\nzwx, a sentence"                     # as before: the file is one caption
+    on = captions.add_text(str(d), "photo", "", "zwx", False, each_line=True)["changes"][0]["new"]
+    assert on == "zwx, photo, tags\nzwx, photo, a sentence"
+
+
+def test_captioner_adds_a_line_once(tmp_path):
+    from fizgig.scripts.batch_caption import _write_caption
+    p = str(tmp_path / "a.png")
+    _write_caption(p, "zwx, tags", ".txt", add_line=True)                 # no file yet: its first
+    _write_caption(p, "zwx, a sentence", ".txt", add_line=True)
+    _write_caption(p, "zwx, a sentence", ".txt", add_line=True)           # already there: not twice
+    assert open(str(tmp_path / "a.txt"), encoding="utf-8").read() == "zwx, tags\nzwx, a sentence"
+    _write_caption(p, "replaced", ".txt")
+    assert open(str(tmp_path / "a.txt"), encoding="utf-8").read() == "replaced"

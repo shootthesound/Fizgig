@@ -4601,7 +4601,8 @@ class Handler(BaseHTTPRequestHandler):
                     str(b.get("instruction") or ""), int(b.get("max_tokens") or 120), str(b.get("trigger") or ""),
                     bool(b.get("overwrite")), clips, only=only or None, photos=photos,
                     ext=captions.caption_ext(b.get("ext")), threshold=float(b.get("threshold") or 0.35),
-                    leave_out=str(b.get("leave_out") or ""), underscores=bool(b.get("underscores"))))
+                    leave_out=str(b.get("leave_out") or ""), underscores=bool(b.get("underscores")),
+                    add_line=bool(b.get("add_line")) and not only))
             if path.startswith("/api/studio/"):
                 try:
                     return self.json(_studio_post(path[len("/api/studio/"):], b))
@@ -4854,7 +4855,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/captions/add":
                 _, folder, *_ = _caption_args(b)
                 return self.json(captions.add_text(folder, b.get("start"), b.get("end"), b.get("trigger"),
-                                                   bool(b.get("apply")), captions.caption_ext(b.get("ext"))))
+                                                   bool(b.get("apply")), captions.caption_ext(b.get("ext")),
+                                                   each_line=bool(b.get("each_line"))))
             if path == "/api/captions/translate":
                 prefs, folder, *_ = _caption_args(b)
                 _caption_gpu_check(1.0)

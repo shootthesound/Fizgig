@@ -372,7 +372,7 @@ class Watch:
                     try:
                         _p, folder, name = self.watch.where(k)
                         txt = os.path.join(folder, name + self.caption_ext)
-                        if self.multi_caption and os.path.exists(txt):
+                        if getattr(self, "multi_caption", False) and os.path.exists(txt):
                             # several captions per picture: the new caption replaces the first line only, and the
                             # picture's other lines (yours) stay
                             with open(txt, encoding="utf-8", errors="replace") as f:

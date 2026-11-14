@@ -344,10 +344,11 @@ def find_replace(folder, find, replace, apply, ext=".txt"):
     return {"changes": changes, "applied": bool(apply)}
 
 
-def add_text(folder, start, end, trigger, apply, ext=".txt"):
+def add_text(folder, start, end, trigger, apply, ext=".txt", each_line=False):
     """Text added to the start and/or end of every .txt caption (not songs' lyrics): the changes, and (apply)
     written. The start goes after the trigger word when a caption opens with it, so captions stay trigger-first; a
-    caption that already has the text is left as it is."""
+    caption that already has the text is left as it is. each_line: a file of several captions (one a line) has each
+    line done on its own."""
     start, end, trigger = (str(x or "").strip().strip(",").strip() for x in (start, end, trigger))
     if not (start or end):
         raise ValueError("Type what to add to the start or the end first.")
@@ -360,14 +361,18 @@ def add_text(folder, start, end, trigger, apply, ext=".txt"):
             old = read_text(fp)
         except OSError:
             continue
-        new = old.strip()
-        if start and not has(new, start):
-            m = re.match(r"\s*" + re.escape(trigger) + r"(?!\w)\s*,?\s*", new, re.IGNORECASE) if trigger else None
-            new = (new[:m.end()].rstrip(" ,") + ", " + start + (", " + new[m.end():] if new[m.end():] else "")
-                   if m else start + (", " + new if new else ""))
-        if end and not has(new, end):
-            new = (new.rstrip(" .,") + ", " if new else "") + end
-        if new == old.strip():
+        def one(new):
+            if start and not has(new, start):
+                m = re.match(r"\s*" + re.escape(trigger) + r"(?!\w)\s*,?\s*", new, re.IGNORECASE) if trigger else None
+                new = (new[:m.end()].rstrip(" ,") + ", " + start + (", " + new[m.end():] if new[m.end():] else "")
+                       if m else start + (", " + new if new else ""))
+            if end and not has(new, end):
+                new = (new.rstrip(" .,") + ", " if new else "") + end
+            return new
+        lines = [ln.strip() for ln in old.splitlines() if ln.strip()]
+        multi = each_line and len(lines) > 1
+        new = "\n".join(one(ln) for ln in lines) if multi else one(old.strip())
+        if new == ("\n".join(lines) if multi else old.strip()):
             continue
         changes.append({"name": _caption_name(folder, fp), "old": old[:300], "new": new[:300]})
         if apply:
@@ -477,10 +482,12 @@ def _popen(cmd, prefs, stdin=False):
 
 
 def ai_captions(prefs, captioner, folder, model, task_label, instruction, max_tokens, trigger, overwrite, clips,
-                only=None, photos=True, ext=".txt", threshold=0.35, leave_out="", underscores=False):
+                only=None, photos=True, ext=".txt", threshold=0.35, leave_out="", underscores=False, add_line=False):
     """Caption the folder's pictures (and clips) with a captioner from the registry (`model` is its label or key), or
     just `only` (a re-caption). The worker loads once and stays loaded for the next batch. A tagger keeps the tags
-    scoring `threshold` or more, minus `leave_out` (comma-separated), underscores as spaces unless `underscores`."""
+    scoring `threshold` or more, minus `leave_out` (comma-separated), underscores as spaces unless `underscores`.
+    add_line: every file, each keeping its caption and getting the new one on a line of its own (Several captions per
+    picture, #300)."""
     if _busy():
         raise ValueError("A captioning job is already running. Stop it first.")
     desc = _captioners.get(model)
@@ -495,9 +502,9 @@ def ai_captions(prefs, captioner, folder, model, task_label, instruction, max_to
         raise ValueError("Nothing here for the AI to caption: this model trains on recordings. Use Static Caption All "
                          "or Caption every song." if not photos and not clips else
                          "No pictures or clips in the training folder.")
-    if not only and not overwrite:
+    if not only and not overwrite and not add_line:
         images = [p for p in images if not os.path.exists(os.path.splitext(p)[0] + ext)]
-    images, roots = _crop_images(images, overwrite or bool(only), ext)    # detail crops: at their largest size
+    images, roots = _crop_images(images, overwrite or add_line or bool(only), ext)    # detail crops: at their largest size
     if not images:
         raise ValueError("Every file already has a caption. Tick Overwrite to caption them again."
                          if not only else "That file isn't there any more.")
@@ -528,7 +535,7 @@ def ai_captions(prefs, captioner, folder, model, task_label, instruction, max_to
     except OSError:
         pass
     job = {"list_file": list_file, "max_new_tokens": int(max_tokens or 120), "trigger": trigger.strip(),
-           "stop_file": stop_file, "caption_ext": ext}
+           "stop_file": stop_file, "caption_ext": ext, **({"add_line": True} if add_line else {})}
     if desc.instruction:
         instr = os.path.join(JOB_DIR, "instruction.txt")
         with open(instr, "w", encoding="utf-8") as f:

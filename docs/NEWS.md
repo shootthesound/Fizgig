@@ -1,6 +1,6 @@
 # Fizgig news
 
-## 13 Nov 2026: every job keeps its own view
+## 14 Nov 2026: every job keeps its own view
 
 **Switch between the run that's training, the runs in your queue and what you're setting up, without losing your place.** A pill at the top right (bottom right on a phone) always says what the tabs are showing: a job's name, or **not yet queued**. Press it and pick another, and the Start, Image Prep, Captions, Samples and Training tabs all change to that job's training folder, captions, masks, sample prompts, settings and previews. The run training now is there to look at, with its Samples tab still changeable; a queued run can be changed and saved back; a paused run takes what you change before Resume. **Set up a new run with these settings** copies the job on show into a new setup named with `_2`, and **Back to the normal view** gives you a clean start.
 

@@ -5,7 +5,7 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 
 NEWS = [
     {
-        "date": "13 Nov 2026",
+        "date": "14 Nov 2026",
         "title": "Every job keeps its own view",
         "body": (
             "A pill at the top right (bottom right on a phone) says what the tabs are showing. Press it to switch "
@@ -15,7 +15,7 @@ NEWS = [
             "folder. You can star the previews you like, and a run cut off when Fizgig closed is offered again at the "
             "next start."
         ),
-        "links": [{"text": "Read more", "href": _ARTICLE + "#13-nov-2026-every-job-keeps-its-own-view"},
+        "links": [{"text": "Read more", "href": _ARTICLE + "#14-nov-2026-every-job-keeps-its-own-view"},
                   {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.7.1"}],
     },
     {

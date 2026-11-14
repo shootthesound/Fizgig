@@ -2843,8 +2843,10 @@ async function startupChoose(choice) {
   try {
     const r = await api("/api/startup", {choice});
     $("startupModal").classList.remove("active");
+    // whichever was chosen, the form is left as a clean start (no training folder, the model's defaults, no name):
+    // what it held came from the session before, and is neither the run now going nor anything queued
     if (choice === "fresh") await ctxNormal();
-    else showTab("training");
+    else { await ctxNormal(true); showTab("training"); }
     if (r && r.form && choice === "continue") $("runStatus").textContent = "Carrying on from its last save.";
     pollRun();
   } catch (e) {
@@ -2856,7 +2858,7 @@ async function startupChoose(choice) {
 // Back to the normal view (the pill's list): out of the job on show, to a clean start - the Start tab with no training folder picked,
 // and the Training tab at the model's own defaults (its first preset, as a first visit) with no LoRA name. Nothing of
 // the job is left in the form. The Samples tab's prompts and preview settings are yours, not the job's: they stay
-async function ctxNormal() {
+async function ctxNormal(stay) {            // stay: the tab you are on is kept (else the Start tab opens)
   jobPillMenu(false);
   if (ctxKind() !== "draft") await ctxSwitch({kind: "draft"});
   try {
@@ -2881,7 +2883,7 @@ async function ctxNormal() {
     $("imageFolder").dispatchEvent(new Event("change"));
   }
   S.viewJob = null;
-  showTab("start");
+  if (stay !== true) showTab("start");
   jobPillShow();
 }
 

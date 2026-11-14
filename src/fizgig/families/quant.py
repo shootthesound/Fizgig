@@ -241,6 +241,14 @@ def _target_shapes(driver, dit_path):
             if prefix + n + ".weight" in hdr and len(hdr[prefix + n + ".weight"].get("shape") or []) == 2]
 
 
+def adapter_ema(run: dict) -> bool:
+    """Whether the run keeps an EMA copy of the adapter (ema_decay above 0)."""
+    try:
+        return float(run.get("ema_decay") or 0) > 0
+    except (TypeError, ValueError):
+        return bool(run.get("ema_decay"))
+
+
 def adapter_extra_gb(driver, run: dict) -> float:
     """GB this run's trainable adapter holds beyond what the description's train_memory figures already include
     (a rank-16 LoRA on adamw8bit with EMA): weights, gradients, optimizer state and the EMA copy, all fp32. Not a
@@ -264,10 +272,7 @@ def adapter_extra_gb(driver, run: dict) -> float:
 
     n = sum(params(o, i) for o, i in shapes)
     base = sum(_FIGURE_RANK * (i + o) for o, i in shapes)
-    try:
-        ema = float(run.get("ema_decay") or 0) > 0
-    except (TypeError, ValueError):
-        ema = bool(run.get("ema_decay"))
+    ema = adapter_ema(run)
     state = _STATE_BYTES.get(str(run.get("optimizer_type") or "adamw8bit").lower(), 8)
     return max(0.0, (n * _adapter_bytes(state, ema) - base * _adapter_bytes(_FIGURE_STATE, _FIGURE_EMA)) / 1e9)
 

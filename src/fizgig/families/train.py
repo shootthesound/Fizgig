@@ -1553,20 +1553,26 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         else:
             # the figures are a rank-16 LoRA's: a bigger adapter (LoKR, fp32 Adam, EMA) is counted on top (#337)
             adapter_gb = quant.adapter_extra_gb(driver, run_plan) if not finetune else 0.0
-            precision, blocks_to_swap, why = quant.plan(desc, driver, precision, blocks_to_swap, megapixels=mp,
-                                                         pictures=bsz, adapter_gb=adapter_gb)
+            plain = quant.plan(desc, driver, precision, blocks_to_swap, megapixels=mp, pictures=bsz)
+            counted = quant.plan(desc, driver, precision, blocks_to_swap, megapixels=mp, pictures=bsz,
+                                 adapter_gb=adapter_gb) if adapter_gb >= 0.1 else plain
+            precision, blocks_to_swap, why = counted
+            if counted[:2] != plain[:2] and plain[:2] == ("nf4", 0):
+                # the 4-bit base is the smallest and can't swap; the swapped int8 the adapter pushes the plan to ran 6x
+                # slower than nf4 in #337's measurement, and the figures leave room on Linux - keep nf4, say what to
+                # change so it fits for certain (a Windows card past its memory spills into system RAM and crawls)
+                precision, blocks_to_swap, why = plain
+                logger.warning(
+                    f"[precision] tight fit: this run's {'LoKR' if str(network_type).lower() == 'lokr' else 'LoRA'}, "
+                    f"its optimizer{' and EMA' if quant.adapter_ema(run_plan) else ''} take ~{adapter_gb:.1f} GB "
+                    "more than a rank-16 LoRA, so the 4-bit base may not fit this card. If steps slow down as the "
+                    "run goes (Windows spilling into system memory), or it runs out of memory: turn Weight averaging "
+                    "(EMA) off, lower Target Megapixels, or use a standard LoRA")
             why += f" at {mp:.2f} MP" + (f" x {bsz} pictures a step" if bsz > 1 else "")
             if adapter_gb >= 0.1:
                 why += (f", counting {adapter_gb:.1f} GB more for the "
                         f"{'LoKR' if str(network_type).lower() == 'lokr' else 'LoRA'}, its optimizer"
-                        + (" and EMA" if run_plan["ema_decay"] and str(run_plan["ema_decay"]) not in ("0", "0.0")
-                           else "") + " than a rank-16 LoRA")
-                if auto_precision and "nf4" in desc.precisions and (precision != "nf4" or blocks_to_swap):
-                    logger.warning(f"[precision] this run's adapter needs {adapter_gb:.1f} GB more than a rank-16 "
-                                   "LoRA, so the 4-bit base without block swap no longer fits this card (running "
-                                   "past it would spill into system memory and crawl). To train on 4-bit at full "
-                                   "speed: turn Weight averaging (EMA) off, lower Target Megapixels, or use a "
-                                   "standard LoRA instead of LoKR")
+                        + (" and EMA" if quant.adapter_ema(run_plan) else "") + " than a rank-16 LoRA")
             if share_worker is not None:
                 # a helper's share trains at the lead's precision (the same base numbers): say so plainly, before the
                 # model loads, when this card can't hold it even with the most blocks swapped (the lead trains on)

@@ -54,6 +54,27 @@ def test_fresh_clears_the_queue(cut):
     assert server.startup_choice("fresh").get("error")              # answered: nothing left to decide
 
 
+def test_a_run_that_came_by_a_move_is_never_offered(cut):
+    recs = history._read()
+    recs[-1]["values"]["__moved_in"] = "1"          # as helpers.move_in marks it
+    history._write(recs)
+    assert server._startup_offer() is None and not server.load_state().get("interrupted")
+
+
+def test_the_bar_place_is_kept_with_the_window(tmp_path, monkeypatch):
+    import json
+    from fizgig.web import app_window
+    prefs = tmp_path / "prefs.json"
+    prefs.write_text(json.dumps({"web_port": "8081"}), encoding="utf-8")
+    monkeypatch.setattr(app_window, "PREFS_FILE", str(prefs))
+    app_window._remember_bar([0.25, 300])
+    assert json.loads(prefs.read_text(encoding="utf-8")) == {"web_port": "8081", "app_bar_place": [0.25, 300.0]}
+    assert "[0.25, 300.0]" in app_window._bar("On a pod", "Back", "t", "home")
+    app_window._remember_bar(None)                  # a double-click: back to the top middle
+    assert "app_bar_place" not in json.loads(prefs.read_text(encoding="utf-8"))
+    assert app_window._bar("On a pod", "Back", "t", "home").rstrip().endswith("null);")
+
+
 def test_a_run_stopped_on_purpose_is_never_offered(cut):
     server.save_state({"interrupted": ""})
     assert server._startup_offer() is None

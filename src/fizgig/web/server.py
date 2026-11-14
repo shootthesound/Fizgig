@@ -1705,7 +1705,8 @@ def _startup_offer():
     """What the page asks at start-up, or None: {id, lora, can_continue, done, of, unit, queued}."""
     rid = str(load_state().get("interrupted") or "")
     rec = history.get(rid) if rid else None
-    if rec is None or rec.get("result") != "stopped":
+    # a run that came here by a move belongs to the computer it came from, which follows it and brings it home
+    if rec is None or rec.get("result") != "stopped" or (rec.get("values") or {}).get("__moved_in"):
         if rid:
             save_state({"interrupted": ""})
         return None

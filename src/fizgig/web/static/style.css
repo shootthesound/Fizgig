@@ -2295,6 +2295,8 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 .job-pill { position: fixed; top: 10px; right: 16px; z-index: 30; display: flex; align-items: center; gap: 4px;
   max-width: min(34vw, 460px); padding: 5px 6px; border-radius: 999px; background: var(--bg-surface);
   border: 1px solid var(--accent); box-shadow: 0 2px 10px color-mix(in srgb, var(--shadow) 40%, transparent); }
+/* in the app window on a pod or another computer, the window's own bar sits top middle: the pill starts under it */
+.fizgig-app-bar .job-pill { top: 56px; }
 .job-pill-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none;
   border: 0; color: var(--text-primary); font-size: 13.5px; padding: 4px 10px 4px 4px; cursor: pointer; text-align: left;
   touch-action: none; user-select: none; display: flex; align-items: center; gap: 8px; }

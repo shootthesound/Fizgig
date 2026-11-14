@@ -96,7 +96,7 @@ def _icon(profile):
 # the bar the window adds to a page (so a pod on older Fizgig gets it too): on a pod, where you are and the way back
 # here; back here, the pod you left and the way back to it (with a ✕ to put it away)
 _BAR_JS = r"""
-(function (text, button, title, call, dismiss) {
+(function (text, button, title, call, dismiss, place) {
   var old = document.getElementById('fizgigAppBar');
   if (old) old.remove();
   // room above the page for the bar (and a build note under it), so neither covers the page's own top line
@@ -117,6 +117,46 @@ _BAR_JS = r"""
   var t = document.createElement('span');
   t.textContent = text;
   t.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+  // the grip: six dots to drag the bar by. It goes anywhere in the window and never off it (it is the way back), its
+  // place kept with the app window (the same on every pod); a double-click puts it back in the top middle
+  var g = document.createElement('span');
+  g.title = 'Drag to move this; double-click puts it back';
+  g.style.cssText = 'flex:none;display:grid;grid-template-columns:repeat(2,3px);gap:3px;cursor:grab;touch-action:none;padding:4px 2px';
+  for (var i = 0; i < 6; i++) {
+    var d = document.createElement('i');
+    d.style.cssText = 'width:3px;height:3px;border-radius:50%;background:var(--text-primary, #F0F4F8);opacity:.7';
+    g.appendChild(d);
+  }
+  b.appendChild(g);
+  function put(x, y) {          // the bar's left / top, held inside the window
+    var r = b.getBoundingClientRect();
+    b.style.transform = 'none';
+    b.style.left = Math.max(4, Math.min(window.innerWidth - r.width - 4, x)) + 'px';
+    b.style.top = Math.max(4, Math.min(window.innerHeight - r.height - 4, y)) + 'px';
+  }
+  function home() { b.style.left = '50%'; b.style.top = '10px'; b.style.transform = 'translateX(-50%)'; }
+  function tell(v) { if (window.pywebview && window.pywebview.api && window.pywebview.api.bar_place) window.pywebview.api.bar_place(v); }
+  var drag = null;
+  g.onpointerdown = function (e) {
+    var r = b.getBoundingClientRect();
+    drag = {x: e.clientX, y: e.clientY, l: r.left, t: r.top};
+    g.setPointerCapture(e.pointerId); g.style.cursor = 'grabbing';
+  };
+  g.onpointermove = function (e) { if (drag) put(drag.l + e.clientX - drag.x, drag.t + e.clientY - drag.y); };
+  g.onpointerup = g.onpointercancel = function () {
+    if (!drag) return;
+    drag = null; g.style.cursor = 'grab';
+    var r = b.getBoundingClientRect();        // its middle as a share of the window's width, and its top
+    place = [(r.left + r.width / 2) / window.innerWidth, r.top];
+    tell(place);
+  };
+  g.ondblclick = function () { place = null; home(); tell(null); };
+  function restore() {
+    if (!place) return;
+    var r = b.getBoundingClientRect();
+    put(place[0] * window.innerWidth - r.width / 2, place[1]);
+  }
+  window.addEventListener('resize', restore);
   var h = document.createElement('button');
   h.textContent = button;
   h.title = title;
@@ -129,16 +169,42 @@ _BAR_JS = r"""
     x.textContent = '✕';
     x.title = 'Hide this';
     x.style.cssText = 'background:none;color:var(--text-primary, #F0F4F8);border:0;cursor:pointer;font:13px Segoe UI,system-ui,sans-serif;padding:2px 6px';
-    x.onclick = function () { b.remove(); sp.remove(); if (window.pywebview && window.pywebview.api) window.pywebview.api.forget_pod(); };
+    x.onclick = function () { b.remove(); sp.remove(); document.documentElement.classList.remove('fizgig-app-bar');
+      if (window.pywebview && window.pywebview.api) window.pywebview.api.forget_pod(); };
     b.appendChild(x);
   }
   document.body.appendChild(b);
+  document.documentElement.classList.add('fizgig-app-bar');     // the page's own pill starts below the bar
+  restore();
 })(__ARGS__);
 """
 
 
 def _bar(text, button, title, call, dismiss=False):
-    return _BAR_JS.replace("__ARGS__", ", ".join(json.dumps(v) for v in (text, button, title, call, dismiss)))
+    place = _prefs().get("app_bar_place")
+    if not (isinstance(place, list) and len(place) == 2 and all(isinstance(v, (int, float)) for v in place)):
+        place = None
+    return _BAR_JS.replace("__ARGS__", ", ".join(json.dumps(v) for v in (text, button, title, call, dismiss, place)))
+
+
+def _remember_bar(place):
+    """Where the bar was dragged to ([its middle as a share of the window's width, its top in pixels]; None = the top
+    middle), kept in prefs.json so it is the same on every pod and computer the window shows."""
+    p = _prefs()
+    if isinstance(place, (list, tuple)) and len(place) == 2:
+        try:
+            p["app_bar_place"] = [max(0.0, min(1.0, float(place[0]))), max(0.0, float(place[1]))]
+        except (TypeError, ValueError):
+            return
+    else:
+        p.pop("app_bar_place", None)
+    tmp = PREFS_FILE + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(p, f, indent=2)
+        os.replace(tmp, PREFS_FILE)
+    except OSError:
+        pass
 
 
 def _git(*args):
@@ -677,6 +743,9 @@ def main():
 
             def forget_pod(self):
                 left[0] = ""
+
+            def bar_place(self, place=None):
+                _remember_bar(place)             # the bar dragged somewhere (or put back): the same on every pod
 
             def build(self):
                 return _build()

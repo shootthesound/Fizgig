@@ -4269,6 +4269,7 @@ def move_in(body):
         f = next((mf for mf in desc.model_files if mf.role == role), None)
         if f is not None and paths.get(stage):
             over[f.pref_key] = paths[stage]
+    v["__moved_in"] = "1"          # this run came by a move: the start-up question leaves it alone (server.py)
     r = s._start(desc.key, v, rec["folder"], resume=state, models=over,
                  note=f"=== Moved here from {rec.get('lead') or 'another computer'}: carrying on from "
                       f"{os.path.basename(state)} ===")

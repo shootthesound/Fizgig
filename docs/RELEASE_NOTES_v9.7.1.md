@@ -10,6 +10,8 @@
 - **When the job on show finishes,** the pill says so and pulses. The tab you're on keeps showing it, the list offers **Switch this tab to** the run that started next, and your next change of tab moves on by itself. The pulse colour is part of each theme.
 - **Put the pill where you like.** On a wide window, drag it by its grip to anywhere in the window; it stays there, and a double-click puts it back. On a phone it stays bottom right and its list comes up from the bottom.
 
+**In the app window on a pod, the bar that takes you back can be moved too.** Drag it by its grip to anywhere in the window; it never leaves the window, its place is the same on every pod, and a double-click puts it back in the top middle. The pill starts just under it, so the two don't overlap.
+
 **Likeness and Style scores belong to the run.** Pick your three reference photos once and they're remembered with the training folder, so every run on those pictures uses them without asking again. Each run keeps its own likeness and Style scores over its own previews, so two runs sharing a samples folder never mix or overwrite each other's numbers, and looking at an older run never clears the current one's. Scores made before this release are scored again the first time you open a run, and you pick the three photos once more per training folder.
 
 **Star the previews you like.** A star on any preview in the Samples gallery, its grid or a run's card, and the matching epoch's checkpoint gets a star in the checkpoint lists, so the one you liked is easy to find when you pick a LoRA.

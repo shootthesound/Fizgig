@@ -76,9 +76,35 @@ def test_row_shows_only_under_the_ticked_subfolder_row(tree):
     st = form.state(desc, {"TRAIN_SUBFOLDERS": True}, str(tree))
     assert "TRAIN_SUBFOLDER_REPEATS" not in st["hidden"]
     assert "look like repeat counts" in st["notes"]["TRAIN_SUBFOLDERS"]      # the hint, tick still off
+    assert st["actions"]["TRAIN_SUBFOLDERS"]["values"] == {"TRAIN_SUBFOLDER_REPEATS": True}
     st = form.state(desc, {"TRAIN_SUBFOLDERS": True, "TRAIN_SUBFOLDER_REPEATS": True}, str(tree))
     assert "look like repeat counts" not in st["notes"]["TRAIN_SUBFOLDERS"]
+    assert "TRAIN_SUBFOLDERS" not in st["actions"]                            # the table lists the folders
     note = st["notes"]["TRAIN_SUBFOLDER_REPEATS"]
-    assert note.startswith("Each epoch: 57 steps from 13 pictures.")
+    assert note.startswith("Each epoch (one pass through the pictures) sees 57 pictures, from the 13 in the folders.")
     assert "| 10_base | 4 | x10 | 40 | 70% |" in note
     assert "|! plain | 1 | x1 | 1 | 2% |" in note and "Marked:" in note      # under 3%: flagged
+    assert "an epoch is 4.4x as long: 12 epochs see 684 pictures" in note
+
+
+def test_unticked_numbered_folders_offer_both_ticks(tree):
+    st = form.state(get_family("klein"), {}, str(tree))
+    assert "Their names look like repeat counts" in st["notes"]["TRAIN_SUBFOLDERS"]
+    assert st["actions"]["TRAIN_SUBFOLDERS"]["values"] == {"TRAIN_SUBFOLDERS": True, "TRAIN_SUBFOLDER_REPEATS": True}
+
+
+def test_plain_names_get_a_concrete_rename(tmp_path):
+    d = tmp_path / "d"
+    for i in range(20):
+        _pic(str(d / "red" / f"{i}.png"))
+    for i in range(8):
+        _pic(str(d / "blue" / f"{i}.png"))
+    note = form.state(get_family("klein"), {"TRAIN_SUBFOLDERS": True, "TRAIN_SUBFOLDER_REPEATS": True},
+                      str(d))["notes"]["TRAIN_SUBFOLDER_REPEATS"]
+    assert "rename the folder blue to 2_blue" in note and "(8 x 2 = 16, close to red's 20)" in note
+
+
+def test_hidden_without_subfolders(tmp_path):
+    d = tmp_path / "flat"
+    _pic(str(d / "a.png"))
+    assert "TRAIN_SUBFOLDER_REPEATS" in form.state(get_family("klein"), {"TRAIN_SUBFOLDERS": True}, str(d))["hidden"]

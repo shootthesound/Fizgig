@@ -1051,18 +1051,47 @@ def _on(values, o):
 SUBFOLDERS_HINT = ("Off: only the pictures directly in the training folder are used.\nOn: the pictures in its "
                    "sub-folders are trained on too, at any depth, each sub-folder as its own set with its own captions "
                    "and cache, so a big dataset can stay organised. Every picture trains once an epoch, wherever it "
-                   "is. Image Prep and Captions work on one folder at a time: to caption or mask a sub-folder, choose "
-                   "it as the training folder on the Start tab.")
+                   "is, unless Repeats from folder names is on. Image Prep and Captions work on one folder at a time: "
+                   "to caption or mask a sub-folder, choose it as the training folder on the Start tab.")
 
 
-REPEATS_HINT = ("A sub-folder named with a number and an underscore, like 10_Laffey_base, trains that many times an "
-                "epoch, so you choose how much of each epoch each folder gets. Folders without a number train once. "
-                "The same folder names kohya and OneTrainer use.\nOff: a number in a folder's name means nothing.")
+REPEATS_HINT = ("Lets a small folder count as much as a big one, or one folder count more. Start a sub-folder's name "
+                "with a number and an underscore, like 3_blue, and its pictures are seen 3 times each epoch (each pass "
+                "through the pictures); folders without a number are seen once. Only the folder's own name counts "
+                "(10_a/3_b is seen 3 times), and the rest of the name is just a label: captions still come from the "
+                "caption files. The same naming kohya and OneTrainer use.\nOff: a number in a folder's name means "
+                "nothing.")
+
+
+def _num(values, key, default):
+    try:
+        return max(1, int(float(_str(values.get(key)) or default)))
+    except ValueError:
+        return int(default)
+
+
+def _even_out(rows):
+    """The rename that evens out the smallest folder against the largest, when no folder is numbered yet: a line, or
+    "" when they're already close."""
+    subs = [(lab, n) for lab, _f, n, _r in rows if lab != "the training folder" and n]
+    if len(subs) < 2:
+        return ""
+    big_lab, big = max(subs, key=lambda x: x[1])
+    lab, n = min(subs, key=lambda x: x[1])
+    k = round(big / n)
+    if k < 2:
+        return ""
+    base = lab.rstrip("/").split("/")[-1]
+    total = sum(m for _l, _f, m, _r in rows)
+    return (f"{lab} has the fewest pictures, so it gets the least training ({100 * n / total:.0f}%). To even it out, "
+            f"rename the folder {base} to {k}_{base} in your file browser ({n:,} x {k} = {n * k:,}, close to "
+            f"{big_lab}'s {big:,}), then come back here.")
 
 
 def repeats_note(desc, values, image_folder):
-    """The Repeats from folder names tick's note: each folder's pictures x repeats and share of an epoch (on), as a
-    table ("| ... |" lines, the first its header; "|!" marks a folder with a very small share), and the epoch line."""
+    """The Repeats from folder names tick's note: the epoch line, each folder's pictures x repeats and share of an
+    epoch as a table ("| ... |" lines, the first its header; "|!" marks a folder with a very small share), then what
+    the repeats do to the run (its length, previews and saves, steps at a Batch size above 1)."""
     reg = _str(values.get("FAMILY_REG_DIR")) if reg_ticked(desc, values) else ""
     subs = launch.subfolders(image_folder, (_str(values.get("LORA_OUTPUT_DIR")), reg))
     if not subs:
@@ -1074,32 +1103,41 @@ def repeats_note(desc, values, image_folder):
     if not total:
         return ""
     numbered = [rel for rel, _f in subs if launch.looks_like_repeats(rel)]
-    out = [f"Each epoch: {total:,} steps from {pics:,} pictures."]
-    if not numbered:
-        out.append("None of the sub-folders' names starts with a number yet, so every folder trains once. Rename "
-                   "one like 10_name to train it 10 times an epoch.")
-    out.append("| Folder | Pictures | Repeats | Steps | Share |")
+    out = [f"Each epoch (one pass through the pictures) sees {total:,} pictures, from the {pics:,} in the folders.",
+           "| Folder | Pictures | Repeats | Seen an epoch | Share |"]
     small = 3.0
     for label, _f, n, r in sorted(rows, key=lambda x: -x[2] * x[3]):
         share = 100 * n * r / total
-        out.append(f"|{'!' if share < small and len(rows) > 1 else ''} {label} | {n:,} | x{r} | {n * r:,} | "
-                   f"{share:.0f}% |" if share >= 1 else
-                   f"|{'!' if len(rows) > 1 else ''} {label} | {n:,} | x{r} | {n * r:,} | <1% |")
-    odd = [(rel, launch.folder_repeats(rel)[1]) for rel, _f in subs
-           if launch.folder_repeats(rel)[1] is not None and launch.folder_repeats(rel)[1] != launch.folder_repeats(rel)[0]]
-    for rel, asked in odd[:3]:
-        out.append(f"{rel}: {asked} " + ("trains once (0 is read as 1)." if asked < 1 else
-                                         f"is more than {launch.MAX_FOLDER_REPEATS}, so it trains "
-                                         f"{launch.MAX_FOLDER_REPEATS} times."))
+        flag = "!" if share < small and len(rows) > 1 else ""
+        out.append(f"|{flag} {label} | {n:,} | x{r} | {n * r:,} | {f'{share:.0f}%' if share >= 1 else '<1%'} |")
+    if not numbered:
+        out.append("None of the folder names starts with a number yet, so every folder is seen once an epoch. "
+                   + (_even_out(rows) or "Start a folder's name with a number (3_name) to see it more often."))
+    for rel, _f in subs:
+        reps, asked = launch.folder_repeats(rel)
+        if asked is not None and asked != reps:
+            out.append(f"{rel}: " + ("0 is read as 1, so it is seen once." if asked < 1 else
+                                     f"{asked} is more than {launch.MAX_FOLDER_REPEATS}, so it is seen "
+                                     f"{launch.MAX_FOLDER_REPEATS} times."))
     if any(100 * n * r / total < small for _l, _f, n, r in rows) and len(rows) > 1:
-        out.append(f"Marked: under {small:g}% of an epoch, so it will barely train. Check its number if that isn't "
+        out.append(f"Marked: under {small:g}% of each epoch, so it will barely train. Check its number if that isn't "
                    "what you meant.")
+    if total > pics:
+        epochs = _num(values, "MAX_TRAIN_EPOCHS", DEFAULTS["MAX_TRAIN_EPOCHS"])
+        line = (f"With the repeats an epoch is {total / pics:.1f}x as long: {epochs} epochs see {total * epochs:,} "
+                f"pictures, and previews and saves every N epochs come {total / pics:.1f}x further apart.")
+        batch = launch.batch_size(desc, values)
+        if batch > 1:
+            line += f" At Batch size {batch} that is about {-(-total // batch):,} steps an epoch."
+        out.append(line)
     return "\n".join(out)
 
 
 def subfolders_note(desc, values, image_folder):
-    """(the tick's line, its Show all folders / Hide the folders button or None): what it will train and which
-    folders still need captions (on), or what it is leaving out (off)."""
+    """(the tick's line, its one button or None): what it will train and which folders still need captions (on), or
+    what it is leaving out (off). The button: Train them with these repeats / Use these repeats when the folder names
+    look like repeat counts and the repeats tick is off, else Show all folders / Hide the folders (not while the
+    repeats table lists them)."""
     if not image_folder or not os.path.isdir(image_folder):
         return "", None
     # the form's values name the kind of training (a label), not FAMILY_FT: a fine-tune's regularisation folder
@@ -1111,11 +1149,20 @@ def subfolders_note(desc, values, image_folder):
     ext = _str(values.get("DATASET_CAPTION_EXT")) or ".txt"
     counts = [(rel, launch._media_count(f), _uncaptioned(f, ext)) for rel, f in subs]
     more = sum(n for _r, n, _u in counts)
-    if not values.get("TRAIN_SUBFOLDERS"):
-        return (f"{len(subs)} sub-folder{'s' if len(subs) != 1 else ''} with {more:,} more picture"
-                f"{'s' if more != 1 else ''} {'is' if more == 1 else 'are'} not trained on. Tick this to include "
-                f"them."), None
     own = launch._media_count(image_folder)
+    numbered = [rel for rel, _f in subs if launch.looks_like_repeats(rel)]
+    looks = len(numbered) >= 2 and not values.get("TRAIN_SUBFOLDER_REPEATS")
+    if not values.get("TRAIN_SUBFOLDERS"):
+        s = "s" if len(subs) != 1 else ""
+        line = (f"{len(subs)} sub-folder{s} with {more:,} more picture{'s' if more != 1 else ''} "
+                f"{'is' if more == 1 else 'are'} not trained on." if own else
+                f"All {more:,} picture{'s' if more != 1 else ''} {'is' if more == 1 else 'are'} in {len(subs)} "
+                f"sub-folder{s}, which {'is' if len(subs) == 1 else 'are'} not trained on.")
+        if looks:
+            return (line + f" Their names look like repeat counts ({numbered[0]}).",
+                    {"label": "Train them with these repeats",
+                     "values": {"TRAIN_SUBFOLDERS": True, "TRAIN_SUBFOLDER_REPEATS": True}})
+        return line + " Tick this to include them.", None
     rows = ([("the training folder", own, _uncaptioned(image_folder, ext))] if own else []) + counts
     line = f"Training on {len(rows)} folders, {own + more:,} pictures."
     bare = [(rel, u) for rel, _n, u in rows if u]
@@ -1123,10 +1170,12 @@ def subfolders_note(desc, values, image_folder):
         line += (" Not captioned yet, so Start will refuse them: "
                  + " · ".join(f"{rel} ({u:,})" for rel, u in bare[:8])
                  + (f" · and {len(bare) - 8} more folders" if len(bare) > 8 else "") + ".")
-    numbered = [rel for rel, _f in subs if launch.looks_like_repeats(rel)]
-    if not values.get("TRAIN_SUBFOLDER_REPEATS") and len(numbered) >= 2:
-        line += (f" These folder names look like repeat counts ({numbered[0]}): tick Repeats from folder names to "
-                 f"use them. Until then every folder trains once.")
+    if looks:
+        return (line + f" These folder names look like repeat counts ({numbered[0]}); until you use them every "
+                       f"folder is seen once an epoch.",
+                {"label": "Use these repeats", "values": {"TRAIN_SUBFOLDER_REPEATS": True}})
+    if values.get("TRAIN_SUBFOLDER_REPEATS"):      # the repeats table lists every folder
+        return line, None
     show = bool(values.get("_SUBFOLDER_LIST"))
     if show:
         line += " All folders: " + " · ".join(f"{rel} {n:,}" for rel, n, _u in rows) + "."
@@ -1187,8 +1236,9 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         notes["TRAIN_SUBFOLDERS"], act = subfolders_note(desc, values, image_folder)
         if act:
             actions["TRAIN_SUBFOLDERS"] = act
-    if "TRAIN_SUBFOLDERS" in hidden or not values.get("TRAIN_SUBFOLDERS"):
-        hidden.add("TRAIN_SUBFOLDER_REPEATS")       # only under the sub-folder tick, while it's on
+    if "TRAIN_SUBFOLDERS" in hidden or not values.get("TRAIN_SUBFOLDERS") or not (
+            image_folder and launch.subfolders(image_folder, (_str(values.get("LORA_OUTPUT_DIR")),))):
+        hidden.add("TRAIN_SUBFOLDER_REPEATS")       # only under the sub-folder tick, on, with sub-folders to read
     elif values.get("TRAIN_SUBFOLDER_REPEATS") and image_folder and os.path.isdir(image_folder):
         notes["TRAIN_SUBFOLDER_REPEATS"] = repeats_note(desc, values, image_folder)
     if not values.get("FACE_BOOST"):

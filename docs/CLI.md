@@ -270,7 +270,7 @@ Field notes:
 - **Multiple `[[datasets]]` blocks** are supported — each with its own `image_directory`, `cache_directory`, and optional per-dataset overrides of any `[general]` key (e.g. a different `num_repeats` to weight one folder more heavily).
 - **`caption_replace = [["zwxem, a woman", "zwxemwoman"]]`** — rewrites captions as they're read (whole words, any case, in order); your `.txt` files aren't changed. Fizgig LoRA Isolation uses it to join each trigger to its class.
 - **`photos_only = true`** — a family that trains clips or voice (MiniMax H3) reads only the pictures in this folder. Fizgig LoRA Isolation sets it on H3, which trains people from their photos.
-- **`is_reg = true`** — marks a fine-tune's regularisation set: those images train at `--reg_lr_multiplier` (default 0.2) times the learning rate, as a light anchor on the class. A LoRA run trains such a block as ordinary images and says so in the log.
+- **`is_reg = true`** — marks a regularisation set, a fine-tune's or a LoRA's: those images train at `--reg_lr_multiplier` (default 0.2 on the command line; the Training tab's LoRA regularisation dataset sends 1.0 unless you pick another) times the learning rate, as an anchor on the kind of thing your subject is. `--reg_per_epoch N` trains on N of them an epoch, a different N each epoch (0, the default, trains every one). The per-image loss watch, masks, Boost the face and training maps leave the set alone.
 
 If you change captions, re-run the text cache step. If you add/remove/edit images, re-run both cache steps (a picture edited after it was cached is encoded again even with `--skip_existing`).
 

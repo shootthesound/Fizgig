@@ -79,6 +79,17 @@ The Training tab's **Subjects** card says who the LoRA is of and how it behaves 
 
 How to caption for it, choose trigger words and prompt the finished LoRA: [People in group pictures](MULTI_PERSON.md).
 
+### Regularisation dataset
+
+For a LoRA that changes too much besides its subject: plain prompts drift toward your subject, or the whole style shifts. The fold at the bottom of the Subjects card, under **Check a trigger word**, trains a second folder alongside your training pictures: ordinary pictures of the same kind of thing (other people for a person, other characters for a character, other pictures in the genre for a style). They hold the model's idea of that kind of thing in place while your subject trains. It works for any subject, anime and drawn characters included, where Fizgig LoRA Isolation suits people best.
+
+- **Train with a regularisation dataset** turns it on. The rest of the Subjects card is set aside for that run: one subject (the training folder), no DOP, no Fizgig LoRA Isolation. Those choices are greyed out and keep their values, so unticking brings them back.
+- **Regularisation pictures:** real pictures, not ones the model made (those teach it its own mistakes). Every picture needs a caption that describes it and does not use your trigger word; Start refuses pictures without one and warns about captions that use the trigger. Caption them by making that folder the training folder on Start for a moment, then switching back.
+- **Regularisation LR ×:** the share of the learning rate the regularisation pictures train at. 1.0 (the default) trains them as firmly as your own pictures; lower makes them a lighter anchor.
+- **Use each epoch:** how many of the folder's pictures each epoch trains on, a different handful each epoch, so over a run the whole folder is used. **Match my training pictures** (the default) takes as many as your training pictures; or a share of the folder from 10% to 100%. The line beside it says how many that is and how long an epoch becomes.
+- Standard LoRA and LoKR, on every still-picture model. A fine-tune has its own regularisation folder on its card. While it is on, a run can't be shared with a helper GPU (Move a run still takes the folder with it).
+- Regularisation pictures are never judged, throttled, excluded or recaptioned by the per-image loss watch, never masked or face-boosted, and never used for training maps.
+
 ## Output folders
 
 The LoRA output folder lives on the Training tab's Output section and is remembered per model: switch models and each gets its own folder back. The default is `output_loras` inside Fizgig.

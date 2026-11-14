@@ -82,7 +82,7 @@ async function boot() {
   S.passwordOn = pr.password_on;
   S.portFixed = pr.port_fixed;
   S.pw = {saved: pr.password_saved, env: pr.password_env, lan: pr.lan_ip || ""};
-  S.qtGpu = pr.qt_gpu_option ? {saved: !!pr.qt_disable_gpu, changed: false} : null;   // Linux's app window only
+  S.qtGpu = pr.qt_gpu_option ? {saved: !!pr.qt_disable_gpu, changed: false} : null;   // Linux's and Windows' app window
   S.pod = pr.pod;
   S.outputDefault = pr.output_default || "";
   S.outputPref = pr.lora_output_dir || "";
@@ -1602,15 +1602,15 @@ function welcomeShow(pr) {
   v.play().catch(() => {});
 }
 
-// prefs qt_disable_gpu → on Linux, QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu before import webview (the card shows on
-// Linux only)
+// prefs qt_disable_gpu → --disable-gpu for the app window from its next start: on Linux QTWEBENGINE_CHROMIUM_FLAGS (Qt
+// WebEngine), on Windows WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS (WebView2). The card shows on those two only
 function qtGpuCard() {
   const G = S.qtGpu;
   if (!G || S.onPod) return null;
   const on = el("input", {type: "checkbox"});
   on.checked = !!G.saved;
   const say = el("div", {class: "field-hint"});
-  const base = "Linux only (Qt WebEngine): keeps the app window's Chromium off the GPU so it does not share VRAM " +
+  const base = "Keeps the app window off the GPU so it does not share VRAM " +
     "with training, and can stop some setups where the window crashes or stays blank. Used from the next start (close Fizgig and open it again; not a browser tab).";
   const paint = () => {
     say.textContent = (G.changed ? "Saved: restart Fizgig for it to apply. " : "") + base;
@@ -1624,7 +1624,7 @@ function qtGpuCard() {
   paint();
   return el("div", {class: "section-card"},
     el("div", {class: "card-title"}, el("span", {text: "App window"})),
-    el("div", {class: "card-desc", text: "The Fizgig desktop window (Qt WebEngine on Linux)."}),
+    el("div", {class: "card-desc", text: "The Fizgig desktop window (WebView2 on Windows, Qt WebEngine on Linux)."}),
     el("div", {class: "card-content"},
       el("div", {class: "field-row"},
         el("label", {class: "checkbox-label"}, on, " Disable GPU for the app window")),

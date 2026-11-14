@@ -3203,8 +3203,8 @@ class Handler(BaseHTTPRequestHandler):
                               "sysmem_tip": sys.platform == "win32" and str(p.get("sysmem_tip_hidden") or "") != "1"
                               and _has_nvidia(),
                               "qt_disable_gpu": str(p.get("qt_disable_gpu") or "") == "1",
-                              # the app window's GPU switch is Linux's (Qt WebEngine): the card shows only there
-                              "qt_gpu_option": sys.platform.startswith("linux"),
+                              # the app window's GPU switch: Linux's (Qt WebEngine) and Windows' (WebView2) windows
+                              "qt_gpu_option": sys.platform.startswith("linux") or sys.platform == "win32",
                               "password_env": bool(os.environ.get("FIZGIG_PASSWORD")) or getattr(self, "password_arg", False),
                               "lan_ip": __import__("fizgig.web.port", fromlist=["x"]).lan_ip(),
                               "cuda_device": str(p.get("cuda_device") or ""), "gpus": list_gpus(),

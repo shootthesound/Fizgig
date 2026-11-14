@@ -697,14 +697,12 @@ def main():
     home = f"http://127.0.0.1:{port}/"
     fallback = [""]                       # why the window gave way to the browser, when it did
     try:
-        # Preferences > App window: the window drawn without the graphics card, so it holds none of the VRAM a run
-        # needs (#321: a 16 GB card at its limit stopped crashing with it). Each engine has its own switch
-        no_gpu = str(_prefs().get("window_no_gpu") or "0") == "1"
-        if no_gpu:
-            flags = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "")
-            if "--disable-gpu" not in flags:
-                os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (flags + " --disable-gpu").strip()      # Linux, Qt
-            os.environ.setdefault("WEBKIT_DISABLE_COMPOSITING_MODE", "1")                           # Linux, GTK
+        # Qt WebEngine only reads QTWEBENGINE_CHROMIUM_FLAGS at init (Preferences → App window)
+        if sys.platform.startswith("linux") and str(_prefs().get("qt_disable_gpu") or "") == "1":
+            flag = "--disable-gpu"
+            cur = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "").strip()
+            if flag not in cur.split():
+                os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = f"{cur} {flag}".strip()
         import webview
         _log_pywebview()
         if os.name == "nt":            # the taskbar shows Fizgig's own button and icon, not pythonw's (as the old app)
@@ -720,9 +718,10 @@ def main():
         # clips decode on the CPU in this window: the first clip played froze the window (pointer included) while
         # WebView2 brought up the GPU's video decoder, on more than one machine; Fizgig's previews are small clips
         # the CPU decodes with ease. (pywebview's own flag is kept: this variable stands in for its arguments.)
+        # Preferences > App window's Disable GPU: WebView2's own switch, read at its start as Qt's is on Linux
         os.environ.setdefault("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
                               "--disable-features=ElasticOverscroll --disable-accelerated-video-decode"
-                              + (" --disable-gpu" if no_gpu else ""))
+                              + (" --disable-gpu" if str(_prefs().get("qt_disable_gpu") or "") == "1" else ""))
 
         class Api:
             """What a page in the window - a pod's page included - can ask of it: to come back to this computer, and
@@ -977,7 +976,8 @@ def main():
         how = (f"For the window, install Microsoft Edge WebView2 Runtime: {WEBVIEW2_URL}" if os.name == "nt" else
                "For the window on Linux, in Fizgig's venv: `venv/bin/pip install \"pywebview[qt]\"`, or WebKitGTK: "
                "your distro's gir1.2-webkit2-4.1 and libgirepository dev packages, then `venv/bin/pip install "
-               "PyGObject` (the distro's python3-gi isn't seen inside the venv).")
+               "PyGObject` (the distro's python3-gi isn't seen inside the venv). If the window opens then crashes or "
+               "stays blank, try Preferences → App window → Disable GPU for the app window, then open Fizgig again.")
         _log(f"[app] no app window ({e}) - opening the web UI in your browser instead. {how}")
         webbrowser.open(url)
         if own is not None:

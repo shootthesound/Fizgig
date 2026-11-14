@@ -338,7 +338,9 @@ def _training_items(desc, st):
     if not folder or not os.path.isdir(folder):
         return 0
     n = _media_count(folder)
-    if subfolders_on(desc, st):
+    if repeats_on(desc, st):             # Repeats from folder names: an epoch's real length
+        n = sum(c * r for _l, _f, c, r in repeat_rows(desc, st))
+    elif subfolders_on(desc, st):
         n += sum(_media_count(f) for _r, f in subfolders(folder, (_s(st.get("LORA_OUTPUT_DIR")),
                                                                    _s(st.get("cache_root")), reg_folder(desc, st))))
     if detail_crops_on(desc, st):
@@ -773,6 +775,55 @@ def item_prefix(rel):
     return "fizgig_detail_crops/" if rel.split("/")[0] == "fizgig_detail_crops" else rel + "/"
 
 
+# Repeats from folder names (#300): a sub-folder named "10_Laffey_base" trains 10 times an epoch - the kohya /
+# OneTrainer convention. Only with the Training tab's tick (off by default): without it a "10_" name means nothing.
+_REPEAT_NAME = re.compile(r"(\d+)_(.+)")
+MAX_FOLDER_REPEATS = 100
+
+
+def folder_repeats(rel):
+    """(repeats, what the name asked for or None) from a sub-folder's own name (the last part of its path):
+    "10_Laffey_base" -> (10, 10), "Laffey" -> (1, None), "0_x" -> (1, 0), "500_x" -> (100, 500)."""
+    m = _REPEAT_NAME.fullmatch(str(rel).rstrip("/").split("/")[-1])
+    if not m:
+        return 1, None
+    asked = int(m.group(1))
+    return min(MAX_FOLDER_REPEATS, max(1, asked)), asked
+
+
+def looks_like_repeats(rel):
+    """A sub-folder's name has the N_name form (for the hint that suggests the tick)."""
+    return folder_repeats(rel)[1] is not None
+
+
+def repeats_on(desc, st):
+    """Repeats from folder names applies: the sub-folder tick is on and applies, and its repeats tick is on."""
+    return subfolders_on(desc, st) and bool(st.get("subfolder_repeats"))
+
+
+def repeat_rows(desc, st, subs=None):
+    """[(label, folder, items, repeats)] of the run's own folders with repeats from their names: the training folder
+    (once, when it holds items) and each sub-folder. Detail crops aren't sub-folders here (they train once)."""
+    folder = _s(st.get("image_folder"))
+    if subs is None:
+        subs = subfolders(folder, (_s(st.get("LORA_OUTPUT_DIR")), _s(st.get("cache_root")), reg_folder(desc, st)))
+    own = _media_count(folder) if folder and os.path.isdir(folder) else 0
+    rows = [("the training folder", folder, own, 1)] if own else []
+    return rows + [(rel, f, _media_count(f), folder_repeats(rel)[0]) for rel, f in subs]
+
+
+def repeats_line(desc, st):
+    """The run log's line for Repeats from folder names, or "" (off). Largest share first."""
+    if not repeats_on(desc, st):
+        return ""
+    rows = repeat_rows(desc, st)
+    total = sum(n * r for _l, _f, n, r in rows) or 1
+    rows.sort(key=lambda x: -x[2] * x[3])
+    parts = [f"{label} x{r} ({100 * n * r / total:.0f}%)" for label, _f, n, r in rows]
+    return (f"[repeats] {len(rows)} folders, {total:,} steps an epoch from {sum(n for _l, _f, n, _r in rows):,} "
+            f"pictures: " + ", ".join(parts[:8]) + (f" and {len(parts) - 8} more" if len(parts) > 8 else ""))
+
+
 def detail_crops_on(desc, st):
     """The training folder is switched to Detail crops (Image Prep) and this run can take them: a standard LoRA of a
     family with the ability (not an edit, a slider, a fine-tune or Fizgig LoRA Isolation)."""
@@ -1095,6 +1146,9 @@ def train_command(desc, inputs, plan):
     if lora_reg_dir(desc, st):         # a LoRA's regularisation dataset: its LR share, and how many an epoch uses
         cmd += ["--reg_lr_multiplier", f"{_lora_reg_mult(st):g}",
                 "--reg_per_epoch", str(max(1, lora_reg_budget(desc, st)[0]))]
+    if repeats_on(desc, st):           # Repeats from folder names (#300): recorded in the LoRA's metadata
+        import json as _json
+        cmd += ["--folder_repeats", _json.dumps({lab: r for lab, _f, _n, r in repeat_rows(desc, st) if r > 1})]
     if st.get("TRAINING_MAPS") and desc.training_maps:     # training/train_maps.py: the Samples tab's Training maps
         cmd += ["--training_maps"]
     # per-image loss watch (families/loss_watch.py): at any Batch size, a batch's pictures weighed and recorded
@@ -1546,6 +1600,9 @@ def dataset_toml(desc, inputs, cache_suffix=""):
     for rel, f in subs:                  # Also train on its sub-folders: each its own block and cache folder
         lines += ["", "[[datasets]]", f'image_directory = "{f.replace(chr(92), "/")}"',
                   f'item_prefix = "{_toml_str(item_prefix(rel))}"']
+        reps_ = folder_repeats(rel)[0] if repeats_on(desc, inputs) and rel.split("/")[0] != "fizgig_detail_crops" else 1
+        if reps_ > 1:                    # Repeats from folder names (#300)
+            lines.append(f"num_repeats = {reps_}")
         if root:
             lines.append(f'cache_directory = "{(cache_dir_for(root, f) + cache_suffix).replace(chr(92), "/")}"')
     for n, f in enumerate(extra, start=2):   # Multi Concept: each subject its own block and cache folder
@@ -1952,6 +2009,9 @@ def plan(desc, inputs):
     own = own_skipped_line(desc, inputs)
     if own:
         p.console.append(own)
+    reps_line = repeats_line(desc, inputs)
+    if reps_line:
+        p.console.append(reps_line)
     train = train_command(desc, inputs, p)
     people = [(f, s, w) for f, s, _why, w in multi_person_subjects(desc, inputs) if s and s["kind"] == "person"] \
         if multi_person_on(desc, inputs) else []

@@ -1720,6 +1720,15 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .section-card[id^="sec-"] .form-row.kind-radio .row-note:not(:empty) { background: var(--bg-raised);
   border-color: var(--border); color: var(--text-explain); }
 
+/* a note that holds a table (Repeats from folder names): informational, so the neutral callout, not the warning one */
+.section-card[id^="sec-"] .form-row .row-note.note-table:not(:empty) { background: var(--bg-raised);
+  border-color: var(--border); color: var(--text-explain); }
+.note-grid { border-collapse: collapse; margin: 6px 0; font-variant-numeric: tabular-nums; }
+.note-grid th, .note-grid td { padding: 2px 12px 2px 0; text-align: right; white-space: nowrap; }
+.note-grid th:first-child, .note-grid td:first-child { text-align: left; white-space: normal; word-break: break-word; }
+.note-grid th { color: var(--text-secondary); font-weight: 600; }
+.note-grid tr.note-grid-flag td { color: var(--warning); }
+
 /* Buy me a coffee: always there, under the GPU monitor */
 .coffee-btn { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 8px; padding: 9px 12px;
   border-radius: var(--radius); background: var(--coffee); color: var(--text-on-light); font-weight: 700; font-size: 13px;

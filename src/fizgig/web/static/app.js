@@ -471,7 +471,7 @@ function renderRow(r) {
     if (actMsg) wrap.append(actMsg);
     if (upStatus) wrap.append(upStatus);
   }
-  wrap.append(el("div", {class: "field-hint row-note", id: "note_" + r.key}));
+  wrap.append(el("div", {class: "field-hint row-note" + (r.note_table ? " note-table" : ""), id: "note_" + r.key}));
   const link = r.link ? el("a", {class: "inline-link", target: "_blank", rel: "noopener", href: r.link.href,
     text: r.link.text + " →"}) : null;      // a row's guide on GitHub, under its hint
   if (r.hint && r.hint_labels) {                  // one spaced line per choice, "Name: what it does" with the name bold
@@ -957,7 +957,17 @@ async function refreshState() {
     }
     if (n) {
       if (n.tagName === "INPUT") { n.value = S.state.notes[k] || ""; return; }
-      if (n.classList.contains("note-lines")) {    // one line each, "Label: text" with the label bold (Subjects card)
+      if (n.classList.contains("note-table")) {   // "| a | b |" lines are a table's rows, other lines plain text
+        const lines = String(S.state.notes[k] || "").split("\n").filter(Boolean);
+        const rows = lines.filter((l) => l.startsWith("|"));
+        const cells = (l) => l.replace(/^\|\s*|\s*\|$/g, "").split(/\s*\|\s*/);
+        const table = rows.length ? el("table", {class: "note-grid"}, ...rows.map((l, i) => el("tr",
+          {class: l.startsWith("|!") ? "note-grid-flag" : ""}, ...cells(l.replace(/^\|!/, "|")).map((c) =>
+            el(i ? "td" : "th", {text: c}))))) : null;
+        n.replaceChildren(...lines.filter((l) => !l.startsWith("|")).slice(0, 1).map((l) => el("div", {text: l})),
+          ...(table ? [table] : []),
+          ...lines.filter((l) => !l.startsWith("|")).slice(1).map((l) => el("div", {text: l})));
+      } else if (n.classList.contains("note-lines")) {    // one line each, "Label: text" with the label bold (Subjects card)
         n.replaceChildren(...String(S.state.notes[k] || "").split("\n").filter(Boolean).map((line) => {
           const at = line.indexOf(": ");
           return at > 0 ? el("div", {}, el("b", {text: line.slice(0, at) + ": "}), line.slice(at + 2))

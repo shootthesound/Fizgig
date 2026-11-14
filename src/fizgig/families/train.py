@@ -1164,7 +1164,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  recaption_instruction_detailed=None, recaption_task=None, recaption_task_detailed=None,
                  captioner=None, finetune=False, ft_rotations=10, ft_save_every_rotations=1, ft_rotate_every=1, ft_max_parts=0,
                  ft_start_window=0,
-                 ft_epochs_done=0, ft_fused_backward=False, reg_lr_multiplier=0.2, reg_per_epoch=0,
+                 ft_epochs_done=0, ft_fused_backward=False, reg_lr_multiplier=0.2, reg_per_epoch=0, folder_repeats=None,
                  preview_checkpoint=None,
                  preview_checkpoint_cache="auto", preview_int8=False, family_options=None,
                  dop=False, dop_trigger=None, dop_class="", dop_weight=1.0, dop_every=1, dop_ft_samples=8,
@@ -2159,6 +2159,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                        "ss_masked_images": str(masked_images)})
             if mask_prior:
                 md["ss_mask_prior"] = f"{mask_prior:g}"
+        if folder_repeats:
+            md["ss_folder_repeats"] = str(folder_repeats)
         if face_on:
             md["ss_face_weight"] = f"{float(face_weight):g}"
             md["ss_face_area"] = str(face_area or "face")
@@ -3345,6 +3347,9 @@ def setup_parser():
                         "regularisation set)")
     p.add_argument("--reg_per_epoch", type=int, default=0,
                    help="regularisation images an epoch trains on (a different handful each epoch); 0 = all of them")
+    p.add_argument("--folder_repeats", default=None,
+                   help="JSON {sub-folder: repeats} of Repeats from folder names, for the LoRA's metadata (the "
+                        "repeats themselves are the dataset config's num_repeats)")
     p.add_argument("--batch_size_auto", action="store_true",
                    help="Batch size Auto: the family's measured fastest batch on a 40 GB+ card (description batch_auto)")
     p.add_argument("--gradient_checkpointing", default="auto", choices=("auto", "on"),
@@ -3466,7 +3471,7 @@ def main():
         finetune=a.finetune, ft_rotations=a.ft_rotations, ft_save_every_rotations=a.ft_save_every_rotations,
         ft_rotate_every=a.ft_rotate_every, ft_max_parts=a.ft_max_parts, ft_start_window=a.ft_start_window, ft_epochs_done=a.ft_epochs_done,
         ft_fused_backward=a.ft_fused_backward, reg_lr_multiplier=a.reg_lr_multiplier,
-        reg_per_epoch=a.reg_per_epoch,
+        reg_per_epoch=a.reg_per_epoch, folder_repeats=a.folder_repeats,
         preview_checkpoint=a.preview_checkpoint, preview_checkpoint_cache=a.preview_checkpoint_cache,
         preview_int8=a.preview_int8,
         family_options=dict(o.split("=", 1) for o in a.family_option if "=" in o),

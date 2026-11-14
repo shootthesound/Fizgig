@@ -319,6 +319,7 @@ MINIMAX = FamilyDescription(
     },
     slider_training=True,             # prompt pairs, photo pairs and clip pairs (driver: _slider_loss / predict)
     loss_watch=False,
+    multi_caption=False,              # H3 caches its text its own way (minimax/caching.py): one caption a clip
     training_maps=False,
     lora_regularisation=False,        # clips: the regularisation dataset is for still-picture LoRAs
     batch_training=True,              # Batch size (Other Options): pictures packed (forward_packed); clips one a step

@@ -62,7 +62,7 @@ def process_batches(args, datasets, all_files, all_paths, encode_fn, index_offse
         from fizgig.training.progress import CacheProgress, dataset_items
         shown = CacheProgress("captions", dataset_items(dataset))
         for batch in tqdm(_regroup(batches, bs_want)):
-            shown.add(len(batch))
+            shown.add(sum(1 for item in batch if not getattr(item, "caption_alt", False)))
             all_paths[i].update(os.path.normpath(item.text_encoder_output_cache_path) for item in batch)
 
             if args.skip_existing:

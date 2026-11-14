@@ -423,6 +423,30 @@ def uncached_pictures(toml_text):
     return n
 
 
+def multi_caption_on(desc, st):
+    """Several captions per picture (#300, the Training tab tick, off by default): each line of a caption file trains
+    as a caption of its own. A family that caches text the shared way (description multi_caption); not an edit or a
+    slider (their captions describe a pair)."""
+    return (bool(getattr(desc, "multi_caption", False)) and bool(st.get("multi_caption") or st.get("MULTI_CAPTION"))
+            and not edit_on(desc, st) and not slider_on(desc, st))
+
+
+def caption_line_counts(folder, ext=".txt"):
+    """{caption file name: its non-blank lines} for a folder's caption files (top level)."""
+    out = {}
+    if not folder or not os.path.isdir(folder):
+        return out
+    ext = ext if ext.startswith(".") else "." + ext
+    for f in os.listdir(folder):
+        if f.lower().endswith(ext.lower()):
+            try:
+                with open(os.path.join(folder, f), encoding="utf-8", errors="replace") as fh:
+                    out[f] = sum(1 for line in fh.read().splitlines() if line.strip())
+            except OSError:
+                continue
+    return out
+
+
 def start_checks(desc, st, image_folder):
     """Warnings for Start, each one line, never a block (Start anyway goes on): pictures with no caption, captions
     without the trigger word, a learning rate outside the model's usual band (description start_lr_bands)."""
@@ -450,6 +474,17 @@ def start_checks(desc, st, image_folder):
         if trig and trig.lower() != "trigger_word" and not multi_person_on(desc, st):
             pat = re.compile(r"(?<!\w)" + re.escape(trig) + r"(?!\w)", re.I)
             lack = [f for f, t in texts.items() if t and t.strip() and not pat.search(t)]
+            if multi_caption_on(desc, st):  # several captions per picture: each line on its own
+                miss = {f: sum(1 for line in t.splitlines() if line.strip() and not pat.search(line))
+                        for f, t in texts.items() if t and t.strip()}
+                miss = {f: n for f, n in miss.items() if n}
+                if miss:
+                    n = sum(miss.values())
+                    out.append(f"{n} caption line{'s' if n != 1 else ''} in {len(miss)} picture"
+                               f"{'s' if len(miss) != 1 else ''} {'don' if n != 1 else 'doesn'}'t contain the trigger "
+                               f"word '{trig}' ({', '.join(list(miss)[:3])}{', ...' if len(miss) > 3 else ''}): "
+                               f"{'those lines train' if n != 1 else 'that line trains'} without it.")
+                lack = []
             if lack:
                 out.append(f"{len(lack)} caption{'s don' if len(lack) != 1 else ' doesn'}'t contain the trigger word "
                            f"'{trig}' ({', '.join(lack[:3])}{', ...' if len(lack) > 3 else ''}): "
@@ -1146,6 +1181,8 @@ def train_command(desc, inputs, plan):
     if lora_reg_dir(desc, st):         # a LoRA's regularisation dataset: its LR share, and how many an epoch uses
         cmd += ["--reg_lr_multiplier", f"{_lora_reg_mult(st):g}",
                 "--reg_per_epoch", str(max(1, lora_reg_budget(desc, st)[0]))]
+    if multi_caption_on(desc, st):     # Several captions per picture (#300): recorded in the LoRA's metadata
+        cmd += ["--multi_caption"]
     if repeats_on(desc, st):           # Repeats from folder names (#300): recorded in the LoRA's metadata
         import json as _json
         cmd += ["--folder_repeats", _json.dumps({lab: r for lab, _f, _n, r in repeat_rows(desc, st) if r > 1})]
@@ -1559,6 +1596,7 @@ def dataset_toml(desc, inputs, cache_suffix=""):
     lines = ["[general]", f"resolution = [{side}, {side}]",
              f'caption_extension = "{_s(inputs.get("caption_ext", ".txt"))}"',
              f"batch_size = {batch}", "num_repeats = 1",
+             *(["multi_caption = true"] if multi_caption_on(desc, inputs) else []),
              f"enable_bucket = {'true' if inputs.get('enable_bucket', True) else 'false'}",
              f"bucket_no_upscale = {'true' if inputs.get('no_upscale', True) else 'false'}"]
     try:
@@ -2012,6 +2050,9 @@ def plan(desc, inputs):
     reps_line = repeats_line(desc, inputs)
     if reps_line:
         p.console.append(reps_line)
+    if multi_caption_on(desc, inputs):
+        p.console.append("[captions] several per picture: each line of a caption file is a caption of its own, and "
+                         "each step uses one of a picture's lines at random")
     train = train_command(desc, inputs, p)
     people = [(f, s, w) for f, s, _why, w in multi_person_subjects(desc, inputs) if s and s["kind"] == "person"] \
         if multi_person_on(desc, inputs) else []

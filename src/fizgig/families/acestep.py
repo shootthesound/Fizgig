@@ -173,6 +173,7 @@ ACESTEP15 = FamilyDescription(
     network_types=("lora",),          # LoRA only on the Training tab (Peter, 11 Oct 2026)
     adaptive_lr=False,
     loss_watch=False,
+    multi_caption=False,             # ACE-Step caches caption + song info + lyrics its own way (acestep/driver.py)
     training_maps=False,             # songs: the maps draw on a picture
     lora_regularisation=False,       # songs: the regularisation dataset is for still-picture LoRAs
     helper_files=(("ACE-Step/Ace-Step1.5", ("Qwen3-Embedding-0.6B/*.json", "Qwen3-Embedding-0.6B/*.txt",

@@ -84,6 +84,8 @@ class Watch:
                  captioner_path=None, recaption_task=None, recaption_task_detailed=None):
         from fizgig.training.loss_logger import PerImageLossWatch, is_enabled as env_on
         self.output_dir, self.group, self.driver, self.te_path = output_dir, group, driver, te_path
+        # Several captions per picture (#300): a fixed caption's every line is encoded, and auto-recaption swaps line 1
+        self.multi_caption = any(getattr(ds, "multi_caption", False) for ds in getattr(group, "datasets", None) or ())
         self.trigger_word, self.trigger_position = trigger_word, trigger_position
         self.triggers = dict(recaption_triggers or {})     # another folder's own trigger word, by key prefix
         self.instr, self.instr_detailed = recaption_instruction, recaption_instruction_detailed
@@ -292,11 +294,25 @@ class Watch:
             te = self.driver.load_text_encoder(self.te_path, device)
             try:
                 desc = self.driver.description
-                for i in range(0, len(todo), 4):
-                    chunk = todo[i:i + 4]
-                    for (_, item, cap, _), cond in zip(chunk, self.driver.encode_text(te, [c for _, _, c, _ in chunk])):
-                        item.caption = cap
-                        cache.save_cond(desc, item, cond)     # the loader reads this file every step
+                from fizgig.dataset.image_dataset import caption_lines, text_cache_alt_path, text_cache_alts
+                jobs = []          # (item, None for its own cache or the line's path, text): one per caption line
+                for _k, item, cap, _a in todo:
+                    lines = (caption_lines(cap) or [cap]) if self.multi_caption else [cap]
+                    jobs += [(item, None if j == 0 else text_cache_alt_path(item.text_encoder_output_cache_path, j),
+                              line) for j, line in enumerate(lines)]
+                for i in range(0, len(jobs), 4):
+                    chunk = jobs[i:i + 4]
+                    for (item, alt, text), cond in zip(chunk, self.driver.encode_text(te, [t for _, _, t in chunk])):
+                        if alt is None:
+                            item.caption = text
+                            cache.save_cond(desc, item, cond)     # the loader reads this file every step
+                        else:
+                            cache.save_cond_file(desc, alt, text, cond, item.item_key)
+                if self.multi_caption:     # a caption that lost lines: its old lines' caches go, or they'd still train
+                    for _k, item, cap, _a in todo:
+                        keep = max(0, len(caption_lines(cap) or [cap]) - 1)
+                        for extra in text_cache_alts(item.text_encoder_output_cache_path)[keep:]:
+                            _remove(extra)
                 ok = True
             finally:
                 self.driver.unload_text_encoder(te)
@@ -352,14 +368,22 @@ class Watch:
                     trig = self.triggers.get(prefix, "") if prefix else self.trigger_word   # the picture's folder's
                     if trig:
                         cap = (f"{cap}, {trig}" if str(self.trigger_position) == "end" else f"{trig}, {cap}")
+                    text = cap
                     try:
                         _p, folder, name = self.watch.where(k)
-                        with open(os.path.join(folder, name + self.caption_ext), "w", encoding="utf-8") as f:
-                            f.write(cap)
+                        txt = os.path.join(folder, name + self.caption_ext)
+                        if self.multi_caption and os.path.exists(txt):
+                            # several captions per picture: the new caption replaces the first line only, and the
+                            # picture's other lines (yours) stay
+                            with open(txt, encoding="utf-8", errors="replace") as f:
+                                rest = [ln for ln in f.read().splitlines() if ln.strip()][1:]
+                            text = "\n".join([cap] + rest)
+                        with open(txt, "w", encoding="utf-8") as f:
+                            f.write(text)
                     except OSError:
                         logger.warning(f"[auto-recaption] could not write the .txt for {k} - this run is fixed, "
                                        "a future re-cache will use the old caption")
-                    rows.append((k, items[k], cap, attempt))
+                    rows.append((k, items[k], text, attempt))
                     logger.info(f"[auto-recaption] {k} (attempt {attempt}/2"
                                 f"{', detailed' if attempt >= 2 else ''}): \"{cap}\"")
                 except Exception:

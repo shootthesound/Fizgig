@@ -598,8 +598,10 @@ class BucketBatchManager:
 
         for item_info in bucket[start:end]:
             sd_latent = load_file(item_info.latent_cache_path)
-            _alts = getattr(item_info, "text_encoder_alt_paths", None)
-            # Several captions per picture: one of its lines at random, a fresh pick every time it comes round
+            # Several captions per picture: one of its lines at random, a fresh pick every time it comes round. Looked up
+            # each time, so a caption fixed mid-run (more or fewer lines) is followed from the next step
+            _alts = (text_cache_alts(item_info.text_encoder_output_cache_path)
+                     if getattr(item_info, "multi_caption", False) else None)
             sd_te = load_file(random.choice([item_info.text_encoder_output_cache_path] + _alts) if _alts
                               else item_info.text_encoder_output_cache_path)
             if getattr(item_info, "still_only", False):
@@ -1280,6 +1282,7 @@ class ImageDataset(torch.utils.data.Dataset):
                         data.append(item_info)
                         for k, line in enumerate(lines[1:], start=1):
                             alt = ItemInfo(item_key, line, (0, 0), (0, 0))
+                            alt.caption_alt = True       # counted once with its picture in the cache progress
                             alt.text_encoder_output_cache_path = text_cache_alt_path(
                                 item_info.text_encoder_output_cache_path, k)
                             data.append(alt)
@@ -1466,9 +1469,10 @@ class ImageDataset(torch.utils.data.Dataset):
                                  latent_cache_path=cache_file)
             item_info.text_encoder_output_cache_path = te_cache
             if self.multi_caption:          # its other caption lines' caches: one is picked at random each step
-                item_info.text_encoder_alt_paths = text_cache_alts(te_cache)
-                multi_items += bool(item_info.text_encoder_alt_paths)
-                multi_lines += 1 + len(item_info.text_encoder_alt_paths)
+                item_info.multi_caption = True
+                _alts = text_cache_alts(te_cache)
+                multi_items += bool(_alts)
+                multi_lines += 1 + len(_alts)
             _mdir = self.mask_directory or self.image_directory
             # a regularisation set's pictures train whole and plain: no mask, no Boost the face (an anchor for the kind
             # of thing they show, not a subject)
@@ -1546,6 +1550,9 @@ class ImageDataset(torch.utils.data.Dataset):
                     f"[dataset] {still_frame0_fallback} clip(s) were cached without a picked "
                     f"still — their frame 0 is used instead. Re-run caching with the tick on "
                     f"(or flush the cache) to pick sharp frames for them.")
+        if self.multi_caption:
+            logger.info(f"[captions] several per picture in {self.image_directory}: {multi_items} of its pictures have "
+                        f"more than one, {multi_lines} captions in all; each step uses one of a picture's at random")
         if self.face_boost != 1.0:
             what = {"face": "a face", "head": "a face (with its hair)"}.get(self.face_area, self.face_area.replace("_", " "))
             logger.info(f"[face boost] {face_items} picture(s) in {self.image_directory} have {what} found: it counts "

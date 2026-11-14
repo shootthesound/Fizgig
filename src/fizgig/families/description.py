@@ -573,6 +573,9 @@ class FamilyDescription:
     adaptive_lr_clip_signal: bool = False
     adaptive_lr: bool = True          # the Adaptive LR control (off: hidden, never sent - MiniMax H3)
     loss_watch: bool = True           # the per-image loss watch toggles (off: hidden, never sent - MiniMax H3)
+    # Several captions per picture (#300): each line of a caption file its own text cache, one picked each step - the
+    # shared text cache (families/cache.py) does it; off for a family that caches text its own way (H3, ACE-Step)
+    multi_caption: bool = True
     # Training maps (training/train_maps.py): where a few fixed pictures are still wrong and where the LoRA acts, each
     # epoch - through the driver's noise_latents / predict / map_target, stills (4-D latents) only
     training_maps: bool = True

@@ -96,7 +96,7 @@ DEFAULTS = {
     "FAMILY_MP_MANUAL": False, "FAMILY_MP_FACECROPS_FIRST": True, "FAMILY_SUBJECT_KIND": "From its captions", "FAMILY_SUBJECT_KIND2": "From its captions",
     "FAMILY_SUBJECT_KIND3": "From its captions", "FAMILY_SUBJECT_KIND4": "From its captions",
     "SAVE_STATE_ON_TRAIN_END": True, "KEEP_LAST_N_STATES": "2", "KREA2_LOSS_WATCH": False,
-    "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False, "TRAIN_SUBFOLDERS": False, "TRAIN_SUBFOLDER_REPEATS": False, "CAPTION_TRIGGER_WORD": "",
+    "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False, "TRAIN_SUBFOLDERS": False, "TRAIN_SUBFOLDER_REPEATS": False, "MULTI_CAPTION": False, "CAPTION_TRIGGER_WORD": "",
     "RECAPTION_FIRST": "Training caption (person or character)", "RECAPTION_SECOND": "Exhaustive detail (person or character)", "KREA2_WARMUP_LOOK": False,
     "FAMILY_PRECISION": launch.PRECISION_LABELS["auto"], "FAMILY_EMA": "0.98 (recommended)",
     "FAMILY_TRAINING_ADAPTER": True, "FAMILY_KIND": "standard", "FAMILY_FAST_ID": False,
@@ -311,6 +311,8 @@ def form(desc):
         _row("TRAIN_SUBFOLDERS", "Also train on its sub-folders", "check", SUBFOLDERS_HINT, default=False),
         _row("TRAIN_SUBFOLDER_REPEATS", "Repeats from folder names", "check", REPEATS_HINT, default=False,
              note_table=True),
+        _row("MULTI_CAPTION", "Several captions per picture (one per line)", "check", MULTI_CAPTION_HINT,
+             default=False) if desc.multi_caption else None,
         _row("LEARNING_RATE", "Learning Rate", default=DEFAULTS["LEARNING_RATE"]),
     ]
     if desc.adaptive_lr:
@@ -1063,6 +1065,43 @@ REPEATS_HINT = ("Lets a small folder count as much as a big one, or one folder c
                 "nothing.")
 
 
+MULTI_CAPTION_HINT = ("Each line of a caption file is a caption of its own, and every time a picture comes round "
+                      "one of its lines is picked at random. For a line of tags plus a sentence, or captions from "
+                      "several captioners, so no single caption dominates. OneTrainer writes them this way."
+                      "\nOff: the whole file is one caption, its lines joined, as before.\n"
+                      "Features that need one caption (Leave the rest of the model alone, training maps) use the "
+                      "first line.")
+
+
+def multi_caption_note(desc, values, image_folder):
+    """(show the row, its note): the row shows when the run's caption files have several lines, or it is ticked.
+    Ticked: pictures, captions and the caching cost; unticked: how many files have several lines, and what that does
+    today."""
+    ext = _str(values.get("DATASET_CAPTION_EXT")) or ".txt"
+    folders = [image_folder] if image_folder and os.path.isdir(image_folder) else []
+    if folders and values.get("TRAIN_SUBFOLDERS"):
+        folders += [f for _r, f in launch.subfolders(image_folder, (_str(values.get("LORA_OUTPUT_DIR")),))]
+    counts = []
+    for f in folders:
+        counts += [n for n in launch.caption_line_counts(f, ext).values() if n]
+    many = [n for n in counts if n > 1]
+    on = bool(values.get("MULTI_CAPTION"))
+    if not on:
+        if not many:
+            return False, ""
+        return True, (f"{len(many):,} of your {len(counts):,} caption files have more than one line. Today each "
+                      f"trains as one long caption, its lines joined. Tick this to use each line as a caption of its "
+                      f"own.")
+    if not counts:
+        return True, ""
+    if not many:
+        return True, "No caption file here has more than one line yet, so this changes nothing: each picture has its one caption."
+    total = sum(counts)
+    return True, (f"{len(counts):,} pictures, {total:,} captions ({len(many):,} with more than one, up to "
+                  f"{max(many)} a picture). Caching encodes every line, so it takes about {total / len(counts):.1f}x "
+                  f"as long; training runs at the same speed.")
+
+
 def _num(values, key, default):
     try:
         return max(1, int(float(_str(values.get(key)) or default)))
@@ -1249,6 +1288,11 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         hidden.add("TRAIN_SUBFOLDER_REPEATS")       # only under the sub-folder tick, on, with sub-folders to read
     elif values.get("TRAIN_SUBFOLDER_REPEATS") and image_folder and os.path.isdir(image_folder):
         notes["TRAIN_SUBFOLDER_REPEATS"] = repeats_note(desc, values, image_folder)
+    if desc.multi_caption:              # Several captions per picture: shown when the captions have several lines
+        show, notes["MULTI_CAPTION"] = ((False, "") if kind in ("edit", "slider") else
+                                        multi_caption_note(desc, values, image_folder))
+        if not show:
+            hidden.add("MULTI_CAPTION")
     if not values.get("FACE_BOOST"):
         hidden.add("FACE_BOOST_AREA")
     if desc.element_boost and launch.boost_too_small(desc, values):    # too few pixels in a small face: greyed, kept
@@ -1797,6 +1841,7 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
         concept_balance=b("FAMILY_CONCEPT_BALANCE"),
         subfolders=b("TRAIN_SUBFOLDERS"),
         subfolder_repeats=b("TRAIN_SUBFOLDERS") and b("TRAIN_SUBFOLDER_REPEATS"),
+        multi_caption=b("MULTI_CAPTION") and desc.multi_caption,
         FAMILY_OPTIONS=_option_values(desc, v),
     )
     if launch.lora_reg_on(desc, d):        # a regularisation dataset: the rest of the Subjects card gives way (#332)

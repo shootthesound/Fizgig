@@ -1085,7 +1085,7 @@ def _even_out(rows):
     total = sum(m for _l, _f, m, _r in rows)
     return (f"{lab} has the fewest pictures, so it gets the least training ({100 * n / total:.0f}%). To even it out, "
             f"rename the folder {base} to {k}_{base} in your file browser ({n:,} x {k} = {n * k:,}, close to "
-            f"{big_lab}'s {big:,}), then come back here.")
+            f"{big_lab}'s {big:,}), then come back here. That folder is cached again on the next Start.")
 
 
 def repeats_note(desc, values, image_folder):
@@ -1103,13 +1103,15 @@ def repeats_note(desc, values, image_folder):
     if not total:
         return ""
     numbered = [rel for rel, _f in subs if launch.looks_like_repeats(rel)]
-    out = [f"Each epoch (one pass through the pictures) sees {total:,} pictures, from the {pics:,} in the folders.",
-           "| Folder | Pictures | Repeats | Seen an epoch | Share |"]
+    out = [(f"Each epoch now shows the model {total:,} pictures: the {pics:,} in the folders, each repeated by its "
+            f"folder's number." if total > pics else
+            f"Each epoch shows the model each of the {pics:,} pictures once."),
+           "| Folder | Pictures | Repeats | Seen per epoch | Share of training |"]
     small = 3.0
     for label, _f, n, r in sorted(rows, key=lambda x: -x[2] * x[3]):
         share = 100 * n * r / total
         flag = "!" if share < small and len(rows) > 1 else ""
-        out.append(f"|{flag} {label} | {n:,} | x{r} | {n * r:,} | {f'{share:.0f}%' if share >= 1 else '<1%'} |")
+        out.append(f"|{flag} {label} | {n:,} | {r}x | {n * r:,} | {f'{share:.0f}%' if share >= 1 else '<1%'} |")
     if not numbered:
         out.append("None of the folder names starts with a number yet, so every folder is seen once an epoch. "
                    + (_even_out(rows) or "Start a folder's name with a number (3_name) to see it more often."))
@@ -1124,8 +1126,11 @@ def repeats_note(desc, values, image_folder):
                    "what you meant.")
     if total > pics:
         epochs = _num(values, "MAX_TRAIN_EPOCHS", DEFAULTS["MAX_TRAIN_EPOCHS"])
-        line = (f"With the repeats an epoch is {total / pics:.1f}x as long: {epochs} epochs see {total * epochs:,} "
-                f"pictures, and previews and saves every N epochs come {total / pics:.1f}x further apart.")
+        same = max(1, round(epochs * pics / total))
+        line = (f"An epoch is now {total / pics:.1f}x as long. Your {epochs} epochs (Max Epochs) show "
+                f"{total * epochs:,} pictures instead of {pics * epochs:,}, and previews and saves every N epochs come "
+                f"{total / pics:.1f}x further apart."
+                + (f" For about the same length of run, set Max Epochs to {same}." if same != epochs else ""))
         batch = launch.batch_size(desc, values)
         if batch > 1:
             line += f" At Batch size {batch} that is about {-(-total // batch):,} steps an epoch."
@@ -1159,8 +1164,12 @@ def subfolders_note(desc, values, image_folder):
                 f"All {more:,} picture{'s' if more != 1 else ''} {'is' if more == 1 else 'are'} in {len(subs)} "
                 f"sub-folder{s}, which {'is' if len(subs) == 1 else 'are'} not trained on.")
         if looks:
+            st_ = {"image_folder": image_folder, "LORA_OUTPUT_DIR": values.get("LORA_OUTPUT_DIR")}
+            rr = launch.repeat_rows(desc, st_, subs)
+            x = sum(n * k for _l, _f, n, k in rr) / max(1, sum(n for _l, _f, n, _k in rr))
             return (line + f" Their names look like repeat counts ({numbered[0]}).",
-                    {"label": "Train them with these repeats",
+                    {"label": f"Train them, with repeats ({x:.1f}x longer epochs)" if x > 1.05 else
+                     "Train them, with repeats",
                      "values": {"TRAIN_SUBFOLDERS": True, "TRAIN_SUBFOLDER_REPEATS": True}})
         return line + " Tick this to include them.", None
     rows = ([("the training folder", own, _uncaptioned(image_folder, ext))] if own else []) + counts
@@ -1171,9 +1180,8 @@ def subfolders_note(desc, values, image_folder):
                  + " · ".join(f"{rel} ({u:,})" for rel, u in bare[:8])
                  + (f" · and {len(bare) - 8} more folders" if len(bare) > 8 else "") + ".")
     if looks:
-        return (line + f" These folder names look like repeat counts ({numbered[0]}); until you use them every "
-                       f"folder is seen once an epoch.",
-                {"label": "Use these repeats", "values": {"TRAIN_SUBFOLDER_REPEATS": True}})
+        return (line + f" These folder names look like repeat counts ({numbered[0]}), but every folder is seen once an "
+                       f"epoch: tick Repeats from folder names below to use them."), None
     if values.get("TRAIN_SUBFOLDER_REPEATS"):      # the repeats table lists every folder
         return line, None
     show = bool(values.get("_SUBFOLDER_LIST"))

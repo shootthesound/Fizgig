@@ -67,6 +67,8 @@ class BaseDatasetParams:
     debug_dataset: bool = False
     architecture: str = "no_default"
     clip_megapixels: Optional[float] = None
+    # Several captions per picture (#300): each line of a caption file is a caption of its own
+    multi_caption: bool = False
 
 
 @dataclass
@@ -143,6 +145,8 @@ class ConfigSanitizer:
         "bucket_no_upscale": bool,
         # MiniMax H3: clips are cached and trained at this size or smaller, photos at resolution
         "clip_megapixels": Any(int, float),
+        # Several captions per picture (#300)
+        "multi_caption": bool,
     }
 
     # Fields specific to an image dataset entry

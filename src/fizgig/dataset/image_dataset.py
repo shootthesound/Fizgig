@@ -36,6 +36,36 @@ from fizgig.utils.upright import open_upright
 logger = logging.getLogger(__name__)
 
 
+def caption_lines(text: str, replace=()) -> list:
+    """Several captions per picture: a caption file's non-blank lines, each stripped and with `replace` (compiled
+    (pattern, to) pairs, multi-person fusing) applied to it on its own."""
+    out = []
+    for line in str(text).splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        for pat, to in replace:
+            line = pat.sub(lambda _m, t=to: t, line)
+        out.append(line)
+    return out
+
+
+def text_cache_alt_path(te_path: str, k: int) -> str:
+    """The text cache of a picture's caption line k+1 (k >= 1) beside its first line's `<stem>_<arch>_te.safetensors`:
+    `<stem>_<arch>_tealt<k>.safetensors` - outside the `*_te.safetensors` glob, as the `_teref` files are."""
+    stem, ext = os.path.splitext(te_path)
+    return f"{stem}alt{k}{ext}"
+
+
+def text_cache_alts(te_path: str) -> list:
+    """The extra caption lines' text caches that exist for a picture, in order."""
+    out, k = [], 1
+    while os.path.exists(text_cache_alt_path(te_path, k)):
+        out.append(text_cache_alt_path(te_path, k))
+        k += 1
+    return out
+
+
 def decode_caption(raw: bytes, caption_path: str) -> str:
     """Decode a caption file's bytes, tolerating encodings other than UTF-8.
 
@@ -568,7 +598,10 @@ class BucketBatchManager:
 
         for item_info in bucket[start:end]:
             sd_latent = load_file(item_info.latent_cache_path)
-            sd_te = load_file(item_info.text_encoder_output_cache_path)
+            _alts = getattr(item_info, "text_encoder_alt_paths", None)
+            # Several captions per picture: one of its lines at random, a fresh pick every time it comes round
+            sd_te = load_file(random.choice([item_info.text_encoder_output_cache_path] + _alts) if _alts
+                              else item_info.text_encoder_output_cache_path)
             if getattr(item_info, "still_only", False):
                 # the clip's still item: the cached sharpest-face frame when the cache pass
                 # made one, else frame 0 sliced from the clip latent [C, T, H, W] -> [C, H, W]
@@ -713,8 +746,12 @@ class ImageDirectoryDatasource:
         family=None,
         caption_replace=None,
         extra_reference_directory: Optional[str] = None,
+        multi_caption: bool = False,
     ):
         import re
+        # Several captions per picture (#300, the Training tab tick): each line of a caption file is a caption of its
+        # own; get_caption hands them on joined by "\n", each stripped and fused on its own, blank lines dropped
+        self.multi_caption = bool(multi_caption)
         self.caption_replace = [(re.compile(r"(?<!\w)" + re.escape(str(a)) + r"(?!\w)", re.I), str(b))
                                 for a, b in (caption_replace or []) if str(a)]
         self.image_directory = image_directory
@@ -882,6 +919,8 @@ class ImageDirectoryDatasource:
         with open(caption_path, "rb") as f:
             raw = f.read()
         caption = decode_caption(raw, caption_path).strip()
+        if self.multi_caption:
+            return image_path, "\n".join(caption_lines(caption, self.caption_replace))
         for pat, to in self.caption_replace:
             caption = pat.sub(lambda _m, t=to: t, caption)
         return image_path, caption
@@ -950,9 +989,11 @@ class ImageDataset(torch.utils.data.Dataset):
         photos_only: bool = False,
         mask_directory: Optional[str] = None,
         item_prefix: str = "",
+        multi_caption: bool = False,
         **kwargs,
     ):
         super().__init__()
+        self.multi_caption = bool(multi_caption)      # Several captions per picture (#300): one per line
         # Each picture's training key is item_prefix + its name: a training folder's own pictures have none, a
         # sub-folder's is its path ("outfits/red/"), another subject's or the regularisation set's a tag ("s2:",
         # "reg:") - so same-named pictures in two folders stay apart, and the loss watch finds each one's folder
@@ -1006,7 +1047,8 @@ class ImageDataset(torch.utils.data.Dataset):
         self.datasource = ImageDirectoryDatasource(image_directory, caption_extension,
                                                    control_directory, extra_extensions=_extra,
                                                    family=self.family, caption_replace=caption_replace,
-                                                   extra_reference_directory=extra_reference_directory)
+                                                   extra_reference_directory=extra_reference_directory,
+                                                   multi_caption=multi_caption)
 
         if self.cache_directory is None:
             self.cache_directory = self.image_directory
@@ -1232,7 +1274,17 @@ class ImageDataset(torch.utils.data.Dataset):
                     item_key, caption = future.result()
                     item_info = ItemInfo(item_key, caption, (0, 0), (0, 0))
                     item_info.text_encoder_output_cache_path = self.get_text_encoder_output_cache_path(item_info)
-                    data.append(item_info)
+                    if self.multi_caption and "\n" in caption:   # each line its own cache; the first at the usual path
+                        lines = caption.split("\n")
+                        item_info.caption = lines[0]
+                        data.append(item_info)
+                        for k, line in enumerate(lines[1:], start=1):
+                            alt = ItemInfo(item_key, line, (0, 0), (0, 0))
+                            alt.text_encoder_output_cache_path = text_cache_alt_path(
+                                item_info.text_encoder_output_cache_path, k)
+                            data.append(alt)
+                    else:
+                        data.append(item_info)
                     futures.remove(future)
 
         def submit_batch(flush: bool = False):
@@ -1363,6 +1415,7 @@ class ImageDataset(torch.utils.data.Dataset):
 
         bucketed: dict[Tuple, list[ItemInfo]] = {}   # (w, h), or ("audio", w, h) for voice items
         _mask_names, masked_items, misfit_masks = None, 0, []
+        multi_items = multi_lines = 0
         _pic_names, face_items = None, 0
         for cache_file in latent_cache_files:
             tokens = os.path.basename(cache_file).split("_")
@@ -1412,6 +1465,10 @@ class ImageDataset(torch.utils.data.Dataset):
             item_info = ItemInfo(self.item_prefix + item_key, "", image_size, bucket_reso,
                                  latent_cache_path=cache_file)
             item_info.text_encoder_output_cache_path = te_cache
+            if self.multi_caption:          # its other caption lines' caches: one is picked at random each step
+                item_info.text_encoder_alt_paths = text_cache_alts(te_cache)
+                multi_items += bool(item_info.text_encoder_alt_paths)
+                multi_lines += 1 + len(item_info.text_encoder_alt_paths)
             _mdir = self.mask_directory or self.image_directory
             # a regularisation set's pictures train whole and plain: no mask, no Boost the face (an anchor for the kind
             # of thing they show, not a subject)

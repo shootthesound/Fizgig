@@ -76,15 +76,15 @@ def test_row_shows_only_under_the_ticked_subfolder_row(tree):
     st = form.state(desc, {"TRAIN_SUBFOLDERS": True}, str(tree))
     assert "TRAIN_SUBFOLDER_REPEATS" not in st["hidden"]
     assert "look like repeat counts" in st["notes"]["TRAIN_SUBFOLDERS"]      # the hint, tick still off
-    assert st["actions"]["TRAIN_SUBFOLDERS"]["values"] == {"TRAIN_SUBFOLDER_REPEATS": True}
+    assert "TRAIN_SUBFOLDERS" not in st["actions"]                            # the tick is right below
     st = form.state(desc, {"TRAIN_SUBFOLDERS": True, "TRAIN_SUBFOLDER_REPEATS": True}, str(tree))
     assert "look like repeat counts" not in st["notes"]["TRAIN_SUBFOLDERS"]
     assert "TRAIN_SUBFOLDERS" not in st["actions"]                            # the table lists the folders
     note = st["notes"]["TRAIN_SUBFOLDER_REPEATS"]
-    assert note.startswith("Each epoch (one pass through the pictures) sees 57 pictures, from the 13 in the folders.")
-    assert "| 10_base | 4 | x10 | 40 | 70% |" in note
-    assert "|! plain | 1 | x1 | 1 | 2% |" in note and "Marked:" in note      # under 3%: flagged
-    assert "an epoch is 4.4x as long: 12 epochs see 684 pictures" in note
+    assert note.startswith("Each epoch now shows the model 57 pictures: the 13 in the folders")
+    assert "| 10_base | 4 | 10x | 40 | 70% |" in note
+    assert "|! plain | 1 | 1x | 1 | 2% |" in note and "Marked:" in note      # under 3%: flagged
+    assert "An epoch is now 4.4x as long. Your 12 epochs (Max Epochs) show 684 pictures instead of 156" in note and "set Max Epochs to 3" in note
 
 
 def test_unticked_numbered_folders_offer_both_ticks(tree):

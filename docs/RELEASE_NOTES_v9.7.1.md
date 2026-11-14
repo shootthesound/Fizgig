@@ -1,13 +1,14 @@
 # Fizgig v9.7.1: every job keeps its own view
 
-**Switch between the run that's training, the runs in your queue and what you're setting up, without losing your place in any of them.** A pill at the top right (bottom right on a phone) always says what the tabs are showing: **Viewing:** a job's name and what it is doing, or **not yet queued** when the form is no job yet. Press it and pick another: the Start, Image Prep, Captions, Samples and Training tabs all change to that job's training folder, captions, masks, sample prompts, settings and previews, and the view stays with you from tab to tab.
+**Switch between the run that's training, the runs in your queue and what you're setting up, without losing your place in any of them.** A pill at the top right (bottom right on a phone) always says what the tabs are showing: **Viewing:** a job's name and what it is doing, or **not yet queued** when what's in the form hasn't been started or queued (with the run training, and how many are queued, beside it). Press it and pick another: the Start, Image Prep, Captions, Samples and Training tabs all change to that job's training folder, captions, masks, sample prompts, settings and previews, and the view stays with you from tab to tab.
 
 - **Training now** shows the run that's going. Its training settings are there to look at; its Samples tab stays changeable, and a change goes to its next previews.
 - **Queued 1, 2, …** shows a queued run, and you can change it: **Save to queue** keeps the changes. A run you add with **Add to queue** becomes the job on show straight away.
 - **A paused run is still that job.** The pill reads **Paused**, and everything Resume takes from the form (the previews, the size, block swap, the save schedule, the learning rate) is changed on its own settings.
-- **Set up a new run with these settings** (in the pill's list on the Training tab) copies the job on show into a new setup with the same training folder, named with `_2` after its name, so another run of the same thing takes one press.
+- **Set up a new run with these settings** (in the pill's list on the Training tab) copies the job on show into a new setup with the same training folder, named with `_2` after its name (or the next number not already in use), so another run of the same thing takes one press.
 - **Back to the normal view** leaves the job for a clean start: no training folder picked, the model's default settings, no LoRA name. Your sample prompts stay.
 - **When the job on show finishes,** the pill says so and pulses. The tab you're on keeps showing it, the list offers **Switch this tab to** the run that started next, and your next change of tab moves on by itself. The pulse colour is part of each theme.
+- **Put the pill where you like.** On a wide window, drag it by its grip to anywhere in the window; it stays there, and a double-click puts it back. On a phone it stays bottom right and its list comes up from the bottom.
 
 **Likeness and Style scores belong to the run.** Pick your three reference photos once and they're remembered with the training folder, so every run on those pictures uses them without asking again. Each run keeps its own likeness and Style scores over its own previews, so two runs sharing a samples folder never mix or overwrite each other's numbers, and looking at an older run never clears the current one's. Scores made before this release are scored again the first time you open a run, and you pick the three photos once more per training folder.
 
@@ -15,7 +16,7 @@
 
 **A run that was cut off is offered again.** If Fizgig closes while a run trains, the next start asks what to do before anything runs: carry that run on from its last saved state (the queue follows after it), start the next run in the queue, or clear the queue and start fresh. The question you get when quitting now says where the run is saved, what would be lost, and what each button does.
 
-**One name, one run.** Start, Add to queue and Check settings now refuse a LoRA name that already has files in the same output folder, and tell you which name is free. Two runs sharing a name wrote over each other's files, and deleting one took the other's. To train a run further, use **Continue** on Runs & outputs. **Start again with these settings** now names the new run with `_2` for the same reason.
+**One name, one run.** Start, Add to queue and Check settings now refuse a LoRA name that already has files in the same output folder, and tell you which name is free. Two runs sharing a name wrote over each other's files, and deleting one took the other's. To train a run further, use **Continue** on Runs & outputs. **Start again with these settings** now names the new run with `_2` (or the next free number) for the same reason.
 
 **Captions tab: boxes that fit their caption.** Caption boxes are as tall as their text and grow as you type, in the cards, the table and the big view. The big view puts the caption beside the picture on a wide window, and under it otherwise. Suggested on Reddit, as was keeping each job's context.
 

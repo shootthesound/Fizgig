@@ -2296,15 +2296,22 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
   max-width: min(34vw, 460px); padding: 5px 6px; border-radius: 999px; background: var(--bg-surface);
   border: 1px solid var(--accent); box-shadow: 0 2px 10px color-mix(in srgb, var(--shadow) 40%, transparent); }
 .job-pill-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none;
-  border: 0; color: var(--text-primary); font-size: 13.5px; padding: 4px 12px; cursor: pointer; text-align: left;
-  touch-action: none; user-select: none; }
+  border: 0; color: var(--text-primary); font-size: 13.5px; padding: 4px 10px 4px 4px; cursor: pointer; text-align: left;
+  touch-action: none; user-select: none; display: flex; align-items: center; gap: 8px; }
+.job-pill-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the grip: six dots, the handle to drag the pill by (a wide window only) */
+.job-pill-grip { flex: none; display: grid; grid-template-columns: repeat(2, 3px); gap: 3px; padding: 5px 4px 5px 8px;
+  cursor: grab; touch-action: none; }
+.job-pill-grip i { width: 3px; height: 3px; border-radius: 50%; background: var(--text-muted); }
+.job-pill-grip:hover i { background: var(--text-primary); }
+.job-pill.dragging .job-pill-grip { cursor: grabbing; }
 .job-pill-text b { color: var(--accent); font-weight: 600; }
 .job-pill.dragging { cursor: grabbing; }
 .job-pill.dragging .job-pill-text { cursor: grabbing; }
 /* dragged somewhere its list would run off the window: the list opens upward, or from the pill's left edge */
 .job-pill-menu.up { top: auto; bottom: calc(100% + 8px); }
 .job-pill-menu.left { right: auto; left: 0; }
-.job-pill-caret { color: var(--text-muted); }
+.job-pill-caret { flex: none; color: var(--text-secondary); font-size: 17px; line-height: 1; }
 .job-pill-state { color: var(--text-secondary); }
 /* the job on show has finished (or another has started): the pill pulses in the theme's --pulse until you switch */
 .job-pill.attention { border-color: var(--pulse); animation: job-pill-pulse 1.4s ease-out infinite; }
@@ -2350,6 +2357,7 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
   .job-pill { top: auto !important; left: auto !important; right: 16px !important; bottom: 112px; padding: 3px 4px;
     max-width: min(78vw, 340px); }
   .job-pill-text { font-size: 14px; padding: 8px 12px; }
+  .job-pill-grip { display: none; }
   .job-pill-menu { position: fixed; top: auto; left: 0; right: 0; bottom: 0; max-width: none; min-width: 0;
     border-radius: 16px 16px 0 0; padding: 12px 12px calc(16px + env(safe-area-inset-bottom)); gap: 6px; }
   .job-pill-row { padding: 14px 12px; font-size: 15px; min-height: 52px; }

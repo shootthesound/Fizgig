@@ -2750,8 +2750,8 @@ function jobPillShow() {
     ["new run", live ? `${paused() ? "Paused" : "Training"}: ${S.run.lora}` :
       `${items.length} queued`];
   p.classList.toggle("attention", !!c.ended);
-  $("jobPillText").replaceChildren(el("b", {text: "Viewing: "}), name || "",
-    el("span", {class: "job-pill-state", text: " · " + state}), el("span", {class: "job-pill-caret", text: " ▾"}));
+  $("jobPillText").replaceChildren(el("span", {class: "job-pill-label"}, el("b", {text: "Viewing: "}), name || "",
+    el("span", {class: "job-pill-state", text: " · " + state})), el("span", {class: "job-pill-caret", text: "▾"}));
   $("jobPillText").title = c.ended
     ? `${c.lora} is finished` + (c.next ? `, and ${c.next} is training. Press to switch.` : ".")
     : (c.kind === "draft" && !same ? "These tabs show a new run: one not started or queued yet. Press to look at a job instead."
@@ -10965,19 +10965,19 @@ function wire() {
     S.pillPlace = () => { const at = saved(); if (at && wide() && pill.style.display !== "none") place(at[0], at[1]); };
     window.addEventListener("resize", () => S.pillPlace());
     let drag = null;
-    $("jobPillText").addEventListener("pointerdown", (e) => {
+    const grab = (e) => {
       if (!wide() || e.button) return;
       const b = pill.getBoundingClientRect();
       drag = {x: e.clientX, y: e.clientY, l: b.left, t: b.top, moved: false};
       e.currentTarget.setPointerCapture(e.pointerId);
-    });
-    $("jobPillText").addEventListener("pointermove", (e) => {
+    };
+    const move = (e) => {
       if (!drag) return;
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       if (!drag.moved && Math.hypot(dx, dy) < 5) return;
       if (!drag.moved) { drag.moved = true; pill.classList.add("dragging"); jobPillMenu(false); }
       place(drag.l + dx, drag.t + dy);
-    });
+    };
     const drop = () => {
       if (drag && drag.moved) {
         const b = pill.getBoundingClientRect();
@@ -10987,12 +10987,17 @@ function wire() {
       pill.classList.remove("dragging");
       drag = null;
     };
-    $("jobPillText").addEventListener("pointerup", drop);
-    $("jobPillText").addEventListener("pointercancel", drop);
-    $("jobPillText").addEventListener("dblclick", () => {
-      try { localStorage.removeItem(KEY); } catch (e) { /* private window */ }
-      home(); jobPillMenu(false);
-    });
+    for (const part of [$("jobPillText"), $("jobPillGrip")]) {     // the grip is the handle; the text drags too
+      part.addEventListener("pointerdown", grab);
+      part.addEventListener("pointermove", move);
+      part.addEventListener("pointerup", drop);
+      part.addEventListener("pointercancel", drop);
+      part.addEventListener("dblclick", () => {
+        try { localStorage.removeItem(KEY); } catch (e) { /* private window */ }
+        home(); jobPillMenu(false);
+      });
+    }
+    $("jobPillGrip").addEventListener("pointerup", () => { S.pillDragged = false; });   // no click follows a grip drag
   }
   $("jobPillText").addEventListener("click", () => {
     if (S.pillDragged) { S.pillDragged = false; return; }

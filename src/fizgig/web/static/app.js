@@ -2747,8 +2747,9 @@ function jobPillShow() {
     c.kind === "run" ? [c.lora, doing] :
     c.kind === "queue" ? [c.lora, `queued ${c.n || ""}`.trim()] :
     same ? [S.run.lora, doing] :
-    ["not yet queued", live ? `${paused() ? "Paused" : "Training"}: ${S.run.lora}` :
-      `${items.length} run${items.length === 1 ? "" : "s"} after this`];
+    // not a job yet: beside it, what is going on - the run training (or paused), then how many wait behind it
+    ["not yet queued", [live ? `${paused() ? "Paused" : "Training"}: ${S.run.lora}` : "",
+      items.length ? `${items.length} queued` : ""].filter(Boolean).join(" · ")];
   p.classList.toggle("attention", !!c.ended);
   $("jobPillText").replaceChildren(el("span", {class: "job-pill-label"}, el("b", {text: "Viewing: "}), name || "",
     el("span", {class: "job-pill-state", text: " · " + state})), el("span", {class: "job-pill-caret", text: "▾"}));

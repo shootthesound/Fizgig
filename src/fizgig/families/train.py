@@ -1557,7 +1557,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             counted = quant.plan(desc, driver, precision, blocks_to_swap, megapixels=mp, pictures=bsz,
                                  adapter_gb=adapter_gb) if adapter_gb >= 0.1 else plain
             precision, blocks_to_swap, why = counted
-            if counted[:2] != plain[:2] and plain[:2] == ("nf4", 0):
+            kept = counted[:2] != plain[:2] and plain[:2] == ("nf4", 0)
+            if kept:
                 # the 4-bit base is the smallest and can't swap; the swapped int8 the adapter pushes the plan to ran 6x
                 # slower than nf4 in #337's measurement, and the figures leave room on Linux - keep nf4, say what to
                 # change so it fits for certain (a Windows card past its memory spills into system RAM and crawls)
@@ -1569,7 +1570,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     "run goes (Windows spilling into system memory), or it runs out of memory: turn Weight averaging "
                     "(EMA) off, lower Target Megapixels, or use a standard LoRA")
             why += f" at {mp:.2f} MP" + (f" x {bsz} pictures a step" if bsz > 1 else "")
-            if adapter_gb >= 0.1:
+            if adapter_gb >= 0.1 and not kept:
                 why += (f", counting {adapter_gb:.1f} GB more for the "
                         f"{'LoKR' if str(network_type).lower() == 'lokr' else 'LoRA'}, its optimizer"
                         + (" and EMA" if quant.adapter_ema(run_plan) else "") + " than a rank-16 LoRA")

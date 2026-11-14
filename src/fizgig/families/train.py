@@ -1121,6 +1121,21 @@ def _apply_test_vram_cap(gb, at):
     logger.warning(f"[test] VRAM capped at {gb:g} GB from step {at} (FIZGIG_TEST_VRAM_CAP_GB) - a test setting")
 
 
+def _reg_limit(group, per_epoch, say=False):
+    """A LoRA's regularisation set (dataset blocks marked is_reg): at most per_epoch of its pictures an epoch, a
+    different handful each epoch (BucketBatchManager.limit). 0 = every one, as a fine-tune's set trains. The group's
+    length follows, so the steps an epoch (and the run card's totals) count only what trains."""
+    if not per_epoch:
+        return
+    for ds in getattr(group, "datasets", None) or []:
+        if getattr(ds, "is_reg", False) and getattr(ds, "batch_manager", None) is not None:
+            have = ds.batch_manager.limit(int(per_epoch))
+            if say:
+                logger.info(f"[reg] {have} regularisation picture(s); each epoch uses "
+                            f"{min(int(per_epoch), have)} of them, a different handful each epoch")
+    group.cumulative_sizes = group.cumsum(group.datasets)
+
+
 def train_family(family, dit_path, dataset_config, output_dir, output_name, *, network_dim=32, network_alpha=32,
                  preview_small_card_cap=0,
                  learning_rate=1e-4, max_train_epochs=16, save_every_n_epochs=1, save_until_epoch=0,
@@ -1439,6 +1454,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                                "those off.")
         logger.info(f"[batch] {bsz} pictures a step, each from the same size bucket; a batch whose captions differ "
                     "in shape runs each shape's pictures as their own group")
+    _reg_limit(group, reg_per_epoch, say=True)     # a LoRA's regularisation set: its share an epoch (--reg_per_epoch)
     loader = DataLoader(group, batch_size=1, shuffle=True, num_workers=0,
                         collate_fn=(lambda b: b[0]) if slider_prompts else _Collator(shared_epoch, group))
     # Start at a smaller size: the first stage_until of the epochs draw from this dataset (its own cache folder),
@@ -1452,6 +1468,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         if low_group.num_train_items == 0:
             logger.warning("[stages] the smaller size has no cache - this run trains at the full size throughout")
         else:
+            _reg_limit(low_group, reg_per_epoch)
             low_loader = DataLoader(low_group, batch_size=1, shuffle=True, num_workers=0,
                                     collate_fn=_Collator(shared_epoch, low_group))
             logger.info(f"[stages] the first {float(stage_until) * 100:.0f}% of the epochs at the smaller size "

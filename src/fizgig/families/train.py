@@ -1149,7 +1149,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  recaption_instruction_detailed=None, recaption_task=None, recaption_task_detailed=None,
                  captioner=None, finetune=False, ft_rotations=10, ft_save_every_rotations=1, ft_rotate_every=1, ft_max_parts=0,
                  ft_start_window=0,
-                 ft_epochs_done=0, ft_fused_backward=False, reg_lr_multiplier=0.2, preview_checkpoint=None,
+                 ft_epochs_done=0, ft_fused_backward=False, reg_lr_multiplier=0.2, reg_per_epoch=0,
+                 preview_checkpoint=None,
                  preview_checkpoint_cache="auto", preview_int8=False, family_options=None,
                  dop=False, dop_trigger=None, dop_class="", dop_weight=1.0, dop_every=1, dop_ft_samples=8,
                  lr_boost=None, share_worker=None, masked_training=False, mask_floor=0.1, mask_prior=0.0, face_weight=1.0, face_area="face", face_cycle="1:0", face_until="0:0",
@@ -1496,24 +1497,27 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                                       if getattr(ds, "cache_directory", None)}), "max_train_epochs": max_train_epochs})
         except Exception as e:
             logger.info(f"[share] no training share for this run ({e})")
-    # A fine-tune's regularisation set: a dataset block marked is_reg, trained at a fixed reduced LR so it tethers
-    # the model's prior rather than teaching a subject (a full fine-tune has no rank bound on its drift). A LoRA's
-    # update is rank-bounded, so there the block is trained as ordinary images, with a warning.
+    # A regularisation set: a dataset block marked is_reg, each of its pictures' loss scaled by reg_lr_multiplier.
+    # A fine-tune's tethers the model's prior (a full fine-tune has no rank bound on its drift); a LoRA's (the Subjects
+    # card's Regularisation dataset, #332) holds the model's idea of the kind of thing the subject is in place, in
+    # place of DOP / Fizgig LoRA Isolation. Its pictures are never watched, excluded, recaptioned or mapped
+    # (loss_watch._folders and train_maps skip the block)
     reg_keys = set()
     reg_ds = [ds for ds in getattr(group, "datasets", []) if getattr(ds, "is_reg", False)]
-    if reg_ds and finetune:
+    if reg_ds:
         for ds in reg_ds:
             for bucket in ds.batch_manager.buckets.values():
                 reg_keys.update(str(it.item_key) for it in bucket)
+        subject = group.num_train_items - len(reg_keys)
         logger.info(f"[reg] {len(reg_keys)} regularisation image(s) at x{reg_lr_multiplier:g} LR "
-                    f"({group.num_train_items - len(reg_keys)} subject items)")
-        if len(reg_keys) >= group.num_train_items - len(reg_keys):
+                    f"({subject} subject items)")
+        if finetune and len(reg_keys) >= subject:
             logger.warning("[reg] regularisation images are at least half the training set - the multiplier only "
                            "reads as an LR cut while they are the minority (Adafactor normalises by a second moment "
                            "the majority dominates)")
-    elif reg_ds:
-        logger.warning("[reg] the dataset config has a regularisation block, but this is a LoRA run - those images "
-                       "train as ordinary images at full LR; remove the is_reg block if that is not what you want")
+        elif not finetune and (int(reg_per_epoch or 0) or len(reg_keys)) > subject:
+            logger.warning("[reg] each epoch trains on more regularisation pictures than subject pictures: most of "
+                           "what the LoRA sees is the regularisation set, so it learns your subject more slowly")
 
     # ---- Auto precision / swap: planned on an empty card (the description's figures include the preview VAE)
     auto_precision = precision == "auto"
@@ -2093,6 +2097,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         if context_lora_path:
             md.update({"ss_context_lora": os.path.basename(context_lora_path),
                        "ss_context_lora_strength": str(context_lora_strength)})
+        if reg_keys:                         # trained beside a regularisation set (a LoRA's, the Subjects card's)
+            md.update({"ss_fizgig_reg_images": str(len(reg_keys)),
+                       "ss_fizgig_reg_lr_multiplier": f"{float(reg_lr_multiplier):g}"})
         if slider:
             # the deploy contract: strength is the dial (-1 one pole, +1 the other); tools read this
             md.update({"ss_slider": "prompt_pairs" if slider_prompts else "image_pairs"})
@@ -3295,7 +3302,10 @@ def setup_parser():
     p.add_argument("--ft_fused_backward", action="store_true",
                    help="step each weight as its gradient lands and free it (less VRAM; no clipping or accumulation)")
     p.add_argument("--reg_lr_multiplier", type=float, default=0.2,
-                   help="fine-tune: LR multiplier for images in a dataset block marked is_reg = true")
+                   help="LR multiplier for images in a dataset block marked is_reg = true (a fine-tune's or a LoRA's "
+                        "regularisation set)")
+    p.add_argument("--reg_per_epoch", type=int, default=0,
+                   help="regularisation images an epoch trains on (a different handful each epoch); 0 = all of them")
     p.add_argument("--batch_size_auto", action="store_true",
                    help="Batch size Auto: the family's measured fastest batch on a 40 GB+ card (description batch_auto)")
     p.add_argument("--gradient_checkpointing", default="auto", choices=("auto", "on"),
@@ -3417,6 +3427,7 @@ def main():
         finetune=a.finetune, ft_rotations=a.ft_rotations, ft_save_every_rotations=a.ft_save_every_rotations,
         ft_rotate_every=a.ft_rotate_every, ft_max_parts=a.ft_max_parts, ft_start_window=a.ft_start_window, ft_epochs_done=a.ft_epochs_done,
         ft_fused_backward=a.ft_fused_backward, reg_lr_multiplier=a.reg_lr_multiplier,
+        reg_per_epoch=a.reg_per_epoch,
         preview_checkpoint=a.preview_checkpoint, preview_checkpoint_cache=a.preview_checkpoint_cache,
         preview_int8=a.preview_int8,
         family_options=dict(o.split("=", 1) for o in a.family_option if "=" in o),

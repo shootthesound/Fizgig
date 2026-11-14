@@ -22,6 +22,7 @@ Everything on this page works on every model unless it says otherwise: [Klein 9B
 - **Masks for masked training** — Image Prep makes a mask for every picture in a folder (the person, just the face and hair, the body without the face, and more), so training learns the part that matters, not the room around it. See [Masked training](MASKED_TRAINING.md).
 - **Look Consistency Filter** — pick the 3 images that best nail the look and every image is scored against them (AdaFace ViT, or DINOv2 for furry / anime faces). Worst matches surface first; mark drifters or let Auto-Suggest flag the outliers, then move them out in one click — nothing is deleted, and the scores feed the trainer's [look-outlier warm-up](KREA2.md#the-trainer-curates-your-dataset-while-it-trains-experimental).
 - **Sub-folders (optional)** — tick **Also train on its sub-folders** on the Training tab and a big dataset can stay organised in folders (outfits, forms, sources), each trained with its own captions and cache. Off by default. See [Sub-folders](#sub-folders) below.
+- **Several captions per picture (optional)** — a caption file can hold several captions, one a line: a line of tags and a sentence, or captions from different captioners. See [Several captions per picture](#several-captions-per-picture) below.
 
 ## Element boost: one part of each picture learns faster
 
@@ -67,6 +68,14 @@ The line under the repeats tick is a table: each folder's pictures, its repeats,
 **Not with** Subjects 2-4, DOP or Fizgig LoRA Isolation, which keep one folder per subject, nor Edit or slider training, which pair their files: the tick is hidden in those modes. To train several people, use Subjects; to train one subject's outfits or forms, use sub-folders or one folder with the outfit named in each caption.
 
 For the command line, see [CLI](CLI.md): each sub-folder is a `[[datasets]]` block with an `item_prefix`.
+
+## Several captions per picture
+
+A caption file normally is one caption: if it has several lines, they are joined and train as one long caption. Tick **Several captions per picture (one per line)** in Training Parameters and each line is a caption of its own: every time a picture comes round, one of its lines is picked at random. Use it for a line of booru tags plus a sentence, so the LoRA answers to either kind of prompt, or for captions written by several captioners, so no one bad caption dominates. OneTrainer writes multi-caption files the same way, so its datasets work as they are.
+
+The tick only shows when your caption files have more than one line (or it's already ticked). Its note says how many of your files do; ticked, it counts the pictures and captions, and the cost: caching encodes every line, so it takes longer in proportion, while training runs at the same speed. Blank lines are ignored. Start's trigger-word check looks at each line. Features that need a single caption use the first line: **Leave the rest of the model alone**, training maps, and the multi-person sample caption. A caption you fix in the Problem Images window re-encodes every line; **auto-recaption** replaces the first line only and keeps your other lines. It is for still-picture LoRAs and fine-tunes on every family except MiniMax H3 and ACE-Step, and not for edit or slider training. The run's log has a `[captions]` line, and the LoRA's metadata `ss_multi_caption`.
+
+On the Captions tab, a card says when its file has several captions. To build two-line files, caption with one model, then tick **Add as another line** and caption with another: each file keeps its caption and gets the new one on a line of its own (a line already there isn't added twice). **Add text** offers **To every line** when the folder has multi-line files; unticked, it treats a file as one caption, as before.
 
 ## Subjects: more than one person, and keeping them to their trigger
 

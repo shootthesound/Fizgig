@@ -263,6 +263,74 @@ def _lora_reg_mult(st):
         return None
 
 
+def _reg_captions(folder, ext):
+    """{picture file: its caption text, or None when it has no caption file} of a regularisation folder's pictures."""
+    from fizgig.dataset.image_dataset import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
+    exts = {e.lower() for e in (*IMAGE_EXTENSIONS, *VIDEO_EXTENSIONS, *AUDIO_EXTENSIONS)}
+    ext = ext if ext.startswith(".") else "." + ext
+    out = {}
+    try:
+        names = sorted(n for n in os.listdir(folder) if os.path.splitext(n)[1].lower() in exts and not is_mask_file(n))
+    except OSError:
+        return out
+    for n in names:
+        try:
+            with open(os.path.join(folder, os.path.splitext(n)[0] + ext), encoding="utf-8", errors="replace") as fh:
+                out[n] = fh.read()
+        except OSError:
+            out[n] = None
+    return out
+
+
+def lora_reg_problems(desc, st):
+    """What Start refuses for a LoRA's regularisation dataset: no folder, a missing or empty one, the training folder
+    itself, a multiplier that isn't a number, and pictures without a caption (captions are required: an uncaptioned
+    picture would train on an empty caption, the opposite of an anchor for the kind of thing it shows)."""
+    if not lora_reg_on(desc, st):
+        return []
+    what = "Regularisation dataset (Subjects card)"
+    reg = lora_reg_dir(desc, st)
+    if not reg:
+        return [f"{what}: pick its folder, or untick Train with a regularisation dataset"]
+    if not os.path.isdir(reg):
+        return [f"{what}: the folder {reg} does not exist - pick another, or untick Train with a regularisation dataset"]
+    folder = _s(st.get("image_folder"))
+    same = lambda a, b: os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+    if folder and same(reg, folder):
+        return [f"{what}: it is the training folder itself - it needs a folder of its own, of other pictures of the "
+                f"same kind of thing"]
+    out = []
+    if _lora_reg_mult(st) is None:
+        out.append(f"{what}: the Regularisation LR × must be a number")
+    caps = _reg_captions(reg, _s(st.get("caption_ext")) or _s(st.get("DATASET_CAPTION_EXT")) or ".txt")
+    if not caps:
+        out.append(f"{what}: the folder {reg} has no pictures in it")
+        return out
+    none = [n for n, t in caps.items() if t is None or not t.strip()]
+    if none:
+        out.append(f"{what}: {len(none)} of the {len(caps)} regularisation pictures have no caption "
+                   f"({', '.join(none[:3])}{', ...' if len(none) > 3 else ''}). Caption them first: make that folder "
+                   f"the training folder on Start, caption on the Captions tab without a trigger word, then switch "
+                   f"back.")
+    return out
+
+
+def lora_reg_warnings(desc, st):
+    """Start's warning for a LoRA's regularisation dataset: captions that use the run's trigger word."""
+    reg = lora_reg_dir(desc, st)
+    trig = _s(st.get("CAPTION_TRIGGER_WORD"))
+    if not (reg and os.path.isdir(reg) and trig and trig.lower() != "trigger_word"):
+        return []
+    pat = re.compile(r"(?<!\w)" + re.escape(trig) + r"(?!\w)", re.I)
+    caps = _reg_captions(reg, _s(st.get("caption_ext")) or _s(st.get("DATASET_CAPTION_EXT")) or ".txt")
+    has = [n for n, t in caps.items() if t and pat.search(t)]
+    if not has:
+        return []
+    return [f"{len(has)} regularisation caption{'s use' if len(has) != 1 else ' uses'} your trigger word '{trig}' "
+            f"({', '.join(has[:3])}{', ...' if len(has) > 3 else ''}): a regularisation picture named with your "
+            f"trigger teaches the opposite of what it is for."]
+
+
 def _training_items(desc, st):
     """The run's own training items: the training folder's, its sub-folders' when it trains on them, and its detail
     crops' (the size it trains at). Counted only: no folder is made."""
@@ -403,6 +471,7 @@ def start_checks(desc, st, image_folder):
         if lack:
             out.append(f"{len(lack)} detail crop caption{'s' if len(lack) != 1 else ''} in {rel} don't contain the "
                        f"trigger word '{trig}': those crops train without it.")
+    out += lora_reg_warnings(desc, st)
     if (not st.get("ADAPTIVE_LR") and (ft_on(desc, st) or not (automagic(st) or prodigy(st)))):
         # Automagic sets its own rate, Prodigy's 1.0 is a multiplier; a fine-tune trains at the box's rate
         kind = "finetune" if ft_on(desc, st) else "slider" if slider_on(desc, st) else "lora"
@@ -539,6 +608,7 @@ def problems(desc, inputs):
                           f"without one")
         elif reg and _ft_reg_mult(inputs) is None:
             errors.append("Fine-tune: the regularisation LR multiplier must be a number")
+    errors += lora_reg_problems(desc, inputs)
     ext = inputs.get("caption_ext") or ".txt"
     if edit_on(desc, inputs) and slider_on(desc, inputs):
         errors.append("Edit LoRA and Slider are both on - a run is one kind of LoRA: pick Edit or Slider")
@@ -692,7 +762,7 @@ def run_subfolders(desc, st, skipped=None):
     it trains at (detail_crops_on): each its own dataset block, item prefix and cache folder, so the per-image loss,
     auto-recaption, a move and a training share treat a crop like a sub-folder's picture."""
     subs = subfolders(_s(st.get("image_folder")), (_s(st.get("LORA_OUTPUT_DIR")), _s(st.get("cache_root")),
-                                                   ft_reg_dir(desc, st)), skipped) if subfolders_on(desc, st) else []
+                                                   reg_folder(desc, st)), skipped) if subfolders_on(desc, st) else []
     return subs + detail_crop_folders(desc, st)
 
 
@@ -1022,6 +1092,9 @@ def train_command(desc, inputs, plan):
         if cont.get("checkpoint"):
             cmd += ["--ft_start_window", str(int(cont.get("start_window", 0))),
                     "--ft_epochs_done", str(int(cont.get("epochs_done", 0)))]
+    if lora_reg_dir(desc, st):         # a LoRA's regularisation dataset: its LR share, and how many an epoch uses
+        cmd += ["--reg_lr_multiplier", f"{_lora_reg_mult(st):g}",
+                "--reg_per_epoch", str(max(1, lora_reg_budget(desc, st)[0]))]
     if st.get("TRAINING_MAPS") and desc.training_maps:     # training/train_maps.py: the Samples tab's Training maps
         cmd += ["--training_maps"]
     # per-image loss watch (families/loss_watch.py): at any Batch size, a batch's pictures weighed and recorded
@@ -1492,8 +1565,8 @@ def dataset_toml(desc, inputs, cache_suffix=""):
         lines += ["", "[[datasets]]", f'image_directory = "{w.replace(chr(92), "/")}"', f'item_prefix = "mp{n}:"']
         if root:
             lines.append(f'cache_directory = "{(cache_dir_for(root, w) + cache_suffix).replace(chr(92), "/")}"')
-    reg = ft_reg_dir(desc, inputs)
-    if reg:                              # a fine-tune's regularisation set: its own block (and cache folder)
+    reg = reg_folder(desc, inputs)
+    if reg:                              # a regularisation set (a fine-tune's or a LoRA's): its own block and cache
         lines += ["", "[[datasets]]", f'image_directory = "{reg.replace(chr(92), "/")}"', 'item_prefix = "reg:"']
         if root:
             lines.append(f'cache_directory = "{(cache_dir_for(root, reg) + cache_suffix).replace(chr(92), "/")}"')

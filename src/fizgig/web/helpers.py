@@ -3676,7 +3676,8 @@ def _run_subfolders(folder, values):
     training share as a sub-folder does."""
     from fizgig.families import launch
     subs = launch.subfolders(folder, (str(values.get("LORA_OUTPUT_DIR") or ""),
-                                      str(values.get("FAMILY_FT_REG_DIR") or ""))) \
+                                      str(values.get("FAMILY_FT_REG_DIR") or ""),
+                                      str(values.get("FAMILY_REG_DIR") or ""))) \
         if (values or {}).get("TRAIN_SUBFOLDERS") else []
     from fizgig.dataset import detail_crops
     if not detail_crops.is_on(folder):

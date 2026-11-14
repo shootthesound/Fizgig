@@ -1,6 +1,6 @@
 # Fizgig v9.7.1: every job keeps its own view
 
-**Switch between the run that's training, the runs in your queue and what you're setting up, without losing your place in any of them.** A pill at the top right (bottom right on a phone) always says what the tabs are showing: **Viewing:** a job's name and what it is doing, or **new run** when the form is no job yet. Press it and pick another: the Start, Image Prep, Captions, Samples and Training tabs all change to that job's training folder, captions, masks, sample prompts, settings and previews, and the view stays with you from tab to tab.
+**Switch between the run that's training, the runs in your queue and what you're setting up, without losing your place in any of them.** A pill at the top right (bottom right on a phone) always says what the tabs are showing: **Viewing:** a job's name and what it is doing, or **unsaved run** when the form is no job yet. Press it and pick another: the Start, Image Prep, Captions, Samples and Training tabs all change to that job's training folder, captions, masks, sample prompts, settings and previews, and the view stays with you from tab to tab.
 
 - **Training now** shows the run that's going. Its training settings are there to look at; its Samples tab stays changeable, and a change goes to its next previews.
 - **Queued 1, 2, …** shows a queued run, and you can change it: **Save to queue** keeps the changes. A run you add with **Add to queue** becomes the job on show straight away.

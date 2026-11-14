@@ -2740,21 +2740,21 @@ function jobPillShow() {
   p.style.display = show ? "" : "none";
   if (!show) { jobPillMenu(false); return; }
   if (S.pillPlace && !p.classList.contains("dragging")) S.pillPlace();
-  // Always "Viewing: <what the tabs show>": a job's name, or "new run" (the form is no job yet). After it, what that
-  // is doing (training, paused, queued 2, finished) - or, on a new run, what is going on meanwhile (Training: name)
+  // Always "Viewing: <what the tabs show>": a job's name, or "unsaved run" (the form is no job yet). After it, what
+  // that is doing (training, paused, queued 2, finished) - or, on an unsaved run, what is going on meanwhile
   const same = ctxSetupIsRun(), doing = paused() ? "paused" : "training";
   const [name, state] = c.ended ? [c.lora, "finished"] :
     c.kind === "run" ? [c.lora, doing] :
     c.kind === "queue" ? [c.lora, `queued ${c.n || ""}`.trim()] :
     same ? [S.run.lora, doing] :
-    ["new run", live ? `${paused() ? "Paused" : "Training"}: ${S.run.lora}` :
+    ["unsaved run", live ? `${paused() ? "Paused" : "Training"}: ${S.run.lora}` :
       `${items.length} queued`];
   p.classList.toggle("attention", !!c.ended);
   $("jobPillText").replaceChildren(el("span", {class: "job-pill-label"}, el("b", {text: "Viewing: "}), name || "",
     el("span", {class: "job-pill-state", text: " · " + state})), el("span", {class: "job-pill-caret", text: "▾"}));
   $("jobPillText").title = c.ended
     ? `${c.lora} is finished` + (c.next ? `, and ${c.next} is training. Press to switch.` : ".")
-    : (c.kind === "draft" && !same ? "These tabs show a new run: one not started or queued yet. Press to look at a job instead."
+    : (c.kind === "draft" && !same ? "These tabs show an unsaved run: one not started or queued yet. Press to look at a job instead."
     : "The job these tabs show. Press to switch to another, or back to the normal view.") +
       (window.innerWidth > 900 ? " Drag it to move it; double-click puts it back." : "");
   // the line at the top of each tab saying whose content it is, while it is another job's than your own setup

@@ -1060,6 +1060,7 @@ def subfolders_note(desc, values, image_folder):
         return "", None
     # the form's values name the kind of training (a label), not FAMILY_FT: a fine-tune's regularisation folder
     reg = _str(values.get("FAMILY_FT_REG_DIR")) if desc.finetune and _kind(desc, values) == "finetune" else ""
+    reg = reg or (_str(values.get("FAMILY_REG_DIR")) if reg_ticked(desc, values) else "")   # or a LoRA's (#332)
     subs = launch.subfolders(image_folder, (_str(values.get("LORA_OUTPUT_DIR")), reg))
     if not subs:
         return ("This training folder has no sub-folders with pictures." if values.get("TRAIN_SUBFOLDERS") else ""), None

@@ -1095,7 +1095,8 @@ def multi_caption_note(desc, values, image_folder):
         which = f" ({', '.join(names[:3])}{', ...' if len(names) > 3 else ''})" if len(names) <= 5 else ""
         return True, (f"{len(many):,} of your {len(counts):,} caption files {'has' if len(many) == 1 else 'have'} "
                       f"more than one line{which}. With this off, a file's lines are joined into one caption. Tick it "
-                      f"to train each line as a caption of its own.")
+                      f"only if each line is a whole caption on its own (files from OneTrainer, or a line of tags "
+                      f"plus a sentence); if a caption just runs onto a second line, leave it off.")
     if not counts:
         return True, ""
     if not many:
@@ -1107,7 +1108,8 @@ def multi_caption_note(desc, values, image_folder):
     return True, (f"{len(counts):,} pictures, {total:,} captions: {len(many):,} picture{'s' if len(many) != 1 else ''} "
                   f"{'have' if len(many) != 1 else 'has'} {span} lines. Preparing the captions before training "
                   f"(the text cache) takes about {total / len(counts):.1f}x as long; the pictures' cache and training "
-                  f"speed don't change.")
+                  f"speed don't change. Each picture is still used once an epoch, so each of its captions comes up "
+                  f"less often.")
 
 
 def _num(values, key, default):

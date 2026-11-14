@@ -557,11 +557,12 @@
               <label class="checkbox-label"><input type="checkbox" id="capOverwrite" checked>
                 Overwrite existing captions (untick to caption only the files without one)</label>
               <label class="checkbox-label" title="Keeps what each caption file already says and adds this model's caption on a new line: run a tagger, then a model that writes sentences, and every picture has both. Training reads each line as a caption of its own when Several captions per picture is ticked on the Training tab."><input type="checkbox" id="capAddLine">
-                Keep each file's caption and add this one on a new line</label>
+                Add as another line (keeps each file's caption)</label>
               <div class="field-hint" id="capAddLineNote" hidden>Each file keeps its caption and gets this model's on a
                 new line; a file without one gets its first. A line already in the file isn't added twice. To train on
-                each line, tick Several captions per picture on the Training tab. Put the style you prompt with most
-                first: training's single-caption features use line 1.</div>
+                each line, tick Several captions per picture on the Training tab. The trigger word goes first on the new
+                line too. Run first the model whose style you prompt with most: its caption becomes line 1, which
+                training's single-caption features use.</div>
               <div class="field-hint" id="capLinesWarn" hidden></div>
             </div>
           </div>
@@ -621,8 +622,8 @@
                 first. A caption that already has the words is left as it is.</div>
               <div id="frEachLineRow" hidden><label class="checkbox-label"><input type="checkbox" id="frEachLine">
                 To every line (for files with several captions, one a line)</label>
-                <div class="field-hint">Unticked, a file is one caption: the start goes on its first line and the end
-                on its last.</div></div>
+                <div class="field-hint">Ticked, each line gets it, and a line that already has the words is left as
+                it is. Unticked, a file is one caption: the start goes on its first line and the end on its last.</div></div>
               <div class="field-row"><button class="btn" id="frAddPreview">Preview</button>
                 <button class="btn btn-primary" id="frAdd">Add to all captions</button></div>
               <div id="frChanges" class="checkpoint-list"></div>

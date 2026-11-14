@@ -8718,7 +8718,7 @@ function renderCaptions() {
     };
     const recap = isAudio || !trainsPictures ? null : el("button", {class: "btn btn-sm", text: "Re-caption",
       title: capLines(it.caption) > 1 ? "Write this file's first caption again with the model and task above " +
-        "(its other lines stay; with Keep each file's caption ticked, add one more line instead)" :
+        "(its other lines stay; with Add as another line ticked, it adds one more line instead)" :
         "Write this file's caption again with the model and task above", onclick: () => recapRun()});
     // a clip with its sound (not Gizmo's _mute): Whisper its speech onto the caption, "... saying "words""
     const speechRun = kind === "mp4" && !/_mute$/i.test(it.name.replace(/\.[^.]+$/, "")) ? async (say = (t) => { status.textContent = t; }) => {
@@ -8781,7 +8781,7 @@ function capLinesWarn() {
   w.textContent = add && had ? `${had} file${had === 1 ? " has" : "s have"} a caption already: each gets one more line. ` +
       "Running the same model twice adds a second, slightly different line." :
     !add && over && multi ? `${multi} file${multi === 1 ? " has" : "s have"} several captions (one a line): Overwrite ` +
-      "replaces all of them with one. Tick Keep each file's caption to add a line instead." : "";
+      "replaces all of them with one. Tick Add as another line to add one instead." : "";
   w.hidden = !w.textContent;
 }
 

@@ -500,11 +500,28 @@ class BucketBatchManager:
         self.num_timestep_buckets = num_timestep_buckets
         self.timestep_pool: Optional[list[list[float]]] = None
 
+        self.quota: Optional[dict] = None   # limit(): items a bucket gives each epoch (None = all of them)
         self.bucket_batch_indices: list[Tuple[Tuple[int, int], int]] = []
         for reso in self.bucket_resos:
             num_batches = math.ceil(len(self.buckets[reso]) / self.bucket_batch(reso))
             for i in range(num_batches):
                 self.bucket_batch_indices.append((reso, i))
+
+    def limit(self, per_epoch: int) -> int:
+        """At most per_epoch items an epoch (a LoRA's regularisation set, --reg_per_epoch). Each bucket gives a fixed
+        share of them by its size, so an epoch's steps are the same every epoch (the run's totals hold), and the
+        buckets' shuffle at each epoch's start makes them a different handful each time. Returns the items there are."""
+        total = sum(len(b) for b in self.buckets.values())
+        if per_epoch <= 0 or per_epoch >= total:
+            return total
+        raw = {r: per_epoch * len(self.buckets[r]) / total for r in self.bucket_resos}
+        quota = {r: int(v) for r, v in raw.items()}
+        for r in sorted(self.bucket_resos, key=lambda r: raw[r] - quota[r], reverse=True)[:per_epoch - sum(quota.values())]:
+            quota[r] += 1                      # largest remainders first: the shares add up to per_epoch
+        self.quota = quota
+        self.bucket_batch_indices = [(r, i) for r in self.bucket_resos
+                                     for i in range(math.ceil(quota[r] / self.bucket_batch(r)))]
+        return total
 
     def bucket_batch(self, reso):
         """Items a step from this bucket: Batch size for pictures, 1 for a clip's or a voice's bucket (a step packs
@@ -544,7 +561,8 @@ class BucketBatchManager:
         bucket_reso, batch_idx = self.bucket_batch_indices[idx]
         bucket = self.buckets[bucket_reso]
         start = batch_idx * self.bucket_batch(bucket_reso)
-        end = min(start + self.bucket_batch(bucket_reso), len(bucket))
+        end = min(start + self.bucket_batch(bucket_reso), len(bucket) if self.quota is None
+                  else self.quota.get(bucket_reso, len(bucket)))
 
         batch_tensor_data: dict[str, list[torch.Tensor]] = {}
 
@@ -1395,7 +1413,9 @@ class ImageDataset(torch.utils.data.Dataset):
                                  latent_cache_path=cache_file)
             item_info.text_encoder_output_cache_path = te_cache
             _mdir = self.mask_directory or self.image_directory
-            if self.loss_masks and _mdir and bucket_key == bucket_reso \
+            # a regularisation set's pictures train whole and plain: no mask, no Boost the face (an anchor for the kind
+            # of thing they show, not a subject)
+            if self.loss_masks and _mdir and bucket_key == bucket_reso and not self.is_reg \
                     and self.latent_cache_frames(cache_file) <= 1:          # stills only: never a clip or a voice
                 if _mask_names is None:
                     _mask_names = folder_names(_mdir)
@@ -1408,7 +1428,7 @@ class ImageDataset(torch.utils.data.Dataset):
                         misfit_masks.append(f"{os.path.basename(item_info.mask_path)} ({_why})")
                         item_info.mask_path = None              # its picture trains unmasked, and the log says so
                 masked_items += bool(item_info.mask_path)
-            if self.face_boost != 1.0 and self.image_directory and bucket_key == bucket_reso \
+            if self.face_boost != 1.0 and self.image_directory and bucket_key == bucket_reso and not self.is_reg \
                     and self.latent_cache_frames(cache_file) <= 1:          # Boost the face: stills only
                 if _pic_names is None:
                     _pic_names = folder_names(self.image_directory)

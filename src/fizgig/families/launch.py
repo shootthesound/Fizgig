@@ -160,13 +160,24 @@ STATE_MARKERS = ("training_state.json", "random_states_0.pkl")   # written last:
                                                                   # half-written save
 
 
-def latest_state(out_dir, name):
-    """The run's newest complete state folder (<name>-NNNNNN-state with its commit marker), or ""."""
+def latest_state(out_dir, name, since=0.0):
+    """The run's newest complete state folder (<name>-NNNNNN-state with its commit marker), or "". since: the time the
+    run started; a state saved before it belongs to an earlier run that had the same name and folder, and is left out
+    (it used to be taken for this run's, so a 20-epoch run read as 50 epochs done)."""
+    def saved(d):
+        times = []
+        for m in STATE_MARKERS:
+            try:
+                times.append(os.path.getmtime(os.path.join(out_dir, d, m)))
+            except OSError:
+                pass
+        return max(times) if times else None
+
     try:
-        found = [d for d in os.listdir(out_dir) if re.fullmatch(re.escape(name) + r"-\d{6}-state", d)
-                 and any(os.path.isfile(os.path.join(out_dir, d, m)) for m in STATE_MARKERS)]
+        found = [d for d in os.listdir(out_dir) if re.fullmatch(re.escape(name) + r"-\d{6}-state", d)]
     except OSError:
         return ""
+    found = [d for d in found if (saved(d) or -1.0) >= (float(since or 0) - 2 if since else 0)]
     return os.path.join(out_dir, max(found)) if found else ""
 
 
@@ -223,6 +234,137 @@ def _ft_reg_mult(inputs):
         return max(0.0, float(str(inputs.get("FAMILY_FT_REG_MULT", "") or 0.2)))
     except ValueError:
         return None
+
+
+# ---- a LoRA's regularisation dataset (the Subjects card's, #332) ---------------------------------------------------
+def lora_reg_on(desc, st):
+    """The Subjects card's Regularisation dataset ticked, on a family that offers it, for a Standard LoRA or LoKR run
+    (a fine-tune has its own; a slider or an edit trains pairs). While it is on, the rest of the Subjects card gives
+    way: no second subject, no DOP, no Fizgig LoRA Isolation (dop_on, multi_person_on, form.inputs)."""
+    return (bool(getattr(desc, "lora_regularisation", False)) and bool(st.get("FAMILY_REG_ON"))
+            and not (ft_on(desc, st) or slider_on(desc, st) or edit_on(desc, st)))
+
+
+def lora_reg_dir(desc, st):
+    """A LoRA run's regularisation folder, when it is on and one is set (else "")."""
+    return _s(st.get("FAMILY_REG_DIR")) if lora_reg_on(desc, st) else ""
+
+
+def reg_folder(desc, st):
+    """The run's regularisation folder, a fine-tune's or a LoRA's ("" = none): its own dataset block, never a
+    sub-folder of the training folder."""
+    return ft_reg_dir(desc, st) or lora_reg_dir(desc, st)
+
+
+def _lora_reg_mult(st):
+    try:
+        return max(0.0, float(str(st.get("FAMILY_REG_MULT", "") or 1.0)))
+    except ValueError:
+        return None
+
+
+def _reg_captions(folder, ext):
+    """{picture file: its caption text, or None when it has no caption file} of a regularisation folder's pictures."""
+    from fizgig.dataset.image_dataset import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
+    exts = {e.lower() for e in (*IMAGE_EXTENSIONS, *VIDEO_EXTENSIONS, *AUDIO_EXTENSIONS)}
+    ext = ext if ext.startswith(".") else "." + ext
+    out = {}
+    try:
+        names = sorted(n for n in os.listdir(folder) if os.path.splitext(n)[1].lower() in exts and not is_mask_file(n))
+    except OSError:
+        return out
+    for n in names:
+        try:
+            with open(os.path.join(folder, os.path.splitext(n)[0] + ext), encoding="utf-8", errors="replace") as fh:
+                out[n] = fh.read()
+        except OSError:
+            out[n] = None
+    return out
+
+
+def lora_reg_problems(desc, st):
+    """What Start refuses for a LoRA's regularisation dataset: no folder, a missing or empty one, the training folder
+    itself, a multiplier that isn't a number, and pictures without a caption (captions are required: an uncaptioned
+    picture would train on an empty caption, the opposite of an anchor for the kind of thing it shows)."""
+    if not lora_reg_on(desc, st):
+        return []
+    what = "Regularisation dataset (Subjects card)"
+    reg = lora_reg_dir(desc, st)
+    if not reg:
+        return [f"{what}: pick its folder, or untick Train with a regularisation dataset"]
+    if not os.path.isdir(reg):
+        return [f"{what}: the folder {reg} does not exist - pick another, or untick Train with a regularisation dataset"]
+    folder = _s(st.get("image_folder"))
+    same = lambda a, b: os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+    if folder and same(reg, folder):
+        return [f"{what}: it is the training folder itself - it needs a folder of its own, of other pictures of the "
+                f"same kind of thing"]
+    out = []
+    if _lora_reg_mult(st) is None:
+        out.append(f"{what}: the Regularisation LR × must be a number")
+    caps = _reg_captions(reg, _s(st.get("caption_ext")) or _s(st.get("DATASET_CAPTION_EXT")) or ".txt")
+    if not caps:
+        out.append(f"{what}: the folder {reg} has no pictures in it")
+        return out
+    none = [n for n, t in caps.items() if t is None or not t.strip()]
+    if none:
+        out.append(f"{what}: {len(none)} of the {len(caps)} regularisation pictures have no caption "
+                   f"({', '.join(none[:3])}{', ...' if len(none) > 3 else ''}). Caption them first: make that folder "
+                   f"the training folder on Start, caption on the Captions tab without a trigger word, then switch "
+                   f"back.")
+    return out
+
+
+def lora_reg_warnings(desc, st):
+    """Start's warning for a LoRA's regularisation dataset: captions that use the run's trigger word."""
+    reg = lora_reg_dir(desc, st)
+    trig = _s(st.get("CAPTION_TRIGGER_WORD"))
+    if not (reg and os.path.isdir(reg) and trig and trig.lower() != "trigger_word"):
+        return []
+    pat = re.compile(r"(?<!\w)" + re.escape(trig) + r"(?!\w)", re.I)
+    caps = _reg_captions(reg, _s(st.get("caption_ext")) or _s(st.get("DATASET_CAPTION_EXT")) or ".txt")
+    has = [n for n, t in caps.items() if t and pat.search(t)]
+    if not has:
+        return []
+    return [f"{len(has)} regularisation caption{'s use' if len(has) != 1 else ' uses'} your trigger word '{trig}' "
+            f"({', '.join(has[:3])}{', ...' if len(has) > 3 else ''}): a regularisation picture named with your "
+            f"trigger teaches the opposite of what it is for."]
+
+
+def _training_items(desc, st):
+    """The run's own training items: the training folder's, its sub-folders' when it trains on them, and its detail
+    crops' (the size it trains at). Counted only: no folder is made."""
+    folder = _s(st.get("image_folder"))
+    if not folder or not os.path.isdir(folder):
+        return 0
+    n = _media_count(folder)
+    if subfolders_on(desc, st):
+        n += sum(_media_count(f) for _r, f in subfolders(folder, (_s(st.get("LORA_OUTPUT_DIR")),
+                                                                   _s(st.get("cache_root")), reg_folder(desc, st))))
+    if detail_crops_on(desc, st):
+        from fizgig.dataset import detail_crops
+        try:
+            d = detail_crops.size_dir(folder, float(st.get("megapixels") or st.get("DATASET_MEGAPIXELS") or 0))
+            n += _media_count(d) if os.path.isdir(d) else 0
+        except (TypeError, ValueError):
+            pass
+    return n
+
+
+def lora_reg_budget(desc, st):
+    """(regularisation pictures an epoch uses, pictures in the folder, the run's training items), from the Subjects
+    card's Use each epoch: Match my training pictures = as many as the training items (all of the folder when it has
+    fewer); a share = that share of the folder (at least 1). The one figure the form shows and the trainer is given
+    (--reg_per_epoch), a different handful each epoch."""
+    folder = lora_reg_dir(desc, st)
+    have = _media_count(folder) if folder and os.path.isdir(folder) else 0
+    train = _training_items(desc, st)
+    m = re.match(r"\s*(\d+)\s*%", _s(st.get("FAMILY_REG_USE")))
+    if m:
+        per = min(have, max(1, round(have * int(m.group(1)) / 100))) if have else 0
+    else:
+        per = min(have, train)
+    return per, have, train
 
 
 def _ft_int(inputs, key, default):
@@ -329,6 +471,7 @@ def start_checks(desc, st, image_folder):
         if lack:
             out.append(f"{len(lack)} detail crop caption{'s' if len(lack) != 1 else ''} in {rel} don't contain the "
                        f"trigger word '{trig}': those crops train without it.")
+    out += lora_reg_warnings(desc, st)
     if (not st.get("ADAPTIVE_LR") and (ft_on(desc, st) or not (automagic(st) or prodigy(st)))):
         # Automagic sets its own rate, Prodigy's 1.0 is a multiplier; a fine-tune trains at the box's rate
         kind = "finetune" if ft_on(desc, st) else "slider" if slider_on(desc, st) else "lora"
@@ -465,6 +608,7 @@ def problems(desc, inputs):
                           f"without one")
         elif reg and _ft_reg_mult(inputs) is None:
             errors.append("Fine-tune: the regularisation LR multiplier must be a number")
+    errors += lora_reg_problems(desc, inputs)
     ext = inputs.get("caption_ext") or ".txt"
     if edit_on(desc, inputs) and slider_on(desc, inputs):
         errors.append("Edit LoRA and Slider are both on - a run is one kind of LoRA: pick Edit or Slider")
@@ -618,7 +762,7 @@ def run_subfolders(desc, st, skipped=None):
     it trains at (detail_crops_on): each its own dataset block, item prefix and cache folder, so the per-image loss,
     auto-recaption, a move and a training share treat a crop like a sub-folder's picture."""
     subs = subfolders(_s(st.get("image_folder")), (_s(st.get("LORA_OUTPUT_DIR")), _s(st.get("cache_root")),
-                                                   ft_reg_dir(desc, st)), skipped) if subfolders_on(desc, st) else []
+                                                   reg_folder(desc, st)), skipped) if subfolders_on(desc, st) else []
     return subs + detail_crop_folders(desc, st)
 
 
@@ -948,6 +1092,9 @@ def train_command(desc, inputs, plan):
         if cont.get("checkpoint"):
             cmd += ["--ft_start_window", str(int(cont.get("start_window", 0))),
                     "--ft_epochs_done", str(int(cont.get("epochs_done", 0)))]
+    if lora_reg_dir(desc, st):         # a LoRA's regularisation dataset: its LR share, and how many an epoch uses
+        cmd += ["--reg_lr_multiplier", f"{_lora_reg_mult(st):g}",
+                "--reg_per_epoch", str(max(1, lora_reg_budget(desc, st)[0]))]
     if st.get("TRAINING_MAPS") and desc.training_maps:     # training/train_maps.py: the Samples tab's Training maps
         cmd += ["--training_maps"]
     # per-image loss watch (families/loss_watch.py): at any Batch size, a batch's pictures weighed and recorded
@@ -1418,8 +1565,8 @@ def dataset_toml(desc, inputs, cache_suffix=""):
         lines += ["", "[[datasets]]", f'image_directory = "{w.replace(chr(92), "/")}"', f'item_prefix = "mp{n}:"']
         if root:
             lines.append(f'cache_directory = "{(cache_dir_for(root, w) + cache_suffix).replace(chr(92), "/")}"')
-    reg = ft_reg_dir(desc, inputs)
-    if reg:                              # a fine-tune's regularisation set: its own block (and cache folder)
+    reg = reg_folder(desc, inputs)
+    if reg:                              # a regularisation set (a fine-tune's or a LoRA's): its own block and cache
         lines += ["", "[[datasets]]", f'image_directory = "{reg.replace(chr(92), "/")}"', 'item_prefix = "reg:"']
         if root:
             lines.append(f'cache_directory = "{(cache_dir_for(root, reg) + cache_suffix).replace(chr(92), "/")}"')
@@ -1495,7 +1642,8 @@ def dop_rules(st):
 def dop_on(desc, st):
     """DOP (the Subjects card's "Leave the rest of the model alone", and under Fizgig LoRA Isolation): a family that
     offers it (description subject_isolation), never an edit or a slider."""
-    return bool(st.get("FAMILY_DOP")) and desc.subject_isolation and not (slider_on(desc, st) or edit_on(desc, st))
+    return bool(st.get("FAMILY_DOP")) and desc.subject_isolation and not (slider_on(desc, st) or edit_on(desc, st)
+                                                                          or lora_reg_on(desc, st))
 
 
 MASK_FLOORS = ("0 - not at all", "0.05", "0.1 (recommended)", "0.2", "0.3", "0.5")
@@ -1544,10 +1692,34 @@ FACE_AREA_KEYS = (("Face and hair", "head"), ("Face only", "face"), ("The person
 FACE_AREAS = tuple(k[0] for k in FACE_AREA_KEYS)
 
 
+# Element boost needs pictures of at least this size (Peter, 12 Nov 2026): the model sees a picture as 16-pixel patches
+# (8x VAE, 2x2 patches), and in a medium or full-length shot a face at 0.5 MP can be 1-3 patches wide - boosting
+# that teaches the LoRA pixelation; at 0.75 MP most are a few patches wide
+BOOST_MIN_MP = 0.75
+BOOST_TOO_SMALL = ("Needs Target Megapixels {mp:g} or more: below that a small face is too few pixels, and boosting it "
+                   "teaches the LoRA pixelation.")
+
+
+def boost_mp(desc, st):
+    """The picture size Element boost trains at: Start at a smaller size's while it's on (the boost runs early in the
+    run), else Target Megapixels; 0 when unknown."""
+    try:
+        mp = float(st.get("megapixels") or st.get("DATASET_MEGAPIXELS") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    return stage_mp(desc, {**st, "megapixels": mp}) or mp
+
+
+def boost_too_small(desc, st):
+    return 0 < boost_mp(desc, st) < BOOST_MIN_MP
+
+
 def face_weight(desc, st):
     """Boost the face: the face weight when ticked, else None. Stills of a family with masked training, not a
-    prompt slider (no photos)."""
+    prompt slider (no photos), at BOOST_MIN_MP or more."""
     if not (st.get("FACE_BOOST") and desc.element_boost and desc.masked_training) or slider_on(desc, st, "prompts"):
+        return None
+    if boost_too_small(desc, st):
         return None
     return FACE_BOOST
 
@@ -1568,7 +1740,7 @@ def mask_report(desc, st):
 def multi_person_on(desc, st):
     """Fizgig LoRA Isolation (multi-person mode, families/multi_person.py): a standard LoRA run with the tick on, on a
     family that offers it."""
-    return bool(st.get("FAMILY_MULTI_PERSON")) and desc.subject_isolation and         not (slider_on(desc, st) or edit_on(desc, st) or ft_on(desc, st))
+    return bool(st.get("FAMILY_MULTI_PERSON")) and desc.subject_isolation and         not (slider_on(desc, st) or edit_on(desc, st) or ft_on(desc, st) or lora_reg_on(desc, st))
 
 
 def isolation_photos_only(desc):

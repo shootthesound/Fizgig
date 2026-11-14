@@ -1,5 +1,27 @@
 # Fizgig news
 
+## 14 Nov 2026: every job keeps its own view
+
+**Switch between the run that's training, the runs in your queue and what you're setting up, without losing your place.** A pill at the top right (bottom right on a phone) always says what the tabs are showing: a job's name, or **not yet queued**. Press it and pick another, and the Start, Image Prep, Captions, Samples and Training tabs all change to that job's training folder, captions, masks, sample prompts, settings and previews. The run training now is there to look at, with its Samples tab still changeable; a queued run can be changed and saved back; a paused run takes what you change before Resume. **Set up a new run with these settings** copies the job on show into a new setup named with `_2`, and **Back to the normal view** gives you a clean start.
+
+**Likeness and Style scores belong to the run**: pick your three reference photos once per training folder, and each run keeps its own scores over its own previews. **Star the previews you like**, and the matching checkpoint gets a star too. **A run cut off when Fizgig closed** is offered again at the next start: carry it on, start the next in the queue, or start fresh. And a LoRA name can only be used once per output folder, so two runs never write over each other.
+
+[Fizgig v9.7.1 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.7.1)
+
+## 12 Nov 2026: top-end likeness for MiniMax H3 Image
+
+**MiniMax H3 Image now trains likeness at the very top end.** On our hardest test dataset, the best previews look more like the person than all but two of their own 45 photos do, and that held on two more datasets, one harder still. Load **✨ MiniMax H3 Image Standard** (0.25 MP) and train with its settings as they are: a new Likeness optimization schedule (its controls under Advanced), Automagic v4 starting at 2.5e-4 (the most any weight can move, as it steps each one down from there: not comparable to an AdamW rate), and 30 epochs. The presets are back at 0.25 MP: the schedule and the optimizer were what held likeness back, not the picture size.
+
+**Likeness scores now come from AdaFace ViT instead of ArcFace**: its best epochs matched the ones we picked by eye every time. The Samples gallery also shows **your photos**: your own training photos scored against the same reference photos, as a green band on the likeness chart, the realistic top (real photos never score 100%). **Element boost** now needs Target Megapixels 0.75 or more.
+
+[Fizgig v9.7.0 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.7.0)
+
+## 11 Nov 2026: Likeness optimization for MiniMax H3 Image
+
+**MiniMax H3 Image has a new Likeness optimization**, and in our tests it improves likeness dramatically. It weights training toward the nearly finished picture, where skin, eyes and fine detail are made, while pose and layout keep up. It's on in the Standard preset (load **✨ MiniMax H3 Image Standard**) and replaces H3 Image's Clean-end share box. It will be updated over the coming days with more ways to customise it.
+
+[Fizgig v9.6.4 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.6.4)
+
 ## 11 Nov 2026: training suddenly slow on Windows? Turn off Sysmem Fallback
 
 If training on Windows with an NVIDIA card is suddenly several times slower, especially after a driver or Windows update, the driver is probably spilling part of the run into system RAM. Open NVIDIA Control Panel → Manage 3D settings → **Global Settings**, set **CUDA - Sysmem Fallback Policy** to **Prefer No Sysmem Fallback**, Apply, and restart Fizgig. Use Global Settings, not Program Settings. A few people went from 10–15 s/it back to about 2.5 s/it. Fizgig now shows these steps when it starts, until you tick Don't show this again.

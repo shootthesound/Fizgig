@@ -3,12 +3,14 @@ Face finding and identity embedding for Fizgig
 ==============================================
 
 Two pluggable parts, both CPU-only (they never compete with the DiT for VRAM) and lazily loaded. The defaults are
-InsightFace + ArcFace, exactly what Fizgig always used: the YOLO, Auto and DINOv2 choices are opt-in, picked on
-the Image Prep tab ("Anime/furry/drawn characters"). docs/FACE_BACKENDS.md has the details.
+InsightFace's face finder + AdaFace ViT: the YOLO, Auto and DINOv2 choices are opt-in, picked on the Image Prep tab
+("Anime/furry/drawn characters"). docs/FACE_BACKENDS.md has the details. The models download on first use
+(ensure_face_models; the installer and "Download models for me" fetch them up front).
 
 FACE DETECTOR (FaceDetector) - where the faces are. prefs.json "face_detector":
-  * "insightface" - InsightFace buffalo_l (RetinaFace + gender/age). Human photos; the only one with gender. The
-                    default, and exactly the detection Fizgig always ran (one pass, boxes as InsightFace gives them).
+  * "insightface" - InsightFace buffalo_l's RetinaFace + gender/age (only those two files are fetched, never its
+                    ArcFace). Human photos; the only one with gender. The default (one pass, boxes as InsightFace
+                    gives them).
   * "yolo"        - a YOLO face model run through onnxruntime (no ultralytics needed): an ADetailer-style .onnx
                     the user picks in "face_yolo_model" (recommended for furry datasets: Fdetailer v1.1, converted
                     once with src/fizgig/scripts/convert_yolo_to_onnx.py - see docs/FACE_BACKENDS.md). Blank =
@@ -21,13 +23,14 @@ FACE DETECTOR (FaceDetector) - where the faces are. prefs.json "face_detector":
 
 IDENTITY EMBEDDER (FaceEmbedder) - how alike two faces are (Look Filter, likeness scoring, Repair Studio metrics,
 Block Profiler). prefs.json "face_identity":
-  * "arcface" - InsightFace's ArcFace (512-d). Human faces only (it needs InsightFace's own detection/landmarks).
-                The default.
+  * "adaface" - AdaFace ViT-Base (face_vit.py, 512-d) on InsightFace's 5-point aligned face. Human faces only (it
+                needs InsightFace's landmarks). The default; it replaced ArcFace on 12 Nov 2026 (its best epochs
+                matched Peter's picks every time, ArcFace's often didn't). A saved "arcface" reads as "adaface".
   * "dinov2"  - DINOv2-base (facebook/dinov2-base, Apache-2.0) on the detector's face crop. Any face: anime, furry,
                 human. Needs only transformers (already a dependency).
   * "clip"    - removed (tested and dropped: DINOv2 separates characters better); a saved "clip" reads as "dinov2".
-  * "auto"    - "yolo" -> DINOv2, "insightface" -> ArcFace. With the "auto" detector it is decided PER DATASET /
-                scoring session (decide_look_match): ArcFace only when InsightFace finds a human face in most of the
+  * "auto"    - "yolo" -> DINOv2, "insightface" -> AdaFace. With the "auto" detector it is decided PER DATASET /
+                scoring session (decide_look_match): AdaFace only when InsightFace finds a human face in most of the
                 probed images and few images have only non-human (YOLO) faces; otherwise DINOv2 for the whole session.
                 A session never mixes embedding spaces.
 
@@ -58,17 +61,31 @@ PREFS_FILE = user_data.PREFS_FILE
 # Settings
 # ---------------------------------------------------------------------------------------------------------------
 DETECTORS = ("auto", "insightface", "yolo")
-IDENTITIES = ("auto", "arcface", "dinov2")
-IDENTITY_RENAMED = {"clip": "dinov2"}   # retired look matches -> what they read as now (old prefs / env)
-FACE_SETTING_DEFAULTS = {          # what people get today: InsightFace + ArcFace; the rest is opt-in
+IDENTITIES = ("auto", "adaface", "dinov2")
+IDENTITY_RENAMED = {"clip": "dinov2", "arcface": "adaface"}   # retired look matches -> what they read as now
+FACE_SETTING_DEFAULTS = {          # what people get today: InsightFace's finder + AdaFace; the rest is opt-in
     "face_detector": "insightface",
     "face_yolo_model": "",          # path to a YOLO .onnx; blank = DEFAULT_YOLO (auto-download)
     "face_yolo_conf": 0.35,         # box confidence; Fdetailer's true faces score ~0.6-0.9, misfires < 0.4
-    "face_identity": "arcface",
-    "face_auto_threshold": 0.5,     # Auto look match: share of probed images with a human face needed for ArcFace
+    "face_identity": "adaface",
+    "face_auto_threshold": 0.5,     # Auto look match: share of probed images with a human face needed for AdaFace
 }
 AUTO_HUMAN_SCORE = 0.6     # an InsightFace face counts as human at this confidence (fursuits / art rarely reach it)
-AUTO_MIXED_SHARE = 0.25    # ...and ArcFace also needs fewer than this share of images with only non-human faces
+AUTO_MIXED_SHARE = 0.25    # ...and AdaFace also needs fewer than this share of images with only non-human faces
+
+# The face models' files, each pinned and checked by SHA-256 (ensure_face_models). InsightFace's buffalo_l pack is
+# one zip with ArcFace and two landmark models Fizgig doesn't use, so only its finder and gender/age files are
+# fetched, from a Hugging Face mirror whose files are byte-identical to the official zip's; once that folder exists
+# InsightFace never downloads the zip.
+INSIGHTFACE_FILES = {"repo": "public-data/insightface", "revision": "33c1063c49c785b7652d3fd529f86fa4f149392b",
+                     "folder": "models/buffalo_l",
+                     "files": {"det_10g.onnx": "5838f7fe053675b1c7a08b633df49e7af5495cee0493c7dcf6697200b85b5b91",
+                               "genderage.onnx": "4fde69b1c810857b88c64a335084f1c3fe8f01246c9a191b48c7bb756d6652fb"}}
+ADAFACE_FILE = {"repo": "minchul/cvlface_adaface_vit_base_webface4m",
+                "revision": "c6fed2ff09ac0a29cccc72c09127ad7b4bd3fa9e", "file": "model.safetensors",
+                "sha256": "5fafd6b7d599a3ede5fac5bd1d01ad05e9e93e89b39b7687d4a3bc93ff2aebc0",
+                "dest": os.path.join(user_data.MODELS_DIR, "face", "adaface_vit_base_webface4m.safetensors"),
+                "gb": 0.46}
 AUTO_PROBE_MAX = 24        # images probed per dataset (spread evenly over the sorted list)
 # The fallback YOLO model: deepghs' anime head detector (MIT), YOLOv8s ONNX, one class "head". Head boxes include
 # ears / hair, so crops from it run a little larger than from a face model.
@@ -127,7 +144,60 @@ def resolve_identity(settings: dict) -> str:
     ident = IDENTITY_RENAMED.get(ident, ident)
     if ident != "auto":
         return ident
-    return "dinov2" if settings.get("face_detector") == "yolo" else "arcface"
+    return "dinov2" if settings.get("face_detector") == "yolo" else "adaface"
+
+
+def insightface_root() -> str:
+    """Where InsightFace keeps its models (FaceAnalysis's root): INSIGHTFACE_HOME (the pod image) or ~/.insightface."""
+    return os.path.expanduser(os.environ.get("INSIGHTFACE_HOME") or "~/.insightface")
+
+
+def _sha256(path) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _fetch(repo, revision, file, dest, sha, log):
+    """One pinned file from Hugging Face to dest, its SHA-256 checked (a mismatch is deleted and raises)."""
+    import shutil
+    import tempfile
+    from fizgig.utils import hf_public
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    tmp = tempfile.mkdtemp(prefix="fizgig_face_", dir=os.path.dirname(dest))
+    try:
+        got = hf_public.download(repo_id=repo, filename=file, revision=revision, local_dir=tmp, log=log)
+        if _sha256(got) != sha:
+            raise RuntimeError(f"{os.path.basename(dest)} from {repo} didn't match its checksum - not used")
+        os.replace(got, dest)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+_FETCH_LOCK = threading.Lock()
+
+
+def ensure_face_models(log=print, adaface: bool = True) -> bool:
+    """The face finder's two files (det_10g, genderage) in InsightFace's buffalo_l folder and, with adaface, the
+    AdaFace ViT weights in models/face/: fetched when missing, each checked. Returns True when they're all there."""
+    with _FETCH_LOCK:
+        folder = os.path.join(insightface_root(), "models", "buffalo_l")
+        for name, sha in INSIGHTFACE_FILES["files"].items():
+            dest = os.path.join(folder, name)
+            if not os.path.isfile(dest):
+                if log:
+                    log(f"[faces] downloading the face finder ({name})")
+                _fetch(INSIGHTFACE_FILES["repo"], INSIGHTFACE_FILES["revision"],
+                       f"{INSIGHTFACE_FILES['folder']}/{name}", dest, sha, log)
+        if adaface and not os.path.isfile(ADAFACE_FILE["dest"]):
+            if log:
+                log(f"[faces] downloading AdaFace ViT, the likeness model (~{ADAFACE_FILE['gb']:g} GB, once)")
+            _fetch(ADAFACE_FILE["repo"], ADAFACE_FILE["revision"], ADAFACE_FILE["file"], ADAFACE_FILE["dest"],
+                   ADAFACE_FILE["sha256"], log)
+    return True
 
 
 class FaceInfo(NamedTuple):
@@ -208,7 +278,7 @@ def _importable(*mods) -> bool:
 
 
 class InsightFaceBackend:
-    """InsightFace buffalo_l (RetinaFace detection + gender/age, or + ArcFace recognition), CPU."""
+    """InsightFace buffalo_l's RetinaFace detection (+ gender/age), CPU. Its landmarks align AdaFace's face."""
 
     name = "insightface"
     has_gender = True
@@ -230,10 +300,11 @@ class InsightFaceBackend:
             if app is None:
                 if not self.available():
                     raise ImportError("InsightFace is not installed. Run install_fizgig.py to set up face detection.")
+                ensure_face_models(adaface=False)     # its two files, so InsightFace never fetches the whole pack
                 from fizgig.utils import ort_telemetry
                 ort_telemetry.off()
                 from insightface.app import FaceAnalysis
-                app = FaceAnalysis(name='buffalo_l', allowed_modules=list(self.modules),
+                app = FaceAnalysis(name='buffalo_l', root=insightface_root(), allowed_modules=list(self.modules),
                                    providers=['CPUExecutionProvider'])
                 app.prepare(ctx_id=-1)      # ctx_id=-1 forces CPU
                 self._shared[self.modules] = app
@@ -242,21 +313,23 @@ class InsightFaceBackend:
     def load(self):
         _ = self.app
 
-    def raw_faces(self, bgr):
+    def raw_faces(self, bgr, with_image=False):
         """InsightFace Face objects, retrying on a padded copy when none are found: RetinaFace misses faces that
         FILL the frame (a close-up is beyond its anchor scales) and a border brings them back into range. Returns
-        (faces, (px, py)) - the padding to subtract from their boxes."""
+        (faces, (px, py)) - the padding to subtract from their boxes - and, with_image, the picture they were found
+        in (the padded copy when padded: their landmarks are in its space)."""
         import cv2
         faces = self.app.get(bgr)
         if faces:
-            return faces, (0, 0)
+            return (faces, (0, 0), bgr) if with_image else (faces, (0, 0))
         h, w = bgr.shape[:2]
         for pad in (0.25, 0.5):
             py, px = int(h * pad), int(w * pad)
-            faces = self.app.get(cv2.copyMakeBorder(bgr, py, py, px, px, cv2.BORDER_REPLICATE))
+            img = cv2.copyMakeBorder(bgr, py, py, px, px, cv2.BORDER_REPLICATE)
+            faces = self.app.get(img)
             if faces:
-                return faces, (px, py)
-        return [], (0, 0)
+                return (faces, (px, py), img) if with_image else (faces, (px, py))
+        return ([], (0, 0), bgr) if with_image else ([], (0, 0))
 
     def detect_bgr(self, bgr, pad_retry: bool = False) -> List[FaceInfo]:
         """FaceInfo for every face. pad_retry=False (the InsightFace finder) is the detection Fizgig always ran: one
@@ -712,21 +785,22 @@ def draw_face_boxes(
 #   borderline  >= "borderline":  same-subject territory, drifting
 #   drift       below:            likely off-look / a different subject
 #   floor:      the Look Filter's outlier cut-off never goes below it (a different subject rarely clears it)
-# ArcFace: InsightFace's conventions (same person across varied photos 0.30-0.70 vs one baseline; a different
-# person rarely clears 0.25). DINOv2: calibrated on face/head crops of anime, furry and human images
+# AdaFace: set at the shares of same-person photos ArcFace's old bands kept (0.45 / 0.30 / 0.25 kept 92 / 96 / 97%),
+# measured 12 Nov 2026 on 6 people's datasets (each photo vs 3 of the set's own; 1,700 different-person pairs: median
+# 0.05, highest 0.31, none above). DINOv2: calibrated on face/head crops of anime, furry and human images
 # (docs/FACE_BACKENDS.md has the numbers) - provisional, the Look Filter's dataset-relative cut-off
 # (median - 1.5 IQR) does most of the work.
 IDENTITY_THRESHOLDS = {
-    "arcface": {"match": 0.45, "borderline": 0.30, "floor": 0.25},
+    "adaface": {"match": 0.42, "borderline": 0.36, "floor": 0.30},
     "dinov2": {"match": 0.62, "borderline": 0.48, "floor": 0.40},
 }
-IDENTITY_LABELS = {"arcface": "ArcFace (people)", "dinov2": "DINOv2 (any face)"}
+IDENTITY_LABELS = {"adaface": "AdaFace (people)", "dinov2": "DINOv2 (any face)"}
 CROP_MARGIN = 0.25      # the crop an embedder sees: the face box grown 25% each side (ears, muzzle, markings)
 
 
 def same_embedder(recorded: Optional[str], cache_id: str) -> bool:
     """Whether cached scores recorded with embedder `recorded` can be reused under `cache_id`. Files written
-    before the face backends existed carry no embedder and were ArcFace."""
+    before the face backends existed carry no embedder and were ArcFace, so they're scored again."""
     return (recorded or "arcface") == cache_id
 
 
@@ -751,23 +825,38 @@ def look_cutoff(scores: List[float], floor: float) -> Optional[float]:
     return max(med - 1.5 * (q3 - q1), floor)
 
 
-class _ArcFace:
-    name = "arcface"
+class _AdaFace:
+    """AdaFace ViT (face_vit.py) on the largest face, aligned by InsightFace's 5 landmarks to the 112x112 template."""
+    name = "adaface"
+    _net = None
+    _lock = threading.Lock()
 
     def __init__(self, settings):
-        self.backend = InsightFaceBackend(modules=("detection", "recognition"))
+        self.backend = InsightFaceBackend(modules=("detection",))
 
     def available(self) -> bool:
-        return self.backend.available()
+        return self.backend.available() and _importable("torch", "safetensors")
+
+    @classmethod
+    def net(cls):
+        with cls._lock:
+            if cls._net is None:
+                ensure_face_models()
+                from fizgig import face_vit
+                cls._net = face_vit.load(ADAFACE_FILE["dest"])
+            return cls._net
 
     def embed_bgr(self, bgr):
-        faces, pad = self.backend.raw_faces(bgr)
+        faces, pad, img = self.backend.raw_faces(bgr, with_image=True)
         if not faces:
             return None, None
         f = max(faces, key=lambda x: (x.bbox[2] - x.bbox[0]) * (x.bbox[3] - x.bbox[1]))
-        emb = getattr(f, "normed_embedding", None)
-        if emb is None:
+        if getattr(f, "kps", None) is None:
             return None, None
+        from insightface.utils import face_align
+        from fizgig import face_vit
+        crop = face_align.norm_crop(img, np.asarray(f.kps), 112)            # BGR
+        emb = face_vit.embed(self.net(), np.ascontiguousarray(crop[..., ::-1]))
         bbox = None
         if pad == (0, 0):     # a padded detection's box is in padded-image space: embedding only
             h, w = bgr.shape[:2]
@@ -879,12 +968,12 @@ class _DinoV2(_CropEmbedder):
         return out.pooler_output[0].float().numpy()       # CLS token after the final layernorm
 
 
-_EMBEDDERS = {"arcface": _ArcFace, "dinov2": _DinoV2}
+_EMBEDDERS = {"adaface": _AdaFace, "dinov2": _DinoV2}
 
 
 class FaceEmbedder:
     """
-    Identity embedding of the LARGEST face in an image, with a pluggable backend (ArcFace / DINOv2), for
+    Identity embedding of the LARGEST face in an image, with a pluggable backend (AdaFace / DINOv2), for
     look-consistency and likeness scoring. Embeddings are L2-normalised, so cosine similarity is a dot product -
     but only between embeddings of the SAME embedder (compare `name`).
 
@@ -908,7 +997,7 @@ class FaceEmbedder:
     @property
     def settings_key(self) -> tuple:
         """Changes whenever an embedding would come out different (embedder, or the detector its crops come from)."""
-        if self.name == "arcface":
+        if self.name == "adaface":
             return (self.name,)
         return (self.name, self.settings["face_detector"], self.settings["face_yolo_model"],
                 self.settings["face_yolo_conf"])
@@ -916,7 +1005,7 @@ class FaceEmbedder:
     @property
     def cache_id(self) -> str:
         """What cached scores record as their embedder (Look Filter / gallery JSONs)."""
-        return self.name if self.name == "arcface" else f"{self.name}@{self.settings['face_detector']}:" \
+        return self.name if self.name == "adaface" else f"{self.name}@{self.settings['face_detector']}:" \
             f"{os.path.basename(self.settings['face_yolo_model']) or 'default'}"
 
     @property
@@ -925,8 +1014,8 @@ class FaceEmbedder:
 
     def _ensure_loaded(self):
         if not self.available:
-            raise ImportError(f"{self.label} is unavailable (missing InsightFace / onnxruntime / transformers or the "
-                              f"face model). Run install_fizgig.py.")
+            raise ImportError(f"{self.label} is unavailable (missing InsightFace / onnxruntime / torch / transformers "
+                              f"or the face model). Run install_fizgig.py.")
 
     def embed_pil(self, pil: Image.Image):
         """(embedding, bbox) of the largest face; bbox None when unknown (a padded InsightFace retry), (None, None)
@@ -963,7 +1052,7 @@ class FaceEmbedder:
 # Auto look match: one embedder per dataset / scoring session
 # ---------------------------------------------------------------------------------------------------------------
 class LookMatchDecision(NamedTuple):
-    identity: str            # "arcface" | "dinov2"
+    identity: str            # "adaface" | "dinov2"
     kind: str                # "human" | "furry" | "mixed" | "explicit" | "empty"
     human: int               # probed images with a confident InsightFace (human) face
     yolo_only: int           # probed images whose only faces came from the YOLO model
@@ -996,10 +1085,10 @@ def decide_look_match(paths, settings: Optional[dict] = None, *, max_n: int = AU
     photos of a likeness session). Only "auto" + "auto" probes; an explicit face_identity, or an explicit detector
     with an auto identity, is used as is.
 
-    Probe: the Auto detector (InsightFace + YOLO, merged) on up to max_n images. ArcFace when at least
+    Probe: the Auto detector (InsightFace + YOLO, merged) on up to max_n images. AdaFace when at least
     face_auto_threshold of them (default 50%) have a confident human face AND fewer than AUTO_MIXED_SHARE (25%) have
     only non-human faces; otherwise DINOv2 for the whole session - for a furry / anime set, and for a mixed one,
-    since ArcFace can't embed a furry face and two embedders' scores can't be compared. Cached per (images, mtimes,
+    since AdaFace can't embed a furry face and two embedders' scores can't be compared. Cached per (images, mtimes,
     settings) - the same folder decides the same way every time; detections are cached for the crops that follow."""
     st = load_face_settings(settings)
     if st["face_identity"] != "auto" or st["face_detector"] != "auto":
@@ -1019,8 +1108,8 @@ def decide_look_match(paths, settings: Optional[dict] = None, *, max_n: int = AU
             log(hit.message + " (cached)")
         return hit
     if not sample:
-        d = LookMatchDecision("arcface", "empty", 0, 0, 0, dict(st, face_identity="arcface"),
-                              "[faces] Auto look match: no images to probe - ArcFace")
+        d = LookMatchDecision("adaface", "empty", 0, 0, 0, dict(st, face_identity="adaface"),
+                              "[faces] Auto look match: no images to probe - AdaFace")
         if log:
             log(d.message)
         return d
@@ -1041,7 +1130,7 @@ def decide_look_match(paths, settings: Optional[dict] = None, *, max_n: int = AU
     if not InsightFaceBackend.available():
         kind, ident, why = "furry", "dinov2", "InsightFace isn't installed"
     elif human / n >= thr and yolo_only / n < AUTO_MIXED_SHARE:
-        kind, ident, why = "human", "arcface", "a set of people"
+        kind, ident, why = "human", "adaface", "a set of people"
     elif human / n >= thr or (human / n >= AUTO_MIXED_SHARE and yolo_only / n >= AUTO_MIXED_SHARE):
         kind, ident, why = "mixed", "dinov2", "people and characters mixed, so one look match for all"
     elif yolo_only / n >= AUTO_MIXED_SHARE:

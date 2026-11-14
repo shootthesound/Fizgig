@@ -34,6 +34,9 @@
 </p>
 
 > ### 📰 Latest news
+> - **Fizgig 9.7.1 — every job keeps its own view.** A pill switches the tabs between the run training now, your queued runs and a clean start, each with its own folder, captions, prompts, settings and previews. Likeness and Style scores per run, starred previews, and a run cut off when Fizgig closed is offered again at the next start. [Release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.7.1)
+> - **Fizgig 9.7.0 — top-end likeness for MiniMax H3 Image.** The best previews look more like the person than all but two of their own 45 photos, on our hardest dataset and two more. Load the Standard preset (0.25 MP) and train with it as it is. Likeness now scored by AdaFace ViT, with your own photos' range on the chart. [Release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.7.0)
+> - **Fizgig 9.6.4 — Likeness optimization for MiniMax H3 Image.** In our tests it improves likeness dramatically; on in the Standard preset, in place of the Clean-end share box. More ways to customise it over the coming days. [Release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.6.4)
 > - **Fizgig 9.6.3 — training suddenly slow on Windows?** Turn off NVIDIA's CUDA Sysmem Fallback (Global Settings → Prefer No Sysmem Fallback): a run spilling into system RAM trains several times slower. Fizgig now shows the steps when it starts. [Release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.6.3)
 > - **Fizgig 9.6.2 — MiniMax H3 Image presets start at 2.8e-4.** Based on early user feedback: better previews at the presets' 0.5 MP. Element boost's hint now says it works best on pictures of 1 MP or more where the boosted part is small in the frame. [Release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.6.2)
 > - **Fizgig 9.6.1 — MiniMax H3 Image presets, and Element boost to try.** H3 Image's presets now train at 0.5 MP and start Automagic v3 at 2e-4; Element boost is on H3 Image's Training tab, off in every preset; 2048 previews for every model. [Release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.6.1)
@@ -155,7 +158,7 @@ More: [docs/WEB_UI.md](docs/WEB_UI.md).
 
 Face crops, the Look Consistency Filter and every likeness score can work on anime, furry and drawn characters and fursuits too, not just people.
 
-**The defaults are InsightFace (face finder) and ArcFace (look match), the same as before.** People's sets need nothing changed. Everything else is opt-in: open **Image Prep → Anime/furry/drawn characters** and pick:
+**The defaults are InsightFace (face finder) and AdaFace ViT (look match).** People's sets need nothing changed. Everything else is opt-in: open **Image Prep → Anime/furry/drawn characters** and pick:
 
 - **Face finder**: **Anime/furry/drawn (YOLO model)** for characters, or **Both** for a set with people and characters in it.
 - **Look match**: **Anime/furry/drawn** for characters, or **Auto (Decide for each set)**. Each look match has its own thresholds, and saved scores record which one made them.
@@ -237,7 +240,7 @@ Renting through the [RunPod link](https://console.runpod.io/deploy?type=GPU&gpu=
 | [Install and requirements](docs/INSTALL.md) | Hardware, system RAM, AMD ROCm, model downloads, VRAM tables |
 | [Klein 9B](docs/KLEIN.md) · [Flux 3 Image Klein](docs/FLUX3.md) · [Fibo 2.0](docs/FIBO2.md) · [Krea 2](docs/KREA2.md) · [MiniMax H3](docs/MINIMAX_H3.md) · [MiniMax H3 Image](docs/MINIMAX_IMAGE.md) · [Qwen Image 2.1](docs/QWEN_IMAGE.md) · [MOSS-Image](docs/MOSS_IMAGE.md) · [Z-Image Turbo](docs/ZIMAGE.md) · [SDXL](docs/SDXL.md) · [Anima](docs/ANIMA.md) · [ACE-Step](docs/ACESTEP.md) | Each model: presets, features, memory |
 | [Training and the workbench](docs/TRAINING.md) | The shared features and tools in detail |
-| [Face backends](docs/FACE_BACKENDS.md) | Face finder (InsightFace / YOLO) and look match (ArcFace / DINOv2) for people, anime and furry |
+| [Face backends](docs/FACE_BACKENDS.md) | Face finder (InsightFace / YOLO) and look match (AdaFace / DINOv2) for people, anime and furry |
 | [Full fine-tuning](docs/FINETUNE.md) · [How do I…?](docs/FINETUNE_HOWDOI.md) | Training the base model itself |
 | [RefMods](docs/REFMOD_HOWDOI.md) | RefMods for MiniMax H3 |
 | [Command line](docs/CLI.md) | Every trainer, headless |
@@ -251,7 +254,7 @@ Renting through the [RunPod link](https://console.runpod.io/deploy?type=GPU&gpu=
 
 Fizgig is open source under the **[Apache License 2.0](LICENSE)** — free to use, modify, and redistribute, including commercially, with attribution and no warranty. Third-party components under compatible permissive licenses (and other terms where noted) are listed in **[THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md)**.
 
-The **Automagic v3 and v4 optimizers**, the Krea 2 **MMDiT backbone and flow-matching sampler**, and Ostris's MiniMax H3 **training adapter** all come from **[@ostris](https://github.com/ostris)** — the first two from [AI-Toolkit](https://github.com/ostris/ai-toolkit) under the MIT licence, the adapter downloaded as a model rather than bundled. The default H3 training adapter comes from **[circlestone-labs](https://huggingface.co/circlestone-labs)**, also downloaded as a model. Anima's model code is adapted from kohya-ss's [sd-scripts](https://github.com/kohya-ss/sd-scripts) under the Apache licence, Z-Image's from Tongyi-MAI's [reference implementation](https://github.com/Tongyi-MAI/Z-Image), and Flux 3 Image Klein's from Black Forest Labs' [reference implementation](https://github.com/black-forest-labs/flux-3-image-klein), both Apache too. The **Prodigy** optimizer is Konstantin Mishchenko's [prodigy](https://github.com/konstmish/prodigy) (MIT), and **Muon** is PyTorch's `torch.optim.Muon` (BSD).
+The **Automagic v3 and v4 optimizers**, the Krea 2 **MMDiT backbone and flow-matching sampler**, and Ostris's MiniMax H3 **training adapter** all come from **[@ostris](https://github.com/ostris)** — the first two from [AI-Toolkit](https://github.com/ostris/ai-toolkit) under the MIT licence, the adapter downloaded as a model rather than bundled. Anima's model code is adapted from kohya-ss's [sd-scripts](https://github.com/kohya-ss/sd-scripts) under the Apache licence, Z-Image's from Tongyi-MAI's [reference implementation](https://github.com/Tongyi-MAI/Z-Image), and Flux 3 Image Klein's from Black Forest Labs' [reference implementation](https://github.com/black-forest-labs/flux-3-image-klein), both Apache too. The **Prodigy** optimizer is Konstantin Mishchenko's [prodigy](https://github.com/konstmish/prodigy) (MIT), and **Muon** is PyTorch's `torch.optim.Muon` (BSD).
 
 A few features came from looking at other trainers: starting a run at a smaller size, the run summary, the sidebar's disk and job meters and the captions table were inspired by [ZenTrainer](https://github.com/Nynxz/ZenTrainer) by @Nynxz.
 

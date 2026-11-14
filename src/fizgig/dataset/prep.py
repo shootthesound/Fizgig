@@ -6,7 +6,7 @@ training bucket grid, so a prepped image is exactly what trains (see resize_imag
 'originals' subfolder unless the user chose to replace them.
 
 The Look Filter scores every face against 3 baselines (the mean similarity - one photo would bake its own angle and
-light into every score) with the face embedder Image Prep's face settings pick (ArcFace for people, DINOv2 for furry /
+light into every score) with the face embedder Image Prep's face settings pick (AdaFace for people, DINOv2 for furry /
 anime faces: face_utils), and saves <folder>/fizgig_look_scores.json, which training's "Warm up look outliers" reads:
 keep its format.
 """
@@ -514,14 +514,14 @@ class Prep:
 
 
 # ---- Look Consistency Filter ---------------------------------------------------------------------------------
-ARCFACE = {"match": 0.45, "borderline": 0.30, "floor": 0.25}     # face_utils.IDENTITY_THRESHOLDS["arcface"]
+ADAFACE = {"match": 0.42, "borderline": 0.36, "floor": 0.30}     # face_utils.IDENTITY_THRESHOLDS["adaface"]
 
 
 def verdict(sim, thresholds=None):
     """(label, colour, blurb) for a similarity under the embedder's thresholds (face_utils.IDENTITY_THRESHOLDS; the
-    default is ArcFace's - the same person across varied photos usually lands 0.30-0.70, a different person rarely
-    clears 0.25). Scores from different embedders are on different scales."""
-    t = thresholds or ARCFACE
+    default is AdaFace's - the same person across varied photos usually lands 0.45-0.70, a different person rarely
+    clears 0.30). Scores from different embedders are on different scales."""
+    t = thresholds or ADAFACE
     if sim is None:
         return ("no face", "#7F8C8D", "No face detected — can't be scored. Back shots are fine; judge by eye.")
     if sim >= t["match"]:
@@ -539,8 +539,8 @@ def look_files(folder):
                   and not is_mask_file(f))
 
 
-def cutoff(scores, floor=0.25):
-    """The auto-suggest fence: median - 1.5 x IQR of the scored faces, floored at the embedder's floor (ArcFace 0.25);
+def cutoff(scores, floor=0.30):
+    """The auto-suggest fence: median - 1.5 x IQR of the scored faces, floored at the embedder's floor (AdaFace 0.30);
     None under 4 faces. (median, cutoff)."""
     ss = sorted(s for s in scores.values() if s is not None)
     if len(ss) < 4:
@@ -550,7 +550,7 @@ def cutoff(scores, floor=0.25):
     return med, max(med - 1.5 * (q3 - q1), floor)
 
 
-def suggest(scores, baselines, floor=0.25):
+def suggest(scores, baselines, floor=0.30):
     """The drifters auto-suggest marks: below the fence; never a baseline, never a no-face."""
     _, cut = cutoff(scores, floor)
     if cut is None:
@@ -579,8 +579,8 @@ def score(files, baselines, embed, progress=None):
 def save_scores(folder, baselines, scores, embedder=None):
     """<folder>/fizgig_look_scores.json for training's "Warm up look outliers": baselines, the auto-suggest cutoff,
     each image's score by file stem, and the embedder that made them (face_utils.FaceEmbedder: its cache_id and
-    label - a file without one is ArcFace). Keep the format."""
-    floor = embedder.thresholds["floor"] if embedder is not None else ARCFACE["floor"]
+    label - a file without one was ArcFace's). Keep the format."""
+    floor = embedder.thresholds["floor"] if embedder is not None else ADAFACE["floor"]
     payload = {"baselines": [os.path.basename(b) for b in baselines], "cutoff": cutoff(scores, floor)[1],
                "scores": {os.path.splitext(os.path.basename(p))[0]: s for p, s in scores.items()}}
     if embedder is not None:

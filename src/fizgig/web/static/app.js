@@ -82,7 +82,7 @@ async function boot() {
   S.passwordOn = pr.password_on;
   S.portFixed = pr.port_fixed;
   S.pw = {saved: pr.password_saved, env: pr.password_env, lan: pr.lan_ip || ""};
-  S.qtGpu = {saved: !!pr.qt_disable_gpu, changed: false};
+  S.qtGpu = pr.qt_gpu_option ? {saved: !!pr.qt_disable_gpu, changed: false} : null;   // Linux's app window only
   S.pod = pr.pod;
   S.outputDefault = pr.output_default || "";
   S.outputPref = pr.lora_output_dir || "";
@@ -288,9 +288,25 @@ function renderSections(tab, host) {
           el("span", {class: "sec-video-sub", text: sec.help.sub || "Watch on YouTube"}))));
     }
     // a group's rows (form.py ROW_GROUPS) in one box where its first row is, side by side; their hints behind ?
-    const groups = {};
+    const groups = {}, folds = {};
     for (const r of sec.rows) {
       const row = renderRow(r);
+      if (r && r.advanced_of && advancedInto(body, r.advanced_of, row)) continue;
+      if (r && r.fold) {                 // a fold of its own at the card's end, closed unless its tick is on
+        let f = folds[r.fold];
+        if (!f) {
+          const inner = el("div", {class: "form-fold-rows"});
+          const d = el("details", {class: "tc-box form-fold", "data-fold": r.fold},
+            el("summary", {text: r.fold_label || r.label}), inner);
+          S.foldOpen = S.foldOpen || {};
+          d.open = r.fold in S.foldOpen ? S.foldOpen[r.fold] : !!(r.fold_on && S.values[r.fold_on]);
+          d.addEventListener("toggle", () => { S.foldOpen[r.fold] = d.open; });
+          f = folds[r.fold] = {d, inner};
+          body.append(d);
+        }
+        f.inner.append(row);
+        continue;
+      }
       if (!r || !r.group) { body.append(row); continue; }
       let g = groups[r.group];
       if (!g) {
@@ -306,7 +322,11 @@ function renderSections(tab, host) {
       if (r.hint) g.help.append(el("div", {}, el("b", {text: r.label.replace(/:$/, "") + ": "}), r.hint));
     }
     for (const g of Object.values(groups)) if (!g.help.children.length) g.q.remove();
-    if (sec.id === "subjects" && !S.family.startsWith("acestep")) body.append(triggerCheckBlock());
+    // Check a trigger word: after the card's rows, above any fold of its own (the Regularisation dataset)
+    if (sec.id === "subjects" && !S.family.startsWith("acestep")) {
+      const fold = body.querySelector(":scope > .form-fold");
+      if (fold) body.insertBefore(triggerCheckBlock(), fold); else body.append(triggerCheckBlock());
+    }
     const card = el("div", {class: "section-card", id: "sec-" + sec.id, "data-section": sec.id}, head, body);
     show();
     if (sec.extras) host.append(el("div", {class: "extras-divider", "data-extras": "1"}, el("span", {text: "✦ Extras ✦"})));
@@ -314,6 +334,33 @@ function renderSections(tab, host) {
     else if (host.querySelector(".extras-divider")) card.classList.add("sec-extra");
     host.append(card);
   }
+}
+
+// an option's advanced rows (FamilyOption.advanced): inside the row they belong to, behind its Advanced toggle, closed
+// until opened (remembered in this browser). The owner row becomes a panel that grows to hold them.
+function advancedInto(body, ownerKey, row) {
+  const owner = body.querySelector(`.form-row[data-key="${ownerKey}"]`);
+  if (!owner) return false;
+  let box = owner.querySelector(":scope > .row-advanced");
+  if (!box) {
+    const mem = "fizgig.adv." + ownerKey;
+    let open = false;
+    try { open = localStorage.getItem(mem) === "1"; } catch (e) { /* private window: closed */ }
+    box = el("div", {class: "row-advanced", hidden: !open});
+    const btn = el("button", {type: "button", class: "adv-toggle", "aria-expanded": String(open),
+      text: (open ? "▾" : "▸") + " Advanced"});
+    btn.addEventListener("click", () => {
+      const now = box.hidden;
+      box.hidden = !now;
+      btn.textContent = (now ? "▾" : "▸") + " Advanced";
+      btn.setAttribute("aria-expanded", String(now));
+      try { localStorage.setItem(mem, now ? "1" : "0"); } catch (e) { /* not kept */ }
+    });
+    owner.classList.add("row-has-advanced");
+    owner.append(btn, box);
+  }
+  box.append(row);
+  return true;
 }
 
 function renderRow(r) {
@@ -792,12 +839,30 @@ function optimizerPicked(prev, opt) {
   if (touched.length) syncInputs(touched);
 }
 
+// The Resume Training box (Memory section) holds a state: say so by Start, where it is seen before pressing it. A
+// state left there from an earlier run carried that run on by surprise (#317)
+function startResumeNote(live) {
+  const box = $("startResumeNote"), path = String(S.values.RESUME_TRAINING || "").trim();
+  const row = document.querySelector('.form-row[data-key="RESUME_TRAINING"]');
+  if (live || !path || !row || row.style.display === "none") { box.style.display = "none"; return; }
+  const name = path.replace(/[\\/]+$/, "").split(/[\\/]/).pop(), m = name.match(/-(\d{6})-state$/);
+  box.style.display = "";
+  if (box.dataset.path === path) return;
+  box.dataset.path = path;
+  box.replaceChildren(
+    el("span", {text: `Start will carry on from ${name}` + (m ? ` (epoch ${Number(m[1])})` : "") +
+      ", not begin a new run: the Resume Training box holds it. "}),
+    el("button", {class: "btn btn-sm", type: "button", text: "Clear it: start a new run", onclick: () => {
+      S.values.RESUME_TRAINING = ""; syncInputs(["RESUME_TRAINING"]); saveStateSoon(); startResumeNote(false); }}));
+}
+
 function onValue(r, val) {
   const prev = S.values[r.key];
   S.values[r.key] = val;
   if (r.key === "FAMILY_PREVIEW_SMALL") S.values._chosen_FAMILY_PREVIEW_SMALL = true;   // the person's own choice: kept
   if (r.key === "OPTIMIZER_TYPE" && prev !== val) optimizerPicked(String(prev || ""), String(val || ""));
-  if (r.key === "__SAMPLE_LIVE" || (S.values.__SAMPLE_LIVE &&
+  if (!ctxIsLiveRun()) { /* the form isn't the run training: nothing of it goes to that run's previews */ }
+  else if (r.key === "__SAMPLE_LIVE" || (S.values.__SAMPLE_LIVE &&
       ["SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS", "SAMPLE_CFG_SCALE",
        "FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_ON", "SAMPLE_EVERY_N_EPOCHS", "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH",
        "SAMPLE_EVERY_AFTER", "FAMILY_PREVIEW_LOOK", "SAMPLE_CHECKPOINT"].includes(r.key))) sampleLiveSoon();
@@ -865,7 +930,8 @@ async function refreshState() {
     if (grp) grp.style.display = [...grp.querySelectorAll(".form-row[data-key]")]
       .some((x) => !hidden.has(x.dataset.key)) ? "" : "none";
     // a label the state renumbers (the Edit pairs steps when an extra-pictures folder joins), else the form's own
-    const lab = row.querySelector(".field-label"), rowDef = (S.fam.form.sections.flatMap((s) => s.rows)
+    // its own label (not one of the advanced rows inside it)
+    const lab = row.querySelector(":scope > .field-row > .field-label"), rowDef = (S.fam.form.sections.flatMap((s) => s.rows)
       .find((r) => r && r.key === k));
     if (lab && rowDef) lab.textContent = ((S.state.labels || {})[k] || rowDef.label) + ":";
     // a control of several values greys and hides each of its parts by its own key
@@ -902,6 +968,16 @@ async function refreshState() {
       if (act) n.append(" ", el("button", {class: "btn btn-sm", text: act.label, onclick: () => {
         Object.assign(S.values, act.values); syncInputs(Object.keys(act.values)); refreshStateSoon(); saveStateSoon(); }}));
     }
+  });
+  // an Advanced toggle shows while any of its rows can (Likeness optimization ticked)
+  document.querySelectorAll(".form-row.row-has-advanced").forEach((o) => {
+    const any = [...o.querySelectorAll(":scope > .row-advanced > .form-row[data-key]")].some((x) => !hidden.has(x.dataset.key));
+    o.querySelector(":scope > .adv-toggle").style.display = any ? "" : "none";
+    o.querySelector(":scope > .row-advanced").style.display = any ? "" : "none";
+  });
+  // a card's own fold shows while any of its rows can (the Regularisation dataset: Standard LoRA and LoKR only)
+  document.querySelectorAll(".form-fold").forEach((f) => {
+    f.style.display = [...f.querySelectorAll(".form-row[data-key]")].some((x) => !hidden.has(x.dataset.key)) ? "" : "none";
   });
   document.querySelectorAll(".section-card[data-section]").forEach((c) => {
     c.style.display = hidden.has(c.dataset.section) ? "none" : "";
@@ -1267,6 +1343,17 @@ function fetchRow(f) {
   return box;
 }
 
+// a download's line (#327): the file, how much of it is here, its speed and the time left once it's measured
+function fetchLine(st) {
+  const gb = (n) => (n / 1024 ** 3).toFixed(1);
+  const left = (t) => t >= 3600 ? `about ${Math.floor(t / 3600)} h ${Math.floor(t % 3600 / 60)} min` :
+    t >= 90 ? `about ${Math.round(t / 60)} min` : `about ${Math.max(1, Math.round(t))} s`;
+  let line = `${st.file}: ${gb(st.done)} of ${gb(st.total)} GB`;
+  if (st.rate > 0) line += ` · ${(st.rate / 1024 ** 2).toFixed(0)} MB/s`;
+  if (st.eta != null && st.rate > 0) line += ` · ${left(st.eta)} left`;
+  return line;
+}
+
 function paintFetch() {
   const st = S.fetch || {};
   const busy = st.state === "running";
@@ -1280,7 +1367,7 @@ function paintFetch() {
       const pct = st.total ? Math.min(100, (100 * st.done) / st.total) : 0;
       box.replaceChildren(
         el("div", {text: `${name}'s model files aren't downloaded yet: downloading them now, then training starts by itself.`}),
-        el("div", {class: "fetch-msg", text: st.file ? `${st.file}: ${gb(st.done)} of ${gb(st.total)} GB` :
+        el("div", {class: "fetch-msg", text: st.file ? fetchLine(st) :
           ((st.lines || []).slice(-1)[0] || "Starting…")}),
         el("div", {class: "fetch-bar"}, el("div", {style: `width:${pct.toFixed(1)}%`})),
         el("button", {class: "btn btn-sm", text: "Cancel download",
@@ -1303,7 +1390,7 @@ function paintFetch() {
     if (busy) {
       const pct = st.total ? Math.min(100, (100 * st.done) / st.total) : 0;
       r.status.append(
-        el("div", {class: "fetch-msg", text: st.file ? `${st.file}: ${gb(st.done)} of ${gb(st.total)} GB` :
+        el("div", {class: "fetch-msg", text: st.file ? fetchLine(st) :
           (st.lines[st.lines.length - 1] || "Starting…")}),
         el("div", {class: "fetch-bar"}, el("div", {style: `width:${pct.toFixed(1)}%`})),
         el("button", {class: "btn", text: "Cancel", onclick: () => api("/api/fetch/cancel", {}).then(watchFetch)}));
@@ -1515,7 +1602,8 @@ function welcomeShow(pr) {
   v.play().catch(() => {});
 }
 
-// prefs qt_disable_gpu → on Linux, QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu before import webview (no effect elsewhere)
+// prefs qt_disable_gpu → on Linux, QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu before import webview (the card shows on
+// Linux only)
 function qtGpuCard() {
   const G = S.qtGpu;
   if (!G || S.onPod) return null;
@@ -1523,8 +1611,7 @@ function qtGpuCard() {
   on.checked = !!G.saved;
   const say = el("div", {class: "field-hint"});
   const base = "Linux only (Qt WebEngine): keeps the app window's Chromium off the GPU so it does not share VRAM " +
-    "with training, and can stop some setups where the window crashes or stays blank. No effect on Windows or " +
-    "macOS. Used from the next start (close Fizgig and open it again; not a browser tab).";
+    "with training, and can stop some setups where the window crashes or stays blank. Used from the next start (close Fizgig and open it again; not a browser tab).";
   const paint = () => {
     say.textContent = (G.changed ? "Saved: restart Fizgig for it to apply. " : "") + base;
   };
@@ -1715,6 +1802,7 @@ function checkModels() {
 
 // ---- saved state -------------------------------------------------------------------------------------------
 function saveState() {
+  if (ctxKind() !== "draft") return;                // another job is on show: your own setup is kept as it was
   S.all[S.family] = S.values;
   // only the model on show: another open page (a phone, another tab) keeps the models it changed
   api("/api/state", {family: S.family, image_folder: S.imageFolder,
@@ -1763,6 +1851,7 @@ async function start(path, body) {
     showProblems(r.problems || (r.error ? [r.error] : []));    // stays up: the run line below refreshes itself
     // the form went to a run that started: it isn't the queued run being edited any more (Save to queue would have
     // put this run's settings in its place)
+    if (r.ok && S.viewJob && !S.editQueue) viewJob(null);   // a run started: the gallery follows it
     if (r.ok && S.editQueue) {
       queueEditing(null);
       $("runStatus").textContent = "Started. The queued run you were editing is left as it was.";
@@ -1833,7 +1922,9 @@ const RUN_LABELS = {idle: "Idle", starting: "Starting", running: "Running", paus
 
 async function pollRun() {
   try { S.run = await api("/api/run"); } catch (e) { return; }
+  startupOffer();
   resumeMarks();
+  jobPillShow();
   runSummary();
   if (training() !== S.wasTraining) {             // the LoRA lists' Studio buttons show only between runs
     if (S.wasTraining !== undefined && $("tab-training").classList.contains("active")) loadCheckpoints();
@@ -1844,7 +1935,7 @@ async function pollRun() {
   $("podStopKeep").textContent = ps.counting ? "Keep the pod running" : "OK";      // a result note: dismissed
   $("podStopText").textContent = ps.counting ? `Stopping this pod in ${ps.left} s so it stops billing.` : ps.note || "";
   const r = S.run, live = r.running || r.state === "starting";
-  liveNote(live);
+  liveNote(live && ctxIsLiveRun());
   $("runPodNote").style.display = S.onPod && live ? "" : "none";     // a pod's run doesn't need this page open
   const label = RUN_LABELS[r.state] || r.state;
   $("runStatus").textContent = r.lora ? `${label}: ${r.lora}${r.stage ? " · " + r.stage : ""}` : label;
@@ -1854,7 +1945,8 @@ async function pollRun() {
   $("runCardBadge").dataset.state = r.state;
   showProgress(r.progress, r.state, r.lora, r.stage);
   const moveBusy = !!(r.move && ["moving", "back", "moved"].includes(r.move.state));
-  $("btnStart").disabled = live || moveBusy || !!S.starting;
+  $("btnStart").disabled = live || moveBusy || !!S.starting || ctxKind() === "run";
+  startResumeNote(live);
   $("btnPause").disabled = !r.running;
   // a model that can't pause (a RefMod is made in one go): no Pause button for its runs
   const runFam = S.schema.families.find((f) => f.key === (r.family || S.family)) || {};
@@ -2166,8 +2258,7 @@ function renderWebQueue(q) {
         title: "Load its settings into the form on the Training tab; Save to queue puts them back in its place",
         onclick: async () => {
           try {
-            await loadIntoForm(await api("/api/queue/item?id=" + encodeURIComponent(it.id)));
-            queueEditing({id: it.id, n: i + 1, lora: it.lora});
+            await ctxSwitch({kind: "queue", id: it.id});
             showTab("training");
             $("runStatus").textContent = `Editing queued run ${i + 1} (${it.lora}): change what you like, then Save to queue.` +
               (it.continues ? " It still continues from its last save, so keep its LoRA name and output folder." : "");
@@ -2277,6 +2368,7 @@ function runSummary() {
     cell("Training", r.training_at && end ? dur(end - r.training_at) : ""),
     cell("Total", r.started_at && end ? dur(end - r.started_at) : ""),
     cell("Speed", p.speed), cell("Epoch", p.epoch ? `${p.epoch} of ${p.total_epochs}` : ""),
+    live && epochStepsLeft(p) ? cell("Steps left in epoch", epochStepsLeft(p)) : null,
     cell("Peak VRAM", live ? gb(s.vram_peak) : ""), cell(live ? "Time left" : "Steps",
       live ? p.eta : (p.total_steps ? `${p.step} of ${p.total_steps}` : "")),
   ]);
@@ -2336,6 +2428,13 @@ function sideSpark(d) {
   box.title = `Loss, smoothed: ${ys[ys.length - 1].toFixed(4)} now`;
 }
 
+// the steps left in the epoch that is training ("12 of 40"), or "" when the run's steps don't divide into its epochs
+function epochStepsLeft(p) {
+  const total = Number(p && p.total_steps) || 0, epochs = Number(p && p.total_epochs) || 0, epoch = Number(p && p.epoch) || 0;
+  if (!total || !epochs || !epoch || total % epochs) return "";
+  const per = total / epochs, done = Number(p.step) - (epoch - 1) * per;
+  return done >= 0 && done <= per ? `${per - done} of ${per}` : "";
+}
 // the run's figures (the same from a web run and from a desktop run): the bar, the tiles, the sidebar
 function showProgress(p, state, name, extraNote) {
   const pct = p ? p.percent : (["completed"].includes(state) ? 100 : 0);
@@ -2349,6 +2448,7 @@ function showProgress(p, state, name, extraNote) {
   if (p) {
     tile("Epoch", p.epoch ? `${p.epoch} / ${p.total_epochs}` : "");
     tile("Step", p.total_steps ? `${p.step} / ${p.total_steps}` : "");
+    if (["running", "pausing"].includes(state)) tile("Left in epoch", epochStepsLeft(p));
     tile("Speed", p.speed);
     tile("Loss", p.loss);
     tile("Time left", p.eta);
@@ -2370,13 +2470,39 @@ function previewLabel(it) {
   return [`Epoch ${it.epoch}`, `Prompt ${it.idx + 1}`, it.strength != null && `strength ${it.strength}`]
     .filter(Boolean).join(" · ");
 }
+// a star on a preview (web/stars.py): kept with the previews; the checkpoint lists star that epoch's checkpoint
+function starButton(it, fig) {
+  if (!it.path) return null;
+  const b = el("button", {class: "star-btn", type: "button"});
+  const show = () => {
+    b.textContent = it.starred ? "★" : "☆";
+    b.title = it.starred ? "Starred - click to unstar" : "Star this preview (its epoch's checkpoint gets a star too)";
+    b.setAttribute("aria-pressed", it.starred ? "true" : "false");
+    fig.classList.toggle("starred", !!it.starred);
+  };
+  b.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    try {
+      const r = await api("/api/stars", {path: it.path, on: !it.starred});
+      it.starred = r.starred;
+      show();
+      if ($("checkpoints")) loadCheckpoints();
+    } catch (err) { b.textContent = "!"; b.title = `Couldn't star it: ${err.message}`; }
+  });
+  show();
+  return b;
+}
 function previewFigure(it, prompts, eager, byEpoch) {
   // its own epoch's prompt (recorded by the trainer, so a mid-run change shows), else the run's
   const own = byEpoch && it.epoch != null && byEpoch[String(it.epoch)];
   const prompt = it.idx == null ? "" : (own && own[it.idx]) || (prompts ? prompts[it.idx] : "");
-  return withMode(el("figure", {class: "gallery-item", title: it.name}, mediaFor(it, eager && eager.has(it)),
+  const fig = withMode(el("figure", {class: "gallery-item", title: it.name}, mediaFor(it, eager && eager.has(it)),
     el("figcaption", {}, el("b", {text: previewLabel(it)}), prompt ? el("span", {class: "preview-prompt", text: prompt, title: prompt}) : null,
       el("span", {class: "preview-file", text: it.name}), it.lora ? studioButton(it.lora, it.family) : null)), it);
+  const star = starButton(it, fig);
+  if (star) fig.append(star);
+  return fig;
 }
 // the family's line on how this preview was made (the run's record), shown over it in the lightbox
 function withMode(fig, it) {
@@ -2398,9 +2524,13 @@ function previewGrid(items, prompts, eager) {
       el("th", {class: "prompt-head"}, el("b", {text: `Prompt ${i + 1}`}),
         prompts[i] ? el("span", {class: "preview-prompt", text: prompts[i], title: prompts[i]}) : null),
       ...epochs.map((e) => { const it = at.get(e + ":" + i);
-        return el("td", {}, it ? withMode(el("figure", {class: "gallery-item", title: it.name}, mediaFor(it, eager && eager.has(it)),
+        if (!it) return el("td", {});
+        const fig = withMode(el("figure", {class: "gallery-item", title: it.name}, mediaFor(it, eager && eager.has(it)),
           el("figcaption", {class: "visually-hidden"}, el("b", {text: previewLabel(it)}),
-            prompts[i] ? el("span", {text: " · " + prompts[i]}) : null)), it) : null); })));
+            prompts[i] ? el("span", {text: " · " + prompts[i]}) : null)), it);
+        const star = starButton(it, fig);
+        if (star) fig.append(star);
+        return el("td", {}, fig); })));
   }
   // a second scroll bar over the grid, in step with the one under it (a long grid puts that one far down the page)
   const wrap = el("div", {class: "gallery prompt-grid-wrap"}, table);
@@ -2429,27 +2559,38 @@ async function galleryRefresh() {
 }
 
 async function loadGallery() {
-  const out = S.run.output_dir || S.values.LORA_OUTPUT_DIR || S.outputDefault;   // an empty box = the default folder
+  // a job loaded into the form (Edit on a queued run, Start again) is the one shown, until Back to the run training
+  // now or a run starts; otherwise the run training now (or the last one)
+  // a loaded job that is the run training now (Continue loads it too) is simply the run now
+  if (S.viewJob && S.viewJob.lora === (S.run && S.run.lora) && training()) { S.viewJob = null; jobPillShow(); }
+  const vj = S.viewJob;
+  const out = (vj && vj.output_dir) || S.run.output_dir || S.values.LORA_OUTPUT_DIR || S.outputDefault;   // empty = default
   const host = $("gallery");
   if (!out) { host.innerHTML = ""; $("galleryControls").style.display = "none"; return; }
   const sep = out.includes("\\") ? "\\" : "/";
   const dir = out + sep + "sample";
-  // the run picked here stays picked until another run starts
-  const cur = currentRunName();
+  // the run picked here stays picked until another run starts (or another job is loaded)
+  const cur = vj ? vj.lora : currentRunName();
   if (S.galleryFor !== cur) { S.galleryRun = ""; S.galleryFor = cur; }
   const want = S.galleryRun || cur;
   const get = (run) => api(`/api/samples?dir=${encodeURIComponent(dir)}&run=${encodeURIComponent(run)}`)
     .catch(() => ({items: [], runs: [], prompts: []}));
   let g = await get(want);
   let run = want;
-  if (!g.items.length && g.runs.length && !g.runs.includes(want)) { run = g.runs[0]; g = await get(run); }
+  // a loaded job with no previews yet shows none, not another run's
+  if (!vj && !g.items.length && g.runs.length && !g.runs.includes(want)) { run = g.runs[0]; g = await get(run); }
+  // the shown run's own training folder (its record), for its likeness photos and Style score; a run Fizgig has no
+  // record of falls back to the training folder set now, as before
+  S.galDataset = g.dataset || (run === currentRunName() ? S.imageFolder || "" : "");
   previewMode(g.preview_mode);
   S.galleryLabels = {run, labels: g.preview_labels || {}};        // the lightbox's line per epoch (previewFigure)
   const sel = $("galleryRun");
   sel.innerHTML = "";
   // "this run" while it trains; once it has ended it is the last run
   const R = S.run || {}, liveNow = !!(R.running || ["starting", "running", "pausing"].includes(R.state));
-  for (const r of g.runs) sel.append(el("option", {value: r, text: r + (r === cur ? (liveNow ? " (this run)" : " (last run)") : "")}));
+  for (const r of g.runs) sel.append(el("option", {value: r, text: r + (r === cur ?
+    (vj ? " (loaded)" : liveNow ? " (this run)" : " (last run)") : "")}));
+  if (vj && !g.runs.includes(run)) sel.append(el("option", {value: run, text: run + " (loaded, no previews yet)"}));
   sel.value = run;
   $("galleryControls").style.display = g.runs.length ? "" : "none";
   const view = S.galleryView || "list";
@@ -2459,7 +2600,7 @@ async function loadGallery() {
   const sig = [run, view, training(), ...g.items.map((it) => it.name + "@" + it.time)].join("|");
   const playing = [...host.querySelectorAll("video, audio")].some((m) => !m.paused);
   if (S.gal && S.gal.sig === sig || (playing && S.gal && S.gal.run === run)) {
-    likenessShow(dir, g.items, run, view); styleShow(dir, g.items); return; }
+    likenessShow(dir, g.items, run, view); styleShow(dir, g.items, run); return; }
   host.innerHTML = "";
   host.classList.toggle("gallery-as-grid", view === "grid");
   // the newest epoch's clips download at once (the ones you'll play); the rest when the pointer comes to them
@@ -2471,27 +2612,395 @@ async function loadGallery() {
     host.append(previewFigure(withLora(it, g.loras, S.fam && S.fam.key), g.prompts || [], eager, g.epoch_prompts));
   S.gal = {items: g.items, run, sig};
   likenessShow(dir, g.items, run, view);
-  styleShow(dir, g.items);
+  styleShow(dir, g.items, run);
   const others = g.runs.filter((r) => r !== run).length;
-  $("galleryInfo").textContent = g.items.length ?
+  const info = g.items.length ?
     `${g.items.length} preview${g.items.length === 1 ? "" : "s"} of ${run} in ${dir}` +
     (others ? ` · ${others} other run${others === 1 ? "" : "s"} have previews here too (pick one above)` : "") :
-    "No previews yet. They appear here as the run makes them.";
+    vj ? `No previews of ${run} yet.` : "No previews yet. They appear here as the run makes them.";
+  $("galleryInfo").replaceChildren(info, ...(vj ? [" · ", el("b", {text: "Showing the job you loaded."}), " ",
+    el("a", {href: "#", text: "Back to the run training now", onclick: (e) => { e.preventDefault(); viewJob(null); }})] : []));
+}
+
+// ---- the job the tabs show, and the pill that switches it --------------------------------------------------------
+// S.ctx: {kind: "draft"} - what you are setting up (the folder selected on Start, the form as you left it); {kind:
+// "run", key, lora} - the run training now, to look at (its settings can't be changed); {kind: "queue", id, n, lora}
+// - a queued run, to look at or change (Save to queue keeps the changes). The view follows you across the Start, Image
+// Prep, Captions, Samples and Training tabs. While another job is on show your own setup is kept aside (S.draft) and
+// nothing of the job is saved over it.
+const ctxKind = () => (S.ctx && S.ctx.kind) || "draft";
+// the run's own record names it (a pause and its Resume keep one record), else its name and start
+const runKey = (r) => (r && r.lora ? String(r.history_id || `${r.lora}|${r.started_at || ""}`) : "");
+// the job behind the pill: a run training, or one paused (it is still that job, waiting for Resume)
+const paused = () => !!(S.run && S.run.state === "paused" && S.run.lora);
+const jobAlive = () => training() || paused();
+const baseName = (p) => String(p || "").replace(/[\\/]+$/, "").split(/[\\/]/).pop();
+const CTX_TABS = ["start", "prep", "captions", "samples", "training"];
+const activeTab = () => ((document.querySelector(".tab-panel.active") || {}).id || "").replace(/^tab-/, "");
+
+// a job's model, training folder and settings into the form, saved nowhere (values: exactly these, for your own setup)
+async function ctxLoad(s, exact) {
+  if (s.family && s.family !== S.family) await chooseFamily(s.family);
+  const kept = Object.fromEntries(Object.entries(s.values || {}).filter(([, v]) => v != null));
+  S.values = exact ? {...(s.values || {})} : {...S.values, ...kept};
+  if (!exact && !("FAMILY_TURBO_STRENGTH" in kept)) delete S.values.__turbo_live;
+  if (s.image_folder !== undefined && s.image_folder !== S.imageFolder) {
+    $("imageFolder").value = s.image_folder || ""; S.imageFolder = s.image_folder || "";
+    await loadTrigger(); lookForget();
+  }
+  renderSections("samples", $("samplesForm"));
+  renderSections("training", $("trainingForm"));
+  await refreshState();
+}
+
+// the form is the run training now: the run on show, or your own setup when that is what is training. Only then
+// does a change on the Samples tab go to the run's next previews
+const ctxIsLiveRun = () => training() && ((ctxKind() === "run" && !(S.ctx || {}).ended) || (ctxKind() === "draft" && ctxSetupIsRun()));
+
+// the run on show can be looked at, not changed: its training settings, the model and preset pickers and the Start
+// tab's folder. Its Samples tab stays changeable: the prompts and preview settings go to its next previews
+function ctxLock() {
+  // paused: nothing is locked. What a Resume takes from the form (the previews, the size, block swap, the save
+  // schedule, the learning rate) is changed here, on the paused run's own settings
+  const on = ctxKind() === "run" && training();
+  const parts = [$("trainingForm"), $("datasetsCard"), $("imageFolder").closest(".section-card"),
+    ...document.querySelectorAll(".preset-row"), ...[...document.querySelectorAll(".family-pick")].map((x) => x.parentElement)];
+  for (const p of parts) if (p) p.inert = on;
+  for (const id of ["btnQueue", "btnCheck"]) $(id).disabled = on;
+  document.body.classList.toggle("ctx-view", ctxKind() !== "draft");
+}
+
+// the open tab's content again, for the job now on show
+function ctxRefreshTab() {
+  const t = activeTab();
+  if (t === "captions") loadCaptions();
+  if (t === "prep") loadPrep();
+  if (t === "samples") loadGallery();
+  if (t === "training") loadCheckpoints();
+}
+
+// switch the view: {kind: "draft"}, {kind: "run"} (the run training now) or {kind: "queue", id}
+async function ctxSwitch(to) {
+  if (S.ctxBusy) return;
+  S.ctxBusy = true;
+  jobPillMenu(false);
+  try {
+    const from = ctxKind();
+    if (from === "draft" && to.kind !== "draft") {
+      if (S.saveWaiting) { S.saveWaiting = false; saveState(); }        // your setup as it is now, kept
+      S.draft = {family: S.family, values: {...S.values}, image_folder: S.imageFolder, all: {...S.all}};
+    }
+    if (from === "queue") queueEditing(null);                            // an edit not saved is left as it was
+    if (to.kind === "run" && jobAlive()) {
+      S.ctx = {kind: "run", key: runKey(S.run), lora: S.run.lora};
+      await ctxLoad({family: S.run.family, values: S.run.values, image_folder: S.run.image_folder});
+      S.values.__SAMPLE_LIVE = true;                 // a change on its Samples tab goes to its next previews
+      syncInputs(["__SAMPLE_LIVE"]);
+      S.viewJob = null;
+    } else if (to.kind === "queue") {
+      const items = (S.run.web_queue && S.run.web_queue.items) || [], n = items.findIndex((i) => i.id === to.id) + 1;
+      const item = await api("/api/queue/item?id=" + encodeURIComponent(to.id));
+      const lora = (items[n - 1] || {}).lora || (item.values || {}).LORA_NAME || "";
+      S.ctx = {kind: "queue", id: to.id, n, lora};
+      await ctxLoad(item);
+      S.viewJob = {lora: S.values.LORA_NAME || "", output_dir: S.values.LORA_OUTPUT_DIR || S.outputDefault || ""};
+      queueEditing({id: to.id, n, lora});
+    } else {
+      S.ctx = {kind: "draft"};
+      const d = S.draft;
+      S.draft = null;
+      if (d) {
+        S.ctx = {kind: "loading"};                // nothing is saved while your setup goes back into the form
+        S.all = d.all;
+        await ctxLoad(d, true);
+        S.all[S.family] = S.values;
+        S.ctx = {kind: "draft"};
+      }
+      S.viewJob = null;
+    }
+    S.galleryRun = ""; S.gal = null;
+  } catch (e) {
+    $("runStatus").textContent = e.message;
+    if (ctxKind() !== "draft" && !S.draft) S.ctx = {kind: "draft"};
+  } finally {
+    S.ctxBusy = false;
+  }
+  ctxLock();
+  jobPillShow();
+  ctxRefreshTab();
+}
+
+// your own setup IS the run training now (you pressed Start on it and haven't set up anything else since): then
+// there is one job to show, not two, and the list has no entry of its own for the setup
+function ctxSetupIsRun() {
+  if (!jobAlive()) return false;
+  const d = S.draft || {image_folder: S.imageFolder, values: S.values || {}};
+  return (d.image_folder || "") === (S.run.image_folder || "") && ((d.values || {}).LORA_NAME || "") === (S.run.lora || "");
+}
+
+// each status poll: the job on show ended, or a queued one on show started or left the queue
+function ctxTick() {
+  const c = S.ctx = S.ctx || {kind: "draft"};
+  if (S.ctxBusy) return;
+  const liveKey = jobAlive() ? runKey(S.run) : "";
+  if (c.kind === "run") {
+    if (liveKey !== c.key) { c.ended = true; c.next = liveKey ? S.run.lora : ""; }
+  } else if (c.kind === "queue") {
+    const items = (S.run.web_queue && S.run.web_queue.items) || [], at = items.findIndex((i) => i.id === c.id);
+    if (at >= 0) c.n = at + 1;
+    else if (liveKey && S.run.lora === c.lora) ctxSwitch({kind: "run"});      // its turn came: it is the run now
+    else ctxSwitch({kind: "draft"});
+  } else if (c.kind === "draft") {
+    // your setup was the run training: when that run ends, the pill says so, as for any job on show
+    if (ctxSetupIsRun()) { c.key = liveKey; c.lora = S.run.lora; c.ended = false; }
+    else if (c.key && liveKey !== c.key) { c.ended = true; c.next = liveKey ? S.run.lora : ""; c.key = ""; }
+  }
+}
+
+// a change of tab after the job on show finished: on to the run that followed it, else back to your own setup
+function ctxOnTab() {
+  const c = S.ctx;
+  if (!c || !c.ended || S.ctxBusy) return;
+  if (jobAlive()) ctxSwitch({kind: "run"});
+  else if (c.kind === "run") ctxSwitch({kind: "draft"});
+  else { c.ended = false; c.next = ""; jobPillShow(); }
+}
+
+// the pill: names the job on show; a press opens the list of jobs to switch to (a sheet from the bottom on a phone).
+// It pulses when the job on show has finished, until you switch
+function jobPillShow() {
+  const p = $("jobPill");
+  if (!p) return;
+  ctxTick();
+  ctxLock();                                   // a run that paused (or resumed) while on show: its form opens (or locks)
+  const c = S.ctx, live = jobAlive() && S.run && S.run.lora;
+  const items = (S.run && S.run.web_queue && S.run.web_queue.items) || [];
+  const show = !!live || items.length > 0 || c.kind !== "draft" || !!c.ended;
+  p.style.display = show ? "" : "none";
+  if (!show) { jobPillMenu(false); return; }
+  if (S.pillPlace && !p.classList.contains("dragging")) S.pillPlace();
+  // Always "Viewing: <what the tabs show>": a job's name, or "not yet queued" (the form is no job yet). After it,
+  // what that is doing (training, paused, queued 2, finished) - or, when it is no job yet, what is going on meanwhile
+  const same = ctxSetupIsRun(), doing = paused() ? "paused" : "training";
+  const [name, state] = c.ended ? [c.lora, "finished"] :
+    c.kind === "run" ? [c.lora, doing] :
+    c.kind === "queue" ? [c.lora, `queued ${c.n || ""}`.trim()] :
+    same ? [S.run.lora, doing] :
+    // not a job yet: beside it, what is going on - the run training (or paused), then how many wait behind it
+    ["not yet queued", [live ? `${paused() ? "Paused" : "Training"}: ${S.run.lora}` : "",
+      items.length ? `${items.length} queued` : ""].filter(Boolean).join(" · ")];
+  p.classList.toggle("attention", !!c.ended);
+  $("jobPillText").replaceChildren(el("span", {class: "job-pill-label"}, el("b", {text: "Viewing: "}), name || "",
+    el("span", {class: "job-pill-state", text: " · " + state})), el("span", {class: "job-pill-caret", text: "▾"}));
+  $("jobPillText").title = c.ended
+    ? `${c.lora} is finished` + (c.next ? `, and ${c.next} is training. Press to switch.` : ".")
+    : (c.kind === "draft" && !same ? "These tabs show a run that is not yet queued or started. Press to look at a job instead."
+    : "The job these tabs show. Press to switch to another, or back to the normal view.") +
+      (window.innerWidth > 900 ? " Drag it to move it; double-click puts it back." : "");
+  // the line at the top of each tab saying whose content it is, while it is another job's than your own setup
+  const say = c.kind === "run" ? (c.ended ? `${c.lora} is finished` + (c.next ? `, and ${c.next} is training now.` : ".") +
+      " These tabs still show it until you change tab or switch with the pill."
+      : paused() ? `Showing the paused run: ${c.lora}. Change here what Resume should take up: the previews, the size, ` +
+        "block swap, the save schedule and the learning rate go with the resume."
+      : `Showing the run training now: ${c.lora}. Its training settings can be looked at, not changed; a change on ` +
+        "the Samples tab goes to its next previews.") :
+    c.kind === "queue" ? `Showing queued run ${c.n}: ${c.lora}. Changes are kept with Save to queue.` : "";
+  for (const t of CTX_TABS) {
+    const panel = $("tab-" + t);
+    if (!panel) continue;
+    let line = panel.querySelector(":scope > .ctx-line");
+    if (!line) { line = el("div", {class: "ctx-line"}); panel.prepend(line); }
+    line.textContent = say;
+    line.style.display = say ? "" : "none";
+  }
+  if (!$("jobPillMenu").hidden) jobPillMenu(true);         // open: its rows follow what changed
+}
+
+function jobPillMenu(open) {
+  const menu = $("jobPillMenu"), shade = $("jobPillShade");
+  if (!menu) return;
+  menu.hidden = shade.hidden = !open;
+  if (!open) return;
+  const c = S.ctx || {kind: "draft"}, live = jobAlive() && S.run && S.run.lora;
+  const items = (S.run && S.run.web_queue && S.run.web_queue.items) || [];
+  const row = (label, name, on, go, strong) => el("button", {class: "job-pill-row" + (on ? " on" : "") + (strong ? " strong" : ""),
+    type: "button", onclick: on ? () => jobPillMenu(false) : go},
+    el("span", {class: "job-pill-row-k", text: label}), el("span", {class: "job-pill-row-v", text: name || ""}));
+  const rows = [], same = ctxSetupIsRun();
+  if (c.ended && live) rows.push(row("Switch this tab to", S.run.lora, false, () => ctxSwitch({kind: "run"}), true));
+  if (c.ended) rows.push(row("Finished", c.lora, true));
+  // the run training now: your own setup when that is what is training (it stays changeable for the next run)
+  else if (live) rows.push(row(paused() ? "Paused" : "Training now", S.run.lora, c.kind === "run" || (c.kind === "draft" && same),
+    () => ctxSwitch(same ? {kind: "draft"} : {kind: "run"})));
+  items.forEach((it, i) => rows.push(row(`Queued ${i + 1}`, it.lora, c.kind === "queue" && c.id === it.id,
+    () => ctxSwitch({kind: "queue", id: it.id}))));
+  // a run is training: another like it, without going back to Start for the folder
+  if (live && activeTab() === "training") rows.push(row("Set up a new run with these settings", "", false, ctxNewLike));
+  // Back to the normal view: out of the job, to a clean start (the Start tab, no training folder, the model's
+  // defaults, no name). There unless the form is that clean start already
+  const clean = c.kind === "draft" && !S.imageFolder && !String((S.values || {}).LORA_NAME || "").trim();
+  if (!clean) rows.push(row("Back to the normal view", "", false, ctxNormal));
+  menu.replaceChildren(...rows);
+  menu.classList.remove("up", "left");
+  if (window.innerWidth > 900) {                // the pill may have been dragged near an edge
+    const b = $("jobPill").getBoundingClientRect();
+    menu.classList.toggle("up", b.bottom + menu.offsetHeight + 12 > window.innerHeight && b.top > menu.offsetHeight + 12);
+    menu.classList.toggle("left", b.right - menu.offsetWidth < 8);
+  }
+}
+
+// At start-up, after Fizgig was closed (or stopped) while a run trained: carry that run on from its last save, start
+// the next queued run, or clear the queue and start fresh. Asked once a page load; ✕ decides later (the queue stays
+// held, as it always is after a restart)
+function startupOffer() {
+  const o = S.run && S.run.startup;
+  if (!o) { if (S.startupSeen) $("startupModal").classList.remove("active"); return; }
+  if (S.startupSeen === o.id) return;
+  S.startupSeen = o.id;
+  const name = o.lora || "A run", n = o.queued;
+  $("startupTitle").textContent = `${name} was cut off`;
+  $("startupText").textContent = `${name} was training when Fizgig closed. ` +
+    (o.can_continue ? `It is saved at ${o.unit} ${o.done}` + (o.of ? ` of ${o.of}` : "") + `: carrying on starts from there, and anything it trained after that save is gone. `
+      : "It had not saved anything yet, so it can't be carried on. ") +
+    (n ? `${n} run${n === 1 ? " is" : "s are"} waiting in the queue.` : "");
+  const pick = (cls, title, text, choice) => el("button", {class: "startup-choice" + cls, type: "button",
+    onclick: () => startupChoose(choice)}, el("b", {text: title}), el("span", {text}));
+  const rows = [];
+  if (o.can_continue) rows.push(pick(" main", `Carry on with ${name}`,
+    `From ${o.unit} ${o.done}, with its own settings.` + (n ? " The queue follows after it." : ""), "continue"));
+  if (n) rows.push(pick(o.can_continue ? "" : " main", "Start the next in the queue",
+    `${name} stays on Runs & outputs, where Continue still carries it on later.`, "queue"));
+  rows.push(pick("", n ? "Clear the queue and start fresh" : "Start fresh",
+    (n ? `The ${n} queued run${n === 1 ? " is" : "s are"} removed. ` : "") +
+    `${name} and what it saved stay on Runs & outputs.`, "fresh"));
+  $("startupChoices").replaceChildren(...rows);
+  $("startupNote").textContent = "Nothing starts until you choose.";
+  $("startupModal").classList.add("active");
+}
+async function startupChoose(choice) {
+  for (const b of $("startupChoices").querySelectorAll("button")) b.disabled = true;
+  try {
+    const r = await api("/api/startup", {choice});
+    $("startupModal").classList.remove("active");
+    // whichever was chosen, the form is left as a clean start (no training folder, the model's defaults, no name):
+    // what it held came from the session before, and is neither the run now going nor anything queued
+    if (choice === "fresh") await ctxNormal();
+    else { await ctxNormal(true); showTab("training"); }
+    if (r && r.form && choice === "continue") $("runStatus").textContent = "Carrying on from its last save.";
+    pollRun();
+  } catch (e) {
+    $("startupNote").textContent = e.message;
+    for (const b of $("startupChoices").querySelectorAll("button")) b.disabled = false;
+  }
+}
+
+// Back to the normal view (the pill's list): out of the job on show, to a clean start - the Start tab with no training folder picked,
+// and the Training tab at the model's own defaults (its first preset, as a first visit) with no LoRA name. Nothing of
+// the job is left in the form. The Samples tab's prompts and preview settings are yours, not the job's: they stay
+async function ctxNormal(stay) {            // stay: the tab you are on is kept (else the Start tab opens)
+  jobPillMenu(false);
+  if (ctxKind() !== "draft") await ctxSwitch({kind: "draft"});
+  try {
+    const keep = {};
+    for (const sec of S.fam.form.sections.filter((x) => x.tab !== "training"))
+      for (const r of sec.rows) for (const k of [r.key, ...(r.parts || []).map((p) => p.key)])
+        if (k && S.values[k] !== undefined) keep[k] = S.values[k];
+    let v = {...defaults()};
+    const first = S.fam.form.presets[0];
+    if (first) {
+      v = (await api("/api/preset", {family: S.family, name: first.name, values: v})).values;
+      v.__preset = first.name;
+    }
+    S.values = {...v, ...keep, LORA_NAME: "", RESUME_TRAINING: "", __SAMPLE_LIVE: true};
+    S.all[S.family] = S.values;
+    renderAll();
+    await refreshState();
+    saveState();
+  } catch (e) { $("runStatus").textContent = e.message; }
+  if ($("imageFolder").value || S.imageFolder) {
+    $("imageFolder").value = "";
+    $("imageFolder").dispatchEvent(new Event("change"));
+  }
+  S.viewJob = null;
+  if (stay !== true) showTab("start");
+  jobPillShow();
+}
+
+// a name for another run of the same thing: name_2, then _3..., past the run training and the queued ones
+function nextRunName(name) {
+  const taken = new Set([training() ? S.run.lora : "", ...(((S.run || {}).web_queue || {}).items || []).map((i) => i.lora)]);
+  let n = String(name || "").trim() || "my_lora";
+  do {
+    const m = n.match(/^(.*)_(\d+)$/);
+    n = m ? `${m[1]}_${Number(m[2]) + 1}` : `${n}_2`;
+  } while (taken.has(n));
+  return n;
+}
+// the form's run gets the next name (and never carries on from a saved state): a new run, not that one again. The
+// server picks it: past the names in use here and whatever is in the output folder already
+async function renameForNew(from) {
+  const base = from || S.values.LORA_NAME;
+  let name;
+  try {
+    name = (await api("/api/runs/next_name?name=" + encodeURIComponent(base || "") +
+      "&dir=" + encodeURIComponent(S.values.LORA_OUTPUT_DIR || ""))).name;
+  } catch (e) { name = ""; }
+  S.values.LORA_NAME = name || nextRunName(base);
+  S.values.RESUME_TRAINING = "";
+  syncInputs(["LORA_NAME", "RESUME_TRAINING"]);
+  refreshStateSoon(); saveState();
+  return S.values.LORA_NAME;
+}
+
+// Set up a new run with these settings: the job on show (the run training, or the queued run you are looking at)
+// becomes your own setup under the next name, on the Training tab; nothing starts until Start or Add to queue
+async function ctxNewLike() {
+  jobPillMenu(false);
+  const c = S.ctx || {kind: "draft"};
+  const src = c.kind === "queue" ? {family: S.family, values: {...S.values}, image_folder: S.imageFolder}
+    : {family: S.run.family, values: {...(S.run.values || {})}, image_folder: S.run.image_folder};
+  for (const k of ["__continue", "__more"]) delete src.values[k];
+  const was = src.values.LORA_NAME || S.run.lora || "";
+  try {
+    await loadIntoForm(src);                       // (a job on show gives way to your own setup first)
+    const name = await renameForNew(was);
+    S.viewJob = null;
+    jobPillShow();
+    // to the top of the Training tab: the new run's settings start there, and the press came from the run card at
+    // the bottom
+    if (S.tabScroll) delete S.tabScroll["tab-training"];
+    const pane = document.querySelector(".notebook-pane");
+    if (pane) pane.scrollTop = 0;
+    window.scrollTo(0, 0);
+    $("runStatus").textContent = `A new run set up from ${was}, named ${name}: change what you like, then Start or Add to queue.`;
+  } catch (e) { $("runStatus").textContent = e.message; }
+}
+
+// the job the gallery follows inside your own setup: one loaded into the form with Start again shows its own previews
+// and scores in the Samples gallery; null = the run training now (or the last one)
+function viewJob(job) {
+  S.viewJob = job && job.lora ? job : null;
+  S.galleryRun = ""; S.gal = null;
+  jobPillShow();
+  loadGallery();
 }
 
 // ---- likeness to the subject (fizgig/web/gallery_likeness.py; the desktop gallery's likeness.json) ------------
 S.lik = {dir: "", picked: []};
 const LIK_PICS = /\.(png|jpe?g|webp)$/i;
-// ArcFace never reaches 100%: two photos of the same person score about 72% against each other. Shown wherever ArcFace
-// scores are (a scorer label that isn't ArcFace's means another embedder, on its own scale; none recorded = ArcFace).
-const ARC_PEAK = "Peak ArcFace is about 72%: that's what two photos of the same person score against each other, " +
+// AdaFace never reaches 100%: two photos of the same person score about 70% against each other (measured 12 Nov 2026
+// on 6 people's datasets: a photo vs one of the set's own, 75th percentile 0.69). Shown wherever AdaFace scores are (a
+// scorer label that isn't AdaFace's means another embedder, on its own scale).
+const ADA_PEAK = "Peak AdaFace is about 70%: that's what two photos of the same person score against each other, " +
   "so no picture reaches 100%.";
-function arcPeak(label) { return !label || String(label).startsWith("ArcFace") ? ARC_PEAK : ""; }
+function adaPeak(label) { return label && String(label).startsWith("AdaFace") ? ADA_PEAK : ""; }
 
 // the gallery's Style score (web/gallery_style.py): each preview against the training pictures' look as a whole
-async function styleShow(dir, items) {
+async function styleShow(dir, items, run) {
+  S.styRun = run;
   let d;
-  try { d = await api(`/api/style?dir=${encodeURIComponent(dir)}&dataset=${encodeURIComponent(S.imageFolder || "")}`); }
+  try { d = await api(`/api/style?dir=${encodeURIComponent(dir)}&run=${encodeURIComponent(run || "")}` +
+                      `&dataset=${encodeURIComponent(S.galDataset || "")}`); }
   catch (e) { return; }
   S.sty = {dir, on: d.on};
   $("styBtn").classList.toggle("active", d.on);
@@ -2509,9 +3018,11 @@ async function styleShow(dir, items) {
 
 async function likenessShow(dir, items, run, view) {
   S.lik.dir = dir;
+  S.lik.run = run || "";                              // the run whose scores these are
   const ask = S.lik.ask = (S.lik.ask || 0) + 1;     // an older refresh's answer arriving late changes nothing
   let d;
-  try { d = await api(`/api/likeness?dir=${encodeURIComponent(dir)}&dataset=${encodeURIComponent(S.imageFolder || "")}`); }
+  try { d = await api(`/api/likeness?dir=${encodeURIComponent(dir)}&run=${encodeURIComponent(run || "")}` +
+                      `&dataset=${encodeURIComponent(S.galDataset || "")}`); }
   catch (e) { return; }
   if (ask !== S.lik.ask) return;
   S.lik.data = d;
@@ -2535,29 +3046,66 @@ async function likenessShow(dir, items, run, view) {
     const it = pics.find((p) => p.name === fig.title);
     if (!on || !it) continue;
     const s = d.scores[it.name];
-    const t = d.thresholds || {match: 0.45, borderline: 0.30};     // the embedder's own bands (ArcFace / DINOv2 / CLIP)
+    const t = d.thresholds || {match: 0.42, borderline: 0.36};     // the embedder's own bands (AdaFace / DINOv2)
     const cls = s === undefined || s === null ? "na" : s >= t.match ? "good" : s >= t.borderline ? "mid" : "bad";
     fig.append(el("span", {class: `lik-badge ${cls}${it.epoch === bestEpoch && bestEpoch != null ? " best" : ""}`,
       text: s === undefined ? "…" : s === null ? "no face" : `${Math.round(s * 100)}%`}));
   }
   $("likPanel").style.display = epochs.length ? "" : "none";
   if (!epochs.length) return;
-  $("likPeak").textContent = arcPeak(d.embedder);
-  $("likRun").textContent = `${run} - best so far: epoch ${bestEpoch} (${Math.round(avgs[best] * 100)}% average likeness)`;
+  // the person's own training photos against the same 3 (gallery_likeness.real_photos): the realistic top, since
+  // real photos never score 100% either. Without it (still measuring, too few faces) the general note.
+  const real = d.real, pc = (v) => Math.round(v * 100) + "%";
+  $("likPeak").textContent = real ?
+    `Your ${real.n} training photos score ${pc(real.median)} against the 3 reference photos (most between ` +
+    `${pc(real.p25)} and ${pc(real.p75)}). A preview there looks as much like the person as a real photo does - ` +
+    `nothing reaches 100%, real photos don't either.` : adaPeak(d.embedder);
+  // the best epoch, and the mean over every trained epoch so far (epoch 0 - the model before training - left out)
+  const trained = avgs.filter((v, i) => epochs[i] > 0);
+  const mean = trained.length ? trained.reduce((a, b) => a + b, 0) / trained.length : null;
+  const vs = (v) => !real ? "" : v >= real.p75 ? " - above most of your photos" :
+    v >= real.median ? " - level with your photos" : v >= real.p25 ? " - within your photos' range" : "";
+  $("likRun").textContent = `${run} - best so far: epoch ${bestEpoch} (${pc(avgs[best])} likeness${vs(avgs[best])})` +
+    (mean == null ? "" : ` · average over ${trained.length} epoch${trained.length === 1 ? "" : "s"}: ` +
+     `${pc(mean)}`);
   const cv = $("likChart");
   const w = cv.clientWidth || 900;
   if (cv.width !== w) cv.width = w;
   const g = cv.getContext("2d"), W = cv.width, H = cv.height, L = 42, R = 12, T = 12, B = 22;
   g.clearRect(0, 0, W, H);
-  const ymax = Math.min(1, Math.max(0.7, (d.thresholds || {}).match + 0.15 || 0, Math.max(...avgs) + 0.05));
+  // headroom above the band and the run's best, so the part that matters isn't pressed against the top
+  const ymax = Math.min(1, Math.max(0.7, (d.thresholds || {}).match + 0.15 || 0, Math.max(...avgs) + 0.08,
+                                    real ? real.p75 + 0.1 : 0));
   const x = (i) => epochs.length === 1 ? L + (W - L - R) / 2 : L + (W - L - R) * i / (epochs.length - 1);
   const y = (v) => T + (H - T - B) * (1 - v / ymax);
   g.font = "11px sans-serif"; g.lineWidth = 1;
+  if (real) {                  // the training photos' middle half, their median a dashed line: where real photos land
+    g.fillStyle = themeColor("--success", 0.13);
+    g.fillRect(L, y(real.p75), W - L - R, y(real.p25) - y(real.p75));
+    g.strokeStyle = themeColor("--success"); g.setLineDash([5, 4]);
+    g.beginPath(); g.moveTo(L, y(real.median)); g.lineTo(W - R, y(real.median)); g.stroke();
+    g.setLineDash([]);
+    g.fillStyle = themeColor("--success");
+    g.fillText("your photos", W - R - 70, y(real.p75) - 4);
+  }
   const bands = d.thresholds || {match: 0.45, borderline: 0.30};
+  // your photos' numbers on the axis (their middle half's edges and median, in the band's green); a badge band's
+  // number that would sit on top of one of them gives way
+  const realMarks = real ? [real.p25, real.median, real.p75] : [];
+  const clear = (v) => realMarks.every((r) => Math.abs(y(v) - y(r)) >= 11);
   for (const band of [bands.borderline, bands.match]) {         // the badge colour bands, for orientation
     g.strokeStyle = themeColor("--border"); g.fillStyle = themeColor("--text-muted");
     g.beginPath(); g.moveTo(L, y(band)); g.lineTo(W - R, y(band)); g.stroke();
-    g.fillText(Math.round(band * 100) + "%", 8, y(band) + 4);
+    if (clear(band)) g.fillText(Math.round(band * 100) + "%", 8, y(band) + 4);
+  }
+  if (real) {
+    g.fillStyle = themeColor("--success");
+    let last = -Infinity;
+    for (const v of [real.p75, real.median, real.p25]) {        // top down, each clear of the one above
+      const yy = Math.max(y(v) + 4, last + 11);
+      g.fillText(Math.round(v * 100) + "%", 8, yy);
+      last = yy;
+    }
   }
   g.strokeStyle = themeColor("--accent"); g.lineWidth = 2; g.beginPath();
   avgs.forEach((v, i) => (i ? g.lineTo(x(i), y(v)) : g.moveTo(x(i), y(v))));
@@ -2571,7 +3119,7 @@ async function likenessShow(dir, items, run, view) {
 }
 async function likenessPicker() {
   S.lik.mode = "gallery";
-  await likGridShow(S.imageFolder || "", (S.lik.data && S.lik.data.baselines) || []);
+  await likGridShow(S.galDataset || "", (S.lik.data && S.lik.data.baselines) || []);   // the shown run's own photos
 }
 // the 3-photo picker, for the Samples gallery (exactly 3, from the training images) or LoRA Royale (1-3, any folder)
 async function likGridShow(folder, picked) {
@@ -2579,7 +3127,8 @@ async function likGridShow(folder, picked) {
   S.lik.folder = folder; S.lik.paths = {};
   $("likTitle").textContent = `Likeness: pick ${royale ? "up to " : ""}3 photos of your subject`;
   $("likFrom").textContent = royale ? "this folder" : "the training images";
-  $("likFolder").textContent = folder || "no training image folder set on the Start tab";
+  $("likFolder").textContent = folder || (royale ? "no folder picked" :
+    "this run's training folder isn't on record (set the training folder on the Start tab)");
   $("likFolderPick").style.display = royale ? "" : "none";
   $("likClear").style.display = royale ? "none" : "";
   $("likStart").textContent = royale ? "Use these" : "Start scoring";
@@ -2616,7 +3165,7 @@ function likenessMarks() {
 async function likenessSet(names) {
   $("likPickStatus").textContent = "Starting…";
   try {
-    await api("/api/likeness", {dir: S.lik.dir, dataset: S.imageFolder || "", baselines: names});
+    await api("/api/likeness", {dir: S.lik.dir, run: S.lik.run || "", dataset: S.galDataset || "", baselines: names});
     $("likModal").classList.remove("active");
     loadGallery();
   } catch (e) { $("likPickStatus").textContent = e.message; }
@@ -2739,6 +3288,10 @@ async function rvFrame() {
   cv.toBlob((b) => rvDownload(b, `${S.gal.run || "run"}_epoch${fr.epoch}.png`), "image/png");
 }
 
+// a checkpoint's name, starred when its epoch's preview is (web/stars.starred_checkpoints)
+const ckptName = (it) => el("span", {class: "checkpoint-name" + (it.starred ? " starred" : ""), text: it.name,
+  title: it.starred ? "You starred this epoch's preview" : ""}, it.starred ? el("span", {class: "ckpt-star", text: " ★",
+  "aria-label": "starred"}) : null);
 async function loadCheckpoints() {
   const out = S.run.output_dir || S.values.LORA_OUTPUT_DIR;
   const host = $("checkpoints");
@@ -2752,7 +3305,7 @@ async function loadCheckpoints() {
   for (const it of shown) {
     const href = `/api/download?path=${encodeURIComponent(it.path)}&t=${encodeURIComponent(TOKEN)}`;
     host.append(el("div", {class: "checkpoint-row"},
-      el("span", {class: "checkpoint-name", text: it.name}),
+      ckptName(it),
       el("span", {class: "field-hint", text: `${it.kind === "finetune" ? "Fine-tune (whole model)" : "LoRA"} · ` +
         `${size(it.size)} · ${new Date(it.time * 1000).toLocaleString()}`}),
       it.kind === "finetune" ? null : studioButton(it.path, S.fam && S.fam.key),
@@ -2927,7 +3480,8 @@ async function loadRuns() {
       onclick: async () => {
         try {
           await loadIntoForm(await api("/api/runs/settings", {id: run.id}));
-          $("runStatus").textContent = `Loaded the settings of ${run.lora || "that run"}: check them, then Start.`;
+          const name = await renameForNew(run.lora);  // a new run, under the next free name (name_2), not over that one
+          $("runStatus").textContent = `Loaded the settings of ${run.lora || "that run"}, named ${name}: check them, then Start.`;
         } catch (e) { alertRow.textContent = e.message; }
       }});
     // Continue: on from the run's newest save, with its own settings (only when that save is still there); a run that
@@ -3897,8 +4451,8 @@ async function royaleScore() {
     $("ryBest").disabled = false;
     $("ryLikeStatus").textContent = `Best: ${ryLabel(r.best).toLowerCase()} (${r.scores[r.best].toFixed(3)})` +
       (r.no_face ? `  (${r.no_face} no-face)` : "") +
-      (r.embedder && !r.embedder.startsWith("ArcFace") ? `  · ${r.embedder}` : "");     // named when it isn't the usual one
-    $("ryLikePeak").textContent = arcPeak(r.embedder).replace("72%", "0.72 (72%)");
+      (r.embedder && !r.embedder.startsWith("AdaFace") ? `  · ${r.embedder}` : "");     // named when it isn't the usual one
+    $("ryLikePeak").textContent = adaPeak(r.embedder).replace("70%", "0.70 (70%)");
     royaleBest();
   } catch (e) { $("ryLikeStatus").textContent = e.message; }
 }
@@ -4634,7 +5188,13 @@ function valueOrDefault(key) {
 const sampleLiveSoon = debounce(async () => {
   const v = S.values, note = $("note___SAMPLE_LIVE");
   try {
-    const r = await api("/api/run/sample_override", {on: !!v.__SAMPLE_LIVE, prompts: v.SAMPLE_PROMPT || "",
+    if (!ctxIsLiveRun()) return;
+    // form: the Samples values as they now are, kept with the run so every page (and a later look at it) shows them
+    const keep = ["SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS", "SAMPLE_CFG_SCALE",
+      "FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_ON", "SAMPLE_EVERY_N_EPOCHS", "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH",
+      "SAMPLE_EVERY_AFTER", "FAMILY_PREVIEW_LOOK", "SAMPLE_CHECKPOINT", "__SAMPLE_LIVE"];
+    const r = await api("/api/run/sample_override", {form: Object.fromEntries(keep.filter((k) => k in v).map((k) => [k, v[k]])),
+      on: !!v.__SAMPLE_LIVE, prompts: v.SAMPLE_PROMPT || "",
       seed: v.SAMPLE_SEED, width: v.SAMPLE_WIDTH, height: v.SAMPLE_HEIGHT, steps: v.SAMPLE_STEPS,
       cfg: v.SAMPLE_CFG_SCALE, turbo: v.FAMILY_TURBO_ON === false ? "0" : v.FAMILY_TURBO_STRENGTH,
       every: v.SAMPLE_EVERY_N_EPOCHS,
@@ -4658,6 +5218,7 @@ function liveNote(live) {
 
 // a run's model, training folder and settings into the form (Start again, a queued run's Edit)
 async function loadIntoForm(s) {
+  if (ctxKind() !== "draft") await ctxSwitch({kind: "draft"});
   if (s.family !== S.family) await chooseFamily(s.family);
   const kept = Object.fromEntries(Object.entries(s.values || {}).filter(([, v]) => v != null));
   S.values = {...S.values, ...kept};
@@ -4673,6 +5234,8 @@ async function loadIntoForm(s) {
   renderSections("training", $("trainingForm"));
   await refreshState();
   saveState();
+  // the Samples gallery follows this job (its previews and likeness scores) until Back or a run starts
+  viewJob({lora: S.values.LORA_NAME || "", output_dir: S.values.LORA_OUTPUT_DIR || S.outputDefault || ""});
   showTab("training");
 }
 
@@ -4680,7 +5243,10 @@ async function loadIntoForm(s) {
 // editing a queued run: a bar at the bottom of the window, on every tab, with Save to queue and Cancel edit, until
 // one of them (or a Start) ends it; the Training tab's Add to queue steps aside meanwhile
 function queueEditing(item) {
+  if (!item && S.editQueue && S.viewJob) S.viewJob = null;   // the edit ended: the gallery goes back to the run now
   S.editQueue = item;
+  if (!item && ctxKind() === "queue" && !S.ctxBusy) ctxSwitch({kind: "draft"});   // Cancel edit, Save to queue
+  jobPillShow();
   $("btnQueue").textContent = item ? `Save to queue (run ${item.n})` : "Add to queue";
   $("btnQueue").style.display = item ? "none" : "";
   $("queueEditBar").style.display = item ? "" : "none";
@@ -4702,7 +5268,7 @@ async function runFiles(run) {
   const size = (b) => b >= 2 ** 30 ? (b / 2 ** 30).toFixed(1) + " GB" : (b / 2 ** 20).toFixed(0) + " MB";
   const ckpts = c.items.filter((it) => it.run === run.lora);
   if (ckpts.length) out.push(el("div", {class: "checkpoint-list"}, ckpts.map((it) => el("div", {class: "checkpoint-row"},
-    el("span", {class: "checkpoint-name", text: it.name}),
+    ckptName(it),
     el("span", {class: "field-hint", text: `${it.kind === "finetune" ? "Fine-tune" : "LoRA"} · ${size(it.size)}`}),
     it.kind === "finetune" ? null : studioButton(it.path, run.family),
     el("a", {class: "btn btn-sm btn-primary", download: it.name, text: "Download",
@@ -5352,7 +5918,7 @@ async function prepRun() {
 }
 
 // Image Prep's "Anime/furry/drawn characters" (fizgig/face_utils.py, prefs.json face_*): saved as soon as they
-// change. InsightFace + ArcFace are the defaults; the section opens by itself when something else is chosen.
+// change. InsightFace's finder + AdaFace are the defaults; the section opens by itself when something else is chosen.
 const FACE_HINTS = {
   insightface: "For people. It can tell men from women, for Largest Male / Female Face. It doesn't see anime, furry " +
     "or drawn faces.",
@@ -5360,7 +5926,7 @@ const FACE_HINTS = {
     "Male / Female Face use the largest face.",
   auto: "For a set with both people and characters in it. Both finders look at every picture, so it's a little slower."};
 const LOOK_HINTS = {
-  arcface: "For people's faces. For anime, furry or drawn characters, pick Anime/furry/drawn.",
+  adaface: "For people's faces. For anime, furry or drawn characters, pick Anime/furry/drawn.",
   dinov2: "For anime, furry or drawn characters, and fursuits; it works on people too. Its scores run higher than the people setting's, and " +
     "the colours follow.",
   auto: "Fizgig looks at some of the pictures each time it scores: People (the default) for a set of people, " +
@@ -5393,7 +5959,7 @@ function faceSettingsWire() {
   $("prepDetector").addEventListener("change", () => {
     const det = $("prepDetector").value, f = S.prep.face || {};
     // a YOLO face finder with the people-only look match would score nothing: the look match follows, said aloud
-    if (det !== "insightface" && f.identity === "arcface") {
+    if (det !== "insightface" && f.identity === "adaface") {
       const ident = det === "yolo" ? "dinov2" : "auto";
       return faceSettingsSave({detector: det, identity: ident}, `Look match changed to ${ident === "dinov2" ?
         "Anime/furry/drawn" : "Auto (Decide for each set)"}, so characters' faces get scored too.`);
@@ -5488,7 +6054,7 @@ async function lookPoll() {
   $("lookScan").disabled = S.prep.lookRunning || S.prep.bases.length !== 3;
   $("lookPick").disabled = S.prep.lookRunning;
   $("lookDecision").textContent = r.decision ? r.decision.replace("[faces] ", "") : "";
-  $("lookPeak").textContent = r.state === "done" && r.rows && r.rows.length ? arcPeak(r.embedder) : "";
+  $("lookPeak").textContent = r.state === "done" && r.rows && r.rows.length ? adaPeak(r.embedder) : "";
   const mine = r.folder === S.imageFolder;        // the last scan may be of another folder
   if (r.state === "running") {
     $("lookStatus").textContent = r.progress[0] ? `Scoring faces… ${r.progress[0]}/${r.progress[1]}` :
@@ -8024,7 +8590,8 @@ async function captionsLive() {
       $("lightboxCapNote").textContent = "Re-captioned";
     }
     it.caption = n.caption;
-    if (ta) ta.value = n.caption ?? "";
+    if (ta) { ta.value = n.caption ?? ""; fitText(ta); }
+    if (big.value === (n.caption ?? "")) fitText(big);
   }
 }
 
@@ -8106,10 +8673,14 @@ function renderCaptions() {
     (q ? ` · ${items.length} match` : "") + (pages > 1 ? ` · page ${S.cap.page + 1} of ${pages}` : "");
   $("capPrev").disabled = S.cap.page === 0; $("capNext").disabled = S.cap.page >= pages - 1;
   host.classList.toggle("captions-as-table", $("capView").value === "table");
-  if ($("capView").value === "table") { host.append(captionsTable(items.slice(S.cap.page * CAP_PAGE, (S.cap.page + 1) * CAP_PAGE), ext)); return; }
+  if ($("capView").value === "table") {
+    host.append(captionsTable(items.slice(S.cap.page * CAP_PAGE, (S.cap.page + 1) * CAP_PAGE), ext));
+    fitTexts(host);
+    return;
+  }
   for (const it of items.slice(S.cap.page * CAP_PAGE, (S.cap.page + 1) * CAP_PAGE)) {
     const src = `/api/media?path=${encodeURIComponent(it.path)}&t=${encodeURIComponent(TOKEN)}`;
-    const ta = el("textarea", {rows: 4});
+    const ta = el("textarea", {rows: 4, class: "fit-text"});
     ta.value = it.caption ?? "";
     it._ta = ta;                                 // for the live refresh while captioning runs
     const status = el("span", {class: "field-hint"});
@@ -8171,6 +8742,7 @@ function renderCaptions() {
       el("div", {class: "field-row"}, save, recap, speech, maskBtn, remove, status)));
     host.append(card);
   }
+  fitTexts(host);
 }
 
 // the table view: one row a file, sorted by a click on a column's head (again: the other way)
@@ -8188,7 +8760,7 @@ function captionsTable(items, ext) {
     text: c.label + (ts.key === c.key ? (ts.dir > 0 ? " ▲" : " ▼") : ""), title: "Sort by this column",
     onclick: () => { S.cap.tsort = {key: c.key, dir: ts.key === c.key ? -ts.dir : 1}; S.cap.page = 0; renderCaptions(); }})));
   const rows = items.map((it) => {
-    const ta = el("textarea", {rows: 2, class: "cap-cell-text"});
+    const ta = el("textarea", {rows: 2, class: "cap-cell-text fit-text"});
     ta.value = it.caption ?? "";
     it._ta = ta;                                 // the live refresh while captioning runs fills it too
     const words = el("td", {class: "cap-num", text: String(capWords(it))});
@@ -9708,6 +10280,7 @@ function tabsMenu(open) {
 
 function showTab(name) {
   if (name !== "prep" && S.me && S.me.dirty) meSave();      // leaving Image Prep saves the mask being edited
+  if (name !== activeTab()) ctxOnTab();                     // the job on show finished: the view moves on now
   // each tab keeps its own scroll place: back on Training, the loss chart is where you left it (the tabs share one
   // scrolling pane; a phone scrolls the page itself). Read before anything below scrolls (the tab button's
   // scrollIntoView can move a phone's page)
@@ -10091,6 +10664,23 @@ function uploadButton(r, input, set) {
 }
 
 let wired = false;
+// ---- caption boxes sized to their caption (class fit-text): the whole caption shows, no scrolling, up to 40% of the
+// window (the big view's: half); typing grows one past its height, and a box dragged taller stays as dragged.
+// On a wide window the big view's box sits beside the picture at full height (CSS), so it isn't sized here.
+const LB_SIDE = "(min-width: 1100px) and (min-aspect-ratio: 5/4)";
+function fitText(ta, grow) {
+  if (!ta || !ta.isConnected || !ta.offsetParent) return;
+  if (ta.id === "lightboxCapText" && matchMedia(LB_SIDE).matches) { ta.style.height = ""; return; }
+  if (grow && ta.scrollHeight <= ta.clientHeight) return;
+  const max = Math.round(innerHeight * (ta.id === "lightboxCapText" ? 0.5 : 0.4));
+  const border = ta.offsetHeight - ta.clientHeight;
+  ta.style.height = "";
+  ta.style.height = Math.min(Math.max(ta.scrollHeight + border, ta.offsetHeight), max) + "px";
+}
+const fitTexts = (host) => requestAnimationFrame(() => host.querySelectorAll("textarea.fit-text").forEach((t) => fitText(t)));
+document.addEventListener("input", (e) => { if (e.target.matches && e.target.matches("textarea.fit-text")) fitText(e.target, true); });
+matchMedia(LB_SIDE).addEventListener("change", () => fitText($("lightboxCapText")));
+
 // ---- the picture viewer: any preview or Captions picture, big, with the others in its list a step away --------
 const LIGHTBOX_PICS = ".gallery-item > img, .caption-card > img";      // (Repair Studio's panes are gallery items)
 S.lb = {list: [], at: 0};
@@ -10125,6 +10715,7 @@ function lightboxShow(i) {
   $("lightboxPrev").style.visibility = i > 0 ? "" : "hidden";
   $("lightboxNext").style.visibility = i < S.lb.list.length - 1 ? "" : "hidden";
   $("lightbox").style.display = "";
+  if (pic.cap) fitText($("lightboxCapText"));
 }
 async function lightboxClose() {
   if (!(await lightboxCapFlush())) return;
@@ -10200,7 +10791,7 @@ function wireLightbox() {
     const pic = S.lb.list[S.lb.at];
     if (!pic || !pic.cap || !pic.cap.speech || !(await lightboxCapFlush())) return;
     const text = await pic.cap.speech((t) => { $("lightboxCapNote").textContent = t; });
-    if (text && S.lb.list[S.lb.at] === pic) $("lightboxCapText").value = text;
+    if (text && S.lb.list[S.lb.at] === pic) { $("lightboxCapText").value = text; fitText($("lightboxCapText")); }
   });
   $("lightboxCapRemove").addEventListener("click", async () => {
     const pic = S.lb.list[S.lb.at];
@@ -10399,12 +10990,68 @@ function wire() {
   $("btnStart").addEventListener("click", () => start("/api/start"));
   $("galleryRun").addEventListener("change", () => { S.galleryRun = $("galleryRun").value; loadGallery(); });
   $("likBtn").addEventListener("click", likenessPicker);
+  // the pill can be dragged anywhere on a wide window (kept in this browser; a double-click puts it back). A press
+  // that didn't move it opens its list. A narrow window or a phone keeps it where it is
+  {
+    const pill = $("jobPill"), KEY = "fizgig.pill", wide = () => window.innerWidth > 900;
+    const place = (x, y) => {
+      const b = pill.getBoundingClientRect();
+      pill.style.left = Math.max(4, Math.min(window.innerWidth - b.width - 4, x)) + "px";
+      pill.style.top = Math.max(4, Math.min(window.innerHeight - b.height - 4, y)) + "px";
+      pill.style.right = "auto";
+    };
+    const home = () => { pill.style.left = pill.style.top = pill.style.right = ""; };
+    const saved = () => { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { return null; } };
+    S.pillPlace = () => { const at = saved(); if (at && wide() && pill.style.display !== "none") place(at[0], at[1]); };
+    window.addEventListener("resize", () => S.pillPlace());
+    let drag = null;
+    const grab = (e) => {
+      if (!wide() || e.button) return;
+      const b = pill.getBoundingClientRect();
+      drag = {x: e.clientX, y: e.clientY, l: b.left, t: b.top, moved: false};
+      e.currentTarget.setPointerCapture(e.pointerId);
+    };
+    const move = (e) => {
+      if (!drag) return;
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (!drag.moved && Math.hypot(dx, dy) < 5) return;
+      if (!drag.moved) { drag.moved = true; pill.classList.add("dragging"); jobPillMenu(false); }
+      place(drag.l + dx, drag.t + dy);
+    };
+    const drop = () => {
+      if (drag && drag.moved) {
+        const b = pill.getBoundingClientRect();
+        try { localStorage.setItem(KEY, JSON.stringify([Math.round(b.left), Math.round(b.top)])); } catch (e) { /* private window */ }
+        S.pillDragged = true;                       // the click that ends a drag opens nothing
+      }
+      pill.classList.remove("dragging");
+      drag = null;
+    };
+    for (const part of [$("jobPillText"), $("jobPillGrip")]) {     // the grip is the handle; the text drags too
+      part.addEventListener("pointerdown", grab);
+      part.addEventListener("pointermove", move);
+      part.addEventListener("pointerup", drop);
+      part.addEventListener("pointercancel", drop);
+      part.addEventListener("dblclick", () => {
+        try { localStorage.removeItem(KEY); } catch (e) { /* private window */ }
+        home(); jobPillMenu(false);
+      });
+    }
+    $("jobPillGrip").addEventListener("pointerup", () => { S.pillDragged = false; });   // no click follows a grip drag
+  }
+  $("jobPillText").addEventListener("click", () => {
+    if (S.pillDragged) { S.pillDragged = false; return; }
+    jobPillMenu($("jobPillMenu").hidden);
+  });
+  $("jobPillShade").addEventListener("click", () => jobPillMenu(false));
+  $("startupLater").addEventListener("click", () => $("startupModal").classList.remove("active"));
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") jobPillMenu(false); });
   $("styBtn").addEventListener("click", async () => {       // the Style score on or off for the shown run's folder
     const dir = S.lik && S.lik.dir;
     if (!dir) return;
-    try { await api("/api/style", {dir, dataset: S.imageFolder || "", on: !(S.sty && S.sty.on)}); }
+    try { await api("/api/style", {dir, run: S.styRun || "", dataset: S.galDataset || "", on: !(S.sty && S.sty.on)}); }
     catch (e) { $("styStatus").textContent = e.message; return; }
-    styleShow(dir, []);
+    styleShow(dir, [], S.styRun);
   });
   // Gizmo is a window on the Fizgig computer: offered only to a page open there (not a phone, not a pod)
   const gizmoHere = !!(S.uploadRoot && S.uploadRoot.local && !S.onPod);
@@ -10458,7 +11105,14 @@ function wire() {
         showProblems([], ed ? `Saved: queued run ${r.position} has these settings now.` :
           `Added to the queue as number ${r.position}` + (before ? `: it starts after ${before}` + (eta ? ` (about ${eta})` : "") :
           ": it starts as soon as nothing else is training") + ".");
-        queueEditing(null);
+        await pollRun();
+        const queued = ((S.run.web_queue || {}).items || []).some((i) => i.id === r.id);
+        if (ed && queued) {                                   // saved: still that queued run, as it now is
+          queueEditing({...ed, n: r.position || ed.n});
+          $("queueEditText").replaceChildren(el("b", {text: `Saved: queued run ${r.position || ed.n}`}),
+            el("span", {text: (ed.lora ? `: ${ed.lora}. ` : ". ") + "Change more and Save to queue again, or leave with the pill."}));
+        } else if (!ed && queued) await ctxSwitch({kind: "queue", id: r.id});   // added: the tabs show that job now
+        else if (ed) queueEditing(null);                      // it started meanwhile: it is the run now
       } else {
         showProblems(r.problems || (r.error ? [r.error] : []));
         if (ed) $("queueEditText").replaceChildren(el("b", {text: `Not saved: `}),   // the bar is where you pressed it
@@ -10471,7 +11125,12 @@ function wire() {
     }
   });
   $("queueEditSave").addEventListener("click", () => $("btnQueue").click());
-  $("btnQueueCancel").addEventListener("click", () => { queueEditing(null); $("runStatus").textContent = "Edit cancelled: the queued run is as it was."; });
+  $("btnQueueCancel").addEventListener("click", async () => {
+    const c = S.ctx || {};
+    if (c.kind === "queue") await ctxSwitch({kind: "queue", id: c.id});    // its settings as queued, back in the form
+    else queueEditing(null);
+    $("runStatus").textContent = "Edit cancelled: the queued run is as it was.";
+  });
   $("webQueueStart").addEventListener("click", () => api("/api/queue/start", {}).then(pollRun)
     .catch((e) => { $("runStatus").textContent = e.message; }));
   $("webQueueHold").addEventListener("click", () => api("/api/queue/hold", {}).then(pollRun));

@@ -186,13 +186,20 @@ class MiniMaxH3ImageDriver(FamilyDriver):
             t = tok(cap, add_special_tokens=False)["input_ids"]
             ids += t
             tags += [TEXT_TAG] * len(t)
-            kw = {}
-            if pix:
-                kw = {"pixel_values": torch.cat(pix).to(te.device, torch.bfloat16),
-                      "image_grid_thw": torch.cat(grids).to(te.device)}
             ids = torch.tensor([ids], dtype=torch.long)
-            h = te.model(input_ids=ids.to(te.device), attention_mask=torch.ones_like(ids).to(te.device),
-                         **kw).last_hidden_state.to(DTYPE)
+            if hasattr(te, "_reference_forward"):
+                # the streamed encoder (a card too small to hold it): its layers wait in system RAM, so the model
+                # can't be called whole; its own forward brings each layer over in turn (#334)
+                h = te._reference_forward(input_ids=ids, attention_mask=torch.ones_like(ids),
+                                          pixel_values=torch.cat(pix) if pix else None,
+                                          image_grid_thw=torch.cat(grids) if pix else None).to(DTYPE)
+            else:
+                kw = {}
+                if pix:
+                    kw = {"pixel_values": torch.cat(pix).to(te.device, torch.bfloat16),
+                          "image_grid_thw": torch.cat(grids).to(te.device)}
+                h = te.model(input_ids=ids.to(te.device), attention_mask=torch.ones_like(ids).to(te.device),
+                             **kw).last_hidden_state.to(DTYPE)
             out.append({"hidden_states": h[0].cpu(), "token_tags": torch.tensor(tags, dtype=torch.long)})
         return out
 
@@ -243,14 +250,56 @@ class MiniMaxH3ImageDriver(FamilyDriver):
         if not keep:
             mid = 0.5 * (min_t + max_t)
             keep = [min(levels, key=lambda s: abs(s - mid))]
-        pct = self.options.get("lownoise_pct")      # MiniMax H3's clean-end share option: that share of the steps
-        if pct not in (None, "") and len(keep) > 1:  # at the levels below sigma 0.5, the rest spread evenly above
+        pct = self._clean_share()                  # that share of the steps at the levels below sigma 0.5, the rest
+        if pct is not None and len(keep) > 1:       # spread evenly above
             p = min(max(float(str(pct).rstrip("%")) / 100.0, 0.0), 1.0)
             lo, hi = [s for s in keep if s < 0.5], [s for s in keep if s >= 0.5]
             if lo and hi:
                 w = torch.tensor([p / len(lo) if s < 0.5 else (1.0 - p) / len(hi) for s in keep])
                 return float(keep[int(torch.multinomial(w, 1, generator=generator))])
         return float(keep[int(torch.randint(len(keep), (1,), generator=generator))])
+
+    def _clean_share(self):
+        """The clean-end share for this epoch (percent) or None (the model's even draw). Likeness optimization:
+        likeness_before (16.67) for epochs 1 to likeness_hinge (6), likeness_after (75) after it; likeness_alternate
+        (before / after / off) makes that side switch between the two shares every epoch, starting with its own.
+        likeness_slide=N: the N epochs after the hinge move evenly from Before to After (After's alternating after).
+        likeness_before_end=P: the Before share climbs evenly to P by the hinge (only its own epochs while alternating).
+        lownoise_pct=P (the CLI) still sets one share."""
+        if str(self.options.get("likeness_opt", "")).strip() in ("1", "true", "True"):
+            def num(key, default):
+                try:
+                    return float(str(self.options.get(key, "") or default).rstrip("%").strip())
+                except ValueError:
+                    return float(default)
+            # the schedule's defaults (families/minimax_image.py LIKENESS_DEFAULTS, run six): a run given none of
+            # its numbers (the CLI's plain likeness_opt=1) gets the whole of it, the climb to 50 included
+            bare = not any(k.startswith("likeness_") and k != "likeness_opt" for k in self.options)
+            before, after = num("likeness_before", 16.67), num("likeness_after", 75)
+            hinge, slide = int(num("likeness_hinge", 6)), max(int(num("likeness_slide", 0)), 0)
+            e = int(getattr(self, "epoch", 1) or 1)
+            alt = str(self.options.get("likeness_alternate", "") or "before").strip().lower()
+            if e <= hinge:
+                own = not (alt == "before" and (e - 1) % 2 == 1)      # a Before epoch (not its alternate's)
+                pct = before if own else after
+                end = str(self.options.get("likeness_before_end", "") or ("50" if bare else "")).rstrip("%").strip()
+                if own and end:                 # the Before share climbing to likeness_before_end by the hinge:
+                    try:                        # evenly over its own epochs, the last one before the hinge at it
+                        k, n = ((e - 1) // 2, (hinge + 1) // 2) if alt == "before" else (e - 1, hinge)
+                        pct = round(before + (float(end) - before) * (k / (n - 1) if n > 1 else 0.0), 2)
+                    except ValueError:
+                        pass
+            elif e <= hinge + slide:            # the slide: evenly from Before to After, at After on its last epoch
+                pct = round(before + (after - before) * (e - hinge) / slide, 1)
+            else:
+                pct = before if alt == "after" and (e - hinge - slide - 1) % 2 == 1 else after
+            pct = int(pct) if float(pct).is_integer() else pct
+            if getattr(self, "_share_said", None) != pct:
+                self._share_said = pct
+                logger.info(f"MiniMax H3 Image: Likeness optimization - {pct}% of steps at the clean end from epoch {e}")
+            return pct
+        pct = self.options.get("lownoise_pct")
+        return None if pct in (None, "") else float(str(pct).rstrip("%"))
 
     def _noised(self, latents, generator, min_t, max_t):
         """(x0, noise, sigma): the latent cropped to the 2x2 patch grid, the step's noise level, then its noise."""
@@ -379,7 +428,11 @@ class MiniMaxH3ImageDriver(FamilyDriver):
 
         @contextlib.contextmanager
         def hooks():
-            mods = [b.attn for b in dit.blocks]
+            def inner(b):        # Compile Blocks wraps each block (torch.compile's module, then CheckpointedBlock)
+                while not hasattr(b, "attn"):
+                    b = getattr(b, "_orig_mod", None) or getattr(b, "block")
+                return b
+            mods = [inner(b).attn for b in dit.blocks]
             saved = []
             for a in mods:
                 orig, fwd = wrap(a)

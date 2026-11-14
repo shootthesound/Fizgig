@@ -83,6 +83,18 @@ def last_values(lora, output_dir):
     return None
 
 
+def image_folder_of(lora, output_dir):
+    """The training folder the newest run with this LoRA name and output folder trained on, or "" (a run Fizgig has
+    no record of)."""
+    try:
+        for r in reversed(_read()):
+            if _same_run(r, lora, output_dir):
+                return str(r.get("image_folder") or "")
+    except OSError:
+        pass
+    return ""
+
+
 def start(source, family, lora, output_dir, image_folder, values, resume=False, carry=""):
     """Record a run that is starting; returns its id. A resume carries on the paused run's own record (the newest
     paused one with the same LoRA name and folder, from either app) instead of listing the run twice; Continue on
@@ -233,6 +245,9 @@ def _server_alive(pid):
         return False
 
 
+last_orphan = [""]          # the newest run close_orphans closed (the one Fizgig was training when it went away)
+
+
 def close_orphans():
     """At the server's start: a run still recorded as running has nothing behind it now (its server stopped or
     crashed, and the training process went with it), so it is recorded as stopped - unless the server that started it
@@ -245,6 +260,7 @@ def close_orphans():
                 if r.get("result") == "running" and not _server_alive(r.get("server_pid")):
                     r["result"] = "stopped"
                     r["ended_at"] = r.get("ended_at") or time.time()
+                    last_orphan[0] = str(r.get("id") or "")
                     n += 1
             if n:
                 _write(rs)

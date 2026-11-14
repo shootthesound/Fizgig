@@ -171,6 +171,7 @@ VIMOO = FamilyDescription(
     ft_learning_rate=1e-5,               # the EMA dropdown's "Short run" (decay sized to the run, as H3's)             # photos only: the dataset gives a mask to a still, never to a clip (as H3)
     loss_watch=True,
     training_maps=False,
+    lora_regularisation=False,        # clips: the regularisation dataset is for still-picture LoRAs
 
     sampling=(
         SamplingSettings("Vimoo Lite", steps=50, cfg=4.0, sampler="euler", scheduler="lognorm", negative_prompt=True,

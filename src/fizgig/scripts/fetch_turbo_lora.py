@@ -10,8 +10,7 @@ For each entry:
   - neither ................................... downloads with progress, verifies, populates
 
 Entries: the Krea 2 Turbo LoRA (previews render on RAW + Turbo LoRA, no model swapping), the
-Qwen Image 2.1 Turbo LoRA and Fizgig's Qwen Image 2.1 training adapter (v2), and the MiniMax H3 training adapters — Circlestone's (the default, one file for both bases) and
-Ostris's two (per base) — which the Training tab's adapter dropdown chooses between. Always fetched when missing,
+Qwen Image 2.1 Turbo LoRA and Fizgig's Qwen Image 2.1 training adapter (v2), and Ostris's two MiniMax H3 training adapters (one per base). Always fetched when missing,
 whatever family is configured (Peter, 2 Sep 2026: no "not a Krea 2 install" gate, ever).
 The GUI calls ensure_turbo_lora() again at Krea 2 training start as a fallback.
 """
@@ -44,21 +43,19 @@ LORAS = [
      "krea2_turbo_lora_rank_64_bf16.safetensors",
      "diffusion_model.blocks.0.attn.wq.lora_down.weight", 400 * 1024 * 1024,
      "Krea 2 Turbo LoRA (~470 MB)"),
-    ("minimax_circlestone_adapter", "minimax_h3_image_training_adapter.safetensors",
-     "https://huggingface.co/circlestone-labs/MiniMax-H3-Image-Training-Adapter/resolve/main/"
-     "minimax_h3_image_training_adapter.safetensors",
-     "diffusion_model.blocks.0.attn.out_proj.lora_A.weight", 580 * 1024 * 1024,
-     "MiniMax H3 training adapter, Circlestone (~620 MB, the default)"),
-    ("minimax_training_adapter", "minimax_h3_training_adapter_v1.safetensors",
+    # Ostris's adapters, v3 (Nov 2026, rank 32): a pref on v1 / v2 moves to it, the old file stays on disk
+    ("minimax_training_adapter", "minimax_h3_training_adapter_v3.safetensors",
      "https://huggingface.co/ostris/minimax_h3_training_adapter/resolve/main/"
-     "minimax_h3_training_adapter_v1.safetensors",
-     "diffusion_model.blocks.0.attn.out_proj.lora_A.weight", 140 * 1024 * 1024,
-     "MiniMax H3 training adapter, fl2va (~155 MB, Ostris)"),
-    ("minimax_ref_training_adapter", "minimax_h3_ref2va_training_adapter_v1.safetensors",
+     "minimax_h3_training_adapter_v3.safetensors",
+     "diffusion_model.blocks.0.attn.out_proj.lora_A.weight", 290 * 1024 * 1024,
+     "MiniMax H3 training adapter v3, fl2va (~310 MB, Ostris)",
+     ("minimax_h3_training_adapter_v1.safetensors", "minimax_h3_training_adapter_v2.safetensors")),
+    ("minimax_ref_training_adapter", "minimax_h3_ref2va_training_adapter_v3.safetensors",
      "https://huggingface.co/ostris/minimax_h3_training_adapter/resolve/main/"
-     "minimax_h3_ref2va_training_adapter_v1.safetensors",
-     "diffusion_model.blocks.0.attn.out_proj.lora_A.weight", 140 * 1024 * 1024,
-     "MiniMax H3 training adapter, ref2va (~155 MB, Ostris)"),
+     "minimax_h3_ref2va_training_adapter_v3.safetensors",
+     "diffusion_model.blocks.0.attn.out_proj.lora_A.weight", 290 * 1024 * 1024,
+     "MiniMax H3 training adapter v3, ref2va (~310 MB, Ostris)",
+     ("minimax_h3_ref2va_training_adapter_v1.safetensors", "minimax_h3_ref2va_training_adapter_v2.safetensors")),
     # Qwen Image 2.1's Turbo LoRA (Comfy-Org) replaced Viggle's in the same pref: an install still pointing at
     # another file gets this one (the old file stays on disk)
     ("qwen21_turbo_lora", "qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors",
@@ -243,8 +240,71 @@ def ensure_moss_previews(repo_dir: str = REPO_DIR, log=print):
         return None
 
 
+def ensure_face_models(log=print):
+    """The face models (InsightFace's finder files + AdaFace ViT, which replaced ArcFace on 12 Nov 2026) for an
+    updating install, so its first likeness score doesn't stop to download 0.5 GB. Fetches only what's missing, like
+    the other models here. Never raises; without a connection they download on first use."""
+    try:
+        from fizgig.face_utils import ensure_face_models as _ensure
+        return _ensure(log=log)
+    except Exception as e:
+        log(f"Face models (AdaFace): skipped, they'll download on first use ({type(e).__name__}: {e})")
+        return None
+
+
+def ensure_mask_segmenter(log=print):
+    """Make masks' person segmenter (~20 MB, hash-checked) for an updating install. Only an early fetch: Make masks
+    still downloads it on first use if it's missing (automask.ensure_model). Never raises."""
+    try:
+        from fizgig import user_data
+        from fizgig.dataset import automask
+        if os.path.isfile(automask.model_path(user_data.MODELS_DIR)):
+            return True
+        return bool(automask.ensure_model(user_data.MODELS_DIR, log=lambda m: log(m.rstrip())))
+    except Exception as e:
+        log(f"Make masks' segmenter: skipped, it downloads on first use ({type(e).__name__}: {e})")
+        return None
+
+
+# Tokenizer configs the older families load by name (fetch_models' hf-config tools): (the pref that says the family is
+# set up, repo). The Qwen3-VL one is the shared captioner's.
+TEXT_HELPERS = (("krea2_text_encoder", "Qwen/Qwen3-VL-4B-Instruct"), ("text_encoder", "Qwen/Qwen3-8B"))
+
+
+def ensure_text_helpers(repo_dir: str = REPO_DIR, log=print):
+    """The small tokenizer / processor files of every family set up here (a model path in Preferences): the described
+    families' helper_files and the older families' tokenizer configs. Only an early fetch: the drivers still download
+    them on first use if they're missing. A repo already cached is skipped without asking the Hub. Never raises."""
+    try:
+        from fizgig.families.registry import FAMILIES
+        from fizgig.utils import hf_public
+        from fizgig.utils.hf_cache import cached_snapshot_dir
+        prefs = _load_prefs(_prefs_file(repo_dir))
+        has = lambda key: bool(key and str(prefs.get(key) or "").strip())
+        want = {repo: (["*.json", "*.txt", "*.model"], repo.split("/")[-1]) for key, repo in TEXT_HELPERS if has(key)}
+        for d in FAMILIES.values():
+            if d.training_ready and d.helper_files and any(has(f.pref_key) for f in d.model_files):
+                for repo, pats in d.helper_files:
+                    want.setdefault(repo, (list(pats), d.display_name))
+        for repo, (pats, label) in want.items():
+            if cached_snapshot_dir(repo):
+                continue
+            try:
+                log(f"Fetching {label}'s tokenizer files ...")
+                hf_public.snapshot(repo_id=repo, allow_patterns=pats, log=log)
+            except Exception as e:
+                log(f"  {label}'s tokenizer files: skipped, they download on first use ({type(e).__name__})")
+        return True
+    except Exception as e:
+        log(f"Tokenizer files: skipped ({type(e).__name__}: {e})")
+        return None
+
+
 if __name__ == "__main__":
     ensure_all()
     ensure_taeh3()
     ensure_moss_previews()
+    ensure_face_models()
+    ensure_mask_segmenter()
+    ensure_text_helpers()
     qwen_turbo_dit_hint()

@@ -18,25 +18,39 @@ _H = "Comfy-Org/MiniMax-H3"
 _PDD_SIGMAS = (1.0, 0.9675236940383911, 0.8875485062599182, 0.75, 0.5327739119529724, 0.23200887441635132, 0.0)
 
 
-def _preset(rank, epochs=30, slider=False, mp="0.5", edit=False):
+# Likeness optimization's schedule (Peter, 12 Nov 2026: "this number 6 setup is the exact setup"): won a day of runs on
+# the Nicola set (Automagic v4, 0.25 MP) - the Before share starts at the model's own (1 in 6) and climbs to 50 by the
+# hinge at epoch 6, alternating with 75; 75 held after. Its face shape came earliest, it scored highest at matched
+# framing (AdaFace ViT 0.689, above all but 2 of her 45 photos) and kept the backgrounds clean. The boxes hold these
+# numbers behind the row's Advanced toggle; minimax_image/driver.py's defaults are the same.
+LIKENESS_DEFAULTS = {"BEFORE": "16.67", "BEFORE_END": "50", "HINGE": "6", "SLIDE": "0", "AFTER": "75",
+                     "ALTERNATE": "Before the hinge"}
+
+
+def _preset(rank, epochs=30, slider=False, mp="0.25", edit=False, likeness=False, optimizer="automagic3", lr=2.8e-4):
     """Krea 2's presets (families/krea2.py _preset; Peter, 10 Nov 2026: "mirror the Krea 2 presets exactly"), plus the
     two this model needs: Fizgig's training adapter on (without it people turn into caricatures) and an edit flag for
     the Edit preset. Every preset trains on Automagic v3 (Peter, 11 Nov 2026), which starts at 2.8e-4 and finds its own
     rate from there (Peter, 11 Nov 2026: started at 1e-4 it climbed to ~1.8e-4 at once, then trickled down to ~9e-5
     over ~1,200 steps; started at 2.8e-4 it eased down ~20% over 400 steps with no overshoot cut, and the previews
-    looked better - Automagic keeps roughly the level it starts from, so the start is the choice), and turns Adaptive LR off, so Krea 2's Ultra Fast preset (an LR choice) isn't here."""
+    looked better - Automagic keeps roughly the level it starts from, so the start is the choice), and turns Adaptive LR off, so Krea 2's Ultra Fast preset (an LR choice) isn't here.
+    Every preset trains at 0.25 MP (Peter, 12 Nov 2026: the 0.5 MP theory of 11 Nov was proved wrong).
+    Standard trains on Automagic v4 at 2.5e-4 (its ceiling; Peter, 12 Nov 2026: over ~30 runs v4 at the ceiling beat
+    v3 and Muon by far, most on a set with few headshots), with Likeness optimization."""
     return {
-        "NETWORK_DIM": rank, "NETWORK_ALPHA": rank, "NETWORK_TYPE": "LoRA (standard)", "LEARNING_RATE": 2.8e-4,
+        "NETWORK_DIM": rank, "NETWORK_ALPHA": rank, "NETWORK_TYPE": "LoRA (standard)", "LEARNING_RATE": lr,
         "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 42, "FAMILY_SLIDER": slider, "FAMILY_EDIT": edit,
         "ADAPTIVE_LR": False, "ADAPTIVE_LR_MIN": "1e-4", "ADAPTIVE_LR_MAX": "4e-4",
-        "OPTIMIZER_TYPE": "automagic3", "OPTIMIZER_ARGS": "", "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
+        "OPTIMIZER_TYPE": optimizer, "OPTIMIZER_ARGS": "", "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
         "DATASET_MEGAPIXELS": mp, "BLOCKS_SWAP": "Auto (detect from GPU)",
         "FAMILY_PRECISION": "Auto (fits your free VRAM)", "FAMILY_TRAINING_ADAPTER": True,
         "FAMILY_EMA": "0.98 (recommended)",
         "KREA2_LOSS_WATCH": True, "KREA2_PER_IMAGE_LR": True, "KREA2_AUTO_RECAPTION": False,
         "KREA2_WARMUP_LOOK": False,
         "FAMILY_SLIDER_GUIDANCE": "3",    # Krea 2's prompt-slider push strength
-        "MINIMAX_IMAGE_LOWNOISE_PCT": "40",    # the clean-end share (Peter, 11 Nov 2026); the model's own is ~17
+        # on in Standard only (Peter, 11 Nov 2026), on run six's schedule (12 Nov 2026, LIKENESS_DEFAULTS)
+        "MINIMAX_IMAGE_LIKENESS_OPT": "1" if likeness else "",
+        **{"MINIMAX_IMAGE_LIKENESS_" + k: v for k, v in LIKENESS_DEFAULTS.items()},
     }
 
 
@@ -141,7 +155,7 @@ MINIMAX_IMAGE = FamilyDescription(
     batch_gb=(0.05, 0.8),
     precision_labels={"auto": "Auto (fits your free VRAM)", "int8": "int8 · most accurate, needs ~24 GB free",
                       "nf4": "4-bit · fits smaller cards", "hqq": "4-bit HQQ · lower error than 4-bit, slower"},
-    optimizers=("automagic3", "adamw", "adamw8bit"),
+    optimizers=("automagic4", "automagic3", "adamw", "adamw8bit"),
     trainable_dtype="bf16",           # MiniMax H3's LoRA dtype (its trainer: network.to(bfloat16))
     network_types=("lora", "lokr"),
     ema_default="0.98",
@@ -205,22 +219,49 @@ MINIMAX_IMAGE = FamilyDescription(
     preview_width=2048,               # ComfyUI's MiniMaxH3ImageConditioning default; the low end of 4-20 MP
     preview_height=2048,
     repair_size=1024,
-    # the clean-end share (MiniMax H3's): that share of the steps at the noise level below sigma 0.5 (0.232, the
-    # last of the 6), the rest spread evenly over the 5 above; empty = the model's own even draw, 1 in 6 (~17%)
+    # Likeness optimization (H3 Image's own, in place of the Clean-end share box, Peter 11 Nov 2026): the share of
+    # steps at the noise level below sigma 0.5 (0.232, the last of the 6) follows LIKENESS_DEFAULTS' schedule; the
+    # rest spread evenly over the 5 above. Off = the model's own even draw, 1 in 6 (~17%).
     options=(
-        FamilyOption("MINIMAX_IMAGE_LOWNOISE_PCT", "Clean-end share", kind="entry", tokens="lownoise_pct={}",
-                     default="40", width=8, suffix="% of steps",
-                     hint="How much of training goes to the last of the model's 6 steps, the nearly finished "
-                          "picture, where skin, eyes and fine detail are made. The rest is shared evenly by the "
-                          "earlier steps, which set out pose, layout and the shape of things. Higher: more detail "
-                          "and likeness. Lower: more on layout and composition. Fizgig's presets use 40; H3 Image's "
-                          "own default is 17, an even share for every step (leave the box empty for that).",
-                     summary="clean-end {}%"),
+        FamilyOption("MINIMAX_IMAGE_LIKENESS_OPT", "Likeness optimization", kind="check",
+                     tokens="likeness_opt=1", default="1",
+                     hint="Weights training toward the last of the model's 6 steps, the nearly finished picture, "
+                          "where skin, eyes and fine detail are made, changing over the run so the earlier steps "
+                          "(pose, layout, the shape of things) keep up. Untick for H3 Image's own even share.",
+                     summary="likeness optimization"),
+        # its schedule (Peter, 12 Nov 2026): one share before the hinge, one after, and which side alternates (between
+        # the two shares, starting with its own). Inside the tick's row, behind its Advanced toggle (closed by default).
+        FamilyOption("MINIMAX_IMAGE_LIKENESS_BEFORE", "Before the hinge", kind="entry", tokens="likeness_before={}",
+                     default=LIKENESS_DEFAULTS["BEFORE"], width=6, suffix="% at the clean end, to the hinge",
+                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), advanced=True),
+        # Peter, 12 Nov 2026: the Before share can climb (e.g. the model's own 16.67 up to 50) - the structure-heavy
+        # start of a low first share, landing at the hinge like a 50 / 75 alternation
+        FamilyOption("MINIMAX_IMAGE_LIKENESS_BEFORE_END", "Rises to", kind="entry", tokens="likeness_before_end={}",
+                     default=LIKENESS_DEFAULTS["BEFORE_END"], width=6, suffix="% by the hinge (blank: no climb)",
+                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), advanced=True,
+                     hint="Climbs evenly from Before to this by the hinge (only Before's own epochs while alternating)."),
+        FamilyOption("MINIMAX_IMAGE_LIKENESS_HINGE", "Hinge epoch", kind="entry", tokens="likeness_hinge={}",
+                     default=LIKENESS_DEFAULTS["HINGE"], width=6, suffix="the last epoch of Before",
+                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), advanced=True),
+        FamilyOption("MINIMAX_IMAGE_LIKENESS_SLIDE", "Slide over", kind="entry", tokens="likeness_slide={}",
+                     default=LIKENESS_DEFAULTS["SLIDE"], width=6, suffix="epochs from Before to After (0: a jump)",
+                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), advanced=True,
+                     hint="Starts after the hinge; After's alternating, if picked, starts when it ends."),
+        FamilyOption("MINIMAX_IMAGE_LIKENESS_AFTER", "After the hinge", kind="entry", tokens="likeness_after={}",
+                     default=LIKENESS_DEFAULTS["AFTER"], width=6, suffix="% at the clean end, after the hinge",
+                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), advanced=True),
+        FamilyOption("MINIMAX_IMAGE_LIKENESS_ALTERNATE", "Alternate", choices=(       # the first is the default
+                         ("Before the hinge", "likeness_alternate=before"),
+                         ("After the hinge", "likeness_alternate=after"),
+                         ("Off", "likeness_alternate=off")),
+                     requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), width=18, advanced=True,
+                     hint="That side switches between the two shares each epoch, starting with its own. Off: each "
+                          "side holds its own."),
     ),
     workbench=("repair", "profiler", "extract", "royale"),
 
     presets=(
-        ("✨ MiniMax H3 Image Standard (rank 32, full model)", _preset(32, epochs=64)),
+        ("✨ MiniMax H3 Image Standard (rank 32, full model)", _preset(32, epochs=30, likeness=True, optimizer="automagic4", lr=2.5e-4)),
         ("✨ MiniMax H3 Image Style (rank 16)", _preset(16, epochs=64)),
         ("✨ MiniMax H3 Image Edit (rank 8)", _preset(8, epochs=12, edit=True)),
         ("✨ MiniMax H3 Image Slider (rank 8)", _preset(8, epochs=20, slider=True)),

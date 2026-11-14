@@ -196,15 +196,13 @@ def profile_prefill(lora):
         md = {}
     trig = (md.get("modelspec.trigger_phrase") or md.get("ss_trigger_word") or "").strip()
     baselines = []
-    try:
-        sdir = os.path.join(os.path.dirname(lora), "sample")
-        with open(os.path.join(sdir, "likeness.json"), encoding="utf-8") as f:
-            lk = json.load(f)
-        with open(os.path.join(sdir, "dataset.json"), encoding="utf-8") as f:
-            ds = json.load(f).get("folder", "")
-        paths = [os.path.join(ds, b) for b in lk.get("baselines", [])]
-        if len(paths) == 3 and all(os.path.isfile(p) for p in paths):
-            baselines = paths
+    try:                                 # the photos remembered for the run's training folder (gallery_likeness)
+        import re
+        from fizgig.web import gallery_likeness, history
+        run = re.sub(r"-\d{6}$", "", os.path.splitext(os.path.basename(lora))[0])
+        ds = history.image_folder_of(run, os.path.dirname(lora))
+        if ds:
+            baselines = [os.path.join(ds, n) for n in gallery_likeness.dataset_pick(ds)]
     except (OSError, ValueError, AttributeError):
         pass
     prompt, class_prompt = _run_sample_prompt(lora, trig)

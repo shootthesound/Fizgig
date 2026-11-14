@@ -266,6 +266,8 @@ class FamilyOption:
     batch_off: bool = False           # a check that reads one picture a step: off and greyed while Batch size is above 1
     requires: str = ""                # shown (and sent) only while this check is ticked ("KEY") or this choice is
     #                                   picked ("KEY=LABEL", matched as pick() matches)
+    advanced: bool = False            # web: drawn inside the row it `requires`, behind that row's Advanced toggle
+    #                                   (closed by default) - a tuned default whose numbers most people leave alone
     suggestions: tuple = ()           # entry: ready-made values offered in an editable dropdown ("6-49 · why")
     mode: str = ""                    # "finetune": shown and sent for a fine-tune only; "lora": for a LoRA only
     # a queued run's one-line summary shows this while the option is away from its default ("{}" = its value;
@@ -467,6 +469,10 @@ class FamilyDescription:
     # Clean-end share differs for a fine-tune and a LoRA
     kind_values: tuple = ()
     ft_regularisation: bool = True    # the fine-tune card offers a regularisation set (photos of the broad class)
+    # the Subjects card's Regularisation dataset (Standard LoRA and LoKR): a folder of ordinary pictures of the same
+    # kind of thing, trained alongside at its own LR multiplier, in place of DOP / Fizgig LoRA Isolation (#332). Off for
+    # the families whose items are clips or songs
+    lora_regularisation: bool = True
     # the Training tab's large-dataset hint: (rate, steps per epoch) - a standard LoRA whose learning rate (or
     # adaptive Min LR) is at least `rate`, on more than `steps` steps an epoch, gets a tip suggesting a cooler rate,
     # so the best point doesn't fall between two saved epochs. None turns the hint off for the family

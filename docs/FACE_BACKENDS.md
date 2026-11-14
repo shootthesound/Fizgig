@@ -5,7 +5,7 @@ Fizgig uses faces in two ways:
 - the **face finder** (detector) decides where the face is. Image Prep's face close-ups (Resize + face close-ups, Face close-ups only), *Test face detection on one photo* and the clip-still picker use it, and so does the look match when it scores a crop.
 - the **look match** (identity embedder) turns a face into a vector, so two faces can be compared. The **Look Consistency Filter**, the **sample gallery's live likeness badges**, **LoRA Royale's likeness score**, **Repair Studio's likeness chips** and the **Block Profiler's likeness/bleed numbers** all use it.
 
-The defaults are **InsightFace** and **ArcFace**, the same as before this feature: a set of people needs nothing changed, and gets exactly the face crops, Look Filter scores and likeness scores it got before ([checked](#people-sets-are-unchanged)). InsightFace and ArcFace are built for human photographs, though. On a drawn or fursuit character they usually find no face at all (0 of 19 on our test set). For anime, furry and drawn datasets, switch both settings.
+The defaults are **InsightFace** (face finder) and **AdaFace ViT** (look match): a set of people needs nothing changed. AdaFace replaced ArcFace as the people's look match in November 2026 ([why](#adaface-replaced-arcface)). Both defaults are built for human photographs, though. On a drawn or fursuit character they usually find no face at all (0 of 19 on our test set). For anime, furry and drawn datasets, switch both settings.
 
 ## Where to set it
 
@@ -13,16 +13,16 @@ The defaults are **InsightFace** and **ArcFace**, the same as before this featur
 
 - **Face finder**: *People (InsightFace, the default)*, *Anime/furry/drawn (YOLO model)*, or *Both, for sets with people and characters* (`auto`).
 - **Look match**: *People (the default)*, *Anime/furry/drawn*, or *Auto (Decide for each set)* (`auto`).
-  Which model each one uses: face finder *People (InsightFace, the default)* = InsightFace (`insightface`), *Anime/furry/drawn (YOLO model)* = a YOLO .onnx (`yolo`), *Both* = both (`auto`); look match *People (the default)* = ArcFace (`arcface`), *Anime/furry/drawn* = DINOv2 (`dinov2`), *Auto (Decide for each set)* = ArcFace or DINOv2, picked per set (`auto`).
+  Which model each one uses: face finder *People (InsightFace, the default)* = InsightFace (`insightface`), *Anime/furry/drawn (YOLO model)* = a YOLO .onnx (`yolo`), *Both* = both (`auto`); look match *People (the default)* = AdaFace ViT (`adaface`), *Anime/furry/drawn* = DINOv2 (`dinov2`), *Auto (Decide for each set)* = AdaFace or DINOv2, picked per set (`auto`).
 - **YOLO face model** (shown when the face finder isn't InsightFace): the standard file row, as for model paths elsewhere: type a path, **Choose…** a file on the Fizgig computer, or **Upload…** an `.onnx` from the device you're using (it lands in Fizgig's `uploads` folder and is filled in).
 
-They save as soon as you change them, in `user_data/prefs.json` like every other preference, and apply from the next scan or run. Picking a YOLO or Both face finder while the look match is still *People (the default)* (ArcFace) moves the look match along (the page says so), since ArcFace can't score a character's face: YOLO → *Anime/furry/drawn*, Both → *Auto (Decide for each set)*.
+They save as soon as you change them, in `user_data/prefs.json` like every other preference, and apply from the next scan or run. Picking a YOLO or Both face finder while the look match is still *People (the default)* (AdaFace) moves the look match along (the page says so), since AdaFace can't score a character's face: YOLO → *Anime/furry/drawn*, Both → *Auto (Decide for each set)*.
 
 ### What the hints on the page leave out
 
 - **Both** runs InsightFace and the YOLO model on every picture and merges the boxes (see [How Auto merges](#face-finder-backends)): about 0.3 s a picture on the CPU instead of ~0.13 s.
 - **A blank YOLO face model** means `user_data/models/face/fdetailer_v11.onnx` if that file exists (Fdetailer, which you convert once: [below](#fdetailer-v11-recommended-furry-model)), otherwise deepghs' MIT anime head model, downloaded from Hugging Face the first time it's used.
-- **Anime/furry/drawn** (DINOv2) scores run higher than ArcFace's: the same character usually lands at 60–90% rather than 30–70%. The Look Filter's colours, the gallery badges and the chart bands use each look match's own thresholds ([table](#look-match-identity-embedders)).
+- **Anime/furry/drawn** (DINOv2) scores run higher than AdaFace's: the same character usually lands at 60–90% rather than 45–70%. The Look Filter's colours, the gallery badges and the chart bands use each look match's own thresholds ([table](#look-match-identity-embedders)).
 - **Auto (Decide for each set)** looks at up to 24 of the pictures each time it scores (the [Auto look match](#auto-look-match)).
 
 | prefs.json key | Values | Default |
@@ -30,14 +30,14 @@ They save as soon as you change them, in `user_data/prefs.json` like every other
 | `face_detector` | `insightface`, `yolo`, `auto` (InsightFace **and** the YOLO model on every image, boxes merged) | `insightface` |
 | `face_yolo_model` | path to a YOLO face/head model **.onnx**. A relative path is read relative to the Fizgig folder. Blank means `user_data/models/face/fdetailer_v11.onnx` if that file exists, otherwise the built-in deepghs anime head model. | blank |
 | `face_yolo_conf` | the YOLO confidence threshold | `0.35` |
-| `face_identity` | `arcface`, `dinov2`, `auto` (an old saved `clip` reads as `dinov2`. `auto` with the Auto finder: decided per dataset / scoring session, see [Auto look match](#auto-look-match); with `insightface` → ArcFace, with `yolo` → DINOv2) | `arcface` |
-| `face_auto_threshold` | Auto look match: the share of probed images that must have a confident human face for ArcFace | `0.5` |
+| `face_identity` | `adaface`, `dinov2`, `auto` (an old saved `clip` reads as `dinov2`, an old `arcface` as `adaface`. `auto` with the Auto finder: decided per dataset / scoring session, see [Auto look match](#auto-look-match); with `insightface` → AdaFace, with `yolo` → DINOv2) | `adaface` |
+| `face_auto_threshold` | Auto look match: the share of probed images that must have a confident human face for AdaFace | `0.5` |
 
 You can override these for headless runs and tests with `FIZGIG_FACE_DETECTOR`, `FIZGIG_FACE_YOLO_MODEL`, `FIZGIG_FACE_IDENTITY` and `FIZGIG_FACE_AUTO_THRESHOLD`.
 
 **What to pick:**
 
-- **People:** nothing. The defaults are InsightFace + ArcFace, as always.
+- **People:** nothing. The defaults are InsightFace + AdaFace ViT.
 - **Anime, furry or drawn characters:** face finder **Anime/furry/drawn (YOLO model)**, look match **Anime/furry/drawn** (or *Auto (Decide for each set)*), with **Fdetailer v1.1 converted to .onnx** as the YOLO face model (see below).
 - **A mix of people and characters:** face finder **Both**, look match **Auto (Decide for each set)**. Gender targeting still works on the human faces.
 
@@ -45,7 +45,7 @@ You can override these for headless runs and tests with `FIZGIG_FACE_DETECTOR`, 
 
 | Backend | Good at | Gender | Runs on |
 |---|---|---|---|
-| InsightFace `buffalo_l` (RetinaFace) | human photos | yes | CPU, onnxruntime |
+| InsightFace `buffalo_l` (RetinaFace; only its detector and gender/age files are downloaded) | human photos | yes | CPU, onnxruntime |
 | YOLO model via onnxruntime | drawn, anime and furry characters and fursuits, depending on the model | no | CPU, onnxruntime (no ultralytics, no PyTorch) |
 | Auto | everything: **both** on every image, boxes merged | on InsightFace's faces | CPU, ~0.13 s (InsightFace) + ~0.17 s (Fdetailer) per image |
 
@@ -74,8 +74,8 @@ How it decides:
 1. Fizgig probes up to **24 images**, spread evenly over the sorted list, with the Auto detector.
 2. An image counts as **human** if InsightFace finds a face with score ≥ 0.6. It counts as **YOLO-only** if its only faces came from the YOLO model.
 3. The result:
-   - **ArcFace** when at least **50%** of the probed images are human (`face_auto_threshold`) **and** fewer than **25%** are YOLO-only.
-   - **DINOv2** otherwise: a furry or anime set, too few human faces, or a **mixed** set where both kinds are substantial. ArcFace can't embed a furry face, so a mixed set gets DINOv2 for all.
+   - **AdaFace** when at least **50%** of the probed images are human (`face_auto_threshold`) **and** fewer than **25%** are YOLO-only.
+   - **DINOv2** otherwise: a furry or anime set, too few human faces, or a **mixed** set where both kinds are substantial. AdaFace can't embed a furry face, so a mixed set gets DINOv2 for all.
 
 The decision is logged (the server console) and shown under the Look Filter's status line, for example:
 
@@ -83,17 +83,17 @@ The decision is logged (the server console) and shown under the Look Filter's st
 [faces] Look match for this set: DINOv2 (any face), anime, furry or drawn characters (a person's face in 0/11 pictures looked at, only a character's face in 7/11)
 ```
 
-With an explicit look match (the default, ArcFace, included) nothing is probed and nothing extra is shown.
+With an explicit look match (the default, AdaFace, included) nothing is probed and nothing extra is shown.
 
-The embedder is also recorded in the score caches (`embedder`, `embedder_label`), the gallery's status line, LoRA Royale's best-epoch line and Repair Studio's likeness chip (its tooltip). The decision is cached per set of probed files (path, mtime, size) and settings, so the same folder always decides the same way. An explicit look match (ArcFace / DINOv2), or an explicit finder, skips the probe.
+The embedder is also recorded in the score caches (`embedder`, `embedder_label`), the gallery's status line, LoRA Royale's best-epoch line and Repair Studio's likeness chip (its tooltip). The decision is cached per set of probed files (path, mtime, size) and settings, so the same folder always decides the same way. An explicit look match (AdaFace / DINOv2), or an explicit finder, skips the probe.
 
 **Why 50% / 25% / 0.6.**
 
 - On our furry test images (drawn art and fursuit-con photos), InsightFace returns *some* face on 6 of 19 (32%): human bystanders, and RetinaFace half-firing on suits. Only 3 of those score ≥ 0.6 (16%).
 - On the 47-image furry probe (huskies + drawn + suits), 4/24 were human and 15/24 YOLO-only → DINOv2.
-- Human portrait crops: 9/9 human, 0 YOLO-only → ArcFace.
+- Human portrait crops: 9/9 human, 0 YOLO-only → AdaFace.
 - Mixed humans + huskies: 9/22 human, 10/22 YOLO-only → DINOv2.
-- A human dataset only fails the 50% bar if most of its images have no detectable face, and then ArcFace would score most of them as *no face* anyway.
+- A human dataset only fails the 50% bar if most of its images have no detectable face, and then AdaFace would score most of them as *no face* anyway.
 
 ### Fdetailer v1.1 (recommended furry model)
 
@@ -168,12 +168,14 @@ Fizgig's own onnxruntime decoder gives exactly the detections ultralytics gives 
 
 | Embedder | What it is | Match | Borderline | Floor |
 |---|---|---|---|---|
-| ArcFace (`buffalo_l` recognition) | human face recognition | 0.45 | 0.30 | 0.25 |
+| **AdaFace ViT-Base** (CVLface `minchul/cvlface_adaface_vit_base_webface4m`) | human face recognition, on the face aligned by InsightFace's 5 landmarks | 0.42 | 0.36 | 0.30 |
 | **DINOv2-base** (`facebook/dinov2-base`, Apache-2.0) | general image features on the finder's face crop | 0.62 | 0.48 | 0.40 |
 
 - *Match* and *borderline* set the green / orange / red verdicts in the Look Filter and the colour bands in the gallery.
 - *Floor* is the lowest the Look Filter's Auto-Suggest cutoff can go. The cutoff is median − 1.5 × IQR, but never below the floor.
-- Scores are only comparable **within one embedder**. A DINOv2 score of 0.6 and an ArcFace score of 0.6 mean different things.
+- Scores are only comparable **within one embedder**. A DINOv2 score of 0.6 and an AdaFace score of 0.6 mean different things.
+
+**AdaFace calibration (12 Nov 2026).** Its bands sit where ArcFace's old ones did (0.45 / 0.30 / 0.25), as shares of same-person photos: 92%, 96% and 97% of them clear match, borderline and floor. Measured on 6 people's datasets, each photo against 3 of the set's own: same person p10 / p25 / median 0.46 / 0.56 / 0.63. Across 1,700 different-person pairs the median was 0.05 and the highest 0.31.
 
 **Calibration.** We calibrated DINOv2 (and CLIP, for comparison) on these images:
 
@@ -200,24 +202,30 @@ These thresholds come from a small set. Treat them as a starting point, and trus
 
 **Downloads.**
 
-- ArcFace comes with InsightFace.
+- The face finder: InsightFace's detector and gender/age files (18 MB), from a Hugging Face mirror whose files are byte-identical to InsightFace's own `buffalo_l` zip. ArcFace and the zip's two landmark models aren't downloaded.
+- AdaFace ViT (460 MB of safetensors).
+- Both are pinned and checked by SHA-256. The installer and **Download models for me** fetch them, and anything missing downloads the first time it's used.
 - DINOv2 (~350 MB of safetensors) downloads the first time you use it.
 
 ### Cached scores record their embedder
 
 - `fizgig_look_scores.json` (the Look Filter, read by the trainer's look-outlier warm-up) now stores:
-  - `embedder` (e.g. `dinov2@auto:fdetailer_v11.onnx`, or `arcface`)
+  - `embedder` (e.g. `dinov2@auto:fdetailer_v11.onnx`, or `adaface`)
   - `embedder_label`
   - a `cutoff` computed on that embedder's scale (floored at its floor)
 
-  The warm-up uses the cutoff as is and logs the embedder. Older files without these fields are ArcFace files and still work.
-- The gallery's `likeness.json` stores `embedder`, `embedder_label` and `thresholds`, and the gallery draws its badge colours and chart bands from `thresholds`. When you reopen or resume scoring, saved scores are reused only if the embedder matches. Files without an `embedder` count as ArcFace. If you change the face settings mid-run, the gallery rescores from scratch.
+  The warm-up uses the cutoff as is and logs the embedder. Older files without these fields, or with `arcface`, were made with ArcFace and still work (their cutoff is on their own scale).
+- The gallery's `likeness.json` stores `embedder`, `embedder_label` and `thresholds`, and the gallery draws its badge colours and chart bands from `thresholds`. When you reopen or resume scoring, saved scores are reused only if the embedder matches. Files without an `embedder`, or with `arcface`, were ArcFace's, so they're scored again with AdaFace. If you change the face settings mid-run, the gallery rescores from scratch.
 - The in-memory embedding cache shared by the Look Filter, gallery and Repair Studio is keyed by the embedder's settings. Changing the finder, the model or the look match never mixes old and new embeddings.
 - Block Profiler reports name the embedder in the likeness/bleed note.
 
-## People sets are unchanged
+## AdaFace replaced ArcFace
 
-With the defaults (InsightFace + ArcFace), everything a set of people gets is what it got before this feature. Checked on CPU with the real InsightFace `buffalo_l` models, running the same code paths on `master` and on this branch over 18 pictures of people: 11 photos (one to three faces each, men and women), plus versions of them made to hit the edge cases: three face close-ups, a greyscale PNG, an RGBA PNG, a JPEG with an EXIF rotation, and one with no face.
+On 12 Nov 2026 AdaFace ViT replaced ArcFace as the look match for people. Scoring MiniMax H3 Image runs epoch by epoch with ArcFace, AdaFace IR-101 and AdaFace ViT side by side, AdaFace ViT's best epochs matched the ones picked by eye every time; ArcFace's often didn't. A vision transformer compares the whole face at once, so it follows proportions and structure more than rendered skin texture. It runs on the CPU like ArcFace did: about 0.1 s more per face (the face and its mirror image are averaged), and about 0.5 GB of system RAM while it's loaded. Saved ArcFace scores are rescored, never mixed with AdaFace's.
+
+## People sets were unchanged by the face backends
+
+When the face backends were added (before AdaFace), with the defaults (InsightFace + ArcFace) everything a set of people got was what it got before that feature. Checked on CPU with the real InsightFace `buffalo_l` models, running the same code paths on `master` and on this branch over 18 pictures of people: 11 photos (one to three faces each, men and women), plus versions of them made to hit the edge cases: three face close-ups, a greyscale PNG, an RGBA PNG, a JPEG with an EXIF rotation, and one with no face.
 
 | What | Compared | Differences |
 |---|---|---|
@@ -230,14 +238,14 @@ With the defaults (InsightFace + ArcFace), everything a set of people gets is wh
 | Repair Studio likeness (embeddings and face boxes) | 105 | 0 (embeddings bit-identical) |
 | Block Profiler embeddings | 36 | 0 (bit-identical) |
 
-The InsightFace path keeps every detail of the old one: one detection pass (the padded retry is only for *Both*), boxes truncated to whole pixels and not clamped, `gender_score` from the detection score, files read with OpenCV for *Test face detection* and Repair Studio as before. `checks/test_face_backends.py` pins this down without models: the old detection, embedding and crop code is copied into the checks and compared with the new on stand-in InsightFace answers.
+The InsightFace path keeps every detail of the old one: one detection pass (the padded retry is only for *Both*), boxes truncated to whole pixels and not clamped, `gender_score` from the detection score, files read with OpenCV for *Test face detection* and Repair Studio as before. `checks/test_face_backends.py` pins this down without models: the old detection and crop code is copied into the checks and compared with the new on stand-in InsightFace answers, and AdaFace's alignment is checked the same way.
 
 ## Limitations
 
 - The clip-still picker (MiniMax H3 clips, RefMods) uses the same face finder, so with Auto it runs both detectors per candidate frame.
 
 - YOLO faces have no gender. Gender targeting needs InsightFace, which only works on human faces.
-- The Auto look match decides on a sample of up to 24 images (or on 1–3 reference photos for likeness sessions). A set that is, say, 40% human portraits and 60% faceless shots gets DINOv2. Set ArcFace explicitly to override, or lower `face_auto_threshold`.
+- The Auto look match decides on a sample of up to 24 images (or on 1–3 reference photos for likeness sessions). A set that is, say, 40% human portraits and 60% faceless shots gets DINOv2. Set *People* (AdaFace) explicitly to override, or lower `face_auto_threshold`.
 - Auto detection costs both detectors on every image: about 0.3 s per image on CPU (~0.13 s InsightFace + ~0.17 s Fdetailer on an i9). The probe adds up to 24 images at the start of a scan; those detections are reused.
 - Models with a dynamic input size, like the deepghs head ONNX, run at a fixed 640×640 letterbox. Ultralytics would use a rectangular letterbox, so scores can differ slightly (by up to ~0.2 on borderline boxes in our tests). Detections are the same in practice. Fixed-size exports, such as anything made with `convert_yolo_to_onnx.py`, match ultralytics exactly.
 - Fizgig's NMS IoU is 0.5. ADetailer uses 0.7, so Fizgig drops more nested duplicate boxes. That suits *largest face*.

@@ -531,10 +531,9 @@ def frozen_lora_vram_gb(path: str, bytes_per_elem: int = 2) -> float:
     trainable adapter's weights. Any AdaLN rows the file carries are injected from the same
     tensors and are counted here too.
 
-    Not a rounding error: the training adapter is on by default in every H3 preset. Fizgig's
-    default is Circlestone's (rank 64, 0.62 GB resident); Ostris's v1 is rank 16, 0.155 GB, and
-    his v2 at rank 32 is 0.310 GB if a user points the path at it. This reads whichever file
-    is configured rather than assuming either.
+    Not a rounding error: the training adapter is on by default in every H3 preset: Ostris's
+    v3 (rank 32, 0.310 GB resident); his v1 is rank 16, 0.155 GB. This reads whichever file is
+    configured rather than assuming one.
     """
     if not path:
         return 0.0

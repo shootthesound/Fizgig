@@ -108,17 +108,13 @@ FAMILIES = {
         Weight("minimax_turbo_lora", "larryvrh/MiniMax-H3-Turbo-Lora",
                "minimax_h3_turbo_v4_step600.safetensors", 0.78,
                "Turbo LoRA — fast 6-step in-training previews"),
-        # Training adapters, picked by the Training tab's dropdown: Circlestone (the default, one
-        # 620 MB file for both bases) and Ostris's pair (155 MB each, one per base, for video-only
-        # datasets). All fetched — small next to the DiT.
-        Weight("minimax_circlestone_adapter", "circlestone-labs/MiniMax-H3-Image-Training-Adapter",
-               "minimax_h3_image_training_adapter.safetensors", 0.62,
-               "Training adapter (Circlestone) — the default, one file for both bases"),
+        # Ostris's training adapters (310 MB each, one per base, picked by the Training Base). Both
+        # fetched — small next to the DiT.
         Weight("minimax_training_adapter", "ostris/minimax_h3_training_adapter",
-               "minimax_h3_training_adapter_v1.safetensors", 0.16,
+               "minimax_h3_training_adapter_v3.safetensors", 0.31,
                "Training adapter (fl2va) — de-distills the base while your LoRA learns (Ostris)"),
         Weight("minimax_ref_training_adapter", "ostris/minimax_h3_training_adapter",
-               "minimax_h3_ref2va_training_adapter_v1.safetensors", 0.16,
+               "minimax_h3_ref2va_training_adapter_v3.safetensors", 0.31,
                "Training adapter (ref2va) — the same, for runs on the reference base (Ostris)"),
         # ref2va is a DIFFERENT fine-tune, needed only for reference distillation — 21 GB most
         # users don't want on a first setup, so it rides behind --include-optional like the
@@ -199,7 +195,7 @@ FAMILIES.update(DESCRIBED)
 TOOLS = [
     ("MiaoshouAI/Florence-2-base-PromptGen", 1.0, "Florence-2 captioner"),
     ("Helsinki-NLP/opus-mt-en-zh", 0.3, "EN->ZH translator (bilingual captions)"),
-    ("insightface:buffalo_l", 0.3, "Face model — Look Filter + likeness scoring"),
+    ("faces:models", 0.5, "Face models — face finder + AdaFace ViT (Look Filter, likeness scoring)"),
     ("masks:segmenter", 0.02, "Person segmenter — Image Prep's Make masks"),
     # hf-model: config + tokenizer + safetensors only. The repo also carries .bin/.msgpack/.h5
     # duplicates of the same weights — an unfiltered snapshot would pull 1.16 GB for a 0.3 GB
@@ -496,14 +492,13 @@ def fetch_weight(w, models_dir, prefs, token=None, log=print, dry_run=False):
 def fetch_tool(spec, log=print, dry_run=False):
     """Warm a by-name model's cache. Never fatal — these all re-download on demand anyway."""
     model_id, gb, note = spec
-    if model_id.startswith("insightface:"):
-        # Cheap presence check first. Unlike the HF downloads, warming this one means actually
-        # constructing FaceAnalysis and letting onnxruntime load the models — several seconds of
-        # console noise. Both family buttons fetch the tools, so that would otherwise happen
-        # twice for anyone who trains with both families.
-        name = model_id.split(":", 1)[1]
-        home = os.environ.get("INSIGHTFACE_HOME") or os.path.expanduser("~/.insightface")
-        if os.path.isdir(os.path.join(home, "models", name)):
+    if model_id.startswith("faces:"):
+        # The face finder's two files + AdaFace ViT (face_utils.ensure_face_models: pinned, checksummed)
+        from fizgig import face_utils as F
+        have = os.path.isfile(F.ADAFACE_FILE["dest"]) and all(
+            os.path.isfile(os.path.join(F.insightface_root(), "models", "buffalo_l", n))
+            for n in F.INSIGHTFACE_FILES["files"])
+        if have:
             log(f"  [ok]   {model_id} — already present")
             return True
     if model_id.startswith("masks:"):
@@ -516,16 +511,9 @@ def fetch_tool(spec, log=print, dry_run=False):
     if dry_run:
         return True
     try:
-        if model_id.startswith("insightface:"):
-            # No public download API — instantiating is what actually populates ~/.insightface,
-            # and it proves onnxruntime can load the model rather than just that bytes arrived.
-            from fizgig.utils import ort_telemetry
-            ort_telemetry.off()
-            from insightface.app import FaceAnalysis
-            app = FaceAnalysis(name=model_id.split(":", 1)[1],
-                               allowed_modules=["detection", "genderage"],
-                               providers=["CPUExecutionProvider"])
-            app.prepare(ctx_id=-1)
+        if model_id.startswith("faces:"):
+            from fizgig.face_utils import ensure_face_models
+            ensure_face_models(log=log)
         elif model_id.startswith("masks:"):
             # Make masks' segmenter: the same download and hash check as its first use (dataset/automask.py)
             from fizgig.dataset import automask

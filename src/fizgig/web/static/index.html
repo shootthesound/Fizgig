@@ -682,7 +682,7 @@
               <div class="lik-panel" id="likPanel" style="display:none">
                 <div class="lik-run" id="likRun"></div>
                 <div class="field-hint" id="likPeak"></div>
-                <canvas id="likChart" height="150"></canvas>
+                <canvas id="likChart" height="190"></canvas>
               </div>
               <div class="preview-mode" id="galleryMode" style="display:none"></div>
               <div class="gallery" id="gallery"></div>
@@ -727,6 +727,7 @@
               <div id="runLoss"></div>
               <div class="il-box" id="runImageLoss" style="display:none"></div>
               <div class="tm-box" id="runTrainMaps" style="display:none"></div>
+              <div class="field-hint start-resume" id="startResumeNote" style="display:none"></div>
               <div class="field-row">
                 <button class="btn" id="btnCheck" title="Runs Start's checks without starting: lists anything missing or wrong, else the stages a run would go through">Check settings</button>
                 <button class="btn btn-primary" id="btnStart">Start Training</button>
@@ -1963,6 +1964,17 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="startupModal">
+    <div class="modal-window startup-window">
+      <div class="modal-header"><span id="startupTitle"></span>
+        <button class="btn" id="startupLater" title="Decide later: nothing starts, and the queue stays held">✕</button></div>
+      <div class="modal-body">
+        <div id="startupText"></div>
+        <div class="startup-choices" id="startupChoices"></div>
+        <div class="field-hint" id="startupNote"></div>
+      </div>
+    </div>
+  </div>
   <div class="modal-backdrop" id="cropModal">
     <div class="modal-window crop-window">
       <div class="modal-header"><span id="cropTitle">Crop to the clip's shape</span>
@@ -2047,6 +2059,14 @@
     </div>
   </div>
 
+  <!-- the job the tabs show (app.js jobPillShow): top right, clear of the app window's bar in the top middle -->
+  <div class="job-pill" id="jobPill" style="display:none">
+    <span class="job-pill-grip" id="jobPillGrip" aria-hidden="true" title="Drag to move it; double-click puts it back"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+    <button class="job-pill-text" id="jobPillText" aria-haspopup="true"></button>
+    <div class="job-pill-menu" id="jobPillMenu" role="menu" hidden></div>
+  </div>
+  <div class="job-pill-shade" id="jobPillShade" hidden></div>
+
   <!-- On Windows with an NVIDIA card: turn off CUDA Sysmem Fallback, once a launch until Don't show this again -->
   <div class="modal-backdrop" id="sysmemModal">
     <div class="modal-window sysmem-window">
@@ -2093,7 +2113,7 @@
     <button class="btn lightbox-step" id="lightboxPrev" title="Previous (←). On previews: ← → the same prompt an epoch earlier or later, ↑ ↓ the other prompts at this epoch">‹</button>
     <figure class="lightbox-figure"><div class="lightbox-mode" id="lightboxMode" style="display:none"></div><img id="lightboxImg" alt=""><figcaption id="lightboxName"></figcaption>
       <div class="lightbox-cap" id="lightboxCap" style="display:none">
-        <textarea id="lightboxCapText" rows="3" spellcheck="true"></textarea>
+        <textarea id="lightboxCapText" class="fit-text" rows="3" spellcheck="true"></textarea>
         <div class="lightbox-cap-row"><button class="btn btn-primary btn-sm" id="lightboxCapSave"
           title="Save the caption (Ctrl+Enter)">Save</button>
           <button class="btn btn-sm" id="lightboxCapRecap" title="Write this file's caption again with the model and task on the Captions tab">Re-caption</button>

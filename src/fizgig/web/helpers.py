@@ -3647,7 +3647,15 @@ MOVED_FILE = ".fizgig_moved.json"     # in the run's output folder here while it
 # the folders and files a run names besides its training folder: they go with it (dirs/<key>/<its name>/...,
 # files/<key>/<name>) and come back the same way, so every LoRA kind moves
 _MOVE_DIRS = ("FAMILY_CONCEPT_DIR", "FAMILY_CONCEPT_DIR3", "FAMILY_CONCEPT_DIR4", "FAMILY_EDIT_DIR",
-              "FAMILY_EDIT_EXTRAS_DIR", "FAMILY_SLIDER_DIR")
+              "FAMILY_EDIT_EXTRAS_DIR", "FAMILY_SLIDER_DIR", "FAMILY_REG_DIR")
+
+
+def _move_names(values, k):
+    """The run names this folder or file: set, not "off", and - the Subjects card's regularisation folder - with its
+    tick on (a path left in the greyed box neither goes with the run nor stops it moving)."""
+    if k == "FAMILY_REG_DIR" and not (values or {}).get("FAMILY_REG_ON"):
+        return False
+    return str((values or {}).get(k) or "").strip().lower() not in ("", "off")
 _MOVE_FILES = ("FAMILY_EDIT_REF", "SAMPLE_REFERENCE", "METADATA_THUMBNAIL")
 
 
@@ -3663,7 +3671,7 @@ def _caption_ext(values):
 
 def _move_extras(values):
     """The run's other folders and files that are there: ({key: folder}, {key: file})."""
-    dirs = {k: str(values.get(k) or "").strip() for k in _MOVE_DIRS}
+    dirs = {k: str(values.get(k) or "").strip() for k in _MOVE_DIRS if _move_names(values, k)}
     files = {k: str(values.get(k) or "").strip() for k in _MOVE_FILES}
     files = {k: f for k, f in files.items() if f.lower() != "off"}      # Thumbnail "off": none, not a file
     return ({k: d for k, d in dirs.items() if d and os.path.isdir(d)},
@@ -3676,7 +3684,8 @@ def _run_subfolders(folder, values):
     training share as a sub-folder does."""
     from fizgig.families import launch
     subs = launch.subfolders(folder, (str(values.get("LORA_OUTPUT_DIR") or ""),
-                                      str(values.get("FAMILY_FT_REG_DIR") or ""))) \
+                                      str(values.get("FAMILY_FT_REG_DIR") or ""),
+                                      str(values.get("FAMILY_REG_DIR") or ""))) \
         if (values or {}).get("TRAIN_SUBFOLDERS") else []
     from fizgig.dataset import detail_crops
     if not detail_crops.is_on(folder):
@@ -3875,7 +3884,7 @@ def move_start(hid, now=False, home=True, batch=False):
     v = dict(r["values"] or {})
     if desc is None or r["family"] == s.refmod.KEY or r["resume_mode"] == "ft" or s.form._kind(desc, v) == "finetune":
         raise ValueError("A fine-tune or a RefMod can't move: LoRA runs move (standard, edit and slider).")
-    gone = [k for k in _MOVE_DIRS + _MOVE_FILES if str(v.get(k) or "").strip().lower() not in ("", "off") and not (
+    gone = [k for k in _MOVE_DIRS + _MOVE_FILES if _move_names(v, k) and not (
         os.path.isdir(str(v[k]).strip()) if k in _MOVE_DIRS else os.path.isfile(str(v[k]).strip()))]
     if gone:
         raise ValueError(f"It names {str(v[gone[0]]).strip()}, which isn't on this computer any more, so it can't "
@@ -4269,6 +4278,7 @@ def move_in(body):
         f = next((mf for mf in desc.model_files if mf.role == role), None)
         if f is not None and paths.get(stage):
             over[f.pref_key] = paths[stage]
+    v["__moved_in"] = "1"          # this run came by a move: the start-up question leaves it alone (server.py)
     r = s._start(desc.key, v, rec["folder"], resume=state, models=over,
                  note=f"=== Moved here from {rec.get('lead') or 'another computer'}: carrying on from "
                       f"{os.path.basename(state)} ===")

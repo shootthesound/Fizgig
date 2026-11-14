@@ -37,6 +37,7 @@
   --warning-text: #FCD34D;
   --warning-text-soft: #FCD9A0; /* In a boxed note */
   --danger: #EF4444;
+  --pulse: #EF4444;      /* the pill's pulse when the job on show has finished: a theme sets its own */
   --danger-strong: #DC2626;
   --danger-text: #FCA5A5;
   --gold: #F1C40F;             /* Chosen, best */
@@ -423,6 +424,9 @@ body {
 .tc-box { grid-column: 1 / -1; margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }   /* Check a trigger word */
 .tc-box > summary { cursor: pointer; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; }
 .tc-box > .field-hint { max-width: 760px; margin: 4px 0 8px; line-height: 1.45; }
+/* a card's own fold (form.py rows with fold=): its rows laid out as the card's, under Check a trigger word */
+.form-fold-rows { display: grid; gap: 14px 24px; align-items: start; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.tc-box + .tc-box { margin-top: 10px; }
 .tc-verdict { margin: 10px 0 6px; font-weight: 600; }      /* Check a trigger word's answer */
 .tc-good { color: var(--success); }
 .tc-warn { color: var(--warning); }
@@ -1196,6 +1200,34 @@ input[type="range"] {
 .collapsible-header { cursor: pointer; user-select: none; }
 .form-row { margin: 2px 0; }
 /* a control worth noticing (FamilyOption featured): a soft accent panel with a bright edge */
+/* a row with an Advanced toggle (FamilyOption.advanced): a panel that grows to hold its advanced rows */
+.form-row.row-has-advanced { border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px;
+  background: var(--bg-inset); }
+.adv-toggle { margin: 6px 0 0 40px; padding: 2px 0; border: 0; background: none; color: var(--accent); font: inherit;
+  font-size: 0.9em; cursor: pointer; }
+.adv-toggle:hover { text-decoration: underline; }
+.adv-toggle:focus:not(:focus-visible) { outline: none; }
+/* open: the panel takes the card's whole width, its rows in columns, each a short box with its note beside it */
+.section-card[id^="sec-"] > .card-content > .form-row.row-has-advanced:has(> .row-advanced:not([hidden])) {
+  grid-column: 1 / -1; }
+.row-advanced { margin-top: 10px; padding-top: 12px; border-top: 1px solid var(--border);
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px 28px; }
+.row-advanced[hidden] { display: none !important; }
+.section-card[id^="sec-"] .row-advanced > .form-row { margin: 0; padding: 0; border: 0; background: none; }
+/* (these beat the form's general rules: a field row's box stretching, a switch tile's indented, clamped hints) */
+.section-card[id^="sec-"] .row-advanced { align-items: start; }
+.section-card[id^="sec-"] .row-advanced .form-row .field-row { flex-wrap: nowrap; gap: 4px 10px; display: grid;
+  grid-template-columns: auto 1fr; align-items: center; }
+.section-card[id^="sec-"] .row-advanced .form-row .field-row > .field-label { grid-column: 1 / -1; margin: 0; }
+.section-card[id^="sec-"] .row-advanced .form-row .field-row > input { width: 5.5em !important; flex: none; }
+.section-card[id^="sec-"] .row-advanced .form-row .field-row > select { width: auto !important; min-width: 10em; flex: none; }
+.section-card[id^="sec-"] .form-row .row-advanced .form-row .field-row > .field-hint { margin: 0; padding-left: 0;
+  line-height: 1.35; }
+.section-card[id^="sec-"] .form-row.kind-check .row-advanced .form-row > .field-hint { padding-left: 0; margin-top: 6px;
+  display: block; -webkit-line-clamp: unset; overflow: visible; cursor: default; }
+.section-card[id^="sec-"] .form-row .adv-toggle { border: 0 !important; box-shadow: none !important; outline: none;
+  background: none !important; border-radius: 4px; }
+.section-card[id^="sec-"] .form-row .adv-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .form-row.row-featured {
   padding: 8px 10px; margin: 4px 0; border-radius: 8px;
   background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 16%, transparent), color-mix(in srgb, var(--accent) 4%, transparent));
@@ -1277,7 +1309,7 @@ input[type="range"] {
 .side-loaded-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .meter.side-job { cursor: pointer; }
 .form-row textarea, .caption-card textarea {
-  width: 100%; max-width: 720px; background: var(--bg-inset); color: var(--text-primary);
+  width: 100%; max-width: 720px; resize: vertical; background: var(--bg-inset); color: var(--text-primary);
   border: 1px solid var(--border); font-family: var(--font-family); font-size: 10pt; padding: 6px;
 }
 .form-row select, .form-row input[type="text"] {
@@ -1827,20 +1859,34 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
   color-mix(in srgb, var(--pic-shade) 16%, var(--pic-text)) 0 50%) 0 0 / 16px 16px; }
 .lightbox-figure img.see-through { width: auto; height: auto; max-width: calc(100vw - 140px);
   max-height: calc(100vh - 80px); }
-.lightbox.with-cap .lightbox-figure img.see-through { height: auto; max-height: calc(100vh - 330px); }
 .caption-card > img.see-through { width: auto; max-width: 100%; align-self: center; }
 .lightbox-figure figcaption { color: var(--text-secondary); font-size: 9pt; margin-top: 8px; overflow-wrap: anywhere;
   text-align: center; }
 .lightbox-close { position: absolute; top: 12px; right: 12px; }
-/* a Captions picture: its caption under it, the picture shorter to make room */
-.lightbox.with-cap .lightbox-figure img { height: calc(100vh - 330px); }
-.lightbox.with-cap .lightbox-figure { padding-bottom: 28px; }
+/* a Captions picture: its caption under it, and the picture takes the height the caption leaves (a caption box
+   sized to a long caption, or dragged taller, shrinks the picture, never runs off the window) */
+.lightbox.with-cap .lightbox-figure { height: calc(100vh - 32px); }
+.lightbox.with-cap .lightbox-figure img { flex: 1 1 0; min-height: 120px; height: auto; }
+.lightbox.with-cap .lightbox-figure img.see-through { flex: 0 1 auto; min-height: 120px; max-height: 100%; }
+.lightbox.with-cap .lightbox-cap { flex: none; }
 .lightbox-cap { width: min(860px, calc(100vw - 160px)); margin-top: 14px; display: flex; flex-direction: column; gap: 10px;
   padding: 14px 16px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; box-sizing: border-box; }
 .lightbox-cap textarea { width: 100%; box-sizing: border-box; min-height: 74px; resize: vertical; font: inherit; font-size: 14px;
   background: var(--bg-inset); color: var(--text-primary); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
 .lightbox-cap textarea:focus { outline: none; border-color: var(--accent); }
-.lightbox-cap-row { display: flex; align-items: center; gap: 10px; }
+.lightbox-cap-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* a wide window: the caption beside the picture at the window's full height (app.js LB_SIDE: the same query) */
+@media (min-width: 1100px) and (min-aspect-ratio: 5/4) {
+  .lightbox.with-cap .lightbox-figure { display: grid; width: calc(100vw - 140px); column-gap: 16px;
+    grid-template-columns: minmax(0, 1fr) clamp(340px, 34vw, 560px); grid-template-rows: auto minmax(0, 1fr) auto; }
+  .lightbox.with-cap .lightbox-mode { grid-column: 1; grid-row: 1; justify-self: center; }
+  .lightbox.with-cap .lightbox-figure img { grid-column: 1; grid-row: 2; width: 100%; height: 100%; min-height: 0; }
+  .lightbox.with-cap .lightbox-figure img.see-through { width: auto; height: auto; max-width: 100%; max-height: 100%;
+    place-self: center; }
+  .lightbox.with-cap .lightbox-figure figcaption { grid-column: 1; grid-row: 3; }
+  .lightbox.with-cap .lightbox-cap { grid-column: 2; grid-row: 1 / -1; width: auto; height: 100%; margin-top: 0; min-height: 0; }
+  .lightbox.with-cap .lightbox-cap textarea { flex: 1 1 auto; min-height: 0; resize: none; }
+}
 .lightbox-step { font-size: 22px; height: 44px; width: 44px; justify-content: center; flex: none; }
 @media (max-width: 760px) {
   .lightbox { padding: 8px; gap: 4px; }
@@ -2017,6 +2063,8 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 .st-pane video { width: 100%; aspect-ratio: 1; object-fit: contain; background: var(--bg-deep); display: block; }
 .st-pane audio { width: 100%; margin-top: 6px; }
 .st-pane.audio img { aspect-ratio: 4 / 1; }
+.start-resume { color: var(--warning); margin: 6px 0 2px; }
+.start-resume .btn { margin-left: 6px; }
 .st-slot { display: grid; grid-template-columns: 110px 72px 1fr; gap: 10px; align-items: center; margin: 6px 0; }
 .st-slot img { width: 72px; height: 72px; object-fit: cover; border-radius: 6px; background: var(--bg-deep); }
 .st-slot .field-row { margin: 0; }
@@ -2195,6 +2243,15 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 
 /* Samples gallery: likeness to the subject (badge colours: >=45% match, 30-45% borderline, under 30% drift) */
 .gallery-item { position: relative; }
+/* a preview's star (top right; the likeness badge is top left, the Style score bottom left) */
+.star-btn { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%;
+  font-size: 17px; line-height: 30px; cursor: pointer; color: var(--pic-text); opacity: 0;
+  background: color-mix(in srgb, var(--pic-shade) 55%, transparent); transition: opacity .15s; }
+.gallery-item:hover .star-btn, .star-btn:focus-visible, .gallery-item.starred .star-btn { opacity: 1; }
+.gallery-item.starred .star-btn { color: var(--gold); }
+.gallery-item.starred { border-color: var(--gold); }
+.ckpt-star { color: var(--gold); }
+@media (hover: none) { .star-btn { opacity: 1; } }
 .lik-badge { position: absolute; top: 10px; left: 10px; padding: 2px 8px; border-radius: 4px; font-size: 9pt;
   font-weight: 700; color: var(--pic-text); background: color-mix(in srgb, var(--pic-shade) 60%, transparent); pointer-events: none; }
 .lik-badge.good { background: var(--success); } .lik-badge.mid { background: var(--warning); } .lik-badge.bad { background: var(--danger-strong); }
@@ -2235,6 +2292,83 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 #rvModal .rv-window { max-width: 96vw; }
 #rvModal select.st-small-select { width: auto !important; min-width: 0; }
 
+/* the job the tabs show, and the switch to another: top right, narrow enough to stay clear of the app window's bar
+   (top middle, up to 60% of the window); under modals and lightboxes. A narrow window or a phone has it bottom right,
+   above the status bar, and its list comes up from the bottom as a sheet */
+.job-pill { position: fixed; top: 10px; right: 16px; z-index: 30; display: flex; align-items: center; gap: 4px;
+  max-width: min(34vw, 460px); padding: 5px 6px; border-radius: 999px; background: var(--bg-surface);
+  border: 1px solid var(--accent); box-shadow: 0 2px 10px color-mix(in srgb, var(--shadow) 40%, transparent); }
+/* in the app window on a pod or another computer, the window's own bar sits top middle: the pill starts under it */
+.fizgig-app-bar .job-pill { top: 56px; }
+.job-pill-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none;
+  border: 0; color: var(--text-primary); font-size: 13.5px; padding: 4px 10px 4px 4px; cursor: pointer; text-align: left;
+  touch-action: none; user-select: none; display: flex; align-items: center; gap: 8px; }
+.job-pill-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the grip: six dots, the handle to drag the pill by (a wide window only) */
+.job-pill-grip { flex: none; display: grid; grid-template-columns: repeat(2, 3px); gap: 3px; padding: 5px 4px 5px 8px;
+  cursor: grab; touch-action: none; }
+.job-pill-grip i { width: 3px; height: 3px; border-radius: 50%; background: var(--text-muted); }
+.job-pill-grip:hover i { background: var(--text-primary); }
+.job-pill.dragging .job-pill-grip { cursor: grabbing; }
+.job-pill-text b { color: var(--accent); font-weight: 600; }
+.job-pill.dragging { cursor: grabbing; }
+.job-pill.dragging .job-pill-text { cursor: grabbing; }
+/* dragged somewhere its list would run off the window: the list opens upward, or from the pill's left edge */
+.job-pill-menu.up { top: auto; bottom: calc(100% + 8px); }
+.job-pill-menu.left { right: auto; left: 0; }
+.job-pill-caret { flex: none; color: var(--text-secondary); font-size: 17px; line-height: 1; }
+.job-pill-state { color: var(--text-secondary); }
+/* the job on show has finished (or another has started): the pill pulses in the theme's --pulse until you switch */
+.job-pill.attention { border-color: var(--pulse); animation: job-pill-pulse 1.4s ease-out infinite; }
+.job-pill.attention .job-pill-text b { color: var(--pulse); }
+@keyframes job-pill-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--pulse) 70%, transparent); }
+  70% { box-shadow: 0 0 0 12px color-mix(in srgb, var(--pulse) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--pulse) 0%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .job-pill.attention { animation: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--pulse) 55%, transparent); }
+}
+.job-pill-menu { position: absolute; top: calc(100% + 8px); right: 0; z-index: 31; min-width: 300px; max-width: min(92vw, 420px);
+  padding: 6px; border-radius: 12px; background: var(--bg-raised); border: 1px solid var(--border);
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--shadow) 55%, transparent); display: flex; flex-direction: column; gap: 2px; }
+.job-pill-menu[hidden] { display: none; }
+.job-pill-head { color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; padding: 4px 10px 6px; }
+.job-pill-row { display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px;
+  background: none; color: var(--text-primary); font-size: 13px; text-align: left; cursor: pointer; }
+.job-pill-row:hover { background: var(--bg-hover); }
+.job-pill-row.on { background: var(--accent-subtle); cursor: default; }
+.job-pill-row.strong { border: 1px solid var(--pulse); }
+.job-pill-row-k { flex: none; color: var(--text-secondary); font-size: 12px; min-width: 104px; }
+.job-pill-row.strong .job-pill-row-k { color: var(--pulse); font-weight: 600; }
+.job-pill-row-v { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.job-pill-shade { position: fixed; inset: 0; z-index: 29; background: transparent; }
+.job-pill-shade[hidden] { display: none; }
+/* the start-up question after a run was cut off: carry it on, the next in the queue, or a fresh start */
+.startup-window { max-width: 560px; }
+.startup-choices { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 6px; }
+.startup-choice { display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 12px 14px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--bg-raised); color: var(--text-primary); text-align: left; cursor: pointer; }
+.startup-choice:hover { border-color: var(--accent); background: var(--bg-hover); }
+.startup-choice:disabled { opacity: 0.6; cursor: default; }
+.startup-choice b { font-size: 14px; }
+.startup-choice span { color: var(--text-secondary); font-size: 12.5px; }
+.startup-choice.main { border-color: var(--accent); }
+/* whose content a tab shows, while it isn't your own setup */
+.ctx-line { margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--accent);
+  background: var(--accent-subtle); color: var(--text-primary); font-size: 13px; }
+@media (max-width: 900px) {
+  /* a phone: where it is (never dragged there), whatever place a wider window left it */
+  .job-pill { top: auto !important; left: auto !important; right: 16px !important; bottom: 112px; padding: 3px 4px;
+    max-width: min(78vw, 340px); }
+  .job-pill-text { font-size: 14px; padding: 8px 12px; }
+  .job-pill-grip { display: none; }
+  .job-pill-menu { position: fixed; top: auto; left: 0; right: 0; bottom: 0; max-width: none; min-width: 0;
+    border-radius: 16px 16px 0 0; padding: 12px 12px calc(16px + env(safe-area-inset-bottom)); gap: 6px; }
+  .job-pill-row { padding: 14px 12px; font-size: 15px; min-height: 52px; }
+  .job-pill-row-k { font-size: 13px; }
+  .job-pill-shade { background: color-mix(in srgb, var(--overlay) 55%, transparent); }
+}
 /* a pod's auto-stop countdown, over every tab */
 .pod-stop-bar { position: sticky; top: 0; z-index: 20; }
 /* editing a queued run: fixed to the bottom of the window, on every tab, until Save to queue or Cancel edit */
@@ -2590,6 +2724,7 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   --special-strong: #1F1F1F; --special: #4A4A4A; --special-soft: #7A7A7A; --special-text: #2A2A2A; --special-light: #111111;
   --data-blue: #3F7FBF; --data-teal: #3A9488; --data-green: #4E8F2A; --data-olive: #9A8A2A; --data-orange: #E0661A;
   --radius: 4px; --radius-sm: 2px;
+  --pulse: #DC2626;
 }
 
 /* Light n’ Orange's news card: white, with the one hot mark */
@@ -2612,6 +2747,7 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   --special-strong: #C2501A; --special: #E0701F; --special-soft: #E89A5A; --special-text: #F2A65A; --special-light: #F8C68F;
   --data-blue: #6A9FB5; --data-teal: #5FA89A; --data-green: #8FA34A; --data-olive: #C4A23A; --data-orange: #E0701F;
   --radius: 16px; --radius-sm: 10px;
+  --pulse: #C8452B;
 }
 /* Seventies' orange on the brown: titles, the sidebar's edge, the top edge of each card (colours only, the same widths) */
 :root[data-theme="seventies"] h1, :root[data-theme="seventies"] .card-title { color: var(--accent-text); }
@@ -2631,6 +2767,7 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   --danger-text: #FF9AA4; --gold: #FFD23F;
   --special-strong: #0891B2; --special: #22D3EE; --special-soft: #67D8EA; --special-text: #A5F3FC; --special-light: #CFFAFE;
   --data-blue: #4D8DFF; --data-teal: #22D3EE; --data-green: #2EE6A6; --data-olive: #E6D04D; --data-orange: #FF8A3D;
+  --pulse: #FF4D5E;
 }
 
 /* Cosmic Pigeon: deep space navy, nebula purple, iridescent pigeon-neck green, soft pigeon greys, a touch of starlight pink */
@@ -2646,6 +2783,7 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   --danger-text: #FF9CA9; --gold: #F5D06B;
   --special-strong: #C0368A; --special: #E879C6; --special-soft: #EE9AD4; --special-text: #F6C2E6; --special-light: #FBE0F2;
   --data-blue: #6E8BFF; --data-teal: #4FC9B8; --data-green: #5FB88A; --data-olive: #D8C86A; --data-orange: #F29A5C;
+  --pulse: #F0566A;
 }
 
 /* Deep Space: Graphite's restraint, near-black with a faint blue-violet tint, a sparing nebula violet, a faint star-glow cyan */
@@ -2661,6 +2799,7 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   --danger-text: #F09AA8; --gold: #E3C565;
   --special-strong: #0E8FA8; --special: #4CC6DB; --special-soft: #7BD3E2; --special-text: #A9E4EE; --special-light: #D3F2F7;
   --data-blue: #6A86E8; --data-teal: #4CC6DB; --data-green: #5DB08A; --data-olive: #C9BC66; --data-orange: #E0915A;
+  --pulse: #D9536A;
 }
 
 /* Graphite: plain neutral greys, a teal accent */
@@ -2670,6 +2809,7 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   --text-primary: #EDEDED; --text-secondary: #A3A3A3; --text-explain: #CFCFCF; --text-muted: #707070;
   --accent: #0D9488; --accent-hover: #14B8A6; --accent-subtle: #134E4A; --accent-text: #5EEAD4; --accent-text-hover: #99F6E4;
   --border: #303030; --border-strong: #8A8A8A;
+  --pulse: #EF4444;
 }
 
 /* Colour-blind safe (red-green: deuteranopia, protanopia): the Fizgig look, with good / bad / middling and the chart
@@ -2682,6 +2822,7 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   --danger: #D55E00; --danger-strong: #B34E00; --danger-text: #F5A56B; --gold: #F0E442;
   --special-strong: #A8578A; --special: #CC79A7; --special-soft: #D89BBE; --special-text: #E5B5D0; --special-light: #F0D3E3;
   --data-blue: #0072B2; --data-teal: #56B4E9; --data-green: #009E73; --data-olive: #F0E442; --data-orange: #D55E00;
+  --pulse: #D55E00;
 }
 
 /* High contrast (low vision): black, white text, a bright yellow accent with black text on it, heavier lines */
@@ -2697,6 +2838,7 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   --danger-text: #FF9B9B; --gold: #FFE45C;
   --special-strong: #C9A8FF; --special: #D6BBFF; --special-soft: #E2CEFF; --special-text: #EBDDFF; --special-light: #F5EEFF;
   --data-blue: #6CB4FF; --data-teal: #4DE8D8; --data-green: #7DFF7D; --data-olive: #FFE45C; --data-orange: #FF9E4D;
+  --pulse: #FF6B6B;
 }
 /* High contrast's brand buttons keep white text; links are underlined; a clear focus ring */
 :root[data-theme="high-contrast"] .runpod-btn, :root[data-theme="high-contrast"] .runpod-btn:hover,
@@ -2717,6 +2859,7 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   --danger-text: #D49A92; --gold: #C4A858;
   --special-strong: #6E5F8C; --special: #8A7AA8; --special-soft: #A396BD; --special-text: #B0A5C8; --special-light: #C2B9D4;
   --data-blue: #6E8FAD; --data-teal: #6E9E96; --data-green: #7E9A62; --data-olive: #A8985E; --data-orange: #B8805A;
+  --pulse: #A35850;
 }
 
 /* the theme picker: the Theme card at the top of Preferences, a tile per theme */
@@ -2796,6 +2939,7 @@ label[title]:has(.tip-mark) { cursor: help; }
 :root[data-theme="cosmic-pigeon"], :root[data-theme="deep-space"] {
   --fx-glow: color-mix(in srgb, var(--accent) 45%, transparent);
   --fx-bar: linear-gradient(90deg, #7C4DEA, #A855F7 45%, #E879C6 80%, #7C4DEA);
+  --pulse: #EF4444;
 }
 :root[data-theme="deep-space"] { --fx-glow: color-mix(in srgb, var(--accent) 35%, transparent);
   --fx-bar: linear-gradient(90deg, #6D4FD6, #7A5AE0 40%, #4CC6DB 80%, #6D4FD6); }

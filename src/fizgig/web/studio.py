@@ -405,7 +405,7 @@ def map_status():
 
 def metrics(ref=""):
     """The desktop's metrics strip for the pair on screen: likeness to a reference photo (the Look Filter's face
-    embedder; with Auto look match decided from the reference - ArcFace for a person, DINOv2 for a furry / anime
+    embedder; with Auto look match decided from the reference - AdaFace for a person, DINOv2 for a furry / anime
     face) and repair_studio.metrics' paired numbers - patch grid, face detail, clipping, saturation. CPU only."""
     import numpy as np
     from PIL import Image

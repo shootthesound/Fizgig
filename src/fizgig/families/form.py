@@ -1065,12 +1065,14 @@ REPEATS_HINT = ("Lets a small folder count as much as a big one, or one folder c
                 "nothing.")
 
 
-MULTI_CAPTION_HINT = ("Each line of a caption file is a caption of its own, and every time a picture comes round "
-                      "one of its lines is picked at random. For a line of tags plus a sentence, or captions from "
-                      "several captioners, so no single caption dominates. OneTrainer writes them this way."
-                      "\nOff: the whole file is one caption, its lines joined, as before.\n"
-                      "Features that need one caption (Leave the rest of the model alone, training maps) use the "
-                      "first line.")
+MULTI_CAPTION_HINT = ("Each line of a caption file is a caption of its own: each time training uses a picture, it "
+                      "takes one of its lines, every line equally likely (blank lines are skipped). For a line of tags "
+                      "plus a sentence, or captions from several captioners, so no single caption dominates. Caption "
+                      "files from OneTrainer often have several lines."
+                      "\nOff: a file's lines are joined into one caption.\n"
+                      "Put the caption style you prompt with most first: what needs a single caption uses line 1 "
+                      "(training maps, the Subjects card's Leave the rest of the model alone), and auto-recaption "
+                      "rewrites line 1 only, keeping your other lines.")
 
 
 def multi_caption_note(desc, values, image_folder):
@@ -1081,25 +1083,31 @@ def multi_caption_note(desc, values, image_folder):
     folders = [image_folder] if image_folder and os.path.isdir(image_folder) else []
     if folders and values.get("TRAIN_SUBFOLDERS"):
         folders += [f for _r, f in launch.subfolders(image_folder, (_str(values.get("LORA_OUTPUT_DIR")),))]
-    counts = []
+    counts = {}
     for f in folders:
-        counts += [n for n in launch.caption_line_counts(f, ext).values() if n]
-    many = [n for n in counts if n > 1]
+        counts.update({os.path.join(f, n): k for n, k in launch.caption_line_counts(f, ext).items() if k})
+    many = {p: k for p, k in counts.items() if k > 1}
     on = bool(values.get("MULTI_CAPTION"))
     if not on:
         if not many:
             return False, ""
-        return True, (f"{len(many):,} of your {len(counts):,} caption files have more than one line. Today each "
-                      f"trains as one long caption, its lines joined. Tick this to use each line as a caption of its "
-                      f"own.")
+        names = sorted(os.path.basename(p) for p in many)
+        which = f" ({', '.join(names[:3])}{', ...' if len(names) > 3 else ''})" if len(names) <= 5 else ""
+        return True, (f"{len(many):,} of your {len(counts):,} caption files {'has' if len(many) == 1 else 'have'} "
+                      f"more than one line{which}. With this off, a file's lines are joined into one caption. Tick it "
+                      f"to train each line as a caption of its own.")
     if not counts:
         return True, ""
     if not many:
-        return True, "No caption file here has more than one line yet, so this changes nothing: each picture has its one caption."
-    total = sum(counts)
-    return True, (f"{len(counts):,} pictures, {total:,} captions ({len(many):,} with more than one, up to "
-                  f"{max(many)} a picture). Caching encodes every line, so it takes about {total / len(counts):.1f}x "
-                  f"as long; training runs at the same speed.")
+        return True, ("No caption file here has more than one line yet, so this changes nothing: each picture has "
+                      "its one caption.")
+    total = sum(counts.values())
+    span = f"{min(many.values())}-{max(many.values())}" if min(many.values()) != max(many.values()) else \
+        str(max(many.values()))
+    return True, (f"{len(counts):,} pictures, {total:,} captions: {len(many):,} picture{'s' if len(many) != 1 else ''} "
+                  f"{'have' if len(many) != 1 else 'has'} {span} lines. Preparing the captions before training "
+                  f"(the text cache) takes about {total / len(counts):.1f}x as long; the pictures' cache and training "
+                  f"speed don't change.")
 
 
 def _num(values, key, default):

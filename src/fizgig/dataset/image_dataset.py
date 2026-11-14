@@ -1552,7 +1552,7 @@ class ImageDataset(torch.utils.data.Dataset):
                     f"(or flush the cache) to pick sharp frames for them.")
         if self.multi_caption:
             logger.info(f"[captions] several per picture in {self.image_directory}: {multi_items} of its pictures have "
-                        f"more than one, {multi_lines} captions in all; each step uses one of a picture's at random")
+                        f"more than one, {multi_lines} captions in all; each step uses one of a picture's lines at random")
         if self.face_boost != 1.0:
             what = {"face": "a face", "head": "a face (with its hair)"}.get(self.face_area, self.face_area.replace("_", " "))
             logger.info(f"[face boost] {face_items} picture(s) in {self.image_directory} have {what} found: it counts "

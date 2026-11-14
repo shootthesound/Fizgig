@@ -81,9 +81,9 @@ def test_row_shows_only_for_multi_line_captions(folder, tmp_path):
     assert form.DEFAULTS["MULTI_CAPTION"] is False
     st = form.state(desc, {}, str(folder))
     assert "MULTI_CAPTION" not in st["hidden"]
-    assert st["notes"]["MULTI_CAPTION"].startswith("1 of your 2 caption files have more than one line")
+    assert st["notes"]["MULTI_CAPTION"].startswith("1 of your 2 caption files has more than one line (a.txt). With this off")
     st = form.state(desc, {"MULTI_CAPTION": True}, str(folder))
-    assert st["notes"]["MULTI_CAPTION"].startswith("2 pictures, 4 captions (1 with more than one, up to 3 a picture)")
+    assert st["notes"]["MULTI_CAPTION"].startswith("2 pictures, 4 captions: 1 picture has 3 lines.")
     plain = tmp_path / "plain"
     _pic(str(plain / "c.png"), "one line")
     assert "MULTI_CAPTION" in form.state(desc, {}, str(plain))["hidden"]
@@ -96,6 +96,7 @@ def test_trigger_checked_per_line(folder):
     st = {"CAPTION_TRIGGER_WORD": "zwx", "DATASET_CAPTION_EXT": ".txt"}
     off = launch.start_checks(desc, st, str(folder))
     assert not any("trigger" in w for w in off)                  # off: the file as a whole has it
+    assert any(w.startswith("2 caption files have several lines (a.png, b.png)") for w in off)   # and the lines join
     on = launch.start_checks(desc, {**st, "MULTI_CAPTION": True}, str(folder))
     assert any(w.startswith("1 caption line in 1 picture doesn't contain the trigger word 'zwx'") for w in on)
 
@@ -119,3 +120,12 @@ def test_captioner_adds_a_line_once(tmp_path):
     assert open(str(tmp_path / "a.txt"), encoding="utf-8").read() == "zwx, tags\nzwx, a sentence"
     _write_caption(p, "replaced", ".txt")
     assert open(str(tmp_path / "a.txt"), encoding="utf-8").read() == "replaced"
+
+
+def test_recaption_first_line_keeps_the_rest(tmp_path):
+    from fizgig.scripts.batch_caption import _write_caption
+    p = str(tmp_path / "a.png")
+    with open(str(tmp_path / "a.txt"), "w", encoding="utf-8") as f:
+        f.write("old tags\nmy sentence")
+    _write_caption(p, "new tags", ".txt", first_line=True)
+    assert open(str(tmp_path / "a.txt"), encoding="utf-8").read() == "new tags\nmy sentence"

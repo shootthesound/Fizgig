@@ -482,12 +482,13 @@ def _popen(cmd, prefs, stdin=False):
 
 
 def ai_captions(prefs, captioner, folder, model, task_label, instruction, max_tokens, trigger, overwrite, clips,
-                only=None, photos=True, ext=".txt", threshold=0.35, leave_out="", underscores=False, add_line=False):
+                only=None, photos=True, ext=".txt", threshold=0.35, leave_out="", underscores=False, add_line=False,
+                first_line=False):
     """Caption the folder's pictures (and clips) with a captioner from the registry (`model` is its label or key), or
     just `only` (a re-caption). The worker loads once and stays loaded for the next batch. A tagger keeps the tags
     scoring `threshold` or more, minus `leave_out` (comma-separated), underscores as spaces unless `underscores`.
     add_line: every file, each keeping its caption and getting the new one on a line of its own (Several captions per
-    picture, #300)."""
+    picture, #300). first_line: a re-caption of a file with several lines writes its first line and keeps the rest."""
     if _busy():
         raise ValueError("A captioning job is already running. Stop it first.")
     desc = _captioners.get(model)
@@ -535,7 +536,8 @@ def ai_captions(prefs, captioner, folder, model, task_label, instruction, max_to
     except OSError:
         pass
     job = {"list_file": list_file, "max_new_tokens": int(max_tokens or 120), "trigger": trigger.strip(),
-           "stop_file": stop_file, "caption_ext": ext, **({"add_line": True} if add_line else {})}
+           "stop_file": stop_file, "caption_ext": ext, **({"add_line": True} if add_line else {}),
+           **({"first_line": True} if first_line and not add_line else {})}
     if desc.instruction:
         instr = os.path.join(JOB_DIR, "instruction.txt")
         with open(instr, "w", encoding="utf-8") as f:

@@ -4602,7 +4602,7 @@ class Handler(BaseHTTPRequestHandler):
                     bool(b.get("overwrite")), clips, only=only or None, photos=photos,
                     ext=captions.caption_ext(b.get("ext")), threshold=float(b.get("threshold") or 0.35),
                     leave_out=str(b.get("leave_out") or ""), underscores=bool(b.get("underscores")),
-                    add_line=bool(b.get("add_line")) and not only))
+                    add_line=bool(b.get("add_line")), first_line=bool(b.get("first_line")) and bool(only)))
             if path.startswith("/api/studio/"):
                 try:
                     return self.json(_studio_post(path[len("/api/studio/"):], b))

@@ -470,6 +470,12 @@ def start_checks(desc, st, image_folder):
         if none:
             out.append(f"{len(none)} of {len(items)} pictures {'has' if len(none) == 1 else 'have'} no caption ({', '.join(none[:3])}"
                        f"{', ...' if len(none) > 3 else ''}): {'it trains' if len(none) == 1 else 'they train'} on an empty caption.")
+        multi = [f for f, t in texts.items() if t and sum(1 for line in t.splitlines() if line.strip()) > 1]
+        if multi and getattr(desc, "multi_caption", False) and not multi_caption_on(desc, st) \
+                and not edit_on(desc, st) and not slider_on(desc, st):
+            out.append(f"{len(multi)} caption file{'s have' if len(multi) != 1 else ' has'} several lines "
+                       f"({', '.join(multi[:3])}{', ...' if len(multi) > 3 else ''}): with Several captions per picture "
+                       f"off, each file's lines train joined as one caption.")
         trig = _s(st.get("CAPTION_TRIGGER_WORD"))
         if trig and trig.lower() != "trigger_word" and not multi_person_on(desc, st):
             pat = re.compile(r"(?<!\w)" + re.escape(trig) + r"(?!\w)", re.I)
@@ -483,7 +489,8 @@ def start_checks(desc, st, image_folder):
                     out.append(f"{n} caption line{'s' if n != 1 else ''} in {len(miss)} picture"
                                f"{'s' if len(miss) != 1 else ''} {'don' if n != 1 else 'doesn'}'t contain the trigger "
                                f"word '{trig}' ({', '.join(list(miss)[:3])}{', ...' if len(miss) > 3 else ''}): "
-                               f"{'those lines train' if n != 1 else 'that line trains'} without it.")
+                               f"{'those lines train' if n != 1 else 'that line trains'} without it. Add it with the "
+                               f"Captions tab's Add text, To every line.")
                 lack = []
             if lack:
                 out.append(f"{len(lack)} caption{'s don' if len(lack) != 1 else ' doesn'}'t contain the trigger word "

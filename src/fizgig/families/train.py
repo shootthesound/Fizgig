@@ -1496,6 +1496,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     _launch = uuid.uuid4().hex[:12]      # this launch: a re-run of the same name is a new training share
     # what keeps this run on one GPU (the share's half would train without it), for the Helpers tab to say so
     _share_off = ("a fine-tune" if finetune else
+                  "a regularisation dataset" if any(getattr(ds, "is_reg", False) for ds in group.datasets) else
                   "Start at a smaller size" if low_loader is not None else
                   "Your subject and other people" if dop else
                   "Track how each image trains and the per-image options" if (

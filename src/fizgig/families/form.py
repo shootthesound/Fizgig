@@ -1030,8 +1030,10 @@ def batch_blockers(desc, values):
     if not desc.batch_training:
         return ["this model trains one picture a step"]
     kind = _kind(desc, values)
+    reg = reg_ticked(desc, values)          # a regularisation dataset sets DOP and Isolation aside (greyed, kept)
     out = [w for on, w in ((kind == "edit", "an edit"), (kind == "slider", "a slider"),
-                           (values.get("FAMILY_DOP"), "DOP"), (values.get("FAMILY_MULTI_PERSON"), "Fizgig LoRA Isolation"),
+                           (values.get("FAMILY_DOP") and not reg, "DOP"),
+                           (values.get("FAMILY_MULTI_PERSON") and not reg, "Fizgig LoRA Isolation"),
                            (str(values.get("STAGE_MP") or "Off") != "Off", "Start at a smaller size"),
                            (values.get("MASKED_TRAINING") and str(values.get("MASK_PRIOR") or "Off") != "Off",
                             "keeping the model's own picture outside the mask")) if on]
@@ -1475,8 +1477,8 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             elif state == "done":
                 notes["FAMILY_PREVIEW_LOOK"] = "Downloaded: previews use it from the next one."
     if desc.batch_training:
-        one_a_step = kind in ("edit", "slider") or values.get("FAMILY_DOP") or \
-            values.get("FAMILY_MULTI_PERSON")
+        one_a_step = kind in ("edit", "slider") or (not reg and (values.get("FAMILY_DOP") or
+                                                                  values.get("FAMILY_MULTI_PERSON")))
         if one_a_step:
             disabled.add("BATCH_SIZE")
             notes["BATCH_SIZE"] = ("Greyed out: sliders, edits, DOP and Fizgig LoRA Isolation train one picture a "

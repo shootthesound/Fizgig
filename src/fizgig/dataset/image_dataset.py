@@ -1413,7 +1413,9 @@ class ImageDataset(torch.utils.data.Dataset):
                                  latent_cache_path=cache_file)
             item_info.text_encoder_output_cache_path = te_cache
             _mdir = self.mask_directory or self.image_directory
-            if self.loss_masks and _mdir and bucket_key == bucket_reso \
+            # a regularisation set's pictures train whole and plain: no mask, no Boost the face (an anchor for the kind
+            # of thing they show, not a subject)
+            if self.loss_masks and _mdir and bucket_key == bucket_reso and not self.is_reg \
                     and self.latent_cache_frames(cache_file) <= 1:          # stills only: never a clip or a voice
                 if _mask_names is None:
                     _mask_names = folder_names(_mdir)
@@ -1426,7 +1428,7 @@ class ImageDataset(torch.utils.data.Dataset):
                         misfit_masks.append(f"{os.path.basename(item_info.mask_path)} ({_why})")
                         item_info.mask_path = None              # its picture trains unmasked, and the log says so
                 masked_items += bool(item_info.mask_path)
-            if self.face_boost != 1.0 and self.image_directory and bucket_key == bucket_reso \
+            if self.face_boost != 1.0 and self.image_directory and bucket_key == bucket_reso and not self.is_reg \
                     and self.latent_cache_frames(cache_file) <= 1:          # Boost the face: stills only
                 if _pic_names is None:
                     _pic_names = folder_names(self.image_directory)

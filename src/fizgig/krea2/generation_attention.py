@@ -13,9 +13,10 @@ from fizgig import user_data
 
 
 def preference_available():
-    """Offer on AMD launches or when installed; discovery must not load native kernels."""
-    if os.environ.get("FIZGIG_GPU_BACKEND", "").lower() == "rocm":
-        return True
+    """Offered only on an AMD launch with SageAttention installed in Fizgig's Python (the Linux AMD installer builds
+    it for RX 9070 / 9070 XT). Never on NVIDIA. Discovery must not load native kernels, so find_spec, not import."""
+    if os.environ.get("FIZGIG_GPU_BACKEND", "").lower() != "rocm":
+        return False
     try:
         return importlib.util.find_spec("sageattention") is not None
     except (ImportError, ValueError):
@@ -23,11 +24,14 @@ def preference_available():
 
 
 def wanted():
+    """The preference is on AND offered here: a setting saved on another machine, or before SageAttention was
+    removed, does nothing where the tick isn't shown."""
     try:
         with open(user_data.PREFS_FILE, encoding="utf-8") as f:
-            return str(json.load(f).get("inference_sageattention", "0")).lower() in ("1", "true")
+            on = str(json.load(f).get("inference_sageattention", "0")).lower() in ("1", "true")
     except (OSError, ValueError):
         return False
+    return on and preference_available()
 
 
 def configured_generation(fn):

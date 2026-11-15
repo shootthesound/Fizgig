@@ -15,9 +15,10 @@ from fizgig.krea2 import attention as A
 from fizgig.krea2 import generation_attention as G
 
 
-@pytest.mark.parametrize("backend,installed,want", [("rocm", False, True), ("cuda", False, False),
-                                                    ("", False, False), ("cuda", True, True)])
-def test_preference_offered_only_on_amd_or_with_installed_package(monkeypatch, backend, installed, want):
+@pytest.mark.parametrize("backend,installed,want", [("rocm", True, True), ("rocm", False, False),
+                                                    ("cuda", False, False), ("", False, False), ("cuda", True, False),
+                                                    ("", True, False)])
+def test_preference_offered_only_on_amd_with_installed_package(monkeypatch, backend, installed, want):
     monkeypatch.setenv("FIZGIG_GPU_BACKEND", backend)
     monkeypatch.setattr(G.importlib.util, "find_spec", lambda name: object() if installed else None)
     assert G.preference_available() is want
@@ -47,6 +48,7 @@ def _prefs(monkeypatch, tmp_path, on):
     path = tmp_path / "prefs.json"
     path.write_text(json.dumps({"inference_sageattention": on}))
     monkeypatch.setattr(G.user_data, "PREFS_FILE", str(path))
+    monkeypatch.setattr(G, "preference_available", lambda: True)     # an AMD launch with SageAttention installed
     return path
 
 
@@ -155,3 +157,14 @@ def test_actual_driver_generation_and_training_keep_separate_backends(monkeypatc
     model.train()
     driver._forward(model, torch.randn(1, 16, 8, 8), torch.tensor([.5]), cond).square().mean().backward()
     assert model.first.weight.grad is not None
+
+
+def test_saved_preference_does_nothing_where_not_offered(monkeypatch, tmp_path):
+    path = tmp_path / "prefs.json"
+    path.write_text(json.dumps({"inference_sageattention": "1"}))
+    monkeypatch.setattr(G.user_data, "PREFS_FILE", str(path))
+    monkeypatch.setenv("FIZGIG_GPU_BACKEND", "cuda")
+    monkeypatch.setattr(G.importlib.util, "find_spec", lambda name: object())
+    assert G.wanted() is False
+    dit = SimpleNamespace(attn_mode="torch", split_attn=False)
+    assert G.configured_generation(lambda self, model: model.attn_mode)(None, dit) == "torch"

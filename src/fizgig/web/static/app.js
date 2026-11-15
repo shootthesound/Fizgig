@@ -1286,10 +1286,9 @@ function inferenceCard() {
   });
   const sageControls = S.sageAttentionOption ? [
     el("label", {class: "checkbox-label"}, sage, " Force SageAttention for Krea 2 image generation"),
-    el("div", {class: "field-hint", text: "Applies to Krea 2 training previews, Studio, Royale and Profiler from the " +
-      "next generated image. Requires a compatible SageAttention build in Fizgig's Python environment (including " +
-      "ROCm builds). Generation fails if it is unavailable; turn this off to use the default attention. " +
-      "Training steps keep their own attention backend."})] : [];
+    el("div", {class: "field-hint", text: "Krea 2 pictures (training previews, Studio, Royale, the Profiler) use the " +
+      "SageAttention the installer built for your card, from the next picture. Off by default. If pictures fail " +
+      "with it on, turn it off. Training keeps its own attention."})] : [];
   return el("div", {class: "section-card"}, el("div", {class: "card-title"}, el("span", {text: "Inference performance"})),
     el("div", {class: "card-desc", text: "For Studio, Royale, the Profiler and Extract. Block swap moves blocks to the CPU " +
       "between steps to save memory, at some speed. Training manages its own and ignores these."}),

@@ -25,6 +25,21 @@ _PDD_SIGMAS = (1.0, 0.9675236940383911, 0.8875485062599182, 0.75, 0.532773911952
 # numbers behind the row's Advanced toggle; minimax_image/driver.py's defaults are the same.
 LIKENESS_DEFAULTS = {"BEFORE": "16.67", "BEFORE_END": "50", "HINGE": "6", "SLIDE": "0", "AFTER": "75",
                      "ALTERNATE": "Before the hinge"}
+# the ⓘ beside Likeness optimization (Peter, 15 Nov 2026: help text, the schedule itself stays as it is)
+_LIKENESS_EXPLAIN = (
+    "H3 Image draws each training step at one of its 6 noise levels. The clean-end share is how many steps go to the "
+    "last one, the nearly finished picture, where skin, eyes and fine detail are made. The model's own share is 1 in "
+    "6 (about 17%). A higher share learns likeness faster; the other levels learn pose, layout and the shape of "
+    "things.\n\n"
+    "The schedule has two halves, split at the Hinge epoch. Before the hinge is the share up to and including that "
+    "epoch; Rises to (if set) makes it climb evenly to that figure by the hinge. After the hinge is the share from "
+    "then on. Slide over moves evenly from one to the other over that many epochs after the hinge (0 jumps "
+    "straight across). Alternate makes one half switch between the two shares every epoch, starting with its "
+    "own.\n\n"
+    "The defaults: epochs 1, 3 and 5 at 17%, 33% and 50%; epochs 2, 4 and 6 at 75%; from epoch 7, 75% every "
+    "epoch.\n\n"
+    "H3 Image learns fast. If hands, faces or bodies come out broken, try an earlier epoch before you change "
+    "these numbers: a late epoch has usually gone past its best.")
 
 
 def _preset(rank, epochs=30, slider=False, mp="0.25", edit=False, likeness=False, optimizer="automagic3", lr=2.8e-4):
@@ -228,7 +243,7 @@ MINIMAX_IMAGE = FamilyDescription(
                      hint="Weights training toward the last of the model's 6 steps, the nearly finished picture, "
                           "where skin, eyes and fine detail are made, changing over the run so the earlier steps "
                           "(pose, layout, the shape of things) keep up. Untick for H3 Image's own even share.",
-                     summary="likeness optimization"),
+                     explain=_LIKENESS_EXPLAIN, summary="likeness optimization"),
         # its schedule (Peter, 12 Nov 2026): one share before the hinge, one after, and which side alternates (between
         # the two shares, starting with its own). Inside the tick's row, behind its Advanced toggle (closed by default).
         FamilyOption("MINIMAX_IMAGE_LIKENESS_BEFORE", "Before the hinge", kind="entry", tokens="likeness_before={}",

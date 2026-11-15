@@ -236,6 +236,7 @@ class FamilyOption:
     #                                   check: tokens sent when ticked
     default: str = ""                 # entry text / "1" for a ticked check; a choice defaults to its first label
     hint: str = ""                    # the grey line under the control
+    explain: str = ""                 # web: a longer help behind an ⓘ beside the label (a blank line = a new paragraph)
     warn: str = ""                    # an amber line under the hint (web), with `warn_link` (an href) after it
     warn_link: str = ""
     featured: bool = False            # the row stands out (web): a soft accent panel, for a control worth noticing

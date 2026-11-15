@@ -396,10 +396,12 @@ function renderRow(r) {
   if (r.lines) return promptLines(r, wrap);
   if (r.kind === "cadence") return cadenceRow(r, wrap);
   if (r.kind === "split") return splitRow(r, wrap);
+  const explain = r.explain ? explainParts(r.explain) : null;
   if (r.kind === "check") {
     input = el("input", {type: "checkbox", id: "f_" + r.key, onchange: (e) => set(e.target.checked)});
     input.checked = !!v;
-    wrap.append(el("label", {class: "checkbox-label"}, input, " " + r.label));
+    const lab = el("label", {class: "checkbox-label"}, input, " " + r.label);
+    wrap.append(explain ? el("div", {class: "explain-line"}, lab, explain.btn) : lab);
   } else if (r.kind === "radio") {
     const box = el("div", {class: "radio-row"});
     for (const c of r.choices) {
@@ -461,6 +463,7 @@ function renderRow(r) {
         title: "Back to the LoRA output folder in Preferences", onclick: () => { input.value = ""; set(""); }}));
     }
     if (r.suffix) row.append(el("span", {class: "field-hint", text: r.suffix}));
+    if (explain) row.append(explain.btn);
     let actMsg = null;
     if (r.action === "write_captions") {          // the typed line as every photo's caption (Edit, Slider pairs)
       const w = writeCaptions(() => input.value);
@@ -492,7 +495,18 @@ function renderRow(r) {
   if (link) wrap.append(el("div", {class: "field-hint"}, link));
   if (r.warn) wrap.append(el("div", {class: "field-hint tc-warn"}, r.warn, r.warn_link ? el("a", {class: "inline-link",
     target: "_blank", rel: "noopener", href: r.warn_link, text: " Best values: the Reddit discussion →"}) : ""));
+  if (explain) wrap.append(explain.box);
   return wrap;
+}
+
+// a row's longer help (FamilyOption.explain): an ⓘ beside its label opens it under the row; a blank line = a paragraph
+function explainParts(text) {
+  const box = el("div", {class: "row-explain", hidden: true});
+  for (const p of text.split("\n\n")) box.append(el("p", {text: p}));
+  const btn = el("button", {type: "button", class: "explain-btn", title: "What this does", "aria-label": "What this does",
+    "aria-expanded": "false"}, el("i"));
+  btn.addEventListener("click", () => { box.hidden = !box.hidden; btn.setAttribute("aria-expanded", String(!box.hidden)); });
+  return {btn, box};
 }
 
 // How often to preview: one sentence of boxes - "Every [N] epochs", then (ticked) "then from epoch [10], every
@@ -1929,7 +1943,7 @@ function stopConfirmReset() {
   if (STOP_CONFIRM.timer) clearTimeout(STOP_CONFIRM.timer);
   STOP_CONFIRM.timer = null;
   const b = $("btnStop");
-  if (b) { b.textContent = "Stop"; b.title = ""; }
+  if (b) { b.textContent = b.dataset.idle || "Stop"; b.title = ""; }
 }
 const RUN_LABELS = {idle: "Idle", starting: "Starting", running: "Running", pausing: "Pausing", paused: "Paused",
                     completed: "Finished", failed: "Failed", stopped: "Stopped", moved: "Moved"};
@@ -1965,8 +1979,12 @@ async function pollRun() {
   // a model that can't pause (a RefMod is made in one go): no Pause button for its runs
   const runFam = S.schema.families.find((f) => f.key === (r.family || S.family)) || {};
   $("btnPause").style.display = runFam.no_pause ? "none" : "";
-  $("btnStop").disabled = !live;
-  if (!live) stopConfirmReset();                    // run ended: Stop goes back to one plain button
+  // a paused run holds the queue: Stop paused run ends the pause (its saves stay; Continue on its card carries it on)
+  const heldPause = !live && r.state === "paused" && !!r.resume && !moveBusy;
+  $("btnStop").dataset.idle = heldPause ? "Stop paused run" : "Stop";
+  $("btnStop").disabled = !live && !heldPause;
+  if (!live && !heldPause) stopConfirmReset();      // run ended: Stop goes back to one plain button
+  else if (!STOP_CONFIRM.timer) $("btnStop").textContent = $("btnStop").dataset.idle;
   $("btnResume").style.display = !live && r.resume && !moveBusy ? "" : "none";
   renderWebQueue(r.web_queue || {items: []});
   queueSummary(r.web_queue || {items: []}, r);
@@ -11245,8 +11263,11 @@ function wire() {
   $("btnStop").addEventListener("click", () => {
     if (!STOP_CONFIRM.timer) {
       const b = $("btnStop");
+      const held = b.dataset.idle === "Stop paused run";
       b.textContent = "Confirm stop";
-      b.title = "Click again within 30 s to stop the run now (it won't save a restore point; Pause does)";
+      b.title = held ? "Click again within 30 s to end the pause, so the queue can start. Its saves stay: Continue " +
+                       "on its card in Runs & outputs carries it on later"
+                     : "Click again within 30 s to stop the run now (it won't save a restore point; Pause does)";
       STOP_CONFIRM.timer = setTimeout(stopConfirmReset, 30000);
       return;
     }

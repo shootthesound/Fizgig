@@ -2167,6 +2167,24 @@ def _stop():
     return True
 
 
+def _stop_paused():
+    """Stop paused run (#348): the paused run ends here, so the queue can start. Its saves stay, and its record reads
+    stopped, so Continue on its card in Runs & outputs carries it on later. False if no run is paused."""
+    with _lock:
+        if _run["state"] != "paused" or _run["proc"] is not None or not _run.get("resume"):
+            return False
+        lora, out_dir = _run.get("lora") or "", _run.get("output_dir") or ""
+        _run.update(state="stopped", resume="", resume_mode="", ended_at=time.time())
+    try:
+        os.remove(os.path.join(out_dir, PAUSED_FILE))
+    except OSError:
+        pass
+    history.stop_paused(lora, out_dir)
+    append_log("\n■ Paused run stopped. Its saves are kept: Continue on its card in Runs & outputs carries it on.\n")
+    webqueue.on_run_ended("stopped", lora, _queue_starter)
+    return True
+
+
 # ---- uploads: a training folder sent from the browser's computer ------------------------------------------------
 # what the trainers read (dataset/image_dataset.py: pictures, .mp4 clips, songs) + captions, ACE-Step's .json song
 # details and zips. Not .gif / .webm: nothing trains on them.
@@ -4401,8 +4419,8 @@ class Handler(BaseHTTPRequestHandler):
                 with _lock:
                     paused = _run["state"] == "paused"
                 if paused:                              # as the desktop's Start next now: it would leave the run
-                    return self.json({"error": "A run is paused. Resume it first: the queue carries on after it "
-                                               "finishes."}, 400)
+                    return self.json({"error": "A run is paused. Resume it (the queue carries on after it finishes), "
+                                               "or press Stop paused run to set it aside."}, 400)
                 webqueue.release(_queue_starter)
                 return self.json({"ok": True})
             if path == "/api/queue/hold":
@@ -4593,7 +4611,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/fetch/cancel":
                 return self.json({"ok": _cancel_fetch()})
             if path == "/api/stop":
-                return self.json({"ok": _stop()})
+                return self.json({"ok": _stop() or _stop_paused()})
             if path == "/api/logout":                     # this device: its login cookie goes
                 return self.json({"ok": True}, extra=[("Set-Cookie", "fizgig_session=; Path=/; Max-Age=0; HttpOnly; "
                                                                      "SameSite=Strict")])

@@ -128,6 +128,9 @@ def test_actual_driver_generation_and_training_keep_separate_backends(monkeypatc
     from fizgig.krea2.model import SingleMMDiTConfig, SingleStreamDiT
 
     path = _prefs(monkeypatch, tmp_path, "0")
+    # generate() moves a CPU model's work to the GPU when there is one (block swap streams the weights); this model
+    # stays on the CPU, so the check runs CPU-only on a machine with a card too
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     monkeypatch.setattr(D, "DTYPE", torch.float32)
     monkeypatch.setattr(A, "sageattn", _sage)
     # Never resolve or invoke the CUDA varlen API.

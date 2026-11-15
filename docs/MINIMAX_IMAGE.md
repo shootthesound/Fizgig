@@ -48,7 +48,7 @@ A 16 GB laptop with 32 GB of RAM trains a rank 8 LoRA on Auto and runs Studio (1
 
 ## Previews
 
-- 6 steps, no CFG, Euler on the model's own schedule, 2048×2048 by default (ComfyUI's default size for this model). Negative prompts don't apply.
+- 6 steps, no CFG, Euler on the model's own schedule, 2048×2048 by default (ComfyUI's default size for this model). Negative prompts don't apply. The Samples tab also offers 3072 and 4096 (up to 16 MP, nearer the model's best); the preview sets the run's memory peak, so a bigger one needs more VRAM than the table above.
 - Studio renders with INT8 attention, as the checkpoint asks and as ComfyUI does: on the same LoRA, prompt and seed at 2048×2048, Studio and ComfyUI differ by a mean of 5 in 255 (27 dB PSNR). In-training previews use standard attention, which differs from ComfyUI by a mean of 10 in 255 (22 dB); judge the final look in Studio or ComfyUI.
 
 ## Sliders

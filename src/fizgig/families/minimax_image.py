@@ -233,6 +233,7 @@ MINIMAX_IMAGE = FamilyDescription(
     preview_negative=None,
     preview_width=2048,               # ComfyUI's MiniMaxH3ImageConditioning default; the low end of 4-20 MP
     preview_height=2048,
+    preview_more_sizes=(3072, 4096),  # 9 and 16 MP for those with the memory (#348); 2048 stays the default
     repair_size=1024,
     # Likeness optimization (H3 Image's own, in place of the Clean-end share box, Peter 11 Nov 2026): the share of
     # steps at the noise level below sigma 0.5 (0.232, the last of the 6) follows LIKENESS_DEFAULTS' schedule; the

@@ -689,6 +689,9 @@ class FamilyDescription:
     # long side to this many px (quicker, but a 1 MP model looks worse below its size: MOSS-Image). 0 = no tick
     preview_small_card_option: int = 0
     preview_height: int = 1024
+    # sizes beyond the Samples tab's usual list (form.SIZES, up to 2048) for a model made for bigger pictures: H3 Image
+    # works at 4-20 MP (#348). The default stays preview_width / preview_height
+    preview_more_sizes: tuple = ()
     repair_size: int = 768            # Repair Studio's starting preview size (its Res dropdown) for the family
     block_activity: bool = False      # Repair Studio lights each block's slider as the song plays (BlockMeter)
     repair_default_strength: float = 1.0   # Repair Studio's primary / donor "at strength" on a family switch (ACE-Step 0.5)

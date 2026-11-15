@@ -414,9 +414,11 @@ function renderRow(r) {
   } else {
     if (r.kind === "choice") {
       input = el("select", {id: "f_" + r.key, onchange: (e) => set(e.target.value)});
+      // a choice since renamed (FamilyOption.choice_renamed): the saved value reads as its new label
+      const cv = r.renamed && v != null && r.renamed[v] ? r.renamed[v] : v;
       // a saved value in another case is the same choice ("auto" saved before the box read "Auto")
-      const same = v != null && r.choices.find((c) => c.toLowerCase() === String(v).toLowerCase());
-      const val = same || v;
+      const same = cv != null && r.choices.find((c) => c.toLowerCase() === String(cv).toLowerCase());
+      const val = same || cv;
       if (same && same !== v) S.values[r.key] = same;
       const opts = r.choices.includes(String(val)) || !val ? r.choices : [String(val), ...r.choices];
       for (const c of opts) input.append(el("option", {value: c, text: c}));

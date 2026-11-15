@@ -288,6 +288,8 @@ class FamilyOption:
     # them", which puts `value` into the boxes. () = none
     slide_alt: tuple = ()
     single: str = ""                  # Single's value to start with when the default is a Split or Slide value
+    # (old label, new label): a choice renamed, so a saved run, preset or queued run keeps its pick
+    choice_renamed: tuple = ()
 
     def choice_labels(self):
         return [c[0] for c in self.choices]
@@ -296,6 +298,7 @@ class FamilyOption:
         """The choice label for a stored value: itself, else the label that contains it (an old setting's value -
         "ref2va" -> "Reference (ref2va)") or that it starts with, else the first (the default)."""
         v = str(value or "").strip()
+        v = dict(self.choice_renamed).get(v, v)
         labels = self.choice_labels()
         if v in labels:
             return v

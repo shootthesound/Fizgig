@@ -92,3 +92,15 @@ def test_boxes_only_sent_while_ticked_and_behind_advanced():
 def test_off_is_the_model_default_and_cli_share_still_works():
     assert _share({}, 3) is None
     assert _share({"lownoise_pct": "40"}, 3) == 40.0
+
+
+def test_alternate_renamed_keeps_saved_picks():
+    """The Alternate choices were renamed (15 Nov 2026, worded like MOSS-Image's Slide): a run, preset or queued run
+    saved with the old labels keeps its pick, and the default is the new first choice."""
+    from fizgig.families import registry
+    from fizgig.families.minimax_image import LIKENESS_DEFAULTS
+    opt = next(o for o in registry.get("minimax_image").options if o.key == "MINIMAX_IMAGE_LIKENESS_ALTERNATE")
+    assert opt.resolve("Before the hinge") == ["likeness_alternate=before"]
+    assert opt.resolve("After the hinge") == ["likeness_alternate=after"]
+    assert opt.resolve("The second share") == ["likeness_alternate=after"]
+    assert LIKENESS_DEFAULTS["ALTERNATE"] == opt.choice_labels()[0]

@@ -24,20 +24,19 @@ _PDD_SIGMAS = (1.0, 0.9675236940383911, 0.8875485062599182, 0.75, 0.532773911952
 # framing (AdaFace ViT 0.689, above all but 2 of her 45 photos) and kept the backgrounds clean. The boxes hold these
 # numbers behind the row's Advanced toggle; minimax_image/driver.py's defaults are the same.
 LIKENESS_DEFAULTS = {"BEFORE": "16.67", "BEFORE_END": "50", "HINGE": "6", "SLIDE": "0", "AFTER": "75",
-                     "ALTERNATE": "Before the hinge"}
+                     "ALTERNATE": "The first share"}
 # the ⓘ beside Likeness optimization (Peter, 15 Nov 2026: help text, the schedule itself stays as it is)
 _LIKENESS_EXPLAIN = (
     "H3 Image draws each training step at one of its 6 noise levels. The clean-end share is how many steps go to the "
     "last one, the nearly finished picture, where skin, eyes and fine detail are made. The model's own share is 1 in "
     "6 (about 17%). A higher share learns likeness faster; the other levels learn pose, layout and the shape of "
     "things.\n\n"
-    "The schedule has two halves, split at the Hinge epoch. Before the hinge is the share up to and including that "
-    "epoch; Rises to (if set) makes it climb evenly to that figure by the hinge. After the hinge is the share from "
-    "then on. Slide over moves evenly from one to the other over that many epochs after the hinge (0 jumps "
-    "straight across). Alternate makes one half switch between the two shares every epoch, starting with its "
-    "own.\n\n"
-    "The defaults: epochs 1, 3 and 5 at 17%, 33% and 50%; epochs 2, 4 and 6 at 75%; from epoch 7, 75% every "
-    "epoch.\n\n"
+    "The schedule reads like MOSS-Image's Clean-end share Slide: the First share until the Until epoch (Rising to, if "
+    "set, makes it climb evenly to that figure by then), then it slides over that many epochs to the Second share "
+    "(0 jumps straight across), which holds from then on. Alternate makes one share switch with the other every "
+    "epoch, starting with its own.\n\n"
+    "The defaults: 17% rising to 50% until epoch 6, alternating with 75%, so epochs 1, 3 and 5 at 17%, 33% and 50% "
+    "and epochs 2, 4 and 6 at 75%; from epoch 7, 75% every epoch.\n\n"
     "H3 Image learns fast. If hands, faces or bodies come out broken, try an earlier epoch before you change "
     "these numbers: a late epoch has usually gone past its best.")
 
@@ -245,34 +244,39 @@ MINIMAX_IMAGE = FamilyDescription(
                           "where skin, eyes and fine detail are made, changing over the run so the earlier steps "
                           "(pose, layout, the shape of things) keep up. Untick for H3 Image's own even share.",
                      explain=_LIKENESS_EXPLAIN, summary="likeness optimization"),
-        # its schedule (Peter, 12 Nov 2026): one share before the hinge, one after, and which side alternates (between
-        # the two shares, starting with its own). Inside the tick's row, behind its Advanced toggle (closed by default).
-        FamilyOption("MINIMAX_IMAGE_LIKENESS_BEFORE", "Before the hinge", kind="entry", tokens="likeness_before={}",
-                     default=LIKENESS_DEFAULTS["BEFORE"], width=6, suffix="% at the clean end, to the hinge",
+        # its schedule (Peter, 12 Nov 2026): a first clean-end share until an epoch, a second after it, and which
+        # share alternates (with the other, starting with its own). Inside the tick's row, behind its Advanced toggle
+        # (closed by default). Worded like MOSS-Image's Clean-end share Slide (15 Nov 2026, #348); the keys and
+        # tokens keep their old before / hinge / after names.
+        FamilyOption("MINIMAX_IMAGE_LIKENESS_BEFORE", "First share", kind="entry", tokens="likeness_before={}",
+                     default=LIKENESS_DEFAULTS["BEFORE"], width=6, suffix="% of steps at the clean end, to start",
                      requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), advanced=True),
-        # Peter, 12 Nov 2026: the Before share can climb (e.g. the model's own 16.67 up to 50) - the structure-heavy
-        # start of a low first share, landing at the hinge like a 50 / 75 alternation
-        FamilyOption("MINIMAX_IMAGE_LIKENESS_BEFORE_END", "Rises to", kind="entry", tokens="likeness_before_end={}",
-                     default=LIKENESS_DEFAULTS["BEFORE_END"], width=6, suffix="% by the hinge (blank: no climb)",
+        # Peter, 12 Nov 2026: the first share can climb (e.g. the model's own 16.67 up to 50) - the structure-heavy
+        # start of a low first share, landing at the Until epoch like a 50 / 75 alternation
+        FamilyOption("MINIMAX_IMAGE_LIKENESS_BEFORE_END", "Rising to", kind="entry", tokens="likeness_before_end={}",
+                     default=LIKENESS_DEFAULTS["BEFORE_END"], width=6, suffix="% by the Until epoch (blank: no climb)",
                      requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), advanced=True,
-                     hint="Climbs evenly from Before to this by the hinge (only Before's own epochs while alternating)."),
-        FamilyOption("MINIMAX_IMAGE_LIKENESS_HINGE", "Hinge epoch", kind="entry", tokens="likeness_hinge={}",
-                     default=LIKENESS_DEFAULTS["HINGE"], width=6, suffix="the last epoch of Before",
+                     hint="Climbs evenly from the first share to this by the Until epoch (only on the first share's "
+                          "own epochs while it alternates)."),
+        FamilyOption("MINIMAX_IMAGE_LIKENESS_HINGE", "Until epoch", kind="entry", tokens="likeness_hinge={}",
+                     default=LIKENESS_DEFAULTS["HINGE"], width=6, suffix="the last epoch of the first share",
                      requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), advanced=True),
-        FamilyOption("MINIMAX_IMAGE_LIKENESS_SLIDE", "Slide over", kind="entry", tokens="likeness_slide={}",
-                     default=LIKENESS_DEFAULTS["SLIDE"], width=6, suffix="epochs from Before to After (0: a jump)",
+        FamilyOption("MINIMAX_IMAGE_LIKENESS_SLIDE", "Then slides over", kind="entry", tokens="likeness_slide={}",
+                     default=LIKENESS_DEFAULTS["SLIDE"], width=6, suffix="epochs to the second share (0: a jump)",
                      requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), advanced=True,
-                     hint="Starts after the hinge; After's alternating, if picked, starts when it ends."),
-        FamilyOption("MINIMAX_IMAGE_LIKENESS_AFTER", "After the hinge", kind="entry", tokens="likeness_after={}",
-                     default=LIKENESS_DEFAULTS["AFTER"], width=6, suffix="% at the clean end, after the hinge",
+                     hint="Starts after the Until epoch; the second share's alternating, if picked, starts when it "
+                          "ends."),
+        FamilyOption("MINIMAX_IMAGE_LIKENESS_AFTER", "Second share", kind="entry", tokens="likeness_after={}",
+                     default=LIKENESS_DEFAULTS["AFTER"], width=6, suffix="% of steps at the clean end, from then on",
                      requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), advanced=True),
         FamilyOption("MINIMAX_IMAGE_LIKENESS_ALTERNATE", "Alternate", choices=(       # the first is the default
-                         ("Before the hinge", "likeness_alternate=before"),
-                         ("After the hinge", "likeness_alternate=after"),
+                         ("The first share", "likeness_alternate=before"),
+                         ("The second share", "likeness_alternate=after"),
                          ("Off", "likeness_alternate=off")),
+                     choice_renamed=(("Before the hinge", "The first share"), ("After the hinge", "The second share")),
                      requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), width=18, advanced=True,
-                     hint="That side switches between the two shares each epoch, starting with its own. Off: each "
-                          "side holds its own."),
+                     hint="That share switches with the other one every epoch, starting with its own. Off: each "
+                          "share holds."),
     ),
     workbench=("repair", "profiler", "extract", "royale"),
 

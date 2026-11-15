@@ -470,9 +470,12 @@ class MiniMaxH3ImageDriver(FamilyDriver):
         tags = cond.get("token_tags")
         if tags is not None:
             tags = tags[0] if tags.dim() == 2 else tags
+        # the sampler: the call's options, else the run's family option (Samples tab), else Euler (the model's own)
+        opts = {**(getattr(self, "options", None) or {}), **dict(options or ())}
+        sampler = str(opts.get("sampler") or "euler").strip().lower()
         z = S.sample(dit, self._real_tokens(cond), width, height, steps=steps, seed=seed, sigmas=sigmas,
                      noise=None if noise is None else _lat5(noise), on_step=on_step,
-                     refs=[_lat5(r) for r in refs] if refs else None, text_token_tags=tags)
+                     refs=[_lat5(r) for r in refs] if refs else None, text_token_tags=tags, sampler=sampler)
         return z[:, :, 0]
 
     def pad_conditioning(self, conds):

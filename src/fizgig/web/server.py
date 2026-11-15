@@ -1466,7 +1466,7 @@ def delete_run(run_id, confirm=False) -> dict:
     return {"ok": True}
 
 
-def purge_runs(days, delete_data=False, include_paused=False, confirm=False) -> dict:
+def purge_runs(days, delete_data=False, include_paused=False, confirm=False, ids=None) -> dict:
     """Purge older than X days on Runs & outputs. With confirm False it only says which runs are past the cut-off,
     read off the history list alone: no folder is opened and nothing is sized, so a very long history previews
     instantly. With confirm True it takes them out. The cut-off counts from a run's end date, so a run still training
@@ -1481,7 +1481,8 @@ def purge_runs(days, delete_data=False, include_paused=False, confirm=False) -> 
         return {"error": "Between 1 and 365 days."}
     cut = time.time() - days * 86400
     past, held = [], 0
-    for r in history.runs():
+    every = history.runs()
+    for r in every:
         ended = r.get("ended_at")
         if not ended or float(ended) > cut:
             continue                        # no end date: still training, or a run nothing ever closed
@@ -1501,11 +1502,24 @@ def purge_runs(days, delete_data=False, include_paused=False, confirm=False) -> 
                            # set to. Nothing is looked for on disk - a run that reported nothing simply shows no epoch.
                            "epoch": prog.get("epoch"), "total_epochs": prog.get("total_epochs")})
         return {"ok": True, "days": days, "count": len(past), "held": held, "runs": listed}
+    if ids is not None:                     # only what the preview showed: a run that came past the cut-off since stays
+        keep = {str(i) for i in ids}
+        past = [r for r in past if str(r.get("id")) in keep]
     if not past:
         return {"error": f"Nothing ended more than {days} days ago."}
-    purged, failed = 0, []
+    # Files are found by output folder + LoRA name, so a run that shares both with a run staying on the list (two
+    # starts under one name before names were made unique) would delete that run's files: those only leave the list
+    going = {str(r.get("id")) for r in past}
+    norm = lambda r: (os.path.normcase(os.path.abspath(str(r.get("output_dir") or "."))), str(r.get("lora") or "").lower())
+    staying = {norm(r) for r in every if str(r.get("id")) not in going}
+    purged, failed, shared = 0, [], 0
     for r in past:
         rid = str(r.get("id"))
+        if delete_data and norm(r) in staying:
+            history.remove(rid)
+            purged += 1
+            shared += 1
+            continue
         if delete_data:
             out = delete_run(rid, confirm=True)
             if out.get("error"):            # this run's own files are stuck; the others still go
@@ -1514,7 +1528,7 @@ def purge_runs(days, delete_data=False, include_paused=False, confirm=False) -> 
         else:
             history.remove(rid)
         purged += 1
-    return {"ok": True, "days": days, "purged": purged, "failed": failed}
+    return {"ok": True, "days": days, "purged": purged, "failed": failed, "shared": shared}
 
 
 PAUSED_FILE = ".fizgig_paused.json"       # in the run's output folder, as the desktop writes it
@@ -4397,7 +4411,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(r, 400 if r.get("error") else 200)
             if path == "/api/runs/purge":               # Purge older than X days: preview first, then the purge
                 r = purge_runs(b.get("days"), delete_data=bool(b.get("data")),
-                               include_paused=bool(b.get("paused")), confirm=bool(b.get("confirm")))
+                               include_paused=bool(b.get("paused")), confirm=bool(b.get("confirm")),
+                               ids=b.get("ids") if isinstance(b.get("ids"), list) else None)
                 return self.json(r, 400 if r.get("error") else 200)
             if path == "/api/runs/continue":            # Continue: on from the run's newest save
                 from fizgig.web import helpers as _helpers

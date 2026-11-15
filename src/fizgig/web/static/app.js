@@ -3632,7 +3632,8 @@ async function loadRuns() {
 const purgeDays = () => { const n = parseInt($("purgeDays").value, 10); return n >= 1 && n <= 365 ? n : 14; };
 const purgeState = () => ({days: purgeDays(), data: $("purgeData").checked, paused: $("purgePaused").checked});
 const purgeWord = (n) => `${n} run${n === 1 ? "" : "s"}`;
-const purgeLabel = () => { $("purgeBtn").textContent = `Purge Older Than ${purgeDays()} Days`; };
+const purgeLabel = () => { $("purgeBtn").textContent = "Purge…"; };    // the preview comes first, then two asks
+let purgeIds = [];                                             // the runs the preview showed: the purge takes only these
 const purgeHide = () => { const s = $("purgeSay"); s.style.display = "none"; s.innerHTML = ""; };
 
 // what it found, what it will do, the two buttons, and only then the runs themselves: the choice is at the top where
@@ -3644,11 +3645,12 @@ async function purgePreview() {
   let p;
   try { p = await api("/api/runs/purge", {...st, confirm: false}); }
   catch (e) { say.replaceChildren(el("div", {class: "problems", text: e.message})); return; }
+  purgeIds = p.runs.map(r => r.id);
   const unit = p.days === 1 ? "day" : "days";
   const scope = st.data
-    ? "A purge deletes what each run saved - its checkpoints, saved states and previews - as well as taking it off " +
-      "this list, for good."
-    : "A purge takes these runs off this list only; everything they saved on disk stays exactly where it is.";
+    ? "A purge deletes each run's LoRA files - the finished LoRA too, and every epoch's - its saved states and its " +
+      "previews, and takes it off this list. They can't be got back. Your training pictures are never touched."
+    : "A purge takes these runs off this list only; their LoRAs and everything else they saved stay where they are.";
   const kids = [el("div", {class: "field-hint", text: p.count
     ? `${purgeWord(p.count)} ended more than ${p.days} ${unit} ago.`
     : `Nothing ended more than ${p.days} ${unit} ago.`})];
@@ -3668,8 +3670,8 @@ async function purgePreview() {
 // the second confirmation: one plain sentence saying exactly what goes and which runs it covers, answered yes or no
 function purgeAsk(st, p) {
   const doWhat = st.data
-    ? `delete ${purgeWord(p.count)} and everything they saved on disk`
-    : `take ${purgeWord(p.count)} off this list, leaving what they saved on disk untouched`;
+    ? `delete ${purgeWord(p.count)} and everything they saved, their finished LoRAs included`
+    : `take ${purgeWord(p.count)} off this list, leaving their LoRAs and everything else they saved where they are`;
   const which = st.paused ? "including paused runs" : "leaving paused runs out";
   $("purgeSay").replaceChildren(
     el("div", {class: "field-hint", text: `Are you really sure you want to ${doWhat}, ${which}?`}),
@@ -3682,8 +3684,10 @@ async function purgeGo() {
   const say = $("purgeSay");
   say.textContent = "Purging…";
   try {
-    const d = await api("/api/runs/purge", {...purgeState(), confirm: true});
+    const d = await api("/api/runs/purge", {...purgeState(), confirm: true, ids: purgeIds});
     say.replaceChildren(el("div", {class: "field-hint", text: `${purgeWord(d.purged)} purged.` +
+      (d.shared ? ` ${purgeWord(d.shared)} shared a name and folder with a run still on the list, so ` +
+        `${d.shared === 1 ? "its" : "their"} files were kept and only the list line went.` : "") +
       (d.failed.length ? ` ${d.failed.length} couldn't be deleted: ${d.failed.join("; ")}` : "")}));
     loadRuns();
     loadOutputs();

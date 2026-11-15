@@ -1,6 +1,7 @@
 """Inference backend selection without GPU kernels or model downloads."""
 import json
 import runpy
+import shutil
 import sys
 import subprocess
 from pathlib import Path
@@ -23,6 +24,8 @@ def test_preference_offered_only_on_amd_or_with_installed_package(monkeypatch, b
 
 
 def test_preference_ui_hides_sage_controls_without_capability():
+    if not shutil.which("node"):
+        pytest.skip("node not installed")
     app = Path(__file__).resolve().parents[1] / "src/fizgig/web/static/app.js"
     source = app.read_text()
     card = source[source.index("const INFERENCE_SWAP"):source.index("// where the LoRA and reference pickers")]

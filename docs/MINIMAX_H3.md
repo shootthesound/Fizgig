@@ -143,7 +143,7 @@ Stills teach H3 a look; clips teach it **motion**, and clips with sound teach it
 | Frame rate | exactly 24 fps |
 | Frame count | 5, 22, 39, 56, 73, 90, 107 or 124 frames |
 | Dimensions | multiples of 32 |
-| Audio | 32 kHz stereo, or no track at all |
+| Audio | any sample rate, mono or stereo (converted to 32 kHz stereo when it caches), or no track at all |
 
 <p align="center"><img src="assets/gizmo_video.png" alt="Gizmo — Find the moment: first/last frame previews with frame-accurate stepping" width="720"></p>
 

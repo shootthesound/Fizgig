@@ -1099,6 +1099,177 @@ def output_name(src_path, out_dir, muted, claimed=()):
     raise RuntimeError("1000 clips from one source — give the output folder a clean start.")
 
 
+def export_clip(ffmpeg, job):
+    """Write one clip job (build_export_command's arguments). Returns an error string, or None on success."""
+    try:
+        cmd = build_export_command(ffmpeg, job["src"], job["dst"], job["start"],
+                                   job["frames"], job["w"], job["h"], job["keep_every"],
+                                   job["with_audio"], job.get("crop"), job.get("sar", 1.0))
+        p = _run(cmd, text=True)
+        if p.returncode != 0 or not os.path.exists(job["dst"]):
+            return (p.stderr or "").strip()[-400:] or "ffmpeg failed"
+        # Verified, not assumed: frame count is the one thing Fizgig refuses a clip over, and
+        # a source that ends mid-clip silently yields a short one.
+        got = count_frames(ffmpeg, job["dst"])
+        if got is not None and got != job["frames"]:
+            os.remove(job["dst"])
+            return (f"only {got} frames, not {job['frames']} — the source runs out before "
+                    f"the clip does")
+        return None
+    except Exception as exc:
+        return f"{type(exc).__name__}: {exc}"
+
+
+# --- a whole folder at once --------------------------------------------------------------------
+# For footage that is already cut (or close to it): every video in a folder made trainable in one pass, written to
+# a NEW folder so the originals stay as they are. Each one gets what Add would give it at its start - real-time 24 fps,
+# its own size on the /32 grid, sound at the training rate - and its caption .txt comes along.
+
+VIDEO_EXTS = (".mp4", ".mov", ".mkv", ".avi", ".m4v", ".webm", ".mts", ".wmv")
+
+
+def _desktop_dialog(args):
+    """Linux: the desktop's own file dialog (zenity on GNOME and most others, kdialog on KDE) instead of Tk's, which
+    looks decades old there. Returns the chosen path, "" when cancelled, or None when neither is installed."""
+    if not sys.platform.startswith("linux"):
+        return None
+    for tool, build in (("zenity", lambda a: ["zenity", "--file-selection", *a["zenity"]]),
+                        ("kdialog", lambda a: ["kdialog", *a["kdialog"]])):
+        if shutil.which(tool):
+            try:
+                p = subprocess.run(build(args), capture_output=True, text=True)
+            except OSError:
+                continue
+            return p.stdout.strip() if p.returncode == 0 else ""
+    return None
+
+
+def pick_folder(parent, title, initial=None):
+    """A folder from the user ('' when cancelled)."""
+    start = initial if initial and os.path.isdir(initial) else os.path.expanduser("~")
+    got = _desktop_dialog({"zenity": ["--directory", f"--title={title}", f"--filename={start.rstrip('/')}/"],
+                           "kdialog": ["--title", title, "--getexistingdirectory", start]})
+    if got is not None:
+        return got
+    return filedialog.askdirectory(parent=parent, title=title, initialdir=start) or ""
+
+
+def pick_file(parent, title, patterns, label):
+    """A file from the user ('' when cancelled). patterns: ("*.mp4", ...), label: what they are."""
+    got = _desktop_dialog({"zenity": [f"--title={title}", f"--file-filter={label} | {' '.join(patterns)}",
+                                      "--file-filter=All files | *"],
+                           "kdialog": ["--title", title, "--getopenfilename", os.path.expanduser("~"),
+                                       f"{' '.join(patterns)}|{label}"]})
+    if got is not None:
+        return got
+    return filedialog.askopenfilename(parent=parent, title=title,
+                                      filetypes=[(label, " ".join(patterns)), ("All files", "*.*")]) or ""
+
+
+def open_in_file_browser(path):
+    if not path or not os.path.isdir(path):
+        return
+    try:
+        if os.name == "nt":
+            os.startfile(path)                                     # noqa: S606
+        else:
+            subprocess.Popen(["xdg-open", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+
+def folder_videos(folder):
+    """The videos directly in `folder`, by name (not its sub-folders)."""
+    try:
+        names = sorted(os.listdir(folder), key=str.lower)
+    except OSError:
+        return []
+    return [os.path.join(folder, n) for n in names
+            if n.lower().endswith(VIDEO_EXTS) and os.path.isfile(os.path.join(folder, n))]
+
+
+def _batch_lengths(frames, split):
+    """The clip lengths to cut from `frames` real-time frames, from the start: the longest grid length that fits, and
+    with split, as many of those as fit back to back, then the longest that fits what is left. Lengths below the
+    shortest that shows movement (H3's 5 frames) are not cut."""
+    usable = [g for g in GRID_FRAMES if g >= 17]
+    out, left = [], frames
+    while left >= usable[0]:
+        g = max(f for f in usable if f <= left)
+        out.append(g)
+        left -= g
+        if not split:
+            break
+    return out
+
+
+def plan_folder(ffmpeg, folder, out_dir, split=True):
+    """Every video in `folder` as clip jobs into `out_dir`, plus a note for each one that can't be used.
+
+    A video already on the spec (24 fps, sides on /32, a grid length) is copied as it is, not re-encoded. Returns
+    (jobs, notes); a job is export_clip's dict with "caption" (the source's .txt or None) and "copy" (True = copy)."""
+    jobs, notes, claimed = [], [], set()
+    for src in folder_videos(folder):
+        name = os.path.basename(src)
+        try:
+            info = probe_source(ffmpeg, src)
+        except Exception as exc:
+            notes.append(f"{name}: {exc}")
+            continue
+        stem = os.path.splitext(src)[0]
+        caption = stem + ".txt" if os.path.isfile(stem + ".txt") else None
+        muted = os.path.splitext(name)[0].lower().endswith(MUTE_SUFFIX)
+        w, h = target_size(info["display_width"], info["display_height"], 99.0)
+        on_spec = (abs((info["fps"] or 0) - FPS) < 0.01 and info["rotation"] == 0 and abs(info["sar"] - 1.0) < 1e-3
+                   and info["width"] % SIZE_STEP == 0 and info["height"] % SIZE_STEP == 0)
+        if on_spec:
+            n = count_frames(ffmpeg, src)
+            if n in GRID_FRAMES:
+                dst = output_name(src, out_dir, muted, claimed)
+                claimed.add(os.path.basename(dst))
+                jobs.append({"src": src, "dst": dst, "copy": True, "caption": caption, "frames": n,
+                             "w": info["width"], "h": info["height"], "done": False, "error": None})
+                continue
+        # real time at 24 fps: the frames the source holds, a frame short of its banner duration (which rounds up)
+        frames = int(max(0.0, (info["duration"] or 0) - 0.5 / FPS) * FPS)
+        lengths = _batch_lengths(frames, split)
+        if not lengths:
+            shortest = min(g for g in GRID_FRAMES if g >= 17)
+            notes.append(f"{name}: {frames / FPS:.2f} s, shorter than the shortest clip ({shortest} frames, "
+                         f"{shortest / FPS:.2f} s)")
+            continue
+        start = 0
+        for g in lengths:
+            dst = output_name(src, out_dir, muted, claimed)
+            claimed.add(os.path.basename(dst))
+            jobs.append({"src": src, "dst": dst, "copy": False, "caption": caption,
+                         "start": start / FPS, "frames": g, "w": w, "h": h, "keep_every": None,
+                         "with_audio": bool(MODEL["sound"] and info["has_audio"]), "crop": None,
+                         "sar": info["sar"], "done": False, "error": None})
+            start += g
+    return jobs, notes
+
+
+def run_folder_job(ffmpeg, job):
+    """Write one planned folder job and its caption. Returns an error string, or None."""
+    os.makedirs(os.path.dirname(job["dst"]), exist_ok=True)
+    if job["copy"]:
+        try:
+            shutil.copy2(job["src"], job["dst"])
+        except OSError as exc:
+            return f"{type(exc).__name__}: {exc}"
+    else:
+        err = export_clip(ffmpeg, job)
+        if err:
+            return err
+    if job["caption"]:
+        try:
+            shutil.copy2(job["caption"], os.path.splitext(job["dst"])[0] + ".txt")
+        except OSError as exc:
+            return f"clip written, caption not copied: {exc}"
+    return None
+
+
 def enable_file_drop(root, on_drop):
     """Let a video be dragged onto the window. Returns True if it took.
 
@@ -1764,6 +1935,11 @@ class Gizmo:
                      tip="Open the video you want to cut clips out of.\n\n"
                          "Anything ffmpeg can read: phone footage, a camera file, a download. "
                          "Gizmo never modifies it — it only reads.").pack(side=tk.LEFT)
+        self._button(row, "Prepare a folder…", self.open_folder_batch,
+                     tip="Every video in a folder made ready to train in one go, into a new folder.\n\n"
+                         "For footage that is already cut: 24 fps at real speed, a size and length the "
+                         "model takes, sound at the training rate, captions brought along. The "
+                         "originals are never changed.").pack(side=tk.LEFT, padx=(8, 0))
         self.src_label = tk.Label(row, text="No video open", font=(FONT_FAMILY, 10),
                                   bg=COLORS["bg_surface"], fg=COLORS["text_muted"])
         self.src_label.pack(side=tk.LEFT, padx=12)
@@ -2347,10 +2523,7 @@ class Gizmo:
 
     # -- opening ---------------------------------------------------------------------------------
     def open_video(self):
-        path = filedialog.askopenfilename(
-            title="Open a source video",
-            filetypes=[("Video files", "*.mp4 *.mov *.mkv *.avi *.m4v *.webm *.mts *.wmv"),
-                       ("All files", "*.*")])
+        path = pick_file(self.root, "Open a source video", tuple("*" + e for e in VIDEO_EXTS), "Video files")
         if not path:
             return
         try:
@@ -3539,11 +3712,9 @@ class Gizmo:
 
     # -- audio: opening -----------------------------------------------------------------------------
     def open_audio(self):
-        path = filedialog.askopenfilename(
-            title="Open a recording — or a video, for its audio track",
-            filetypes=[("Audio files", "*.wav *.mp3 *.flac *.m4a"),
-                       ("Video files (audio track)", "*.mp4 *.mov *.mkv *.avi *.m4v *.webm"),
-                       ("All files", "*.*")])
+        path = pick_file(self.root, "Open a recording — or a video, for its audio track",
+                         ("*.wav", "*.mp3", "*.flac", "*.m4a", "*.ogg") + tuple("*" + e for e in VIDEO_EXTS),
+                         "Audio, or video for its sound")
         if not path:
             return
         self.notebook.select(self._audio_host_tab())
@@ -4510,10 +4681,8 @@ class Gizmo:
         self.root.after(0, done)
 
     def _audio_pick_output(self):
-        d = filedialog.askdirectory(title="Where should the song sections go?"
-                                    if self._music_mode() else
-                                    "Where should the voice segments go?",
-                                    initialdir=self.audio_out_var.get() or os.path.expanduser("~"))
+        d = pick_folder(self.root, "Where should the song sections go?" if self._music_mode() else
+                        "Where should the voice segments go?", self.audio_out_var.get() or None)
         if d:
             self.audio_out_var.set(d)
 
@@ -4691,8 +4860,7 @@ class Gizmo:
 
     # -- saving -----------------------------------------------------------------------------------
     def pick_output(self):
-        d = filedialog.askdirectory(title="Where should the clips go?",
-                                    initialdir=self.out_var.get() or os.path.expanduser("~"))
+        d = pick_folder(self.root, "Where should the clips go?", self.out_var.get() or None)
         if d:
             self.out_var.set(d)
 
@@ -5167,6 +5335,141 @@ class Gizmo:
                               fg=COLORS["text_secondary"])
         self._autochop_close()
 
+    # -- a whole folder ------------------------------------------------------------------------------
+    def open_folder_batch(self):
+        """The Prepare a folder window: pick a folder of videos, a folder to write to, Start."""
+        if not self.ffmpeg:
+            messagebox.showerror("Gizmo", "ffmpeg wasn't found, so Gizmo can't write clips.")
+            return
+        win = getattr(self, "_batch_win", None)
+        if win is not None and win.winfo_exists():
+            win.lift()
+            return
+        win = tk.Toplevel(self.root)
+        self._batch_win = win
+        win.title("Prepare a folder")
+        win.configure(bg=COLORS["bg_deep"])
+        win.geometry("%dx%d" % _scaled(win, 760, 470))
+        win.minsize(*_scaled(win, 620, 400))
+        bg = COLORS["bg_deep"]
+        longest = max(GRID_FRAMES)
+        tk.Label(win, text="Prepare a folder", font=(FONT_FAMILY, 13, "bold"), bg=bg,
+                 fg=COLORS["text_primary"]).pack(anchor="w", padx=14, pady=(12, 0))
+        sound = "its sound at 32 kHz stereo, " if MODEL["sound"] else ""
+        tk.Label(win, wraplength=720, justify=tk.LEFT, font=(FONT_FAMILY, 9), bg=bg, fg=COLORS["text_explain"],
+                 text=f"Every video in a folder made ready to train, written into a new folder: your originals "
+                      f"are never changed. Each one gets {FPS} fps at real speed, its own size cut to a multiple of "
+                      f"32, {sound}and a length {MODEL['short']} takes (up to {longest} frames, "
+                      f"{longest / FPS:.1f} s), from its start. A video that is already right is copied as it is. "
+                      f"A caption file with the same name comes along with each clip.").pack(
+            anchor="w", padx=14, pady=(2, 8))
+
+        grid = tk.Frame(win, bg=bg)
+        grid.pack(fill=tk.X, padx=14)
+        grid.columnconfigure(1, weight=1)
+        src_var, out_var = tk.StringVar(), tk.StringVar()
+
+        def row(r, label, var, pick):
+            tk.Label(grid, text=label, font=(FONT_FAMILY, 10), bg=bg, fg=COLORS["text_secondary"]).grid(
+                row=r, column=0, sticky="w", pady=4)
+            e = tk.Entry(grid, textvariable=var, bg=COLORS["bg_hover"], fg=COLORS["text_primary"],
+                         insertbackground=COLORS["text_primary"], relief=tk.FLAT, font=(FONT_FAMILY, 10))
+            e.grid(row=r, column=1, sticky="ew", padx=8, ipady=4)
+            self._shield_from_hotkeys(e)
+            self._button(grid, "Browse…", pick).grid(row=r, column=2)
+
+        def pick_src():
+            d = pick_folder(win, "The folder of videos to prepare", src_var.get() or None)
+            if d:
+                src_var.set(d)
+                if not out_var.get().strip():
+                    out_var.set(d.rstrip("/\\") + "_gizmo")
+
+        def pick_out():
+            d = pick_folder(win, "Where should the prepared clips go?", out_var.get() or src_var.get() or None)
+            if d:
+                out_var.set(d)
+
+        row(0, "Videos from:", src_var, pick_src)
+        row(1, "Save to:", out_var, pick_out)
+        split_var = tk.BooleanVar(value=True)
+        tk.Checkbutton(win, variable=split_var, bg=bg, fg=COLORS["text_primary"], selectcolor=COLORS["bg_hover"],
+                       activebackground=bg, activeforeground=COLORS["text_primary"], font=(FONT_FAMILY, 10),
+                       text=f"Cut a video longer than {longest / FPS:.1f} s into several clips, back to back "
+                            f"(off: only its first {longest / FPS:.1f} s)").pack(anchor="w", padx=10, pady=(8, 0))
+
+        ctl = tk.Frame(win, bg=bg)
+        ctl.pack(fill=tk.X, padx=14, pady=(10, 4))
+        say = tk.Label(win, text="", wraplength=720, justify=tk.LEFT, font=(FONT_FAMILY, 9), bg=bg,
+                       fg=COLORS["text_secondary"], anchor="nw")
+        say.pack(fill=tk.BOTH, expand=True, padx=14, pady=(4, 12))
+        state = {"busy": False}
+
+        def show(text, color="text_secondary"):
+            if win.winfo_exists():
+                say.configure(text=text, fg=COLORS[color])
+
+        def start():
+            if state["busy"]:
+                return
+            src, out = src_var.get().strip(), out_var.get().strip()
+            if not src or not os.path.isdir(src):
+                show("Choose the folder of videos first.", "warning")
+                return
+            if not out:
+                show("Choose where the clips should go.", "warning")
+                return
+            if os.path.normcase(os.path.abspath(src)) == os.path.normcase(os.path.abspath(out)):
+                show("Save them to a different folder: your originals stay as they are.", "warning")
+                return
+            state["busy"] = True
+            go.configure(state=tk.DISABLED)
+            show("Reading the videos…")
+            threading.Thread(target=work, args=(src, out, bool(split_var.get())), daemon=True).start()
+
+        def work(src, out, split):
+            jobs, notes = plan_folder(self.ffmpeg, src, out, split)
+            if not jobs:
+                self.root.after(0, finish, 0, [], notes, out, 0)
+                return
+            videos = len({j["src"] for j in jobs})
+            failed = []
+            for n, job in enumerate(jobs, 1):
+                self.root.after(0, show, f"Writing {n} of {len(jobs)} clips from {videos} video"
+                                         f"{'' if videos == 1 else 's'} — {os.path.basename(job['dst'])}")
+                err = run_folder_job(self.ffmpeg, job)
+                if err:
+                    failed.append(f"{os.path.basename(job['dst'])}: {err}")
+            self.root.after(0, finish, len(jobs) - len(failed), failed, notes, out, videos)
+
+        def finish(ok, failed, notes, out, videos):
+            state["busy"] = False
+            if not win.winfo_exists():
+                return
+            go.configure(state=tk.NORMAL)
+            if not ok and not failed:
+                text = "No videos here could become clips." if notes else "No videos in that folder."
+            else:
+                text = (f"{ok} clip{'' if ok == 1 else 's'} written from {videos} video"
+                        f"{'' if videos == 1 else 's'} into {out}.")
+            lines = [text]
+            if failed:
+                lines.append(f"{len(failed)} failed:")
+                lines += failed[:8]
+            if notes:
+                lines.append(f"{len(notes)} skipped:")
+                lines += notes[:8]
+            show("\n".join(lines), "warning" if failed or (notes and not ok) else "success")
+            self._batch_out = out
+            open_btn.configure(state=tk.NORMAL if ok else tk.DISABLED)
+
+        go = self._button(ctl, "Start", start, "accent")
+        go.pack(side=tk.LEFT)
+        open_btn = self._button(ctl, "📂 Open the new folder",
+                                lambda: open_in_file_browser(getattr(self, "_batch_out", "")))
+        open_btn.configure(state=tk.DISABLED)
+        open_btn.pack(side=tk.LEFT, padx=(8, 0))
+
     # -- exporting ---------------------------------------------------------------------------------
     def export_queue(self):
         if self._busy:
@@ -5199,23 +5502,7 @@ class Gizmo:
 
     def _export_one(self, job):
         """Write one clip. Returns an error string, or None on success."""
-        try:
-            cmd = build_export_command(self.ffmpeg, job["src"], job["dst"], job["start"],
-                                       job["frames"], job["w"], job["h"], job["keep_every"],
-                                       job["with_audio"], job.get("crop"), job.get("sar", 1.0))
-            p = _run(cmd, text=True)
-            if p.returncode != 0 or not os.path.exists(job["dst"]):
-                return (p.stderr or "").strip()[-400:] or "ffmpeg failed"
-            # Verified, not assumed: frame count is the one thing Fizgig refuses a clip over, and
-            # a source that ends mid-clip silently yields a short one.
-            got = count_frames(self.ffmpeg, job["dst"])
-            if got is not None and got != job["frames"]:
-                os.remove(job["dst"])
-                return (f"only {got} frames, not {job['frames']} — the source runs out before "
-                        f"the clip does")
-            return None
-        except Exception as exc:
-            return f"{type(exc).__name__}: {exc}"
+        return export_clip(self.ffmpeg, job)
 
     def _export_done(self, jobs):
         self._busy = False

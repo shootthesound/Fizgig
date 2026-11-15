@@ -14,6 +14,11 @@ if /I "%~1"=="browser" (
     set "AMD_MODE=browser"
     shift
 )
+REM "check": the AMD diagnostic (src\fizgig\scripts\amd_check.py) in exactly the environment Fizgig gets (#342)
+if /I "%~1"=="check" (
+    set "AMD_MODE=check"
+    shift
+)
 :amd_collect_args
 if "%~1"=="" goto amd_args_done
 set "AMD_ARGS=!AMD_ARGS! %1"
@@ -108,6 +113,11 @@ if not defined HIP_VISIBLE_DEVICES if exist "%~dp0venv\Scripts\python.exe" (
 )
 if defined HIP_VISIBLE_DEVICES echo [AMD-ROCm] HIP_VISIBLE_DEVICES=!HIP_VISIBLE_DEVICES!
 
+if /I "!AMD_MODE!"=="check" (
+    "%~dp0venv\Scripts\python.exe" "%~dp0src\fizgig\scripts\amd_check.py" !AMD_ARGS!
+    pause
+    exit /b
+)
 if /I "!AMD_MODE!"=="browser" (
     "%~dp0venv\Scripts\python.exe" "%~dp0fizgig.py" --web --open !AMD_ARGS!
     pause

@@ -46,3 +46,17 @@ def test_out_of_range_index_is_ignored(monkeypatch):
     calls = _fake(monkeypatch, 2)
     gpu_backend.pin_rocm_device()
     assert calls == []
+
+
+def test_every_amd_process_says_what_it_sees(monkeypatch, capsys):
+    """#342: each process's line (stderr, so a stage's is in its run log): the variables, the devices, the one used."""
+    _fake(monkeypatch, 2)
+    monkeypatch.setattr(torch.cuda, "current_device", lambda: 1)
+    monkeypatch.setenv("HIP_VISIBLE_DEVICES", "1")
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    gpu_backend.report_rocm_devices()
+    err = capsys.readouterr().err
+    assert "HIP_VISIBLE_DEVICES=1 CUDA_VISIBLE_DEVICES=-" in err and "2 devices (0: dev0, 1: dev1); using 1, dev1" in err
+    _fake(monkeypatch, 2, rocm=False)
+    gpu_backend.report_rocm_devices()
+    assert capsys.readouterr().err == ""                 # NVIDIA: nothing

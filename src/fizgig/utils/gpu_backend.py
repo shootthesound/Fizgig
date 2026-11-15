@@ -55,6 +55,26 @@ def pin_rocm_device() -> None:
         pass
 
 
+def report_rocm_devices() -> None:
+    """One line per process on AMD (#342), on stderr so a stage's line lands in its run log: the variables that pick
+    the card, the devices this process sees, and the one "cuda" means here."""
+    import os
+    import sys
+    env = " ".join(f"{k}={os.environ.get(k) or '-'}"
+                   for k in ("HIP_VISIBLE_DEVICES", "CUDA_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES"))
+    try:
+        import torch
+        if not is_rocm():
+            return
+        n = torch.cuda.device_count()
+        cur = torch.cuda.current_device()
+        names = ", ".join(f"{i}: {torch.cuda.get_device_name(i)}" for i in range(n))
+        print(f"[AMD-ROCm] {env} - {n} device{'s' if n != 1 else ''} ({names}); using {cur}, "
+              f"{torch.cuda.get_device_name(cur)}", file=sys.stderr, flush=True)
+    except Exception as e:
+        print(f"[AMD-ROCm] {env} - couldn't list the devices: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+
+
 def fix_rocm_sdpa_masks() -> None:
     """ROCm's fused attention kernel attends wrongly when the mask broadcasts over the queries - the usual key-padding
     mask, [B, 1, 1, S]: measured on an MI350X (torch 2.14 / ROCm 10.1) against the math kernel, max error 0.1-0.2 at

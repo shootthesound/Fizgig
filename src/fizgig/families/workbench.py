@@ -640,10 +640,17 @@ class WorkbenchEngine:
     def _settings_key(self):
         ps = self.preview_settings
         opts = tuple(sorted((self.driver.options or {}).items())) if self.driver is not None else ()
+        opts += tuple(sorted((getattr(self, "render_options", None) or {}).items()))
         return (None if ps is None else (ps.get("steps"), ps.get("cfg"), ps.get("negative"), ps.get("turbo"))), opts
 
     def sampling(self):
-        """(steps, cfg, sigmas, options) previews use."""
+        """(steps, cfg, sigmas, options) previews use: the model's sampling, plus Studio's own picks of the Samples-tab
+        choices it offers (render_options, e.g. the sampler)."""
+        steps, cfg, sigmas, options = self._sampling()
+        ro = getattr(self, "render_options", None) or {}
+        return steps, cfg, sigmas, tuple(options or ()) + tuple(sorted(ro.items()))
+
+    def _sampling(self):
         ps = self.preview_settings
         if ps is not None and (getattr(self, "checkpoint_sampling", None) is None
                                or getattr(self, "speed_on_checkpoint", False)):

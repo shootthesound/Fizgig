@@ -59,6 +59,7 @@ def cmd_load(c):
     if desc is None:
         raise ValueError(f"Unknown model: {c['family']}")
     plan = dict(c["plan"])
+    ro = plan.pop("render_options", None) or {}
     if plan.pop("use_checkpoint_sampling", False):
         ck = desc.preview_checkpoint()
         plan["preview_sampling"] = ck[1] if ck else None
@@ -76,7 +77,8 @@ def cmd_load(c):
         if eng is None:
             eng = desc.make_workbench_engine()
         S["engine"], S["desc"] = eng, desc
-        S["plan_sig"] = json.dumps(c["plan"], sort_keys=True, default=str)
+        S["plan_sig"] = _plan_sig(c["plan"])
+        eng.render_options = dict(ro)
         S["nolora_out"] = S["nolora_song"] = None
         S["mix_files"] = {}
         eng.turbo_preview = bool(c.get("turbo", True))
@@ -120,6 +122,14 @@ def cmd_settings(c):
     if c.get("preview_settings") is not None:
         eng.preview_settings = c["preview_settings"]
         eng._invalidate_baseline_cache()
+    if c.get("render_options") is not None:      # Studio's own pick of a Samples-tab choice (the sampler)
+        eng.render_options = dict(c["render_options"])
+        eng._invalidate_baseline_cache()
+
+
+def _plan_sig(plan):
+    """A plan's identity: what needs a fresh load. Render options (the sampler) apply to the next render instead."""
+    return json.dumps({k: v for k, v in plan.items() if k != "render_options"}, sort_keys=True, default=str)
 
 
 def _state(d):
@@ -532,6 +542,7 @@ def cmd_cancel(_c):
 def _plan_for(desc, plan):
     """A load plan as the engine takes it: the preview checkpoint's sampling, Auto block swap resolved."""
     plan = dict(plan)
+    plan.pop("render_options", None)             # applied to the engine by _engine_for, not a load setting
     if plan.pop("use_checkpoint_sampling", False):
         ck = desc.preview_checkpoint()
         plan["preview_sampling"] = ck[1] if ck else None
@@ -550,7 +561,7 @@ def _engine_for(c, status_ev="royale_status"):
     if desc is None:
         raise ValueError(f"Unknown model: {c['family']}")
     plan = _plan_for(desc, c["plan"])
-    sig = json.dumps(c["plan"], sort_keys=True, default=str)
+    sig = _plan_sig(c["plan"])
     eng = S["engine"]
     if eng is not None and (getattr(eng.desc, "key", None) != desc.key or S.get("plan_sig") != sig):
         eng.reset()                              # another model, or this one on another plan: load it fresh
@@ -558,6 +569,7 @@ def _engine_for(c, status_ev="royale_status"):
     if eng is None:
         eng = desc.make_workbench_engine()
     S["engine"], S["desc"], S["plan_sig"] = eng, desc, sig
+    eng.render_options = dict(c["plan"].get("render_options") or {})
     if getattr(desc, "video_workbench", False):
         eng.int8_attention = bool(getattr(desc, "int8_attention", False))
         eng.on_status = lambda text: emit(ev=status_ev, text=str(text))

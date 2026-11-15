@@ -801,7 +801,8 @@ def _studio_post(what, b):
         ps = None
         if desc.workbench_follows_samples and "negative" in b:
             ps = studio.plan(desc, load_prefs(), pref_path, samples=_studio_samples(desc), negative=b.get("negative"))[1]
-        studio.settings(turbo=b.get("turbo"), preview_settings=ps)
+        ro = studio.studio_tokens(desc, load_prefs()) if b.get("options") else None    # Studio's own sampler pick
+        studio.settings(turbo=b.get("turbo"), preview_settings=ps, render_options=ro)
         return {"ok": True}
     if what == "save":
         out = str(b.get("out") or "").strip()
@@ -4623,11 +4624,15 @@ class Handler(BaseHTTPRequestHandler):
                 # the workbench's render choice per model that offers it (description.workbench_render_choice)
                 render_keys = {f"workbench_render_{d.key}" for d in training_families()
                                if getattr(d, "workbench_render_choice", False)}
+                # Studio's own pick of a Samples-tab choice it also offers (FamilyOption.studio): one of its labels
+                studio_keys = {f"studio_opt_{o.key}": set(o.choice_labels()) for d in training_families()
+                               for o in d.options if getattr(o, "studio", False)}
                 allowed = {k for d in training_families() for k in form.model_keys(d)} | set(SETTING_PREFS) | {
                     "input_dataset_dir", "welcome_v8_hidden", "sysmem_tip_hidden", "qt_disable_gpu",
-                    captions.SECONDARY_PREF} | render_keys
+                    captions.SECONDARY_PREF} | render_keys | set(studio_keys)
                 ch = b.get("changes") or {}
-                ch = {k: v for k, v in ch.items() if k not in render_keys or v in ("checkpoint", "samples")}
+                ch = {k: v for k, v in ch.items() if (k not in render_keys or v in ("checkpoint", "samples"))
+                      and (k not in studio_keys or v in studio_keys[k])}
                 if b.get("reset"):                      # Reset to defaults: the settings, never the model files
                     ch = {**{k: "" for k in SETTING_PREFS}, **{k: v for k, v in PREF_DEFAULTS.items()
                                                                   if k in SETTING_PREFS}}

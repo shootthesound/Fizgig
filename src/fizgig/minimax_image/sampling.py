@@ -45,11 +45,23 @@ def initial_noise(seed, width, height):
                        dtype=torch.float32)
 
 
+LCM_NOISE = (1.1, 0.9)         # the community's text-to-image pick: SamplerLCM, s_noise 1.1 falling to 0.9
+
+
+def _lcm_noise(x, seed):
+    """ComfyUI's default_noise_sampler: a generator on the latent's device from the seed (+1 on the CPU)."""
+    g = torch.Generator(device=x.device)
+    g.manual_seed(int(seed) + (1 if x.device.type == "cpu" else 0))
+    return lambda: torch.randn(x.size(), dtype=x.dtype, layout=x.layout, device=x.device, generator=g)
+
+
 @torch.no_grad()
 def sample(dit, text, width, height, *, steps=6, seed=0, sigmas=None, noise=None, on_step=None, refs=None,
-           text_token_tags=None, forward=None):
+           text_token_tags=None, forward=None, sampler="euler", s_noise=LCM_NOISE):
     """One picture -> its normalised latent [1, 24, 1, h, w] (fp32, on the DiT's device). `forward(x, t, txt, **kw)`
-    replaces the DiT call (Reuse unchanged blocks); refs are normalised reference latents [1, 24, 1, h, w]."""
+    replaces the DiT call (Reuse unchanged blocks); refs are normalised reference latents [1, 24, 1, h, w].
+    sampler "lcm" is ComfyUI's sample_lcm: each step goes to the head's clean picture (x + sigma * out), then back to
+    the next sigma with fresh noise, its strength s_noise (start, end) linear over the steps."""
     device = next(p for p in dit.parameters() if p.device.type != "meta").device
     grid = dit.final_layer.pdd_sigmas
     sig = list(sigmas) if sigmas is not None else schedule(steps, grid)
@@ -67,6 +79,8 @@ def sample(dit, text, width, height, *, steps=6, seed=0, sigmas=None, noise=None
     call = forward or dit
     fl = dit.final_layer
     n = len(sig) - 1
+    lcm = str(sampler or "").lower() == "lcm"
+    fresh = _lcm_noise(x, seed) if lcm else None
     for i in range(n):
         if on_step is not None:
             on_step(i, n)
@@ -77,5 +91,12 @@ def sample(dit, text, width, height, *, steps=6, seed=0, sigmas=None, noise=None
             out = call(x.to(torch.bfloat16), t, txt, **kw).float()
         finally:
             fl.span_override = None
-        x = x + (s - s_next) * out
+        if not lcm:
+            x = x + (s - s_next) * out
+            continue
+        x = x + s * out                         # the clean picture the head points at (out = x0 - noise)
+        if s_next > 0:
+            a, b = (float(v) for v in s_noise)
+            k = a + (b - a) * (i / (n - 1) if n > 1 else 0.0)
+            x = s_next * (k * fresh()) + (1.0 - s_next) * x
     return x

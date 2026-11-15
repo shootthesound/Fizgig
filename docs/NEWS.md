@@ -1,5 +1,15 @@
 # Fizgig news
 
+## 15 Nov 2026: cleaner H3 Image pictures with LCM, and Stop for a paused run
+
+**H3 Image renders with LCM.** MiniMax H3 Image has a **Sampler** choice on the Samples tab and, separately, in Studio. The new default, **LCM, noise 1.1 → 0.9**, gives much cleaner skin, hands and faces than Euler on text-to-image, the epoch 0 previews included, in the same 6 steps. Euler is still there, and the ⓘ beside it gives the ComfyUI settings for each, so your LoRA renders the same way there. The recipe comes from u/Obvious-Bad7548 on r/StableDiffusion.
+
+**Bigger pictures and a clearer schedule.** H3 Image previews go up to 3072 and 4096, Studio starts at 1280, and Likeness optimization has an ⓘ explaining its schedule, with rows worded like MOSS-Image's Clean-end share.
+
+**Stop a paused run.** While a run is paused, **Stop paused run** ends the pause so the queue can start; **Continue** on its card carries it on later.
+
+[Fizgig v9.7.3 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.7.3)
+
 ## 15 Nov 2026: a regularisation set for LoRAs, AMD fixes, and Gizmo prepares a whole folder
 
 **Train a LoRA against a regularisation dataset.** The Subjects card has a new fold: a folder of captioned pictures of the class you're training, so the LoRA bleeds less into everything else. In our testing DOP and Fizgig LoRA Isolation still do better for most people, so start there; a regularisation set is for the cases that need it.

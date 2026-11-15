@@ -6,6 +6,19 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 NEWS = [
     {
         "date": "15 Nov 2026",
+        "title": "Cleaner H3 Image pictures with LCM, and Stop for a paused run",
+        "body": (
+            "MiniMax H3 Image now renders with LCM by default, on the Samples tab and in Studio: much cleaner skin, "
+            "hands and faces on text-to-image, the epoch 0 previews included, in the same 6 steps. Euler is still "
+            "there, and the info button gives the ComfyUI settings for each.\n\n"
+            "H3 Image previews go up to 4096 px, and Studio starts at 1280. A paused run no longer holds the queue: "
+            "Stop paused run ends the pause, and Continue carries it on later."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#15-nov-2026-cleaner-h3-image-pictures-with-lcm-and-stop-for-a-paused-run"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.7.3"}],
+    },
+    {
+        "date": "15 Nov 2026",
         "title": "A regularisation set for LoRAs, AMD fixes, and Gizmo prepares a whole folder",
         "body": (
             "Train a LoRA against a regularisation dataset from the Subjects card, for the cases that need it: in our "

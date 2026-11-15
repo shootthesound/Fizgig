@@ -866,8 +866,10 @@ function startResumeNote(live) {
   if (box.dataset.path === path) return;
   box.dataset.path = path;
   box.replaceChildren(
-    el("span", {text: `Start will carry on from ${name}` + (m ? ` (epoch ${Number(m[1])})` : "") +
-      ", not begin a new run: the Resume Training box holds it. "}),
+    el("span", {text: m || /-state$/.test(name) ? `Start will carry on from ${name}` + (m ? ` (epoch ${Number(m[1])})` : "") +
+      ", not begin a new run: the Resume Training box holds it. " :
+      `The Resume Training box holds ${name}, which isn't a saved state: pick the state folder itself (named like ` +
+      "my_lora-000012-state), or clear it. "}),
     el("button", {class: "btn btn-sm", type: "button", text: "Clear it: start a new run", onclick: () => {
       S.values.RESUME_TRAINING = ""; syncInputs(["RESUME_TRAINING"]); saveStateSoon(); startResumeNote(false); }}));
 }

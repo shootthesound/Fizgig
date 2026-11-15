@@ -23,12 +23,13 @@ shift
 goto :parse_args
 :args_done
 
-REM Default: pinned AMD stable multi-arch (https://stable.repo.amd.com/rocm/whl-next/).
-REM Same stack as Linux stable: torch 2.14.0+rocm10.1.0.
-REM Optional overrides: TORCH_PIN / TORCHVISION_PIN / ROCM_SDK_DEVEL_PIN (same index).
-REM --experimental uses floating nightlies instead. gfx942 / gfx950 keep legacy staging URLs.
+REM Default: pinned AMD stable (https://stable.repo.amd.com/rocm/whl-next/).
+REM Same stack as Linux stable: torch 2.14.0+rocm10.1.0. Index is fixed; override versions with
+REM TORCH_PIN / TORCHVISION_PIN / ROCM_SDK_DEVEL_PIN.
+REM --experimental: floating packages from ROCM_EXPERIMENTAL_INDEX (default nightly whl-next;
+REM set ROCM_EXPERIMENTAL_INDEX to point at another AMD index). gfx942 / gfx950 keep legacy staging URLs.
 set "ROCM_INDEX=https://stable.repo.amd.com/rocm/whl-next/"
-set "ROCM_EXPERIMENTAL_INDEX=https://nightly.repo.amd.com/rocm/whl-next/"
+if not defined ROCM_EXPERIMENTAL_INDEX set "ROCM_EXPERIMENTAL_INDEX=https://nightly.repo.amd.com/rocm/whl-next/"
 if not defined TORCH_PIN set "TORCH_PIN=2.14.0+rocm10.1.0"
 if not defined TORCHVISION_PIN set "TORCHVISION_PIN=0.29.0a0+rocm10.1.0"
 if not defined ROCM_SDK_DEVEL_PIN set "ROCM_SDK_DEVEL_PIN=10.1.0"
@@ -179,7 +180,7 @@ if !USE_LEGACY_URL!==1 (
 )
 
 if !ROCM_EXPERIMENTAL!==1 (
-    echo Installing floating ROCm experimental ^(nightly whl-next, unpinned --pre^) for !arch!...
+    echo Installing floating ROCm experimental ^(unpinned --pre^) for !arch!...
     echo Source: !ROCM_EXPERIMENTAL_INDEX!
     echo   torch[device-!arch!]
     echo   torchvision[device-!arch!]

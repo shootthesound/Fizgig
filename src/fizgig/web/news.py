@@ -6,6 +6,18 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 NEWS = [
     {
         "date": "15 Nov 2026",
+        "title": "Gizmo's crop box reworked, AMD fixes, and Automagic v4's real rate",
+        "body": (
+            "Gizmo's crop box drags from any corner, keeps a locked shape smoothly, reaches every edge of the frame "
+            "and can be moved, typed, placed and saved.\n\n"
+            "An AMD PC with built-in graphics now trains on its graphics card, and Krea 2 LoKR fits 16 GB AMD cards "
+            "better. Automagic v4 shows the rate it really moves the weights at, on the run card, the chart and the log."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#15-nov-2026-gizmos-crop-box-reworked-amd-fixes-and-automagic-v4s-real-rate"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.7.4"}],
+    },
+    {
+        "date": "15 Nov 2026",
         "title": "Cleaner H3 Image pictures with LCM, and Stop for a paused run",
         "body": (
             "MiniMax H3 Image now renders with LCM by default, on the Samples tab and in Studio: much cleaner skin, "

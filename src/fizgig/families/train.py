@@ -1936,7 +1936,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     if do_compile:                       # decided before the load (below the Auto plan), applied last
         driver.compile_blocks(dit, "outside" if do_compile == "outside" else "inside",
                               blocks_to_swap if swapped else 0)
-    from fizgig.training.optimizers import create_optimizer, group_rates, optimizer_lr, owns_its_rate
+    from fizgig.training.optimizers import (automagic4_detail, create_optimizer, group_rates, owns_its_rate,
+                                            shown_lr)
     if ftr is not None:
         params, optimizer, opt_label = [], None, ftr.opt_label
     else:
@@ -2654,12 +2655,21 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     # one-step-behind loss read). Flushed at the epoch's end, before anything reads the records.
     lag = []
 
+    live_rate = [None]          # the last live rate read (every 20 steps): the bar's for an optimizer owning its rate
+
     def _step_rate(raw=False):
-        """The rate the step applied: the optimizer's (raw: its group rate, as the bar shows it), or under a
-        fine-tune's free-each-gradient - one optimizer per weight, none to read (#312) - the stepper's rate times
-        this step's multiplier."""
+        """The rate the step applied: the optimizer's (Automagic v4: its working rate, rate x mean brake, #353), or
+        under a fine-tune's free-each-gradient - one optimizer per weight, none to read (#312) - the stepper's rate
+        times this step's multiplier. raw (the bar, every step): the group rate, read without a GPU sync - except
+        for an optimizer that owns its rate (Automagic, Prodigy), whose group rate is only its start: the last live
+        rate read instead (#353: the run card showed the Learning rate box's value)."""
         if optimizer is not None:
-            return float(optimizer.param_groups[0]["lr"]) if raw else optimizer_lr(optimizer)
+            if raw:
+                if owns_its_rate(optimizer) and live_rate[0] is not None:
+                    return live_rate[0]
+                return float(optimizer.param_groups[0]["lr"])
+            live_rate[0] = shown_lr(optimizer)
+            return live_rate[0]
         if ftr is not None and ftr.fused is not None:
             return float(ftr.fused.lr) * float(ftr.fused.scale)
         return float(learning_rate)
@@ -3149,6 +3159,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         logger.info(f"epoch {epoch + 1 + _off}/{max_train_epochs + _off}  avr_loss={recorder.moving_average:.4f}  "
                     f"step={global_step}  {(time.time() - t0) / max(1, steps_per_epoch):.2f}s/step  "
                     f"lr={_step_rate():.3e}  "
+                    + (f"({automagic4_detail(optimizer)})  " if automagic4_detail(optimizer) else "")
                     + (f"({group_rates(optimizer)})  " if optimizer is not None and group_rates(optimizer) else "") +
                     f"peak VRAM {torch.cuda.max_memory_reserved() / 1024 ** 3:.1f} GB")
         steplog.flush()

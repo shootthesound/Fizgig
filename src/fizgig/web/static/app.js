@@ -2409,8 +2409,12 @@ function runSummary() {
       live ? p.eta : (p.total_steps ? `${p.step} of ${p.total_steps}` : "")),
   ]);
   const lk = S.likeSummary;
+  const lrCell = cell("Learning rate", p.lr);
+  if (String(v.OPTIMIZER_TYPE || "").toLowerCase() === "automagic4") lrCell.title = "Automagic v4 sets its own " +
+    "rate and slows each weight's step by how sensitive that weight is. This is its working rate: its rate times " +
+    "that slowdown on average, so the weights' real movement. The epoch lines in the log give both parts.";
   const learning = sec("Learning", [
-    cell("Learning rate", p.lr), cell("Grad norm", p.grad_norm), cell("Loss", p.loss),
+    lrCell, cell("Grad norm", p.grad_norm), cell("Loss", p.loss),
     lk ? cell("Likeness", `${Math.round(lk.now * 100)}% (epoch ${lk.epoch})` +
       (lk.bestEpoch !== lk.epoch ? ` · best ${Math.round(lk.best * 100)}% at ${lk.bestEpoch}` : "")) : null,
   ]);

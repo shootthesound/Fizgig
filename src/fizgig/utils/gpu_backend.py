@@ -47,10 +47,10 @@ def pin_rocm_device() -> None:
         idx = int(want)
         if n > 1 and idx < n:
             torch.cuda.set_device(idx)
-            import logging
-            logging.getLogger(__name__).info(
-                f"[AMD-ROCm] HIP_VISIBLE_DEVICES={idx} was not applied by this ROCm build ({n} devices listed): "
-                f"using device {idx}, {torch.cuda.get_device_name(idx)}")
+            import sys
+            # stderr: this runs as fizgig is imported, before any logging is set up; the console and run logs show it
+            print(f"[AMD-ROCm] HIP_VISIBLE_DEVICES={idx} was not applied by this ROCm build ({n} devices listed): "
+                  f"using device {idx}, {torch.cuda.get_device_name(idx)}", file=sys.stderr, flush=True)
     except Exception:
         pass
 

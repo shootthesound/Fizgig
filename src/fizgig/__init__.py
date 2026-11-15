@@ -21,9 +21,9 @@ import logging as _logging
 _logging.getLogger("bitsandbytes.cextension").addFilter(
     lambda r: "No prebuilt binary for CUDA" not in r.getMessage())
 
-# AMD launcher picked a card that isn't device 0 (built-in graphics listed first): make sure it's the one used, even
-# where the ROCm build ignores HIP_VISIBLE_DEVICES (#342). Only on AMD launches with that variable set.
-if _os.environ.get("FIZGIG_GPU_BACKEND") == "rocm" and (_os.environ.get("HIP_VISIBLE_DEVICES") or "").strip().isdigit():
+# AMD with built-in graphics listed first: the card is the one used - the launcher's pick even where the ROCm build
+# ignores HIP_VISIBLE_DEVICES, and the card itself when nothing picked one (#342). Only on AMD launches.
+if _os.environ.get("FIZGIG_GPU_BACKEND") == "rocm":
     from fizgig.utils.gpu_backend import pin_rocm_device as _pin
     _pin()
 # AMD: every process says which devices it sees and which it uses, on stderr - so each stage's line is in its run log

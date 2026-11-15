@@ -749,7 +749,7 @@ SETTINGS_DEFAULTS = {"microphone": "", "whisper_language": "Auto detect",
                      "trigger_word": "", "clip_out_dir": "", "voice_out_dir": "",
                      "music_trigger_word": "", "music_words": "", "music_out_dir": "",
                      "music_fade_in": "0.1", "music_fade_out": "1.5",
-                     "last_model": "h3"}
+                     "last_model": "h3", "saved_crops": []}
 
 
 def load_settings():
@@ -834,6 +834,125 @@ CROP_SHAPES = (
     ("4:5 portrait", 4 / 5),
     ("21:9 ultrawide", 21 / 9),
 )
+# How far from a locked shape a crop may land. The /32 grid hits most ratios exactly only at a few
+# sizes (16:9 at 512x288, 1024x576, ...), and holding out for exact made the box jump between them
+# as it was dragged (#350); within 2% it grows smoothly and the note says what it actually got.
+CROP_SHAPE_TOLERANCE = 0.02
+
+
+def crop_size(want_w, want_h, room_w, room_h, aspect=None):
+    """A crop's (w, h) on the /32 grid: as near the wanted size as the grid and the room allow.
+
+    Free: each side rounded to the nearest 32, at least 32, no more than the room. Locked to a
+    shape: the wanted size is first made that shape by growing the side that was pulled further,
+    so the box always reaches the pointer on one side and never stops short of a drag towards an
+    edge; then the largest /32 pair no bigger than that and within CROP_SHAPE_TOLERANCE of the
+    shape (or, when none is, the closest one). None when not even 32 x 32 fits."""
+    rw = int(room_w // SIZE_STEP) * SIZE_STEP
+    rh = int(room_h // SIZE_STEP) * SIZE_STEP
+    if rw < SIZE_STEP or rh < SIZE_STEP:
+        return None
+    if not aspect:
+        return (min(rw, max(SIZE_STEP, int(round(want_w / SIZE_STEP)) * SIZE_STEP)),
+                min(rh, max(SIZE_STEP, int(round(want_h / SIZE_STEP)) * SIZE_STEP)))
+    tw = min(max(want_w, want_h * aspect), room_w, room_h * aspect)
+    cap = min(rw, max(SIZE_STEP, int(round(tw / SIZE_STEP)) * SIZE_STEP))
+    best = None
+    for cw in range(SIZE_STEP, cap + SIZE_STEP, SIZE_STEP):
+        base = int(cw / aspect // SIZE_STEP) * SIZE_STEP
+        for ch in (base, base + SIZE_STEP):
+            if ch < SIZE_STEP or ch > rh:
+                continue
+            err = abs(cw / ch - aspect) / aspect
+            key = (0, -(cw * ch)) if err <= CROP_SHAPE_TOLERANCE else (1, err)
+            if best is None or key < best[0]:
+                best = (key, (cw, ch))
+    return best[1] if best else None
+
+
+def crop_from_drag(anchor, pointer, frame_w, frame_h, aspect=None):
+    """A dragged box: the corner pressed stays where it was pressed and the box grows towards the
+    pointer, in any direction. Position is free (any pixel); only the size is on the /32 grid.
+    A drag past the frame's edge means "to the edge": the room left is rarely a multiple of 32, so
+    the box slides flush rather than stopping up to 31 pixels short (#350: "refuses to cover the
+    lower edge")."""
+    ax = min(max(0.0, anchor[0]), frame_w)
+    ay = min(max(0.0, anchor[1]), frame_h)
+    px, py = pointer
+    right, down = px >= ax, py >= ay
+    size = crop_size(abs(px - ax), abs(py - ay), frame_w - ax if right else ax,
+                     frame_h - ay if down else ay, aspect)
+    if not size:
+        return None
+    w, h = size
+    x = ax if right else ax - w
+    y = ay if down else ay - h
+    if px >= frame_w:
+        x = frame_w - w
+    elif px <= 0:
+        x = 0
+    if py >= frame_h:
+        y = frame_h - h
+    elif py <= 0:
+        y = 0
+    return (int(round(min(max(0, x), frame_w - w))), int(round(min(max(0, y), frame_h - h))), w, h)
+
+
+def crop_moved(crop, dx, dy, frame_w, frame_h):
+    """The same box slid by (dx, dy), kept inside the frame."""
+    x, y, w, h = crop
+    return (int(round(min(max(0, x + dx), frame_w - w))),
+            int(round(min(max(0, y + dy), frame_h - h))), w, h)
+
+
+def crop_placed(crop, col, row, frame_w, frame_h):
+    """The same box against an edge or centred: col 0/1/2 = left/centre/right, row 0/1/2 =
+    top/middle/bottom, None = leave that axis where it is."""
+    x, y, w, h = crop
+    if col is not None:
+        x = (0, (frame_w - w) // 2, frame_w - w)[col]
+    if row is not None:
+        y = (0, (frame_h - h) // 2, frame_h - h)[row]
+    return (int(x), int(y), w, h)
+
+
+def crop_largest(frame_w, frame_h, aspect=None, centre=None):
+    """The biggest box at the shape (the whole frame, on the grid, when free), centred on `centre`
+    (default the frame's centre) as far as the frame allows."""
+    size = crop_size(frame_w, frame_h, frame_w, frame_h, aspect)
+    if not size:
+        return None
+    w, h = size
+    cx, cy = centre or (frame_w / 2, frame_h / 2)
+    return crop_moved((0, 0, w, h), cx - w / 2, cy - h / 2, frame_w, frame_h)
+
+
+def crop_resized(crop, w=None, h=None, frame_w=0, frame_h=0, aspect=None):
+    """The box with a typed width or height: snapped to 32 and, with a shape locked, the other side
+    following. The top-left corner stays unless the new size would cross the frame's edge."""
+    x, y, cw, ch = crop
+    if aspect:
+        if w is not None:
+            size = crop_size(w, w / aspect, frame_w, frame_h, aspect)
+        else:
+            size = crop_size(h * aspect, h, frame_w, frame_h, aspect)
+    else:
+        size = crop_size(cw if w is None else w, ch if h is None else h, frame_w, frame_h)
+    if not size:
+        return crop
+    return crop_moved((x, y) + tuple(size), 0, 0, frame_w, frame_h)
+
+
+def crop_rescaled(crop, from_w, from_h, frame_w, frame_h, aspect=None):
+    """A saved box from a source of another size, scaled to this one and re-fitted to the grid."""
+    if (from_w, from_h) == (frame_w, frame_h):
+        return crop_moved(crop, 0, 0, frame_w, frame_h)
+    kx, ky = frame_w / from_w, frame_h / from_h
+    x, y, w, h = crop
+    size = crop_size(w * kx, h * ky, frame_w, frame_h, aspect)
+    if not size:
+        return None
+    return crop_moved((0, 0) + tuple(size), x * kx, y * ky, frame_w, frame_h)
 
 # --- palette --------------------------------------------------------------------------------
 # The Fizgig app's colours (its web look, src/fizgig/web/static/style.css), copied rather than imported: gizmo.py
@@ -1050,7 +1169,9 @@ def build_export_command(ffmpeg, src, dst, start_s, frames, width, height,
         # square pixels first and the crop lands where it was drawn.
         if abs(sar - 1.0) > 1e-3:
             vf += ",scale=iw*sar:ih:flags=lanczos,setsar=1"
-        vf += f",crop={cw}:{ch}:{cx}:{cy}"
+        # Kept inside the frame by ffmpeg itself: a box flush to the right edge of an anamorphic
+        # source can sit a pixel past ffmpeg's own rounding of iw*sar.
+        vf += f",crop={cw}:{ch}:'min({cx}\\,iw-ow)':'min({cy}\\,ih-oh)'"
     # Cover, then crop — never stretch. force_original_aspect_ratio=increase scales the frame
     # until it covers the target box with its shape intact, and the crop takes the middle. The
     # target is chosen to sit within ~2% of the source aspect, so what the crop removes is a
@@ -1983,10 +2104,11 @@ class Gizmo:
         ToolTip(self.canvas,
                 "The first frame of the clip you are about to save.\n\n"
                 "With Choose an area set above, drag here to pick the part of the frame to train "
-                "on. Drag again to redraw it.")
+                "on. Drag inside the box to move it, outside it to draw a new one.")
         self.canvas.bind("<Button-1>", self._crop_press)
         self.canvas.bind("<B1-Motion>", self._crop_drag)
         self.canvas.bind("<ButtonRelease-1>", self._crop_release)
+        self.canvas.bind("<Motion>", self._crop_hover)
 
         last = tk.Frame(shots, bg=COLORS["bg_surface"])
         last.pack(side=tk.LEFT, padx=(12, 0))
@@ -2130,8 +2252,9 @@ class Gizmo:
         for text, val, tip in (
                 ("Whole frame", False, "Use everything in shot."),
                 ("Choose an area", True,
-                 "Then drag a rectangle on the FIRST FRAME preview below. It snaps to a "
-                 "multiple of 32, and drag again to redraw it.")):
+                 "Then drag a rectangle on the FIRST FRAME preview below (its size snaps to a "
+                 "multiple of 32), or use Place / Largest. Drag inside the box to move it; "
+                 "drag outside it to draw a new one.")):
             rb = tk.Radiobutton(croprow, text=text, variable=self.crop_var, value=val,
                                 command=self._on_crop_mode_changed,
                                 bg=COLORS["bg_surface"], fg=COLORS["text_primary"],
@@ -2152,8 +2275,8 @@ class Gizmo:
                      "multiple of 32, which Gizmo handles. This is for consistency: thirty "
                      "hand-drawn rectangles are thirty slightly different framings, and one "
                      "shape across the set is usually what you meant.\n\n"
-                     "The grid is coarse, so the lock gets as close as multiples of 32 allow "
-                     "and tells you what it actually managed.")
+                     "The grid is coarse, so the lock lands within 2% of the shape (as close as "
+                     "multiples of 32 allow at small sizes) and tells you what it actually got.")
         tk.Label(croprow, text="Shape", font=(FONT_FAMILY, 9), bg=COLORS["bg_surface"],
                  fg=COLORS["text_muted"]).pack(side=tk.LEFT, padx=(14, 6))
         self.shape_var = tk.StringVar()
@@ -2164,10 +2287,13 @@ class Gizmo:
         self.shape_box.pack(side=tk.LEFT)
         self.shape_box.bind("<<ComboboxSelected>>", lambda _e: self._on_shape_changed())
         ToolTip(self.shape_box, SHAPE_TIP)
-        self.crop_note = tk.Label(grid, text="", font=(FONT_FAMILY, 9), justify=tk.LEFT,
+        cropbox = tk.Frame(grid, bg=COLORS["bg_surface"])
+        cropbox.grid(row=6, column=1, sticky="w")
+        self._build_crop_tools(cropbox)
+        self.crop_note = tk.Label(cropbox, text="", font=(FONT_FAMILY, 9), justify=tk.LEFT,
                                   wraplength=820, bg=COLORS["bg_surface"],
                                   fg=COLORS["text_explain"])
-        self.crop_note.grid(row=6, column=1, sticky="w")
+        self.crop_note.pack(side=tk.TOP, anchor="w")
 
         SOUND_TIP = ("H3 generates sound as well as video, so a clip's audio can be training data "
                      "too.\n\n"
@@ -2357,9 +2483,10 @@ class Gizmo:
     def _set_enabled(self, on):
         state = tk.NORMAL if on else tk.DISABLED
         for w in (self.add_btn, self.chop_btn, self.export_btn, self.scale, self.open_btn,
-                  self.pos_entry, self.crop_clear_btn, self.vplay_btn, *self._radios):
+                  self.pos_entry, self.crop_clear_btn, self.vplay_btn, *self._radios,
+                  *self._crop_widgets):
             w.configure(state=state)
-        for box in (self.len_box, self.motion_box, self.shape_box):
+        for box in (self.len_box, self.motion_box, self.shape_box, self.saved_crop_box):
             box.configure(state="readonly" if on else tk.DISABLED)
         # Listening needs a track to listen to AND a way to play it. Both reasons are spelled out
         # in _fill_sound_note rather than left as a greyed button with no explanation.
@@ -2814,6 +2941,93 @@ class Gizmo:
                          (w - img.size[0]) // 2, (h - img.size[1]) // 2)
         return photo
 
+    def _build_crop_tools(self, parent):
+        """The box as numbers, placing presets and saved boxes (#350). Shown with Choose an area."""
+        self.crop_tools = tools = tk.Frame(parent, bg=COLORS["bg_surface"])
+        self._crop_widgets = []
+        left = tk.Frame(tools, bg=COLORS["bg_surface"])
+        left.pack(side=tk.LEFT, anchor="n")
+
+        def small(parent_, text):
+            return tk.Label(parent_, text=text, font=(FONT_FAMILY, 9), bg=COLORS["bg_surface"],
+                            fg=COLORS["text_muted"])
+
+        nums = tk.Frame(left, bg=COLORS["bg_surface"])
+        nums.pack(side=tk.TOP, anchor="w", pady=(0, 6))
+        self._crop_fields = {}
+        for key, text, tip in (
+                ("x", "X", "Left edge of the box, in the source's pixels. Any number: only the size "
+                           "has to be a multiple of 32."),
+                ("y", "Y", "Top edge of the box, in the source's pixels."),
+                ("w", "W", "Width of the box: a multiple of 32. With a shape locked, the height "
+                           "follows."),
+                ("h", "H", "Height of the box: a multiple of 32. With a shape locked, the width "
+                           "follows.")):
+            small(nums, text).pack(side=tk.LEFT, padx=(0 if key == "x" else 10, 4))
+            var = tk.StringVar()
+            box = tk.Spinbox(nums, textvariable=var, width=6, from_=0, to=99999,
+                             increment=SIZE_STEP if key in ("w", "h") else 1,
+                             font=(FONT_FAMILY, 10), bg=COLORS["bg_inset"],
+                             fg=COLORS["text_primary"], insertbackground=COLORS["text_primary"],
+                             buttonbackground=COLORS["bg_raised"], relief=tk.FLAT,
+                             highlightthickness=1, highlightbackground=COLORS["border"],
+                             highlightcolor=COLORS["accent"],
+                             disabledbackground=COLORS["bg_surface"],
+                             command=lambda k=key: self._crop_field_changed(k))
+            box.pack(side=tk.LEFT)
+            self._shield_from_hotkeys(box)
+            box.bind("<Return>", lambda _e, k=key: self._crop_field_changed(k))
+            box.bind("<FocusOut>", lambda _e, k=key: self._crop_field_changed(k))
+            ToolTip(box, tip)
+            self._crop_fields[key] = (var, box)
+            self._crop_widgets.append(box)
+
+        saved = tk.Frame(left, bg=COLORS["bg_surface"])
+        saved.pack(side=tk.TOP, anchor="w")
+        small(saved, "Saved boxes").pack(side=tk.LEFT, padx=(0, 6))
+        self.saved_crop_var = tk.StringVar()
+        self.saved_crop_box = ttk.Combobox(saved, textvariable=self.saved_crop_var,
+                                           state="readonly", style="G.TCombobox", width=30)
+        self.saved_crop_box.pack(side=tk.LEFT)
+        self.saved_crop_box.bind("<<ComboboxSelected>>", lambda _e: self._apply_saved_crop())
+        ToolTip(self.saved_crop_box,
+                "Boxes you saved, for the next clip from the same camera or edit. Picking one puts "
+                "it on this video; from a source of another size it is scaled to fit.")
+        save_btn = self._button(saved, "Save", self._save_crop, pad=10,
+                                tip="Keep this box (and its shape) under a name, for other clips.")
+        save_btn.pack(side=tk.LEFT, padx=(6, 0))
+        del_btn = self._button(saved, "Delete", self._delete_saved_crop, pad=10,
+                               tip="Forget the saved box picked on the left.")
+        del_btn.pack(side=tk.LEFT, padx=(6, 0))
+        self._crop_widgets += [save_btn, del_btn]
+        self._refresh_saved_crops()
+
+        place = tk.Frame(tools, bg=COLORS["bg_surface"])
+        place.pack(side=tk.LEFT, anchor="n", padx=(22, 0))
+        small(place, "Place").grid(row=0, column=0, rowspan=3, padx=(0, 6), sticky="n")
+        arrows = (("↖", "↑", "↗"), ("←", "•", "→"), ("↙", "↓", "↘"))
+        cols, rows = ("left", "centre", "right"), ("top", "middle", "bottom")
+        for r in range(3):
+            for c in range(3):
+                where = "centre" if (r, c) == (1, 1) else (
+                    rows[r] if c == 1 else cols[c] if r == 1 else f"{rows[r]} {cols[c]}")
+                b = tk.Button(place, text=arrows[r][c], width=2, takefocus=0,
+                              command=lambda cc=c, rr=r: self._place_crop(cc, rr),
+                              bg=COLORS["bg_hover"], fg=COLORS["text_primary"],
+                              activebackground=COLORS["accent_hover"],
+                              activeforeground=COLORS["text_primary"],
+                              font=(FONT_FAMILY, 9), relief=tk.FLAT, bd=0, cursor="hand2")
+                b.grid(row=r, column=c + 1, padx=1, pady=1)
+                ToolTip(b, f"Move the box to the {where} of the frame, flush with the edge. With "
+                           "no box yet, the largest box at the shape goes there.")
+                self._crop_widgets.append(b)
+        big = self._button(place, "Largest", self._largest_crop, pad=10,
+                           tip="The biggest box at the chosen shape, centred where the box is now "
+                               "(the whole frame on the 32 grid when the shape is Free). Then "
+                               "Place it: Largest + ← is a crop from the left.")
+        big.grid(row=0, column=4, rowspan=3, padx=(10, 0), sticky="n")
+        self._crop_widgets.append(big)
+
     # -- cropping ---------------------------------------------------------------------------------
     def _canvas_to_source(self, canvas, cx, cy):
         """A point on a preview canvas -> a point in the source's display pixels."""
@@ -2833,33 +3047,191 @@ class Gizmo:
         return (ox + sx / self.info["display_width"] * iw,
                 oy + sy / self.info["display_height"] * ih)
 
+    def _frame_size(self):
+        return self.info["display_width"], self.info["display_height"]
+
     def _crop_press(self, event):
         if not self.src or not self.crop_var.get():
             return
         pt = self._canvas_to_source(self.canvas, event.x, event.y)
-        if pt:
-            self._crop_anchor = pt
+        if not pt:
+            return
+        self._crop_anchor = pt
+        self._crop_press_xy = (event.x, event.y)
+        self._crop_dragged = False
+        # Inside the box = move it; outside = draw a new one from here.
+        self._crop_moving = self.crop if self._inside_crop(pt) else None
+
+    def _inside_crop(self, pt):
+        if not self.crop:
+            return False
+        x, y, w, h = self.crop
+        return x <= pt[0] <= x + w and y <= pt[1] <= y + h
+
+    def _crop_hover(self, event):
+        if not self.src or not self.crop_var.get():
+            self.canvas.configure(cursor="")
+            return
+        pt = self._canvas_to_source(self.canvas, event.x, event.y)
+        self.canvas.configure(cursor="fleur" if pt and self._inside_crop(pt) else "crosshair")
 
     def _crop_drag(self, event):
         if not getattr(self, "_crop_anchor", None):
             return
+        px, py = self._crop_press_xy
+        if not self._crop_dragged and abs(event.x - px) < 4 and abs(event.y - py) < 4:
+            return                           # a click, or a twitch of the hand: not a box
+        self._crop_dragged = True
         pt = self._canvas_to_source(self.canvas, event.x, event.y)
         if not pt:
             return
-        self.crop = self._snap_crop(self._crop_anchor, pt)
-        self._draw_crop_overlay()
+        fw, fh = self._frame_size()
+        if getattr(self, "_crop_moving", None):
+            box = crop_moved(self._crop_moving, pt[0] - self._crop_anchor[0],
+                             pt[1] - self._crop_anchor[1], fw, fh)
+        else:
+            box = crop_from_drag(self._crop_anchor, pt, fw, fh, self._crop_aspect())
+        if box:
+            self._set_crop(box, final=False)
 
     def _crop_release(self, _event):
         if not getattr(self, "_crop_anchor", None):
             return
         self._crop_anchor = None
+        self._crop_moving = None
+        if self._crop_dragged:
+            self._set_crop(self.crop)
+        else:
+            self._describe_crop()
+
+    def _set_crop(self, box, final=True):
+        """Every change of the box goes through here: the outline, the numbers, and (once the drag
+        or the typing is done) the size, the preview and the note."""
+        self.crop = tuple(int(v) for v in box) if box else None
+        self._draw_crop_overlay()
+        self._sync_crop_fields()
+        if final:
+            if self.info:
+                # The crop decides the shape AND how many pixels there are to work with.
+                self._refresh_cost()
+                self.show_frame()
+            self._describe_crop()
+            self._refresh_planned_name()
+
+    def _sync_crop_fields(self):
+        if getattr(self, "_crop_fields", None) is None:
+            return
+        for i, key in enumerate(("x", "y", "w", "h")):
+            var, _box = self._crop_fields[key]
+            var.set("" if not self.crop else str(self.crop[i]))
+
+    def _crop_field_changed(self, key):
+        """A typed or spun number. Bad input puts the box's own number back."""
+        if not self.info or not self.crop_var.get():
+            return
+        var, _box = self._crop_fields[key]
+        try:
+            v = int(round(float(var.get().strip())))
+        except ValueError:
+            self._sync_crop_fields()
+            return
+        fw, fh = self._frame_size()
+        box = self.crop or crop_largest(fw, fh, self._crop_aspect())
+        if not box:
+            return
+        i = ("x", "y", "w", "h").index(key)
+        if box[i] == v and self.crop:
+            return
+        if key in ("x", "y"):
+            box = crop_moved(box, v - box[0] if key == "x" else 0,
+                             v - box[1] if key == "y" else 0, fw, fh)
+        else:
+            box = crop_resized(box, w=v if key == "w" else None, h=v if key == "h" else None,
+                               frame_w=fw, frame_h=fh, aspect=self._crop_aspect())
+        self._set_crop(box)
+
+    def _place_crop(self, col, row):
+        if not self.info:
+            return
+        self.crop_var.set(True)
+        fw, fh = self._frame_size()
+        box = self.crop or crop_largest(fw, fh, self._crop_aspect())
+        if box:
+            # The centre arrow centres both ways; an edge arrow moves one axis and leaves the other.
+            if (col, row) == (1, 1):
+                self._set_crop(crop_placed(box, 1, 1, fw, fh))
+            else:
+                self._set_crop(crop_placed(box, None if col == 1 else col,
+                                           None if row == 1 else row, fw, fh))
+
+    def _largest_crop(self):
+        if not self.info:
+            return
+        self.crop_var.set(True)
+        fw, fh = self._frame_size()
+        centre = None
         if self.crop:
-            # The crop decides the shape AND how many pixels there are to work with, so the size
-            # menu is rebuilt from it — keeping whichever tier was chosen rather than the pixel
-            # dimensions, which have just changed under it.
-            self._refresh_cost()
-            self.show_frame()
-        self._describe_crop()
+            x, y, w, h = self.crop
+            centre = (x + w / 2, y + h / 2)
+        box = crop_largest(fw, fh, self._crop_aspect(), centre)
+        if box:
+            self._set_crop(box)
+
+    # -- saved boxes ------------------------------------------------------------------------------
+    def _saved_crops(self):
+        return [c for c in (self.settings.get("saved_crops") or []) if isinstance(c, dict)
+                and all(isinstance(c.get(k), int) for k in ("x", "y", "w", "h", "fw", "fh"))]
+
+    def _refresh_saved_crops(self):
+        names = [c.get("name") or "?" for c in self._saved_crops()]
+        self.saved_crop_box.configure(values=names)
+        if self.saved_crop_var.get() not in names:
+            self.saved_crop_var.set("")
+
+    def _save_crop(self):
+        if not self.crop or not self.info:
+            messagebox.showinfo("Gizmo", "Draw a box first, then save it.")
+            return
+        from tkinter import simpledialog
+        x, y, w, h = self.crop
+        fw, fh = self._frame_size()
+        name = simpledialog.askstring("Save box", "Name for this box:", parent=self.root,
+                                      initialvalue=f"{w}x{h} at {x},{y} ({fw}x{fh})")
+        if not name or not name.strip():
+            return
+        name = name.strip()
+        keep = [c for c in self._saved_crops() if c.get("name") != name]
+        self.settings["saved_crops"] = keep + [{
+            "name": name, "x": x, "y": y, "w": w, "h": h, "fw": fw, "fh": fh,
+            "shape": CROP_SHAPES[max(0, self.shape_box.current())][0]}]
+        save_settings(self.settings)
+        self._refresh_saved_crops()
+        self.saved_crop_var.set(name)
+
+    def _apply_saved_crop(self):
+        name = self.saved_crop_var.get()
+        entry = next((c for c in self._saved_crops() if c.get("name") == name), None)
+        if not entry or not self.info:
+            return
+        shapes = [n for n, _ in CROP_SHAPES]
+        if entry.get("shape") in shapes:
+            self.shape_box.current(shapes.index(entry["shape"]))
+        fw, fh = self._frame_size()
+        box = crop_rescaled((entry["x"], entry["y"], entry["w"], entry["h"]),
+                            entry["fw"], entry["fh"], fw, fh, self._crop_aspect())
+        if box:
+            self.crop_var.set(True)
+            self._set_crop(box)
+
+    def _delete_saved_crop(self):
+        name = self.saved_crop_var.get()
+        if not name:
+            return
+        if not messagebox.askyesno("Gizmo", f"Forget the saved box \"{name}\"?"):
+            return
+        self.settings["saved_crops"] = [c for c in self._saved_crops() if c.get("name") != name]
+        save_settings(self.settings)
+        self._refresh_saved_crops()
 
     def _crop_aspect(self):
         """The locked aspect, or None for free-form."""
@@ -2868,53 +3240,6 @@ class Gizmo:
         if value == "source" and self.info:
             return self.info["display_width"] / self.info["display_height"]
         return value if isinstance(value, float) else None
-
-    def _snap_crop(self, a, b):
-        """Two dragged corners -> an (x, y, w, h) box on the /32 grid, inside the frame.
-
-        Snapped because H3 needs multiples of 32 and because a crop that is 31 pixels off the
-        grid would otherwise be quietly rounded later, moving the framing away from what was
-        drawn. Anything smaller than 32 in either direction is not a crop, it is a slip.
-
-        With a shape locked, the /32 pair nearest that ratio is searched for rather than computed:
-        the grid is coarse enough that dividing and rounding lands surprisingly far off — 16:9 at
-        a height of 352 rounds to 640x352, which is 1.82. Both sides move, so the result is the
-        closest the grid can actually get.
-        """
-        dw, dh = self.info["display_width"], self.info["display_height"]
-        max_w = int(dw // SIZE_STEP) * SIZE_STEP
-        max_h = int(dh // SIZE_STEP) * SIZE_STEP
-        x0, x1 = sorted((max(0.0, min(a[0], dw)), max(0.0, min(b[0], dw))))
-        y0, y1 = sorted((max(0.0, min(a[1], dh)), max(0.0, min(b[1], dh))))
-        x = int(x0 // SIZE_STEP) * SIZE_STEP
-        y = int(y0 // SIZE_STEP) * SIZE_STEP
-        w = max(SIZE_STEP, int(round((x1 - x) / SIZE_STEP)) * SIZE_STEP)
-        h = max(SIZE_STEP, int(round((y1 - y) / SIZE_STEP)) * SIZE_STEP)
-
-        aspect = self._crop_aspect()
-        if aspect:
-            # Fitted INSIDE what was dragged, so the rectangle never grows past the gesture, then
-            # scored on how close the grid can get. Ties go to the larger box.
-            span_w = min(w, max_w - x)
-            span_h = min(h, max_h - y)
-            best = None
-            for cw in range(SIZE_STEP, span_w + SIZE_STEP, SIZE_STEP):
-                for ch in {int(round(cw / aspect / SIZE_STEP)) * SIZE_STEP,
-                           int(round(cw / aspect / SIZE_STEP)) * SIZE_STEP + SIZE_STEP}:
-                    if ch < SIZE_STEP or ch > span_h:
-                        continue
-                    score = (round(abs((cw / ch) - aspect) / aspect, 4), -(cw * ch))
-                    if best is None or score < best[0]:
-                        best = (score, (cw, ch))
-            if best is None:
-                return None
-            w, h = best[1]
-
-        w = min(w, max_w - x)
-        h = min(h, max_h - y)
-        if w < SIZE_STEP or h < SIZE_STEP:
-            return None
-        return (x, y, w, h)
 
     def _draw_crop_overlay(self):
         """Outline the crop on BOTH previews. The last frame is the point: a crop holds still and
@@ -2944,20 +3269,13 @@ class Gizmo:
             return
         if self.crop:
             x, y, w, h = self.crop
-            cx, cy = x + w / 2, y + h / 2
-            refit = self._snap_crop((cx - w / 2, cy - h / 2), (cx + w / 2, cy + h / 2))
-            if refit:
-                # Re-centre: the snap anchors at the top-left corner, so a shape change would
-                # otherwise slide the framing down and right.
-                nx, ny, nw, nh = refit
-                nx = max(0, min(int((cx - nw / 2) // SIZE_STEP) * SIZE_STEP,
-                                int(self.info["display_width"] // SIZE_STEP) * SIZE_STEP - nw))
-                ny = max(0, min(int((cy - nh / 2) // SIZE_STEP) * SIZE_STEP,
-                                int(self.info["display_height"] // SIZE_STEP) * SIZE_STEP - nh))
-                self.crop = (nx, ny, nw, nh)
-            self._refresh_cost()
-            self._draw_crop_overlay()
-            self.show_frame()
+            fw, fh = self._frame_size()
+            aspect = self._crop_aspect()
+            size = crop_size(w, h, fw, fh, aspect) if aspect else (w, h)
+            if size:
+                self._set_crop(crop_moved((0, 0) + tuple(size), x + w / 2 - size[0] / 2,
+                                          y + h / 2 - size[1] / 2, fw, fh))
+                return
         self._describe_crop()
 
     def _on_crop_mode_changed(self):
@@ -2973,16 +3291,27 @@ class Gizmo:
         if self.info:
             self._refresh_cost()
         self._draw_crop_overlay()
+        self._sync_crop_fields()
         self._describe_crop()
         self._refresh_planned_name()
 
     def _describe_crop(self):
+        # The numbers, Place and saved boxes show only while an area is being chosen.
+        if getattr(self, "crop_tools", None) is not None:
+            if self.crop_var.get():
+                if not self.crop_tools.winfo_ismapped():
+                    self.crop_tools.pack(side=tk.TOP, anchor="w", pady=(0, 6),
+                                         before=self.crop_note)
+            else:
+                self.crop_tools.pack_forget()
+            self._sync_crop_fields()
         if not self.crop_var.get():
             self.crop_note.configure(text="", fg=COLORS["text_explain"])
             return
         if not self.crop:
             self.crop_note.configure(
-                text="Drag a rectangle on the FIRST FRAME preview below.",
+                text="Drag a rectangle on the FIRST FRAME preview below, or press Largest or a "
+                     "Place arrow.",
                 fg=COLORS["accent"])
             return
         x, y, w, h = self.crop
@@ -2995,7 +3324,7 @@ class Gizmo:
             got = w / h
             text += (f" Shape {got:.3f}"
                      + ("" if abs(got - aspect) / aspect < 0.005
-                        else f" — the closest to {aspect:.3f} the 32-pixel grid allows"))
+                        else f" (asked for {aspect:.3f}: the 32-pixel grid gets this close)"))
         tw, th = self._size()
         # Cropped below the output size means the clip is upscaled-in-effect: there is simply
         # less real detail behind the same number of pixels. Worth saying, not worth refusing.

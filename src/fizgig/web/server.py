@@ -41,6 +41,7 @@ from fizgig.families import refmod
 from fizgig.web import studio
 from fizgig.web.port import PORT_DEFAULT, PORT_WALK, listening, on_pod, on_runpod, on_vast, saved_port
 from fizgig.web.schema import get_schema
+from fizgig.krea2.generation_attention import preference_available as sageattention_option
 
 logger = logging.getLogger("fizgig.web")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -383,7 +384,7 @@ def _write_json(path, data):
 # the desktop's DEFAULT_PREFS that aren't empty: a web-only install starts where the desktop app would
 PREF_DEFAULTS = {"lora_output_dir": "output_loras", "profiles_dir": "user_data/profiles", "cache_dir": "user_data/cache",
                  "runpod_stop_when_done": "0", "inference_blocks_to_swap": "Auto (detect from GPU)",
-                 "inference_int8": "1", "lan_discovery": "1", "update_check": "1"}
+                 "inference_int8": "1", "inference_sageattention": "0", "lan_discovery": "1", "update_check": "1"}
 
 
 LAST_USED_FILE = user_data.LAST_USED_FILE           # the training folder, each folder's trigger word
@@ -445,7 +446,7 @@ def set_folder_trigger(folder, word):
 
 # the Preferences settings Reset to defaults puts back (the model files are never reset)
 SETTING_PREFS = ("lora_output_dir", "profiles_dir", "cache_dir", "input_lora_dir", "input_ref_dir",
-                 "inference_blocks_to_swap", "inference_int8", "lan_discovery", "update_check")
+                 "inference_blocks_to_swap", "inference_int8", "inference_sageattention", "lan_discovery", "update_check")
 
 
 def load_prefs() -> dict:
@@ -3249,6 +3250,7 @@ class Handler(BaseHTTPRequestHandler):
                                          for k in form.model_keys(d)},
                               "cache_dir": str(p.get("cache_dir") or ""),
                               "settings": {k: str(p.get(k) or "") for k in SETTING_PREFS},
+                              "sageattention_option": sageattention_option(),
                               "captioning": {"main": pref_path(p, "krea2_text_encoder"),
                                              "main_ok": bool(pref_path(p, "krea2_text_encoder")
                                                              and os.path.isfile(pref_path(p, "krea2_text_encoder"))),
@@ -4613,7 +4615,7 @@ class Handler(BaseHTTPRequestHandler):
                                                                   if k in SETTING_PREFS}}
                 if "inference_int8" in ch:
                     ch["inference_int8"] = "1" if ch["inference_int8"] in (True, "1", 1) else "0"
-                for k in ("lan_discovery", "update_check", "qt_disable_gpu"):
+                for k in ("lan_discovery", "update_check", "qt_disable_gpu", "inference_sageattention"):
                     if k in ch:
                         ch[k] = "1" if ch[k] in (True, "1", 1) else "0"
                 upd = {k: str(v) for k, v in ch.items() if k in allowed}

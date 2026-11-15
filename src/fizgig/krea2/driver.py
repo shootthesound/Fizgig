@@ -19,6 +19,7 @@ import torch
 import torch.nn.functional as F
 
 from fizgig.families.driver import Block, BlockGroup, FamilyDriver, picture_losses, prior_base, weighted_loss, with_prior
+from fizgig.krea2.generation_attention import configured_generation
 
 DTYPE = torch.bfloat16
 _BLOCK_MODULES = ("attn.wq", "attn.wk", "attn.wv", "attn.gate", "attn.wo", "mlp.gate", "mlp.up", "mlp.down")
@@ -302,6 +303,7 @@ class Krea2Driver(FamilyDriver):
         return torch.randn(1, 16, height // 8, width // 8, device=dev, dtype=DTYPE, generator=g).float().cpu()
 
     @torch.no_grad()
+    @configured_generation
     def generate(self, dit, cond, width, height, *, steps, seed, cfg=1.0, neg_cond=None, sigmas=None, options=(),
                  noise=None, on_step=None, refs=None):
         from fizgig.krea2.sampling import prepare, timesteps

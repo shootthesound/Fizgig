@@ -20,10 +20,14 @@ except ImportError:
     flash_attn_func = None
 
 try:
-    from sageattention import sageattn_varlen, sageattn
+    from sageattention import sageattn
+except ImportError:
+    sageattn = None
+
+try:
+    from sageattention import sageattn_varlen
 except ImportError:
     sageattn_varlen = None
-    sageattn = None
 
 try:
     import xformers.ops as xops
@@ -198,6 +202,10 @@ def attention(
         assert k is not None and v is not None, "k and v must be provided if qkv_or_q is a tensor"
     if attn_params is None:
         attn_params = AttentionParams.create_attention_params("torch", False)
+    if attn_params.attn_mode == "sageattn" and attn_params.split_attn and attn_params.seqlens is None:
+        # Text fusion attends across layers with text tokens as its batch. With
+        # no padding, use one batched kernel rather than a launch per text token.
+        attn_params = AttentionParams.create_attention_params("sageattn", False)
 
     # GQA: q may carry more heads than k/v (e.g. Krea 2 = 48 query / 12 kv heads). Expanding
     # k/v stays the right call even on cuDNN — measured 0.128 ms (expand) vs 0.138 ms
@@ -327,8 +335,7 @@ def attention(
         if attn_params.split_attn:
             x = []
             for i in range(len(q)):
-                # HND seems to cause an error
-                x_i = sageattn(q[i], k[i], v[i])  # B, H, L, D. No dropout support
+                x_i = sageattn(q[i], k[i], v[i], tensor_layout="HND", is_causal=False)
                 q[i] = None
                 k[i] = None
                 v[i] = None
@@ -336,7 +343,7 @@ def attention(
             x = torch.cat(x, dim=0)
             q, k, v = None, None, None
         elif attn_params.cu_seqlens is None:  # all tokens are valid
-            x = sageattn(q, k, v)  # B, L, H, D. No dropout support
+            x = sageattn(q, k, v, tensor_layout="HND", is_causal=False)
             q, k, v = None, None, None
         else:
             # Reshape to [(bxs), a, d]

@@ -386,6 +386,67 @@ install_torch_nightly() {
     install_rocm_torch_pinned "$ROCM_NIGHTLY_INDEX" || return 1
 }
 
+install_sageattention_rdna4() {
+    # This fork's native kernels target gfx1201, not every AMD GPU supported by Fizgig.
+    if [[ "$ARCH" != "gfx1201" ]]; then
+        echo "Skipping SageAttention-RDNA4: ${ARCH} is not gfx1201 (RX 9070 / 9070 XT)."
+        return 0
+    fi
+
+    local py source_dir rocm_home build_jobs
+    local sage_commit="068036781b2061d4ee89277b52749165e3f7a887"
+    py="${FIZGIG_ROOT}/venv/bin/python"
+    rocm_home="${ROCM_HOME:-/opt/rocm/core}"
+    source_dir="${FIZGIG_ROOT}/user_data/src/SageAttention-RDNA4"
+    if ! command -v git >/dev/null 2>&1; then
+        echo "ERROR: git is required to clone SageAttention-RDNA4." >&2
+        return 1
+    fi
+    if [[ ! -d "$rocm_home" ]]; then
+        echo "ERROR: SageAttention-RDNA4 requires the ROCm build toolkit at ${rocm_home} (ROCM_HOME)." >&2
+        return 1
+    fi
+    mkdir -p "$(dirname "$source_dir")" || return 1
+    if [[ -e "$source_dir" ]]; then
+        if [[ ! -d "$source_dir/.git" ]] ||
+           [[ "$(git -C "$source_dir" remote get-url origin)" != "https://github.com/IxMxAMAR/SageAttention-RDNA4.git" ]]; then
+            echo "ERROR: ${source_dir} already exists and is not the expected SageAttention-RDNA4 clone." >&2
+            return 1
+        fi
+        echo "Reusing SageAttention-RDNA4 checkout at ${source_dir} (local changes are kept)."
+    else
+        git clone --no-checkout --depth 1 https://github.com/IxMxAMAR/SageAttention-RDNA4.git "$source_dir" || return 1
+    fi
+
+    # Fetch and build a reviewed revision, never the moving default branch.
+    git -C "$source_dir" fetch --depth 1 origin "$sage_commit" || return 1
+    git -C "$source_dir" checkout --detach "$sage_commit" || return 1
+
+    # Permit source builds on Python 3.13/3.14 as well as 3.12; safe to repeat.
+    sed -i 's/python_requires=">=3.12,<3.13"/python_requires=">=3.12,<3.15"/' "$source_dir/setup.py" || return 1
+
+    build_jobs="${MAX_JOBS:-$(nproc)}" || return 1
+    echo "Building SageAttention-RDNA4 for gfx1201 (MAX_JOBS=${build_jobs})..."
+    (
+        cd "$source_dir" || exit 1
+        export ROCM_HOME="$rocm_home" HIP_PATH="$rocm_home"
+        export PYTORCH_ROCM_ARCH=gfx1201 MAX_JOBS="$build_jobs"
+        # --no-build-isolation requires these in the existing torch environment.
+        "$py" -m pip install "setuptools>=62" wheel "packaging>=21" ninja || exit 1
+        "$py" -m pip install . --no-build-isolation --no-deps || exit 1
+        # Verify the installed package, not the source tree (whose .so may live only in build/).
+        cd "$FIZGIG_ROOT" || exit 1
+        "$py" - <<'PY'
+from sageattention import sageattn
+if not callable(sageattn):
+    raise RuntimeError("SageAttention installed without a callable sageattn")
+print("OK  SageAttention-RDNA4 import (native extension / PyTorch ABI check)")
+PY
+    )
+}
+
+main() {
+
 cd "$FIZGIG_ROOT"
 
 echo "============================================================"
@@ -593,6 +654,12 @@ else:
     print("     Optional: sudo apt install amdrocm-amdsmi (see README)")
 PY
 
+# SageAttention is optional: keep the required checks and model setup even if it cannot build.
+if ! install_sageattention_rdna4; then
+    echo "WARN: SageAttention-RDNA4 installation failed; continuing Fizgig installation." >&2
+    echo "      Leave Force SageAttention off in Preferences until a compatible build is installed." >&2
+fi
+
 echo
 echo "Downloading the face models (face finder + AdaFace ViT, CPU, ~0.5 GB)..."
 PYTHONPATH="$(pwd)/src" python - <<'PY'
@@ -617,3 +684,9 @@ echo "  (launch_fizgig.sh / launch_fizgig_browser.sh are the upstream launchers 
 echo
 echo "  NOTE: Linux AMD ROCm is highly experimental — crashes and GPU resets are common."
 echo "============================================================"
+
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

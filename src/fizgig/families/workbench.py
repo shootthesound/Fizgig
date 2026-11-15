@@ -754,9 +754,10 @@ class WorkbenchEngine:
 
         act = self._act_for_render()
         if act is not None:
+            from fizgig.krea2.generation_attention import wanted as sage_wanted
             key, sig = self._act_ctx
             key = repr((key, steps, cfg, None if sigmas is None else [float(v) for v in sigmas], options,
-                        neg_cond is not None, bool(self.int8_attention)))
+                        neg_cond is not None, bool(self.int8_attention), sage_wanted()))
 
         def _step(done, total):
             if act is not None:

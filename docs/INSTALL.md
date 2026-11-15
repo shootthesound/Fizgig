@@ -112,6 +112,21 @@ ROCM_CHANNEL=nightly ./install_fizgig_rocm.sh
 
 The installer then adds shared deps from `requirements.txt` (filtered) and `bitsandbytes>=0.50.0` for ROCm.
 
+On **RX 9070 / RX 9070 XT (`gfx1201`)**, it optionally builds
+[SageAttention-RDNA4](https://github.com/IxMxAMAR/SageAttention-RDNA4/) at pinned commit
+`068036781b2061d4ee89277b52749165e3f7a887` in `user_data/src/SageAttention-RDNA4`.
+It uses Fizgig's `venv/bin/python -m pip install . --no-build-isolation --no-deps`,
+with `ROCM_HOME=/opt/rocm/core`, `HIP_PATH=/opt/rocm/core`,
+`PYTORCH_ROCM_ARCH=gfx1201` and `MAX_JOBS=$(nproc)`. Set `ROCM_HOME` to use another
+toolkit location, or `MAX_JOBS` to lower compile parallelism. Before building, the
+clone's `setup.py` Python requirement is widened to `>=3.12,<3.15`.
+A failed clone, build or import check prints a warning and installation continues,
+including `ensure_face_models()` for the face finder and AdaFace. The ROCm pin,
+bitsandbytes, GPU kernel and VRAM monitor checks are retained. Other architectures
+skip this optional build. Once installed, enable **Force SageAttention for Krea 2
+image generation** under **Preferences → Inference performance**; leave it off if
+the optional build failed.
+
 Linux ROCm cache scripts import `fizgig.rocm.cache_exit` only when `FIZGIG_GPU_BACKEND=rocm` (set by `launch_fizgig_amd.sh`); NVIDIA and other platforms call `main()` directly. Opt out with `FIZGIG_ROCM_NO_FAST_EXIT=1 ./launch_fizgig_amd.sh`.
 
 ### Linux / macOS (NVIDIA CUDA)

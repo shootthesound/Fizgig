@@ -5,6 +5,20 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 
 NEWS = [
     {
+        "date": "15 Nov 2026",
+        "title": "A regularisation set for LoRAs, AMD fixes, and Gizmo prepares a whole folder",
+        "body": (
+            "Train a LoRA against a regularisation dataset from the Subjects card, for the cases that need it: in our "
+            "testing DOP and Fizgig LoRA Isolation still do better for most people.\n\n"
+            "Gizmo's Prepare a folder makes a whole folder of videos trainable in one go, into a new folder, with a "
+            "Longest clip choice for 16 GB cards, and clips with 48 kHz sound now train as they are. On AMD, Krea 2 "
+            "renders above 512 px and LoKR training are fixed, and the Linux installer works again. ACE-Step caches "
+            "long songs on 16 GB cards."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#15-nov-2026-a-regularisation-set-for-loras-amd-fixes-and-gizmo-prepares-a-whole-folder"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.7.2"}],
+    },
+    {
         "date": "14 Nov 2026",
         "title": "Every job keeps its own view",
         "body": (

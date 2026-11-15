@@ -1,5 +1,15 @@
 # Fizgig news
 
+## 15 Nov 2026: a regularisation set for LoRAs, AMD fixes, and Gizmo prepares a whole folder
+
+**Train a LoRA against a regularisation dataset.** The Subjects card has a new fold: a folder of captioned pictures of the class you're training, so the LoRA bleeds less into everything else. In our testing DOP and Fizgig LoRA Isolation still do better for most people, so start there; a regularisation set is for the cases that need it.
+
+**Gizmo prepares a whole folder of videos.** **Prepare a folder…** on the video tab makes every video in a folder trainable in one go, into a new folder: 24 fps at real speed, a size and length H3 takes, 32 kHz sound, captions brought along. **Longest clip** keeps clips to what your card trains (56 frames on 16 GB). Clips with 48 kHz or mono sound now train as they are.
+
+**AMD:** Krea 2 renders above 512 px and LoKR training are fixed, a PC with built-in graphics trains on the graphics card, the Linux installer works again, and RX 9070 cards can try SageAttention for Krea 2. **ACE-Step** caches long songs without running out of memory, a helper GPU renders MOSS-Image's SFT previews, and Runs & outputs can purge old runs in one go.
+
+[Fizgig v9.7.2 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.7.2)
+
 ## 14 Nov 2026: every job keeps its own view
 
 **Switch between the run that's training, the runs in your queue and what you're setting up, without losing your place.** A pill at the top right (bottom right on a phone) always says what the tabs are showing: a job's name, or **not yet queued**. Press it and pick another, and the Start, Image Prep, Captions, Samples and Training tabs all change to that job's training folder, captions, masks, sample prompts, settings and previews. The run training now is there to look at, with its Samples tab still changeable; a queued run can be changed and saved back; a paused run takes what you change before Resume. **Set up a new run with these settings** copies the job on show into a new setup named with `_2`, and **Back to the normal view** gives you a clean start.

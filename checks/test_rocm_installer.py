@@ -7,7 +7,10 @@ import sys
 
 import pytest
 
-INSTALLER = Path(__file__).resolve().parents[1] / "install_fizgig_rocm.sh"
+# The installer is a Linux bash script, driven here with fake git / Python executables: run on Linux (CI, a pod)
+pytestmark = pytest.mark.skipif(os.name == "nt", reason="the Linux AMD installer runs on Linux")
+
+INSTALLER =Path(__file__).resolve().parents[1] / "install_fizgig_rocm.sh"
 REPO = "https://github.com/IxMxAMAR/SageAttention-RDNA4.git"
 SAGE_COMMIT = "068036781b2061d4ee89277b52749165e3f7a887"
 

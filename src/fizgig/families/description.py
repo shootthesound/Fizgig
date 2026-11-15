@@ -769,6 +769,8 @@ class FamilyDescription:
     def load_driver(self):
         """Instantiate the family's FamilyDriver (imported lazily: the description stays importable without torch)."""
         import importlib
+        from fizgig.utils.gpu_backend import fix_rocm_sdpa_masks
+        fix_rocm_sdpa_masks()          # AMD: before any model attends (#341, #343); no-op on NVIDIA
         mod, _, cls = self.driver.partition(":")
         drv = getattr(importlib.import_module(mod), cls)()
         drv.description = self

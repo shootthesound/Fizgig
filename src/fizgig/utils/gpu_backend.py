@@ -55,5 +55,32 @@ def pin_rocm_device() -> None:
         pass
 
 
+def fix_rocm_sdpa_masks() -> None:
+    """ROCm's fused attention kernel attends wrongly when the mask broadcasts over the queries - the usual key-padding
+    mask, [B, 1, 1, S]: measured on an MI350X (torch 2.14 / ROCm 10.1) against the math kernel, max error 0.1-0.2 at
+    2560+ tokens (an RTX 5090: 6e-4), which turned LoKR training to NaN and changed renders above 512 px (#341, #343).
+    The same mask expanded over the queries ([B, 1, L, S], a view: no memory) is right (6e-4). So on ROCm every
+    scaled_dot_product_attention call gets its query-broadcast mask expanded first. Every family is covered: they all
+    call it through torch.nn.functional. No-op on NVIDIA, and installed once."""
+    try:
+        import torch
+        import torch.nn.functional as F
+    except Exception:
+        return
+    if not getattr(torch.version, "hip", None) or getattr(F.scaled_dot_product_attention, "_fizgig_rocm", False):
+        return
+    orig = F.scaled_dot_product_attention
+
+    def scaled_dot_product_attention(query, key, value, attn_mask=None, *args, **kwargs):
+        if (attn_mask is not None and attn_mask.dim() >= 2 and attn_mask.shape[-2] == 1
+                and query.dim() >= 2 and query.shape[-2] > 1):
+            attn_mask = attn_mask.expand(*attn_mask.shape[:-2], query.shape[-2], attn_mask.shape[-1])
+        return orig(query, key, value, attn_mask, *args, **kwargs)
+
+    scaled_dot_product_attention._fizgig_rocm = True
+    scaled_dot_product_attention.__doc__ = orig.__doc__
+    F.scaled_dot_product_attention = scaled_dot_product_attention
+
+
 def backend_label() -> str:
     return "ROCm" if is_rocm() else "CUDA"

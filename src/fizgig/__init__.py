@@ -26,6 +26,11 @@ _logging.getLogger("bitsandbytes.cextension").addFilter(
 if _os.environ.get("FIZGIG_GPU_BACKEND") == "rocm" and (_os.environ.get("HIP_VISIBLE_DEVICES") or "").strip().isdigit():
     from fizgig.utils.gpu_backend import pin_rocm_device as _pin
     _pin()
+# AMD: ROCm's fused attention mishandles a key-padding mask that broadcasts over the queries (#341, #343); expand it
+# first (gpu_backend.fix_rocm_sdpa_masks; families/driver.py installs it too, for a launch without this variable)
+if _os.environ.get("FIZGIG_GPU_BACKEND") == "rocm":
+    from fizgig.utils.gpu_backend import fix_rocm_sdpa_masks as _masks
+    _masks()
 
 from fizgig.utils.container_ram import install as _container_ram
 _container_ram()     # a pod's RAM checks read its own limit, not the host's (Linux containers only)

@@ -12,9 +12,11 @@ sys.path.insert(0, os.path.join(HERE, "src"))
 #   out.
 # - Intel OpenMP's thread pool sleeps instead of spinning 200 ms after every parallel region: training's small
 #   per-step CPU work kept every core at 100% doing nothing (#18).
-if (sys.platform != "win32" and not os.environ.get("PYTORCH_CUDA_ALLOC_CONF")
-        and os.environ.get("FIZGIG_NO_EXPANDABLE") != "1"):
-    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+#   ROCm reads its own name, PYTORCH_HIP_ALLOC_CONF, and ignores the CUDA one (#341).
+if sys.platform != "win32" and os.environ.get("FIZGIG_NO_EXPANDABLE") != "1":
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+    if os.environ.get("FIZGIG_GPU_BACKEND") == "rocm":
+        os.environ.setdefault("PYTORCH_HIP_ALLOC_CONF", "expandable_segments:True")
 os.environ.setdefault("KMP_BLOCKTIME", "0")
 os.environ.setdefault("OMP_WAIT_POLICY", "PASSIVE")
 

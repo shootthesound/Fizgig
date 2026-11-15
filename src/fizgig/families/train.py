@@ -1569,6 +1569,15 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     "more than a rank-16 LoRA, so the 4-bit base may not fit this card. If steps slow down as the "
                     "run goes (Windows spilling into system memory), or it runs out of memory: turn Weight averaging "
                     "(EMA) off, lower Target Megapixels, or use a standard LoRA")
+            from fizgig.utils.gpu_backend import is_rocm
+            if not kept and precision == "nf4" and "closely" in why and os.name == "nt" and is_rocm():
+                # Windows AMD has no expandable segments: a close fit runs short once pictures of many shapes train at
+                # full size (1.8 GB in unusable pieces, #341, measured on ROCm); a Windows card then spills into system
+                # memory and crawls. EMA off fitted the same run (15.5 GB peak of 15.8)
+                logger.warning(
+                    "[precision] tight fit: on an AMD card on Windows this run may run short once its full-size "
+                    "pictures start. If steps slow down as the run goes, or it runs out of memory: turn Weight "
+                    "averaging (EMA) off, lower Target Megapixels, or use a standard LoRA")
             why += f" at {mp:.2f} MP" + (f" x {bsz} pictures a step" if bsz > 1 else "")
             if adapter_gb >= 0.1 and not kept:
                 why += (f", counting {adapter_gb:.1f} GB more for the "
@@ -3453,9 +3462,10 @@ def setup_parser():
 
 
 def main():
-    if (sys.platform != "win32" and not os.environ.get("PYTORCH_CUDA_ALLOC_CONF")
-            and os.environ.get("FIZGIG_NO_EXPANDABLE") != "1"):
-        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+    if sys.platform != "win32" and os.environ.get("FIZGIG_NO_EXPANDABLE") != "1":
+        os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+        if os.environ.get("FIZGIG_GPU_BACKEND") == "rocm":    # ROCm reads its own name, not the CUDA one (#341)
+            os.environ.setdefault("PYTORCH_HIP_ALLOC_CONF", "expandable_segments:True")
     os.environ.setdefault("KMP_BLOCKTIME", "0")
     os.environ.setdefault("OMP_WAIT_POLICY", "PASSIVE")
     logging.basicConfig(level=logging.INFO)

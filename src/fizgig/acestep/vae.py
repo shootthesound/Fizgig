@@ -63,13 +63,49 @@ def load_vae(path, device, dtype=torch.float32):
     return vae.to(device, dtype).eval().requires_grad_(False)
 
 
+# A song goes through the encoder in pieces (#347). Whole, a 4-minute song's first layers hold 128 channels x 11.5 M
+# samples - about 6 GB per activation in float32 - and caching ran out of memory on 16 and 24 GB cards. Each piece
+# carries OVERLAP of real audio either side, so the convolutions see the same neighbours they would in one pass, and
+# only its middle is kept; both lengths are whole hops, so every piece's latents land exactly on the song's frames.
+CHUNK = 15 * SAMPLE_RATE                 # 375 latent frames
+OVERLAP = 2 * SAMPLE_RATE                # 50 frames either side
+
+
+@torch.no_grad()
+def posterior(vae, audio):
+    """audio (2, n) float at 48 kHz -> the posterior's (mean, std), each (1, 64, T), encoded piece by piece."""
+    x = audio[None]
+    n = x.shape[-1]
+    if n <= CHUNK + 2 * OVERLAP:
+        d = vae.encode(x.to(vae.device, vae.dtype)).latent_dist
+        return d.mean, d.std
+    means, stds = [], []
+    s = 0
+    while True:
+        lo, hi = max(0, s - OVERLAP), min(n, s + CHUNK + OVERLAP)
+        d = vae.encode(x[..., lo:hi].to(vae.device, vae.dtype)).latent_dist
+        a = (s - lo) // HOP
+        keep = slice(a, None) if hi == n else slice(a, a + CHUNK // HOP)   # the last piece keeps the song's end
+        means.append(d.mean[..., keep])
+        stds.append(d.std[..., keep])
+        if hi == n:
+            break
+        s += CHUNK
+    return torch.cat(means, -1), torch.cat(stds, -1)
+
+
 @torch.no_grad()
 def encode(vae, audio, generator=None):
     """audio (2, n) float at 48 kHz -> latents (1, T, 64), sampled from the posterior as ACE-Step's trainer does."""
-    x = audio.to(vae.device, vae.dtype)[None]
-    dist = vae.encode(x).latent_dist
-    lat = dist.mean + dist.std * torch.randn(dist.mean.shape, generator=generator).to(dist.mean)
+    mean, std = posterior(vae, audio)
+    lat = mean + std * torch.randn(mean.shape, generator=generator).to(mean)
     return lat.transpose(1, 2).float()
+
+
+@torch.no_grad()
+def encode_mean(vae, audio):
+    """audio (2, n) float at 48 kHz -> the posterior's mean as latents (1, T, 64)."""
+    return posterior(vae, audio)[0].transpose(1, 2).float()
 
 
 @torch.no_grad()

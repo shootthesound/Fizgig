@@ -404,6 +404,7 @@ def main():
         if LINUX:                                # Qt for the app window (install_fizgig.py's install_linux_window)
             if run([PY, "-m", "uv", "pip", "install", "--python", PY, "pywebview[qt]>=5,<7"]) != 0:
                 print("NOTE: Qt for the app window didn't install; Fizgig opens in your browser instead.")
+            linux_tk_note()
     # Community LoRAs + H3 training adapters. Idempotent, and a failure (offline) never aborts the update.
     run([PY, os.path.join("src", "fizgig", "scripts", "fetch_turbo_lora.py")])
     if not rocm:
@@ -413,6 +414,20 @@ def main():
     print("Update complete! Start Fizgig with ./launch_fizgig.sh (its own window) or ./launch_fizgig_browser.sh"
           if LINUX else "Update complete! Start Fizgig with Launch Fizgig AMD.bat" if rocm else
           "Update complete! Start Fizgig with Launch Fizgig.bat (its own window) or Launch Fizgig in browser.bat")
+
+
+def linux_tk_note():
+    """Gizmo is a Tkinter window; a distro's Python has no Tk until its package is installed (install_fizgig.py's
+    check_linux_tk). Pip can't install it, so say which package. Never fails the update."""
+    if os.environ.get("RUNPOD_POD_ID"):
+        return
+    if subprocess.run([PY, "-c", "import tkinter; tkinter.Tcl()"], capture_output=True).returncode == 0:
+        return
+    v = f"{sys.version_info.major}.{sys.version_info.minor}"
+    print("NOTE: Gizmo (the clip / voice / music prep app) needs Tk, which this Python doesn't have. Install it with")
+    print(f"  Ubuntu / Debian: sudo apt install python3-tk   (or python{v}-tk)")
+    print("  Fedora: sudo dnf install python3-tkinter    Arch: sudo pacman -S tk")
+    print("Everything else in Fizgig works without it.")
 
 
 if __name__ == "__main__":

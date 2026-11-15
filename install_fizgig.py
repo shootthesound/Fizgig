@@ -341,6 +341,21 @@ def install_linux_window(python_path):
     if r.returncode != 0:
         print("NOTE: Qt for the app window didn't install. launch_fizgig.sh will open Fizgig in your browser instead "
               "(or use launch_fizgig_browser.sh).")
+    check_linux_tk(python_path)
+
+
+def check_linux_tk(python_path):
+    """Linux: Gizmo is a Tkinter window, and a distro's Python has no Tk until its package is installed (Ubuntu's
+    python3-tk). Pip can't install it, so say which package to install. Never fails the install."""
+    if platform.system() != "Linux" or os.environ.get("RUNPOD_POD_ID"):
+        return
+    if subprocess.run([str(python_path), "-c", "import tkinter; tkinter.Tcl()"], capture_output=True).returncode == 0:
+        return
+    v = f"{sys.version_info.major}.{sys.version_info.minor}"
+    print("NOTE: Gizmo (the clip / voice / music prep app) needs Tk, which this Python doesn't have. Install it with")
+    print(f"  Ubuntu / Debian: sudo apt install python3-tk   (or python{v}-tk)")
+    print("  Fedora: sudo dnf install python3-tkinter    Arch: sudo pacman -S tk")
+    print("Everything else in Fizgig works without it.")
 
 
 def verify_cuda():

@@ -532,6 +532,14 @@ echo "Installing Qt for Fizgig's app window..."
 # pywebview finds no window engine inside the venv otherwise (the distro's GTK bindings aren't visible there)
 python -m uv pip install "pywebview[qt]>=5,<7" \
     || echo "NOTE: Qt for the app window didn't install; launch_fizgig_amd.sh opens Fizgig in your browser instead."
+# Gizmo is a Tkinter window; the distro's Python has no Tk until its package is installed (pip can't install it)
+if ! python -c "import tkinter; tkinter.Tcl()" 2>/dev/null; then
+    tk_v=$(python -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')
+    echo "NOTE: Gizmo (the clip / voice / music prep app) needs Tk, which this Python doesn't have. Install it with"
+    echo "  Ubuntu / Debian: sudo apt install python3-tk   (or python${tk_v}-tk)"
+    echo "  Fedora: sudo dnf install python3-tkinter    Arch: sudo pacman -S tk"
+    echo "Everything else in Fizgig works without it."
+fi
 
 echo
 echo "Installing bitsandbytes (ROCm — matched to installed torch when possible)..."

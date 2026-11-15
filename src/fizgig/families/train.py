@@ -2303,6 +2303,51 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 logger.info(f"[sample] {os.path.basename(ckpt_previews.path)} renders at CFG 1 (it's distilled); the "
                             f"CFG {ck_cfg:g} asked for is for the training model's previews")
                 ck_cfg = 1.0
+            # a helper renders this round on the same checkpoint, from the epoch's LoRA (#339: MOSS-Image's SFT
+            # previews stayed on the training GPU with a helper standing by); Check picture stays on this GPU
+            hp_ck = _helper_previews(output_dir) if not (ref_latents or finetune) else None
+            pcf = desc.preview_checkpoint()
+            if hp_ck and not hp_ck.get("compare") and pcf is not None:
+                rd = os.path.join(output_dir, HELPER_ROUNDS, f"{epoch:06d}")
+                try:
+                    os.makedirs(rd, exist_ok=True)
+                    if ema is not None:
+                        ema.swap_in()
+                    try:
+                        net.save(os.path.join(rd, "lora.safetensors"), dtype=torch.bfloat16)   # as the checkpoint takes it
+                    finally:
+                        if ema is not None:
+                            ema.swap_out()
+                    cpu = lambda x: ({k: cpu(v) for k, v in x.items()} if isinstance(x, dict) else
+                                     [cpu(v) for v in x] if isinstance(x, (list, tuple)) else
+                                     x.detach().cpu() if torch.is_tensor(x) else x)
+                    torch.save({"conds": cpu(conds), "neg": cpu(neg)}, os.path.join(rd, "conds.pt"))
+                    job = {"family": desc.key, "epoch": epoch, "output_name": output_name, "prompts": list(prompts),
+                           "conds": "conds.pt", "negative": (sample_negative or "") if neg is not None else None,
+                           "seed": sd, "width": w, "height": h, "steps": ck_steps, "cfg": ck_cfg,
+                           "turbo": strength_now if turbo_ck else 0.0, "look": 0.0, "strengths": [],
+                           "checkpoint": {"pref_key": pcf[0].pref_key, "name": os.path.basename(ckpt_previews.path),
+                                          "int8": bool(ckpt_previews.int8), "turbo": bool(turbo_ck)},
+                           "network": {"dim": network_dim, "alpha": network_alpha, "type": network_type,
+                                       "factor": lokr_factor, "blocks": None},
+                           "options": dict(family_options or {}), "precision": precision,
+                           "context": [context_lora_path, context_lora_strength] if context_lora_path else None,
+                           "lowmem": False}
+                    with open(os.path.join(rd, "round.json.tmp"), "w", encoding="utf-8") as f:
+                        json.dump(job, f)
+                    os.replace(os.path.join(rd, "round.json.tmp"), os.path.join(rd, "round.json"))
+                    logger.info(f"[sample] epoch {epoch}: previews on {os.path.basename(ckpt_previews.path)} handed to "
+                                f"{hp_ck.get('name') or 'the helper'} - training carries on")
+                    write_mode({"model": os.path.basename(ckpt_previews.path), "steps": ck_steps, "cfg": ck_cfg,
+                                "turbo": speed_desc.name if turbo_ck else "", "strength": strength_now if turbo_ck else 0},
+                               epoch, False, hp_ck.get("name") or "helper")
+                    last_prompt[0] = prompts[-1] if prompts else None
+                    _record_prompts(sample_dir, output_name, epoch, prompts)
+                    return
+                except Exception:
+                    logger.warning("[sample] could not hand the previews to the helper - rendering them here",
+                                   exc_info=True)
+                    shutil.rmtree(rd, ignore_errors=True)
 
             def _ck_render(m, fl, swp):
                 if turbo_ck and not fl.has(SPEED):     # loaded onto the checkpoint the first round that asks for it
@@ -2789,9 +2834,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
 
     if share_worker is None:
         # what keeps this run's previews on this GPU (a helper renders a normal LoRA run's only), for the web UI to say
+        # (previews on the family's preview checkpoint go to the helper too, since #339)
         _pv_off = ("a slider's previews" if slider else "an edit LoRA's previews" if ref_latents else
-                   "a fine-tune's previews" if finetune else
-                   "previews on a separate preview model (such as Klein's Distilled)" if ckpt_previews is not None else "")
+                   "a fine-tune's previews" if finetune else "")
         _write_json(os.path.join(output_dir, HELPER_PREVIEWS_OFF), {"run": output_name, "launch": _launch, "why": _pv_off})
         if _pv_off and _helper_previews(output_dir):
             logger.info(f"[helpers] this run's previews render on this GPU: helpers don't render {_pv_off} yet")

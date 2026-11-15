@@ -25,8 +25,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from fizgig.families import quant  # noqa: E402
 from fizgig.families.lora import FamilyLoRA  # noqa: E402
 from fizgig.families.registry import get as get_family  # noqa: E402
-from fizgig.families.train import (CONTEXT, LOOK, SPEED, _encode_override, _render_previews,  # noqa: E402
-                                   _small_card_previews)
+from fizgig.families.train import (CONTEXT, LOOK, SPEED, TRAINABLE_PREVIEW, _encode_override,  # noqa: E402
+                                   _render_previews, _small_card_previews)
 
 logger = logging.getLogger("fizgig.preview_worker")
 
@@ -49,6 +49,10 @@ class Worker:
         self.device = torch.device("cuda")
         paths = setup["paths"]
         self.te_path = paths["text_encoder"]
+        self.ck = setup.get("checkpoint") or None
+        if self.ck:
+            self._load_checkpoint(setup, paths)
+            return
         precision = setup.get("precision") or "auto"
         precision, swap, why = quant.plan(self.desc, self.driver, precision, -1)
         self.say("loading", f"Loading {self.desc.display_name} ({precision}" + (f", {swap} blocks swapped" if swap else "")
@@ -82,6 +86,55 @@ class Worker:
         self.enc_key, self.enc, self.neg_key, self.neg = None, None, None, None
         self.say("ready", "Ready")
 
+    def _load_checkpoint(self, setup, paths):
+        """Rounds on the family's preview checkpoint (MOSS-Image's SFT, Klein's Distilled), as the trainer's
+        _CheckpointPreviews renders them: the checkpoint frozen, each epoch's LoRA a frozen file on it (#339)."""
+        path = self.ck.get("path")
+        if not path or not os.path.isfile(path):
+            raise RuntimeError(f"The preview checkpoint isn't here ({path or 'no file set in Preferences'})")
+        self.say("loading", f"Loading {os.path.basename(path)}")
+        self.dit, self.swapped = self.driver.load_preview_checkpoint(path, self.device, int8=bool(self.ck.get("int8")))
+        logger.info(f"[helper] {os.path.basename(path)} (preview checkpoint)"
+                    + (f", {self.swapped} blocks streamed" if self.swapped else ""))
+        self.precision = "checkpoint"
+        self.net = FamilyLoRA(self.dit, self.driver, device=self.device)
+        if paths.get("context"):
+            self.net.add_file(paths["context"], CONTEXT, float(setup.get("context_strength") or 1.0))
+        self.speed_path = paths.get("speed_lora")
+        self.speed = self.look = None
+        self.vae = self.driver.load_vae(paths["vae"], self.device)
+        self.lowmem = False
+        self.enc_key, self.enc, self.neg_key, self.neg = None, None, None, None
+        self.say("ready", "Ready")
+
+    def _run_checkpoint(self, job):
+        import dataclasses
+        t0 = time.time()
+        if self.net.has(TRAINABLE_PREVIEW):
+            self.net.swap_file(TRAINABLE_PREVIEW, job["lora"])
+        else:
+            self.net.add_file(job["lora"], TRAINABLE_PREVIEW)
+        conds, neg = self._conds(job)
+        turbo = float(job.get("turbo") or 0)
+        sp = self.desc.preview_speed()
+        if turbo > 0 and sp is not None and self.speed_path:    # a checkpoint that takes the speed LoRA (Kromoss)
+            if not self.net.has(SPEED):
+                self.net.add_file(self.speed_path, SPEED, turbo)
+                self.driver.frozen_file_added(self.dit, self.speed_path, turbo, "speed")
+            self.net.set_strength(SPEED, turbo)
+            settings = sp.settings
+        else:
+            if self.net.has(SPEED):
+                self.net.set_strength(SPEED, 0.0)
+            settings = dataclasses.replace(self.desc.preview_checkpoint_sampling, cfg=float(job["cfg"]))
+        with torch.no_grad():
+            files = _render_previews(self.driver, self.dit, self.net, self.vae, conds, job["out"], int(job["epoch"]),
+                                     output_name=job["output_name"], steps=int(job["steps"]), cfg=float(job["cfg"]),
+                                     neg=neg, width=int(job["width"]), height=int(job["height"]),
+                                     seed=int(job["seed"]), speed=settings, swapped=bool(self.swapped))
+        return {"ok": True, "files": [os.path.basename(p) for p in files], "seconds": round(time.time() - t0, 1),
+                "precision": self.precision}
+
     def say(self, state, text, **extra):
         _write(self.state, {"state": state, "text": text, "pid": os.getpid(), "at": time.time(), **extra})
 
@@ -104,6 +157,8 @@ class Worker:
         return self.enc, neg
 
     def run(self, job):
+        if self.ck:
+            return self._run_checkpoint(job)
         t0 = time.time()
         n = self.net.load_trainable(job["lora"])
         if n == 0:

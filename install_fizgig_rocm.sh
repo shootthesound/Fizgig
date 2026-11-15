@@ -96,6 +96,66 @@ _fizgig_rocm_python() {
     fi
 }
 
+# Runtime PATH / LD_LIBRARY_PATH, rocm-sdk init and the bitsandbytes ROCm suffix (restored: #319 kept their calls)
+_fizgig_export_rocm_runtime_path() {
+    local _bin="${FIZGIG_ROOT}/venv/bin"
+    [[ -d "$_bin" ]] && PATH="${_bin}${PATH:+:$PATH}"
+    for _d in /opt/rocm/core-*/bin /opt/rocm/bin; do
+        [[ -d "$_d" ]] && PATH="${_d}${PATH:+:$PATH}"
+    done
+    export PATH
+    for _lib in "${FIZGIG_ROOT}"/venv/lib/python*/site-packages/_rocm_sdk_core/lib \
+                "${FIZGIG_ROOT}"/venv/lib/python*/site-packages/_rocm_sdk/lib \
+                "${FIZGIG_ROOT}"/venv/lib/python*/site-packages/_rocm_sdk_libraries/lib \
+                /opt/rocm/lib /opt/rocm/lib64; do
+        [[ -d "$_lib" ]] && LD_LIBRARY_PATH="${_lib}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    done
+    export LD_LIBRARY_PATH
+}
+
+_rocm_sdk_init_post_torch() {
+    _fizgig_export_rocm_runtime_path
+    if ! command -v rocm-sdk >/dev/null 2>&1; then
+        echo "WARN: rocm-sdk not on PATH — skipping rocm-sdk init (torch may still work)."
+        return 0
+    fi
+    echo "Running rocm-sdk init (TheRock devel tree)..."
+    if rocm-sdk init; then
+        echo "OK  rocm-sdk init"
+    else
+        echo "WARN: rocm-sdk init failed."
+        return 1
+    fi
+    if rocm-sdk targets 2>/dev/null | head -1; then
+        :
+    fi
+}
+
+_bnb_rocm_suffix_from_torch() {
+    local py
+    py="$(_fizgig_rocm_python)"
+    "$py" - <<'PY'
+import re
+import sys
+
+import torch
+
+rocm = getattr(torch.version, "rocm", None)
+if rocm:
+    m = re.match(r"(\d+)\.(\d+)", str(rocm))
+    if m:
+        print(f"{m.group(1)}{int(m.group(2))}")
+        sys.exit(0)
+
+m = re.search(r"\+rocm(\d+)\.(\d+)", torch.__version__, re.I)
+if m:
+    print(f"{m.group(1)}{int(m.group(2))}")
+    sys.exit(0)
+
+print("714")
+PY
+}
+
 # Device kernels come from torch[device-${ARCH}] / torchvision[device-${ARCH}] extras
 # on AMD's whl-next indexes (stable default, nightly via ROCM_CHANNEL=nightly).
 
@@ -421,7 +481,7 @@ fi
 
 if ! ARCH="$(python src/install/detect_gpu_linux.py 2>user_data/gpu_detect_debug.log)"; then
     echo "ERROR: GPU detection failed or unsupported AMD GPU."
-    cat gpu_detect_debug.log 2>/dev/null || true
+    cat user_data/gpu_detect_debug.log >&2 2>/dev/null || true
     exit 1
 fi
 ARCH="${ARCH//$'\r'/}"

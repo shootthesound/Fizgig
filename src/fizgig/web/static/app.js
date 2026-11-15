@@ -3625,6 +3625,75 @@ async function loadRuns() {
     "with its results."}));
 }
 
+// ---- Purge older than X days: the run history in bulk. The preview reads the history list alone - no folder is
+// opened and nothing is sized - so a very long history previews at once, and the purge then applies Delete run's own
+// behaviour to every match, with or without the files each run saved. A run still training has no end date at all,
+// so it is never past the cut-off; a paused one counts only when Include Paused is ticked.
+const purgeDays = () => { const n = parseInt($("purgeDays").value, 10); return n >= 1 && n <= 365 ? n : 14; };
+const purgeState = () => ({days: purgeDays(), data: $("purgeData").checked, paused: $("purgePaused").checked});
+const purgeWord = (n) => `${n} run${n === 1 ? "" : "s"}`;
+const purgeLabel = () => { $("purgeBtn").textContent = "Purge…"; };    // the preview comes first, then two asks
+let purgeIds = [];                                             // the runs the preview showed: the purge takes only these
+const purgeHide = () => { const s = $("purgeSay"); s.style.display = "none"; s.innerHTML = ""; };
+
+// what it found, what it will do, the two buttons, and only then the runs themselves: the choice is at the top where
+// it is read, not at the bottom of a list of hundreds
+async function purgePreview() {
+  const st = purgeState(), say = $("purgeSay");
+  say.style.display = "";
+  say.textContent = "Checking…";
+  let p;
+  try { p = await api("/api/runs/purge", {...st, confirm: false}); }
+  catch (e) { say.replaceChildren(el("div", {class: "problems", text: e.message})); return; }
+  purgeIds = p.runs.map(r => r.id);
+  const unit = p.days === 1 ? "day" : "days";
+  const scope = st.data
+    ? "A purge deletes each run's LoRA files - the finished LoRA too, and every epoch's - its saved states and its " +
+      "previews, and takes it off this list. They can't be got back. Your training pictures are never touched."
+    : "A purge takes these runs off this list only; their LoRAs and everything else they saved stay where they are.";
+  const kids = [el("div", {class: "field-hint", text: p.count
+    ? `${purgeWord(p.count)} ended more than ${p.days} ${unit} ago.`
+    : `Nothing ended more than ${p.days} ${unit} ago.`})];
+  if (p.held) kids.push(el("div", {class: "field-hint", text: `${purgeWord(p.held)} paused ${p.held === 1 ? "run" : "runs"} ` +
+    "past the cut-off aren't counted: tick Include Paused to add them."}));
+  kids.push(el("div", {class: "field-hint", text: scope}));
+  kids.push(el("div", {class: "field-row"},
+    el("button", {class: "btn btn-sm btn-danger", text: `Purge ${purgeWord(p.count)}`,
+      ...(p.count ? {} : {disabled: true}), onclick: () => purgeAsk(st, p)}),
+    el("button", {class: "btn btn-sm", text: "Cancel", onclick: purgeHide})));
+  for (const r of p.runs) kids.push(el("div", {class: "field-hint", text: `${r.name} · ` +
+    `${new Date(r.date * 1000).toLocaleString()}` +
+    (r.epoch ? ` · epoch ${r.epoch}${r.total_epochs ? "/" + r.total_epochs : ""}` : "")}));
+  say.replaceChildren(...kids);
+}
+
+// the second confirmation: one plain sentence saying exactly what goes and which runs it covers, answered yes or no
+function purgeAsk(st, p) {
+  const doWhat = st.data
+    ? `delete ${purgeWord(p.count)} and everything they saved, their finished LoRAs included`
+    : `take ${purgeWord(p.count)} off this list, leaving their LoRAs and everything else they saved where they are`;
+  const which = st.paused ? "including paused runs" : "leaving paused runs out";
+  $("purgeSay").replaceChildren(
+    el("div", {class: "field-hint", text: `Are you really sure you want to ${doWhat}, ${which}?`}),
+    el("div", {class: "field-row"},
+      el("button", {class: "btn btn-sm btn-danger", text: `Yes, purge ${purgeWord(p.count)}`, onclick: purgeGo}),
+      el("button", {class: "btn btn-sm", text: "No, go back", onclick: () => purgePreview()})));
+}
+
+async function purgeGo() {
+  const say = $("purgeSay");
+  say.textContent = "Purging…";
+  try {
+    const d = await api("/api/runs/purge", {...purgeState(), confirm: true, ids: purgeIds});
+    say.replaceChildren(el("div", {class: "field-hint", text: `${purgeWord(d.purged)} purged.` +
+      (d.shared ? ` ${purgeWord(d.shared)} shared a name and folder with a run still on the list, so ` +
+        `${d.shared === 1 ? "its" : "their"} files were kept and only the list line went.` : "") +
+      (d.failed.length ? ` ${d.failed.length} couldn't be deleted: ${d.failed.join("; ")}` : "")}));
+    loadRuns();
+    loadOutputs();
+  } catch (e) { say.replaceChildren(el("div", {class: "problems", text: e.message})); }
+}
+
 // ---- per-image loss: each image's residual by epoch (its loss minus the dataset's mean at the same noise level, the
 // loss watch's own measure) with the watch's verdict - the desktop's Problem Images colours and words
 const IL_VERDICTS = {
@@ -10955,6 +11024,10 @@ function wire() {
     if (S.outputsOpen) loadOutputs();
   });
   $("runsReload").addEventListener("click", loadRuns);
+  purgeLabel();                                                 // the button keeps pace with the days box
+  $("purgeDays").addEventListener("input", () => { purgeLabel(); purgeHide(); });
+  for (const t of ["purgeData", "purgePaused"]) $(t).addEventListener("change", purgeHide);
+  $("purgeBtn").addEventListener("click", purgePreview);
   $("datasetsReload").addEventListener("click", loadDatasets);
   $("aboutBtn").addEventListener("click", async () => {
     $("aboutModal").classList.add("active");

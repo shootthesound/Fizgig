@@ -55,3 +55,28 @@ def test_euler_is_unchanged_by_default():
     a = S.sample(head, torch.zeros(4, 8), 32, 32, steps=6, seed=3)
     b = S.sample(_Head(x0), torch.zeros(4, 8), 32, 32, steps=6, seed=3, sampler="euler")
     assert torch.equal(a, b)
+
+
+def test_sampler_choice_on_samples_tab_and_studio_apart():
+    """The Samples tab's Sampler row sends sampler=<pick> to the trainer; Studio keeps its own pick (prefs
+    studio_opt_<KEY>, LCM until changed) and sends it as render options, which reach the driver with the render."""
+    from fizgig.families import form, registry
+    from fizgig.web import studio
+    desc = registry.get("minimax_image")
+    rows = [r for sec in form.form(desc)["sections"] for r in sec["rows"] if r]
+    row = next(r for r in rows if r["key"] == "MINIMAX_IMAGE_SAMPLER")
+    assert row["default"].startswith("LCM") and row.get("explain")
+    opt = next(o for o in desc.options if o.key == "MINIMAX_IMAGE_SAMPLER")
+    assert opt.resolve(row["default"]) == ["sampler=lcm"]
+    assert studio.studio_tokens(desc, {}) == {"sampler": "lcm"}
+    assert studio.studio_tokens(desc, {"studio_opt_MINIMAX_IMAGE_SAMPLER": "Euler (the model's own)"}) == \
+        {"sampler": "euler"}
+    assert studio.studio_tokens(registry.get("klein"), {}) == {}       # a model without the choice: nothing
+
+
+def test_render_options_join_the_render():
+    from fizgig.families.workbench import WorkbenchEngine
+    eng = WorkbenchEngine.__new__(WorkbenchEngine)
+    eng._sampling = lambda: (6, 1.0, None, (("a", 1),))
+    eng.render_options = {"sampler": "euler"}
+    assert eng.sampling() == (6, 1.0, None, (("a", 1), ("sampler", "euler")))

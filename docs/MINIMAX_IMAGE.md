@@ -48,7 +48,10 @@ A 16 GB laptop with 32 GB of RAM trains a rank 8 LoRA on Auto and runs Studio (1
 
 ## Previews
 
-- 6 steps, no CFG, Euler on the model's own schedule, 2048×2048 by default (ComfyUI's default size for this model). Negative prompts don't apply. The Samples tab also offers 3072 and 4096 (up to 16 MP, nearer the model's best); the preview sets the run's memory peak, so a bigger one needs more VRAM than the table above.
+- 6 steps, no CFG, on the model's own schedule, 2048×2048 by default (ComfyUI's default size for this model). Negative prompts don't apply.
+- **Sampler** (Samples tab, and its own choice in Studio, which LoRA Royale and the Profiler share): **LCM, noise 1.1 → 0.9** by default, or **Euler**, the model's own. LCM takes the model's clean picture at every step and adds fresh noise back (1.1 at the start, 0.9 by the end), which gives smoother, more natural skin than Euler on text-to-image; it is a community recipe from r/StableDiffusion. The same seed gives a different picture on each, not just a different finish. The two choices are separate: the Samples tab's sets the training previews, Studio's sets Studio, Royale and the Profiler. The ⓘ beside each gives the ComfyUI settings:
+  - LCM: SamplerCustomAdvanced with SamplerLCM (s_noise 1.1, s_noise_end 0.9, noise_clip_std 0), BasicScheduler (simple, 6 steps, denoise 1.0), CFGGuider (cfg 1.0) and RandomNoise. A KSampler on lcm, simple, 6 steps, CFG 1.0 comes close, a little softer.
+  - Euler: a KSampler on euler, simple, 6 steps, CFG 1.0 (ComfyUI's MiniMax H3 Image template). The Samples tab also offers 3072 and 4096 (up to 16 MP, nearer the model's best); the preview sets the run's memory peak, so a bigger one needs more VRAM than the table above.
 - Studio renders with INT8 attention, as the checkpoint asks and as ComfyUI does: on the same LoRA, prompt and seed at 2048×2048, Studio and ComfyUI differ by a mean of 5 in 255 (27 dB PSNR). In-training previews use standard attention, which differs from ComfyUI by a mean of 10 in 255 (22 dB); judge the final look in Studio or ComfyUI.
 
 ## Sliders

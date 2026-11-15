@@ -6381,6 +6381,7 @@ async function studioFamily(res, w, h) {
     `${L.follow_steps} steps, CFG ${L.follow_cfg}${L.follow_look ? ", " + L.follow_look : ""} - from this model's Samples tab.` :
     !L.dit_fast ? L.dit_full.replace(", slow", "") : "";
   renderChoiceDraw("stRender", L);
+  studioOptionsDraw(L);
   studioNegRow();
   S.st.blocks = {};
   for (const g of L.groups) for (const b of g.blocks) S.st.blocks[b.id] = {pe: true, ps: 1, de: true, ds: 1};
@@ -8014,6 +8015,34 @@ function studioState() {
 
 // a setting changed (size, length, steps, seed, a LoRA's strength, the negative, a reference...): nothing renders until
 // Update, so several can change first - only the block sliders render as they move
+// Studio's own pick of the Samples-tab choices a model also offers here (FamilyOption.studio, e.g. H3 Image's
+// sampler): independent of the Samples tab, kept in prefs studio_opt_<KEY>, and used from the next render
+function studioOptionsDraw(L) {
+  const box = $("stOpts");
+  if (!box) return;
+  const opts = (L && L.studio_options) || [];
+  box.replaceChildren();
+  box.style.display = opts.length ? "" : "none";
+  for (const o of opts) {
+    const ex = o.explain ? explainParts(o.explain) : null;
+    const pick = (v) => async () => {
+      o.value = v;
+      try {
+        await api("/api/prefs", {changes: {[`studio_opt_${o.key}`]: v}});
+        if (S.st.ready) { await api("/api/studio/settings", {family: L.key, options: 1}); studioPending(); }
+      } catch (e) { showProblems([e.message]); }
+    };
+    const row = el("div", {class: "field-row"}, el("span", {class: "field-label", text: o.label + ":"}),
+      ...o.choices.map((c) => el("label", {class: "radio-label"}, el("input", {type: "radio", name: "stOpt_" + o.key,
+        ...(o.value === c ? {checked: true} : {}), onchange: pick(c)}), " " + c)),
+      ...(ex ? [ex.btn] : []));
+    box.append(row);
+    if (o.hint) box.append(el("div", {class: "field-hint", text: o.hint + " Studio's own choice: the Samples tab " +
+      "keeps its own for training previews."}));
+    if (ex) box.append(ex.box);
+  }
+}
+
 function studioPending() {
   if (!S.st.ready) return;
   $("stStart").textContent = "Update";

@@ -25,6 +25,23 @@ _PDD_SIGMAS = (1.0, 0.9675236940383911, 0.8875485062599182, 0.75, 0.532773911952
 # numbers behind the row's Advanced toggle; minimax_image/driver.py's defaults are the same.
 LIKENESS_DEFAULTS = {"BEFORE": "16.67", "BEFORE_END": "50", "HINGE": "6", "SLIDE": "0", "AFTER": "75",
                      "ALTERNATE": "The first share"}
+# the sampler (Samples tab, and Studio's own pick): LCM from a community text-to-image recipe (r/StableDiffusion,
+# 15 Nov 2026), Peter's pick over Euler on the same seeds ("much better", 15 Nov 2026). The ⓘ says how to match it in
+# ComfyUI
+_SAMPLER_EXPLAIN = (
+    "LCM takes the model's clean picture at every step and adds fresh noise back, a little more than usual at the "
+    "start (1.1) and a little less by the end (0.9). On text-to-image it gives smoother, more natural skin and less "
+    "of the crunchy, over-sharpened look than Euler. It adds new noise at each step, so the same seed gives a "
+    "different picture from Euler, not just a different finish.\n\n"
+    "To render the same way in ComfyUI, LCM: SamplerCustomAdvanced, with SamplerLCM (s_noise 1.1, s_noise_end 0.9, "
+    "noise_clip_std 0), BasicScheduler (simple, 6 steps, denoise 1.0), CFGGuider (cfg 1.0) and RandomNoise for the "
+    "seed. Without SamplerLCM's s_noise_end, a KSampler on lcm, simple, 6 steps, CFG 1.0 comes close, a little "
+    "softer.\n\n"
+    "Euler: a KSampler on euler, simple, 6 steps, CFG 1.0 - ComfyUI's own MiniMax H3 Image template.\n\n"
+    "Larger pictures help too: the model was made for about 16 MP (e.g. 3552 x 4736), and long prompts that describe "
+    "the photo (camera, light, skin) do better than short ones.")
+_SAMPLER_HINT = ("LCM (the default): smoother, more natural skin than Euler on text-to-image. Euler: the model's own "
+                 "sampler, as ComfyUI's template. The ⓘ gives the ComfyUI settings for each.")
 # the ⓘ beside Likeness optimization (Peter, 15 Nov 2026: help text, the schedule itself stays as it is)
 _LIKENESS_EXPLAIN = (
     "H3 Image draws each training step at one of its 6 noise levels. The clean-end share is how many steps go to the "
@@ -277,6 +294,12 @@ MINIMAX_IMAGE = FamilyDescription(
                      requires="MINIMAX_IMAGE_LIKENESS_OPT", pady=(4, 0), width=18, advanced=True,
                      hint="That share switches with the other one every epoch, starting with its own. Off: each "
                           "share holds."),
+        # the previews' sampler (Peter, 15 Nov 2026): here for training previews, and in Studio as its own pick
+        # (studio=True, prefs studio_opt_MINIMAX_IMAGE_SAMPLER) - the two are independent
+        FamilyOption("MINIMAX_IMAGE_SAMPLER", "Sampler", tab="samples", choices=(
+                         ("LCM, noise 1.1 → 0.9", "sampler=lcm"),
+                         ("Euler (the model's own)", "sampler=euler")),
+                     hint=_SAMPLER_HINT, explain=_SAMPLER_EXPLAIN, studio=True),
     ),
     workbench=("repair", "profiler", "extract", "royale"),
 

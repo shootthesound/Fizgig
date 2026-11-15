@@ -301,8 +301,34 @@ def plan(desc, prefs, pref_path, fast=True, samples=None, negative=None):
     look_file = str((samples or {}).get("look") or "") if follow and not use_ck else ""
     if lk is not None and look_file and os.path.isfile(look_file):     # a fixed adapter, like the Turbo LoRA
         kw.update(look_lora_path=look_file, look_strength=float(desc.preview_look_strength))
+    ro = studio_tokens(desc, prefs)          # Studio's own picks of the Samples-tab choices it offers (the sampler)
+    if ro:
+        kw["render_options"] = ro
     status = f"Loading {desc.display_name} ({ck.name + ', ' if ck else ''}{steps}-step previews)…"
     return kw, settings, status, problems
+
+
+def studio_options(desc, prefs):
+    """The Samples-tab choices this model also offers in Studio (FamilyOption.studio), with Studio's own pick (prefs
+    studio_opt_<KEY>, the option's default until changed): [{key, label, value, choices, hint, explain}]."""
+    out = []
+    for o in desc.options:
+        if getattr(o, "studio", False) and o.kind == "choice":
+            out.append({"key": o.key, "label": o.label, "value": o.pick(prefs.get(f"studio_opt_{o.key}") or o.default),
+                        "choices": o.choice_labels(), "hint": o.hint, "explain": o.explain})
+    return out
+
+
+def studio_tokens(desc, prefs):
+    """Studio's picks as the driver's options ({"sampler": "lcm"}): the render options every workbench render uses."""
+    opts = {}
+    for so in studio_options(desc, prefs):
+        o = next(x for x in desc.options if x.key == so["key"])
+        for tok in o.resolve(so["value"]):
+            k, eq, v = tok.partition("=")
+            if eq and not tok.startswith(("aux:", "--")):
+                opts[k] = v
+    return opts
 
 
 def load(desc, primary, donor, kw, settings, status, turbo, canvas=None):
@@ -336,12 +362,14 @@ def donor(path):
     _send({"cmd": "donor", "path": path or ""})
 
 
-def settings(turbo=None, preview_settings=None):
+def settings(turbo=None, preview_settings=None, render_options=None):
     c = {"cmd": "settings"}
     if turbo is not None:
         c["turbo"] = bool(turbo)
     if preview_settings is not None:
         c["preview_settings"] = preview_settings
+    if render_options is not None:
+        c["render_options"] = render_options
     _send(c)
 
 
@@ -916,6 +944,7 @@ def layout(desc, prefs, pref_path, samples=None):
             "default_strength": float(desc.repair_default_strength or 1.0),
             "negative_default": desc.preview_negative, "turbo_preview": bool(desc.activation_cache),
             "follows_samples": bool(desc.workbench_follows_samples),
+            "studio_options": studio_options(desc, prefs),
             "dit_fast": fast, "dit_full": f"Full ({ds.steps}-step, slow)" if ds else "",
             "cfg_fast": float(ck[1].cfg) if ck is not None and have(ck[0].pref_key) else
             float(sp.settings.cfg) if fast and sp is not None else float(ds.cfg if ds else 1.0),

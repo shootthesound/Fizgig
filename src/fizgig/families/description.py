@@ -290,6 +290,9 @@ class FamilyOption:
     single: str = ""                  # Single's value to start with when the default is a Split or Slide value
     # (old label, new label): a choice renamed, so a saved run, preset or queued run keeps its pick
     choice_renamed: tuple = ()
+    # a Samples-tab choice also offered in Studio (and the Royale / Profiler renders), picked there on its own and kept
+    # in prefs (studio_opt_<KEY>); its tokens reach the driver as render options (WorkbenchEngine.render_options)
+    studio: bool = False
 
     def choice_labels(self):
         return [c[0] for c in self.choices]

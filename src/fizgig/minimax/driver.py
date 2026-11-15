@@ -164,7 +164,7 @@ class MiniMaxDriver(FamilyDriver):
 
     def _plan_previews(self, n_swap):
         try:
-            total = torch.cuda.get_device_properties(0).total_memory / 1e9
+            total = torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory / 1e9
         except Exception:
             total = 99.0
         frames = int(self.options.get("preview_frames", 1) or 1)

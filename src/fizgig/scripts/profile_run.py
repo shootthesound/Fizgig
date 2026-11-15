@@ -24,7 +24,7 @@ def _auto_swap():
     try:
         import torch
         if torch.cuda.is_available():
-            gb = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+            gb = torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory / (1024 ** 3)
             return 0 if gb >= 15 else 12 if gb >= 10 else 16
     except Exception:
         pass

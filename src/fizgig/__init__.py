@@ -21,5 +21,11 @@ import logging as _logging
 _logging.getLogger("bitsandbytes.cextension").addFilter(
     lambda r: "No prebuilt binary for CUDA" not in r.getMessage())
 
+# AMD launcher picked a card that isn't device 0 (built-in graphics listed first): make sure it's the one used, even
+# where the ROCm build ignores HIP_VISIBLE_DEVICES (#342). Only on AMD launches with that variable set.
+if _os.environ.get("FIZGIG_GPU_BACKEND") == "rocm" and (_os.environ.get("HIP_VISIBLE_DEVICES") or "").strip().isdigit():
+    from fizgig.utils.gpu_backend import pin_rocm_device as _pin
+    _pin()
+
 from fizgig.utils.container_ram import install as _container_ram
 _container_ram()     # a pod's RAM checks read its own limit, not the host's (Linux containers only)

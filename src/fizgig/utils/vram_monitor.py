@@ -73,7 +73,7 @@ def _total_vram_from_torch() -> Optional[int]:
     try:
         torch = _torch_ready()
         if torch is not None:
-            return int(torch.cuda.get_device_properties(0).total_memory)
+            return int(torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory)
     except Exception:
         pass
     return None
@@ -265,7 +265,7 @@ def _hip_device_total_bytes() -> Optional[int]:
     try:
         torch = _torch_ready()
         if torch is not None:
-            return int(torch.cuda.get_device_properties(0).total_memory)
+            return int(torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory)
     except Exception:
         pass
     return None
@@ -631,7 +631,7 @@ def _read_vram_torch_fallback() -> Optional[tuple[int, int]]:
     try:
         torch = _torch_ready()
         if torch is not None:
-            free_b, total_b = torch.cuda.mem_get_info(0)
+            free_b, total_b = torch.cuda.mem_get_info()
             return int(total_b - free_b), int(total_b)
     except Exception:
         pass

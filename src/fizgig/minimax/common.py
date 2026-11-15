@@ -870,7 +870,7 @@ def cap_preview_res_small_card(w, h):
     sample override every time it's read — the override box must not be a way around the
     cap. Returns (w, h[, changed])-style: the clamped pair. H3-only by construction."""
     try:
-        if torch.cuda.get_device_properties(0).total_memory / 1e9 >= 20.0:
+        if torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory / 1e9 >= 20.0:
             return w, h
     except Exception:
         return w, h

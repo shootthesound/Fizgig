@@ -974,7 +974,7 @@ def render_previews(dit, mod: torch.Tensor, encoded_prompts, *, out_dir: str, ou
     # decode: on 16 GB-class cards the whole base parks for the VAE (same rule as training)
     parked = False
     try:
-        small = torch.cuda.get_device_properties(0).total_memory / 1e9 < 20.0
+        small = torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory / 1e9 < 20.0
     except Exception:
         small = False
     if decoder is not None and small:

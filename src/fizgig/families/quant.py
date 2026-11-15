@@ -388,7 +388,7 @@ def card_gb():
         return float(sim)
     if not torch.cuda.is_available():
         return 0.0
-    return torch.cuda.get_device_properties(0).total_memory / 1024 ** 3
+    return torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory / 1024 ** 3
 
 
 def auto_batch(desc, megapixels):
@@ -475,7 +475,7 @@ def apply_vram_cap():
     sim = os.environ.get("FIZGIG_SIM_VRAM_GB", "").strip()
     if not sim or not torch.cuda.is_available():
         return
-    total = torch.cuda.get_device_properties(0).total_memory / 1024 ** 3
+    total = torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory / 1024 ** 3
     torch.cuda.set_per_process_memory_fraction(min(1.0, (float(sim) - _SIM_OTHERS_GB) / total))
     logger.info(f"[sim] behaving like a {float(sim):g} GB card ({float(sim) - _SIM_OTHERS_GB:.1f} GB for Fizgig)")
 

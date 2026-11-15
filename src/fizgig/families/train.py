@@ -247,7 +247,7 @@ def _small_card_previews():
         if not torch.cuda.is_available():
             return False
         sim = os.environ.get("FIZGIG_SIM_VRAM_GB", "").strip()
-        total = float(sim) if sim else torch.cuda.get_device_properties(0).total_memory / 1e9
+        total = float(sim) if sim else torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory / 1e9
         return total < 20.0
     except Exception:
         return False
@@ -1115,7 +1115,7 @@ def _test_vram_cap(device):
 
 
 def _apply_test_vram_cap(gb, at):
-    total = torch.cuda.get_device_properties(0).total_memory
+    total = torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory
     torch.cuda.empty_cache()                 # the cached blocks go, so the cap bites on the next allocations
     torch.cuda.set_per_process_memory_fraction(max(0.01, min(1.0, gb * 1024 ** 3 / total)))
     logger.warning(f"[test] VRAM capped at {gb:g} GB from step {at} (FIZGIG_TEST_VRAM_CAP_GB) - a test setting")

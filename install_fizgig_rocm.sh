@@ -595,7 +595,9 @@ PY
 
 echo
 echo "Downloading the face models (face finder + AdaFace ViT, CPU, ~0.5 GB)..."
-PYTHONPATH="$(pwd)/src" python - <<'PY'
+# -P: a script read from stdin puts the current folder first on the path, where Fizgig's own fizgig.py would stand in
+# for the fizgig package (ImportError, and set -e then ended the install before the launcher config below)
+PYTHONPATH="$(pwd)/src" python -P - <<'PY'
 import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 from fizgig.face_utils import ensure_face_models

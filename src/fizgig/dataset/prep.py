@@ -27,6 +27,15 @@ MODES = ("Auto Prep (Face Crops)", "Resize Only", "Face Crop Only", "Detail Crop
 FACE_MODES = ("Auto Prep (Face Crops)", "Face Crop Only")
 MEGAPIXELS = ["0.25", "0.37", "0.5", "0.75", "1.0", "1.5", "2.0", "2.4", "3.0", "4.2"]
 FACE_TARGETS = ["Largest Face", "Largest Male Face", "Largest Female Face"]
+# a face narrower than this in the photo gets no close-up (Peter, 15 Nov 2026): a smaller face has too little real
+# detail to be worth cropping, and every such crop is one more picture to cull by hand
+MIN_FACE_PX = 400
+
+
+def face_px(face):
+    """The detected face's width in the photo's own pixels."""
+    x1, _y1, x2, _y2 = face.bbox
+    return int(round(x2 - x1))
 
 
 def crop_sizes(prep_mp):
@@ -140,7 +149,7 @@ def source_stats(folder, max_sample=40):
     return len(files), med[0] * med[1], med
 
 
-def summary(folder, mode, replace, prep_mp, train_mp=None, crops_only=False):
+def summary(folder, mode, replace, prep_mp, train_mp=None, crops_only=False, min_face=MIN_FACE_PX):
     """The 'What will happen' card: {lines, warn (prep below training's megapixels), count}."""
     area = target_area(prep_mp)
     n, median_area, median_size = source_stats(folder)
@@ -152,9 +161,11 @@ def summary(folder, mode, replace, prep_mp, train_mp=None, crops_only=False):
     count = f"your {n} images" if n else "your images"
     sized = f"resized to about {prep_mp:g} MP{example} and saved as PNG"
     if mode == "Auto Prep (Face Crops)":
-        what = f"{count} → {sized}, plus one face close-up each{f' (≈{n * 2} files)' if n else ''}"
+        what = (f"{count} → {sized}, plus a face close-up from each photo whose face is at least {min_face} px wide"
+                f"{f' (up to {n * 2} files)' if n else ''}")
     elif mode == "Face Crop Only":
-        what = f"{count} → replaced by just the cropped face from each photo, saved as PNG"
+        what = (f"{count} → replaced by just the cropped face from each photo, saved as PNG (a photo whose face is "
+                f"under {min_face} px wide stays whole)")
     elif mode == "Detail Crops (Style)":
         from fizgig.dataset.detail_crops import DIR, side
         s = side(prep_mp)
@@ -321,8 +332,9 @@ class Prep:
 
     # ---- the three modes ----
     def run(self, mode, folder, prep_mp, face_label="Largest Face", face_padding=20.0, replace=False,
-            crops_only=False):
+            crops_only=False, min_face=MIN_FACE_PX):
         self._originals = {}
+        self.min_face = max(0, int(min_face or 0))
         area = target_area(prep_mp)
         face_mode = face_mode_of(face_label)
         if self.detector is not None and mode in FACE_MODES and getattr(self.detector, "backend_name",
@@ -390,7 +402,7 @@ class Prep:
     def face_crop_only(self, source, output, area, face_mode, face_padding, replace):
         from fizgig.face_utils import crop_to_face
         self.log(f"Mode: Face Crop Only ({face_mode}, padding {face_padding}%)\n\n")
-        converted = skipped = errors = face_crops = no_face = 0
+        converted = skipped = errors = face_crops = no_face = small = 0
         for filepath in image_files(source):
             filename = os.path.basename(filepath)
             ext = os.path.splitext(filename)[1].lower()
@@ -404,7 +416,11 @@ class Prep:
                         sel, note = self.select_face(faces, face_mode)
                         if note:
                             self.log(note)
-                        if sel:
+                        if sel and face_px(sel) < self.min_face:
+                            self.log(f"  Face too small for a close-up in {filename} ({face_px(sel)} px wide, "
+                                     f"needs {self.min_face}): kept whole\n")
+                            small += 1
+                        elif sel:
                             img = crop_to_face(img, sel, face_padding)
                             # the same box on the mask, at the picture's own size
                             crop_mask = (lambda mk, sel=sel, size=original:
@@ -439,7 +455,7 @@ class Prep:
                 self.log(f"Error ({filename}): {e}\n")
                 errors += 1
         self.log(f"\n--- Summary ---\nConverted: {converted} | Skipped: {skipped} | Errors: {errors}\n")
-        self.log(f"Face crops: {face_crops} | No face: {no_face}\n")
+        self.log(f"Face crops: {face_crops} | No face: {no_face} | Face too small (kept whole): {small}\n")
 
     def auto_prep(self, source, output, area, face_mode, face_padding, replace):
         """Resize the originals AND cut a face close-up from each HIGH-RES original (before it is overwritten or
@@ -448,7 +464,7 @@ class Prep:
         self.log("Mode: Auto Prep (Face Crops)\n")
         self.log(f"Face target: {face_mode}, padding: {face_padding}%\n")
         self.log(f"Output: {output}\n\n")
-        converted = skipped = errors = crops_made = no_face = 0
+        converted = skipped = errors = crops_made = no_face = small = 0
         crop_index = self.next_facecrop_index(output)
         for filepath in image_files(source):
             filename = os.path.basename(filepath)
@@ -467,7 +483,11 @@ class Prep:
                         sel, note = self.select_face(faces, face_mode)
                         if note:
                             self.log(note)
-                        if sel:
+                        if sel and face_px(sel) < self.min_face:
+                            self.log(f"Face too small for a close-up: {filename} ({face_px(sel)} px wide, "
+                                     f"needs {self.min_face})\n")
+                            small += 1
+                        elif sel:
                             crop = crop_to_face(original_img, sel, face_padding)
                             crop, _ = resize_image(crop, area)
                             crop_name = f"FaceCrop_{crop_index:03d}.png"
@@ -509,7 +529,7 @@ class Prep:
                 errors += 1
         self.log("\n--- Summary ---\n")
         self.log(f"Originals converted: {converted} | Skipped: {skipped} | Errors: {errors}\n")
-        self.log(f"Face crops created: {crops_made} | No face: {no_face}\n")
+        self.log(f"Face crops created: {crops_made} | No face: {no_face} | Face too small: {small}\n")
         self.log(f"Total files in output: {len(image_files(output))}\n")
 
 

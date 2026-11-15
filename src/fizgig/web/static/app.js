@@ -3547,7 +3547,9 @@ async function loadRuns() {
     const contAsk = (why) => {
       const box = el("input", {type: "number", min: String(cp.done + 1), step: "1", class: "w-num",
         value: String(cp.done + (cp.unit === "epoch" ? Math.max(1, Math.round(cp.done / 2)) : 1))});
-      contBox.replaceChildren(el("span", {class: "field-hint", text: why + " Train to:"}), box,
+      contBox.replaceChildren(el("span", {class: "field-hint", text: why + ` It carries on from ${cp.unit} ${cp.done} ` +
+        `in this same run, nothing restarts, and the ${cp.unit}s and checkpoints it has already saved stay as ` +
+        "they are. Train to:"}), box,
         el("span", {class: "field-hint", text: cp.unit + "s"}),
         el("button", {class: "btn btn-sm btn-primary", text: "Continue", onclick: () => {
           const n = parseInt(box.value, 10);
@@ -5480,6 +5482,7 @@ const thumbOf = (p) => `/api/thumb?path=${encodeURIComponent(p)}&t=${encodeURICo
 const prepSettings = () => ({
   mode: (document.querySelector('input[name="prepMode"]:checked') || {}).value || "Auto Prep (Face Crops)",
   mp: $("prepMp").value || "1.0", face: $("prepFace").value || "Largest Face", padding: $("prepPadding").value || "20",
+  min_face: $("prepMinFace").value === "" ? "400" : $("prepMinFace").value,
   replace: (document.querySelector('input[name="prepReplace"]:checked') || {}).value === "1",
   crops_only: $("prepCropsOnly").checked});
 const savePrepSoon = debounce(() => { S.prepSaved = prepSettings(); api("/api/state", {prep: S.prepSaved}).catch(() => {}); }, 600);
@@ -5493,6 +5496,7 @@ async function loadPrep() {
     $("prepMp").value = saved.mp || "1.0";
     $("prepFace").value = saved.face || "Largest Face";
     if (saved.padding) $("prepPadding").value = saved.padding;
+    if (saved.min_face !== undefined) $("prepMinFace").value = saved.min_face;
     const mode = saved.mode || "Auto Prep (Face Crops)";
     document.querySelectorAll('input[name="prepMode"]').forEach((r) => { r.checked = r.value === mode; });
     document.querySelectorAll('input[name="prepReplace"]').forEach((r) => { r.checked = r.value === (saved.replace ? "1" : "0"); });
@@ -5977,7 +5981,7 @@ async function prepSummary() {
   $("prepRunTitle").textContent = crops ? "2 · Run it" : "3 · Run it";
   if (!S.imageFolder) { $("prepSummary").textContent = ""; return; }
   const r = await api(`/api/prep/summary?folder=${encodeURIComponent(S.imageFolder)}&mode=${encodeURIComponent(p.mode)}` +
-    `&mp=${p.mp}&replace=${p.replace ? 1 : 0}&crops_only=${p.crops_only ? 1 : 0}` +
+    `&mp=${p.mp}&replace=${p.replace ? 1 : 0}&crops_only=${p.crops_only ? 1 : 0}&min_face=${encodeURIComponent(p.min_face)}` +
     `&train_mp=${encodeURIComponent(S.values.DATASET_MEGAPIXELS || "")}`).catch(() => null);
   if (!r) return;
   $("prepAudioOnly").style.display = r.audio_only ? "" : "none";
@@ -6270,7 +6274,7 @@ function presetSaveOpen() {
 function wirePrep() {
   document.querySelectorAll('input[name="prepMode"], input[name="prepReplace"]').forEach((r) =>
     r.addEventListener("change", () => { prepSummary(); savePrepSoon(); }));
-  for (const id of ["prepMp", "prepFace", "prepPadding", "prepCropsOnly"]) $(id).addEventListener("change", () => { prepSummary(); savePrepSoon(); });
+  for (const id of ["prepMp", "prepFace", "prepPadding", "prepMinFace", "prepCropsOnly"]) $(id).addEventListener("change", () => { prepSummary(); savePrepSoon(); });
   $("prepRun").addEventListener("click", prepRun);
   $("maskRun").addEventListener("click", maskRun);
   meWire();

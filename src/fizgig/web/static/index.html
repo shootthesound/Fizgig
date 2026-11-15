@@ -1687,7 +1687,21 @@
           </div>
           <div class="section-card">
             <div class="card-title"><span>Runs</span><button class="btn btn-sm" id="runsReload">Reload</button></div>
-            <div class="card-content"><div id="runsList" class="runs-list"></div></div>
+            <div class="card-content">
+              <div class="field-row" id="purgeRow">
+                <span class="field-label">Purge runs older than:</span>
+                <input type="number" id="purgeDays" class="w-num" min="1" max="365" step="1" value="14"
+                  title="How far back the run history goes. A run is counted by the date it ended, so a run still training is never caught. 1-365 days.">
+                <span class="field-hint">days</span>
+                <label class="checkbox-label" title="Ticked, a purge deletes what each run saved in its output folder - its checkpoints, saved states and previews - as well as taking it off this list. Unticked, only its line here goes and nothing on disk is touched."><input
+                  type="checkbox" id="purgeData"> Delete Saved Run Data</label>
+                <label class="checkbox-label" title="Ticked, a run you paused counts from the moment it paused. Unticked, paused runs stay on the list however long ago they paused."><input
+                  type="checkbox" id="purgePaused"> Include Paused</label>
+                <button class="btn btn-sm btn-danger" id="purgeBtn">Purge Older Than 14 Days</button>
+              </div>
+              <div id="purgeSay" style="display:none"></div>
+              <div id="runsList" class="runs-list"></div>
+            </div>
           </div>
           <div class="section-card">
             <div class="card-title"><span>Saved files</span>

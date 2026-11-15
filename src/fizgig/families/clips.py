@@ -1,10 +1,12 @@
 """Clips against a family's ClipSpec (description.clip_spec): probe, check, decode.
 
 Fizgig does not PREPARE clips - Gizmo does. This module only decides whether a file is already on the family's
-spec and, if it is, decodes it. Nothing here transcodes, resamples or trims: the moment a training app starts
+spec and, if it is, decodes it. Nothing here transcodes or trims the picture: the moment a training app starts
 silently fixing footage, two datasets that look identical train differently and nobody can tell why. Off-spec files
 are REFUSED with the value found and what to do, because the failure they would otherwise cause is invisible - a
-30 fps clip trains motion at the wrong speed and looks perfectly fine doing it.
+30 fps clip trains motion at the wrong speed and looks perfectly fine doing it. Audio is the exception: its sample
+rate and channel count are decode details (read_audio converts them, as the voice path's audio files always have),
+so any rate trains.
 
 Shared by every family whose description's `media` includes "clip"; the dataset layer and the launch checks reach it
 through the description, never through a model package.
@@ -85,14 +87,8 @@ def validate(path: str, spec, family: str, info: dict = None, frames: int = None
         if dim % spec.edge_multiple:
             raise ClipRejected(f"{name}: {info['width']}x{info['height']} - {label} must be a multiple of "
                                f"{spec.edge_multiple}. {where}")
-    if info["has_audio"] and spec.audio_rate:
-        if info["sample_rate"] != spec.audio_rate:
-            raise ClipRejected(f"{name}: audio is {info['sample_rate']} Hz, but the {family} audio VAE is "
-                               f"{spec.audio_rate} Hz. {where}")
-        if info["channels"] not in (None, spec.audio_channels):
-            raise ClipRejected(f"{name}: audio is {info['channels']}-channel, {family} packs "
-                               f"{'stereo' if spec.audio_channels == 2 else f'{spec.audio_channels} channels'}. "
-                               f"{where}")
+    # Audio of any sample rate or channel count trains as it is: read_audio decodes it to the spec's rate and channels
+    # when it caches, and the file is never rewritten. Unlike the frame rate, that changes nothing about what trains.
     grid = grid_frames(spec)
     if frames is not None and frames not in grid:
         raise ClipRejected(

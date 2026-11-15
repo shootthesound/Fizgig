@@ -114,6 +114,10 @@ def masked_ctx(mask):
     falls back to its memory-efficient kernel, and cuDNN takes the mask at almost no cost - MOSS-Image batch 3 went
     1.60 -> 1.31 s a step on an A6000 (#221) with the captions padded to a multiple of 16, so cuDNN plans only a few
     shapes. Unmasked attention keeps sdpa_backend_ctx's rule. A preference: a shape cuDNN can't take falls back."""
+    # cuDNN is NVIDIA-only. Excluding FLASH_ATTENTION on ROCm can force the
+    # quadratic-memory math fallback even when ROCm has a usable fused kernel.
+    if torch.version.hip:
+        return contextlib.nullcontext()
     if mask is None or not mask.is_cuda or os.environ.get("FIZGIG_SDPA_BACKEND", "auto").lower() in ("default", "off", "none"):
         return sdpa_backend_ctx()
     from torch.nn.attention import SDPBackend, sdpa_kernel
@@ -122,6 +126,8 @@ def masked_ctx(mask):
 
 def sdpa_backend_ctx():
     """cuDNN SDPA for inference; PyTorch's default when gradients are being recorded."""
+    if torch.version.hip:
+        return contextlib.nullcontext()
     choice = os.environ.get("FIZGIG_SDPA_BACKEND", "auto").lower()
     if choice in ("default", "off", "none"):
         return contextlib.nullcontext()

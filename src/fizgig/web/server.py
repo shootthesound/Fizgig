@@ -4662,10 +4662,9 @@ class Handler(BaseHTTPRequestHandler):
                 script = os.path.join(BASE_DIR, "src", "gizmo", "gizmo.pyw" if os.name == "nt" else "gizmo.py")
                 if not os.path.isfile(script):
                     return self.json({"error": "Gizmo is missing from your Fizgig folder - update Fizgig."}, 400)
-                exe = sys.executable
-                if os.name == "nt" and os.path.basename(exe).lower() == "python.exe":
-                    exe = os.path.join(os.path.dirname(exe), "pythonw.exe")    # no console window beside it
-                subprocess.Popen([exe, script], cwd=BASE_DIR, **({"creationflags": 0x08000000} if os.name == "nt" else {}))
+                err = _gizmo_start(script)
+                if err:
+                    return self.json({"error": err}, 400)
                 return self.json({"ok": True})
             if path == "/api/lan/firewall":          # Allow on my network: Windows asks for an administrator's OK
                 from fizgig.web import lan
@@ -5153,6 +5152,49 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as e:
             return self.json({"error": str(e)}, 400)
         return self.json({"error": "not found"}, 404)
+
+
+def _tk_help() -> str:
+    """What to install when this Python has no Tk (Gizmo is a Tkinter window)."""
+    if sys.platform == "darwin":
+        return "In a terminal: brew install python-tk, then click Open Gizmo again."
+    if os.name == "nt":
+        return "Run the Fizgig installer again (repair), then click Open Gizmo again."
+    v = f"{sys.version_info.major}.{sys.version_info.minor}"
+    return (f"In a terminal: sudo apt install python3-tk (or python{v}-tk) on Ubuntu / Debian, "
+            "sudo dnf install python3-tkinter on Fedora, sudo pacman -S tk on Arch. Then click Open Gizmo again.")
+
+
+def _gizmo_start(script: str) -> str:
+    """Start Gizmo; '' when it's opening, else what went wrong and what to do (shown under the button)."""
+    exe = sys.executable
+    try:
+        probe = subprocess.run([exe, "-c", "import tkinter; tkinter.Tcl()"], capture_output=True, text=True,
+                               timeout=60, **({"creationflags": 0x08000000} if os.name == "nt" else {}))
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return f"Gizmo couldn't start: {e}"
+    if probe.returncode:
+        return "Gizmo needs Tk, which Fizgig's Python doesn't have. " + _tk_help()
+    if os.name == "nt" and os.path.basename(exe).lower() == "python.exe":
+        exe = os.path.join(os.path.dirname(exe), "pythonw.exe")    # no console window beside it
+    log = user_file("gizmo.log")
+    with open(log, "w", encoding="utf-8", errors="replace") as fh:
+        proc = subprocess.Popen([exe, script], cwd=BASE_DIR, stdout=fh, stderr=subprocess.STDOUT,
+                                **({"creationflags": 0x08000000} if os.name == "nt" else {}))
+    try:                                   # a start-up failure (no display, a missing package) ends at once
+        code = proc.wait(timeout=4)
+    except subprocess.TimeoutExpired:
+        return ""
+    if code == 0:
+        return ""
+    try:
+        lines = [ln.strip() for ln in open(log, encoding="utf-8", errors="replace") if ln.strip()]
+    except OSError:
+        lines = []
+    last = lines[-1] if lines else f"it stopped with code {code}"
+    if "display" in last.lower():
+        return f"Gizmo couldn't open a window ({last}). It needs a desktop session on this computer."
+    return f"Gizmo couldn't start: {last}. The full message is in {log}."
 
 
 class _Server(ThreadingHTTPServer):

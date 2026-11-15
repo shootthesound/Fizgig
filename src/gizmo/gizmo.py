@@ -1188,11 +1188,16 @@ def folder_videos(folder):
             if n.lower().endswith(VIDEO_EXTS) and os.path.isfile(os.path.join(folder, n))]
 
 
-def _batch_lengths(frames, split):
-    """The clip lengths to cut from `frames` real-time frames, from the start: the longest grid length that fits, and
-    with split, as many of those as fit back to back, then the longest that fits what is left. Lengths below the
-    shortest that shows movement (H3's 5 frames) are not cut."""
-    usable = [g for g in GRID_FRAMES if g >= 17]
+def usable_lengths(longest=None):
+    """The grid lengths a folder batch cuts: from the shortest that shows movement (H3's 5 frames are left out) up
+    to `longest` (None = the model's longest)."""
+    return [g for g in GRID_FRAMES if g >= 17 and (longest is None or g <= longest)] or [min(GRID_FRAMES)]
+
+
+def _batch_lengths(frames, split, longest=None):
+    """The clip lengths to cut from `frames` real-time frames, from the start: the longest grid length that fits (up to
+    `longest`), and with split, as many of those as fit back to back, then the longest that fits what is left."""
+    usable = usable_lengths(longest)
     out, left = [], frames
     while left >= usable[0]:
         g = max(f for f in usable if f <= left)
@@ -1203,7 +1208,7 @@ def _batch_lengths(frames, split):
     return out
 
 
-def plan_folder(ffmpeg, folder, out_dir, split=True):
+def plan_folder(ffmpeg, folder, out_dir, split=True, longest=None):
     """Every video in `folder` as clip jobs into `out_dir`, plus a note for each one that can't be used.
 
     A video already on the spec (24 fps, sides on /32, a grid length) is copied as it is, not re-encoded. Returns
@@ -1224,7 +1229,7 @@ def plan_folder(ffmpeg, folder, out_dir, split=True):
                    and info["width"] % SIZE_STEP == 0 and info["height"] % SIZE_STEP == 0)
         if on_spec:
             n = count_frames(ffmpeg, src)
-            if n in GRID_FRAMES:
+            if n in GRID_FRAMES and (longest is None or n <= longest):
                 dst = output_name(src, out_dir, muted, claimed)
                 claimed.add(os.path.basename(dst))
                 jobs.append({"src": src, "dst": dst, "copy": True, "caption": caption, "frames": n,
@@ -1232,9 +1237,9 @@ def plan_folder(ffmpeg, folder, out_dir, split=True):
                 continue
         # real time at 24 fps: the frames the source holds, a frame short of its banner duration (which rounds up)
         frames = int(max(0.0, (info["duration"] or 0) - 0.5 / FPS) * FPS)
-        lengths = _batch_lengths(frames, split)
+        lengths = _batch_lengths(frames, split, longest)
         if not lengths:
-            shortest = min(g for g in GRID_FRAMES if g >= 17)
+            shortest = usable_lengths()[0]
             notes.append(f"{name}: {frames / FPS:.2f} s, shorter than the shortest clip ({shortest} frames, "
                          f"{shortest / FPS:.2f} s)")
             continue
@@ -5352,15 +5357,13 @@ class Gizmo:
         win.geometry("%dx%d" % _scaled(win, 760, 470))
         win.minsize(*_scaled(win, 620, 400))
         bg = COLORS["bg_deep"]
-        longest = max(GRID_FRAMES)
         tk.Label(win, text="Prepare a folder", font=(FONT_FAMILY, 13, "bold"), bg=bg,
                  fg=COLORS["text_primary"]).pack(anchor="w", padx=14, pady=(12, 0))
         sound = "its sound at 32 kHz stereo, " if MODEL["sound"] else ""
         tk.Label(win, wraplength=720, justify=tk.LEFT, font=(FONT_FAMILY, 9), bg=bg, fg=COLORS["text_explain"],
                  text=f"Every video in a folder made ready to train, written into a new folder: your originals "
                       f"are never changed. Each one gets {FPS} fps at real speed, its own size cut to a multiple of "
-                      f"32, {sound}and a length {MODEL['short']} takes (up to {longest} frames, "
-                      f"{longest / FPS:.1f} s), from its start. A video that is already right is copied as it is. "
+                      f"32, {sound}and a length {MODEL['short']} takes, up to the longest clip below, from its start. A video that is already right is copied as it is. "
                       f"A caption file with the same name comes along with each clip.").pack(
             anchor="w", padx=14, pady=(2, 8))
 
@@ -5392,11 +5395,32 @@ class Gizmo:
 
         row(0, "Videos from:", src_var, pick_src)
         row(1, "Save to:", out_var, pick_out)
+
+        # The longest clip to cut: a 16 GB card trains H3 clips only up to 56 frames (CLIP_VRAM), so cutting 124-frame
+        # clips for one makes a set it can't train
+        lengths = usable_lengths()
+
+        def len_label(g):
+            cards = [gb for gb, mp in sorted((CLIP_VRAM.get(g) or {}).items()) if mp]
+            card = f" — trains on {cards[0]} GB cards and up" if cards else ""
+            return f"{g} frames ({g / FPS:.1f} s){card}"
+
+        tk.Label(grid, text="Longest clip:", font=(FONT_FAMILY, 10), bg=bg, fg=COLORS["text_secondary"]).grid(
+            row=2, column=0, sticky="w", pady=4)
+        len_box = ttk.Combobox(grid, state="readonly", style="G.TCombobox", width=44,
+                               values=[len_label(g) for g in lengths])
+        saved = self.settings.get("batch_longest")
+        len_box.current(lengths.index(saved) if saved in lengths else len(lengths) - 1)
+        len_box.grid(row=2, column=1, sticky="w", padx=8)
+        ToolTip(len_box, "Each clip is cut at the longest of these that fits, up to this one.\n\n"
+                         "A longer clip costs much more memory to train: on a 16 GB card, H3 trains clips up to "
+                         "56 frames at about 512x512. Pick that and every video is cut into clips your card can "
+                         "train.")
         split_var = tk.BooleanVar(value=True)
         tk.Checkbutton(win, variable=split_var, bg=bg, fg=COLORS["text_primary"], selectcolor=COLORS["bg_hover"],
                        activebackground=bg, activeforeground=COLORS["text_primary"], font=(FONT_FAMILY, 10),
-                       text=f"Cut a video longer than {longest / FPS:.1f} s into several clips, back to back "
-                            f"(off: only its first {longest / FPS:.1f} s)").pack(anchor="w", padx=10, pady=(8, 0))
+                       text="Cut a video longer than the longest clip into several clips, back to back "
+                            "(off: only its start)").pack(anchor="w", padx=10, pady=(8, 0))
 
         ctl = tk.Frame(win, bg=bg)
         ctl.pack(fill=tk.X, padx=14, pady=(10, 4))
@@ -5425,10 +5449,13 @@ class Gizmo:
             state["busy"] = True
             go.configure(state=tk.DISABLED)
             show("Reading the videos…")
-            threading.Thread(target=work, args=(src, out, bool(split_var.get())), daemon=True).start()
+            longest_now = lengths[len_box.current()] if 0 <= len_box.current() < len(lengths) else None
+            self.settings["batch_longest"] = longest_now
+            save_settings(self.settings)
+            threading.Thread(target=work, args=(src, out, bool(split_var.get()), longest_now), daemon=True).start()
 
-        def work(src, out, split):
-            jobs, notes = plan_folder(self.ffmpeg, src, out, split)
+        def work(src, out, split, longest_now):
+            jobs, notes = plan_folder(self.ffmpeg, src, out, split, longest_now)
             if not jobs:
                 self.root.after(0, finish, 0, [], notes, out, 0)
                 return

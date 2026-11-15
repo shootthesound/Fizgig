@@ -58,6 +58,10 @@ PCI_DEV_TO_GFX: dict[str, str] = {
 }
 
 
+# A real target (gfx950, gfx90a, gfx1100, gfx1201), never a generic ISA family (gfx9-4-generic, gfx11-generic)
+_GFX_RE = re.compile(r"(gfx[0-9]{1,2}[0-9a-f]{2})(?![-0-9a-z])", re.I)
+
+
 def log(*args, **kwargs) -> None:
     print(*args, file=sys.stderr, **kwargs)
 
@@ -86,7 +90,9 @@ def _gfx_from_rocminfo() -> list[str]:
             continue
         m = re.match(r"\s*([^:]+):\s*(.+)", line)
         if m:
-            current[m.group(1).strip().lower()] = m.group(2).strip()
+            # first one wins: an agent's own Name comes first; its ISA list below repeats "Name:" with the generic
+            # instruction sets (amdgcn-amd-amdhsa--gfx9-4-generic, gfx12-generic), which read as "gfx9" / "gfx12"
+            current.setdefault(m.group(1).strip().lower(), m.group(2).strip())
     if current:
         agents.append(current)
 
@@ -94,7 +100,7 @@ def _gfx_from_rocminfo() -> list[str]:
     for agent in agents:
         name = agent.get("name", "")
         device_type = agent.get("device type", "")
-        m = re.search(r"(gfx\d+[a-z0-9]*)", name, re.I)
+        m = _GFX_RE.search(name)
         if not m:
             continue
         gfx = m.group(1).lower()
@@ -111,7 +117,7 @@ def _gfx_from_kfd_topology() -> list[str]:
                 text = fh.read()
         except OSError:
             continue
-        m = re.search(r"gfx_target_version\s+\d+\s+(gfx\d+[a-z0-9]*)", text, re.I)
+        m = re.search(r"gfx_target_version\s+\d+\s+(gfx[0-9]{1,2}[0-9a-f]{2})(?![-0-9a-z])", text, re.I)
         if m:
             hits.append(m.group(1).lower())
     return hits

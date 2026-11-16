@@ -92,6 +92,12 @@ class FamilyDriver:
         INT8 / NF4 are applied afterwards by families/quant.py to the block map's Linears; the driver only loads."""
         raise NotImplementedError
 
+    def precision_problem(self, precision: str, dit_path: str) -> str:
+        """Why this DiT file can't load at `precision` ("" = it can), for a precision only some files support
+        (MiniMax H3's int8 keeps a pruned int8 file's own weights; its bf16 files have none, #357). Start refuses an
+        explicit pick (launch.precision_problems); Auto leaves it out (quant.plan with dit_path)."""
+        return ""
+
     def dit_gb(self, path: str) -> float:
         """The DiT as load_dit loads it, in GB, for sizing precision and RAM: the file's size. A driver that
         decodes a smaller file at load (an int8 build read as bf16) gives the decoded size."""

@@ -606,7 +606,8 @@ def _apply_auto_batch(desc, driver, user_config, precision, blocks_to_swap, run)
     elif blockers:
         n, why = 1, f"this run reads one picture a step ({', '.join(blockers)})"
     elif not desc.own_plan:
-        p, swap, _w = quant.plan(desc, driver, precision, blocks_to_swap, megapixels=mp, pictures=n)
+        p, swap, _w = quant.plan(desc, driver, precision, blocks_to_swap, megapixels=mp, pictures=n,
+                                 dit_path=run.get("dit"))
         if swap > 0:
             n, why = 1, f"{n} pictures a step would need block swap on this card"
     if n > 1:
@@ -1315,7 +1316,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         user_config = load_user_config(dataset_config)
         if batch_size_auto:
             _apply_auto_batch(desc, driver, user_config, precision, blocks_to_swap, dict(
-                slider=slider, finetune=finetune, dop=bool(dop), share=share_worker is not None,
+                dit=dit_path, slider=slider, finetune=finetune, dop=bool(dop), share=share_worker is not None,
                 stage=bool(stage_dataset_config), mask_prior=bool(masked_training and mask_prior),
                 lora=str(network_type).lower() == "lora", accumulation=int(gradient_accumulation_steps or 1) > 1,
                 paired=any(d.get("control_directory") for d in user_config.get("datasets", []))))
@@ -1553,9 +1554,10 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         else:
             # the figures are a rank-16 LoRA's: a bigger adapter (LoKR, fp32 Adam, EMA) is counted on top (#337)
             adapter_gb = quant.adapter_extra_gb(driver, run_plan) if not finetune else 0.0
-            plain = quant.plan(desc, driver, precision, blocks_to_swap, megapixels=mp, pictures=bsz)
+            plain = quant.plan(desc, driver, precision, blocks_to_swap, megapixels=mp, pictures=bsz,
+                               dit_path=dit_path)
             counted = quant.plan(desc, driver, precision, blocks_to_swap, megapixels=mp, pictures=bsz,
-                                 adapter_gb=adapter_gb) if adapter_gb >= 0.1 else plain
+                                 adapter_gb=adapter_gb, dit_path=dit_path) if adapter_gb >= 0.1 else plain
             precision, blocks_to_swap, why = counted
             kept = counted[:2] != plain[:2] and plain[:2] == ("nf4", 0)
             if kept:

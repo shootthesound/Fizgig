@@ -68,11 +68,21 @@ class MiniMaxH3ImageDriver(FamilyDriver):
     def max_blocks_to_swap(self, dit=None):
         return 40                     # H3's cap (50 blocks, >= 10 resident)
 
+    def precision_problem(self, precision, dit_path):
+        """int8 keeps the pruned int8 file's own weights: the pruned bf16 file has none (#357)."""
+        from fizgig.minimax.common import int8_problem
+        return int8_problem(dit_path, self.description) if precision == "int8" else ""
+
     def load_planned(self, path, device, precision, blocks_to_swap):
         """The base at int8 (the file's ConvRot codes), NF4 or HQQ, the last n blocks streamed host->device through
-        the ring for their type, as MiniMax H3 loads it (minimax/driver.py load_planned)."""
+        the ring for their type, as MiniMax H3 loads it (minimax/driver.py load_planned). int8 of a 16-bit file (the
+        pruned bf16, no int8 weights) loads 4-bit, the smaller base (#357)."""
         import os
+        from fizgig.minimax.common import has_int8_codes
         mode = precision if precision in ("int8", "nf4", "hqq") else "int8"
+        if mode == "int8" and not has_int8_codes(path):
+            logger.warning(f"[precision] {os.path.basename(path)} has no int8 weights (a 16-bit file): 4-bit")
+            mode = "nf4"
         n = max(0, min(int(blocks_to_swap or 0), self.max_blocks_to_swap()))
         dit = M.load_dit(path, device, base_quant=mode, blocks_to_swap=n, compute_dtype=DTYPE)
         if n > 0:

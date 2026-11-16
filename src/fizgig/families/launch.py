@@ -1814,6 +1814,7 @@ def start_problems(desc, inputs):
     out += checks.numbers(v)
     out += checks.dataset_config(v.get("DATASET_CONFIG"), must_exist=False)
     out += problems(desc, inputs)
+    out += precision_problems(desc, inputs)
     out += checks.learning_rate_range(v)
     out += multi_concept_problems(desc, v)
     out += dop_problems(desc, v)
@@ -1876,6 +1877,23 @@ def start_problems(desc, inputs):
                    "mask beside its picture with -masklabel added to the name (photo.jpg -> photo-masklabel.png: "
                    "white = train, black = mostly ignore), or untick Masked training.")
     return out
+
+
+def precision_problems(desc, inputs):
+    """A Base precision picked by hand that the DiT file can't load at (MiniMax H3's int8 of a 16-bit file: int8
+    keeps the pruned int8 file's own weights, #357), refused at Start with what to pick instead. Auto leaves such a
+    precision out by itself (quant.plan with dit_path)."""
+    if len(desc.precisions) < 2 or not desc.driver or ft_on(desc, inputs):
+        return []
+    prec = precision_key(desc, inputs.get("FAMILY_PRECISION"))
+    if prec == "auto":
+        return []
+    dit = _model(inputs, desc, "dit")
+    toks = option_tokens(desc, inputs)[0]
+    if "--dit" in toks:                  # an option's own base (H3's reference base) is the one that trains
+        dit = toks[toks.index("--dit") + 1]
+    why = desc.load_driver().precision_problem(prec, dit) if dit else ""
+    return [why] if why else []
 
 
 _CLIP_CHECKED = {}          # (path, mtime, size) -> problem: a Start re-check does not probe an unchanged clip again

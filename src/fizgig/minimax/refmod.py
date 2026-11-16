@@ -722,10 +722,13 @@ def plan_and_load_dit(dit_path: str, *, device, dtype, base_quant: str = "auto",
     the sequence plus the training still) — recompute is skipped only when that fits without
     it, as the trainer does; an explicit swap count keeps it on."""
     from fizgig.minimax.loader import load_minimax_h3_dit
-    from fizgig.minimax.common import (is_pruned_checkpoint, plan_base_quant, plan_vram,
+    from fizgig.minimax.common import (has_int8_codes, is_pruned_checkpoint, plan_base_quant, plan_vram,
                                         _INT8_TRANSIENT_GB)
     from fizgig.minimax import common as _tr
     pruned = is_pruned_checkpoint(dit_path)
+    int8 = has_int8_codes(dit_path)            # a pruned bf16 file is pruned with no int8 weights (#357)
+    if base_quant == "int8" and not int8:
+        base_quant = "nf4"
     mode, n_swap = base_quant, 0
     _ckpt = True
     # the planner's activation term scales with tokens: the whole sequence, in stills of `mp`
@@ -735,7 +738,7 @@ def plan_and_load_dit(dit_path: str, *, device, dtype, base_quant: str = "auto",
             from fizgig.utils.device import plannable_free_vram
             free_gb = plannable_free_vram()
             if base_quant == "auto":
-                mode, n_swap, _ckpt, why = plan_base_quant(free_gb, pruned, mp=mp_plan, adapter_gb=0.0)
+                mode, n_swap, _ckpt, why = plan_base_quant(free_gb, pruned, mp=mp_plan, adapter_gb=0.0, int8=int8)
             else:
                 mode = base_quant
                 resident = (_tr._RESIDENT_INT8_GB if mode == "int8"
@@ -751,8 +754,8 @@ def plan_and_load_dit(dit_path: str, *, device, dtype, base_quant: str = "auto",
             mode = "nf4" if base_quant == "auto" else base_quant
     else:
         n_swap = int(blocks_to_swap)
-        mode = ("int8" if pruned else "nf4") if base_quant == "auto" else base_quant
-    if not pruned and mode == "int8":
+        mode = ("int8" if int8 else "nf4") if base_quant == "auto" else base_quant
+    if not int8 and mode == "int8":
         mode = "nf4"
     dit = load_minimax_h3_dit(dit_path, device=device, compute_dtype=dtype, quantize=True,
                               blocks_to_swap=n_swap, base_quant=mode, adaln_fp32=True)

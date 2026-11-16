@@ -18,10 +18,13 @@ that tensor, decode it if quantized, and place it —
 The frozen base is what LoRA/FT trains on top of; the fp32 output-head island stays fp32.
 """
 
+import logging
 import os
 
 import torch
 import torch.nn as nn
+
+logger = logging.getLogger(__name__)
 
 # Not the official safe_open mmap path: on Windows, streaming a 66 GB file via
 # safe_open(device="cpu").get_tensor() hard-crashes (access violation) in torch's storage
@@ -92,7 +95,7 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
 
     base_quant:
       "int8" — KEEP the checkpoint's int8 ConvRot weights (what the reference trainer does).
-               ~0.17% error in the frozen base, ~21 GB resident. Needs a pre-quantized file.
+               ~0.17% error in the frozen base, ~21 GB resident. Needs a pre-quantized file (a 16-bit one loads as nf4).
       "nf4"  — decode to bf16 then NF4 (bitsandbytes). ~9.5% error, ~11 GB resident. The only
                option for the bf16 checkpoint, and the fallback for small cards.
       "hqq"  — decode to bf16 then HQQ 4-bit, group 8 (rintic-13, #102; needs `pip install
@@ -123,8 +126,12 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
         if mode == "auto":
             mode = "int8" if quant_conf else "nf4"
         if mode == "int8" and not quant_conf:
-            raise ValueError("base_quant='int8' needs a pre-quantized checkpoint "
-                             "(minimax_h3_*_pruned_int8_convrot.safetensors)")
+            # a 16-bit file (the pruned bf16 builds) has no int8 weights to keep: 4-bit, the smaller base, so whatever
+            # was planned for int8 still fits. Start refuses an explicit int8 pick with such a file (#357); this
+            # catches the paths that plan without the file (Studio, RefMod)
+            logger.warning(f"[precision] {os.path.basename(path)} has no int8 weights (a 16-bit file): loading it "
+                           "as 4-bit instead of int8")
+            mode = "nf4"
         if mode == "hqq":
             from .hqq4 import HQQ4bitLinear, _quantizer
             _quantizer()                      # fail HERE with the install hint, not mid-stream

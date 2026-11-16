@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 # the same reader every other large-model loader in the repo uses. See embedder.py.
 from fizgig.krea2.safetensors_utils import MemoryEfficientSafeOpen, ShardedSafeOpen
 
-from .convrot import ConvRotInt8Linear, dequantize_int8_convrot, parse_comfy_quant
+from .convrot import ConvRotInt8Linear, dequantize_comfy, parse_comfy_quant, quantize_int8_convrot
 from .model import MiniMaxH3DiT, MiniMaxH3Config
 
 # Which Linear weights get NF4'd: the per-block matmul bulk AND the per-block AdaLN modulation
@@ -45,6 +45,19 @@ _NF4_SUBSTRINGS = (".attn.qkv_proj.weight", ".attn.out_proj.weight",
 
 def _is_nf4_target(name: str) -> bool:
     return name.startswith(("blocks.", "token_refiner.blocks.")) and name.endswith(_NF4_SUBSTRINGS)
+
+
+# The Linears ComfyUI's pruned int8 files store as int8 ConvRot: every block's attention and MLP, 200 in all, each
+# with this marker. A pruned file without int8 codes (the pruned bf16 / fp8 builds, a fine-tune or merge saved that
+# way) is converted to exactly that storage at load, so int8 trains on it as on the int8 file.
+_INT8_LINEARS = (".attn.qkv_proj", ".attn.out_proj", ".mlp.fc1", ".mlp.fc2")
+_INT8_CONF = {"format": "int8_tensorwise", "convrot": True, "convrot_groupsize": 256}
+
+
+def int8_targets(keys) -> list:
+    """The module paths int8 stores as int8 ConvRot, from a checkpoint's keys (blocks.N.attn.qkv_proj ...)."""
+    return sorted(k[: -len(".weight")] for k in keys
+                  if k.startswith("blocks.") and k.endswith(".weight") and k[: -len(".weight")].endswith(_INT8_LINEARS))
 
 
 def _owner_and_leaf(model, name: str):
@@ -95,7 +108,9 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
 
     base_quant:
       "int8" — KEEP the checkpoint's int8 ConvRot weights (what the reference trainer does).
-               ~0.17% error in the frozen base, ~21 GB resident. Needs a pre-quantized file (a 16-bit one loads as nf4).
+               ~0.17% error in the frozen base, ~21 GB resident. A pruned file without them (bf16, fp8)
+               is converted to the same storage at load (int8_targets); the full unpruned file loads
+               as nf4 (int8 would leave its ~26 GB of AdaLN projections dense).
       "nf4"  — decode to bf16 then NF4 (bitsandbytes). ~9.5% error, ~11 GB resident. The only
                option for the bf16 checkpoint, and the fallback for small cards.
       "hqq"  — decode to bf16 then HQQ 4-bit, group 8 (rintic-13, #102; needs `pip install
@@ -121,16 +136,20 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
         # `<module>.comfy_quant` marks a pre-quantized Linear; the config rides in the blob.
         quant_conf = {k[: -len(".comfy_quant")]: parse_comfy_quant(f.get_tensor(k))
                       for k in keys if k.endswith(".comfy_quant")}
+        # int8 keeps the file's int8 ConvRot codes; any other marked format (fp8_scaled) is decoded like bf16
+        int8_codes = {m: c for m, c in quant_conf.items() if c.get("format") == "int8_tensorwise"}
 
         mode = base_quant
         if mode == "auto":
-            mode = "int8" if quant_conf else "nf4"
-        if mode == "int8" and not quant_conf:
-            # a 16-bit file (the pruned bf16 builds) has no int8 weights to keep: 4-bit, the smaller base, so whatever
-            # was planned for int8 still fits. Start refuses an explicit int8 pick with such a file (#357); this
-            # catches the paths that plan without the file (Studio, RefMod)
-            logger.warning(f"[precision] {os.path.basename(path)} has no int8 weights (a 16-bit file): loading it "
-                           "as 4-bit instead of int8")
+            mode = "int8" if int8_codes else "nf4"
+        encode = {}                           # module -> marker: converted to int8 ConvRot at load (int8_targets)
+        if mode == "int8" and cfg.adaln_t_table_size is not None:
+            encode = {m: dict(_INT8_CONF) for m in int8_targets(keys) if m not in int8_codes}
+        elif mode == "int8" and not int8_codes:
+            # the full unpruned file: int8 would leave its AdaLN projections dense, ~26 GB. 4-bit, the smaller base, so
+            # whatever was planned for int8 still fits; Start refuses an explicit int8 pick with it (#357)
+            logger.warning(f"[precision] {os.path.basename(path)} is the full unpruned checkpoint: loading it as "
+                           "4-bit instead of int8")
             mode = "nf4"
         if mode == "hqq":
             from .hqq4 import HQQ4bitLinear, _quantizer
@@ -162,7 +181,7 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
                         if not isinstance(child, nn.Linear):
                             continue
                         if mode == "int8":
-                            conf = quant_conf.get(full)
+                            conf = int8_codes.get(full) or encode.get(full)
                             if conf is not None:
                                 rot = (int(conf.get("convrot_groupsize", 256))
                                        if conf.get("convrot") else 1)
@@ -192,8 +211,12 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
                             setattr(module, child_name, q)
 
         dev = torch.device(device)
-        if mode == "int8":
-            print(f"[load] streaming the MiniMax H3 base, KEEPING its {len(quant_conf)} int8 "
+        if mode == "int8" and encode:
+            print(f"[load] streaming the MiniMax H3 base and converting its {len(encode)} block linears to int8 "
+                  "ConvRot, the pruned int8 file's own storage (~0.17% base error, ~21 GB resident) - a minute or "
+                  "two longer than loading the int8 file.", flush=True)
+        elif mode == "int8":
+            print(f"[load] streaming the MiniMax H3 base, KEEPING its {len(int8_codes)} int8 "
                   "ConvRot linears (~0.17% base error, ~21 GB resident — the reference's own "
                   "storage; NF4 would be ~9.5% error at ~11 GB).", flush=True)
         elif mode == "hqq":
@@ -202,8 +225,8 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
                   "more resident than NF4). The proximal solver runs per weight on the GPU; "
                   "a few quiet minutes here is normal.", flush=True)
         elif quant_conf:
-            print(f"[load] streaming the pre-quantized MiniMax H3 base ({len(quant_conf)} int8 "
-                  "ConvRot linears decoded to bf16, then NF4) — a quiet minute here is normal "
+            print(f"[load] streaming the pre-quantized MiniMax H3 base ({len(quant_conf)} "
+                  f"{'int8 ConvRot' if int8_codes else 'fp8'} linears decoded to bf16, then NF4) — a quiet minute here is normal "
                   "(as is a bitsandbytes 'expandable_segments not supported' warning on Windows).",
                   flush=True)
         else:
@@ -224,24 +247,33 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
                 return False
             return int(name.split(".")[1]) >= swap_from
 
-        def _read_weight(name: str):
-            """The dense tensor for `name`, decoding a pre-quantized Linear if that's what it is."""
+        def _read_weight(name: str, dtype=compute_dtype):
+            """The dense tensor for `name`, decoding a pre-quantized Linear (int8 ConvRot, fp8) if that's what it is."""
             module_path = name[: -len(".weight")]
             conf = quant_conf.get(module_path) if name.endswith(".weight") else None
             if conf is None:
                 return f.get_tensor(name)
-            return dequantize_int8_convrot(f.get_tensor(name),
-                                           f.get_tensor(f"{module_path}.weight_scale"),
-                                           conf, out_dtype=compute_dtype)
+            return dequantize_comfy(f.get_tensor(name), f.get_tensor(f"{module_path}.weight_scale"), conf,
+                                    out_dtype=dtype)
 
         # int8 mode: the quantized linears hold BUFFERS, not parameters — fill them first.
         if mode == "int8":
-            for mod_path in quant_conf:
+            for mod_path in int8_codes:
                 mod = model.get_submodule(mod_path)
                 tgt = torch.device("cpu") if _parked(mod_path) else dev
                 mod.qdata = f.get_tensor(f"{mod_path}.weight").to(torch.int8).to(tgt)
                 mod.wscale = (f.get_tensor(f"{mod_path}.weight_scale")
                               .to(torch.float32).reshape(-1, 1).to(tgt))
+            # a pruned file without int8 codes: each target encoded as the int8 file stores it (rotate, per-row absmax,
+            # nearest), on the GPU when there is one, from the file's weights at full precision
+            work = dev if dev.type == "cuda" else torch.device("cpu")
+            for mod_path, conf in encode.items():
+                mod = model.get_submodule(mod_path)
+                tgt = torch.device("cpu") if _parked(mod_path) else dev
+                w = _read_weight(f"{mod_path}.weight", dtype=torch.float32).to(work)
+                q, s = quantize_int8_convrot(w, rot=int(conf["convrot_groupsize"]))
+                mod.qdata, mod.wscale = q.to(tgt), s.reshape(-1, 1).to(tgt)
+                del w, q, s
         # hqq mode: same buffer story — the shells have no `weight` Parameter, so the
         # named_parameters loop below never sees them. Quantize on the GPU (the solver is
         # CPU-slow on fc1-sized weights), then park the packed buffers if the block is swapped.
@@ -256,7 +288,7 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
         for name, param in model.named_parameters():
             if name not in keys:
                 continue
-            if mode == "int8" and name.endswith(".weight") and name[:-7] in quant_conf:
+            if mode == "int8" and name.endswith(".weight") and (name[:-7] in int8_codes or name[:-7] in encode):
                 continue                      # already placed as int8 buffers above; its BIAS loads
                                               # below (a fine-tune may quantize a biased Linear such
                                               # as AdaLN - skipped, the bias stayed on meta)

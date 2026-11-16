@@ -81,7 +81,7 @@ class MiniMaxDriver(FamilyDriver):
         return super().nogc_load(group)
 
     def precision_problem(self, precision, dit_path):
-        """int8 keeps the pruned int8 file's own weights: a 16-bit DiT (the bf16 files) has none (#357)."""
+        """int8 needs a pruned file (its own int8 codes, or bf16 / fp8 converted at load), not the unpruned one (#357)."""
         from fizgig.minimax import common as T
         return T.int8_problem(dit_path, self.description) if precision == "int8" else ""
 
@@ -123,7 +123,7 @@ class MiniMaxDriver(FamilyDriver):
         path = run["dit_path"]
         free = plannable_free_vram()
         pruned = T.is_pruned_checkpoint(path)
-        int8 = T.has_int8_codes(path)      # a pruned bf16 file is pruned but has no int8 weights (#357)
+        int8 = T.int8_loadable(path)       # its own int8 codes, or a pruned bf16 / fp8 file converted at load (#357)
         pats = [x for x in T.DEFAULT_INCLUDE_PATTERNS
                 if "token_refiner" not in x or self.options.get("train_token_refiner") == "1"]
         params = T.adapter_param_count(path, pats,

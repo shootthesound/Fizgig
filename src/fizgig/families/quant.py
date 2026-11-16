@@ -299,7 +299,7 @@ def plan(desc, driver, precision="auto", blocks_to_swap=-1, free_gb=None, margin
     gets the fewest blocks that fit. pictures: a batched step's (Batch size), each past the first adding
     desc.batch_gb's figure at megapixels. adapter_gb: what the run's trainable adapter holds beyond the figures'
     (adapter_extra_gb). dit_path: Auto leaves out a precision that file can't load at (driver.precision_problem:
-    MiniMax H3's int8 of a 16-bit file, #357). Returns (precision, blocks_to_swap, reason)."""
+    MiniMax H3's int8 of its full unpruned file, #357). Returns (precision, blocks_to_swap, reason)."""
     if free_gb is None:
         free_gb = free_vram_gb()
     extra = batch_extra(desc, megapixels, pictures) + max(0.0, float(adapter_gb or 0))

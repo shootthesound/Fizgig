@@ -94,7 +94,7 @@ class FamilyDriver:
 
     def precision_problem(self, precision: str, dit_path: str) -> str:
         """Why this DiT file can't load at `precision` ("" = it can), for a precision only some files support
-        (MiniMax H3's int8 keeps a pruned int8 file's own weights; its bf16 files have none, #357). Start refuses an
+        (MiniMax H3's int8 needs a pruned file, not the full unpruned one, #357). Start refuses an
         explicit pick (launch.precision_problems); Auto leaves it out (quant.plan with dit_path)."""
         return ""
 

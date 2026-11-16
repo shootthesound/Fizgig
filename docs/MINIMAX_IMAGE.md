@@ -22,7 +22,7 @@ python -m fizgig.scripts.fetch_models --family minimax_image
 | Fizgig training adapter | `fizgig_minimax_h3_image_training_adapter.safetensors` from [ShootTheSound/Fizgig-MiniMax-H3-Image-Training-Adapter](https://huggingface.co/ShootTheSound/Fizgig-MiniMax-H3-Image-Training-Adapter) | 0.15 GB |
 
 - **Already have MiniMax H3?** The text encoder is the same file, so it isn't downloaded again.
-- **The pruned bf16 file** (`minimax_h3_image_pruned_bf16.safetensors`, ~40 GB, the other download on the Preferences tab) trains at 4-bit or 4-bit HQQ. int8 keeps the int8 file's own weights and the bf16 file has none, so Auto picks 4-bit for it.
+- **The pruned bf16 file** (`minimax_h3_image_pruned_bf16.safetensors`, ~40 GB, the other download on the Preferences tab) trains at int8 too: Fizgig converts it to the int8 file's own storage as it loads, which takes a minute or two longer. So does a fine-tune or merge saved as a pruned bf16 or fp8 file.
 - **The VAE is its own:** MiniMax H3's video VAE encoder with a decoder made for pictures. The H3 video VAE won't decode H3 Image's pictures properly.
 - **Not the same weights as MiniMax H3:** the layers are H3's, but the weights moved a long way in H3 Image's training (a quarter to a half of each weight's size on the attention and MLP layers). LoRAs trained on MiniMax H3 don't carry over, and neither do H3's training adapters.
 

@@ -103,7 +103,8 @@ MINIMAX_IMAGE = FamilyDescription(
                   "The training base: the pruned int8 file ComfyUI runs, kept int8 on the card (~21 GB), or 4-bit "
                   "on smaller cards.", role="dit",
                   alt_repo=_COMFY, alt_path="diffusion_models/minimax_h3_image_pruned_bf16.safetensors",
-                  alt_label="bf16", alt_note="~40 GB pruned bf16 - loads as 4-bit (NF4 / HQQ), no int8"),
+                  alt_label="bf16", alt_note="~40 GB pruned bf16 - converted to int8 as it loads (a minute or two "
+                                             "longer), or 4-bit"),
         ModelFile("minimax_image_vae", "MiniMax H3 Image VAE", True, _COMFY,
                   "vae/minimax_h3_image_vae_fp16.safetensors", 1.17,
                   "Its own VAE: H3's encoder with a decoder made for pictures. Not the H3 video VAE.", role="vae"),

@@ -722,11 +722,11 @@ def plan_and_load_dit(dit_path: str, *, device, dtype, base_quant: str = "auto",
     the sequence plus the training still) — recompute is skipped only when that fits without
     it, as the trainer does; an explicit swap count keeps it on."""
     from fizgig.minimax.loader import load_minimax_h3_dit
-    from fizgig.minimax.common import (has_int8_codes, is_pruned_checkpoint, plan_base_quant, plan_vram,
+    from fizgig.minimax.common import (int8_loadable, is_pruned_checkpoint, plan_base_quant, plan_vram,
                                         _INT8_TRANSIENT_GB)
     from fizgig.minimax import common as _tr
     pruned = is_pruned_checkpoint(dit_path)
-    int8 = has_int8_codes(dit_path)            # a pruned bf16 file is pruned with no int8 weights (#357)
+    int8 = int8_loadable(dit_path)             # the full unpruned file can't take int8 (#357)
     if base_quant == "int8" and not int8:
         base_quant = "nf4"
     mode, n_swap = base_quant, 0

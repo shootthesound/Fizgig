@@ -1880,8 +1880,8 @@ def start_problems(desc, inputs):
 
 
 def precision_problems(desc, inputs):
-    """A Base precision picked by hand that the DiT file can't load at (MiniMax H3's int8 of a 16-bit file: int8
-    keeps the pruned int8 file's own weights, #357), refused at Start with what to pick instead. Auto leaves such a
+    """A Base precision picked by hand that the DiT file can't load at (MiniMax H3's int8 of its full unpruned file,
+    #357), refused at Start with what to pick instead. Auto leaves such a
     precision out by itself (quant.plan with dit_path)."""
     if len(desc.precisions) < 2 or not desc.driver or ft_on(desc, inputs):
         return []

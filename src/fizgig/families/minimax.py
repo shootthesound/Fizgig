@@ -193,7 +193,8 @@ MINIMAX = FamilyDescription(
                        "LoRA trains against the weights it will be deployed on, and its curve-table AdaLN is a target a "
                        "LoRA can actually use. The ~66 GB bf16 file also works. The pruned file KEEPS its int8 weights "
                        "(~21 GB on the GPU, what the reference trainer does); the bf16 file is quantized to NF4 at load "
-                       "(~11 GB, a little lossier).",
+                       "(~11 GB, a little lossier). A pruned bf16 or fp8 file (a fine-tune saved that way too) is "
+                       "converted to the same int8 as it loads.",
                   download_note="~21GB — Comfy-Org/MiniMax-H3 → diffusion_models/"
                                 "minimax_h3_fl2va_pruned_int8_convrot.safetensors (fl2va is the trainable variant; the "
                                 "66GB bf16 file works too)"),

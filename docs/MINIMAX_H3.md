@@ -79,7 +79,7 @@ Each has a **Download link on its row in Preferences**:
 
 | Model | Size | Notes |
 |---|---|---|
-| DiT — pruned int8 | ~21 GB | The training base, `minimax_h3_fl2va_pruned_int8_convrot.safetensors`, the same file ComfyUI runs. The ~66 GB bf16 file also works for LoRA training (NF4 at load), but [full fine-tuning](FINETUNE.md) needs the int8 file |
+| DiT — pruned int8 | ~21 GB | The training base, `minimax_h3_fl2va_pruned_int8_convrot.safetensors`, the same file ComfyUI runs. The ~66 GB bf16 file also works for LoRA training (NF4 at load), and a pruned bf16 or fp8 file (`minimax_h3_fl2va_pruned_bf16`, a fine-tune saved that way) trains at int8 too, converted as it loads. [Full fine-tuning](FINETUNE.md) needs the int8 file |
 | Qwen3-VL-32B text encoder | ~15.7 GB | The **nvfp4** file, the same one ComfyUI uses. Loaded once for caching, then freed |
 | Video VAE | ~4.9 GB | Caching and preview decode |
 | Audio VAE *(optional)* | ~605 MB | Sound training and previews with sound |

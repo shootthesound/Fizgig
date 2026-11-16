@@ -81,12 +81,25 @@ def test_row_shows_only_for_multi_line_captions(folder, tmp_path):
     assert form.DEFAULTS["MULTI_CAPTION"] is False
     st = form.state(desc, {}, str(folder))
     assert "MULTI_CAPTION" not in st["hidden"]
-    assert st["notes"]["MULTI_CAPTION"].startswith("1 of your 2 caption files has more than one line (a.txt). With this off")
+    assert st["notes"]["MULTI_CAPTION"].startswith("1 of your 2 caption files has more than one line (a.txt). Tick this")
     st = form.state(desc, {"MULTI_CAPTION": True}, str(folder))
     assert st["notes"]["MULTI_CAPTION"].startswith("2 pictures, 4 captions: 1 picture has 3 lines.")
     plain = tmp_path / "plain"
     _pic(str(plain / "c.png"), "one line")
     assert "MULTI_CAPTION" in form.state(desc, {}, str(plain))["hidden"]
+    with open(plain / "notes.txt", "w", encoding="utf-8") as f:     # a .txt with no picture beside it isn't a caption
+        f.write("my notes\nmore notes")
+    assert "MULTI_CAPTION" in form.state(desc, {}, str(plain))["hidden"]
+    assert form.state(desc, {"MULTI_CAPTION": True}, str(plain))["notes"]["MULTI_CAPTION"].startswith("No caption file")
+
+
+def test_counts_read_utf16_and_cp1252_as_training_does(tmp_path):
+    d = tmp_path / "enc"
+    _pic(str(d / "a.png"), "")
+    (d / "a.txt").write_bytes("zwx, it’s one\nzwx, two".encode("utf-16"))
+    _pic(str(d / "b.png"), "")
+    (d / "b.txt").write_bytes("zwx, café".encode("cp1252"))
+    assert launch.caption_line_counts(str(d)) == {"a.txt": 2, "b.txt": 1}
 
 
 def test_trigger_checked_per_line(folder):
@@ -96,7 +109,7 @@ def test_trigger_checked_per_line(folder):
     st = {"CAPTION_TRIGGER_WORD": "zwx", "DATASET_CAPTION_EXT": ".txt"}
     off = launch.start_checks(desc, st, str(folder))
     assert not any("trigger" in w for w in off)                  # off: the file as a whole has it
-    assert any(w.startswith("2 caption files have several lines (a.png, b.png)") for w in off)   # and the lines join
+    assert not any("line" in w for w in off)                     # off: nothing new at Start (the tick's note says it)
     on = launch.start_checks(desc, {**st, "MULTI_CAPTION": True}, str(folder))
     assert any(w.startswith("1 caption line in 1 picture doesn't contain the trigger word 'zwx'") for w in on)
 
@@ -129,3 +142,44 @@ def test_recaption_first_line_keeps_the_rest(tmp_path):
         f.write("old tags\nmy sentence")
     _write_caption(p, "new tags", ".txt", first_line=True)
     assert open(str(tmp_path / "a.txt"), encoding="utf-8").read() == "new tags\nmy sentence"
+
+
+@pytest.mark.parametrize("enc", ["utf-16", "cp1252"])
+def test_kept_lines_survive_a_file_that_isnt_utf8(tmp_path, enc):
+    from fizgig.scripts.batch_caption import _write_caption
+    p, txt = str(tmp_path / "a.png"), tmp_path / "a.txt"
+    txt.write_bytes("old tags\nit’s my café".encode(enc))
+    _write_caption(p, "new tags", ".txt", first_line=True)
+    assert txt.read_text(encoding="utf-8") == "new tags\nit’s my café"
+    txt.write_bytes("old tags\nit’s my café".encode(enc))
+    _write_caption(p, "a sentence", ".txt", add_line=True)
+    assert txt.read_text(encoding="utf-8") == "old tags\nit’s my café\na sentence"
+
+
+def test_stale_line_cleanup_and_resume_count_leave_latents_alone(tmp_path):
+    from types import SimpleNamespace
+    from fizgig.families.cache import drop_stale_caption_lines
+    arch = get_family("klein").arch_id
+    cache, img = tmp_path / "cache", tmp_path / "img"
+    cache.mkdir()
+    img.mkdir()
+    odd = cache / f"z_{arch}_tealt_0064x0064_{arch}.safetensors"   # the latent of a picture named z_<arch>_tealt.png
+    stale = cache / f"y_{arch}_tealt1.safetensors"
+    for f in (odd, stale):
+        f.write_bytes(b"")
+    drop_stale_caption_lines([SimpleNamespace(cache_directory=str(cache), architecture=arch)], [set()])
+    assert odd.exists() and not stale.exists()
+    # a picture whose latent was deleted, with its line caches still there: a resume caches it again
+    Image.new("RGB", (8, 8)).save(img / "p.png")
+    for n in (f"p_{arch}_te.safetensors", f"p_{arch}_tealt1.safetensors"):
+        (cache / n).write_bytes(b"")
+    toml = f'[[datasets]]\nimage_directory = "{img.as_posix()}"\ncache_directory = "{cache.as_posix()}"\n'
+    assert launch.uncached_pictures(toml) == 1
+
+
+def test_subjects_sample_caption_one_line_when_ticked(tmp_path):
+    from fizgig.families import multi_person as mp
+    d = tmp_path / "s"
+    _pic(str(d / "a.png"), "1girl, tags\nzwx, a woman")
+    assert mp.sample_caption(str(d), "zwx") == "1girl, tags\nzwx, a woman"      # off: the file is the caption
+    assert mp.sample_caption(str(d), "zwx", multi=True) == "zwx, a woman"

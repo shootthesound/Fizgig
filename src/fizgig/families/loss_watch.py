@@ -375,8 +375,9 @@ class Watch:
                         if getattr(self, "multi_caption", False) and os.path.exists(txt):
                             # several captions per picture: the new caption replaces the first line only, and the
                             # picture's other lines (yours) stay
-                            with open(txt, encoding="utf-8", errors="replace") as f:
-                                rest = [ln for ln in f.read().splitlines() if ln.strip()][1:]
+                            from fizgig.dataset.image_dataset import decode_caption
+                            with open(txt, "rb") as f:     # as training reads it: UTF-16 and Windows-1252 too
+                                rest = [ln for ln in decode_caption(f.read(), txt).splitlines() if ln.strip()][1:]
                             text = "\n".join([cap] + rest)
                         with open(txt, "w", encoding="utf-8") as f:
                             f.write(text)

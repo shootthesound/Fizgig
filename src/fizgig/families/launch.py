@@ -416,8 +416,9 @@ def uncached_pictures(toml_text):
         names = os.listdir(cdir) if os.path.isdir(cdir) else []
         # <stem>_<WxH>_<arch>.safetensors and <stem>_<arch>_te.safetensors: the stem is all but the last two parts
         te = {"_".join(f[:-len(".safetensors")].split("_")[:-2]) for f in names if f.endswith("_te.safetensors")}
-        lat = {"_".join(f.split("_")[:-2]) for f in names
-               if f.endswith(".safetensors") and not f.endswith("_te.safetensors")}
+        lat = {"_".join(f.split("_")[:-2]) for f in names      # a caption line's text cache (_tealt<k>) isn't one
+               if f.endswith(".safetensors") and not f.endswith("_te.safetensors")
+               and not re.search(r"_tealt\d+\.safetensors$", f)}
         n += sum(1 for f in os.listdir(img) if os.path.splitext(f)[1].lower() in exts and not is_mask_file(f)
                  and (os.path.splitext(f)[0] not in lat or os.path.splitext(f)[0] not in te))
     return n
@@ -431,19 +432,39 @@ def multi_caption_on(desc, st):
             and not edit_on(desc, st) and not slider_on(desc, st))
 
 
+def _caption_text(path):
+    """A caption file's text as training reads it (UTF-16 with its BOM, UTF-8, else Windows-1252), without the
+    dataset's warnings: for counts the page redraws often. OSError if it isn't there."""
+    with open(path, "rb") as f:
+        raw = f.read()
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        try:
+            return raw.decode("utf-16")
+        except UnicodeDecodeError:
+            pass
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return raw.decode("cp1252", errors="replace")
+
+
 def caption_line_counts(folder, ext=".txt"):
-    """{caption file name: its non-blank lines} for a folder's caption files (top level)."""
+    """{caption file name: its non-blank lines} for each picture in a folder (top level), 0 when it has no caption.
+    A caption file with no picture beside it (notes, a deleted picture's) isn't counted."""
+    from fizgig.dataset.image_dataset import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
     out = {}
     if not folder or not os.path.isdir(folder):
         return out
     ext = ext if ext.startswith(".") else "." + ext
-    for f in os.listdir(folder):
-        if f.lower().endswith(ext.lower()):
-            try:
-                with open(os.path.join(folder, f), encoding="utf-8", errors="replace") as fh:
-                    out[f] = sum(1 for line in fh.read().splitlines() if line.strip())
-            except OSError:
-                continue
+    exts = {e.lower() for e in (*IMAGE_EXTENSIONS, *VIDEO_EXTENSIONS, *AUDIO_EXTENSIONS)}
+    for f in sorted(os.listdir(folder)):
+        if os.path.splitext(f)[1].lower() not in exts or is_mask_file(f):
+            continue
+        name = os.path.splitext(f)[0] + ext
+        try:
+            out[name] = sum(1 for line in _caption_text(os.path.join(folder, name)).splitlines() if line.strip())
+        except OSError:
+            out[name] = 0
     return out
 
 
@@ -470,27 +491,28 @@ def start_checks(desc, st, image_folder):
         if none:
             out.append(f"{len(none)} of {len(items)} pictures {'has' if len(none) == 1 else 'have'} no caption ({', '.join(none[:3])}"
                        f"{', ...' if len(none) > 3 else ''}): {'it trains' if len(none) == 1 else 'they train'} on an empty caption.")
-        multi = [f for f, t in texts.items() if t and sum(1 for line in t.splitlines() if line.strip()) > 1]
-        if multi and getattr(desc, "multi_caption", False) and not multi_caption_on(desc, st) \
-                and not edit_on(desc, st) and not slider_on(desc, st):
-            out.append(f"{len(multi)} caption file{'s have' if len(multi) != 1 else ' has'} several lines "
-                       f"({', '.join(multi[:3])}{', ...' if len(multi) > 3 else ''}): with Several captions per picture "
-                       f"off, each file's lines train joined as one caption.")
         trig = _s(st.get("CAPTION_TRIGGER_WORD"))
         if trig and trig.lower() != "trigger_word" and not multi_person_on(desc, st):
             pat = re.compile(r"(?<!\w)" + re.escape(trig) + r"(?!\w)", re.I)
             lack = [f for f, t in texts.items() if t and t.strip() and not pat.search(t)]
-            if multi_caption_on(desc, st):  # several captions per picture: each line on its own
-                miss = {f: sum(1 for line in t.splitlines() if line.strip() and not pat.search(line))
-                        for f, t in texts.items() if t and t.strip()}
-                miss = {f: n for f, n in miss.items() if n}
+            if multi_caption_on(desc, st):  # several captions per picture: each line on its own, read as training does
+                miss = {}
+                for f, t in texts.items():
+                    try:
+                        k = sum(1 for line in _caption_text(os.path.join(folder, os.path.splitext(f)[0] + cap))
+                                .splitlines() if line.strip() and not pat.search(line)) if t and t.strip() else 0
+                    except OSError:
+                        k = 0
+                    if k:
+                        miss[f] = k
                 if miss:
                     n = sum(miss.values())
                     out.append(f"{n} caption line{'s' if n != 1 else ''} in {len(miss)} picture"
                                f"{'s' if len(miss) != 1 else ''} {'don' if n != 1 else 'doesn'}'t contain the trigger "
                                f"word '{trig}' ({', '.join(list(miss)[:3])}{', ...' if len(miss) > 3 else ''}): "
-                               f"{'those lines train' if n != 1 else 'that line trains'} without it. Add it with the "
-                               f"Captions tab's Add text, To every line.")
+                               f"{'those lines train' if n != 1 else 'that line trains'} without it. To add it: on the "
+                               f"Captions tab, type {trig} in Add to the start, tick To every line, then Add to all "
+                               f"captions.")
                 lack = []
             if lack:
                 out.append(f"{len(lack)} caption{'s don' if len(lack) != 1 else ' doesn'}'t contain the trigger word "

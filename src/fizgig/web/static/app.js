@@ -476,7 +476,8 @@ function renderRow(r) {
     if (actMsg) wrap.append(actMsg);
     if (upStatus) wrap.append(upStatus);
   }
-  wrap.append(el("div", {class: "field-hint row-note" + (r.note_table ? " note-table" : ""), id: "note_" + r.key}));
+  wrap.append(el("div", {class: "field-hint row-note" + (r.note_table ? " note-table" : "") +
+    (r.note_info ? " note-info" : ""), id: "note_" + r.key}));
   const link = r.link ? el("a", {class: "inline-link", target: "_blank", rel: "noopener", href: r.link.href,
     text: r.link.text + " →"}) : null;      // a row's guide on GitHub, under its hint
   if (r.hint && r.hint_labels) {                  // one spaced line per choice, "Name: what it does" with the name bold
@@ -8583,6 +8584,13 @@ async function loadCaptionOptions() {
   $("capTaskHint").style.display = pictures && qwenOn() ? "" : "none";       // fillTasks ran while the row was hidden
   capKindRows();
   if (o.song_words) { $("capSongWords").placeholder = "e.g. " + o.song_words; $("capSongWords").value = saved.songWords || ""; }
+  // Add as another line: only for a model that can train several captions a picture (its Training tab's tick)
+  const lines = !!(S.fam && S.fam.multi_caption);
+  $("capAddLine").closest("label").style.display = lines ? "" : "none";
+  if (!lines && $("capAddLine").checked) {
+    $("capAddLine").checked = false;
+    $("capAddLine").dispatchEvent(new Event("change"));
+  }
 }
 
 // the rows the chosen captioner uses: a task menu when it has one (or follows an instruction), Max tokens for
@@ -8711,7 +8719,9 @@ function capJobBody(extra = {}) {
     max_tokens: Number($("capTokens").value) || 120,
     threshold: Number($("capThreshold").value) || 0.35, leave_out: $("capLeaveOut").value,
     underscores: $("capUnderscores").checked,
-    trigger: $("capTrigger").value, overwrite: $("capOverwrite").checked, add_line: $("capAddLine").checked,
+    // Add as another line greys Overwrite out: a static or song caption then writes only the files without one
+    trigger: $("capTrigger").value, overwrite: $("capOverwrite").checked && !$("capAddLine").checked,
+    add_line: $("capAddLine").checked,
     ...extra};
 }
 
@@ -8853,14 +8863,15 @@ function renderCaptions() {
     const trainsPictures = !S.fam || !S.fam.media || S.fam.media.includes("photo") || kind === "mp4";
     const recapRun = async (say = (t) => { status.textContent = t; }) => {
       say("Re-captioning…");
-      // a file of several captions: Re-caption writes line 1 and keeps the others (or adds a line, when ticked)
+      // a file of several captions, with the Training tab's Several captions per picture ticked: Re-caption writes
+      // line 1 and keeps the others (or adds a line, when ticked). Not ticked, the file is one caption: replaced whole
       const r = await capRun("/api/captions/ai", capJobBody({only: [it.path], overwrite: true,
-        add_line: $("capAddLine").checked, first_line: capLines(ta.value) > 1}));
+        add_line: $("capAddLine").checked, first_line: capMulti() && capLines(ta.value) > 1}));
       if (r && r.error) say(r.error);
     };
     const recap = isAudio || !trainsPictures ? null : el("button", {class: "btn btn-sm", text: "Re-caption",
-      title: capLines(it.caption) > 1 ? "Write this file's first caption again with the model and task above " +
-        "(its other lines stay; with Add as another line ticked, it adds one more line instead)" :
+      title: capMulti() && capLines(it.caption) > 1 ? "Write this file's first caption again with the model and " +
+        "task above (its other lines stay; with Add as another line ticked, it adds one more line instead)" :
         "Write this file's caption again with the model and task above", onclick: () => recapRun()});
     // a clip with its sound (not Gizmo's _mute): Whisper its speech onto the caption, "... saying "words""
     const speechRun = kind === "mp4" && !/_mute$/i.test(it.name.replace(/\.[^.]+$/, "")) ? async (say = (t) => { status.textContent = t; }) => {
@@ -8887,7 +8898,7 @@ function renderCaptions() {
       onclick: () => capRemove(it, card, status)});
     const lines = capLines(it.caption);         // several captions per picture: one a line
     const size = [it.size ? `${it.size[0]}×${it.size[1]} · ${(it.size[0] * it.size[1] / 1e6).toFixed(1)} MP` : "",
-      lines > 1 ? `${lines} captions, one per line` : ""].filter(Boolean).join(" · ");
+      lines > 1 ? (capMulti() ? `${lines} captions, one per line` : `${lines} lines`) : ""].filter(Boolean).join(" · ");
     // masked training: the picture's mask (photo-masklabel.png), shown in its place on a click
     const pic = it.mask ? media.querySelector("img") || (media.tagName === "IMG" ? media : null) : null;
     const maskBtn = pic ? el("button", {class: "btn btn-sm", text: "Show mask",
@@ -8911,9 +8922,11 @@ function renderCaptions() {
 
 // a caption file's non-blank lines: more than one = several captions (the Training tab's Several captions per picture)
 const capLines = (text) => String(text || "").split(/\r?\n/).filter((l) => l.trim()).length;
+// the Training tab's Several captions per picture, ticked for this model: a file's lines are captions of their own
+const capMulti = () => !!(S.fam && S.fam.multi_caption && S.values && S.values.MULTI_CAPTION);
 
-// what Caption All is about to do to files that already hold several captions: Overwrite replaces every line; Keep and
-// add a line adds another to files that already have them (a second run of the same model adds a near-duplicate)
+// what Caption All is about to do to files that already hold several lines: Overwrite replaces each whole file; Add as
+// another line adds one to files that already have a caption (a second run of the same model adds a near-duplicate)
 function capLinesWarn() {
   const items = (S.cap && S.cap.items) || [];
   const multi = items.filter((i) => capLines(i.caption) > 1).length;
@@ -8922,8 +8935,10 @@ function capLinesWarn() {
   const w = $("capLinesWarn");
   w.textContent = add && had ? `${had} file${had === 1 ? " has" : "s have"} a caption already: each gets one more line. ` +
       "Running the same model twice adds a second, slightly different line." :
-    !add && over && multi ? `${multi} file${multi === 1 ? " has" : "s have"} several captions (one a line): Overwrite ` +
-      "replaces all of them with one. Tick Add as another line to add one instead." : "";
+    !add && over && multi && capMulti() ? `${multi} file${multi === 1 ? " has" : "s have"} several captions (one a ` +
+      "line): Overwrite replaces all of them with one. Tick Add as another line to add one instead." :
+    !add && over && multi && S.fam && S.fam.multi_caption ? `${multi} file${multi === 1 ? " has" : "s have"} more ` +
+      "than one line: Overwrite replaces each whole file with the new caption." : "";
   w.hidden = !w.textContent;
 }
 

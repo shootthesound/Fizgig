@@ -20,6 +20,7 @@ Output, in <output>/training_maps/<LoRA name>/ (runs often share an output folde
 pooled to at most MAX_SIDE on its long side (a latent grid is small already; the page scales it over the picture).
 """
 import contextlib
+import copy
 import json
 import logging
 import os
@@ -182,7 +183,11 @@ class TrainingMaps:
         from fizgig.dataset.image_dataset import BucketBatchManager
         for k in self.keys:
             reso, it = items[k]
-            try:      # its own one-picture batch from the cache, with its own caption
+            try:      # its own one-picture batch from the cache, with its own caption: line 1 when it has several
+                # (Several captions per picture; the trigger positions below come from line 1), never a random line
+                if getattr(it, "multi_caption", False):
+                    it = copy.copy(it)
+                    it.multi_caption = False
                 self.batches[k] = {n: _cpu(v) for n, v in BucketBatchManager({reso: [it]}, 1)[0].items()}
             except Exception:
                 logger.debug(f"[maps] could not read {k} from the cache", exc_info=True)

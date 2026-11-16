@@ -96,13 +96,15 @@ def _write_caption(path: str, caption: str, ext: str = ".txt", add_line: bool = 
     """Write a picture's caption file; add_line (Several captions per picture): keep what it says and add the caption
     on a line of its own (not when that line is already there); first_line: replace its first line, keep the rest."""
     p = os.path.splitext(path)[0] + (ext or ".txt")
+    lines = []
+    if (first_line or add_line) and os.path.exists(p):
+        # read as training reads it (a UTF-16 or Windows-1252 file too), so the lines kept are written back intact
+        from fizgig.dataset.image_dataset import decode_caption
+        with open(p, "rb") as f:
+            lines = [ln.strip() for ln in decode_caption(f.read(), p).splitlines() if ln.strip()]
     if first_line and not add_line and os.path.exists(p):
-        with open(p, encoding="utf-8", errors="replace") as f:
-            rest = [ln.strip() for ln in f.read().splitlines() if ln.strip()][1:]
-        caption = "\n".join([caption] + rest)
+        caption = "\n".join([caption] + lines[1:])
     elif add_line and os.path.exists(p):
-        with open(p, encoding="utf-8", errors="replace") as f:
-            lines = [ln.strip() for ln in f.read().splitlines() if ln.strip()]
         if caption.strip() in lines:
             return
         caption = "\n".join(lines + [caption])

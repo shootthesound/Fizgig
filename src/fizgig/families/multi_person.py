@@ -94,8 +94,9 @@ def caption_trigger(folder, ext=".txt"):
     return word if n * 2 >= len(caps) else ""
 
 
-def sample_caption(folder, trigger, ext=".txt"):
-    """The folder's first caption (by file name) that holds the trigger, for the Subjects card's preview."""
+def sample_caption(folder, trigger, ext=".txt", multi=False):
+    """The folder's first caption (by file name) that holds the trigger, for the Subjects card's preview. multi
+    (Several captions per picture): a file's lines are captions of their own, so one line, not the whole file."""
     try:
         names = sorted(n for n in os.listdir(folder) if n.lower().endswith(ext.lower()) and not n.startswith(PREFIX))
     except OSError:
@@ -108,9 +109,10 @@ def sample_caption(folder, trigger, ext=".txt"):
                 c = f.read().strip()
         except OSError:
             continue
-        first = first or c
-        if pat is None or pat.search(c):
-            return c
+        for c in ([ln.strip() for ln in c.splitlines() if ln.strip()] or [""]) if multi else [c]:
+            first = first or c
+            if pat is None or pat.search(c):
+                return c
     return first
 
 

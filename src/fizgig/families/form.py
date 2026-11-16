@@ -315,7 +315,7 @@ def form(desc):
         _row("TRAIN_SUBFOLDER_REPEATS", "Repeats from folder names", "check", REPEATS_HINT, default=False,
              note_table=True),
         _row("MULTI_CAPTION", "Several captions per picture (one per line)", "check", MULTI_CAPTION_HINT,
-             default=False) if desc.multi_caption else None,
+             default=False, note_info=True) if desc.multi_caption else None,
         _row("LEARNING_RATE", "Learning Rate", default=DEFAULTS["LEARNING_RATE"]),
     ]
     if desc.adaptive_lr:
@@ -1086,9 +1086,9 @@ def multi_caption_note(desc, values, image_folder):
     folders = [image_folder] if image_folder and os.path.isdir(image_folder) else []
     if folders and values.get("TRAIN_SUBFOLDERS"):
         folders += [f for _r, f in launch.subfolders(image_folder, (_str(values.get("LORA_OUTPUT_DIR")),))]
-    counts = {}
+    counts = {}                     # every picture's caption file: its lines (0 = no caption, it trains on an empty one)
     for f in folders:
-        counts.update({os.path.join(f, n): k for n, k in launch.caption_line_counts(f, ext).items() if k})
+        counts.update({os.path.join(f, n): k for n, k in launch.caption_line_counts(f, ext).items()})
     many = {p: k for p, k in counts.items() if k > 1}
     on = bool(values.get("MULTI_CAPTION"))
     if not on:
@@ -1096,23 +1096,23 @@ def multi_caption_note(desc, values, image_folder):
             return False, ""
         names = sorted(os.path.basename(p) for p in many)
         which = f" ({', '.join(names[:3])}{', ...' if len(names) > 3 else ''})" if len(names) <= 5 else ""
-        return True, (f"{len(many):,} of your {len(counts):,} caption files {'has' if len(many) == 1 else 'have'} "
-                      f"more than one line{which}. With this off, a file's lines are joined into one caption. Tick it "
-                      f"only if each line is a whole caption on its own (files from OneTrainer, or a line of tags "
-                      f"plus a sentence); if a caption just runs onto a second line, leave it off.")
+        captioned = sum(1 for k in counts.values() if k)
+        return True, (f"{len(many):,} of your {captioned:,} caption files {'has' if len(many) == 1 else 'have'} more "
+                      f"than one line{which}. Tick this if each line is a separate caption. If a caption just wraps "
+                      f"onto the next line, leave it off: its lines train together as one caption.")
     if not counts:
         return True, ""
     if not many:
         return True, ("No caption file here has more than one line yet, so this changes nothing: each picture has "
                       "its one caption.")
-    total = sum(counts.values())
+    pics, total = len(counts), sum(max(k, 1) for k in counts.values())
     span = f"{min(many.values())}-{max(many.values())}" if min(many.values()) != max(many.values()) else \
         str(max(many.values()))
-    return True, (f"{len(counts):,} pictures, {total:,} captions: {len(many):,} picture{'s' if len(many) != 1 else ''} "
-                  f"{'have' if len(many) != 1 else 'has'} {span} lines. Preparing the captions before training "
-                  f"(the text cache) takes about {total / len(counts):.1f}x as long; the pictures' cache and training "
-                  f"speed don't change. Each picture is still used once an epoch, so each of its captions comes up "
-                  f"less often.")
+    return True, (f"{pics:,} picture{'s' if pics != 1 else ''}, {total:,} captions: {len(many):,} "
+                  f"picture{'s' if len(many) != 1 else ''} {'have' if len(many) != 1 else 'has'} {span} lines. "
+                  f"Preparing the captions before training (the text cache) takes about {total / pics:.1f}x as long; "
+                  f"the pictures' cache and training speed don't change. Each picture is used as often as before, so "
+                  f"each of its captions comes up less often.")
 
 
 def _num(values, key, default):

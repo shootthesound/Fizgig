@@ -114,12 +114,14 @@ def drop_stale_caption_lines(datasets, paths, keep_cache=False):
     """Several captions per picture: remove the extra lines' text caches (`_tealt<k>`) this pass didn't write - a
     caption that lost lines, or the tick turned off. They sit outside post_process's `*_te.safetensors` glob."""
     import glob as _glob
+    import re as _re
     for i, ds in enumerate(datasets):
         d = getattr(ds, "cache_directory", None)
         if not d or not os.path.isdir(d):
             continue
+        line = _re.compile(rf".+_{_re.escape(ds.architecture)}_tealt\d+\.safetensors")   # never a latent named *_tealt*
         for f in _glob.glob(os.path.join(_glob.escape(d), f"*_{ds.architecture}_tealt*.safetensors")):
-            if os.path.normpath(f) not in paths[i] and not keep_cache:
+            if line.fullmatch(os.path.basename(f)) and os.path.normpath(f) not in paths[i] and not keep_cache:
                 os.remove(f)
                 logger.info(f"Removed a caption line's stale text cache: {f}")
 

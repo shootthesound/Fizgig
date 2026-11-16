@@ -998,7 +998,8 @@ def _multi_person_notes(vals, image_folder, multi_person=True):
             got, _w = mp.subject(folder, auto_trig, "", ext)
             if got:
                 found[ckey] = got["phrase"].split()[-1]
-        cap = mp.sample_caption(folder, trig.split(",")[0].strip() if trig else "", ext)
+        cap = mp.sample_caption(folder, trig.split(",")[0].strip() if trig else "", ext,
+                                multi=bool(vals.get("MULTI_CAPTION")))
         lines = [f"Trigger word: {trig}" if trig else "Trigger word: none found in this folder's captions",
                  f"One of its captions: {cap}" if cap else "One of its captions: none found - caption the folder first"]
         if not multi_person:
@@ -1107,7 +1108,7 @@ def _plan(family_key, values, image_folder, resume="", ft_continue=None, models=
         inputs.update(FAMILY_FT_CONTINUE=ft_continue["continue"], FAMILY_FT_ROTATIONS=str(ft_continue["rotations"]),
                       resuming=True)
     if resume or ft_continue or str(values.get("RESUME_TRAINING") or "").strip():
-        inputs["recache"] = _size_changed(name, out_dir, values)
+        inputs["recache"] = _size_changed(name, out_dir, values) or _lines_changed(desc, name, out_dir, values)
     return desc, inputs, launch.plan(desc, inputs)
 
 
@@ -1169,6 +1170,15 @@ def _size_changed(lora, out_dir, values):
         except ValueError:
             return str(v or "").strip()
     return any(num(old.get(k, "")) != num(values.get(k, "")) for k in _SIZE_KEYS)
+
+
+def _lines_changed(desc, lora, out_dir, values):
+    """A resume with Several captions per picture ticked or unticked since the run last started caches the captions
+    again: the text cache holds them as that run read them (one caption a file, or one a line)."""
+    from fizgig.web import history
+    old = history.last_values(lora, out_dir)
+    return (old is not None and bool(getattr(desc, "multi_caption", False))
+            and bool(old.get("MULTI_CAPTION")) != bool(values.get("MULTI_CAPTION")))
 
 
 def _ref_strength(v):

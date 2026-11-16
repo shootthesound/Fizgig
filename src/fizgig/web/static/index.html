@@ -562,8 +562,8 @@
               </div>
               <label class="checkbox-label"><input type="checkbox" id="capOverwrite" checked>
                 Overwrite existing captions (untick to caption only the files without one)</label>
-              <label class="checkbox-label" title="Keeps what each caption file already says and adds this model's caption on a new line: run a tagger, then a model that writes sentences, and every picture has both. Training reads each line as a caption of its own when Several captions per picture is ticked on the Training tab."><input type="checkbox" id="capAddLine">
-                Add as another line (keeps each file's caption)</label>
+              <label class="checkbox-label" title="For Several captions per picture (Training tab): keeps what each caption file already says and adds this model's caption on a new line, so every picture has a caption from each model you run. Run first the model whose style you prompt with most: its caption becomes line 1, which training's single-caption features use."><input type="checkbox" id="capAddLine">
+                Add as another line (for Several captions per picture)</label>
               <div class="field-hint" id="capAddLineNote" hidden>Each file keeps its caption and gets this model's on a
                 new line; a file without one gets its first. A line already in the file isn't added twice. To train on
                 each line, tick Several captions per picture on the Training tab. The trigger word goes first on the new

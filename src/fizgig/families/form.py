@@ -1052,8 +1052,9 @@ def _on(values, o):
 SUBFOLDERS_HINT = ("Off: only the pictures directly in the training folder are used.\nOn: the pictures in its "
                    "sub-folders are trained on too, at any depth, each sub-folder as its own set with its own captions "
                    "and cache, so a big dataset can stay organised. Every picture trains once an epoch, wherever it "
-                   "is. Image Prep and Captions work on one folder at a time: to caption or mask a sub-folder, choose "
-                   "it as the training folder on the Start tab.")
+                   "is. Resizing, face prep and captions include those sub-folders too; each picture and its outputs "
+                   "stay in their own folder. Detail crops, masks and the Look Filter work on one selected folder "
+                   "at a time.")
 
 
 def subfolders_note(desc, values, image_folder):

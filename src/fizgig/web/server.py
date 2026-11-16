@@ -3081,6 +3081,48 @@ def _caption_gpu_check(need_gb):
                          f"beside it. Wait for the run to finish, or pause it.")
 
 
+def _tool_folders(folder, family="", values=None, candidates=None):
+    """Prep and captions follow the current training tick, its mode gates and its excluded folders."""
+    desc = _files_family(family)
+    if desc is None or not (values or {}).get("TRAIN_SUBFOLDERS"):
+        return [folder]
+    prefs = load_prefs()
+    values = {**values, "LORA_OUTPUT_DIR": str(values.get("LORA_OUTPUT_DIR") or "").strip() or default_output_dir()}
+    st = form.inputs(desc, values, models={}, python=sys.executable, repo_dir=BASE_DIR,
+                     image_folder=folder, cache_root=pref_path(prefs, "cache_dir"), samples_dir="")
+    if not launch.subfolders_on(desc, st):
+        return [folder]
+    skip = (st.get("LORA_OUTPUT_DIR"), st.get("cache_root"), launch.ft_reg_dir(desc, st),
+            launch.lora_reg_dir(desc, st))
+    if candidates is not None:
+        norm = lambda p: os.path.normcase(os.path.abspath(p))
+        root = norm(folder)
+        excluded = {norm(d) for d in skip if d}
+        out, seen = [folder], {root}
+        for candidate in candidates:
+            if not isinstance(candidate, str):
+                continue
+            path = norm(candidate)
+            try:
+                if os.path.commonpath((root, path)) != root:
+                    continue
+            except ValueError:
+                continue
+            ancestors = []
+            current = path
+            while current != root:
+                ancestors.append(current)
+                current = os.path.dirname(current)
+            if any(os.path.basename(d).startswith(".") or launch.is_own_subfolder(d)
+                   or d in excluded or os.path.islink(d) for d in ancestors):
+                continue
+            if path not in seen and os.path.isdir(path):
+                seen.add(path)
+                out.append(candidate)
+        return out
+    return [folder] + [d for _rel, d in launch.subfolders(folder, skip)]
+
+
 def _caption_args(b):
     prefs = load_prefs()
     desc = _files_family(b.get("family", ""))
@@ -3600,10 +3642,11 @@ class Handler(BaseHTTPRequestHandler):
                 train = float(g("train_mp")) if g("train_mp") else None
             except ValueError:
                 mp, train = 1.0, None
+            folders = _tool_folders(folder, g("family"), json.loads(g("values", "{}")))
             r = _prep.summary(folder, g("mode", _prep.MODES[0]), g("replace") == "1", mp, train,
-                              g("crops_only") == "1", _min_face(g("min_face")))
+                              g("crops_only") == "1", _min_face(g("min_face")), folders=folders)
             try:
-                names = os.listdir(folder)
+                names = [n for d in folders for n in os.listdir(d) if os.path.isfile(os.path.join(d, n))]
             except OSError:
                 names = []
             exts = {os.path.splitext(n)[1].lower() for n in names}
@@ -3821,7 +3864,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._stream(p)
         if path == "/api/captions":
             return self._captions((qs.get("folder") or [""])[0], (qs.get("ext") or [".txt"])[0],
-                                  (qs.get("family") or [""])[0])
+                                  (qs.get("family") or [""])[0],
+                                  json.loads((qs.get("values") or ["{}"])[0]),
+                                  only=(json.loads(qs["only"][0]) or []) if "only" in qs else None)
         return self.json({"error": "not found"}, 404)
 
     def _log_stream(self, since):
@@ -3967,17 +4012,46 @@ class Handler(BaseHTTPRequestHandler):
             it["starred"] = it["name"] in starred
         return self.json({"items": out})
 
-    def _captions(self, folder, ext, family=""):
+    def _captions(self, folder, ext, family="", values=None, only=None):
         from fizgig.dataset import detail_crops
-        try:
-            names = sorted(os.listdir(folder))
-        except OSError:
-            return self.json({"items": []})
-        items = self._caption_items(folder, names, ext, family)
-        big = detail_crops.largest(folder)           # its detail crops, after the pictures: the largest size
-        if big:
-            crops = self._caption_items(big, sorted(os.listdir(big)), ext, family)
-            items += [{**it, "crop": os.path.basename(big)} for it in crops]
+        items = []
+        if only is not None:
+            if not isinstance(only, list) or any(not isinstance(p, str) for p in only):
+                return self.json({"error": "Choose existing media files in the caption folders."}, 400)
+            if not only:
+                return self.json({"items": []})
+            parents = [os.path.dirname(os.path.abspath(p)) for p in only]
+            bases = [detail_crops.root_of(d) if detail_crops.is_crop_dir(d) else d for d in parents]
+            scoped = captions.with_crops(folder, _tool_folders(folder, family, values, candidates=bases))
+            try:
+                paths = captions.selected_media_files(only, scoped, MEDIA)
+            except ValueError as e:
+                return self.json({"error": str(e)}, 400)
+            for p in paths:
+                name = os.path.basename(p)
+                if not _caption_media_filter([name], family)(name):
+                    return self.json({"error": "That media isn't captioned by this model."}, 400)
+                try:
+                    text = captions.read_text(os.path.splitext(p)[0] + captions.caption_ext(ext))
+                except OSError:
+                    text = None
+                item = {"name": name, "path": p, "caption": text,
+                        "relative": os.path.relpath(p, folder).replace("\\", "/")}
+                if detail_crops.is_crop_dir(os.path.dirname(p)):
+                    item["crop"] = os.path.basename(os.path.dirname(p))
+                items.append(item)
+            return self.json({"items": items})
+        for d in captions.with_crops(folder, _tool_folders(folder, family, values)):
+            try:
+                names = sorted(os.listdir(d))
+            except OSError:
+                continue
+            crop = os.path.basename(d) if detail_crops.is_crop_dir(d) else ""
+            for it in self._caption_items(d, names, ext, family):
+                it["relative"] = os.path.relpath(it["path"], folder).replace("\\", "/")
+                if crop:
+                    it["crop"] = crop
+                items.append(it)
         return self.json({"items": items})
 
     def _caption_items(self, folder, names, ext, family):
@@ -4693,19 +4767,23 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/captioners/download":    # one captioner's files now, rather than on first use
                 return self.json(captions.download_captioner(str(b.get("key") or ""), load_prefs()))
             if path == "/api/captions/ai":
+                if "only" in b and b["only"] is None:
+                    raise ValueError("Choose an existing picture or clip in the caption folders.")
                 prefs, folder, clips, photos, _ = _caption_args(b)
                 cap = captioner_for(prefs)
                 model = str(b.get("model") or "")
                 _caption_gpu_check(captions.need_gb(model))
-                from fizgig.dataset import detail_crops     # the folder's files, or its largest detail crops
-                inside = {os.path.abspath(f) for f in captions.with_crops(folder)}
-                only = [p for p in (b.get("only") or []) if os.path.dirname(os.path.abspath(p)) in inside]
+                from fizgig.dataset import detail_crops
                 return self.json(captions.ai_captions(
                     prefs, cap if cap and os.path.isfile(cap) else "", folder, model, str(b.get("task") or ""),
                     str(b.get("instruction") or ""), int(b.get("max_tokens") or 120), str(b.get("trigger") or ""),
-                    bool(b.get("overwrite")), clips, only=only or None, photos=photos,
+                    bool(b.get("overwrite")), clips, only=b.get("only"), photos=photos,
                     ext=captions.caption_ext(b.get("ext")), threshold=float(b.get("threshold") or 0.35),
-                    leave_out=str(b.get("leave_out") or ""), underscores=bool(b.get("underscores"))))
+                    leave_out=str(b.get("leave_out") or ""), underscores=bool(b.get("underscores")),
+                    folders=_tool_folders(folder, b.get("family", ""), b.get("values"), candidates=(
+                        [detail_crops.root_of(d) if detail_crops.is_crop_dir(d) else d
+                         for d in (os.path.dirname(os.path.abspath(p)) for p in b["only"] if isinstance(p, str))]
+                        if isinstance(b.get("only"), list) else ([] if "only" in b else None)))))
             if path.startswith("/api/studio/"):
                 try:
                     return self.json(_studio_post(path[len("/api/studio/"):], b))
@@ -4882,7 +4960,8 @@ class Handler(BaseHTTPRequestHandler):
                                                          str(b.get("face") or "Largest Face"),
                                                          b.get("padding") or 20, bool(b.get("replace")),
                                                          bool(b.get("crops_only")),
-                                                         _min_face(b.get("min_face"))))
+                                                         _min_face(b.get("min_face")),
+                                                         folders=_tool_folders(folder, b.get("family", ""), b.get("values"))))
                     if path == "/api/look/scan":
                         captions.unload()
                         return self.json(prep_jobs.look_scan(folder, b.get("baselines") or []))
@@ -4945,25 +5024,30 @@ class Handler(BaseHTTPRequestHandler):
                 _, folder, clips, photos, voice = _caption_args(b)
                 return self.json(captions.static_captions(folder, str(b.get("trigger") or ""),
                                                           bool(b.get("overwrite")), clips, photos, voice,
-                                                          captions.caption_ext(b.get("ext"))))
+                                                          captions.caption_ext(b.get("ext")),
+                                                          folders=_tool_folders(folder, b.get("family", ""), b.get("values"))))
             if path == "/api/captions/songs":
                 _, folder, *_ = _caption_args(b)
                 return self.json(captions.song_captions(folder, str(b.get("trigger") or ""),
                                                         str(b.get("words") or ""), bool(b.get("overwrite")),
-                                                        captions.caption_ext(b.get("ext"))))
+                                                        captions.caption_ext(b.get("ext")),
+                                                        folders=_tool_folders(folder, b.get("family", ""), b.get("values"))))
             if path == "/api/captions/replace":
                 _, folder, *_ = _caption_args(b)
                 return self.json(captions.find_replace(folder, str(b.get("find") or ""), str(b.get("replace") or ""),
-                                                       bool(b.get("apply")), captions.caption_ext(b.get("ext"))))
+                                                       bool(b.get("apply")), captions.caption_ext(b.get("ext")),
+                                                       folders=_tool_folders(folder, b.get("family", ""), b.get("values"))))
             if path == "/api/captions/add":
                 _, folder, *_ = _caption_args(b)
                 return self.json(captions.add_text(folder, b.get("start"), b.get("end"), b.get("trigger"),
-                                                   bool(b.get("apply")), captions.caption_ext(b.get("ext"))))
+                                                   bool(b.get("apply")), captions.caption_ext(b.get("ext")),
+                                                   folders=_tool_folders(folder, b.get("family", ""), b.get("values"))))
             if path == "/api/captions/translate":
                 prefs, folder, *_ = _caption_args(b)
                 _caption_gpu_check(1.0)
                 return self.json(captions.translate(prefs, folder, bool(b.get("skip_existing")),
-                                                    captions.caption_ext(b.get("ext"))))
+                                                    captions.caption_ext(b.get("ext")),
+                                                    folders=_tool_folders(folder, b.get("family", ""), b.get("values"))))
             if path == "/api/captions/stop":
                 return self.json({"ok": captions.stop()})
             if path == "/api/captions/unload":

@@ -3416,12 +3416,25 @@ async function datasetPictures(d) {
   lightboxShow(0);
 }
 
-// Image Prep and Captions work on the one folder: a training folder with sub-folders says how to reach theirs
+// The current training scope travels with prep and caption requests, including unsaved changes to the tick.
+function datasetToolValues() {
+  const keys = ["TRAIN_SUBFOLDERS", "FAMILY_KIND", "FAMILY_MULTICONCEPT", "FAMILY_DOP", "FAMILY_MULTI_PERSON",
+    "FAMILY_REG_ON", "FAMILY_REG_DIR", "FAMILY_FT_REG_DIR", "LORA_OUTPUT_DIR"];
+  return Object.fromEntries(keys.filter((k) => k in (S.values || {})).map((k) => [k, S.values[k]]));
+}
+
+function datasetToolQuery() {
+  return `&family=${encodeURIComponent(S.family || "")}&values=${encodeURIComponent(JSON.stringify(datasetToolValues()))}`;
+}
+
 function subfoldersHint() {
   const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
   const d = ((S.datasets || {}).datasets || []).find((x) => norm(x.path) === norm(S.imageFolder));
-  return d && d.sub_folders ? ` · This works on this folder only, not its ${d.sub_folders} sub-folder` +
-    `${d.sub_folders === 1 ? "" : "s"}: to caption or mask one, choose it as the training folder on the Start tab.` : "";
+  if (!d || !d.sub_folders) return "";
+  const on = !!(S.values || {}).TRAIN_SUBFOLDERS && !((S.state || {}).hidden || []).includes("TRAIN_SUBFOLDERS");
+  return on ? " · Resizing, face prep and captions include the training sub-folders; files stay in their own folders. " +
+    "Detail crops, masks and the Look Filter work on the selected folder." :
+    " · Prep and captions use this folder only. Tick Also train on its sub-folders on the Training tab to include them.";
 }
 
 function renderDatasets() {
@@ -5478,7 +5491,7 @@ function mediaFor(it, eager) {
   }
   return el("img", {loading: "lazy", src: q(it.path), alt: it.name});
 }
-const mediaLabel = (it) => it.name;
+const mediaLabel = (it) => it.relative || it.name;
 
 // ---- Image Prep tab: resize / PNG / face close-ups, and the Look Filter (fizgig/web/prep_jobs.py) -------------
 S.prep = {opts: null, logSize: 0, timer: null, look: null, marked: new Set(), bases: [], page: 0, picking: false};
@@ -5986,7 +5999,7 @@ async function prepSummary() {
   if (!S.imageFolder) { $("prepSummary").textContent = ""; return; }
   const r = await api(`/api/prep/summary?folder=${encodeURIComponent(S.imageFolder)}&mode=${encodeURIComponent(p.mode)}` +
     `&mp=${p.mp}&replace=${p.replace ? 1 : 0}&crops_only=${p.crops_only ? 1 : 0}&min_face=${encodeURIComponent(p.min_face)}` +
-    `&train_mp=${encodeURIComponent(S.values.DATASET_MEGAPIXELS || "")}`).catch(() => null);
+    `&train_mp=${encodeURIComponent(S.values.DATASET_MEGAPIXELS || "")}${datasetToolQuery()}`).catch(() => null);
   if (!r) return;
   $("prepAudioOnly").style.display = r.audio_only ? "" : "none";
   $("prepMain").style.display = r.audio_only ? "none" : "";
@@ -6024,7 +6037,7 @@ async function prepRun() {
   if (!S.imageFolder) { $("prepState").textContent = "Choose the training folder on the Start tab first."; return; }
   const p = prepSettings();
   try {
-    await api("/api/prep/run", {folder: S.imageFolder, ...p});
+    await api("/api/prep/run", {folder: S.imageFolder, family: S.family, values: datasetToolValues(), ...p});
     $("prepLog").textContent = ""; S.prep.logSize = 0;
     pollPrep();
   } catch (e) { $("prepState").textContent = e.message; }
@@ -8697,6 +8710,7 @@ const capExt = () => {                    // Training > Other Options > Caption 
 
 function capJobBody(extra = {}) {
   return {family: S.family, folder: capFolder(), model: $("capModel").value, task: $("capTask").value, ext: capExt(),
+    values: datasetToolValues(),
     instruction: capInstruction(),
     max_tokens: Number($("capTokens").value) || 120,
     threshold: Number($("capThreshold").value) || 0.35, leave_out: $("capLeaveOut").value,
@@ -8716,11 +8730,14 @@ async function capRun(path, body) {
 // while captioning runs: the captions written so far fill in every few seconds - never over one you're editing
 async function captionsLive() {
   if (!S.imageFolder || !document.querySelector("#tab-captions.active")) return;
-  const r = await api(`/api/captions?folder=${encodeURIComponent(capFolder())}&ext=${encodeURIComponent(capExt())}&family=${encodeURIComponent(S.family || "")}`)
+  const visible = S.cap.items.filter((it) => it._ta && it._ta.isConnected);
+  if (!visible.length) return;
+  const only = visible.map((it) => it.path);
+  const r = await api(`/api/captions?folder=${encodeURIComponent(capFolder())}&ext=${encodeURIComponent(capExt())}${datasetToolQuery()}&only=${encodeURIComponent(JSON.stringify(only))}`)
     .catch(() => null);
   if (!r || !r.items) return;
   const now = new Map(r.items.map((i) => [i.path, i]));
-  for (const it of S.cap.items) {
+  for (const it of visible) {
     const n = now.get(it.path);
     if (!n || (n.caption ?? "") === (it.caption ?? "")) continue;
     const ta = it._ta, untouched = !ta || (document.activeElement !== ta && ta.value === (it.caption ?? ""));
@@ -8786,7 +8803,7 @@ async function loadCaptions() {
   if (!S.imageFolder) { $("captionsSummary").textContent = "Choose the training folder on the Start tab."; return; }
   const ext = $("captionExt").value.trim() || ".txt";
   const r = await api(`/api/captions?folder=${encodeURIComponent(capFolder())}` +
-    `&ext=${encodeURIComponent(ext)}&family=${encodeURIComponent(S.family || "")}`);
+    `&ext=${encodeURIComponent(ext)}${datasetToolQuery()}`);
   S.cap.items = r.items;                      // the pictures, then the largest detail crops (it.crop: their folder)
   renderCaptions();
 }
@@ -8797,7 +8814,7 @@ function renderCaptions() {
   const ext = $("captionExt").value.trim() || ".txt";
   const q = $("capSearch").value.trim().toLowerCase();
   const all = S.cap.items;
-  let items = q ? all.filter((i) => i.name.toLowerCase().includes(q) || (i.caption || "").toLowerCase().includes(q)) : all;
+  let items = q ? all.filter((i) => (i.relative || i.name).toLowerCase().includes(q) || (i.caption || "").toLowerCase().includes(q)) : all;
   const sort = $("capSort").value, px = (i) => (i.size ? i.size[0] * i.size[1] : null);
   if (sort !== "name") {                       // by pixel count; songs (no size) go last either way
     items = [...items].sort((a, b) => (px(a) == null) - (px(b) == null) ||
@@ -8890,7 +8907,7 @@ function renderCaptions() {
 // the table view: one row a file, sorted by a click on a column's head (again: the other way)
 const capWords = (i) => (i.caption || "").trim() ? (i.caption || "").trim().split(/\s+/).length : 0;
 const CAP_COLS = [
-  {key: "name", label: "File", sort: (i) => i.name.toLowerCase()},
+  {key: "name", label: "File", sort: (i) => (i.relative || i.name).toLowerCase()},
   {key: "caption", label: "Caption", sort: (i) => (i.caption || "").toLowerCase()},
   {key: "words", label: "Words", sort: capWords},
   {key: "size", label: "Size", sort: (i) => (i.size ? i.size[0] * i.size[1] : -1)},
@@ -8915,7 +8932,7 @@ function captionsTable(items, ext) {
     const thumb = it.size ? el("img", {class: "cap-thumb", loading: "lazy",
       src: `/api/thumb?path=${encodeURIComponent(it.path)}&t=${encodeURIComponent(TOKEN)}`}) : el("span", {text: ""});
     return el("tr", {}, el("td", {}, thumb), el("td", {class: "cap-name", text: mediaLabel(it) +
-      (it.crop ? " · detail crop" : ""), title: it.name}),
+      (it.crop ? " · detail crop" : ""), title: it.relative || it.name}),
       el("td", {}, ta), words,
       el("td", {class: "cap-num", text: it.size ? `${it.size[0]}×${it.size[1]}` : ""}),
       el("td", {class: "cap-num", text: it.mask ? "yes" : ""}));
@@ -8927,7 +8944,7 @@ async function addText(apply) {
   const host = $("frChanges");
   try {
     const r = await api("/api/captions/add", {family: S.family, folder: capFolder(), start: $("frStart").value,
-      end: $("frEnd").value, trigger: $("capTrigger").value, apply, ext: capExt()});
+      end: $("frEnd").value, trigger: $("capTrigger").value, apply, ext: capExt(), values: datasetToolValues()});
     host.innerHTML = "";
     $("frStatus").textContent = r.changes.length ? (apply ? `Added to ${r.changes.length} captions.` :
       `${r.changes.length} captions would change:`) : "Every caption already has that.";
@@ -8961,7 +8978,7 @@ async function findReplace(apply) {
   const host = $("frChanges");
   try {
     const r = await api("/api/captions/replace", {family: S.family, folder: capFolder(), find: $("frFind").value,
-      replace: $("frReplace").value, apply, ext: capExt()});
+      replace: $("frReplace").value, apply, ext: capExt(), values: datasetToolValues()});
     host.innerHTML = "";
     $("frStatus").textContent = r.changes.length ? (apply ? `Replaced in ${r.changes.length} captions.` :
       `${r.changes.length} captions would change:`) : "No caption contains that.";

@@ -127,12 +127,12 @@ def atomic_png_save(img, output_path):
         raise
 
 
-def source_stats(folder, max_sample=40):
-    """(image count, median area, median size) of the folder's top-level images, from headers only (cheap)."""
+def source_stats(folder, max_sample=40, folders=None):
+    """(image count, median area, median size) of the selected folders, from headers only (cheap)."""
     exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
     try:
-        files = [os.path.join(folder, f) for f in os.listdir(folder) if os.path.splitext(f)[1].lower() in exts
-                 and not is_mask_file(f)]
+        files = [p for d in (folders if folders is not None else [folder]) for p in image_files(d)
+                 if os.path.splitext(p)[1].lower() in exts]
     except OSError:
         return 0, None, None
     sizes = []
@@ -149,10 +149,14 @@ def source_stats(folder, max_sample=40):
     return len(files), med[0] * med[1], med
 
 
-def summary(folder, mode, replace, prep_mp, train_mp=None, crops_only=False, min_face=MIN_FACE_PX):
+def summary(folder, mode, replace, prep_mp, train_mp=None, crops_only=False, min_face=MIN_FACE_PX, folders=None):
     """The 'What will happen' card: {lines, warn (prep below training's megapixels), count}."""
+    if mode == "Detail Crops (Style)":
+        folders = None                          # training's detail crop sets belong to the selected folder only
     area = target_area(prep_mp)
-    n, median_area, median_size = source_stats(folder)
+    n, median_area, median_size = source_stats(folder, folders=folders)
+    scope = (["Sub-folders are included; each picture and its outputs stay in their own folder."]
+             if folders is not None and len(folders) > 1 else [])
     example = ""
     if median_size:
         w, h = output_size(median_size, area)
@@ -170,7 +174,7 @@ def summary(folder, mode, replace, prep_mp, train_mp=None, crops_only=False, min
         from fizgig.dataset.detail_crops import DIR, side
         s = side(prep_mp)
         from fizgig.dataset.detail_crops import MASTERS, pictures
-        n = len(pictures(folder))
+        n = sum(len(pictures(d)) for d in (folders if folders is not None else [folder]))
         sizes = ", ".join(f"{m:g}" for m in crop_sizes(prep_mp))
         lines = [f"Each of your {n or ''} pictures gets a crop at its own scale (from its full-size original when "
                  f"there is one) at every size up to {prep_mp:g} MP ({sizes} MP), in {DIR}. "
@@ -182,12 +186,13 @@ def summary(folder, mode, replace, prep_mp, train_mp=None, crops_only=False, min
             lines.append(f"⚠ Your typical picture (about {median_size[0] * median_size[1] / 1e6:.2g} MP) is too small for "
                          f"a {prep_mp:g} MP crop: those train whole, with no crop. Detail crops work from pictures "
                          f"bigger than training size.")
-        return {"lines": [" ".join(lines[0].split())] + lines[1:], "warn": "", "count": n}
+        scope = ["Detail crops work on the selected folder only. To crop a sub-folder, select it on the Start tab."]
+        return {"lines": scope + [" ".join(lines[0].split())] + lines[1:], "warn": "", "count": n}
     else:
         what = f"{count} → {sized}"
     originals = ("Your original files are replaced ⚠ there is no undo." if replace else
                  "Your originals are moved to the 'originals' subfolder — nothing is deleted.")
-    lines = [f"{what}. Everything lands in your training folder. {originals}"]
+    lines = scope + [f"{what}. Everything lands in each picture's folder. {originals}"]
     if mode in FACE_MODES and median_area is not None and median_area <= area:
         lines.append(f"⚠ Your images are already at or below {prep_mp:g} MP — face close-ups cut from them will be "
                      f"soft. If you have higher-res versions, prep from those instead.")
@@ -332,7 +337,17 @@ class Prep:
 
     # ---- the three modes ----
     def run(self, mode, folder, prep_mp, face_label="Largest Face", face_padding=20.0, replace=False,
-            crops_only=False, min_face=MIN_FACE_PX):
+            crops_only=False, min_face=MIN_FACE_PX, folders=None):
+        if mode == "Detail Crops (Style)":
+            folders = None                      # never archive a sub-folder into a crop set training can't use
+        if folders is not None:
+            # Scope is captured before prep creates originals/ or detail crop folders.
+            for d in folders:
+                if not image_files(d):
+                    continue
+                self.log(f"\nFolder: {os.path.relpath(d, folder)}\n")
+                self.run(mode, d, prep_mp, face_label, face_padding, replace, crops_only, min_face)
+            return
         self._originals = {}
         self.min_face = max(0, int(min_face or 0))
         area = target_area(prep_mp)

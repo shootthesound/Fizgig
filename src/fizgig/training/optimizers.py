@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import ast
 import importlib
+import importlib.util
 import logging
 import math
 
@@ -94,15 +95,23 @@ def ft_optimizer(name) -> str:
     return n if n in FT_OPTIMIZERS else FT_DEFAULT_OPTIMIZER
 
 
-def available_optimizers() -> list[str]:
-    """Catalog entries whose backing package is actually importable on this machine."""
+def available_optimizers(*, probe: bool = True) -> list[str]:
+    """Catalog entries with their backing package available.
+
+    UI discovery uses probe=False: check installation without loading optional
+    native libraries (notably bitsandbytes' ROCm runtime) merely to draw a combo.
+    Actual optimizer construction still imports and validates its implementation.
+    """
     out = []
     for name, (module, _desc) in _CATALOG.items():
         if module is None:
             out.append(name)
             continue
         try:
-            importlib.import_module(module)
+            if probe:
+                importlib.import_module(module)
+            elif importlib.util.find_spec(module) is None:
+                continue
             out.append(name)
         except Exception:
             pass

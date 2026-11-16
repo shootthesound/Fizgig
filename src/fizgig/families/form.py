@@ -147,7 +147,7 @@ def _recaption_key(label, default):
 def _optimizers():
     from fizgig.training.optimizers import available_optimizers
     try:
-        return list(available_optimizers())
+        return list(available_optimizers(probe=False))
     except Exception:
         return ["adamw8bit", "adamw"]
 

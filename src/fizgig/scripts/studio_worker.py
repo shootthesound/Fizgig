@@ -64,7 +64,7 @@ def cmd_load(c):
         plan["preview_sampling"] = ck[1] if ck else None
     else:
         plan["preview_sampling"] = None
-    if str(plan.get("blocks_to_swap", "")).lower().startswith("auto"):
+    if str(plan.get("blocks_to_swap", "")).lower().startswith("auto") and desc.key != "krea2":
         plan["blocks_to_swap"] = _auto_swap()
     with _engine_lock:
         eng = S["engine"]
@@ -537,7 +537,7 @@ def _plan_for(desc, plan):
         plan["preview_sampling"] = ck[1] if ck else None
     else:
         plan["preview_sampling"] = None
-    if str(plan.get("blocks_to_swap", "")).lower().startswith("auto"):
+    if str(plan.get("blocks_to_swap", "")).lower().startswith("auto") and desc.key != "krea2":
         plan["blocks_to_swap"] = _auto_swap()
     return plan
 
@@ -962,8 +962,9 @@ def _run(c):
 
 
 def main():
+    import faulthandler
+    faulthandler.enable()
     if os.environ.get("FIZGIG_STUDIO_DUMP"):          # diagnosing a hang: every thread's stack after N seconds
-        import faulthandler
         faulthandler.dump_traceback_later(int(os.environ["FIZGIG_STUDIO_DUMP"]), exit=False, file=sys.stderr)
     here = os.path.dirname(os.path.abspath(__file__))
     for p in (os.path.abspath(os.path.join(here, "..", "..")), os.path.abspath(os.path.join(here, "..", "..", ".."))):

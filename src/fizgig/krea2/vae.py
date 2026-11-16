@@ -130,6 +130,11 @@ class QwenImageCausalConv3d(nn.Conv3d):
         self.padding = (0, 0, 0)
 
     def forward(self, x, cache_x=None):
+        if (torch.version.hip and cache_x is None and x.shape[2] == 1
+                and self._padding[4] == self.kernel_size[0] - 1):
+            # A single causal frame only reaches the final temporal kernel slice.
+            return F.conv3d(x, self.weight[:, :, -1:], self.bias, self.stride,
+                            (0, self._padding[2], self._padding[0]), self.dilation, self.groups)
         padding = list(self._padding)
         if cache_x is not None and self._padding[4] > 0:
             cache_x = cache_x.to(x.device)
@@ -908,7 +913,9 @@ class AutoencoderKLQwenImage(nn.Module):  # ModelMixin, ConfigMixin, FromOrigina
         for i in range(iter_):
             self._enc_conv_idx = [0]
             if i == 0:
-                out = self.encoder(x[:, :, :1, :, :], feat_cache=self._enc_feat_map, feat_idx=self._enc_conv_idx)
+                # A still image has no next frame to reuse these full-resolution features (ComfyUI does the same).
+                out = self.encoder(x[:, :, :1, :, :], feat_cache=self._enc_feat_map if num_frame > 1 else None,
+                                   feat_idx=self._enc_conv_idx)
             else:
                 out_ = self.encoder(
                     x[:, :, 1 + 4 * (i - 1) : 1 + 4 * i, :, :],
@@ -960,7 +967,8 @@ class AutoencoderKLQwenImage(nn.Module):  # ModelMixin, ConfigMixin, FromOrigina
         for i in range(num_frame):
             self._conv_idx = [0]
             if i == 0:
-                out = self.decoder(x[:, :, i : i + 1, :, :], feat_cache=self._feat_map, feat_idx=self._conv_idx)
+                out = self.decoder(x[:, :, i : i + 1, :, :], feat_cache=self._feat_map if num_frame > 1 else None,
+                                   feat_idx=self._conv_idx)
             else:
                 out_ = self.decoder(x[:, :, i : i + 1, :, :], feat_cache=self._feat_map, feat_idx=self._conv_idx)
                 out = torch.cat([out, out_], 2)
@@ -1093,7 +1101,8 @@ class AutoencoderKLQwenImage(nn.Module):  # ModelMixin, ConfigMixin, FromOrigina
                             i : i + self.tile_sample_min_height,
                             j : j + self.tile_sample_min_width,
                         ]
-                    tile = self.encoder(tile, feat_cache=self._enc_feat_map, feat_idx=self._enc_conv_idx)
+                    tile = self.encoder(tile, feat_cache=self._enc_feat_map if num_frames > 1 else None,
+                                        feat_idx=self._enc_conv_idx)
                     tile = self.quant_conv(tile)
                     time.append(tile)
                 row.append(torch.cat(time, dim=2))
@@ -1154,7 +1163,8 @@ class AutoencoderKLQwenImage(nn.Module):  # ModelMixin, ConfigMixin, FromOrigina
                     self._conv_idx = [0]
                     tile = z[:, :, k : k + 1, i : i + tile_latent_min_height, j : j + tile_latent_min_width]
                     tile = self.post_quant_conv(tile)
-                    decoded = self.decoder(tile, feat_cache=self._feat_map, feat_idx=self._conv_idx)
+                    decoded = self.decoder(tile, feat_cache=self._feat_map if num_frames > 1 else None,
+                                           feat_idx=self._conv_idx)
                     time.append(decoded)
                 row.append(torch.cat(time, dim=2))
             rows.append(row)

@@ -437,7 +437,7 @@ echo
 
 _ensure_python_dev_headers "$INSTALL_PYTHON"
 
-if [[ ! -e /usr/lib/x86_64-linux-gnu/libnuma.so ]] && [[ ! -e /lib/x86_64-linux-gnu/libnuma.so ]]; then
+if [[ ! -e /usr/lib/libnuma.so ]] && [[ ! -e /lib/x86_64-linux-gnu/libnuma.so ]]; then
     echo "Installing libnuma-dev (PyTorch rocSHMEM needs unversioned libnuma.so)..."
     if command -v apt-get >/dev/null 2>&1; then
         sudo apt-get install -y libnuma-dev

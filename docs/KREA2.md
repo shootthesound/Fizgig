@@ -28,6 +28,104 @@ Users train full Krea 2 LoRAs on 8 GB with everything on **Auto** and batch size
 
 If a preview can't fit, previews auto-disable and **training keeps running and saving**.
 
+## SageAttention image generation on AMD
+
+With a compatible SageAttention build installed in Fizgig's Python environment, an AMD launch offers
+**Preferences → Inference performance → Force SageAttention for Krea 2 image generation**.
+It takes effect on the next image in training previews, Studio, Royale and Profiler. Training keeps its own backend.
+
+Generation follows ComfyUI's fixed-length attention calls: expanded K/V heads, explicit HND layout and
+`smooth_k=False` (the RDNA4 package can override smoothing for accuracy). Equal-length samples share one call;
+ragged samples are split so padding never enters attention. Sage generation also skips the extra 256-token
+shape padding, including Studio's cached forwards. A failing forced kernel stops generation.
+Reference: [ComfyUI attention](https://github.com/Comfy-Org/ComfyUI/blob/master/comfy/ldm/modules/attention.py)
+and [Krea 2 model](https://github.com/Comfy-Org/ComfyUI/blob/master/comfy/ldm/krea2/model.py).
+
+To compare the previous Sage wrapper with this one on your GPU:
+
+```bash
+venv/bin/python checks/bench_krea2_sageattention.py > krea2-sage-results.json
+```
+
+This measures synthetic attention timing and allocated VRAM over repeated runs, then compares both wrappers
+against FP32 math attention outside the timed region. It does not measure complete images or certify their
+quality. For a ComfyUI comparison, also match the checkpoint, weight precision, resolution,
+prompt, steps and CFG, and compare warmed-up renders. Weight offloading and VAE decoding can still differ.
+
+## High-resolution generation
+
+For the Turbo checkpoint, use **Blocks Swap: Auto**. Krea 2 starts with its block weights mostly on CPU,
+then chooses how many can stay on the GPU using available VRAM and the requested resolution. If sampling
+still runs out of memory, it retries the same seed with more blocks offloaded, up to the model's swap limit.
+The log reports the activation reserve and block count. Manual block counts stay fixed; NF4 does not support
+block swapping. Auto preserves stored FP8 weights and uses INT8 for dense checkpoints.
+
+The DiT parks on CPU during text encoding and VAE decoding, including when block swapping is enabled.
+On ROCm, Krea 2 leaves the DiT and VAE on CPU after rendering and releases unused GPU allocations. The next render
+restores the streaming layout; Auto also budgets for CPU-resident embedders, adapters and buffers that must
+return to the GPU. Keeping weights in system RAM does not match ComfyUI's fast-disk storage policy.
+ROCm renders also cap the PyTorch allocator to leave 1.5 GiB beyond memory already used by other processes.
+Auto plans against this cap; a stricter existing cap is preserved, and the previous cap is restored after
+the DiT parks. One 2048×2048 RX 9070 XT run passed with this guard; the user subsequently confirmed
+repeated runs without crashes, with slightly higher RAM usage than ComfyUI.
+If ordinary VAE decoding runs out of memory, it retries with the existing tiled decoder and releases its
+feature cache. Single-image encoding and decoding skip temporal feature caches, as ComfyUI does; video
+passes retain them. On ROCm, single causal frames also use only the final temporal convolution slice, avoiding
+two zero frames of padding and their convolution work, as ComfyUI does. BF16 rounding and tiled decoding
+can change pixels slightly. More offloading also means more CPU RAM and
+transfer time; this does not guarantee that every resolution fits.
+
+The Turbo checkpoint preset uses **8 steps, CFG 1, Euler / beta**, matching ComfyUI's eight-step schedule.
+Other step counts retain the existing simple schedule. These changes apply to the workbench engine used
+by Studio, Royale and Profiler; they do not change training's memory policy.
+
+The memory reserve follows [ComfyUI's Krea 2 estimate](https://github.com/Comfy-Org/ComfyUI/blob/master/comfy/model_base.py),
+using Fizgig's existing block offloader.
+
+RX 9070 XT measurements before idle CPU parking (16 November 2026, PyTorch 2.14.0+rocm10.1.0,
+SageAttention, stored FP8 Turbo, BF16 Qwen-Image VAE, eight steps, CFG 1, Auto swap):
+
+| Check | Before single-frame convolution shortcut | After |
+| --- | ---: | ---: |
+| Warm 1024×1024 VAE decode, identical latents | 1.14 s | 0.24 s |
+| VAE peak allocated VRAM | 6.69 GiB | 4.44 GiB |
+
+Full 1184×1776 generation completed in 29.2 s without a LoRA (21.4 s sampling, 1.0 s decoding),
+and 32.1 s with the rank-64 Turbo LoRA attached (23.4 s sampling, 1.0 s decoding). These totals include
+offloader reconfiguration and stage transfers, excluding initial model loading and text encoding.
+Both runs also completed 1024×1024 renders; no new kernel GPU faults were logged. The separate VAE
+comparison had an RMS pixel difference of 0.00147 on a 0–1 scale from BF16 convolution rounding.
+
+These are bounded hardware checks, not speed parity or a guarantee against resets. The reference ComfyUI
+sampling time was 14.7 s; its prompt and INT8 text encoder differ from this test's neutral teapot prompt
+and FP8 text encoder.
+
+The 17 November 2048×2048 validation completed two seed-42 images with a rank-32 primary, no donor and
+unchanged sliders, but **failed desktop stability**. Sampling took 83.4 / 55.0 s and decoding 5.0 / 2.8 s;
+both decodes required the tiled fallback. There were 748 allocator OOM warnings. Idle GPU allocation fell
+to 0.078 GiB, while process RSS reached 17.7 / 20.1 GiB after the two images.
+
+During the first sampling pass, the kernel reported insufficient memory for command submission and
+`Failed to pin framebuffer: -ENOMEM`. Xwayland aborted and ChatGPT exited. No GPU reset was logged, so
+the absence of a reset does not establish desktop stability. This run predates the hard allocator cap above.
+The original Studio worker exit remains unreproduced.
+
+With the corrected cap, one further gfx1201 / RX 9070 XT run completed at 2048×2048, seed 42, with the same
+rank-32 primary and neutral prompt. Auto offloaded 8 blocks instead of 5. Sampling took 46.7 s, with 11.95 GiB
+peak allocated / 12.44 GiB peak reserved and no allocator OOM warnings. Decode took 5.1 s including its
+recoverable switch to tiled decoding. Idle GPU allocation was 0.078 GiB; process RSS was 17.8 GiB.
+No new GPU fault, framebuffer allocation failure or desktop coredump was logged. The previous allocator
+limit was restored after rendering, and the worker exited normally. The user subsequently confirmed
+repeated-run stability on the RX 9070 XT. Exact-prompt quality, speed parity and system-RAM parity with
+ComfyUI remain unverified.
+
+Profiler logs include the total render count, Auto's memory budget, sampling backend, VAE decode and image
+completion. Two seeds run sequentially for every ablation condition, not as a two-image batch. PyTorch's
+allocator can print OOM warnings and recover by releasing cached allocations; a warning alone is not a failed
+render. Check whether image completion and progress continue, or whether the job reports an exception.
+An unexpected Studio worker exit now includes its process exit code in the error and log. Native crashes
+also print a Python fault traceback to the worker log where the runtime can provide one.
+
 ## The trainer curates your dataset while it trains (experimental)
 
 Four Training-tab toggles no other trainer has. They work on Krea 2 and [Qwen Image 2.1](QWEN_IMAGE.md).

@@ -68,9 +68,11 @@ def _reader(proc):
             current = _S["proc"] is proc
         if current:                              # a worker being stopped (a model switch) has its say no more
             _event(ev)
+    stopped = f"The Studio worker stopped (exit code {proc.wait()})."
     with _lock:
         if _S["proc"] is proc:
-            _S.update(proc=None, state="idle", rendering=False, status="The Studio worker stopped.", progress=None)
+            _S.update(proc=None, state="idle", rendering=False, status=stopped, error=stopped, progress=None)
+            _S["log"] = (_S["log"] + [stopped])[-200:]
             if _R["state"] == "rendering":
                 _R.update(state="failed", error="The GPU worker stopped.", status="The GPU worker stopped.")
             for t in _T.values():

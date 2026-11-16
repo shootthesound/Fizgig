@@ -11,6 +11,7 @@ trains Krea 2 the way src/fizgig/krea2/trainer.py does:
 * LoRA: every Linear in the DiT (264: the 28 blocks, the text-fusion stack, the input / timestep / output layers);
   quantisation (INT8 / NF4) covers the blocks' Linears only, as the original's fp8 / int8 / NF4 paths
 """
+import logging
 import re
 
 import numpy as np
@@ -19,6 +20,7 @@ import torch
 import torch.nn.functional as F
 
 from fizgig.families.driver import Block, BlockGroup, FamilyDriver, picture_losses, prior_base, weighted_loss, with_prior
+from fizgig.krea2.generation_attention import configured_generation
 
 DTYPE = torch.bfloat16
 _BLOCK_MODULES = ("attn.wq", "attn.wk", "attn.wv", "attn.gate", "attn.wo", "mlp.gate", "mlp.up", "mlp.down")
@@ -302,8 +304,11 @@ class Krea2Driver(FamilyDriver):
         return torch.randn(1, 16, height // 8, width // 8, device=dev, dtype=DTYPE, generator=g).float().cpu()
 
     @torch.no_grad()
+    @configured_generation
     def generate(self, dit, cond, width, height, *, steps, seed, cfg=1.0, neg_cond=None, sigmas=None, options=(),
                  noise=None, on_step=None, refs=None):
+        logging.getLogger(__name__).info("Krea 2 sampling: %dx%d, seed %s, %d steps, attention=%s",
+                                        width, height, seed, steps, dit.attn_mode)
         from fizgig.krea2.sampling import prepare, timesteps
         device = next(p for p in dit.parameters() if p.device.type != "meta").device
         if device.type == "cpu" and torch.cuda.is_available():
@@ -340,8 +345,31 @@ class Krea2Driver(FamilyDriver):
     def decode(self, vae, latents, width, height):
         from PIL import Image
         dev = next(vae.parameters()).device
-        pixels = vae.decode_to_pixels(latents.to(dev, torch.bfloat16))                # [0, 1], (B, C, H, W)
+        logging.getLogger(__name__).info("Krea 2 VAE decoding: %dx%d, dtype=%s, tiled=%s",
+                                        width, height, next(vae.parameters()).dtype, vae.use_tiling)
+        latents = latents.to(dev, torch.bfloat16)
+        try:
+            try:
+                pixels = vae.decode_to_pixels(latents)                             # [0, 1], (B, C, H, W)
+            except torch.OutOfMemoryError:
+                if vae.use_tiling:
+                    raise
+                pixels = None
+            if pixels is None:
+                # Leave the failed forward's traceback before retrying, releasing its activations.
+                logging.getLogger(__name__).warning("Krea 2 VAE decode ran out of VRAM; retrying with tiled decoding")
+                vae.clear_cache()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                vae.enable_tiling()
+                try:
+                    pixels = vae.decode_to_pixels(latents)
+                finally:
+                    vae.disable_tiling()
+        finally:
+            vae.clear_cache()
         arr = (pixels[0].float().permute(1, 2, 0).clamp(0, 1) * 255.0).byte().cpu().numpy()
+        logging.getLogger(__name__).info("Krea 2 image complete: %dx%d", width, height)
         return Image.fromarray(arr)
 
     # ---- LoRA and the block map -------------------------------------------------------------------

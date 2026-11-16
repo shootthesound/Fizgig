@@ -86,7 +86,7 @@ async function boot() {
   S.pod = pr.pod;
   S.outputDefault = pr.output_default || "";
   S.outputPref = pr.lora_output_dir || "";
-  S.set = pr.settings || {}; S.setAbs = pr.abs || {};
+  S.set = pr.settings || {}; S.setAbs = pr.abs || {}; S.sageAttentionOption = !!pr.sageattention_option;
   S.gpu = {chosen: pr.cuda_device || "", list: pr.gpus || [], envLocked: pr.gpu_env_locked};
   S.all = st.values || {};
   S.imageFolder = st.image_folder || "";
@@ -1146,7 +1146,8 @@ function renderPrefs() {
         if (e.target.dataset.sure !== "1") { e.target.dataset.sure = "1"; e.target.textContent = "Reset? Click again"; return; }
         await api("/api/prefs", {reset: true});
         const pr = await api("/api/prefs");
-        S.set = pr.settings || {}; S.setAbs = pr.abs || {}; S.outputPref = pr.lora_output_dir || ""; S.outputDefault = pr.output_default;
+        S.set = pr.settings || {}; S.setAbs = pr.abs || {}; S.sageAttentionOption = !!pr.sageattention_option;
+        S.outputPref = pr.lora_output_dir || ""; S.outputDefault = pr.output_default;
         renderPrefs();
       }})),
       el("div", {class: "field-hint", text: "Puts the folders and inference settings above back to Fizgig's defaults. " +
@@ -1275,6 +1276,20 @@ function inferenceCard() {
   int8.checked = String(S.set.inference_int8 ?? "1") !== "0";
   int8.addEventListener("change", () => api("/api/prefs", {changes: {inference_int8: int8.checked}})
     .then(() => { S.set.inference_int8 = int8.checked ? "1" : "0"; }));
+  const sage = el("input", {type: "checkbox"});
+  sage.checked = String(S.set.inference_sageattention ?? "0") === "1";
+  sage.addEventListener("change", async () => {
+    try {
+      await api("/api/prefs", {changes: {inference_sageattention: sage.checked}});
+      S.set.inference_sageattention = sage.checked ? "1" : "0";
+    } catch (e) { sage.checked = !sage.checked; showProblems([e.message]); }
+  });
+  const sageControls = S.sageAttentionOption ? [
+    el("label", {class: "checkbox-label"}, sage, " Force SageAttention for Krea 2 image generation"),
+    el("div", {class: "field-hint", text: "Applies to Krea 2 training previews, Studio, Royale and Profiler from the " +
+      "next generated image. Requires a compatible SageAttention build in Fizgig's Python environment (including " +
+      "ROCm builds). Generation fails if it is unavailable; turn this off to use the default attention. " +
+      "Training steps keep their own attention backend."})] : [];
   return el("div", {class: "section-card"}, el("div", {class: "card-title"}, el("span", {text: "Inference performance"})),
     el("div", {class: "card-desc", text: "For Studio, Royale, the Profiler and Extract. Block swap moves blocks to the CPU " +
       "between steps to save memory, at some speed. Training manages its own and ignores these."}),
@@ -1282,7 +1297,7 @@ function inferenceCard() {
       el("div", {class: "field-row"}, el("span", {class: "field-label", text: "DiT block swap:"}), swap),
       el("label", {class: "checkbox-label"}, int8, " INT8 fast inference (recommended)"),
       el("div", {class: "field-hint", text: "On by default: same memory as fp8, near-identical pictures, previews only. " +
-        "Turn it off to use fp8."})));
+        "Turn it off to use fp8."}), ...sageControls));
 }
 
 // where the LoRA and reference pickers start (Preferences > Other folders, else what they used before)
@@ -4602,7 +4617,10 @@ async function profilerPoll() {
   const res = st.result;
   $("pfStatus").textContent = running ? st.text : st.state === "done" ? "Done." : st.state === "stopped" ? "Stopped." :
     st.state === "failed" ? "Error - see below." : "";
-  $("pfLog").textContent = [...st.log.filter((l) => !/^INFO:/.test(l)), ...(res ? ["", ...res.lines] : []), ...(st.state === "failed" ? ["", st.error] : [])].join("\n");
+  const log = $("pfLog");
+  const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
+  log.textContent = [...st.log.filter((l) => !/^INFO:/.test(l)), ...(res ? ["", ...res.lines] : []), ...(st.state === "failed" ? ["", st.error] : [])].join("\n");
+  if (atEnd) log.scrollTop = log.scrollHeight;
   if (res && res.report) {
     $("pfReport").href = `/api/profile/report?path=${encodeURIComponent(res.report)}&t=${encodeURIComponent(TOKEN)}`;
     $("pfReport").style.display = "";

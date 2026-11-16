@@ -1,7 +1,7 @@
 """A prompt slider's Change the prompts during the run (advanced), in words read at a glance: the switch's name and
 what it's for, each long hint of its rows as its first sentence and a small More (and Less) - its rows only -, Split and
-Slide that start from the number in Single, and the boxes' headings in one style. With the switch off the card is as
-before: test_slider_by_epoch.py."""
+Slide that start from the number in Single, Reuse practice pictures under the plan, and the boxes' headings in one
+style. With the switch off the card is as before: test_slider_by_epoch.py."""
 import json
 import os
 import re
@@ -14,7 +14,7 @@ from fizgig.families import form, launch
 from fizgig.families.registry import get as get_family, training_families
 
 STATIC = os.path.join(os.path.dirname(__file__), "..", "src", "fizgig", "web", "static")
-MODE = {"FAMILY_SLIDER_BY_EPOCH": "on", "_slider_plan": True}   # its rows with More
+MODE = {"FAMILY_SLIDER_BY_EPOCH": "on", "_slider_plan": True, "FAMILY_SLIDER_KEEP": True}   # its rows with More
 # a small page in node for app.js's own parts (the DOM they use); shown(n): what a node shows, its hidden parts left out
 DOM = r"""
 class T { constructor(t) { this.nodeType = 3; this.textContent = String(t); this.parentNode = null; } }
@@ -128,8 +128,8 @@ def test_the_switch_says_what_it_is_for():
 
 
 def test_more_is_on_the_modes_rows_only():
-    # its switch (More only while it's on), the plan and every box's lines look; any other row of any model's form,
-    # and the boxes' plain look, as before
+    # its switch (More only while it's on), the plan, Reuse practice pictures and every box's lines look; any other
+    # row of any model's form, and the boxes' plain look, as before
     for d in training_families():
         for s in form.form(d)["sections"]:
             for r in filter(None, s["rows"]):
@@ -165,7 +165,7 @@ def test_the_modes_long_hints_open_on_a_short_first_sentence():
             for h in ("hint", "split_hint", "slide_hint") if look.get("more") else ():
                 if look.get(h):
                     hints[f"{fam} {k} {h}"] = look[h]
-    assert len(hints) == 2 * 9
+    assert len(hints) == 2 * 10
     got = _node("for (const [k, t] of Object.entries(HINTS)) { const h = moreHint(t); "
                 "log(k, shown(h), !!h.querySelector('a')); }", HINTS=hints)
     first = {}
@@ -174,6 +174,8 @@ def test_the_modes_long_hints_open_on_a_short_first_sentence():
         first[k] = text[:-len(" More")]
     assert first["krea2 FAMILY_SLIDER_BY_EPOCH hint"] == ("Use different words at different stages, so the dial "
                                                           "learns only the change.")
+    assert first["krea2 FAMILY_SLIDER_KEEP hint"] == ("A picture description that comes back at a later epoch uses its "
+                                                      "practice pictures again, instead of rendering them anew.")
     assert first["krea2 FAMILY_SLIDER_GUIDANCE split_hint"] == ("One push strength for the first epochs, then another "
                                                                 "to the end.")
 
@@ -213,6 +215,14 @@ def test_split_and_slide_start_from_the_number_in_single():
         ["6", "6:10:4", "5:10:4", "6", "2", "5:10:4"],
         ["2:10:1.5:15", "2", "", "2:10:1.5:15"],             # Slide's untouched: from 2; no number in Single: as it was
         ["75:5:40", "60:7:30:15:2"]]                          # the Clean-end share's own, as before
+
+
+def test_reuse_practice_pictures_sits_under_the_plan():
+    card = _card("krea2")
+    keys = list(card)
+    assert keys.index("FAMILY_SLIDER_KEEP") == keys.index("_slider_plan") + 1
+    assert card["FAMILY_SLIDER_KEEP"]["label"] == "Reuse practice pictures when a description comes back"
+    assert card["FAMILY_SLIDER_KEEP"]["kind"] == "check" and card["FAMILY_SLIDER_KEEP"]["default"] is True
 
 
 def test_the_boxes_headings_share_one_style_and_the_switch_shows_more_only_while_on():

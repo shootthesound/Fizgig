@@ -747,8 +747,11 @@ function drawSliderPlan() {
         // how these epochs train: the push strength (one number, a Split or a Slide) and (form.py clean_share_at)
         // the share of steps on fine detail and a half-rate epoch
         ...planCond(seg),
-        // a new picture description: its practice pictures render anew
-        seg.new_pictures ? el("span", {class: "plan-badge", text: "new practice pictures"}) : null,
+        // a picture description that came before normally takes its practice pictures again (no new render) - not
+        // when the kept ones pass the trainer's 1 GB, nor once after a Pause and Resume, which starts with none
+        seg.new_pictures ? el("span", {class: "plan-badge", text: seg.again ? "practice pictures normally kept from " +
+          `epoch ${seg.again}` : "new practice pictures", title: seg.again ? "Rendered anew instead when the kept " +
+          "practice pictures pass 1 GB, and once after a Pause and Resume" : undefined}) : null,
         seg.changed.length ? el("span", {class: "plan-badge", text: "new " + seg.changed.map((k) =>
           ({pos: "+1", neg: "−1", anchors: "leave alone"})[k]).join(", ")}) : null,
         el("span", {class: "plan-gist"}, "+1: ", ...words(seg.lines.pos))),

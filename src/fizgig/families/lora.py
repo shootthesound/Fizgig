@@ -528,6 +528,15 @@ class FamilyLoRA:
         self._frozen[name]["load"] = float(strength)
         self._apply(name)
 
+    def state_of(self, name):
+        """What a render with this adapter on depends on: its load strength and block settings (a prompt slider keeps
+        its practice pictures by it); None when it isn't loaded."""
+        st = self._frozen.get(name)
+        if st is None:
+            return None
+        return (st["load"], st["outside_on"], tuple(sorted(st["block_on"].items(), key=lambda kv: str(kv[0]))),
+                tuple(sorted(st["block_mult"].items(), key=lambda kv: str(kv[0]))))
+
     def set_outside(self, name, enabled: bool):
         """On/off for the adapter's modules outside the block map (no slider reaches them)."""
         self._frozen[name]["outside_on"] = bool(enabled)

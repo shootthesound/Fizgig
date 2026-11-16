@@ -1,5 +1,6 @@
 """Change the prompts during the run (advanced): a picture model's tick on the Slider card (FAMILY_SLIDER_BY_EPOCH, off
-when missing) for a prompt slider's lines with their own epochs, its push strength by epoch and its plan.
+when missing) for a prompt slider's lines with their own epochs, its push strength by epoch, its plan and its kept
+practice pictures.
 Off, the prompt slider is the plain slider's - its form, Start's checks, its command and the trainer - and what only the tick
 trains (several lines, a Split or a Slide) is refused, saying to turn it on. The tick on: test_slider_lines.py."""
 import importlib.util
@@ -64,12 +65,12 @@ def test_off_is_the_plain_slider(tmp_path):
 
 
 def test_the_tick_sends_its_switch_and_only_then(tmp_path):
-    _p, cmd, _desc, _v = _plan(tmp_path, "krea2")
-    assert "--slider_by_epoch" not in cmd
-    _p, cmd, _desc, _v = _plan(tmp_path, "krea2", FAMILY_SLIDER_BY_EPOCH=True)
-    assert "--slider_by_epoch" in cmd
+    _p, cmd, _desc, _v = _plan(tmp_path, "krea2", FAMILY_SLIDER_KEEP=False)
+    assert "--slider_by_epoch" not in cmd and "--slider_bank_keep" not in cmd
+    _p, cmd, _desc, _v = _plan(tmp_path, "krea2", FAMILY_SLIDER_BY_EPOCH=True, FAMILY_SLIDER_KEEP=False)
+    assert "--slider_by_epoch" in cmd and cmd[cmd.index("--slider_bank_keep") + 1] == "0"
     _p, cmd, _desc, _v = _plan(tmp_path, "acestep15xl", FAMILY_SLIDER_BY_EPOCH=True)     # songs have no tick
-    assert "--slider_by_epoch" not in cmd
+    assert "--slider_by_epoch" not in cmd and "--slider_bank_keep" not in cmd
 
 
 def test_off_a_prompt_that_starts_with_a_dash_still_reaches_the_trainer(tmp_path):
@@ -116,11 +117,11 @@ def test_off_a_line_that_ends_in_epochs_trains_as_typed_with_a_note(tmp_path):
                                                     + tail.format('line 1: "@-4"; line 3: "@2"'))
     assert "FAMILY_SLIDER_BASE" not in st["notes"]
     assert not st["slider_by_epoch"] and st["slider_plan"] is None
-    assert "_slider_plan" in st["hidden"]
+    assert {"_slider_plan", "FAMILY_SLIDER_KEEP"} <= set(st["hidden"])
     st = form.state(desc, {**v, "FAMILY_SLIDER_BY_EPOCH": True}, "")             # on: its plan and its own notes
     assert st["slider_by_epoch"] and st["slider_plan"]
     assert st["notes"]["FAMILY_SLIDER_POS"].startswith("No line is on at epochs 1–4")
-    assert "_slider_plan" not in st["hidden"]
+    assert not {"_slider_plan", "FAMILY_SLIDER_KEEP"} & set(st["hidden"])
     # several lines of an end: their box waits read-only and says why (Start refuses them); songs: no note at all
     assert form.state(desc, {**v, "FAMILY_SLIDER_POS": "a @1-2\nb @3-"}, "")["notes"]["FAMILY_SLIDER_POS"].startswith(
         'Holds 2 lines from "Change the prompts during the run (advanced)"')
@@ -194,9 +195,10 @@ def test_off_apply_refuses_as_start_does_and_keeps_the_boxes_as_typed(tmp_path, 
 
 def test_the_trainer_takes_lines_and_a_push_by_epoch_only_with_its_switch(tmp_path):
     a = setup_parser().parse_args(ARGS)
-    assert a.slider_by_epoch is False and a.slider_guidance == "3"
-    a = setup_parser().parse_args(ARGS + ["--slider_by_epoch", "--slider_line", "pos", "smiling @1-4"])
-    assert a.slider_by_epoch is True and a.slider_line == [["pos", "smiling @1-4"]]
+    assert a.slider_by_epoch is False and a.slider_bank_keep == 0 and a.slider_guidance == "3"    # nothing kept
+    a = setup_parser().parse_args(ARGS + ["--slider_by_epoch", "--slider_bank_keep", "32",
+                                          "--slider_line", "pos", "smiling @1-4"])
+    assert a.slider_by_epoch is True and a.slider_bank_keep == 32 and a.slider_line == [["pos", "smiling @1-4"]]
     live, boxes = tmp_path / ".slider_prompts.json", {"base": "a man,", "pos": "smiling", "neg": "frowning"}
     for guidance, off, on in (("3:10:2", None, "3:10:2"), (" 2.5 ", "2.5", "2.5"), (3, "3", "3"), (0, None, None)):
         live.write_text(json.dumps({**boxes, "guidance": guidance}), encoding="utf-8")

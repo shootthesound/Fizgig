@@ -107,7 +107,8 @@ DEFAULTS = {
     "FAMILY_EDIT_PICTURES": launch.EDIT_PHOTO_ONLY, "FAMILY_EDIT_EXTRAS_DIR": "",
     "FAMILY_SLIDER_SOURCE": "pairs", "FAMILY_SLIDER_DIR": "", "FAMILY_SLIDER_CAPTION": "",
     "FAMILY_SLIDER_BASE": "", "FAMILY_SLIDER_POS": "", "FAMILY_SLIDER_NEG": "", "FAMILY_SLIDER_ANCHORS": "",
-    "FAMILY_SLIDER_ANCHOR_WEIGHT": "1", "FAMILY_SLIDER_ULTRA": False, "FAMILY_SLIDER_BY_EPOCH": False,
+    "FAMILY_SLIDER_ANCHOR_WEIGHT": "1", "FAMILY_SLIDER_ULTRA": False, "FAMILY_SLIDER_KEEP": True,
+    "FAMILY_SLIDER_BY_EPOCH": False,
     "FAMILY_FT_ROTATIONS": "10", "FAMILY_FT_SAVE_EVERY": "1", "FAMILY_FT_ROTATE_EVERY": "1",
     "FAMILY_FT_FUSED": True, "FAMILY_FT_REG_DIR": "", "FAMILY_FT_REG_MULT": "0.2",
     "FAMILY_REG_ON": False, "FAMILY_REG_DIR": "", "FAMILY_REG_MULT": "1.0", "FAMILY_REG_USE": REG_MATCH,
@@ -693,6 +694,14 @@ def form(desc):
                      "Clean-end share on the Training tab." if any(str(o.tokens).startswith("lownoise_pct=")
                                                                    for o in desc.options) else ""),
                  more=True) if lines else None,
+            # under the plan, whose sections say where practice pictures come again
+            _row("FAMILY_SLIDER_KEEP", "Reuse practice pictures when a description comes back", "check",
+                 hint="A picture description that comes back at a later epoch uses its practice pictures again, "
+                      "instead of rendering them anew. That happens when lines take turns or after a change on the "
+                      "Run card, and only when nothing they depend on has changed: the description, the Turbo LoRA "
+                      "and its strength, the size and the seed. Kept in system memory for this run only, up to about "
+                      "35 MB a description and 1 GB in all: a Pause and Resume renders them again once. Untick to "
+                      "render them every time.", more=True) if lines else None,
             # how it works, at the bottom: the source's own help (the desktop's "Where the two ends come from")
             _row("_slider_help_pairs", "Photo pairs: two folders of the same shots, one for each end of the dial (e.g. "
                  "the same person smiling, and not smiling). 4 to 10 pairs, each pair framed the same. For a dial about "
@@ -1412,16 +1421,17 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     pairs = (values.get("FAMILY_SLIDER_SOURCE") or SLIDER_SOURCES[srcs[0]]) != "Prompts" if len(srcs) > 1 \
         else srcs[0] == "pairs"
     hidden |= ({"FAMILY_SLIDER_BASE", "FAMILY_SLIDER_POS", "FAMILY_SLIDER_NEG", "FAMILY_SLIDER_GUIDANCE",
-                "FAMILY_SLIDER_ANCHORS", "FAMILY_SLIDER_ANCHOR_WEIGHT", "FAMILY_SLIDER_BY_EPOCH",
+                "FAMILY_SLIDER_ANCHORS", "FAMILY_SLIDER_ANCHOR_WEIGHT", "FAMILY_SLIDER_KEEP", "FAMILY_SLIDER_BY_EPOCH",
                 "_slider_help_prompts"} if pairs else {"_slider_plus_dir", "FAMILY_SLIDER_DIR", "FAMILY_SLIDER_CAPTION",
                                                        "_slider_help_pairs"})
     if pairs:
         notes["_slider_plus_dir"] = image_folder or "Not chosen yet - pick it on the Start tab"
-    # Change the prompts during the run (advanced): its plan and the notes under the boxes; off, the card as before.
-    # The rows' look follows the tick in the page (app.js rowLook), and slider_by_epoch tells the Run card and the plan
+    # Change the prompts during the run (advanced): its plan, the Keep tick and the notes under the boxes; off, the
+    # card as before. The rows' look follows the tick in the page (app.js rowLook), and slider_by_epoch tells the Run
+    # card and the plan
     by_epoch, slider_plan = launch.slider_by_epoch(desc, values), None
     if pairs or not by_epoch:
-        hidden |= {"_slider_plan"}
+        hidden |= {"_slider_plan", "FAMILY_SLIDER_KEEP"}
     if kind == "slider" and not pairs:
         _plan_notes, slider_plan = _slider_plan(desc, values) if by_epoch else (_slider_off_notes(desc, values), None)
         notes.update(_plan_notes)
@@ -1672,7 +1682,8 @@ def _slider_plan(desc, values):
     """A prompt slider's notes - under a box of the picture or an end, the first epoch it has no line on - and what the
     boxes make epoch by epoch, for the plan on the Slider card (app.js drawSliderPlan): a section for each run of
     alike epochs (the same prompts and the same training: its Clean-end share and rate, clean_share_at, and its push
-    strength), each box's lines on then with their epochs, and whether its picture renders new practice pictures."""
+    strength), each box's lines on then with their epochs, and whether its picture renders new practice pictures or
+    normally takes again those of an earlier epoch with the same description (train.py _BankCache)."""
     boxes = launch.slider_boxes(values)       # as typed
     # as they join in, the trainer's order - and the notes', which name lines by their words: a line's place in its
     # box changes as the lines take their places by epoch (app.js promptLines)
@@ -1725,11 +1736,26 @@ def _slider_plan(desc, values):
                 plan[-1] = (plan[-1][0], e, *seg[2:])
             else:
                 plan.append((e, e, *seg[2:]))
+    # the epoch that rendered each section's practice pictures, as the trainer normally keeps them (train.py
+    # _BankCache, by the description's text): a description that comes back takes them again while it's among the last
+    # SLIDER_BANKS_KEPT used - unless the kept ones pass its 1 GB, or a Resume started it with none, which the plan
+    # can't know (it says "normally"); unticked, every change renders anew
+    keep = launch.SLIDER_BANKS_KEPT if values.get("FAMILY_SLIDER_KEEP", True) else 0
+    kept, drawn = {}, []                     # description -> the epoch that rendered its pictures, and each section's
+    for n, seg in enumerate(plan):
+        if n and seg[2] == plan[n - 1][2]:
+            drawn.append(drawn[-1])          # the same description goes on, on the same pictures
+            continue
+        drawn.append(kept.pop(seg[2], seg[0]))
+        kept[seg[2]] = drawn[-1]             # the most recently used last
+        while len(kept) > keep:
+            kept.pop(next(iter(kept)))
 
     def trains(a):          # how a section trains: its Clean-end share and rate, the schedule's, and its push strength
         c = cond[a - 1]
         return {"detail": c[0] if c else None, "half": bool(c and c[1]), "push": push[a - 1]}
     view = [{"from": a, "to": b, "new_pictures": bool(n) and base != plan[n - 1][2],
+             "again": drawn[n] if keep and drawn[n] < a else None,      # its pictures from then, normally
              **trains(a),
              "changed": [k for i, k in ((3, "pos"), (4, "neg"), (5, "anchors")) if n and seg[i] != plan[n - 1][i]],
              "lines": {k: [{"text": t, "key": key} for t, key in launch.slider_lines_on(ordered[k], a, keys=True)]
@@ -1842,6 +1868,7 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
         TRAINING_MAPS=b("TRAINING_MAPS") and desc.training_maps,
         SAVE_STATE_ON_TRAIN_END=b("SAVE_STATE_ON_TRAIN_END"), FAMILY_FT_FUSED=b("FAMILY_FT_FUSED"),
         FAMILY_SLIDER_ULTRA=b("FAMILY_SLIDER_ULTRA"),
+        FAMILY_SLIDER_KEEP=bool(v.get("FAMILY_SLIDER_KEEP", True)),     # on unless unticked (older forms have none)
         FAMILY_SLIDER_BY_EPOCH=bool(v.get("FAMILY_SLIDER_BY_EPOCH")),   # Change the prompts...: off when missing
         FAMILY_FAST_ID=b("FAMILY_FAST_ID") and kind == "standard" and bool(desc.identity_blocks),
         **({"FAMILY_TRAIN_AREA": s("TARGET_LAYERS") or desc.train_areas[0][0],

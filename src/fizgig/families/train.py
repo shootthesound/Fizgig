@@ -38,8 +38,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from fizgig.dataset.config import (BlueprintGenerator, ConfigSanitizer,  # noqa: E402
                                    generate_dataset_group_by_blueprint, load_user_config)
 from fizgig.families import quant  # noqa: E402
-from fizgig.families.launch import (slider_at, slider_first, slider_picture_lines, slider_push_at,  # noqa: E402
-                                    slider_push_problems, slider_push_text, slider_scheduled, slider_sort)
+from fizgig.families.launch import (SLIDER_BANKS_KEPT, slider_at, slider_first, slider_picture_lines,  # noqa: E402
+                                    slider_push_at, slider_push_problems, slider_push_text, slider_scheduled,
+                                    slider_sort)
 from fizgig.families.lora import FamilyLoRA  # noqa: E402
 from fizgig.families.registry import get as get_family  # noqa: E402
 from fizgig.training.adaptive_lr import AdaptiveLR  # noqa: E402
@@ -637,6 +638,77 @@ def _load_references(paths, width, height, rgba=False):
     size = _reference_size(*imgs[0].size, width * height)
     return [np.array(ImageOps.fit(im, size if i == 0 else _reference_size(*im.size, width * height), Image.LANCZOS))
             for i, im in enumerate(imgs)], size
+
+
+def _bank_key(text, negative, recipe, speed, res, size, seed):
+    """Everything a prompt slider's practice render depends on, as one key: what the description is - its text - and
+    the negative's text (None: none), not their encodings (encoded in a batch with other prompts, the same text's can
+    differ a little); the recipe (steps, CFG, schedule), the speed LoRA's strength and blocks (None: off), the pictures'
+    size, how many and the seed. The base model renders them with the trained LoRA off, so the same key gives the same
+    pictures - and the plan says "again" by the same text (form._slider_plan)."""
+    return (str(text), None if negative is None else str(negative), repr(recipe), repr(speed), int(res), int(size),
+            int(seed))
+
+
+def _nbytes(x):
+    """The bytes the tensors of an encoding or a practice bank hold ({name: tensor}, a tensor, or lists and dicts of
+    them)."""
+    if torch.is_tensor(x):
+        return x.element_size() * x.nelement()
+    if isinstance(x, dict):
+        return sum(_nbytes(v) for v in x.values())
+    if isinstance(x, (list, tuple)):
+        return sum(_nbytes(v) for v in x)
+    return 0
+
+
+# the system memory each of a prompt slider's caches (practice banks, encodings) may hold at most: tens of MB a bank on
+# the larger models (MOSS-Image: 16 latents of 128 channels), tens of MB a prompt on the larger text encoders
+SLIDER_CACHE_BYTES = 1 << 30
+
+
+class _BankCache:
+    """The practice banks a prompt slider rendered this run, by _bank_key, the most recently used kept: at most `keep`
+    (0: none) and `max_bytes` on the CPU, the newest even when it alone is more. A description that comes back, nothing
+    else changed, takes its pictures again instead of rendering them anew. Never kept past the run: a Resume renders
+    again."""
+
+    def __init__(self, keep=SLIDER_BANKS_KEPT, max_bytes=SLIDER_CACHE_BYTES):
+        self.keep, self.max_bytes, self.banks, self.sizes = keep, max_bytes, {}, {}
+
+    def get(self, key):
+        bank = self.banks.pop(key, None)
+        if bank is not None:
+            self.banks[key] = bank                  # the most recently used goes last
+        return bank
+
+    def put(self, key, bank):
+        self.banks.pop(key, None)
+        self.banks[key], self.sizes[key] = bank, _nbytes(bank)
+        while self.banks and (len(self.banks) > self.keep
+                              or (len(self.banks) > 1 and sum(self.sizes[k] for k in self.banks) > self.max_bytes)):
+            old = next(iter(self.banks))            # the least recently used
+            del self.banks[old], self.sizes[old]
+
+
+# sets of encoded prompts a prompt slider keeps this run (on the CPU, at most SLIDER_CACHE_BYTES), for a set that comes
+# back (lines taking turns)
+SLIDER_ENCODINGS_KEPT = 8
+
+
+def _cached_encode(cache, want, encode):
+    """The encodings of `want`, the texts encoded together: this run's own for the very same texts in the same order
+    (`cache`, a _BankCache keyed by them), else encode(want), kept there. A set of prompts that comes back (lines taking
+    turns) loads no text encoder."""
+    key = tuple(str(t) for t in want)
+    enc = cache.get(key)
+    if enc is None:
+        enc = encode(list(key))
+        cache.put(key, enc)
+    else:
+        logger.info("[slider] these prompts' encodings taken again: this run encoded the very same ones - no text "
+                    "encoder")
+    return enc
 
 
 class _SliderBank(torch.utils.data.Dataset):
@@ -1300,7 +1372,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  sample_strengths=(), slider_pairs=False, slider_diff_weight=1.0, slider_prompts=None, slider_guidance=3.0,
                  slider_anchors=(), slider_anchor_weight=1.0, slider_lines=None, slider_by_epoch=False,
                  train_blocks=None,
-                 slider_bank=16, slider_bank_res=768,
+                 slider_bank=16, slider_bank_res=768, slider_bank_keep=0,
                  metadata_title=None, metadata_author=None, metadata_description=None, metadata_license=None,
                  metadata_tags=None, metadata_trigger_phrase=None, metadata_thumbnail=None,
                  resume_state_dir=None, adaptive_lr=False, adaptive_lr_min=1e-4, adaptive_lr_max=2e-4,
@@ -1378,8 +1450,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     # ---- sliders: a signed dial, trained at +1 and -1 ------------------------------------------------
     slider_prompts = _prompt_texts(slider_prompts)     # as typed (the launch's space before a "-" goes)
     # The by-epoch switch, --slider_by_epoch: lines with their own epochs (the Run card's too), a push strength
-    # by epoch and their metadata - a picture model's, as the launch sends it (launch.slider_by_epoch). Without it a
-    # prompt slider trains as before
+    # by epoch, their metadata and the practice pictures and encodings kept for a set that comes back - a picture
+    # model's, as the launch sends it (launch.slider_by_epoch). Without it a prompt slider trains as before
     slider_by_epoch = bool(slider_by_epoch) and slider_picture_lines(desc)
     slider_boxes = slider_texts = slider_preview = None
     # a prompt slider's push strength: its plan as typed (one number, a Split or a Slide), and the number the epoch
@@ -1828,12 +1900,14 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
 
     # ---- previews: encode prompts once, keep the VAE ---------------------------------------------
     encoded = neg = vae = ref_imgs = ref_latents = None
-    slider_enc = slider_neg = None
+    slider_enc = slider_neg = slider_neg_text = None
     anchor_enc = []
+    # a prompt slider's encodings, by the texts (_cached_encode) - with --slider_by_epoch; without it none are kept
+    enc_cache = _BankCache(keep=SLIDER_ENCODINGS_KEPT if slider_by_epoch else 0)
     if slider_prompts:
         te = driver.load_text_encoder(te_path, device)
-        _all = [{k: v[None] for k, v in c.items()}
-                for c in driver.encode_text(te, [str(x) for x in slider_prompts] + list(slider_anchors))]
+        _all = [{k: v[None] for k, v in c.items()} for c in _cached_encode(    # the set it starts on is kept too
+            enc_cache, [str(x) for x in slider_prompts] + list(slider_anchors), lambda w: driver.encode_text(te, w))]
         slider_enc, anchor_enc = _all[:3], _all[3:]
         # a Turbo LoRA's own recipe can use CFG too (MOSS-Image's: CFG 2), and then it needs the negative as well
         if ((sample_cfg_scale > 1.0 or (speed_desc is not None and speed_desc.settings.cfg > 1.0))
@@ -1841,6 +1915,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             # the practice pictures render as previews do: the Samples tab's negative (else the family's default)
             text = sample_negative if sample_negative is not None else desc.preview_negative
             slider_neg = {k: v[None] for k, v in driver.encode_text(te, [text])[0].items()}
+            slider_neg_text = text                 # the practice pictures are kept by it (bank_key)
         driver.unload_text_encoder(te)
         del te
         torch.cuda.empty_cache()
@@ -2073,11 +2148,34 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             blocks = set(train_blocks)
             logger.info(f"[blocks] the LoRA trains {len(blocks)} of {len(known)} blocks only: {', '.join(train_blocks)}")
         net.add_trainable(network_dim, network_alpha, blocks=blocks, kind=network_type, factor=lokr_factor)
-    def render_bank(neutral):
-        """The practice bank: the base model's own renders of the neutral prompt (`neutral`, its encoding; adapter at
-        0, training adapter off, the speed LoRA on when it is loaded), decoded and re-encoded into training latents.
-        The bank is replaced only when every picture rendered; a render that fails leaves the model as it was."""
+    # 0 (and without --slider_by_epoch): every description renders anew, nothing kept and no key made
+    bank_cache = _BankCache(keep=max(0, int(slider_bank_keep)) if slider_by_epoch else 0)
+
+    def bank_key(text):
+        """The key of a practice render of the description `text` now (_bank_key): with the speed LoRA its recipe and
+        current strength and blocks (a preview round can change its strength), without it the previews' steps and
+        CFG."""
+        use_speed = speed_lora is not None and speed_desc is not None and net.has(SPEED)
+        s = speed_desc.settings if use_speed else None
+        recipe = (("speed", s.steps, s.cfg, s.sigmas, s.options) if use_speed
+                  else ("plain", desc.preview_steps, float(sample_cfg_scale)))
+        return _bank_key(text, slider_neg_text, recipe, net.state_of(SPEED) if use_speed else None, slider_bank_res,
+                         len(group), seed)
+
+    def render_bank(neutral, text):
+        """The practice bank: the base model's own renders of the neutral prompt (`neutral`, its encoding, of the
+        description `text`; adapter at 0, training adapter off, the speed LoRA on when it is loaded), decoded and
+        re-encoded into training latents. The bank is replaced only when every picture rendered; a render that fails
+        leaves the model as it was. A description this run rendered before, with everything a render depends on the
+        same (bank_key), takes those pictures again instead."""
         nonlocal vae
+        key = bank_key(text) if bank_cache.keep else None
+        kept = bank_cache.get(key) if key else None
+        if kept is not None:
+            group.latents = kept
+            logger.info("[slider] %d practice images of '%s' taken again: this run rendered them, and nothing they "
+                        "depend on has changed since - no new render", len(kept), text)
+            return
         if vae is None:
             vae = driver.load_vae(vae_path, device)
         n_c = {k: v[0].to(device) for k, v in neutral.items()}
@@ -2116,11 +2214,13 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             if was_training:
                 dit.train()
         group.latents = bank
+        if key:
+            bank_cache.put(key, bank)
         torch.cuda.empty_cache()
         logger.info("[slider] %d practice images rendered at %dx%d", len(bank), slider_bank_res, slider_bank_res)
 
     if slider_prompts:
-        render_bank(slider_enc[0])
+        render_bank(slider_enc[0], str(slider_prompts[0]))
     if do_compile:                       # decided before the load (below the Auto plan), applied last
         driver.compile_blocks(dit, "outside" if do_compile == "outside" else "inside",
                               blocks_to_swap if swapped else 0)
@@ -2273,8 +2373,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         """A prompt slider's prompts and push strength for the next epoch, taken at an epoch boundary: new ones from the
         web UI's Slider prompts panel, with lines of their own epochs the lines on then (a box's lines on together
         joined into one), and the strength its plan gives that epoch (one number, a Split or a Slide) - as
-        _slider_next decides. New poles are encoded again, and a new base renders a new practice bank; a new strength
-        alone is only taken.
+        _slider_next decides. New poles are encoded again (a set of prompts this run encoded before takes those
+        encodings), and a new base renders a new practice bank; a new strength alone is only taken.
         The previews stay on the slider's own (the first lines with words). Training goes on from where it is, toward
         the new ends. With --slider_by_epoch, a request it can't encode or render is said on the Run card
         (SLIDER_LIVE_APPLIED's failed) and tried again at the next boundary, then it waits for a new Apply
@@ -2350,10 +2450,13 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             parked = []
             try:
                 want = prompts + anchors + [t for t in preview if t not in prompts + anchors]
-                enc = _encode_override(driver, te_path, want, dit, device, parkable=not swapped)
+                enc = _cached_encode(enc_cache, want,       # a set that came before: its very encodings, no encoder
+                                     lambda w: _encode_override(driver, te_path, w, dit, device, parkable=not swapped))
                 _all = [{k: v[None] for k, v in c.items()} for c in enc]
                 if nxt["base_changed"]:
-                    if desc.preview_park_optimizer and optimizer is not None:     # room for the renders, as previews do
+                    # else its pictures are kept from before
+                    rendering = not bank_cache.keep or bank_cache.get(bank_key(prompts[0])) is None
+                    if rendering and desc.preview_park_optimizer and optimizer is not None:   # room for the renders
                         for st in optimizer.state.values():
                             for k, v in st.items():
                                 if torch.is_tensor(v) and v.is_cuda:
@@ -2363,7 +2466,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     # the blocks run uncompiled for the renders, as previews do (Compile Blocks): eval mode and the
                     # bank's size would each build a new graph, minutes of work
                     with torch.compiler.set_stance("force_eager"):
-                        render_bank(_all[0])
+                        render_bank(_all[0], prompts[0])
             except Exception as exc:
                 logger.warning(f"[slider] could not take the new prompts ({type(exc).__name__}: {str(exc)[:200]}) - "
                                f"training goes on with {then}", exc_info=True)
@@ -3692,14 +3795,18 @@ def setup_parser():
                    help="Prompt-pair slider: how much the anchors count against the dial's own loss")
     p.add_argument("--slider_by_epoch", action="store_true",
                    help="Prompt-pair slider (picture models), Change the prompts during the run (advanced): lines with "
-                        "their own epochs (--slider_line, the Run card's too) and a push strength by epoch. Without it "
-                        "the slider trains as before")
+                        "their own epochs (--slider_line, the Run card's too), a push strength by epoch and the "
+                        "practice pictures kept (--slider_bank_keep). Without it the slider trains as before")
     p.add_argument("--slider_line", nargs=2, action="append", default=None, metavar=("BOX", "LINE"),
                    help="Prompt-pair slider (picture models, with --slider_by_epoch), in place of --slider_prompts / "
                         "--slider_anchors: a line of a box (base, pos, neg or anchor), on for the epochs after an @ - "
                         "'smiling @5-8', '@5-' from 5 on, none = the whole run. Again for each line; a box's lines on "
                         "together join into one")
     p.add_argument("--slider_bank", type=int, default=16, help="Prompt-pair slider: practice images to render")
+    p.add_argument("--slider_bank_keep", type=int, default=0,
+                   help="Prompt-pair slider with --slider_by_epoch: practice banks kept in memory, so a description "
+                        "that comes back with nothing else changed takes its pictures again (the web UI: "
+                        f"{SLIDER_BANKS_KEPT}; 0: render them every time)")
     p.add_argument("--train_blocks", default="",
                    help="Comma-separated block ids (the driver's block map) to train; empty = every block")
     p.add_argument("--slider_bank_res", type=int, default=768, help="Prompt-pair slider: practice image size")
@@ -3841,7 +3948,7 @@ def main():
         slider_guidance=a.slider_guidance, slider_anchors=a.slider_anchors or (),
         slider_anchor_weight=a.slider_anchor_weight, slider_lines=[tuple(x) for x in a.slider_line or []] or None,
         slider_by_epoch=a.slider_by_epoch,
-        slider_bank=a.slider_bank, slider_bank_res=a.slider_bank_res,
+        slider_bank=a.slider_bank, slider_bank_res=a.slider_bank_res, slider_bank_keep=a.slider_bank_keep,
         train_blocks=[b.strip() for b in a.train_blocks.split(",") if b.strip()] or None,
         metadata_title=a.metadata_title, metadata_author=a.metadata_author,
         metadata_description=a.metadata_description, metadata_license=a.metadata_license,

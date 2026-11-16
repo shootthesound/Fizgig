@@ -173,12 +173,14 @@ def slider_picture_lines(desc):
 
 
 BY_EPOCH = "Change the prompts during the run (advanced)"  # the Slider card's switch (FAMILY_SLIDER_BY_EPOCH)
+SLIDER_BANKS_KEPT = 32         # practice banks a prompt slider keeps in memory for a description that comes back
 
 
 def slider_by_epoch(desc, inputs):
     """Change the prompts during the run (advanced), a picture model's tick on the Slider card (off when missing):
-    lines with their own epochs, a push strength by epoch and the plan. Off, a prompt slider is the plain slider's -
-    its form, Start's checks, its command and the trainer (no --slider_by_epoch)."""
+    lines with their own epochs, a push strength by epoch, the plan and the practice pictures kept for a description
+    that comes back. Off, a prompt slider is the plain slider's - its form, Start's checks, its command and the trainer
+    (no --slider_by_epoch)."""
     return slider_picture_lines(desc) and bool(inputs.get("FAMILY_SLIDER_BY_EPOCH"))
 
 
@@ -1503,8 +1505,11 @@ def train_command(desc, inputs, plan):
                     cmd += ["--slider_bank_res", str(side)]
             except (TypeError, ValueError):
                 pass
-            if slider_by_epoch(desc, st):    # Change the prompts during the run (advanced): the trainer's own switch
-                cmd += ["--slider_by_epoch"]
+            if slider_by_epoch(desc, st):    # Change the prompts during the run (advanced): the trainer's own switch,
+                # and the practice pictures it keeps for a description that comes back (unticked: none, every one
+                # renders anew)
+                cmd += ["--slider_by_epoch",
+                        "--slider_bank_keep", str(SLIDER_BANKS_KEPT if st.get("FAMILY_SLIDER_KEEP", True) else 0)]
             for flag, role in (("--text_encoder", "text_encoder"), ("--vae", "vae")):
                 if flag not in cmd:          # the practice images and the three prompts need both
                     cmd += [flag, _model(st, desc, role)]

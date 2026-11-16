@@ -79,6 +79,35 @@
       ]
      ]
     },
+    "keep unticked": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
     "no -1 end": {
      "preview": null,
      "problems": [
@@ -398,6 +427,36 @@
       [
        "--slider_anchor_weight",
        "1"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "keep unticked": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
       ],
       [
        "--slider_bank_res",
@@ -747,6 +806,36 @@
       ]
      ]
     },
+    "keep unticked": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
     "no -1 end": {
      "preview": null,
      "problems": [
@@ -1082,6 +1171,36 @@
       [
        "--slider_anchor_weight",
        "1"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "keep unticked": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
       ],
       [
        "--slider_bank_res",
@@ -1431,6 +1550,36 @@
       ]
      ]
     },
+    "keep unticked": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
     "no -1 end": {
      "preview": null,
      "problems": [
@@ -1768,6 +1917,37 @@
       [
        "--slider_anchor_weight",
        "1"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "keep unticked": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "FAMILY_SLIDER_ULTRA",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
       ],
       [
        "--slider_bank_res",
@@ -2136,6 +2316,36 @@
       ]
      ]
     },
+    "keep unticked": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
     "no -1 end": {
      "preview": null,
      "problems": [
@@ -2426,6 +2636,19 @@
      ],
      "slider_args": null
     },
+    "keep unticked": {
+     "preview": null,
+     "problems": [
+      "Slider: set the -1 end folder (Training tab, Slider)"
+     ],
+     "shown": [
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": null
+    },
     "no -1 end": {
      "preview": null,
      "problems": [
@@ -2637,6 +2860,36 @@
       [
        "--slider_anchor_weight",
        "1"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "keep unticked": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
       ],
       [
        "--slider_bank_res",
@@ -2986,6 +3239,36 @@
       ]
      ]
     },
+    "keep unticked": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
     "no -1 end": {
      "preview": null,
      "problems": [
@@ -3321,6 +3604,36 @@
       [
        "--slider_anchor_weight",
        "1"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "keep unticked": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
       ],
       [
        "--slider_bank_res",
@@ -3670,6 +3983,36 @@
       ]
      ]
     },
+    "keep unticked": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
     "no -1 end": {
      "preview": null,
      "problems": [
@@ -4012,6 +4355,36 @@
       ]
      ]
     },
+    "keep unticked": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
     "no -1 end": {
      "preview": null,
      "problems": [
@@ -4347,6 +4720,36 @@
       [
        "--slider_anchor_weight",
        "1"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "keep unticked": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
       ],
       [
        "--slider_bank_res",

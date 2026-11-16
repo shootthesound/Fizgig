@@ -1,8 +1,9 @@
-"""The by-epoch switch: MOSS-Image's Clean-end share read by one function (its driver and the plan); a Run card request
-the trainer can't take tried once more, then waiting for a new Apply; a push strength alone by epoch kept short in the
-metadata; lines with no picture line on the first epoch refused before anything loads; and the Run card's boxes as
-numbered lines with their own epochs and its push strength as Single, Split or Slide (app.js slLines, slPush) - with
-the tick off, the panel as before."""
+"""The by-epoch switch: practice pictures kept by what the description is (its text), and the plan's "again" as the
+trainer's cache normally keeps them; MOSS-Image's Clean-end share read by one function (its driver and the plan); a
+Run card request the trainer can't take tried once more, then waiting for a new Apply; a push strength alone by epoch
+kept short in the metadata; lines with no picture line on the first epoch refused before anything loads; and the Run
+card's boxes as numbered lines with their own epochs and its push strength as Single, Split or Slide (app.js slLines,
+slPush) - with the tick off, the panel as before."""
 import json
 import os
 import re
@@ -20,6 +21,13 @@ RUN = {"FAMILY_KIND": "slider", "FAMILY_SLIDER_SOURCE": "Prompts", "MAX_TRAIN_EP
        "FAMILY_SLIDER_NEG": "frowning", "FAMILY_SLIDER_ANCHORS": "", "FAMILY_SLIDER_BY_EPOCH": True}
 
 
+def _values(**values):
+    return {**form.DEFAULTS, "LORA_NAME": "t", "MAX_TRAIN_EPOCHS": "8", "FAMILY_KIND": "slider",
+            "FAMILY_SLIDER_SOURCE": "Prompts", "FAMILY_SLIDER_BASE": "a photo of a man,",
+            "FAMILY_SLIDER_POS": "smiling", "FAMILY_SLIDER_NEG": "frowning", "FAMILY_SLIDER_GUIDANCE": "3",
+            "FAMILY_SLIDER_BY_EPOCH": True, **values}
+
+
 def _grab(*patterns):
     src = open(APP, encoding="utf-8").read()
     return "".join(re.search(p, src, re.S).group(0) for p in patterns)
@@ -31,6 +39,35 @@ def _node(js):
     run = subprocess.run(["node", "-"], input=js, capture_output=True, text=True, encoding="utf-8")
     assert run.returncode == 0, run.stderr
     return json.loads(run.stdout)
+
+
+# ---- practice pictures, kept by what the description is -------------------------------------------------------------
+def test_the_plans_again_is_what_the_trainers_cache_normally_keeps(monkeypatch):
+    # by how many descriptions it keeps - not by its 1 GB, nor a Resume, which starts with none: "normally", it says
+    from fizgig.families.train import _BankCache, _bank_key
+    desc = get_family("krea2")
+    base = "A, @1-2\nB, @3-3\nC, @4-4\nA, @5-5\nB, @6-6\nD, @7-7\nE, @8-8\nA, @9-9\nC, @10-10"
+    said = {}
+    for keep in (0, 2, 3, 32):
+        monkeypatch.setattr(launch, "SLIDER_BANKS_KEPT", keep or 32)
+        plan = form.state(desc, _values(MAX_TRAIN_EPOCHS="10", FAMILY_SLIDER_BASE=base,
+                                        FAMILY_SLIDER_KEEP=bool(keep)), "")["slider_plan"]
+        cache, took = _BankCache(keep=keep), []
+        for n, seg in enumerate(plan):          # as the trainer goes: a new description looks for its pictures by text
+            if n and not seg["new_pictures"]:
+                continue
+            key = _bank_key(launch.slider_join([x["text"] for x in seg["lines"]["base"]]), None, ("plain", 28, 4.0),
+                            None, 768, 16, 42)
+            kept = cache.get(key)
+            if kept is None:
+                cache.put(key, [seg["from"]])   # rendered at this epoch
+            took.append((seg["from"], kept[0] if kept else None))
+        assert [(s["from"], s["again"]) for n, s in enumerate(plan) if not n or s["new_pictures"]] == took, keep
+        said[keep] = [again for _e, again in took]
+    assert said[0] == [None] * 9                                        # unticked: every change renders anew
+    assert said[32] == [None, None, None, 1, 3, None, None, 1, 4]
+    # 3 kept: A at 9 had gone (the least recently used of A, B, D, E), so it renders again
+    assert said[3] == [None, None, None, 1, 3, None, None, None, None]
 
 
 # ---- MOSS-Image's Clean-end share: one function ----------------------------------------------------------------------

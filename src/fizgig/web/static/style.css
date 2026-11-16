@@ -2666,10 +2666,11 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 .form-row .prompt-line textarea { flex: 1 1 auto; width: auto; max-width: none; min-height: 32px; resize: none;
   overflow: hidden; background: transparent; border: none; border-radius: 0; box-shadow: none; padding: 6px 4px; }
 .form-row .prompt-line textarea:focus { background: color-mix(in srgb, var(--accent) 8%, transparent); box-shadow: none; }
-/* a picture model's prompt slider: the Change the prompts switch on a line of its own, so the boxes after it lay out
-   as before with the switch off (on, its boxes of lines and the push strength's Split and Slide go across the card by
-   their kind) */
-.section-card[id^="sec-"] > .card-content > .form-row[data-key="FAMILY_SLIDER_BY_EPOCH"] { grid-column: 1 / -1; }
+/* a picture model's prompt slider: the Change the prompts switch and the Reuse-practice-pictures switch on lines of
+   their own, so the boxes after them lay out as before with the switch off (on, its boxes of lines and the push
+   strength's Split and Slide go across the card by their kind) */
+.section-card[id^="sec-"] > .card-content > .form-row:is([data-key="FAMILY_SLIDER_BY_EPOCH"],
+  [data-key="FAMILY_SLIDER_KEEP"]) { grid-column: 1 / -1; }
 /* Change the prompts during the run (advanced): its boxes of lines, the push strength and the plan one under another,
    each set apart by some room and a line above (the push strength's box has its own frame); with it off, as before */
 .section-card[id^="sec-"] .form-row:is([data-look="by_epoch"], [data-key="_slider_plan"]) { margin-top: 12px; }

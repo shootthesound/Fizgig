@@ -35,6 +35,7 @@ CASES = {
     "push empty": {"FAMILY_SLIDER_GUIDANCE": ""},
     "epochs as words": {"FAMILY_SLIDER_POS": "smiling @5-8", "FAMILY_SLIDER_ANCHORS": "a photo of a man @-4\na dog @2"},
     "no -1 end": {"FAMILY_SLIDER_NEG": ""},
+    "keep unticked": {"FAMILY_SLIDER_KEEP": False},
     "ultra": {"FAMILY_SLIDER_ULTRA": True},          # its blocks (--train_blocks), on a model that has them
     "photo pairs": {"FAMILY_SLIDER_SOURCE": "Photo pairs"},
     # with its -1 end folder (an empty one, <tmp>/minus): the pair slider's own command

@@ -238,6 +238,70 @@ def test_the_run_card_shows_the_lines_the_trainer_took(tmp_path):
     st = server._slider_live_status(run)
     assert not st["waiting"] and st["now"]["pos"] == "a man, grinning"
 
+def test_practice_pictures_are_kept_only_for_the_very_same_render():
+    from fizgig.families.train import _BankCache, _bank_key
+    # what the description is - its text and the negative's - not their encodings, which another batch moves a little
+    a, neg, speed, on = "a photo of a woman,", "blurry", ("speed", 8, 2.0, None, ()), (0.6, True, (), ())
+    k = _bank_key(a, neg, speed, on, 768, 16, 42)
+    assert k == _bank_key(str(a), str(neg), speed, on, 768, 16, 42)
+    for changed in (_bank_key("a photo of a man,", neg, speed, on, 768, 16, 42),        # the description
+                    _bank_key(a, None, speed, on, 768, 16, 42),                         # the negative
+                    _bank_key(a, "ugly", speed, on, 768, 16, 42),
+                    _bank_key(a, neg, ("plain", 30, 4.0), None, 768, 16, 42),           # no speed LoRA
+                    _bank_key(a, neg, speed, (0.8, True, (), ()), 768, 16, 42),         # its strength
+                    _bank_key(a, neg, speed, on, 512, 16, 42),                          # the size
+                    _bank_key(a, neg, speed, on, 768, 8, 42),                           # how many
+                    _bank_key(a, neg, speed, on, 768, 16, 7)):                          # the seed
+        assert changed != k
+    cache = _BankCache(keep=2)
+    cache.put("a", ["A"])
+    cache.put("b", ["B"])
+    assert cache.get("a") == ["A"]                  # used: the most recent now
+    cache.put("c", ["C"])                           # over 2: the least recently used (b) goes
+    assert cache.get("b") is None and cache.get("a") == ["A"] and cache.get("c") == ["C"]
+    assert cache.get("nope") is None
+
+
+def test_the_plan_says_where_practice_pictures_come_again(tmp_path):
+    _p, desc, v = _plan(tmp_path, "krea2", FAMILY_SLIDER_BASE="A, @1-8/2\nB, @2-8/2")
+    plan = form.state(desc, v, "")["slider_plan"]
+    assert [(s["from"], s["new_pictures"], s["again"]) for s in plan][:4] == [
+        (1, False, None), (2, True, None), (3, True, 1), (4, True, 2)]
+
+def test_the_keep_tick_is_on_by_default_and_unticked_renders_every_time(tmp_path):
+    from fizgig.families.train import _BankCache
+    p, desc, v = _plan(tmp_path, "krea2", FAMILY_SLIDER_BASE="A, @1-8/2\nB, @2-8/2")
+    cmd = _train(p)                                                   # on: the trainer keeps its banks
+    assert "--slider_by_epoch" in cmd and cmd[cmd.index("--slider_bank_keep") + 1] == str(launch.SLIDER_BANKS_KEPT)
+    assert [s["again"] for s in form.state(desc, v, "")["slider_plan"]][2:4] == [1, 2]
+    p, desc, v = _plan(tmp_path, "krea2", FAMILY_SLIDER_BASE="A, @1-8/2\nB, @2-8/2", FAMILY_SLIDER_KEEP=False)
+    cmd = _train(p)
+    assert cmd[cmd.index("--slider_bank_keep") + 1] == "0"
+    assert all(s["again"] is None for s in form.state(desc, v, "")["slider_plan"])
+    assert setup_parser().parse_args(["--family", "krea2", "--dit", "d", "--output_dir", "o", "--output_name", "n",
+                                      "--slider_bank_keep", "0"]).slider_bank_keep == 0
+    never = _BankCache(keep=0)
+    never.put("a", ["A"])
+    assert never.get("a") is None                                     # keeps nothing: every bank renders anew
+    rows = _rows(desc)
+    assert rows["FAMILY_SLIDER_KEEP"]["kind"] == "check" and rows["FAMILY_SLIDER_KEEP"]["default"] is True
+    pairs = form.state(desc, {**v, "FAMILY_SLIDER_SOURCE": "Photo pairs"}, "")
+    assert "FAMILY_SLIDER_KEEP" in pairs["hidden"]
+
+
+def test_the_caches_hold_at_most_their_bytes_the_newest_always():
+    import torch
+    from fizgig.families.train import SLIDER_CACHE_BYTES, _BankCache, _nbytes
+    forty = lambda: [torch.zeros(10, dtype=torch.float32)]           # 40 bytes
+    assert _nbytes([{"a": torch.zeros(2, 3, dtype=torch.bfloat16), "b": torch.zeros(4, dtype=torch.bool)}]) == 16
+    assert _BankCache().max_bytes == SLIDER_CACHE_BYTES == 1 << 30
+    cache = _BankCache(keep=10, max_bytes=100)
+    for k in "abc":
+        cache.put(k, forty())
+    assert cache.get("a") is None and cache.get("b") and cache.get("c")     # 120 bytes: the least recently used goes
+    cache.put("d", [torch.zeros(50, dtype=torch.float32)])           # 200 bytes alone: kept, the rest go
+    assert [k for k in "bcd" if cache.get(k)] == ["d"] and set(cache.sizes) == {"d"}
+
 def test_the_plan_reads_the_clean_end_share_as_the_driver_does():
     from fizgig.moss_image.driver import MOSSImageDriver
     moss = get_family("moss_image")
@@ -389,6 +453,7 @@ def test_the_previews_show_the_first_line_with_words(tmp_path):
         assert next(t for f, t in p.files if f.endswith("_slider_prompt.txt")) == shown, base
     rows = _rows(desc)
     assert "the dial on the first line with words" in rows["FAMILY_SLIDER_BASE"]["hint"]
+    assert "a Pause and Resume renders them again once" in rows["FAMILY_SLIDER_KEEP"]["hint"]
 
 
 def test_a_line_that_starts_with_a_dash_reaches_the_trainer(tmp_path):
@@ -422,6 +487,26 @@ def test_no_half_rate_epochs_where_the_optimizer_owns_the_rate(tmp_path):
     plan = form.state(desc, vals, "")["slider_plan"]
     assert not any(s["half"] for s in plan) and [s["detail"] for s in plan][:3] == ["11", "40", "11"]
 
+
+def test_a_set_of_prompts_that_comes_back_takes_its_encodings_again():
+    import torch
+    from fizgig.families.train import SLIDER_ENCODINGS_KEPT, _BankCache, _cached_encode
+    calls = []
+
+    def encode(texts):                 # as a text encoder that pads to the longest text it encodes with
+        calls.append(list(texts))
+        n = max(map(len, texts))
+        return [{"hidden_states": torch.arange(n, dtype=torch.float32) * len(t)} for t in texts]
+
+    cache = _BankCache(keep=SLIDER_ENCODINGS_KEPT)
+    a, b = ["a woman,", "a woman, smiling", "a woman, frowning"], ["a man,", "a man, smiling", "a man, frowning"]
+    first = _cached_encode(cache, a, encode)
+    _cached_encode(cache, b, encode)
+    again = _cached_encode(cache, a, encode)          # lines taking turns: a, b, a - the text encoder twice, not 3
+    assert again is first and calls == [a, b]
+    _cached_encode(cache, a + ["a photo of a dog in the snow"], encode)    # other texts with them: encoded anew
+    _cached_encode(cache, a[::-1], encode)                                 # and in another order
+    assert len(calls) == 4
 
 def test_a_one_line_prompt_that_starts_with_a_dash_reaches_the_trainer(tmp_path):
     from fizgig.families.train import _prompt_texts

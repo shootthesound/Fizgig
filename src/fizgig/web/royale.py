@@ -26,13 +26,35 @@ def scan(folder):
     if not cps:
         return {"items": [], "summary": "No .safetensors checkpoints found in this folder.", "run": ""}
     labels = [e for e, _ in cps]
-    summary = (f"{len(cps)} checkpoints found (epochs {labels[0]}–{labels[-1]})." if all(str(x).isdigit() for x in labels)
-               else f"{len(cps)} LoRAs found — compared by filename.")
+    n_ep = sum(1 for x in labels if str(x).isdigit())        # Save now snapshots are labelled, not numbered
+    if n_ep == len(labels):
+        summary = f"{len(cps)} checkpoints found (epochs {labels[0]}–{labels[-1]})."
+    elif n_ep:
+        snaps = sum(1 for x in labels if str(x).startswith("step "))
+        lasts = sum(1 for x in labels if x == "last")
+        extra = []
+        if snaps:
+            extra.append(f"{snaps} Save now snapshot{'' if snaps == 1 else 's'}")
+        if lasts:
+            extra.append(f"{lasts} last checkpoint{'' if lasts == 1 else 's'}")
+        summary = (f"{len(cps)} checkpoints found (epochs {labels[0]}–{labels[n_ep - 1]}, "
+                   f"plus {' and '.join(extra)}).")
+    else:
+        summary = f"{len(cps)} LoRAs found — compared by filename."
     return {"items": [[e, p] for e, p in cps], "summary": summary, "run": run_name_for_folder(folder)}
 
 
-def pick(items, max_renders):
-    """Max renders: that many, evenly spread across the run, the first and last always in (the desktop's rule)."""
+def pick(items, max_renders, start=None, end=None):
+    """Max renders: that many, evenly spread across the run, the first and last always in (the desktop's rule).
+    start/end: the epoch-range slider's window into items, inclusive - the spread happens inside it. Both None
+    (no slider, or both knobs at the ends) is the whole run, exactly as before."""
+    if start is not None or end is not None:
+        n = len(items) - 1
+        lo = 0 if start is None else max(0, int(start))
+        hi = n if end is None else min(n, int(end))
+        if hi < lo:
+            lo, hi = hi, lo                       # crossed knobs: the window the other way round
+        items = items[lo:hi + 1]
     if str(max_renders).lower() == "all":
         return items
     n = int(max_renders)

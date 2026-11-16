@@ -39,8 +39,8 @@ from fizgig.dataset.config import (BlueprintGenerator, ConfigSanitizer,  # noqa:
                                    generate_dataset_group_by_blueprint, load_user_config)
 from fizgig.families import quant  # noqa: E402
 from fizgig.families.launch import (SLIDER_BANKS_KEPT, slider_at, slider_first, slider_picture_lines,  # noqa: E402
-                                    slider_push_at, slider_push_problems, slider_push_text, slider_scheduled,
-                                    slider_sort)
+                                    slider_push_at, slider_push_now, slider_push_problems, slider_push_text,
+                                    slider_scheduled, slider_sort, slider_tweak_at, slider_tweak_problems)
 from fizgig.families.lora import FamilyLoRA  # noqa: E402
 from fizgig.families.registry import get as get_family  # noqa: E402
 from fizgig.training.adaptive_lr import AdaptiveLR  # noqa: E402
@@ -492,13 +492,14 @@ def _request_boxes(new, pictures=True):
     return {k: slider_sort(t) for k, t in boxes.items()} if pictures else boxes
 
 
-def _slider_next(new, cur, done, by_epoch, desc):
+def _slider_next(new, cur, done, by_epoch, desc, tweaks=""):
     """What a prompt slider trains on from epoch `done` + 1, decided at that epoch boundary - nothing encoded, rendered
     or written (the trainer's slider_live does that). `new`: the Run card's request (_read_slider_live) or None; `cur`:
     the slider now, {boxes, plan, prompts, anchors, texts, preview} (boxes and texts None while it trains one line
-    each, as it started); `by_epoch`: the trainer's --slider_by_epoch. Returns {took: the request when it brings
-    something new (else None), boxes, plan (the push strength as typed), guidance (the strength its plan gives that
-    epoch), push_only: the same prompts, anchors and previews (only the strength may change: nothing to encode or
+    each, as it started); `by_epoch`: the trainer's --slider_by_epoch; `tweaks`: its --slider_tweaks, whose sections'
+    own push strength wins over the plan's. Returns {took: the request when it brings something new (else None),
+    boxes, plan (the push strength as typed), guidance (the strength that epoch trains at: its section's own, else the
+    plan's), push_only: the same prompts, anchors and previews (only the strength may change: nothing to encode or
     render), prompts, anchors, preview, texts (what the picture is and each end adds), scheduled (lines with their own
     epochs), base_changed (a new practice bank)}."""
     if new is not None and not by_epoch:
@@ -513,7 +514,7 @@ def _slider_next(new, cur, done, by_epoch, desc):
         boxes, plan = _request_boxes(new, by_epoch), new["guidance"]     # in the order lines join in
         if boxes != cur["boxes"] or plan != cur["plan"]:
             took = new
-    out = {"took": took, "boxes": boxes, "plan": plan, "guidance": slider_push_at(plan, done + 1)}
+    out = {"took": took, "boxes": boxes, "plan": plan, "guidance": slider_push_now(plan, tweaks, done + 1)}
     old = [str(x) for x in cur["prompts"]]
     if boxes is None:                        # one line each and no request: only the strength can change
         return {**out, "push_only": True, "prompts": old, "anchors": list(cur["anchors"]), "preview": cur["preview"],
@@ -564,11 +565,33 @@ def _slider_tries(failed, at):
 
 def _history_entry(done, guidance, prompts=None, anchors=None):
     """A prompt slider's change for its metadata (ss_slider_prompt_history), from epoch `done` + 1: its prompts, push
-    strength and anchors - the strength alone when only that changes by epoch (a Split or a Slide), so a Slide doesn't
-    write the whole prompts every epoch."""
+    strength and anchors - the strength alone when only that changes by epoch (a Split, a Slide or a section's own),
+    so a Slide doesn't write the whole prompts every epoch."""
     return ({"epoch": done, "guidance": guidance} if prompts is None else
             {"epoch": done, "prompts": prompts, "guidance": guidance, "anchors": anchors})
 
+
+def _tweak_lr(policy_mult, tweak, scheduled=1.0):
+    """A step's LR multiplier: its section's own rate (--slider_tweaks, a percent of the learning rate) in place of the
+    rate its schedule gives the epoch (`scheduled`, driver.scheduled_lr: a Clean-end share's half-rate epoch, 0.5),
+    the rest of the driver's step_policy multiplier kept (MiniMax H3's adapter-relative ramp) - else the driver's as
+    it is."""
+    if not tweak or tweak.get("rate") is None:
+        return policy_mult
+    return policy_mult / (scheduled or 1.0) * float(tweak["rate"]) / 100.0
+
+
+def _tweak_firm(weight, tweak):
+    """The anchors' weight a step trains with: its section's own how firmly (--slider_tweaks' firm) in place of the
+    run's (--slider_anchor_weight)."""
+    return float(weight) if not tweak or tweak.get("firm") is None else float(tweak["firm"])
+
+
+# a section's own settings in the log, set and back on the run's
+_TWEAK_SAID = {"rate": ("rate {:g}% of the learning rate, in place of the schedule's", "rate as the schedule has it"),
+               "detail": ("fine detail {:g}% (its Clean-end share)", "fine detail as the schedule has it"),
+               "push": ("push strength {:g}, in place of the plan's", "push strength as the plan has it"),
+               "firm": ("how firmly {:g} (the anchors' weight), in place of the run's", "how firmly as the run has it")}
 
 
 def _encode_override(driver, te_path, prompts, dit, device, parkable=True, references=None):
@@ -1371,7 +1394,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  sample_at_first=False, sample_seed=42, sample_reference=None, sample_image=None,
                  sample_strengths=(), slider_pairs=False, slider_diff_weight=1.0, slider_prompts=None, slider_guidance=3.0,
                  slider_anchors=(), slider_anchor_weight=1.0, slider_lines=None, slider_by_epoch=False,
-                 train_blocks=None,
+                 slider_tweaks="", train_blocks=None,
                  slider_bank=16, slider_bank_res=768, slider_bank_keep=0,
                  metadata_title=None, metadata_author=None, metadata_description=None, metadata_license=None,
                  metadata_tags=None, metadata_trigger_phrase=None, metadata_thumbnail=None,
@@ -1461,7 +1484,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         # checked before the driver loaded (_slider_line_start)
         slider_boxes, _base, _pos, _neg, slider_anchors = slider_line_start
         slider_prompts, slider_texts = [_base, f"{_base} {_pos}", f"{_base} {_neg}"], [_base, _pos, _neg]
-    slider_guidance = slider_push_at(slider_push_plan, _first)        # the strength its plan gives the first epoch
+    # the sections' own settings (--slider_tweaks): a prompt slider's, with --slider_by_epoch only
+    slider_tweaks = str(slider_tweaks or "").strip() if slider_by_epoch and slider_prompts else ""
+    slider_guidance = slider_push_now(slider_push_plan, slider_tweaks, _first)     # its section's own, else the plan's
     slider = bool(slider_pairs or slider_prompts)
     if slider:
         if not desc.slider_training:
@@ -1488,6 +1513,17 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     [f"--slider_guidance takes one number without --slider_by_epoch (not {slider_push_plan!r})"])
             if _bad:
                 raise RuntimeError("[slider] " + "; ".join(_bad))
+            # the sections' own settings, as Start takes them: a fine detail is the driver's Clean-end share for its
+            # epochs (MOSS-Image's _share), a rate each step's LR multiplier (_tweak_lr), a push strength the epoch's
+            # (slider_push_now) and a how firmly its anchors' weight (_tweak_firm)
+            if slider_tweaks:
+                _bad = slider_tweak_problems(slider_tweaks, max_train_epochs)
+                if _bad:
+                    raise RuntimeError("[slider] " + "; ".join(_bad))
+                _at = {e: slider_tweak_at(slider_tweaks, e) for e in range(1, max_train_epochs + 1)}
+                driver.share_overrides = {e: t["detail"] for e, t in _at.items() if "detail" in t}
+                logger.info("[slider] the sections' own rate (%% of the learning rate), fine detail, push strength and "
+                            "how firmly: %s", slider_tweaks)
             logger.info("[slider] PROMPT-PAIR SLIDER: base '%s' | +1 -> '%s' | -1 -> '%s' (guidance %g%s)",
                         *slider_prompts, slider_guidance,
                         f", by epoch: {slider_push_plan}" if ":" in slider_push_plan else "")
@@ -2372,9 +2408,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     def slider_live(done):
         """A prompt slider's prompts and push strength for the next epoch, taken at an epoch boundary: new ones from the
         web UI's Slider prompts panel, with lines of their own epochs the lines on then (a box's lines on together
-        joined into one), and the strength its plan gives that epoch (one number, a Split or a Slide) - as
-        _slider_next decides. New poles are encoded again (a set of prompts this run encoded before takes those
-        encodings), and a new base renders a new practice bank; a new strength alone is only taken.
+        joined into one), and the strength its plan gives that epoch (one number, a Split or a Slide) or its section's
+        own (--slider_tweaks) - as _slider_next decides. New poles are encoded again (a set of prompts this run encoded
+        before takes those encodings), and a new base renders a new practice bank; a new strength alone is only taken.
         The previews stay on the slider's own (the first lines with words). Training goes on from where it is, toward
         the new ends. With --slider_by_epoch, a request it can't encode or render is said on the Run card
         (SLIDER_LIVE_APPLIED's failed) and tried again at the next boundary, then it waits for a new Apply
@@ -2399,11 +2435,11 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             new = None                           # failed at two boundaries: it waits for a new Apply (said then)
 
         def _push(plan, prompts=None, anchors=None):
-            """The strength the next epoch trains at, its plan's, the prompts as they are: nothing encoded or
-            rendered. Its metadata has the strength alone, with the prompts and anchors when a Run card request brought
-            it (`prompts`, `anchors`)."""
+            """The strength the next epoch trains at - its section's own, else its plan's - the prompts as they are:
+            nothing encoded or rendered. Its metadata has the strength alone, with the prompts and anchors when a Run
+            card request brought it (`prompts`, `anchors`)."""
             nonlocal slider_guidance, slider_push_plan
-            guidance, slider_push_plan = slider_push_at(plan, done + 1), plan
+            guidance, slider_push_plan = slider_push_now(plan, slider_tweaks, done + 1), plan
             if guidance != slider_guidance:
                 slider_guidance = guidance
                 logger.info("[slider] push strength from epoch %d: %g", done + 1, round(guidance, 2))
@@ -2516,7 +2552,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             return {"boxes": slider_boxes, "plan": slider_push_plan, "prompts": slider_prompts,
                     "anchors": slider_anchors, "texts": slider_texts, "preview": slider_preview}
 
-        nxt = _slider_next(new, _cur(), done, slider_by_epoch, desc)
+        nxt = _slider_next(new, _cur(), done, slider_by_epoch, desc, slider_tweaks)
         asked = slider_by_epoch and nxt["took"] is not None      # the Run card's request, with lines of their own
         retry = tries + 1 < SLIDER_TRIES                         # should it fail now: tried again at the next epoch
         failed = (_take(nxt, "its own lines, and the Run card's are tried again at the next epoch" if retry else
@@ -2530,7 +2566,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             _said({"epoch": done, "failed": failed, "at": time.time(), "asked": nxt["took"], "took": slider_took[0],
                    "retry": retry, "request_at": at})
             torch.cuda.empty_cache()             # what the failed attempt held, back before its own lines' turn
-            failed = _own(_slider_next(None, _cur(), done, slider_by_epoch, desc))
+            failed = _own(_slider_next(None, _cur(), done, slider_by_epoch, desc, slider_tweaks))
         if failed:                               # the old prompts kept, at their own plan's strength
             _push(slider_push_plan)
 
@@ -2563,9 +2599,11 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             if slider_prompts:
                 # the push strength its plan starts on, and a Split or a Slide as typed (the strength by epoch)
                 md.update({"ss_slider_prompts": json.dumps([str(x) for x in slider_prompts]),
-                           "ss_slider_guidance": f"{slider_push_at(slider_push_plan, 1):g}"})
+                           "ss_slider_guidance": f"{slider_push_now(slider_push_plan, slider_tweaks, 1):g}"})
                 if slider_by_epoch and ":" in slider_push_plan:
                     md["ss_slider_push_plan"] = slider_push_plan
+                if slider_tweaks:           # the sections' own settings, as given
+                    md["ss_slider_tweaks"] = slider_tweaks
                 if slider_anchors:
                     md.update({"ss_slider_anchors": json.dumps(list(slider_anchors)),
                                "ss_slider_anchor_weight": f"{float(slider_anchor_weight):g}"})
@@ -3308,6 +3346,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             else:
                 logger.info("[maps] training maps: no picture could be read from the cache - off for this run")
                 maps = None
+    slider_tweak = {}                        # the epoch's own settings (--slider_tweaks), as it trains
     for epoch in (_worker_epochs() if share_worker else range(start_epoch, max_train_epochs)):
         while face_phase.get("said"):        # the boost's switches during the last epoch, each on a line of its own
             logger.info(face_phase["said"].pop(0))
@@ -3317,6 +3356,13 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             logger.info(f"[face boost] epoch {epoch + 1}: " + ("boosted" if face_phase["on"] else "normal (no boost)"))
         shared_epoch.value = epoch + 1
         driver.begin_epoch(epoch + 1 + (ftr.epochs_done if ftr is not None else 0))   # a continued fine-tune counts on
+        if slider_tweaks:                    # a section's own settings, said where they change
+            _tw = slider_tweak_at(slider_tweaks, epoch + 1)
+            if _tw != slider_tweak:
+                logger.info(f"[slider] from epoch {epoch + 1}, set by section: " + "; ".join(
+                    [_TWEAK_SAID[k][0].format(x) for k, x in _tw.items()]
+                    + [_TWEAK_SAID[k][1] for k in slider_tweak if k not in _tw]))
+            slider_tweak = _tw
         if share_worker and epoch + 1 == int(share_now[0]["epoch"]):   # a round's first epoch: the lead's LoRA
             _sj = share_now[0]
             if net.load_trainable(_sj["start"]) == 0:
@@ -3424,7 +3470,10 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 global_step += 1
                 progress.update(1)
                 continue
-            _skip, _lrm = driver.step_policy(batch, epoch + 1 + (ftr.epochs_done if ftr is not None else 0))
+            _pe = epoch + 1 + (ftr.epochs_done if ftr is not None else 0)
+            _skip, _lrm = driver.step_policy(batch, _pe)
+            # a section's own rate in place of its schedule's, the driver's other factors kept (Automagic: 1.0 in _update)
+            _lrm = _tweak_lr(_lrm, slider_tweak, driver.scheduled_lr(_pe) if slider_tweak else 1.0)
             if _skip:                          # a retired category ("stop"): no forward, no loss, no record
                 recorder.drop(step=i)
                 global_step += 1
@@ -3448,7 +3497,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     _l, _t, _al = _prompt_slider_step(
                         driver, dit, net, latents, slider_enc, gen, guidance=slider_guidance, min_t=min_timestep,
                         max_t=max_timestep, anchor=anchor_enc[global_step % len(anchor_enc)] if anchor_enc else None,
-                        anchor_weight=slider_anchor_weight)
+                        anchor_weight=_tweak_firm(slider_anchor_weight, slider_tweak))   # its section's own, if set
                     if _al is not None:
                         anchor_losses.append(_al)
                 else:
@@ -3802,6 +3851,13 @@ def setup_parser():
                         "--slider_anchors: a line of a box (base, pos, neg or anchor), on for the epochs after an @ - "
                         "'smiling @5-8', '@5-' from 5 on, none = the whole run. Again for each line; a box's lines on "
                         "together join into one")
+    p.add_argument("--slider_tweaks", default="",
+                   help="Prompt-pair slider with --slider_by_epoch: the sections' own settings by epochs, "
+                        "'5-8:rate=25,detail=40,push=2,firm=1.5;12:rate=50' (a later entry wins) - rate a percent of "
+                        "the learning rate (1-100) in place of the schedule's (a half-rate epoch's too; MiniMax H3's "
+                        "adapter-relative ramp stays), detail the epoch's Clean-end share (MOSS-Image), push the push "
+                        "strength (above 0) in place of --slider_guidance's, firm the anchors' weight (above 0) in "
+                        "place of --slider_anchor_weight")
     p.add_argument("--slider_bank", type=int, default=16, help="Prompt-pair slider: practice images to render")
     p.add_argument("--slider_bank_keep", type=int, default=0,
                    help="Prompt-pair slider with --slider_by_epoch: practice banks kept in memory, so a description "
@@ -3947,7 +4003,7 @@ def main():
         slider_pairs=a.slider_pairs, slider_diff_weight=a.slider_diff_weight, slider_prompts=a.slider_prompts,
         slider_guidance=a.slider_guidance, slider_anchors=a.slider_anchors or (),
         slider_anchor_weight=a.slider_anchor_weight, slider_lines=[tuple(x) for x in a.slider_line or []] or None,
-        slider_by_epoch=a.slider_by_epoch,
+        slider_by_epoch=a.slider_by_epoch, slider_tweaks=a.slider_tweaks,
         slider_bank=a.slider_bank, slider_bank_res=a.slider_bank_res, slider_bank_keep=a.slider_bank_keep,
         train_blocks=[b.strip() for b in a.train_blocks.split(",") if b.strip()] or None,
         metadata_title=a.metadata_title, metadata_author=a.metadata_author,

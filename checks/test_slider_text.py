@@ -1,7 +1,8 @@
 """A prompt slider's Change the prompts during the run (advanced), in words read at a glance: the switch's name and
 what it's for, each long hint of its rows as its first sentence and a small More (and Less) - its rows only -, Split and
-Slide that start from the number in Single, Reuse practice pictures under the plan, and the boxes' headings in one
-style. With the switch off the card is as before: test_slider_by_epoch.py."""
+Slide that start from the number in Single, the plan's how firmly in every section (greyed where no Leave these alone
+line is on) and its rate said one way, Reuse practice pictures under the plan, and the boxes' headings in one style.
+With the switch off the card is as before: test_slider_by_epoch.py."""
 import json
 import os
 import re
@@ -82,13 +83,13 @@ const shown = (n) => (n.nodeType === 3 ? n.textContent : n.hidden ? "" :
 
 
 def _node(steps, **data):
-    """app.js's own parts in DOM's page - el, splitRow, the plan's badges (planCond) and a prompt slider's boxes
-    (promptLines, moreHint) -, `data` as consts, then `steps`, which log() what they find: the log."""
+    """app.js's own parts in DOM's page - el, splitRow, the plan's badges (planCond, planTweaks) and a prompt slider's
+    boxes (promptLines, moreHint, switchSub) -, `data` as consts, then `steps`, which log() what they find: the log."""
     if not shutil.which("node"):
         pytest.skip("node not installed")
     src = open(os.path.join(STATIC, "app.js"), encoding="utf-8").read()
     grab = lambda pat: re.search(pat, src, re.S).group(0)
-    js = ('"use strict";\n' + DOM + grab(r"const el = \(tag.*?\n\};\n")
+    js = ('"use strict";\n' + DOM + grab(r"const el = \(tag.*?\n\};\n") + grab(r"const TWEAK_NUM = [^\n]*\n")
           + grab(r"function splitRow\(r, wrap\) \{.*?\n\}\n")
           + src[src.index("// how a section trains as badges"):src.index("// the Samples tab's prompt sets")]
           + "".join(f"const {k} = {json.dumps(x)};\n" for k, x in data.items())
@@ -165,7 +166,8 @@ def test_the_modes_long_hints_open_on_a_short_first_sentence():
             for h in ("hint", "split_hint", "slide_hint") if look.get("more") else ():
                 if look.get(h):
                     hints[f"{fam} {k} {h}"] = look[h]
-    assert len(hints) == 2 * 10
+        hints[f"{fam} tweaks"] = card["_slider_plan"]["tick"]["hint"]
+    assert len(hints) == 2 * 11
     got = _node("for (const [k, t] of Object.entries(HINTS)) { const h = moreHint(t); "
                 "log(k, shown(h), !!h.querySelector('a')); }", HINTS=hints)
     first = {}
@@ -174,6 +176,8 @@ def test_the_modes_long_hints_open_on_a_short_first_sentence():
         first[k] = text[:-len(" More")]
     assert first["krea2 FAMILY_SLIDER_BY_EPOCH hint"] == ("Use different words at different stages, so the dial "
                                                           "learns only the change.")
+    assert first["moss_image tweaks"] == first["krea2 tweaks"] == ("Gives each section below its own settings, in "
+                                                                   "place of the run's.")
     assert first["krea2 FAMILY_SLIDER_KEEP hint"] == ("A picture description that comes back at a later epoch uses its "
                                                       "practice pictures again, instead of rendering them anew.")
     assert first["krea2 FAMILY_SLIDER_GUIDANCE split_hint"] == ("One push strength for the first epochs, then another "
@@ -217,6 +221,33 @@ def test_split_and_slide_start_from_the_number_in_single():
         ["75:5:40", "60:7:30:15:2"]]                          # the Clean-end share's own, as before
 
 
+def test_the_plan_says_the_rate_and_how_firmly_one_way():
+    seg = {"from": 11, "to": 11, "push": "3", "push_set": False, "push_own": "3", "detail": "11", "detail_set": False,
+           "detail_own": "11", "rate": 50, "rate_set": False, "rate_own": 50, "half": True, "firm": None,
+           "firm_set": False, "firm_own": "1"}
+    got = _node(r"""
+      for (const s of [SEG, {...SEG, firm: "1.5"}]) log(planCond(s).filter(Boolean).map((b) => b.textContent));
+      for (const s of [SEG, {...SEG, firm: "1.5"}]) {        // Adjust each section on
+        const out = planTweaks(s, {on: true, detail: true, rate_off: ""}, () => {});
+        const sel = out.map((b) => b.querySelector("select")).find(Boolean);
+        log(out.map((b) => [b.childNodes[0].textContent, b.classList.contains("plan-tweak-off"), b.title || "",
+          b.querySelectorAll("input").map((i) => [i.value, i.hasAttribute("readonly")])]),
+          sel.children.find((o) => o.value === sel.value).textContent);
+      }
+      log(scheduleOwn(SEG, "rate"), scheduleOwn({...SEG, rate_own: 100}, "rate"));
+    """, SEG=seg)
+    assert got[:2] == [["push 3", "fine detail 11%", "rate 50%"],
+                       ["push 3", "fine detail 11%", "rate 50%", "how firmly (leave alone) 1.5"]]
+    off, on = got[2:4]
+    assert off == [[["push ", False, "", [["3", False]]], ["fine detail ", False, "", [["11", False]]],
+                    ["rate ", False, "", []],
+                    # in every section: greyed and read-only where no Leave these alone line is on
+                    ["how firmly (leave alone) ", True, "No Leave these alone line on these epochs", [["", True]]]],
+                   "50%"]                                   # the rate control says 50%, as the badge does
+    assert on[0][3] == ["how firmly (leave alone) ", False, "", [["1.5", False]]]
+    assert got[4] == ["50%", "Normal"]                     # where ↺ and the tooltips say it comes from
+
+
 def test_reuse_practice_pictures_sits_under_the_plan():
     card = _card("krea2")
     keys = list(card)
@@ -237,3 +268,14 @@ def test_the_boxes_headings_share_one_style_and_the_switch_shows_more_only_while
     # while it's on
     assert re.search(r"\.form-row\.hint-more-on:has\(input:checked\) > \.row-hint, \.form-row\.hint-more-on:not\("
                      r":has\(input:checked\)\) > \.hint-more \{\s*display: none; \}", css)
+
+
+def test_the_slider_heads_style_reaches_no_other_prompt_head():
+    # the slider's heads with a switch are divs (app.js planRow, promptLines): their rules say div.prompt-head, so the
+    # Samples previews grid's th.prompt-head keeps master's rules only - with the switch off, that table as before
+    css = re.sub(r"/\*.*?\*/", "", open(os.path.join(STATIC, "style.css"), encoding="utf-8").read(), flags=re.S)
+    split = lambda s: [x.strip() for x in re.split(r",(?![^()]*\))", s)]      # not at the commas inside :is(...)
+    heads = [x for head in re.findall(r"([^{}]+)\{", css) for x in split(head) if "prompt-head" in x]
+    master = {".prompt-head .preview-prompt", ".prompt-grid th.prompt-head", ".prompt-grid th.prompt-head b"}
+    assert master <= set(heads), heads
+    assert [x for x in heads if x not in master and not re.search(r"(?<![\w-])div\.prompt-head\b", x)] == [], heads

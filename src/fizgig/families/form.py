@@ -108,7 +108,7 @@ DEFAULTS = {
     "FAMILY_SLIDER_SOURCE": "pairs", "FAMILY_SLIDER_DIR": "", "FAMILY_SLIDER_CAPTION": "",
     "FAMILY_SLIDER_BASE": "", "FAMILY_SLIDER_POS": "", "FAMILY_SLIDER_NEG": "", "FAMILY_SLIDER_ANCHORS": "",
     "FAMILY_SLIDER_ANCHOR_WEIGHT": "1", "FAMILY_SLIDER_ULTRA": False, "FAMILY_SLIDER_KEEP": True,
-    "FAMILY_SLIDER_BY_EPOCH": False,
+    "FAMILY_SLIDER_BY_EPOCH": False, "FAMILY_SLIDER_TWEAKS_ON": False, "FAMILY_SLIDER_TWEAKS": "",
     "FAMILY_FT_ROTATIONS": "10", "FAMILY_FT_SAVE_EVERY": "1", "FAMILY_FT_ROTATE_EVERY": "1",
     "FAMILY_FT_FUSED": True, "FAMILY_FT_REG_DIR": "", "FAMILY_FT_REG_MULT": "0.2",
     "FAMILY_REG_ON": False, "FAMILY_REG_DIR": "", "FAMILY_REG_MULT": "1.0", "FAMILY_REG_USE": REG_MATCH,
@@ -692,8 +692,11 @@ def form(desc):
                      " Fine detail is the share of steps on lightly noised pictures (texture, skin, hair; the rest "
                      "teach shape and layout), and rate 50% an epoch at half the learning rate: both come from "
                      "Clean-end share on the Training tab." if any(str(o.tokens).startswith("lownoise_pct=")
-                                                                   for o in desc.options) else ""),
-                 more=True) if lines else None,
+                                                                   for o in desc.options) else ""), more=True,
+                 # Adjust each section: a switch on the right of its heading (app.js planRow), its hint's first
+                 # sentence under it; the hint follows the form (form.state's slider_tweaks)
+                 tick=_row("FAMILY_SLIDER_TWEAKS_ON", launch.TWEAKS, "check",
+                           hint=_tweaks_hint(desc, {}))) if lines else None,
             # under the plan, whose sections say where practice pictures come again
             _row("FAMILY_SLIDER_KEEP", "Reuse practice pictures when a description comes back", "check",
                  hint="A picture description that comes back at a later epoch uses its practice pictures again, "
@@ -1429,12 +1432,18 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     # Change the prompts during the run (advanced): its plan, the Keep tick and the notes under the boxes; off, the
     # card as before. The rows' look follows the tick in the page (app.js rowLook), and slider_by_epoch tells the Run
     # card and the plan
-    by_epoch, slider_plan = launch.slider_by_epoch(desc, values), None
+    by_epoch, slider_plan, slider_tweaks = launch.slider_by_epoch(desc, values), None, None
     if pairs or not by_epoch:
         hidden |= {"_slider_plan", "FAMILY_SLIDER_KEEP"}
     if kind == "slider" and not pairs:
         _plan_notes, slider_plan = _slider_plan(desc, values) if by_epoch else (_slider_off_notes(desc, values), None)
         notes.update(_plan_notes)
+        if by_epoch:            # Adjust each section: what the plan's sections can set themselves
+            slider_tweaks, late = _slider_tweaks(desc, values)
+            if slider_tweaks["rate_off"]:
+                disabled.add("_slider_tweak_rate")             # their rate controls (app.js drawSliderPlan)
+            if late:                                           # set past the run's last epoch: a button drops it
+                notes["_slider_plan"], actions["_slider_plan"] = late
         if not by_epoch and launch.slider_picture_lines(desc):
             # lines typed with it on, now off: the box shows them as lines to edit (app.js renderRow - a one-line box
             # would run them together), each kept until you change it; Start trains one line in each box, as the plain
@@ -1587,7 +1596,7 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             "media": sorted(media), "turbo_file": bool(speed_file), "force": force, "actions": actions,
             "shown": shown, "checkpoint_file": bool(checkpoint_file), "labels": labels, "checkpoint_turbo": ck_turbo,
             "disabled_choices": disabled_choices, "poll": poll, "slider_plan": slider_plan,
-            "slider_by_epoch": by_epoch}
+            "slider_by_epoch": by_epoch, "slider_tweaks": slider_tweaks}
 
 
 def _extras_found(desc, values, image_folder):
@@ -1681,9 +1690,10 @@ def _slider_off_notes(desc, values):
 def _slider_plan(desc, values):
     """A prompt slider's notes - under a box of the picture or an end, the first epoch it has no line on - and what the
     boxes make epoch by epoch, for the plan on the Slider card (app.js drawSliderPlan): a section for each run of
-    alike epochs (the same prompts and the same training: its Clean-end share and rate, clean_share_at, and its push
-    strength), each box's lines on then with their epochs, and whether its picture renders new practice pictures or
-    normally takes again those of an earlier epoch with the same description (train.py _BankCache)."""
+    alike epochs (the same prompts and the same training: its Clean-end share and rate, clean_share_at, its push
+    strength, and the rate, fine detail, push strength and how firmly it sets itself with Adjust each section on), each
+    box's lines on then with their epochs, and whether its picture renders new practice pictures or normally takes
+    again those of an earlier epoch with the same description (train.py _BankCache)."""
     boxes = launch.slider_boxes(values)       # as typed
     # as they join in, the trainer's order - and the notes', which name lines by their words: a line's place in its
     # box changes as the lines take their places by epoch (app.js promptLines)
@@ -1728,7 +1738,26 @@ def _slider_plan(desc, values):
     guidance = str(values.get("FAMILY_SLIDER_GUIDANCE") or "").strip() or f"{desc.slider_guidance:g}"
     push = [launch.slider_push_at(guidance, e) for e in range(1, epochs + 1)]
     push = [None if x is None else f"{round(x, 2):g}" for x in push]
-    how = list(zip(cond, push))
+    # Adjust each section (its tick on): what a section sets over the run's, epoch by epoch - only what the run can
+    # change (launch.slider_tweak_keys: no rate under Automagic), and how firmly only where anchors are on
+    keys = launch.slider_tweak_keys(desc, values) if launch.slider_tweaks_on(desc, values) else ()
+    anchored = [bool(launch.slider_lines_on(ordered["anchors"], e)) for e in range(1, epochs + 1)]
+    own = [{k: x for k, x in launch.slider_tweak_at(values.get("FAMILY_SLIDER_TWEAKS"), e).items()
+            if k in keys and (k != "firm" or anchored[e - 1])} for e in range(1, epochs + 1)] if keys else [{}] * epochs
+    # under Push strength and How firmly: the epochs whose section sets its own - the box sets the rest
+    for k, key, what in (("push", "FAMILY_SLIDER_GUIDANCE", "push strength"),
+                         ("firm", "FAMILY_SLIDER_ANCHOR_WEIGHT", "\"how firmly\"")):
+        said, many = launch.slider_epochs_said([e for e in range(1, epochs + 1) if k in own[e - 1]])
+        if said:
+            notes[key] = " ".join(x for x in (notes.get(key, ""), f"{said} {'use their' if many else 'uses its'} own "
+                                              f"{what} from the plan below; this box sets the rest.") if x)
+    # the anchors' weight (How firmly), the run's: as Start reads it, 1 when empty
+    firm = str(values.get("FAMILY_SLIDER_ANCHOR_WEIGHT") or "").strip() or "1"
+    try:
+        firm = f"{round(float(firm), 2):g}"
+    except ValueError:
+        pass
+    how = list(zip(cond, push, own))
     plan = []
     for seg in launch.slider_plan(ordered, epochs):    # each run of alike prompts, cut where its training changes
         for e in range(seg[0], seg[1] + 1):
@@ -1751,9 +1780,17 @@ def _slider_plan(desc, values):
         while len(kept) > keep:
             kept.pop(next(iter(kept)))
 
-    def trains(a):          # how a section trains: its Clean-end share and rate, the schedule's, and its push strength
-        c = cond[a - 1]
-        return {"detail": c[0] if c else None, "half": bool(c and c[1]), "push": push[a - 1]}
+    def trains(a):          # how a section trains: its own (_set), else the schedule's or the box's above (_own)
+        c, t = cond[a - 1], own[a - 1]
+        rate, num = 50 if c and c[1] else 100, lambda x: f"{round(x, 2):g}"
+        return {"detail": num(t["detail"]) if "detail" in t else c[0] if c else None,
+                "half": rate == 50 and "rate" not in t, "rate": t.get("rate", rate), "rate_set": "rate" in t,
+                "detail_set": "detail" in t, "rate_own": rate, "detail_own": c[0] if c else None,
+                "push": num(t["push"]) if "push" in t else push[a - 1], "push_set": "push" in t,
+                "push_own": push[a - 1],
+                # how firmly the anchors are kept: only where some are on
+                "firm": (num(t["firm"]) if "firm" in t else firm) if anchored[a - 1] else None,
+                "firm_set": "firm" in t, "firm_own": firm}
     view = [{"from": a, "to": b, "new_pictures": bool(n) and base != plan[n - 1][2],
              "again": drawn[n] if keep and drawn[n] < a else None,      # its pictures from then, normally
              **trains(a),
@@ -1763,6 +1800,46 @@ def _slider_plan(desc, values):
             for n, seg in enumerate(plan) for a, b, base in [seg[:3]]]
     return notes, view
 
+
+TWEAK_RATE_OFF = ("Greyed out: Automagic sets its own learning rate, so a section's rate isn't used with it. What you "
+                  "set is kept for another optimizer.")
+
+
+_TWEAK_HINTS = {"rate": "learning rate (Normal or a share of it, such as 50%)",
+                "detail": "fine detail (the share of its steps on lightly noised pictures)", "push": "push strength",
+                "firm": "how firmly it keeps the Leave these alone lines"}
+
+
+def _tweaks_hint(desc, values):
+    """Adjust each section's hint: only what this run's sections can set (launch.slider_tweak_keys) - the rate unless
+    Automagic, fine detail on MOSS-Image, push strength, and how firmly with Leave these alone lines. Its first
+    sentence shows under the switch, the rest behind More (app.js planRow)."""
+    said = launch.slider_numbers([_TWEAK_HINTS[k] for k in launch.slider_tweak_keys(desc, values)])
+    return (f"Gives each section below its own settings, in place of the run's. A section can set its {said}. A "
+            "section you set is marked, and ↺ puts it back. What you set is kept while this is off, and used only "
+            "while it's on. During a run: Pause, change it, Resume.")
+
+
+def _slider_tweaks(desc, values):
+    """Adjust each section, for the plan (app.js drawSliderPlan): whether its sections get controls (on), whether the
+    rate's are greyed and why (rate_off: Automagic), whether they get fine detail's (a model whose driver reads it), and
+    the tick's hint (what they can set) - and with the tick on, a note with a button that drops what is set past the
+    run's last epoch (Start refuses it): (that, (note, action) or None). Push strength is every section's, and how
+    firmly theirs with anchors on (the plan's firm)."""
+    keys, on = launch.slider_tweak_keys(desc, values), launch.slider_tweaks_on(desc, values)
+    info = {"on": on, "automagic": launch.automagic(values), "rate_off": "" if "rate" in keys else TWEAK_RATE_OFF,
+            "detail": "detail" in keys, "hint": _tweaks_hint(desc, values)}
+    try:
+        epochs = int(str(values.get("MAX_TRAIN_EPOCHS") or "").strip())
+    except ValueError:
+        return info, None
+    text = values.get("FAMILY_SLIDER_TWEAKS")
+    last = max((b for a, b, got in launch.slider_tweaks(text) if b > epochs and set(got) & set(keys)), default=0)
+    if not (on and epochs > 0 and last):
+        return info, None
+    return info, (f"A section is adjusted past the run's last epoch ({epochs}), so Start won't run. Drop what's past "
+                  f"it, or set Max Train Epochs to {last}.",
+                  {"label": "Drop it", "values": {"FAMILY_SLIDER_TWEAKS": launch.slider_tweaks_in_run(text, epochs)}})
 
 
 def _mask_note(desc, values, image_folder):
@@ -1870,6 +1947,7 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
         FAMILY_SLIDER_ULTRA=b("FAMILY_SLIDER_ULTRA"),
         FAMILY_SLIDER_KEEP=bool(v.get("FAMILY_SLIDER_KEEP", True)),     # on unless unticked (older forms have none)
         FAMILY_SLIDER_BY_EPOCH=bool(v.get("FAMILY_SLIDER_BY_EPOCH")),   # Change the prompts...: off when missing
+        FAMILY_SLIDER_TWEAKS_ON=bool(v.get("FAMILY_SLIDER_TWEAKS_ON")),  # Adjust each section: too
         FAMILY_FAST_ID=b("FAMILY_FAST_ID") and kind == "standard" and bool(desc.identity_blocks),
         **({"FAMILY_TRAIN_AREA": s("TARGET_LAYERS") or desc.train_areas[0][0],
             "FAMILY_TRAIN_BLOCKS": [k for k, on in (v.get("TRAINING_BLOCKS") or {}).items() if on]}

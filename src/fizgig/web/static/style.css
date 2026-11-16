@@ -2437,6 +2437,7 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 .slider-live-row input, .slider-live-row textarea { width: 100%; box-sizing: border-box; }
 .slider-live-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .slider-live-actions input.w-port { width: 72px; }
+.slider-live-row > .slider-live-note { grid-column: -2 / -1; }      /* under the push box, not its label */
 /* The by-epoch switch: each box as numbered lines with their own epochs, and the push strength as Single, Split
    or Slide - compact versions of the Slider card's (app.js slLines, slPush) */
 #sliderLive[data-look="lines"] .slider-live-row { align-items: start; }
@@ -2687,6 +2688,11 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 /* ... its switch: its hint as every row's while off, the first sentence and More while on */
 .form-row.hint-more-on:has(input:checked) > .row-hint, .form-row.hint-more-on:not(:has(input:checked)) > .hint-more {
   display: none; }
+/* ... Adjust each section: a short muted line under the switch */
+.form-row div.prompt-head:has(> .prompt-switch) { align-items: flex-start; }
+.prompt-switch { margin: 0 0 0 auto; max-width: min(100%, 420px); }
+.prompt-switch > .prompt-autofill { margin: 0; }
+.section-card[id^="sec-"] .form-row .prompt-switch-sub { margin-top: 2px; color: var(--text-muted); font-size: 11.5px; }
 /* a prompt slider's line: its words box shows it takes typing - a faint tint when empty or pointed at */
 .form-row .prompt-timeline .prompt-line textarea:placeholder-shown:not(:focus),
 .form-row .prompt-timeline .prompt-line textarea:hover:not(:focus) {
@@ -2725,6 +2731,11 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 .prompt-move button:hover { color: var(--text-primary);
   background: color-mix(in srgb, var(--text-muted) 14%, transparent); }
 .prompt-move button:disabled { visibility: hidden; }
+/* Adjust each section, a switch on the right of the plan's heading - div.prompt-head, so the Samples previews grid's
+   th.prompt-head keeps its own look */
+div.prompt-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 16px; }
+.prompt-autofill { width: fit-content; margin: 0 0 0 auto; color: var(--text-secondary); font-size: 12.5px;
+  font-weight: 600; cursor: pointer; }
 /* a line's empty words box: what to type - muted */
 .form-row .prompt-timeline .prompt-line textarea::placeholder { color: var(--text-muted); opacity: 1; }
 /* the plan: a folded section for each run of alike epochs */
@@ -2754,6 +2765,21 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 .plan-badge { font-size: 8.5pt; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border);
   color: var(--text-secondary); }
 .plan-badge-now { border-color: var(--accent); color: var(--accent); }
+/* Adjust each section: a section's push strength, fine detail, rate and how firmly as small controls in its badges,
+   the badge marked when the section sets its own */
+.plan-tweak { display: inline-flex; align-items: center; gap: 4px; }
+.form-row .plan-tweak select, .form-row .plan-tweak input[type="text"] { min-width: 0; padding: 0 4px; }
+.form-row .plan-tweak select { padding-right: 18px !important; }
+.form-row .plan-tweak input.plan-num { width: 46px; text-align: center; }
+@media (min-width: 761px) {
+  .form-row .plan-tweak select, .form-row .plan-tweak input[type="text"] { height: 22px; font-size: 8.5pt; }
+}
+.plan-badge.plan-tweak-set { border-color: var(--accent); color: var(--text-primary); }
+/* how firmly in a section with no Leave these alone line on: greyed, its box read-only */
+.plan-badge.plan-tweak-off { opacity: 0.5; cursor: default; }
+.plan-tweak-off input { pointer-events: none; }
+.plan-reset { background: none; border: none; padding: 0 2px; color: var(--text-muted); cursor: pointer; }
+.plan-reset:hover { color: var(--text-primary); }
 .slider-now { margin: 8px 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--bg-inset);
   line-height: 1.5; }
 

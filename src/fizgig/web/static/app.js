@@ -709,11 +709,65 @@ function writeCaptions(getText) {
 // prompts, folded to its epochs and +1 words, open for both ends and the anchors in full. Words from lines with epochs
 // of their own are bold, in their epochs' colour (as their bars in the boxes); the epoch its run is on now is marked
 function planRow(r, wrap) {
-  wrap.append(el("span", {class: "field-label", text: r.label + ":"}),
+  // Adjust each section: a switch on the right of its heading (form.py, the row's tick), its hint's first sentence
+  // under it and the rest behind More (drawSliderPlan follows the form's)
+  const t = r.tick, label = el("span", {class: "field-label", text: r.label + ":"});
+  const tick = t ? el("label", {class: "checkbox-label prompt-autofill", title: t.hint},
+    el("input", {type: "checkbox", id: "f_" + t.key, "data-field": t.key, checked: !!S.values[t.key],
+      onchange: (e) => onValue(t, e.target.checked)}), t.label) : null;
+  wrap.append(tick ? el("div", {class: "prompt-head"}, label, switchSub(tick, moreHint(t.hint))) : label,
     el("div", {class: "slider-plan", id: "sliderPlan"}),
     r.more ? moreHint(r.hint) : el("div", {class: "field-hint", text: r.hint}),
     el("div", {class: "field-hint row-note", id: "note_" + r.key}));
   return wrap;
+}
+
+// the sections' own settings (FAMILY_SLIDER_TWEAKS) as launch.py reads them,
+// "5-8:rate=25,detail=40,push=2,firm=1.5;12:rate=50" (a later entry wins): taken apart epoch by epoch, {epoch: {rate,
+// detail, push, firm}}, and put back together, epochs alike in a row as one entry. An entry it can't read goes at the
+// next change (Start refuses it)
+const TWEAK_NUM = /^[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/;
+const TWEAK_KEYS = ["rate", "detail", "push", "firm"];      // in the order the text keeps them
+function tweakEpochs(text) {
+  const out = {};
+  for (const part of String(text || "").split(";")) {
+    const m = /^\s*([0-9]+)\s*(?:-\s*([0-9]+)\s*)?:([^]*)$/.exec(part);
+    const got = {};
+    const ok = m && m[3].split(",").every((kv) => {       // each setting once, a number
+      const at = kv.indexOf("="), k = kv.slice(0, at).trim().toLowerCase(), x = kv.slice(at + 1).trim();
+      if (at < 0 || !TWEAK_KEYS.includes(k) || k in got || !TWEAK_NUM.test(x)) return false;
+      got[k] = Number(x);
+      return true;
+    });
+    if (!ok) continue;
+    const a = Number(m[1]), b = m[2] ? Number(m[2]) : a;
+    for (let e = Math.max(1, a); e <= Math.min(b, a + 9999); e++) out[e] = {...out[e], ...got};
+  }
+  return out;
+}
+function tweakText(byEpoch) {
+  const said = (t) => TWEAK_KEYS.filter((k) => t[k] != null).map((k) => `${k}=${t[k]}`).join(",");
+  const runs = [];
+  for (const e of Object.keys(byEpoch).map(Number).sort((a, b) => a - b)) {
+    const s = said(byEpoch[e]), last = runs[runs.length - 1];
+    if (!s) continue;
+    if (last && last.to === e - 1 && last.s === s) last.to = e; else runs.push({from: e, to: e, s});
+  }
+  return runs.map((x) => (x.from === x.to ? `${x.from}` : `${x.from}-${x.to}`) + ":" + x.s).join(";");
+}
+// a section's own setting (k) - or null: back to the schedule's or the box's above - for all its epochs; false when
+// that changes nothing
+function tweakSet(seg, k, x) {
+  const byEpoch = tweakEpochs(S.values.FAMILY_SLIDER_TWEAKS);
+  for (let e = seg.from; e <= seg.to; e++) {
+    const t = {...byEpoch[e]};
+    if (x == null) delete t[k]; else t[k] = x;
+    byEpoch[e] = t;
+  }
+  const text = tweakText(byEpoch);
+  if (text === String(S.values.FAMILY_SLIDER_TWEAKS ?? "")) return false;
+  onValue({key: "FAMILY_SLIDER_TWEAKS"}, text);
+  return true;
 }
 
 function drawSliderPlan() {
@@ -723,9 +777,23 @@ function drawSliderPlan() {
   const run = S.run || {};
   // the epoch the run is on, only while the form is that run (not a queued run, nor your setup while another trains)
   const now = ctxIsLiveRun() && run.family === S.family && run.progress ? Number(run.progress.epoch) || 0 : 0;
-  const sig = JSON.stringify([plan, now]);           // the run's poll redraws it only when something moved
+  // Adjust each section (form.py _slider_tweaks): its tick on, a section's own settings are controls, but not on epochs
+  // a run trained already. Drawn from the state the plan came with; the tick's hint says what they can set
+  const tw = (S.state && S.state.slider_tweaks) || {};
+  const sig = JSON.stringify([plan, now, tw]);       // the run's poll redraws it only when something moved
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
+  const tick = $("f_FAMILY_SLIDER_TWEAKS_ON");
+  if (tick && tw.hint) {           // the tick's hint as the form has it now, and the line under it (open, if it was)
+    tick.closest("label").title = tw.hint;
+    const sub = tick.closest(".prompt-switch")?.querySelector(".prompt-switch-sub");
+    if (sub && sub._text !== tw.hint) {
+      const next = moreHint(tw.hint, !!sub.querySelector(".hint-rest:not([hidden])"));
+      next.classList.add("prompt-switch-sub");
+      sub.replaceWith(next);
+    }
+  }
+  const again = () => { box.dataset.sig = ""; drawSliderPlan(); };      // a control left as it was: drawn anew
   const open = new Set([...box.querySelectorAll("details[open]")].map((d) => d.dataset.from));
   const words = (lines) => lines.flatMap((ln, i) => [      // joined as the trainer joins them (launch.slider_join)
     i ? (/[,;]$/.test(lines[i - 1].text) ? " " : ", ") : "",
@@ -744,9 +812,10 @@ function drawSliderPlan() {
         here ? el("span", {class: "plan-badge plan-badge-now", text: `training now · epoch ${now}`}) : null,
         past ? el("span", {class: "plan-badge", text: "trained",
           title: "These epochs trained with the lines they had then"}) : null,
-        // how these epochs train: the push strength (one number, a Split or a Slide) and (form.py clean_share_at)
-        // the share of steps on fine detail and a half-rate epoch
-        ...planCond(seg),
+        // how these epochs train: the push strength (one number, a Split or a Slide), (form.py clean_share_at) the
+        // share of steps on fine detail and a half-rate epoch, and how firmly the anchors are kept - or the section's
+        // own (planTweaks)
+        ...(tw.on && !past ? planTweaks(seg, tw, again) : planCond(seg)),
         // a picture description that came before normally takes its practice pictures again (no new render) - not
         // when the kept ones pass the trainer's 1 GB, nor once after a Pause and Resume, which starts with none
         seg.new_pictures ? el("span", {class: "plan-badge", text: seg.again ? "practice pictures normally kept from " +
@@ -764,17 +833,111 @@ function drawSliderPlan() {
   }) : [el("div", {class: "field-hint", text: "Set Max Train Epochs to see it."})]));
 }
 
-// how a section trains as badges: its push strength, fine detail and a half-rate epoch - the schedule's, or the box's
-// above
+// how a section trains as badges: its push strength, fine detail, rate and how firmly the anchors are kept (where some
+// are on) - the schedule's or the box's above, or - marked - its own
 const DETAIL_TIP = "The share of these epochs' steps on lightly noised pictures, which teach fine detail (texture, " +
   "skin, hair); the rest teach shape and layout.";
+const FIRM_TIP = "How firmly these epochs keep the Leave alone lines as they are";
+// how firmly, as its badge says it: what it holds (the How firmly box above), and why it's greyed in a section
+const FIRM_SAID = "how firmly (leave alone)", FIRM_OFF = "No Leave these alone line on these epochs";
+// a rate as the plan says it, the badges and the rate control alike: Normal, or a percent (a half-rate epoch: 50%)
+const rateLabel = (x) => (Number(x) === 100 ? "Normal" : `${x}%`);
+const scheduleOwn = (seg, k) => (k === "rate" ? rateLabel(seg.rate_own) :
+  k === "push" ? seg.push_own ?? "none" : k === "firm" ? seg.firm_own :
+  seg.detail_own != null ? `${seg.detail_own}%` : "the model's own");
+// where a setting comes from when a section sets none of its own: the schedule, or a box above
+const BACK_TO = {rate: "the schedule", detail: "the schedule", push: "Push strength above", firm: "How firmly above"};
+const tweakOwn = (seg, k) => `Set for these epochs. ${k === "push" || k === "firm" ? BACK_TO[k] :
+  "The schedule's own"}: ${scheduleOwn(seg, k)}.`;
 function planCond(seg) {
-  const cond = (text, tip) => el("span", {class: "plan-badge plan-badge-cond", text, title: tip});
+  const cond = (k, text, tip) => el("span", {class: "plan-badge plan-badge-cond" +
+    (seg[k + "_set"] ? " plan-tweak-set" : ""), text, title: seg[k + "_set"] ? tweakOwn(seg, k) : tip});
   return [
-    seg.push != null ? cond(`push ${seg.push}`, "The push strength these epochs train at (Push strength above)") : null,
-    seg.detail != null ? cond(`fine detail ${seg.detail}%`, DETAIL_TIP + " Set by Clean-end share on the Training " +
-      "tab.") : null,
-    seg.half ? cond("rate 50%", "Trains at half the learning rate (Clean-end share's every Rth epoch)") : null];
+    seg.push != null ? cond("push", `push ${seg.push}`, "The push strength these epochs train at (Push strength " +
+      "above)") : null,
+    seg.detail != null ? cond("detail", `fine detail ${seg.detail}%`, DETAIL_TIP + " Set by Clean-end share on the " +
+      "Training tab.") : null,
+    seg.rate_set ? cond("rate", `rate ${rateLabel(seg.rate)}`) : seg.half ? el("span", {class: "plan-badge " +
+      "plan-badge-cond", text: `rate ${rateLabel(50)}`, title: "Trains at half the learning rate (Clean-end share's " +
+      "every Rth epoch)"}) : null,
+    seg.firm != null ? cond("firm", `${FIRM_SAID} ${seg.firm}`, FIRM_TIP + " (How firmly above)") : null];
+}
+
+// Adjust each section, ticked: a section's push strength, fine detail (a model whose driver reads it, tw.detail), rate
+// and how firmly (greyed where no anchors are on) as small controls - the rate Normal, 75% ... or Other… (1 to 100),
+// greyed under Automagic (tw.rate_off says why). A change sets the section's epochs (tweakSet); ↺ puts one back on the
+// schedule or the box above. They sit in the section's summary: a click or a key on them never folds it
+const RATES = [[100, "Normal"], [75, "75%"], [50, "50%"], [25, "25%"], [10, "10%"]];
+function planTweaks(seg, tw, again) {
+  const set = (k, x) => { if (!tweakSet(seg, k, x)) again(); };      // nothing changed: the controls as they were
+  const badge = (k, ...kids) => el("span", {class: "plan-badge plan-badge-cond plan-tweak" +
+      (seg[k + "_set"] ? " plan-tweak-set" : ""), onclick: (e) => e.preventDefault(),
+    onkeydown: (e) => {                      // Enter takes a typed number, as leaving its box does
+      if (e.key === "Enter" && e.target.tagName === "INPUT") { e.preventDefault(); e.target.blur(); }
+    },
+    onkeyup: (e) => { if (e.key === " " && e.target.tagName !== "BUTTON") e.preventDefault(); }}, ...kids,
+    seg[k + "_set"] ? el("button", {type: "button", class: "plan-reset", text: "↺", title: `Back to ${BACK_TO[k]}: ` +
+      scheduleOwn(seg, k), "data-field": k === "rate" ? "_slider_tweak_rate" : undefined,
+      onclick: () => set(k, null)}) : null);
+  // a number typed in (a decimal comma too, 2,5): a percent kept between its lowest and highest (fine detail, or
+  // Other… for the rate), or one above 0 (push strength, how firmly), as Start takes the boxes above - finite (1e999
+  // would read as Infinity, which the text can't hold)
+  const numOf = (v) => { const t = v.trim().replace(",", ".");
+    return TWEAK_NUM.test(t) && Number.isFinite(Number(t)) ? Number(t) : null; };
+  const typed = (v, lo, hi) => { const x = numOf(v); return x == null ? null : Math.min(hi, Math.max(lo, x)); };
+  const above0 = (v) => { const x = numOf(v); return x != null && x > 0 ? x : null; };
+  // a setting's number box: a number it reads sets the section's epochs, emptied puts the setting back, else undone
+  const num = (k, read, attrs) => {
+    const box = el("input", {type: "text", inputmode: "decimal", class: "plan-num", value: seg[k] ?? "", ...attrs,
+      onchange: () => {
+        if (!box.isConnected) return;                    // drawn anew meanwhile
+        const x = read(box.value);
+        if (x != null) set(k, x);
+        else if (!box.value.trim() && seg[k + "_set"]) set(k, null);      // emptied: back to the run's
+        else again();
+      }});
+    return box;
+  };
+  const out = [badge("push", "push ", num("push", above0, {"aria-label": "Push strength",
+    title: seg.push_set ? tweakOwn(seg, "push") : "The push strength these epochs train at, from Push strength " +
+      "above: type a number above 0 to set it for these epochs."}))];
+  if (tw.detail) {
+    out.push(badge("detail", "fine detail ", num("detail", (v) => typed(v, 0, 100), {"aria-label": "Fine detail, " +
+      "percent", title: seg.detail_set ? tweakOwn(seg, "detail") : DETAIL_TIP + " From Clean-end share on the " +
+      "Training tab: type a share (0 to 100) to set it for these epochs" + (seg.detail == null ? " (empty: the " +
+      "model's own)." : ".")}), "%"));
+  } else out.push(planCond(seg)[1]);
+  const sel = el("select", {"data-field": "_slider_tweak_rate", disabled: !!tw.rate_off, "aria-label": "Rate",
+    title: tw.rate_off || (seg.rate_set ? tweakOwn(seg, "rate") : "The learning rate these epochs train at, as a " +
+      "share of the normal one (Learning rate on the Training tab). Pick another to set it for these epochs." +
+      (seg.rate_own === 100 ? "" : " 50% here is the schedule's own (Clean-end share's every Rth epoch)."))});
+  for (const [x, label] of RATES.some(([x]) => x === seg.rate) ? RATES : [...RATES, [seg.rate, `${seg.rate}%`]]) {
+    sel.append(el("option", {value: String(x), text: label}));
+  }
+  sel.append(el("option", {value: "", text: "Other…"}));
+  sel.value = String(seg.rate);
+  sel.addEventListener("change", () => {
+    if (sel.value) { set("rate", Number(sel.value)); return; }
+    const box = el("input", {type: "text", inputmode: "decimal", class: "plan-num", "data-field": "_slider_tweak_rate",
+      placeholder: "1–100", "aria-label": "Rate, percent of the learning rate",
+      title: "A percent of the learning rate, 1 to 100", onblur: () => {
+        if (!box.isConnected) return;                    // drawn anew meanwhile
+        const x = typed(box.value, 1, 100);
+        if (x != null) set("rate", x); else again();
+      }});
+    sel.replaceWith(box, "%");
+    box.focus();
+  });
+  out.push(badge("rate", "rate ", sel));
+  // how firmly, in every section: set only where Leave alone lines are on, greyed elsewhere (read-only, as
+  // refreshState sets every control's disabled by its row)
+  out.push(seg.firm != null ? badge("firm", FIRM_SAID + " ", num("firm", above0, {"aria-label": "How firmly",
+    title: seg.firm_set ? tweakOwn(seg, "firm") : FIRM_TIP + ". From How firmly above: type a number above 0 to set " +
+      "it for these epochs."})) : el("span", {class: "plan-badge plan-badge-cond plan-tweak plan-tweak-off",
+    title: FIRM_OFF, onclick: (e) => e.preventDefault()}, FIRM_SAID + " ", el("input", {type: "text",
+    class: "plan-num", readonly: true, tabindex: -1, "aria-disabled": "true", placeholder: "–",
+    "aria-label": "How firmly: " + FIRM_OFF})));
+  return out;
 }
 
 // a line's epochs as a colour (launch.slider_range_key, "5-8"): the same epochs, the same colour, in a prompt slider's
@@ -791,6 +954,7 @@ function moreHint(text, open = false) {
   const t = String(text ?? "").trim(), end = /[.!?](?=\s)/g, h = el("div", {class: "field-hint hint-more"});
   let at = -1, m;
   while (at < 0 && (m = end.exec(t))) if (!/\b(?:e\.g|i\.e)$/.test(t.slice(0, m.index))) at = m.index + 1;
+  h._text = t;                              // drawSliderPlan: the text it shows
   if (at < 0) { h.textContent = t; return h; }
   const rest = el("span", {class: "hint-rest", text: t.slice(at)});
   const more = el("a", {class: "inline-link hint-more-link", href: "#", role: "button",
@@ -800,6 +964,13 @@ function moreHint(text, open = false) {
   show(open);
   h.append(t.slice(0, at), rest, " ", more);
   return h;
+}
+// a switch on the right of a prompt slider's heading (Adjust each section, on the plan's), with a short muted line
+// under it that says what it does without a hover: a text, or a hint with its More
+function switchSub(label, sub) {
+  const s = typeof sub === "string" ? el("div", {class: "field-hint", text: sub}) : sub;
+  if (s) s.classList.add("prompt-switch-sub");
+  return el("div", {class: "prompt-switch"}, label, s);
 }
 // the +1 and -1 ends told apart at a glance (the by-epoch switch): "+1" / "-1" in a label as a tag in its end's colour
 // (style.css .end-tag), the rest of the label as it was
@@ -2268,12 +2439,25 @@ const RESUME_KEYS = ["SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEI
   "FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_ON", "SAMPLE_CHECKPOINT", "BLOCKS_SWAP", "FAMILY_PREVIEW_LOOK",
   "SAMPLE_EVERY_N_EPOCHS", "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH", "SAMPLE_EVERY_AFTER",
   "SAVE_EVERY_N_EPOCHS", "SAVE_LATER", "SAVE_UNTIL_EPOCH", "SAVE_EVERY_AFTER",
-  "LEARNING_RATE", "ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX"];
+  "LEARNING_RATE", "ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX",
+  "FAMILY_SLIDER_TWEAKS", "FAMILY_SLIDER_TWEAKS_ON"];     // a prompt slider's sections' own settings
+// ... those go only while the form shows the paused run's setup: its own view (`own`), or the same model with the same
+// Slider boxes (their lines, blank ones aside). Else the run keeps its own - even when the form's are empty
+const RESUME_TWEAK_KEYS = ["FAMILY_SLIDER_TWEAKS", "FAMILY_SLIDER_TWEAKS_ON"];
+const SLIDER_BOX_KEYS = ["FAMILY_SLIDER_BASE", "FAMILY_SLIDER_POS", "FAMILY_SLIDER_NEG", "FAMILY_SLIDER_ANCHORS"];
+function resumeTweaksGo(run, family, values, own) {
+  const lines = (t) => String(t ?? "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean).join("\n");
+  return run.family === family &&
+    (own || SLIDER_BOX_KEYS.every((k) => lines(values[k]) === lines((run.values || {})[k])));
+}
 
-// while this model's run is paused, the rows Resume uses are marked "Applies on Resume"
+// while this model's run is paused, the rows Resume uses are marked "Applies on Resume" - the plan, which holds the
+// sections' own settings, only while Resume sends them (resumeTweaksGo)
 function resumeMarks() {
   const r = S.run || {}, on = r.state === "paused" && r.family === S.family && r.resume_mode !== "ft";
-  const keys = new Set([...RESUME_KEYS, ...Object.keys(SIZE_KEYS)]);
+  const tweaks = on && resumeTweaksGo(r, S.family, S.values, ctxKind() === "run" && !(S.ctx || {}).ended);
+  const keys = new Set([...RESUME_KEYS.filter((k) => !RESUME_TWEAK_KEYS.includes(k)), ...Object.keys(SIZE_KEYS),
+    ...(tweaks ? ["_slider_plan"] : [])]);
   document.querySelectorAll(".form-row[data-key]").forEach((row) =>
     row.classList.toggle("row-resume", on && keys.has(row.dataset.key)));
 }
@@ -2282,8 +2466,9 @@ async function resumeClick() {
   const r = S.run || {}, was = r.values || {}, box = $("resumeChoice");
   // the previews as the Samples tab has them now (prompts, seed, size, steps, CFG, Turbo strength, the preview
   // checkpoint tick), block swap, the save schedule and the learning rate go with the resume
+  const tweaks = resumeTweaksGo(r, S.family, S.values, ctxKind() === "run" && !(S.ctx || {}).ended);
   const samples = r.family === S.family ? Object.fromEntries(RESUME_KEYS
-    .filter((k) => k in S.values).map((k) => [k, S.values[k]])) : {};
+    .filter((k) => k in S.values && (tweaks || !RESUME_TWEAK_KEYS.includes(k))).map((k) => [k, S.values[k]])) : {};
   const diff = r.family === S.family ? Object.keys(SIZE_KEYS).filter((k) => S.values[k] !== undefined &&
     String(S.values[k]).trim() !== "" && Number(S.values[k]) !== Number(was[k])) : [];
   if (!diff.length) { box.style.display = "none"; return start("/api/resume", {samples}); }
@@ -2698,6 +2883,10 @@ function sliderLiveDraw(sl) {
     "try them again." : "they're tried again at the next epoch.") :
     sl.waiting ? "Waiting for the end of this epoch…" :
     sl.epoch != null ? `Training on these since epoch ${sl.epoch + 1}.` : "";
+  // under the push box: the epochs whose plan section sets its own push strength (Adjust each section) keep it
+  const pushNote = $("slPushNote");
+  pushNote.textContent = sl.push_note || "";
+  pushNote.style.display = sl.push_note ? "" : "none";
   // lines with their own epochs, or a push strength by epoch (a Split or a Slide): what this epoch trains on
   const cur = sl.now, nowBox = $("slNow");
   nowBox.style.display = cur ? "" : "none";

@@ -249,10 +249,16 @@ class MOSSImageDriver(FamilyDriver):
                                "epochs, then 40%) or share:epoch:share:epoch (75:6:40:10 = 75% until epoch 6, "
                                "then slides to 40% by epoch 10; a fifth number R = after that, the higher share, "
                                "with every Rth epoch at the lower one)") from None
+        over = getattr(self, "share_overrides", None)      # a section's own fine detail (train.py --slider_tweaks): the
+        if over and int(epoch) in over:                    # share only, its half rate as the schedule has it
+            pct = f"{round(float(over[int(epoch)]), 2):g}"
         return pct, half
 
     def step_policy(self, batch, epoch):
         return False, (0.5 if self._share(epoch)[1] else 1.0)
+
+    def scheduled_lr(self, epoch):
+        return 0.5 if self._share(epoch)[1] else 1.0
 
     def _t_mu(self):
         """The timestep curve's centre for the epoch: lownoise_pct (_share) moves it so that share of steps lands

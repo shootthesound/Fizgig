@@ -448,6 +448,139 @@ def slider_off_problems(desc, boxes, push, not_a_number="Slider push strength mu
     return out
 
 
+# ---- a prompt slider's own settings by section ---------------------------------------------------------------------
+# With Change the prompts during the run (advanced) on, the plan's tick "Adjust each section" (FAMILY_SLIDER_TWEAKS_ON)
+# gives its sections their own rate - a percent of the learning rate, in place of the schedule's (a Clean-end share's
+# half-rate epochs too) -, fine detail - the epoch's Clean-end share (MOSS-Image's) -, push strength - in place of the
+# Push strength box's - and how firmly - the anchors' weight, in place of the How firmly box's. FAMILY_SLIDER_TWEAKS
+# keeps them as text by epochs, "5-8:rate=25,detail=40,push=2,firm=1.5;12:rate=50", a later entry winning: kept while
+# the tick is off, sent (--slider_tweaks) only with both ticks on. The Clean-end share, Push strength and How firmly
+# boxes stay as typed
+TWEAKS = "Adjust each section"     # the plan's tick (FAMILY_SLIDER_TWEAKS_ON), as the page names it
+# each one's lowest and highest: rate and fine detail a percent; push strength and how firmly above 0 (no highest:
+# None), as Start takes the boxes' own
+SLIDER_TWEAK_RANGE = {"rate": (1, 100), "detail": (0, 100), "push": (0, None), "firm": (0, None)}
+_TWEAK_NAMES = {"rate": "rate", "detail": "fine detail", "push": "push strength", "firm": "\"how firmly\""}
+_SLIDER_TWEAK = re.compile(r"\s*([0-9]+)\s*(?:-\s*([0-9]+)\s*)?:(.*)", re.S)
+_SLIDER_TWEAK_NUM = re.compile(r"[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")    # as app.js reads them
+
+
+def _slider_tweak_entry(part):
+    """One entry, "5-8:rate=25,push=2" -> (5, 8, {"rate": 25.0, "push": 2.0}); None when it isn't one (each setting
+    once, a finite number)."""
+    m = _SLIDER_TWEAK.fullmatch(part)
+    if m is None:
+        return None
+    out = {}
+    for kv in m.group(3).split(","):
+        k, eq, x = (s.strip() for s in kv.partition("="))
+        k = k.lower()
+        if (not eq or k not in SLIDER_TWEAK_RANGE or k in out or not _SLIDER_TWEAK_NUM.fullmatch(x)
+                or not math.isfinite(float(x))):          # 1e400 reads as infinity
+            return None
+        out[k] = float(x)
+    return int(m.group(1)), int(m.group(2) or m.group(1)), out
+
+
+def _slider_tweak_parts(text):
+    return [p for p in str(text or "").split(";") if p.strip()]
+
+
+def slider_tweaks(text):
+    """What the sections set, in order: [(first epoch, last epoch, {"rate": %, "detail": %, "push": x, "firm": x})],
+    an entry that isn't one left out (slider_tweak_problems names it)."""
+    return [t for t in map(_slider_tweak_entry, _slider_tweak_parts(text)) if t]
+
+
+def slider_tweak_at(text, epoch):
+    """What the sections set for this epoch (1-based): {"rate": %, "detail": %, "push": x, "firm": x}, any of them or
+    none - a later entry wins."""
+    out = {}
+    for a, b, got in slider_tweaks(text):
+        if a <= epoch <= b:
+            out.update(got)
+    return out
+
+
+def slider_tweaks_text(tweaks):
+    """[(first, last, {setting: value})] as the text keeps them, "5-8:rate=25,detail=40,push=2,firm=1.5;12:rate=50"
+    (an entry that sets nothing left out)."""
+    return ";".join(f"{a}" + (f"-{b}" if b != a else "") + ":" + ",".join(f"{k}={x:g}" for k, x in got.items())
+                    for a, b, got in tweaks if got)
+
+
+def slider_tweaks_on(desc, inputs):
+    """Adjust each section: the plan's tick, with Change the prompts during the run (advanced) on (off when missing)."""
+    return slider_by_epoch(desc, inputs) and bool(inputs.get("FAMILY_SLIDER_TWEAKS_ON"))
+
+
+def slider_has_anchors(inputs):
+    """A prompt slider's Leave these alone box holds a line with words (its epochs aside): the run has anchors."""
+    return any(slider_line_parts(x)[0] for x in str(inputs.get("FAMILY_SLIDER_ANCHORS") or "").splitlines())
+
+
+def slider_tweak_keys(desc, inputs):
+    """What a section's own value can change in this run: its rate, unless Automagic v3 / v4 sets the rate (left out
+    then, not refused: it stays in the box), its fine detail on a model whose driver reads a Clean-end share by epoch
+    (form._CLEAN_SHARE_SLIDES), its push strength, and how firmly it keeps the anchors when the run has some."""
+    from fizgig.families.form import _CLEAN_SHARE_SLIDES          # here: form imports this module
+    return tuple(k for k, on in (("rate", not automagic(inputs)), ("detail", desc.key in _CLEAN_SHARE_SLIDES),
+                                 ("push", True), ("firm", slider_has_anchors(inputs))) if on)
+
+
+def slider_push_now(plan, tweaks, epoch):
+    """The push strength an epoch (1-based) trains at: its section's own (Adjust each section, the trainer's
+    --slider_tweaks), else its plan's as typed (slider_push_at) - None when neither gives one."""
+    own = slider_tweak_at(tweaks, epoch).get("push")
+    return slider_push_at(plan, epoch) if own is None else own
+
+
+def slider_tweaks_sent(desc, inputs):
+    """The text the trainer gets (--slider_tweaks), "" for none: with both ticks on, what the run can change
+    (slider_tweak_keys), in order."""
+    if not slider_tweaks_on(desc, inputs):
+        return ""
+    keys = slider_tweak_keys(desc, inputs)
+    return slider_tweaks_text([(a, b, {k: x for k, x in got.items() if k in keys})
+                               for a, b, got in slider_tweaks(inputs.get("FAMILY_SLIDER_TWEAKS"))])
+
+
+def slider_tweaks_in_run(text, epochs):
+    """The text without what falls past the run's last epoch (`epochs`): an entry cut at it, or left out."""
+    return slider_tweaks_text([(a, min(b, epochs), got) for a, b, got in slider_tweaks(text) if a <= epochs])
+
+
+def slider_tweak_problems(text, epochs, keys=tuple(SLIDER_TWEAK_RANGE)):
+    """Why what the sections set can't train as it is over the run's epochs (1 to `epochs`): an entry that isn't one,
+    epochs outside the run, a rate outside 1 to 100 or a fine detail outside 0 to 100, or a push strength or how firmly
+    at or below 0 - of the settings in `keys` (slider_tweak_keys: a rate under Automagic is left out, not refused).
+    Start (problems) refuses them, with both ticks on, and so does the trainer."""
+    out = []
+    for part in _slider_tweak_parts(text):
+        t = _slider_tweak_entry(part)
+        if t is None:
+            out.append(f"Slider: \"{part.strip()}\" in the sections' own settings can't be read - each one is epochs "
+                       "and what they set, e.g. 5-8:rate=25,push=2")
+            continue
+        a, b, got = t[0], t[1], {k: x for k, x in t[2].items() if k in keys}
+        said = f"epoch {a}" if a == b else f"epochs {a}-{b}"
+        if got and a < 1:
+            out.append(f"Slider: a section is adjusted for {said} - epochs start at 1")
+        elif got and a > b:
+            out.append(f"Slider: a section's epochs run backwards ({a}-{b}) - give its first epoch first")
+        elif got and epochs and b > epochs:
+            out.append(f"Slider: a section is adjusted for {said}, past the run's last ({epochs}) - drop it (under the "
+                       f"plan) or set Max Train Epochs to {b}")
+        for k, x in got.items():
+            lo, hi = SLIDER_TWEAK_RANGE[k]
+            if hi is None and not x > lo:            # push strength, how firmly: above 0
+                out.append(f"Slider: a section's {_TWEAK_NAMES[k]} must be above {lo} - it is {x:g} for {said}")
+            elif hi is not None and not lo <= x <= hi:
+                out.append(f"Slider: a section's {_TWEAK_NAMES[k]} must be {lo} to {hi}% "
+                           f"{'of the learning rate ' if k == 'rate' else ''}- it is {x:g} for {said}")
+    return out
+
+
 def ft_on(desc, inputs):
     """A full fine-tune of the base model, for a family whose driver offers one (description.finetune)."""
     return bool(desc.finetune and inputs.get("FAMILY_FT"))
@@ -991,6 +1124,9 @@ def problems(desc, inputs):
             # lines with their own epochs: every epoch needs a line of the picture and of each end (those on together
             # join)
             errors += slider_line_problems(desc, slider_boxes(inputs), epochs)
+            if slider_tweaks_on(desc, inputs):      # a section's own settings, as the run would take them
+                errors += slider_tweak_problems(inputs.get("FAMILY_SLIDER_TWEAKS"), epochs,
+                                                slider_tweak_keys(desc, inputs))
         else:            # Change the prompts during the run (advanced) off: the plain slider's check, and what only the
             # tick trains, saying so
             errors += slider_off_problems(desc, slider_boxes(inputs), inputs.get("FAMILY_SLIDER_GUIDANCE"))
@@ -1510,6 +1646,9 @@ def train_command(desc, inputs, plan):
                 # renders anew)
                 cmd += ["--slider_by_epoch",
                         "--slider_bank_keep", str(SLIDER_BANKS_KEPT if st.get("FAMILY_SLIDER_KEEP", True) else 0)]
+                tweaks = slider_tweaks_sent(desc, st)       # the sections' own settings: both ticks on
+                if tweaks:
+                    cmd += ["--slider_tweaks", tweaks]
             for flag, role in (("--text_encoder", "text_encoder"), ("--vae", "vae")):
                 if flag not in cmd:          # the practice images and the three prompts need both
                     cmd += [flag, _model(st, desc, role)]

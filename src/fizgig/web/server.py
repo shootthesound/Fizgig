@@ -1121,6 +1121,10 @@ _RESUME_SAMPLE_KEYS = ("SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_H
                        "SAMPLE_EVERY_N_EPOCHS", "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH", "SAMPLE_EVERY_AFTER",
                        "BLOCKS_SWAP", "SAVE_EVERY_N_EPOCHS", "SAVE_LATER", "SAVE_UNTIL_EPOCH", "SAVE_EVERY_AFTER",
                        "LEARNING_RATE", "ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX")
+# a prompt slider's sections' own settings (the plan's), which Resume takes from the form too - only when the page
+# sends them, while the form shows the paused run's setup (app.js resumeTweaksGo); then an emptied one as well, so a
+# section put back on its schedule trains on it. Not sent, the run keeps its own
+_RESUME_TWEAK_KEYS = ("FAMILY_SLIDER_TWEAKS", "FAMILY_SLIDER_TWEAKS_ON")
 
 
 def _slider_live_boxes(desc, b):
@@ -1130,6 +1134,16 @@ def _slider_live_boxes(desc, b):
         return {k: "\n".join(x.strip() for x in str(b.get(k) or "").splitlines() if x.strip())
                 for k in ("base", "pos", "neg")}
     return {k: str(b.get(k) or "").strip() for k in ("base", "pos", "neg")}
+
+
+def _resume_slider_values(values, samples):
+    """A paused prompt slider's values for its Resume: the plan's tweaks as the form has them now (Pause, change them,
+    Resume) when the page sent them - only while the form shows that run's setup - else the run's own."""
+    v = dict(values or {})
+    for k in _RESUME_TWEAK_KEYS:
+        if k in (samples or {}):
+            v[k] = samples[k]
+    return v
 
 
 # a prompt slider's live prompts: the request the web UI writes, and what the trainer took (fizgig.families.train's
@@ -1151,13 +1165,14 @@ def _prompt_slider_run(run) -> bool:
 
 def _slider_live_status(run):
     """{base, pos, neg, guidance, epoch (when the trainer last took new ones, else None), waiting, failed, retry, now,
-    by_epoch, lines_failed} for the Training tab's Slider prompts panel, or None for any other run. by_epoch: the
-    run's by-epoch switch - off, its boxes are one line each and there is no now, as before. failed: with it on, why
-    the trainer couldn't take the change waiting (encoding or rendering it failed) at the end of epoch `epoch`, else
-    None - it trains on its own lines meanwhile; retry: it tries the change again at the next epoch (True), or it
-    failed twice and waits for a new Apply (False). lines_failed: with it on, the card's words when the trainer
-    couldn't switch to the run's own lines for an epoch (train.py _lines_failure) - now then shows the lines it trains
-    on instead - else None."""
+    by_epoch, lines_failed, push_note} for the Training tab's Slider prompts panel, or None for any other run.
+    by_epoch: the run's by-epoch switch - off, its boxes are one line each and there is no now, as before. failed: with
+    it on, why the trainer couldn't take the change waiting (encoding or rendering it failed) at the end of epoch
+    `epoch`, else None - it trains on its own lines meanwhile; retry: it tries the change again at the next epoch
+    (True), or it failed twice and waits for a new Apply (False). lines_failed: with it on, the card's words when the
+    trainer couldn't switch to the run's own lines for an epoch (train.py _lines_failure) - now then shows the lines it
+    trains on instead - else None. push_note: the note under its push box when the plan's sections set their own push
+    strength (_slider_push_note), else None."""
     if not _prompt_slider_run(run):
         return None
     v, out = run.get("values") or {}, run.get("output_dir") or ""
@@ -1185,9 +1200,9 @@ def _slider_live_status(run):
     failed = str(fail["failed"]) if want and asked and same(want, asked) and not later else None
     waiting = bool(want) and not failed and not (got and same(want, got))
     # what the epoch in progress trains on - with lines of their own epochs its prompts and the next epoch they change
-    # at, with a Split or a Slide its push strength - from what the trainer took: while a change waits for the end of
-    # the epoch (or failed to take), the run's values already hold it, so the last change taken shows instead (none
-    # yet: the values the run started with; a run without them, not shown)
+    # at, with a Split, a Slide or a section's own (Adjust each section) its push strength - from what the trainer
+    # took: while a change waits for the end of the epoch (or failed to take), the run's values already hold it, so
+    # the last change taken shows instead (none yet: the values the run started with; a run without them, not shown)
     desc, start = get_family(run.get("family") or ""), run.get("slider_start") or {}
     by_epoch = launch.slider_by_epoch(desc, v)       # the tick as the run started (Apply keeps it): off, no now
     if not waiting and not failed:
@@ -1206,9 +1221,13 @@ def _slider_live_status(run):
         ep, total = max(1, int((run.get("progress") or {}).get("epoch") or 1)), int(str(v.get("MAX_TRAIN_EPOCHS")))
     except (TypeError, ValueError):
         ep, total = 1, 0
-    if by_epoch and boxes and (scheduled or ":" in plan):
+    # the sections' own settings, as the trainer got them (Adjust each section): their push strength wins over the
+    # plan's, and the Run card's Apply changes the rest
+    tweaks = launch.slider_tweaks_sent(desc, v)
+    own = any("push" in got for _a, _b, got in launch.slider_tweaks(tweaks))
+    if by_epoch and boxes and (scheduled or ":" in plan or own):
         base, pos, neg, anchors = launch.slider_at(boxes, ep)
-        push = launch.slider_push_at(plan, ep)
+        push = launch.slider_push_now(plan, tweaks, ep)
         now = {"epoch": ep, "pos": f"{base} {pos}".strip(), "neg": f"{base} {neg}".strip(), "anchors": anchors,
                "push": None if push is None else f"{round(push, 2):g}",
                "next": next((a for a, *_r in launch.slider_plan(boxes, total) if a > ep), None) if scheduled else None}
@@ -1217,7 +1236,27 @@ def _slider_live_status(run):
     return {**{k: str(v.get(key) or "") for k, key in _SLIDER_LIVE_KEYS.items()},
             "epoch": fail.get("epoch") if failed else got.get("epoch"), "waiting": waiting, "failed": failed,
             "retry": fail.get("retry") is not False if failed else None,      # an older trainer's: it tried every epoch
-            "now": now, "by_epoch": by_epoch, "lines_failed": (lines_failed or {}).get("said") or None}
+            "now": now, "by_epoch": by_epoch, "lines_failed": (lines_failed or {}).get("said") or None,
+            "push_note": _slider_push_note(tweaks, ep, total) if own else None}
+
+
+def _slider_push_note(tweaks, ep, total):
+    """The note under the Run card's push box: the epochs whose plan section sets its own push strength (Adjust each
+    section), those not trained yet - they keep it, and Apply changes the rest - or None."""
+    spans = []                  # each run of such epochs, [first, last]
+    for e in range(1, total + 1):
+        if "push" not in launch.slider_tweak_at(tweaks, e):
+            continue
+        if spans and spans[-1][1] == e - 1:
+            spans[-1][1] = e
+        else:
+            spans.append([e, e])
+    spans = [(a, b) for a, b in spans if b > ep]        # the epoch in progress took its push already
+    if not spans:
+        return None
+    said = launch.slider_numbers([f"{a}–{b}" if b > a else f"{a}" for a, b in spans])
+    return ((f"Epochs {said} keep their own push strength" if len(spans) > 1 or spans[0][1] > spans[0][0] else
+             f"Epoch {said} keeps its own push strength") + ", set in the Slider card's plan. Apply changes the rest.")
 
 
 def _size_changed(lora, out_dir, values):
@@ -4563,6 +4602,7 @@ class Handler(BaseHTTPRequestHandler):
                 for k in _RESUME_SAMPLE_KEYS:            # the previews as the Samples tab has them now
                     if k in samples and samples[k] is not None and str(samples[k]).strip() != "":
                         last["values"][k] = samples[k]
+                last["values"] = _resume_slider_values(last["values"], samples)   # a slider's tweaks
                 if last["resume_mode"] == "ft":
                     if not os.path.isfile(last["resume"]):
                         return self.json({"error": "The paused fine-tune's checkpoint isn't there any more: "

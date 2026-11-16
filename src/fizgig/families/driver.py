@@ -227,6 +227,12 @@ class FamilyDriver:
         10%), averaged over an accumulation window. Default: (False, 1.0)."""
         return False, 1.0
 
+    def scheduled_lr(self, epoch: int) -> float:
+        """The part of step_policy's multiplier that the family's own schedule gives 1-based `epoch` (MOSS-Image's
+        Clean-end share: a half-rate epoch, 0.5). A prompt slider section's own rate (--slider_tweaks) takes its place;
+        the rest of the multiplier stays (MiniMax H3's adapter-relative ramp). Default 1.0."""
+        return 1.0
+
     def batch_cond(self, batch: dict, device) -> dict:
         """The conditioning dict training_loss gets for one loaded item: the cached `cond__` entries, batched. A
         family that keeps its own cache layout (H3's hidden_states + audio rows) maps its keys here."""

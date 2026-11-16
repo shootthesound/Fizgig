@@ -767,7 +767,9 @@
                   <div class="slider-live-actions"><input type="text" id="slGuidance" class="w-port">
                   <button class="btn btn-primary btn-sm" id="slApply">Apply at the next epoch</button>
                   <button class="btn btn-sm" id="slReset" title="Put back what the slider is training on now">Undo edits</button>
-                  <span class="field-hint" id="slSay"></span></div></div>
+                  <span class="field-hint" id="slSay"></span></div>
+                  <!-- under the push box: the epochs whose plan section sets its own push strength keep it -->
+                  <div class="field-hint slider-live-note" id="slPushNote" style="display:none"></div></div>
               </div>
               <div id="problems" class="problems"></div>
               <div class="run-upnext" id="runUpNext" style="display:none"></div>

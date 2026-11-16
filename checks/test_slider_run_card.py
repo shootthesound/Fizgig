@@ -1,9 +1,10 @@
 """The by-epoch switch: practice pictures kept by what the description is (its text), and the plan's "again" as the
-trainer's cache normally keeps them; MOSS-Image's Clean-end share read by one function (its driver and the plan); a
-Run card request the trainer can't take tried once more, then waiting for a new Apply; a push strength alone by epoch
-kept short in the metadata; lines with no picture line on the first epoch refused before anything loads; and the Run
-card's boxes as numbered lines with their own epochs and its push strength as Single, Split or Slide (app.js slLines,
-slPush) - with the tick off, the panel as before."""
+trainer's cache normally keeps them; MOSS-Image's Clean-end share read by one function (its driver and the plan);
+Resume takes the plan's own settings from the form only while it shows the paused run's setup; a Run card request the
+trainer can't take tried once more, then waiting for a new Apply; a push strength alone by epoch kept short in the
+metadata; lines with no picture line on the first epoch refused before anything loads; and the Run card's boxes as
+numbered lines with their own epochs and its push strength as Single, Split or Slide (app.js slLines, slPush) - with
+the tick off, the panel as before."""
 import json
 import os
 import re
@@ -93,6 +94,38 @@ def test_moss_images_clean_end_share_is_read_by_one_function():
     assert form.clean_share_at(moss, {key: "11:7:40:8:x"}, 3) is None
 
 
+# ---- Resume: the plan's own settings from the form only for the run's setup ------------------------------------------
+def test_resume_takes_the_plans_own_settings_only_while_the_form_shows_the_run():
+    from fizgig.web import server
+    run = {"family": "krea2", "values": {**RUN, "FAMILY_SLIDER_TWEAKS": "5-8:push=2", "FAMILY_SLIDER_TWEAKS_ON": True},
+           "state": "paused"}
+    same = {**RUN, "FAMILY_SLIDER_POS": " smiling @1-4\n\nlaughing @5- \n", "SAMPLE_SEED": "7",
+            "FAMILY_SLIDER_TWEAKS": "", "FAMILY_SLIDER_TWEAKS_ON": False}     # its boxes, blank lines aside
+    other = {**same, "FAMILY_SLIDER_POS": "grinning"}                        # another setup of the same model
+    cases = [["run", "krea2", other], ["draft", "krea2", same], ["draft", "krea2", other],
+             ["draft", "moss_image", same]]
+    js = (_grab(r"const SIZE_KEYS = [^\n]*\n", r"const RESUME_KEYS = \[.*?\];[^\n]*\n",
+                r"const RESUME_TWEAK_KEYS = [^\n]*\n",
+                r"const SLIDER_BOX_KEYS = [^\n]*\n", r"function resumeTweaksGo\(.*?\n\}\n",
+                r"async function resumeClick\(\) \{.*?\n\}\n")
+          + "const $ = () => ({style: {}}), start = (path, body) => body.samples; let KIND = '';\n"
+          + "const ctxKind = () => KIND; const S = {};\n"
+          + f"(async () => {{ const out = []; for (const [kind, family, values] of {json.dumps(cases)}) {{\n"
+          + f"  KIND = kind; Object.assign(S, {{run: {json.dumps(run)}, ctx: {{kind}}, family, values}});\n"
+          + "  const s = await resumeClick(); out.push([s.FAMILY_SLIDER_TWEAKS ?? null, s.SAMPLE_SEED ?? null]); }\n"
+          + "console.log(JSON.stringify(out)); })();\n")
+    assert _node(js) == [
+        ["", "7"],              # the run's own view: its plan as the form has it now - emptied too
+        ["", "7"],              # your setup, the same model and the same boxes: the same
+        [None, "7"],            # another setup: the run keeps its own (the previews still go)
+        [None, None]]           # another model: nothing from the form, as before
+    # the server takes what the page sends: not sent, the run keeps its own, even when the form's were empty
+    v = {"FAMILY_SLIDER_BY_EPOCH": True, "FAMILY_SLIDER_TWEAKS": "5-8:push=2", "FAMILY_SLIDER_TWEAKS_ON": True}
+    assert server._resume_slider_values(v, {"SAMPLE_SEED": "7"}) == v
+    assert server._resume_slider_values(v, {"FAMILY_SLIDER_TWEAKS": "", "FAMILY_SLIDER_TWEAKS_ON": False}) == {
+        **v, "FAMILY_SLIDER_TWEAKS": "", "FAMILY_SLIDER_TWEAKS_ON": False}
+
+
 # ---- a Run card request the trainer can't take ----------------------------------------------------------------------
 def test_a_request_it_cant_take_is_tried_once_more_then_waits_for_apply(tmp_path):
     from fizgig.families.train import SLIDER_TRIES, _slider_tries
@@ -137,7 +170,7 @@ def test_a_request_it_cant_take_is_tried_once_more_then_waits_for_apply(tmp_path
 
 def test_a_push_strength_alone_by_epoch_keeps_the_metadata_short():
     from fizgig.families.train import _history_entry
-    assert _history_entry(4, 2.5) == {"epoch": 4, "guidance": 2.5}         # a Split or a Slide
+    assert _history_entry(4, 2.5) == {"epoch": 4, "guidance": 2.5}         # a Split, a Slide or a section's own
     assert _history_entry(4, 2.5, ["a,", "a, b", "a, c"], ["a dog"]) == {    # a Run card request: its prompts too
         "epoch": 4, "prompts": ["a,", "a, b", "a, c"], "guidance": 2.5, "anchors": ["a dog"]}
 
@@ -213,7 +246,7 @@ row("label", "Leave alone", box("slAnchors", "textarea", "Prompts the dial must 
 const actions = new E("div"), push = box("slGuidance", "input");
 actions.className = "slider-live-actions"; push.className = "w-port";
 actions.append(push, box("slSay", "span"));
-row("div", "Push strength", actions);
+row("div", "Push strength", actions, box("slPushNote", "div"));
 panel.append(box("slNow", "div"));
 const S = {sl: {shown: null, edited: false}};
 // what the panel shows of each box: its element, words and look, and the boxes of lines beside it
@@ -241,7 +274,7 @@ def test_the_run_card_shows_lines_with_their_epochs_and_the_push_as_single_split
 const out = {}, before = shape();
 const sl = {base: "a photo of a woman, @-2\nwearing a red coat, @3-35/2", pos: "smiling @1-35\nlaughing @36-",
   neg: "frowning", guidance: "2:10:1.5:15", anchors: "a photo of a man @-4", now: null, by_epoch: true, epoch: null,
-  waiting: false, failed: null};
+  waiting: false, failed: null, push_note: null};
 // off: one line each, as before
 sliderLiveDraw({...sl, by_epoch: false, base: "a man,", pos: "smiling", neg: "frowning", guidance: "3", anchors: ""});
 out.off = [JSON.stringify(shape()) === JSON.stringify(before), $("slPos").value];

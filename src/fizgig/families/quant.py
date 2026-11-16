@@ -294,7 +294,8 @@ def plan(desc, driver, precision="auto", blocks_to_swap=-1, free_gb=None, margin
     Auto precision takes the most precise base that fits without swap (bf16, then int8, then nf4), since swap costs
     far more speed than quantisation. If none fits with the full margin, nf4 still goes first when it fits with a
     small one: swapping int8 instead cost 4.4x the step time and 4x the CPU on a 16 GB card (#216; measured July
-    2026). Only if nothing fits does it swap (int8, the smaller swappable base). An explicit precision with auto swap
+    2026). Only if nothing fits does it swap (int8, the smaller swappable base; failing that, a 4-bit base that
+    streams - desc.streams_blocks). An explicit precision with auto swap
     gets the fewest blocks that fit. pictures: a batched step's (Batch size), each past the first adding
     desc.batch_gb's figure at megapixels. adapter_gb: what the run's trainable adapter holds beyond the figures'
     (adapter_extra_gb). Returns (precision, blocks_to_swap, reason)."""
@@ -311,8 +312,10 @@ def plan(desc, driver, precision="auto", blocks_to_swap=-1, free_gb=None, margin
     cap = driver.max_blocks_to_swap()
     budget = free_gb - margin_gb
 
+    streams = getattr(desc, "streams_blocks", None) or (lambda p: p != "nf4")
+
     def swap_for(p):
-        if p not in mem or p == "nf4":
+        if p not in mem or not streams(p):
             return 0
         need, per_block = mem[p]
         if need <= budget or per_block <= 0 or cap <= 0:
@@ -335,7 +338,14 @@ def plan(desc, driver, precision="auto", blocks_to_swap=-1, free_gb=None, margin
             if mem[p][0] - n * mem[p][1] <= budget:
                 return p, n if blocks_to_swap < 0 else blocks_to_swap, f"{p} + {n} swapped blocks fit {free_gb:.1f} GB"
         p = "nf4" if "nf4" in offered else offered[-1]
-        return p, 0, f"nothing fits {free_gb:.1f} GB comfortably: {p}, the smallest base"
+        # a 4-bit base that streams (MiniMax H3 Image's NF4 ring) takes the blocks it needs: with none, a 12 GB card
+        # planned 12.8 GB, spilled into system memory on Windows and trained at 40 s/step; 16 swapped ran 4.1 (#354)
+        n = swap_for(p)
+        if n and mem[p][0] - n * mem[p][1] <= budget:
+            return p, n if blocks_to_swap < 0 else blocks_to_swap, f"{p} + {n} swapped blocks fit {free_gb:.1f} GB"
+        return (p, n if blocks_to_swap < 0 else (blocks_to_swap if n else 0),
+                f"nothing fits {free_gb:.1f} GB comfortably: {p}, the smallest base"
+                + (f", {n} blocks swapped (the most)" if n else ""))
     if precision not in offered:
         raise ValueError(f"{desc.display_name} offers {offered}, not {precision!r}")
     if blocks_to_swap < 0:

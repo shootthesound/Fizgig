@@ -754,6 +754,9 @@
               <div class="slider-live" id="sliderLive" style="display:none">
                 <div class="slider-live-head"><b>Slider prompts</b><span class="field-hint">Steer the slider while it
                   trains: new prompts take over at the next epoch, from where it has got to.</span></div>
+                <div class="slider-now" id="slNow" style="display:none"></div>
+                <!-- one line each, as before; with the by-epoch switch app.js sliderLiveLook shows each box as
+                     numbered lines with their own epochs and the push strength as Single / Split / Slide -->
                 <label class="slider-live-row"><span>What it is</span><input type="text" id="slBase"
                   title="The base: each end's words are added after it with a space, as at the start"></label>
                 <label class="slider-live-row"><span>+1 end adds</span><input type="text" id="slPos"></label>

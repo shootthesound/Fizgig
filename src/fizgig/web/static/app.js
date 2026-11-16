@@ -179,7 +179,7 @@ const saveTriggerSoon = debounce((word) => api("/api/trigger", {folder: S.imageF
 
 function defaults() {
   const v = {};
-  for (const s of S.fam.form.sections) for (const r of s.rows) if (r.kind !== "note" && r.kind !== "shown") {
+  for (const s of S.fam.form.sections) for (const r of s.rows) if (!["note", "shown", "plan"].includes(r.kind)) {
     v[r.key] = r.default;
     for (const p of r.parts || []) v[p.key] = p.default;   // a control of several values (the preview cadence)
   }
@@ -363,13 +363,28 @@ function advancedInto(body, ownerKey, row) {
   return true;
 }
 
+// Change the prompts during the run (advanced) (form.py): a prompt slider's row with a by_epoch look is drawn in it -
+// lines with their own epochs, Split and Slide - while the tick is on, and as before while it's off. Read from the
+// tick's own value, not the state that comes after, so a row is never drawn in a look the tick doesn't ask for (a box
+// of lines puts its lines in order and saves them as it draws); refreshState draws such a row again in place as the
+// tick changes (sliderLookFollow), the values as they are
+const rowLook = (r) => (r && r.by_epoch ? (S.values.FAMILY_SLIDER_BY_EPOCH ? "by_epoch" : "plain") : "");
+function sliderLookFollow() {
+  for (const r of S.fam.form.sections.flatMap((s) => s.rows)) {
+    const row = r && r.by_epoch && document.querySelector(`.form-row[data-key="${r.key}"]`);
+    if (row && row.dataset.look !== rowLook(r)) row.replaceWith(renderRow(r));
+  }
+}
+
 function renderRow(r) {
+  const look = rowLook(r);
+  if (look === "by_epoch") r = {...r, ...r.by_epoch};
   // its kind sets its layout (style.css): boxes in the grid, switches as tiles, a choice of pills, files and notes
   // across the card - from the schema's row kind, so every model's form lays out the same way
   const kind = {check: "check", radio: "radio", note: "note", text: "wide", path: "wide", folder: "wide", shown: "wide",
-    cadence: "cadence", split: "cadence"}[r.kind] || "field";
+    cadence: "cadence", split: "cadence", plan: "wide"}[r.kind] || "field";
   const wrap = el("div", {class: "form-row kind-" + kind + (r.featured ? " row-featured" : "") +
-    (r.boxed ? " row-boxed" : ""), "data-key": r.key});
+    (r.boxed ? " row-boxed" : ""), "data-key": r.key, "data-look": look || undefined});
   if (r.kind === "shown") {                       // a value from elsewhere (the Start tab's folder), read-only here
     const shownRow = el("div", {class: "field-row"}, el("span", {class: "field-label", text: r.label + ":"}),
       el("input", {type: "text", class: "w-path", id: "note_" + r.key, readonly: true, tabindex: -1}));
@@ -396,6 +411,7 @@ function renderRow(r) {
   if (r.lines) return promptLines(r, wrap);
   if (r.kind === "cadence") return cadenceRow(r, wrap);
   if (r.kind === "split") return splitRow(r, wrap);
+  if (r.kind === "plan") return planRow(r, wrap);
   const explain = r.explain ? explainParts(r.explain) : null;
   if (r.kind === "check") {
     input = el("input", {type: "checkbox", id: "f_" + r.key, onchange: (e) => set(e.target.checked)});
@@ -423,8 +439,12 @@ function renderRow(r) {
       const opts = r.choices.includes(String(val)) || !val ? r.choices : [String(val), ...r.choices];
       for (const c of opts) input.append(el("option", {value: c, text: c}));
       input.value = String(val ?? "");
-    } else if (r.kind === "text") {
-      input = el("textarea", {id: "f_" + r.key, rows: 4, spellcheck: "false", oninput: (e) => set(e.target.value)});
+    } else if (r.kind === "text" || (look === "plain" && String(v ?? "").split("\n").filter((x) => x.trim()).length > 1)) {
+      // a slider box still holding lines from Change the prompts during the run (advanced), now off: shown as lines
+      // to edit, as a one-line box would run them together - keep one (the plain slider's), or tick it again to use
+      // them all. Only lines typed with the tick on get here: every other box is as before
+      const n = r.kind === "text" ? 4 : Math.min(6, String(v ?? "").split("\n").length);
+      input = el("textarea", {id: "f_" + r.key, rows: n, spellcheck: "false", oninput: (e) => set(e.target.value)});
       input.value = v ?? "";
     } else if (r.kind === "combo") {
       // a dropdown of the usual values, as the desktop's, with Other… for a value of your own (a browser's
@@ -487,11 +507,15 @@ function renderRow(r) {
                       : el("div", {text: line}));
     }
     wrap.append(h);
+  } else if (r.hint && r.more === true) {         // a prompt slider's own row (form.py more): first sentence, More
+    wrap.append(moreHint(r.hint));
   } else if (r.hint) {                            // a hint of several lines keeps its line breaks
     const h = el("div", {class: "field-hint row-hint", text: r.hint, title: "Click to read it all",
       onclick: () => h.classList.toggle("open")});
     if (r.hint.includes("\n")) h.style.whiteSpace = "pre-line";
     wrap.append(h);
+    // the prompt slider's own switch (more: "on"): as its mode's while it's on, as every row's while off (style.css)
+    if (r.more) { wrap.classList.add("hint-more-on"); wrap.append(moreHint(r.hint)); }
   }
   if (r.bold) wrap.append(el("div", {class: "field-hint"}, el("b", {text: r.bold})));   // a line the row stresses
   if (link) wrap.append(el("div", {class: "field-hint"}, link));
@@ -551,9 +575,11 @@ function cadenceRow(r, wrap) {
 // by a later epoch. It stays one text - "30", "75:5:40" or "75:6:40:10" - so presets, Last Train and the queue carry
 // it as any entry; each mode remembers its own numbers while you switch between them
 function splitRow(r, wrap) {
-  // a row without Split shows a split value (75:5:40) as a Slide that drops at once (75:5:40:5)
+  // a row without Split shows a split value (75:5:40) as a Slide that drops at once (75:5:40:5); a Slide of four
+  // numbers (the push strength's) has no "then every" part, so five numbers show as typed, in Single
+  const every = (r.slide || []).length > 4;
   const modeOf = () => { const n = String(S.values[r.key] ?? "").split(":").length;
-    return (n === 4 || n === 5) && r.slide ? "Slide" : n === 3 ? (r.split ? "Split" : "Slide") : "Single"; };
+    return (n === 4 || (n === 5 && every)) && r.slide ? "Slide" : n === 3 ? (r.split ? "Split" : "Slide") : "Single"; };
   const partsOf = () => { const p = String(S.values[r.key] ?? "").split(":");
     return p.length === 3 && !r.split ? [...p, p[1]] : p; };
   S._split = S._split || {};
@@ -562,6 +588,16 @@ function splitRow(r, wrap) {
     single: m0 === "Single" ? String(S.values[r.key] ?? "") : String(r.single ?? (String(r.default ?? "").includes(":") ? "" : r.default ?? "")),
     split: m0 === "Split" ? partsOf() : (r.split || []).slice(), slide: m0 === "Slide" ? partsOf() : (r.slide || []).slice()};
   if (mem.slide.length === 5) { mem.every = mem.slide[4]; mem.slide = mem.slide.slice(0, 4); }   // the tick's number apart
+  // the push strength's (form.py from_single): picked, Split and Slide start from the number in Single - it, then
+  // about two thirds of it (to a half) - unless you typed numbers of your own there or Single holds none
+  mem.auto = mem.auto || {};
+  const fromSingle = (k) => {
+    const a = Number(String(mem.single ?? "").trim()), was = mem[k];
+    const untouched = [String(r[k]), String(mem.auto[k])].includes(String(was));    // the form's own, or filled in
+    if (!r.from_single || !untouched || !(a > 0) || !Number.isFinite(a)) return was;
+    const b = Math.round(a * 4 / 3) / 2 || Math.round(a * 200 / 3) / 100 || a;
+    return (mem.auto[k] = was.map((x, i) => (i === 0 ? String(a) : i === 2 ? String(b) : x)));
+  };
   const unit = (r.suffix || "").split(" ")[0];
   const write = () => {
     const m = modeOf();
@@ -590,8 +626,9 @@ function splitRow(r, wrap) {
   const pills = el("div", {class: "radio-row"});
   for (const c of ["Single", ...(r.split ? ["Split"] : []), ...(r.slide ? ["Slide"] : [])]) {
     pills.append(el("label", {class: "checkbox-label"}, el("input", {type: "radio", name: "split_" + r.key, value: c,
-      onchange: () => { onValue(r, c === "Split" ? mem.split.join(":") : c === "Slide" ? [...mem.slide,
-          ...(mem.every && mem.slideTick !== false ? [mem.every] : [])].join(":") : mem.single);
+      onchange: () => { if (c !== "Single") mem[c.toLowerCase()] = fromSingle(c.toLowerCase());
+        onValue(r, c === "Split" ? mem.split.join(":") : c === "Slide" ? [...mem.slide,
+          ...(every && mem.every && mem.slideTick !== false ? [mem.every] : [])].join(":") : mem.single);
         show(); }}), " " + c));
   }
   const lineOne = el("div", {class: "cad-line"}, one, el("span", {text: r.suffix || ""}));
@@ -604,12 +641,12 @@ function splitRow(r, wrap) {
     el("span", {class: "cad-pair"}, sHold, el("span", {text: "then slides to"})),
     el("span", {class: "cad-pair"}, sRest, el("span", {text: unit + " by epoch"})),
     el("span", {class: "cad-pair"}, sBy));
-  const lineRefresh = (r.slide || []).length > 4 ? el("div", {class: "cad-line"},
+  const lineRefresh = every ? el("div", {class: "cad-line"},
     el("label", {class: "cad-tick"}, sTick, el("span", {text: "then every"})),
     el("span", {class: "cad-pair"}, sEvery, el("span", {}, sNth, " epoch at ", sFirstEcho))) : null;
-  const hintOne = el("div", {class: "field-hint", text: r.hint});
-  const hintSplit = el("div", {class: "field-hint", text: r.split_hint || r.hint});
-  const hintSlide = el("div", {class: "field-hint", text: r.slide_hint || r.hint});
+  // a prompt slider's own (form.py more): each mode's first sentence, the rest behind More
+  const hint = (text) => (r.more ? moreHint(text) : el("div", {class: "field-hint", text}));
+  const hintOne = hint(r.hint), hintSplit = hint(r.split_hint || r.hint), hintSlide = hint(r.slide_hint || r.hint);
   // other known-good numbers, bracketed above the hint; the link puts them in the boxes
   const altSlide = r.slide_alt ? el("div", {class: "field-hint"}, "(" + r.slide_alt[0] + " ",
     el("a", {class: "inline-link", href: "#", text: "Click here to try them", onclick: (e) => {
@@ -647,7 +684,6 @@ function splitRow(r, wrap) {
   return wrap;
 }
 
-// a list of prompts, one numbered box each (the gallery's Prompt 1, 2, 3…), saved as the one-per-line text it always was
 // "Write captions": the box's first line saved as every photo's caption in the training folder (Edit, Slider pairs)
 function writeCaptions(getText) {
   const msg = el("div", {class: "field-hint"});
@@ -669,40 +705,342 @@ function writeCaptions(getText) {
          + "trains on it. Photos that already have a caption are left alone unless you choose to replace them."}), msg};
 }
 
+// a prompt slider's plan (form.py _slider_plan, in the state): a section for each run of epochs that train on the same
+// prompts, folded to its epochs and +1 words, open for both ends and the anchors in full. Words from lines with epochs
+// of their own are bold, in their epochs' colour (as their bars in the boxes); the epoch its run is on now is marked
+function planRow(r, wrap) {
+  wrap.append(el("span", {class: "field-label", text: r.label + ":"}),
+    el("div", {class: "slider-plan", id: "sliderPlan"}),
+    r.more ? moreHint(r.hint) : el("div", {class: "field-hint", text: r.hint}),
+    el("div", {class: "field-hint row-note", id: "note_" + r.key}));
+  return wrap;
+}
+
+function drawSliderPlan() {
+  const box = $("sliderPlan");
+  if (!box || !(S.state && S.state.slider_by_epoch)) return;      // Change the prompts... off: no plan (hidden)
+  const plan = (S.state && S.state.slider_plan) || [];
+  const run = S.run || {};
+  // the epoch the run is on, only while the form is that run (not a queued run, nor your setup while another trains)
+  const now = ctxIsLiveRun() && run.family === S.family && run.progress ? Number(run.progress.epoch) || 0 : 0;
+  const sig = JSON.stringify([plan, now]);           // the run's poll redraws it only when something moved
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig;
+  const open = new Set([...box.querySelectorAll("details[open]")].map((d) => d.dataset.from));
+  const words = (lines) => lines.flatMap((ln, i) => [      // joined as the trainer joins them (launch.slider_join)
+    i ? (/[,;]$/.test(lines[i - 1].text) ? " " : ", ") : "",
+    ln.key ? el("b", {class: "plan-word", style: `--c: ${epochColour(ln.key)}`, text: ln.text,
+      title: `Epochs ${ln.key.endsWith("-") ? ln.key + "end" : ln.key}`}) : ln.text]);
+  const end = (label, seg, k) => el("div", {class: "plan-line"},
+    el("span", {class: "plan-end"}, el("b", {class: `end-tag end-${k}`, text: label})),
+    ...(seg.lines[k].length ? [...words(seg.lines.base), seg.lines.base.length ? " " : "", ...words(seg.lines[k])]
+      : [el("span", {class: "plan-missing", text: "no line on: every epoch needs one"})]));
+  box.replaceChildren(...(plan.length ? plan.map((seg) => {
+    // the epoch in progress, and the sections all before it: trained already, muted (the boxes may have changed since)
+    const here = now >= seg.from && now <= seg.to, past = seg.to < now;
+    const d = el("details", {class: "plan-seg" + (here ? " plan-now" : past ? " plan-past" : ""),
+      "data-from": String(seg.from)},
+      el("summary", {}, el("b", {text: seg.from === seg.to ? `Epoch ${seg.from}` : `Epochs ${seg.from}–${seg.to}`}),
+        here ? el("span", {class: "plan-badge plan-badge-now", text: `training now · epoch ${now}`}) : null,
+        past ? el("span", {class: "plan-badge", text: "trained",
+          title: "These epochs trained with the lines they had then"}) : null,
+        // how these epochs train: the push strength (one number, a Split or a Slide) and (form.py clean_share_at)
+        // the share of steps on fine detail and a half-rate epoch
+        ...planCond(seg),
+        // a new picture description: its practice pictures render anew
+        seg.new_pictures ? el("span", {class: "plan-badge", text: "new practice pictures"}) : null,
+        seg.changed.length ? el("span", {class: "plan-badge", text: "new " + seg.changed.map((k) =>
+          ({pos: "+1", neg: "−1", anchors: "leave alone"})[k]).join(", ")}) : null,
+        el("span", {class: "plan-gist"}, "+1: ", ...words(seg.lines.pos))),
+      end("+1", seg, "pos"), end("−1", seg, "neg"),
+      seg.lines.anchors.length ? el("div", {class: "plan-line"}, el("span", {class: "plan-end", text: "Leave alone"}),
+        ...seg.lines.anchors.flatMap((a, i) => [i ? " · " : "", a.key ? el("b", {class: "plan-word",
+          style: `--c: ${epochColour(a.key)}`, text: a.text}) : a.text])) : null);
+    if (here || open.has(String(seg.from))) d.open = true;
+    return d;
+  }) : [el("div", {class: "field-hint", text: "Set Max Train Epochs to see it."})]));
+}
+
+// how a section trains as badges: its push strength, fine detail and a half-rate epoch - the schedule's, or the box's
+// above
+const DETAIL_TIP = "The share of these epochs' steps on lightly noised pictures, which teach fine detail (texture, " +
+  "skin, hair); the rest teach shape and layout.";
+function planCond(seg) {
+  const cond = (text, tip) => el("span", {class: "plan-badge plan-badge-cond", text, title: tip});
+  return [
+    seg.push != null ? cond(`push ${seg.push}`, "The push strength these epochs train at (Push strength above)") : null,
+    seg.detail != null ? cond(`fine detail ${seg.detail}%`, DETAIL_TIP + " Set by Clean-end share on the Training " +
+      "tab.") : null,
+    seg.half ? cond("rate 50%", "Trains at half the learning rate (Clean-end share's every Rth epoch)") : null];
+}
+
+// a line's epochs as a colour (launch.slider_range_key, "5-8"): the same epochs, the same colour, in a prompt slider's
+// boxes and in its plan
+function epochColour(key) {
+  let h = 7;
+  for (const c of String(key)) h = (h * 31 + c.charCodeAt(0)) % 997;
+  return `hsl(${(h * 137) % 360}, 70%, 62%)`;
+}
+// a long hint of a prompt slider's own look (form.py more): its first sentence, then a small More that shows the rest
+// (and Less) - a link, so refreshState's greying of a row's controls never reaches it. A sentence ends at ". ", "! "
+// or "? ", not at "e.g. "; a hint of one sentence is shown whole
+function moreHint(text, open = false) {
+  const t = String(text ?? "").trim(), end = /[.!?](?=\s)/g, h = el("div", {class: "field-hint hint-more"});
+  let at = -1, m;
+  while (at < 0 && (m = end.exec(t))) if (!/\b(?:e\.g|i\.e)$/.test(t.slice(0, m.index))) at = m.index + 1;
+  if (at < 0) { h.textContent = t; return h; }
+  const rest = el("span", {class: "hint-rest", text: t.slice(at)});
+  const more = el("a", {class: "inline-link hint-more-link", href: "#", role: "button",
+    onclick: (e) => { e.preventDefault(); show(rest.hidden); }});
+  const show = (on) => { rest.hidden = !on; more.textContent = on ? "Less" : "More";
+    more.setAttribute("aria-expanded", String(on)); };
+  show(open);
+  h.append(t.slice(0, at), rest, " ", more);
+  return h;
+}
+// the +1 and -1 ends told apart at a glance (the by-epoch switch): "+1" / "-1" in a label as a tag in its end's colour
+// (style.css .end-tag), the rest of the label as it was
+function endTag(text, k) {
+  const m = /[+\-−]1\b/.exec(text);
+  return m ? [text.slice(0, m.index), el("b", {class: `end-tag end-${k}`, text: m[0]}), text.slice(m.index + 2)] :
+    [text];
+}
+// a prompt slider's line ends in its epochs: "@5-8", "@5-", "@-8", and "/3" for every 3rd (launch.py's _SLIDER_AT)
+const SLIDER_AT = /\s*@\s*(\d*)\s*(?:-\s*(\d*))?\s*(?:\/\s*(\d*))?\s*$/;
+// a line's epochs as saved after its words, [from, to, every] -> " @5-8", " @5-/3" (launch.py's slider_line_parts):
+// numbers only, and "every" only above 1 (empty or 1 is every epoch: a lone "@-/1" stayed in the prompt's words)
+function epochsText(eps) {
+  const [a, b, n] = eps.map((x) => (/^\d+$/.test(x) ? x : ""));
+  const step = parseInt(n, 10) > 1 ? n : "";
+  return a || b || step ? ` @${a}-${b}${step ? "/" + step : ""}` : "";
+}
+// a prompt slider's line as launch.slider_line_parts reads it, its epochs after an @: [from, until, every] (null:
+// none; every only above 1). A box that isn't a number leaves the @ in the words, as the trainer takes it
+function lineParts(text) {
+  const m = SLIDER_AT.exec(text);
+  const [a, b, n] = m && (m[1] || m[2] || m[3]) ? m.slice(1, 4).map((x) => (x ? parseInt(x, 10) : null)) : [];
+  return [a ?? null, b ?? null, n > 1 ? n : null];
+}
+// ... as [from, until, every] (1, Infinity and 1 when empty)
+function lineSpan([a, b, n]) {
+  return [Math.max(1, a || 1), b ?? Infinity, n || 1];
+}
+// ... and its key for the colour (launch.slider_range_key: "5-8", "1-30/3", "" = the whole run)
+function lineKey([a, b, n]) {
+  return a === null && b === null && n === null ? "" : `${a || 1}-${b ?? ""}${n ? "/" + n : ""}`;
+}
+// a box's lines as bars across the run - the Slider card's (promptLines) and the Run card's (slLines): `lines`
+// [{parts (lineParts), said (it has words)}], `epochs` the run's (0: not known - then to the last line's end),
+// `joins` (lines on together join into one; not Leave these alone's, each step checks one of them in turn) and
+// `name(j)`, what line j is called. {run: the bars' length in epochs, bars: [{pieces: [[from, to, "" | "dash" |
+// "off"]], title, colour, said}]}: solid on the epochs a line is on, sparse dashes on those it shares with a line
+// above it (that one leads, and stays solid), and faint between them when it's on every few epochs (in its range, but
+// off)
+function lineBars(lines, epochs, joins, name) {
+  const sp = lines.map((l) => lineSpan(l.parts)), keys = lines.map((l) => lineKey(l.parts));
+  const run = epochs || Math.max(1, ...sp.map(([, b]) => (b === Infinity ? 1 : b)));
+  // the lines that share an epoch with another, epoch by epoch over the run (lines on every few epochs can take
+  // turns). A line with epochs of its own counts by them before it has words; one with words and empty epoch boxes is
+  // on all run, so it joins at every epoch
+  const own = lines.map((l, i) => !!keys[i] || l.said), shares = lines.map(() => new Set());
+  const shared = lines.map(() => new Set()), several = joins && own.filter(Boolean).length > 1;
+  for (let e = 1; several && e <= run; e++) {
+    const now = sp.flatMap(([a, b, n], i) => (own[i] && e >= a && e <= b && (e - a) % n === 0 ? [i] : []));
+    now.forEach((i, x) => { if (x) shared[i].add(e); now.forEach((j) => { if (j !== i) shares[i].add(j); }); });
+  }
+  // a line with no words yet trains nothing (the trainer skips it): grey, whatever its epochs. One with words and
+  // empty epoch boxes is on all run, so it takes the colour of epochs 1 to the run's last, as typed ones would
+  const whole = epochs ? epochColour(`1-${epochs}`) : "color-mix(in srgb, var(--text-primary) 70%, transparent)";
+  return {run, bars: lines.map((l, i) => {
+    const [a, b, n] = sp[i], k = keys[i], end = Math.min(b, run), to = b === Infinity ? run : b;
+    const share = [...shares[i]].sort((x, y) => x - y);
+    // a line every few epochs: its first ones ("every 3: 1, 4, 7 …")
+    const few = [a, a + n, a + 2 * n].filter((e) => e <= to), more = a + 3 * n <= to ? " …" : "";
+    const every = n > 1 ? `, every ${n}` + (few.length ? `: ${few.join(", ")}${more}` : "") : "";
+    const pieces = [];
+    for (let e = a; e <= end; e++) {
+      const how = (e - a) % n ? "off" : shared[i].has(e) ? "dash" : "", last = pieces[pieces.length - 1];
+      if (last && last[2] === how) last[1] = e; else pieces.push([e, e, how]);
+    }
+    const title = (l.said ? "" : "No words yet, so training skips this line. ") + (k ?
+      `On for epochs ${a}–${to} of the run's ${run}${every}` :
+      `On for the whole run: epochs 1–${run} (empty epoch boxes follow Max Train Epochs)`) +
+      (share.length ? `. Shares epochs with line ${share.map((j) => name(j)).join(", ")}` : "");
+    return {pieces, title, colour: !l.said ? "var(--text-muted)" : k ? epochColour(k) : whole, said: l.said};
+  })};
+}
+// ... a line's bar drawn (`b`, of lineBars) in its line (`it`), whose left edge takes its colour once it has words -
+// with a thin mark at epoch `at` of the run (the Run card's epoch in progress; 0: none)
+function showBar(it, b, run, at = 0) {
+  const bar = it.querySelector(".prompt-bar");
+  bar.replaceChildren(...b.pieces.map(([s, t, how]) => { const p = el("i", how ? {class: how} : {});
+    p.style.left = `${(s - 1) / run * 100}%`; p.style.width = `${(t - s + 1) / run * 100}%`; return p; }));
+  if (at >= 1 && at <= run) {
+    const mark = el("span", {class: "prompt-at"});
+    mark.style.left = `${(at - 0.5) / run * 100}%`;
+    bar.append(mark);
+  }
+  bar.title = b.title;
+  it.style.setProperty("--c", b.colour);
+  it.classList.toggle("prompt-timed", b.said);
+}
+
+// a list of prompts, one numbered box each (the gallery's Prompt 1, 2, 3…), saved as the one-per-line text it always was.
+// With epochs (a prompt slider's boxes) each line has the epochs it's on for beside it, saved after an @ ("smiling @5-8",
+// launch.py's slider_line_parts), and a bar under it across the run, in its epochs' colour. The lines with epochs keep
+// in order of when they start (then the longer first), a line taking its place as you leave it; a line with no epochs
+// stays where you put it. ▲ ▼ order lines with the same epochs (the order lines on together join in) and move past a
+// line with no epochs
 function promptLines(r, wrap) {
-  const list = el("div", {class: "prompt-lines"});
+  const endK = r.epochs ? {FAMILY_SLIDER_POS: "pos", FAMILY_SLIDER_NEG: "neg"}[r.key] : undefined;  // +1, -1: own colour
+  const list = el("div", {class: "prompt-lines" + (r.epochs ? " prompt-timeline" : "") +
+    (endK ? ` end-zone end-${endK}` : "")});
   const boxes = () => [...list.querySelectorAll("textarea")];
-  const save = () => onValue(r, boxes().map((b) => b.value).join("\n"));
+  const items = () => [...list.querySelectorAll(".prompt-line")];
+  const eps = (item) => [...item.querySelectorAll(".prompt-eps input")].map((i) => i.value.trim());
+  const suffix = (item) => epochsText(eps(item));          // saved after the words
+  const value = (item) => item.querySelector("textarea").value + suffix(item);
+  const save = () => onValue(r, items().map(value).join("\n"));
+  // a line's epochs as launch.slider_line_parts reads the saved line (lineParts), as [from, until, every] (lineSpan)
+  // and its key for the colour (lineKey)
+  const parts = (item) => lineParts(value(item));
+  const span = (item) => lineSpan(parts(item));
+  const key = (item) => lineKey(parts(item));
+  // two lines on just the same epochs (no epochs: the whole run)
+  const same = (x, y) => String(span(x)) === String(span(y));
+  // Backspace at a line's start joins it into the line above only when both are on the same epochs: else nothing
+  // happens
+  const joins = (item) => { const up = item.previousElementSibling;
+    return !!up && (!r.epochs || same(up, item)); };
   const grow = (b) => {                     // to its text; a hidden tab measures 0, so it waits to be seen
     if (!b.offsetParent) return;
     b.style.height = "auto"; b.style.height = b.scrollHeight + 2 + "px";
   };
   new ResizeObserver(() => boxes().forEach(grow)).observe(list);     // shown at last, or a wider window
   const renumber = () => list.querySelectorAll(".prompt-num").forEach((n, i) => { n.textContent = i + 1; });
+  // the line you left as the lines took their places: a short glow, and its number stays marked until another moves
+  const landed = (it) => {
+    list.querySelectorAll(".prompt-landed").forEach((x) => x.classList.remove("prompt-landed"));
+    void it.offsetWidth;                    // the glow starts again when the same line moves again
+    it.classList.add("prompt-landed");
+  };
+  // the lines with epochs, by start, then the longer first (a line on longer leads the one that starts with it: "woman
+  // @1-10" and "red coat @1-5" join as "woman, red coat"), then how often (lines with the same epochs keep their
+  // order), in the places they hold among them; a line with no epochs keeps its place: it's on all run, so it sits
+  // where you put it. True when a line moved
+  const cmp = (x, y) => { const [a1, b1, n1] = span(x), [a2, b2, n2] = span(y);
+    return (a1 - a2) || (b1 === b2 ? 0 : b1 > b2 ? -1 : 1) || (n1 - n2); };
+  function sortLines() {
+    const was = items(), slots = was.flatMap((it, i) => (key(it) ? [i] : []));
+    const sorted = slots.map((i) => [was[i], i]).sort(([x, i], [y, j]) => cmp(x, y) || i - j);
+    const now = [...was];
+    slots.forEach((slot, k) => { now[slot] = sorted[k][0]; });
+    if (!now.some((it, i) => it !== was[i])) return false;
+    // only the lines out of place move (all but the longest run already in order), and the box you're in keeps its
+    // focus and what's selected in it
+    const at = now.map((it) => was.indexOf(it)), len = at.map(() => 1), back = at.map(() => -1);
+    at.forEach((x, i) => {
+      for (let j = 0; j < i; j++) if (at[j] < x && len[j] + 1 > len[i]) { len[i] = len[j] + 1; back[i] = j; }
+    });
+    const stay = new Set();
+    for (let i = len.indexOf(Math.max(...len)); i >= 0; i = back[i]) stay.add(now[i]);
+    const f = list.contains(document.activeElement) ? document.activeElement : null;
+    const sel = f && typeof f.selectionStart === "number" ? [f.selectionStart, f.selectionEnd, f.selectionDirection]
+      : null;
+    now.forEach((it, i) => { if (!stay.has(it)) { if (i) now[i - 1].after(it); else list.prepend(it); } });
+    if (f && document.activeElement !== f) { f.focus(); if (sel) f.setSelectionRange(...sel); }
+    return true;
+  }
+  // a line's epoch boxes (from, to, every)
+  const ins = (item) => [...item.querySelectorAll(".prompt-eps input")];
+  // an epoch box takes numbers only: a letter left the "@" and the epochs in the prompt's words
+  const digits = (i) => { const v = i.value.replace(/\D+/g, "");
+    if (v === i.value) return;
+    const at = Math.max(0, (i.selectionStart ?? v.length) - (i.value.length - v.length));
+    i.value = v; i.setSelectionRange(at, at); };
+  function decorate() {                     // each line's bar across the run, its colour, ▲ ▼ among lines alike
+    if (r.epochs) {
+      const maxEp = parseInt(S.values.MAX_TRAIN_EPOCHS, 10) || 0;      // Max Train Epochs, when it's set
+      const all = items(), said = (it) => !!it.querySelector("textarea").value.trim();
+      // each line's bar across the run in its epochs' colour (lineBars, showBar) - Leave these alone's lines never
+      // join, so no dashes there
+      const {run, bars} = lineBars(all.map((it) => ({parts: parts(it), said: said(it)})), maxEp,
+        r.key !== "FAMILY_SLIDER_ANCHORS", (j) => j + 1);
+      all.forEach((it, i) => {
+        const k = key(it);
+        showBar(it, bars[i], run);
+        ins(it)[1].placeholder = maxEp ? String(maxEp) : "end";     // an empty last epoch is the run's last
+        // ▲ ▼ among lines with the same epochs, and past a line with no epochs (it sits where you put it)
+        const may = (j) => j >= 0 && j < all.length && (key(all[j]) === k || !k || !key(all[j]));
+        it.querySelector(".prompt-up").disabled = !may(i - 1);
+        it.querySelector(".prompt-down").disabled = !may(i + 1);
+      });
+    }
+    renumber();
+  }
+  if (r.epochs) list._decorate = decorate;  // refreshState: the run's length changed, the bars follow
+  // a line, after `after` or at the end
   function line(text, after) {
-    const box = el("textarea", {rows: 1, spellcheck: "false", "aria-label": "Prompt"});
-    box.value = text;
-    const item = el("div", {class: "prompt-line"}, el("span", {class: "prompt-num"}), box,
-      el("button", {class: "prompt-del", text: "×", title: "Remove this prompt", tabindex: -1, onclick: () => {
-        if (boxes().length > 1) item.remove(); else box.value = "";
-        renumber(); save();
-      }}));
-    box.addEventListener("input", () => { grow(box); save(); });
+    const box = el("textarea", {rows: 1, spellcheck: "false", "aria-label": "Prompt",
+      placeholder: r.epochs ? "Type this line's prompt…" : undefined});     // a slider line with no words yet: where
+    const at = r.epochs ? SLIDER_AT.exec(text) : null;                  // its epochs, in their own boxes
+    const has = !!(at && (at[1] || at[2] || at[3]));
+    box.value = has ? text.slice(0, at.index) : text;
+    // epochs count from 1, as the log and the checkpoints count them: a 0 becomes 1 (the first epoch)
+    const first = (x) => (/^0+$/.test(String(x || "").trim()) ? "1" : x || "");
+    const ep = (v, ph, k) => { const i = el("input", {type: "text", inputmode: "numeric", placeholder: ph,
+      title: k === 2 ? "On every Nth epoch of its range, counting from its first: every 2 on epochs 1-6 is epochs 1, " +
+        "3 and 5 (its bar is bright on those, faint between). Empty or 1: every epoch of its range." : undefined,
+      oninput: () => { digits(i); decorate(); save(); },
+      onchange: () => { i.value = first(i.value); decorate(); save(); }});
+      i.value = first(v); return i; };
+    const move = (up) => el("button", {class: up ? "prompt-up" : "prompt-down", text: up ? "▲" : "▼", tabindex: -1,
+      title: up ? "Move up among the lines with the same epochs, or past a line with none: lines on together join " +
+        "in this order" : "Move down",
+      onclick: () => {
+        const other = up ? item.previousElementSibling : item.nextElementSibling;
+        if (!other) return;
+        if (up) other.before(item); else other.after(item);
+        decorate(); save();
+      }});
+    const item = el("div", {class: "prompt-line"}, el("span", {class: "prompt-num"}),
+      r.epochs ? el("span", {class: "prompt-move"}, move(true), move(false)) : null,
+      r.epochs ? el("div", {class: "prompt-main"}, box, el("div", {class: "prompt-bar"}, el("i"))) : box,
+      r.epochs ? el("span", {class: "prompt-eps", title: "The epochs this line is on for, counted from 1 as the log " +
+        "counts them (empty: from the start, or to the end of the run), and every how many from its first (every 3 " +
+        "from 1: epochs 1, 4, 7 …; empty or 1: every epoch). Lines on at the same epochs join into one."},
+        el("span", {text: "epochs"}), ep(has ? at[1] : "", "1", 0), el("span", {text: "–"}),
+        ep(has ? at[2] : "", "end", 1), el("span", {text: "every"}), ep(has ? at[3] : "", "1", 2))
+        : null,
+      el("button", {class: "prompt-del", text: "×", title: "Remove this prompt", tabindex: -1,
+        onclick: () => {
+          if (boxes().length > 1) item.remove();
+          else { box.value = ""; item.querySelectorAll(".prompt-eps input").forEach((i) => { i.value = ""; }); }
+          decorate(); save();
+        }}));
+    if (r.epochs) {               // it keeps its place while you fill it in, and takes it among the others as you leave
+      item.addEventListener("focusout", (e) => {
+        // not for another box of the line, the window losing focus (the line keeps it) or the line going
+        if (item.contains(e.relatedTarget) || item.contains(document.activeElement) || !item.isConnected) return;
+        if (sortLines()) { landed(item); decorate(); save(); }
+      });
+    }
+    box.addEventListener("input", () => { grow(box); if (r.epochs) decorate(); save(); });   // words: grey no more
     box.addEventListener("keydown", (e) => {
       const at = box.selectionStart, flat = at === box.selectionEnd;
-      if (e.key === "Enter" && !e.isComposing) {           // the rest of the line starts the next prompt
+      if (e.key === "Enter" && !e.isComposing) {           // the rest of the line starts the next prompt (same epochs)
         e.preventDefault();
         const rest = box.value.slice(box.selectionEnd);
         box.value = box.value.slice(0, at); grow(box);
-        const next = line(rest, item);
+        const next = line(rest + suffix(item), item);
         next.setSelectionRange(0, 0); next.focus();
-        renumber(); save();
-      } else if (e.key === "Backspace" && flat && at === 0 && item.previousElementSibling) {   // join the one above
-        e.preventDefault();
+        decorate(); save();
+      } else if (e.key === "Backspace" && flat && at === 0 && joins(item)) {
+        e.preventDefault();               // join the one above
         const prev = item.previousElementSibling.querySelector("textarea"), end = prev.value.length;
         prev.value += box.value; grow(prev);
         item.remove(); prev.focus(); prev.setSelectionRange(end, end);
-        renumber(); save();
+        decorate(); save();
       }
     });
     box.addEventListener("paste", (e) => {                 // pasted lines become prompts of their own
@@ -713,11 +1051,12 @@ function promptLines(r, wrap) {
       const head = box.value.slice(0, box.selectionStart), tail = box.value.slice(box.selectionEnd);
       box.value = head + parts[0]; grow(box);
       let last = item, lastBox = box;
-      for (const p of parts.slice(1)) { lastBox = line(p, last); last = lastBox.parentNode; }
+      for (const p of parts.slice(1)) { lastBox = line(p, last); last = lastBox.closest(".prompt-line"); }
       const end = lastBox.value.length;
       lastBox.value += tail; grow(lastBox);
       lastBox.focus(); lastBox.setSelectionRange(end, end);
-      renumber(); save();
+      if (r.epochs) sortLines();               // in order of their epochs
+      decorate(); save();
     });
     if (after) after.after(item); else list.append(item);
     requestAnimationFrame(() => grow(box));
@@ -727,25 +1066,42 @@ function promptLines(r, wrap) {
     list.replaceChildren();
     const v = String(S.values[r.key] ?? "").split(/\r?\n/);
     for (const t of v) line(t);
-    renumber();
+    // in order of their epochs, the order the trainer joins them in
+    if (r.epochs && sortLines()) save();
+    decorate();
   }
   const sync = el("input", {type: "hidden", id: "f_" + r.key});    // syncInputs (a preset, Last Train) redraws it
   sync._sync = draw;
+  const addLine = () => {
+    const last = list.lastElementChild, box = last && last.querySelector("textarea");
+    // a prompt slider's + Add a line when its last line has no words and no epochs yet: into that one, not another
+    // empty line (every other box adds one, as before)
+    if (r.epochs && box && !box.value.trim() && !eps(last).some(Boolean)) {
+      box.focus(); return;
+    }
+    line("", last).focus(); decorate(); save();
+  };
+  // a prompt slider's line takes its place among the others as you leave it, which can move this button while the
+  // mouse is down on it: there it acts as the mouse goes down, so the click is never lost, and the line you left
+  // moves after (the keyboard's Enter or Space still clicks); every other box as before
   const add = el("button", {class: "btn btn-sm", text: r.key === "SAMPLE_PROMPT" ? "+ Add prompt" : "+ Add a line",
-    onclick: () => {
-      const last = list.lastElementChild;
-      line("", last).focus(); renumber(); save();
-    }});
+    onclick: (e) => { if (!r.epochs || !e.detail) addLine(); },
+    ...(r.epochs ? {onmousedown: (e) => { if (e.button === 0) { e.preventDefault(); addLine(); } }} : {})});
+  const label = endK ? el("span", {class: "field-label"}, ...endTag(r.label + ":", endK)) :
+    el("span", {class: "field-label", text: r.label + ":"});
   const actions = el("div", {class: "prompt-actions"}, add);
-  wrap.append(el("span", {class: "field-label", text: r.label + ":"}), list, actions, sync);
+  // a box of lines with their own epochs (a prompt slider's): what's wrong with them right under them - an epoch with
+  // no line, a line past the run - before the buttons and the help; elsewhere at the end, as before
+  const note = el("div", {class: "field-hint row-note", id: "note_" + r.key});
+  wrap.append(label, list, ...(r.epochs ? [note] : []), actions, sync);
   if (r.action === "write_captions") {            // the Edit instruction: its first line as the photos' caption
     const w = writeCaptions(() => String(S.values[r.key] ?? ""));
     actions.append(w.button);
     wrap.append(w.msg);
   }
   if (r.key === "SAMPLE_PROMPT") wrap.append(promptSetsBar(r, draw));
-  if (r.hint) wrap.append(el("div", {class: "field-hint", text: r.hint}));
-  wrap.append(el("div", {class: "field-hint row-note", id: "note_" + r.key}));
+  if (r.hint) wrap.append(r.more ? moreHint(r.hint) : el("div", {class: "field-hint", text: r.hint}));   // form.py more
+  if (!r.epochs) wrap.append(note);
   draw();
   return wrap;
 }
@@ -937,6 +1293,7 @@ async function refreshState() {
   const force = Object.keys(S.state.force || {});      // what a setting turns off (automagic3: Adaptive LR...)
   if (force.length) { Object.assign(S.values, S.state.force); syncInputs(force); saveStateSoon(); }
   const hidden = new Set(S.state.hidden), disabled = new Set(S.state.disabled);
+  sliderLookFollow();                                  // Change the prompts... changed: those rows' other look
   for (const [k, ph] of Object.entries(S.state.placeholders || {})) {   // what Fizgig found, greyed in the box
     const box = $("f_" + k);
     if (box) box.placeholder = ph;
@@ -1004,6 +1361,9 @@ async function refreshState() {
     const extras = [...d.parentNode.querySelectorAll(".section-card.sec-extra")];
     d.style.display = extras.some((c) => c.style.display !== "none") ? "" : "none";
   });
+  // a prompt slider's boxes of lines with epochs: their bars follow the run's length
+  document.querySelectorAll(".prompt-timeline").forEach((l) => { if (l._decorate) l._decorate(); });
+  drawSliderPlan();
   turboFollow();
   if (S.state.pending) setTimeout(refreshStateSoon, 2500);   // a note still being worked out (the fine-tune plan)
 }
@@ -2023,6 +2383,8 @@ async function pollRun() {
   if (!moveOk) S.moveOpen = false;
   moveDraw(mv);
   sliderLiveDraw(r.slider_live);
+  sliderLiveFollow();
+  drawSliderPlan();                                 // its plan marks the epoch the run is on
 }
 
 // ---- the workbench's render choice (description.workbench_render_choice): while the Samples tab previews on the
@@ -2175,17 +2537,195 @@ async function moveOpen() {
 // ---- a prompt slider's live prompts: edited here while it trains, taken by the trainer at its next epoch boundary
 const SL_FIELDS = {base: "slBase", pos: "slPos", neg: "slNeg", guidance: "slGuidance", anchors: "slAnchors"};
 S.sl = {shown: null, edited: false};
+// the boxes as the run takes them (server.py by_epoch): off, one line each, as before (index.html); the by-epoch switch
+// (advanced) on, each box's text (hidden) is edited as numbered lines with their own epochs and the push strength as
+// Single, Split or Slide (slLines, slPush), and Apply sends that text as before ("smiling @5-8", "3:10:2")
+const SL_BASE_TITLE = "The base: each end's words are added after it with a space, as at the start";   // index.html's
+function sliderLiveLook(on) {             // true when the look changed (another run): the boxes take its values
+  const panel = $("sliderLive"), look = on ? "lines" : "plain";
+  if (panel.dataset.look === look) return false;
+  panel.dataset.look = look;
+  for (const [k, id] of Object.entries(SL_FIELDS)) {
+    let box = $(id);
+    if (["base", "pos", "neg"].includes(k) && (box.tagName === "TEXTAREA") !== on) {    // its text keeps its lines
+      const other = on ? el("textarea", {id, rows: 1, spellcheck: "false"}) : el("input", {type: "text", id});
+      other.addEventListener("input", () => { S.sl.edited = true; });
+      box.replaceWith(other);
+      box = other;
+      if (k === "base" && !on) box.title = SL_BASE_TITLE;
+    }
+    box.parentNode.querySelectorAll(":scope > .sl-edit").forEach((x) => x.remove());
+    delete box._fill;
+    delete box._bars;
+    box.style.display = on ? "none" : "";
+    if (k === "pos" || k === "neg") {         // "+1" / "−1" in its label as a tag in its end's colour, or as before
+      const cap = box.parentNode.querySelector(":scope > span"), t = cap.textContent;
+      if (on) cap.replaceChildren(...endTag(t, k)); else cap.textContent = t;
+    }
+    if (on) box.after(k === "guidance" ? slPush(box) : slLines(k, box));
+  }
+  return true;
+}
+
+// The by-epoch switch on: a box of the Run card as numbered lines, each with its own epochs and its bar across the
+// run - a compact version of the Slider card's boxes (promptLines) - read from its text (`box`, hidden) and written
+// back as you edit: each line's words and, after an @, its epochs ("smiling @5-8", as launch.slider_line_parts reads
+// them)
+function slLines(k, box) {
+  const list = el("div", {class: "prompt-lines" + (k === "pos" || k === "neg" ? ` end-zone end-${k}` : "")});
+  const items = () => [...list.children];
+  const read = (it) => [...it.querySelectorAll("input")].map((i) => i.value.trim());     // [words, from, to, every]
+  // each line's bar as the Slider card's (lineBars, showBar), by the line as it's saved and named by its number:
+  // across the run's own epochs, with a thin mark at the epoch in progress (sliderLiveDraw sets both)
+  const decorate = () => {
+    const all = items(), lines = all.map((it) => { const [words, ...eps] = read(it);
+      return {parts: lineParts(words + epochsText(eps)), said: !!words}; });
+    const {run, bars} = lineBars(lines, S.sl.run || 0, k !== "anchors", (j) => j + 1);
+    all.forEach((it, i) => showBar(it, bars[i], run, S.sl.at || 0));
+  };
+  const save = () => {
+    box.value = items().map((it) => {
+      const [words, ...eps] = read(it);
+      return (words + epochsText(eps)).trim();
+    }).filter(Boolean).join("\n");
+    S.sl.edited = true;
+    decorate();
+  };
+  const renumber = () => items().forEach((it, i) => { it.firstChild.textContent = String(i + 1); });
+  const ep = (v, ph) => el("input", {type: "text", inputmode: "numeric", value: v || "", placeholder: ph,
+    oninput: (e) => { e.target.value = e.target.value.replace(/\D+/g, ""); save(); }});      // numbers only
+  const tip = "The epochs this line is on for, counted from 1 as the log counts them (empty: from the start, or to " +
+    "the end of the run), and every how many from its first (empty or 1: every epoch)." +
+    (k === "anchors" ? "" : " Lines on at the same epochs join into one.");
+  function line(text = "") {
+    const at = SLIDER_AT.exec(text), has = !!(at && (at[1] || at[2] || at[3]));
+    const it = el("div", {class: "prompt-line"}, el("span", {class: "prompt-num"}),
+      el("div", {class: "prompt-main"}, el("input", {type: "text", class: "sl-words",
+        value: (has ? text.slice(0, at.index) : text).trim(), "aria-label": "Prompt",
+        placeholder: "Type this line's prompt…", oninput: save}), el("div", {class: "prompt-bar"})),
+      el("span", {class: "prompt-eps", title: tip}, "epochs", ep(has && at[1], "1"), "–", ep(has && at[2], "end"),
+        "every", ep(has && at[3], "1")),
+      el("button", {type: "button", class: "prompt-del", text: "×", title: "Remove this line", tabindex: -1,
+        onclick: () => {
+          if (items().length > 1) it.remove(); else it.querySelectorAll("input").forEach((i) => { i.value = ""; });
+          renumber(); save();
+        }}));
+    list.append(it);
+    return it;
+  }
+  box._fill = () => {                        // the run's text, a line each (blank ones aside)
+    list.replaceChildren();
+    const rows = String(box.value || "").split(/\r?\n/).filter((x) => x.trim());
+    (rows.length ? rows : [""]).forEach((t) => line(t));
+    renumber();
+    decorate();
+  };
+  box._bars = decorate;                      // sliderLiveDraw: the run moved on (the epoch in progress, its length)
+  box._fill();
+  return el("div", {class: "sl-edit"}, list, el("button", {type: "button", class: "btn btn-sm sl-add",
+    text: "+ Add a line", onclick: () => {           // an edit too: the run's values coming in don't draw over it
+      const it = line(); renumber(); S.sl.edited = true; decorate(); it.querySelector(".sl-words").focus(); }}));
+}
+
+// ... and its push strength as Single, Split or Slide (as the Slider card's splitRow): "3", "3:10:2" or "3:10:2:20" in
+// its box, each mode keeping its own numbers while you switch between them
+function slPush(box) {
+  let mode = "Single";
+  const mem = {};
+  const write = () => { box.value = mem[mode].join(":"); S.sl.edited = true; };
+  const num = () => el("input", {type: "text", inputmode: "decimal", class: "sl-num", oninput: () => {
+    mem[mode] = nums[mode].map((i) => i.value.trim()); write(); }});
+  const nums = {Single: [num()], Split: [num(), num(), num()], Slide: [num(), num(), num(), num()]};
+  const words = {Single: [], Split: ["for the first", "epochs, then"], Slide: ["until epoch", "then slides to",
+    "by epoch"]};
+  const lines = Object.fromEntries(Object.entries(nums).map(([m, ins]) => [m, el("span", {class: "sl-push-line"},
+    ins.map((i, j) => (words[m][j] ? el("span", {class: "cad-pair"}, i, el("span", {text: words[m][j]})) : i)))]));
+  const pills = el("span", {class: "radio-row"}, Object.keys(nums).map((m) => el("label", {class: "checkbox-label"},
+    el("input", {type: "radio", name: "slPushMode", value: m, onchange: () => { mode = m; show(); write(); }}),
+    " " + m)));
+  function show() {
+    pills.querySelectorAll("input").forEach((r) => { r.checked = r.value === mode; });
+    for (const [m, ln] of Object.entries(lines)) ln.style.display = m === mode ? "" : "none";
+    nums[mode].forEach((i, j) => { i.value = mem[mode][j] ?? ""; });
+  }
+  box._fill = () => {   // one number, a Split (three) or a Slide (four); the other modes start from its first number,
+    // as the Slider card's do (easing to about two thirds of it, form.py) - anything else shows as typed, in Single
+    const t = String(box.value || "").trim(), p = t.split(":").map((x) => x.trim());
+    mode = {1: "Single", 3: "Split", 4: "Slide"}[p.length] || "Single";
+    const eased = Number(p[0]) > 0 ? String(Math.round(Number(p[0]) * 4 / 3) / 2) : "";
+    Object.assign(mem, {Single: [mode === "Single" ? t : p[0]], Split: mode === "Split" ? p : [p[0], "10", eased],
+      Slide: mode === "Slide" ? p : [p[0], "10", eased, "15"]});
+    show();
+  };
+  box._fill();
+  return el("div", {class: "sl-edit sl-push", title: "Single: one number for the whole run. Split: one for the first " +
+    "epochs, then another to the end. Slide: one until an epoch, then changing a little each epoch until it reaches " +
+    "another by a later epoch, and that one to the end."}, pills, Object.values(lines));
+}
+
 function sliderLiveDraw(sl) {
   const box = $("sliderLive");
   box.style.display = sl ? "" : "none";
   if (!sl) { S.sl = {shown: null, edited: false}; return; }
+  if (sliderLiveLook(!!sl.by_epoch)) S.sl = {shown: null, edited: false};
+  // the by-epoch switch: its lines' bars go across the run's own epochs (its total, else its Max Train Epochs - not
+  // the form's), with a thin mark at the epoch in progress when it's known - the epoch it trains on now, else the
+  // run's own progress; neither, no mark (slLines)
+  const r = S.run || {}, p = r.progress || {};
+  S.sl.run = Number(p.total_epochs) || parseInt((r.values || {}).MAX_TRAIN_EPOCHS, 10) || 0;
+  S.sl.at = Number((sl.now || {}).epoch) || Number(p.epoch) || 0;
   const now = JSON.stringify([sl.base, sl.pos, sl.neg, sl.guidance, sl.anchors]);
   if (!S.sl.edited && S.sl.shown !== now) {           // the run's prompts, unless you're part-way through an edit
-    for (const [k, id] of Object.entries(SL_FIELDS)) $(id).value = sl[k];
+    for (const [k, id] of Object.entries(SL_FIELDS)) {
+      const b = $(id);
+      b.value = sl[k];
+      if (b._fill) b._fill();                         // The by-epoch switch: its lines, or Single / Split / Slide
+    }
     S.sl.shown = now;
   }
-  $("slSay").textContent = sl.waiting ? "Waiting for the end of this epoch…" :
+  const bars = String([S.sl.run, S.sl.at]);           // ... and its bars again as the run moves on
+  if (S.sl.bars !== bars) {
+    S.sl.bars = bars;
+    for (const id of Object.values(SL_FIELDS)) if ($(id)._bars) $(id)._bars();
+  }
+  // a change the trainer couldn't take (the by-epoch switch): why, and that it goes on with its own lines meanwhile -
+  // the change tried again at the next epoch, or, failed twice, waiting for Apply
+  $("slSay").textContent = sl.failed ? `Could not take them at the end of epoch ${sl.epoch} (${sl.failed}) - ` +
+    "training goes on with its own lines; " + (sl.retry === false ? "they failed twice, so they wait: press Apply to " +
+    "try them again." : "they're tried again at the next epoch.") :
+    sl.waiting ? "Waiting for the end of this epoch…" :
     sl.epoch != null ? `Training on these since epoch ${sl.epoch + 1}.` : "";
+  // lines with their own epochs, or a push strength by epoch (a Split or a Slide): what this epoch trains on
+  const cur = sl.now, nowBox = $("slNow");
+  nowBox.style.display = cur ? "" : "none";
+  if (cur) nowBox.replaceChildren(el("div", {}, el("b", {text: `Epoch ${cur.epoch} trains on:`}),
+      cur.push != null ? [" ", el("span", {class: "plan-badge plan-badge-cond", text: `push ${cur.push}`,
+        title: "The push strength this epoch trains at"})] : null),
+    el("div", {}, el("span", {class: "plan-end"}, el("b", {class: "end-tag end-pos", text: "+1"})), cur.pos),
+    el("div", {}, el("span", {class: "plan-end"}, el("b", {class: "end-tag end-neg", text: "−1"})), cur.neg),
+    cur.anchors.length ? el("div", {}, el("span", {class: "plan-end", text: "Leave alone"}),
+      cur.anchors.join(" · ")) : "",
+    el("div", {class: "field-hint", text: cur.next ? `The prompts change next at epoch ${cur.next}.` :
+      "These prompts train to the end of the run."}),
+    // the run's own lines it couldn't switch to (server.py lines_failed): why - the prompts above are the ones it kept
+    sl.lines_failed ? el("div", {class: "field-hint", text: sl.lines_failed}) : "");
+}
+
+// the run on show took its values once (ctxLoad): with the by-epoch switch, as Apply at the next epoch changes
+// its prompts, its Slider boxes and plan follow them (server.py _SLIDER_LIVE_KEYS); without it, as before, they don't.
+// Only that view - never your own setup, nor a queued run
+const SL_KEYS = ["FAMILY_SLIDER_BASE", "FAMILY_SLIDER_POS", "FAMILY_SLIDER_NEG", "FAMILY_SLIDER_GUIDANCE",
+  "FAMILY_SLIDER_ANCHORS"];
+function sliderLiveFollow() {
+  if (S.ctxBusy || ctxKind() !== "run" || !ctxIsLiveRun() || !(S.run.slider_live || {}).by_epoch) return;
+  const v = S.run.values || {}, sig = JSON.stringify(SL_KEYS.map((k) => v[k] ?? null));
+  if (S.ctx.slSeen === sig) return;                 // taken already (the boxes put their lines in order of epochs)
+  S.ctx.slSeen = sig;
+  const keys = SL_KEYS.filter((k) => k in v && String(v[k] ?? "") !== String(S.values[k] ?? ""));
+  if (!keys.length) return;
+  for (const k of keys) S.values[k] = v[k];
+  syncInputs(keys);
+  refreshStateSoon();
 }
 
 function wireSliderLive() {

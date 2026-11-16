@@ -1,0 +1,4620 @@
+{
+ "how": "Made once: a prompt slider as Fizgig had it before the by-epoch switch - upstream ea4f47d4, 9.7.4 - for\nchecks/test_slider_by_epoch.py: with the tick off, Fizgig must give the same. From the repo, with that commit's files in\na folder of their own:\n\n    git archive --format=tar -o base.tar ea4f47d4\n    tar -x -f base.tar -C <an empty folder>\n    python -I checks/data/make_slider_off_upstream.py <that folder>/src checks/data/slider_off_upstream.json\n\nFor each model with slider training (every picture model's prompt slider, MiniMax H3 Image's pairs and ACE-Step's\nsongs) and case, only what proves the slider off is upstream's, so a change elsewhere (a new option, another default,\na hint reworded) leaves it as it is: the Training command's slider part (each --slider_* option with its values, and\n--train_blocks when the slider's Ultra adds it; None when Start refuses), Start's slider problems (those that start\nwith \"Slider\") and the slider previews' prompt file, the temporary folder as <tmp>, the Python as <python> and paths\nwith \"/\"; and the Slider card's rows on show (form() builds them, form.state hides them) - each one's key, kind, label\nand values (its default and choices), not its hint or other words on the page, and without the Train by epoch tick\nand a row's by_epoch look, which that commit doesn't have.\n\nLeft out, as Fizgig differs there on purpose: a box of the picture or an end with several lines (Start refuses them\nwith the tick off, saying to turn it on) and a push strength by epoch such as 3:10:2 (refused in other words) -\ntest_slider_by_epoch.py checks those - and a prompt that starts with \"-\" (fixed apart: the trainer took it for an\noption and stopped).",
+ "models": {
+  "acestep15xl": {
+   "cases": {
+    "anchors": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a dog",
+       "a photo of a cat"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "epochs as words": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling @5-8",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a man @-4",
+       "a dog @2"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "no -1 end": {
+     "preview": null,
+     "problems": [
+      "Slider from prompts: fill in what the -1 end adds"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "one line each": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "photo pairs": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "photo pairs, -1 folder": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "push 0": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push empty": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push number": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "2.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "ultra": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    }
+   },
+   "rows": {
+    "FAMILY_SLIDER_ANCHORS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_ANCHORS",
+     "kind": "text",
+     "label": "5. Leave these alone (optional)"
+    },
+    "FAMILY_SLIDER_ANCHOR_WEIGHT": {
+     "choices": [],
+     "default": "1",
+     "key": "FAMILY_SLIDER_ANCHOR_WEIGHT",
+     "kind": "entry",
+     "label": "6. How firmly"
+    },
+    "FAMILY_SLIDER_BASE": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_BASE",
+     "kind": "entry",
+     "label": "1. What the music is"
+    },
+    "FAMILY_SLIDER_GUIDANCE": {
+     "choices": [],
+     "default": "2",
+     "key": "FAMILY_SLIDER_GUIDANCE",
+     "kind": "entry",
+     "label": "4. Push strength"
+    },
+    "FAMILY_SLIDER_NEG": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_NEG",
+     "kind": "entry",
+     "label": "3. The -1 end adds"
+    },
+    "FAMILY_SLIDER_POS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_POS",
+     "kind": "entry",
+     "label": "2. The +1 end adds"
+    },
+    "_slider_help_prompts": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_prompts",
+     "kind": "note",
+     "label": "Prompts: no photos - you describe the picture and what each end adds, and Fizgig renders its own practice pictures from the description and trains on them. The practice pictures are the size Target Megapixels sets (0.5 = 704 x 704). The previews are strips of three pictures on one seed, at -1, 0 and +1."
+    }
+   }
+  },
+  "anima": {
+   "cases": {
+    "anchors": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a dog",
+       "a photo of a cat"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "epochs as words": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling @5-8",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a man @-4",
+       "a dog @2"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "no -1 end": {
+     "preview": null,
+     "problems": [
+      "Slider from prompts: fill in what the -1 end adds"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "one line each": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "photo pairs": {
+     "preview": null,
+     "problems": [
+      "Slider: set the -1 end folder (Training tab, Slider)"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": null
+    },
+    "photo pairs, -1 folder": {
+     "preview": "a photo\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": [
+      [
+       "--slider_pairs"
+      ]
+     ]
+    },
+    "push 0": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push empty": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push number": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "2.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "ultra": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    }
+   },
+   "rows": {
+    "FAMILY_SLIDER_ANCHORS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_ANCHORS",
+     "kind": "text",
+     "label": "5. Leave these alone (optional)"
+    },
+    "FAMILY_SLIDER_ANCHOR_WEIGHT": {
+     "choices": [],
+     "default": "1",
+     "key": "FAMILY_SLIDER_ANCHOR_WEIGHT",
+     "kind": "entry",
+     "label": "6. How firmly"
+    },
+    "FAMILY_SLIDER_BASE": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_BASE",
+     "kind": "entry",
+     "label": "1. What the picture is"
+    },
+    "FAMILY_SLIDER_CAPTION": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_CAPTION",
+     "kind": "entry",
+     "label": "3. Caption for every pair"
+    },
+    "FAMILY_SLIDER_DIR": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_DIR",
+     "kind": "folder",
+     "label": "2. -1 end folder"
+    },
+    "FAMILY_SLIDER_GUIDANCE": {
+     "choices": [],
+     "default": "2",
+     "key": "FAMILY_SLIDER_GUIDANCE",
+     "kind": "entry",
+     "label": "4. Push strength"
+    },
+    "FAMILY_SLIDER_NEG": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_NEG",
+     "kind": "entry",
+     "label": "3. The -1 end adds"
+    },
+    "FAMILY_SLIDER_POS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_POS",
+     "kind": "entry",
+     "label": "2. The +1 end adds"
+    },
+    "FAMILY_SLIDER_SOURCE": {
+     "choices": [
+      "Photo pairs",
+      "Prompts"
+     ],
+     "default": "Photo pairs",
+     "key": "FAMILY_SLIDER_SOURCE",
+     "kind": "radio",
+     "label": "Slider from"
+    },
+    "_slider_help_pairs": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_pairs",
+     "kind": "note",
+     "label": "Photo pairs: two folders of the same shots, one for each end of the dial (e.g. the same person smiling, and not smiling). 4 to 10 pairs, each pair framed the same. For a dial about people, use a different person in each pair if you can: the dial then learns only the change, and works on anyone. A dial about something else (lighting, colour, a scene) works the same way: the same subject at both ends of a pair, and a different one in each pair."
+    },
+    "_slider_help_prompts": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_prompts",
+     "kind": "note",
+     "label": "Prompts: no photos - you describe the picture and what each end adds, and Fizgig renders its own practice pictures from the description and trains on them. The practice pictures are the size Target Megapixels sets (0.5 = 704 x 704). The previews are strips of three pictures on one seed, at -1, 0 and +1."
+    },
+    "_slider_plus_dir": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_plus_dir",
+     "kind": "shown",
+     "label": "1. +1 end folder"
+    }
+   }
+  },
+  "fibo2": {
+   "cases": {
+    "anchors": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a dog",
+       "a photo of a cat"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "epochs as words": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling @5-8",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a man @-4",
+       "a dog @2"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "no -1 end": {
+     "preview": null,
+     "problems": [
+      "Slider from prompts: fill in what the -1 end adds"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "one line each": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "photo pairs": {
+     "preview": null,
+     "problems": [
+      "Slider: set the -1 end folder (Training tab, Slider)"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": null
+    },
+    "photo pairs, -1 folder": {
+     "preview": "a photo\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": [
+      [
+       "--slider_pairs"
+      ]
+     ]
+    },
+    "push 0": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push empty": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push number": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "2.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "ultra": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    }
+   },
+   "rows": {
+    "FAMILY_SLIDER_ANCHORS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_ANCHORS",
+     "kind": "text",
+     "label": "5. Leave these alone (optional)"
+    },
+    "FAMILY_SLIDER_ANCHOR_WEIGHT": {
+     "choices": [],
+     "default": "1",
+     "key": "FAMILY_SLIDER_ANCHOR_WEIGHT",
+     "kind": "entry",
+     "label": "6. How firmly"
+    },
+    "FAMILY_SLIDER_BASE": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_BASE",
+     "kind": "entry",
+     "label": "1. What the picture is"
+    },
+    "FAMILY_SLIDER_CAPTION": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_CAPTION",
+     "kind": "entry",
+     "label": "3. Caption for every pair"
+    },
+    "FAMILY_SLIDER_DIR": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_DIR",
+     "kind": "folder",
+     "label": "2. -1 end folder"
+    },
+    "FAMILY_SLIDER_GUIDANCE": {
+     "choices": [],
+     "default": "2",
+     "key": "FAMILY_SLIDER_GUIDANCE",
+     "kind": "entry",
+     "label": "4. Push strength"
+    },
+    "FAMILY_SLIDER_NEG": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_NEG",
+     "kind": "entry",
+     "label": "3. The -1 end adds"
+    },
+    "FAMILY_SLIDER_POS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_POS",
+     "kind": "entry",
+     "label": "2. The +1 end adds"
+    },
+    "FAMILY_SLIDER_SOURCE": {
+     "choices": [
+      "Photo pairs",
+      "Prompts"
+     ],
+     "default": "Photo pairs",
+     "key": "FAMILY_SLIDER_SOURCE",
+     "kind": "radio",
+     "label": "Slider from"
+    },
+    "_slider_help_pairs": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_pairs",
+     "kind": "note",
+     "label": "Photo pairs: two folders of the same shots, one for each end of the dial (e.g. the same person smiling, and not smiling). 4 to 10 pairs, each pair framed the same. For a dial about people, use a different person in each pair if you can: the dial then learns only the change, and works on anyone. A dial about something else (lighting, colour, a scene) works the same way: the same subject at both ends of a pair, and a different one in each pair."
+    },
+    "_slider_help_prompts": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_prompts",
+     "kind": "note",
+     "label": "Prompts: no photos - you describe the picture and what each end adds, and Fizgig renders its own practice pictures from the description and trains on them. The practice pictures are the size Target Megapixels sets (0.5 = 704 x 704). The previews are strips of three pictures on one seed, at -1, 0 and +1."
+    },
+    "_slider_plus_dir": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_plus_dir",
+     "kind": "shown",
+     "label": "1. +1 end folder"
+    }
+   }
+  },
+  "flux3": {
+   "cases": {
+    "anchors": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a dog",
+       "a photo of a cat"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "epochs as words": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling @5-8",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a man @-4",
+       "a dog @2"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "no -1 end": {
+     "preview": null,
+     "problems": [
+      "Slider from prompts: fill in what the -1 end adds"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "one line each": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "photo pairs": {
+     "preview": null,
+     "problems": [
+      "Slider: set the -1 end folder (Training tab, Slider)"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": null
+    },
+    "photo pairs, -1 folder": {
+     "preview": "a photo\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": [
+      [
+       "--slider_pairs"
+      ]
+     ]
+    },
+    "push 0": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push empty": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push number": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "2.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "ultra": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    }
+   },
+   "rows": {
+    "FAMILY_SLIDER_ANCHORS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_ANCHORS",
+     "kind": "text",
+     "label": "5. Leave these alone (optional)"
+    },
+    "FAMILY_SLIDER_ANCHOR_WEIGHT": {
+     "choices": [],
+     "default": "1",
+     "key": "FAMILY_SLIDER_ANCHOR_WEIGHT",
+     "kind": "entry",
+     "label": "6. How firmly"
+    },
+    "FAMILY_SLIDER_BASE": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_BASE",
+     "kind": "entry",
+     "label": "1. What the picture is"
+    },
+    "FAMILY_SLIDER_CAPTION": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_CAPTION",
+     "kind": "entry",
+     "label": "3. Caption for every pair"
+    },
+    "FAMILY_SLIDER_DIR": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_DIR",
+     "kind": "folder",
+     "label": "2. -1 end folder"
+    },
+    "FAMILY_SLIDER_GUIDANCE": {
+     "choices": [],
+     "default": "2",
+     "key": "FAMILY_SLIDER_GUIDANCE",
+     "kind": "entry",
+     "label": "4. Push strength"
+    },
+    "FAMILY_SLIDER_NEG": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_NEG",
+     "kind": "entry",
+     "label": "3. The -1 end adds"
+    },
+    "FAMILY_SLIDER_POS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_POS",
+     "kind": "entry",
+     "label": "2. The +1 end adds"
+    },
+    "FAMILY_SLIDER_SOURCE": {
+     "choices": [
+      "Photo pairs",
+      "Prompts"
+     ],
+     "default": "Photo pairs",
+     "key": "FAMILY_SLIDER_SOURCE",
+     "kind": "radio",
+     "label": "Slider from"
+    },
+    "_slider_help_pairs": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_pairs",
+     "kind": "note",
+     "label": "Photo pairs: two folders of the same shots, one for each end of the dial (e.g. the same person smiling, and not smiling). 4 to 10 pairs, each pair framed the same. For a dial about people, use a different person in each pair if you can: the dial then learns only the change, and works on anyone. A dial about something else (lighting, colour, a scene) works the same way: the same subject at both ends of a pair, and a different one in each pair."
+    },
+    "_slider_help_prompts": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_prompts",
+     "kind": "note",
+     "label": "Prompts: no photos - you describe the picture and what each end adds, and Fizgig renders its own practice pictures from the description and trains on them. The practice pictures are the size Target Megapixels sets (0.5 = 704 x 704). The previews are strips of three pictures on one seed, at -1, 0 and +1."
+    },
+    "_slider_plus_dir": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_plus_dir",
+     "kind": "shown",
+     "label": "1. +1 end folder"
+    }
+   }
+  },
+  "klein": {
+   "cases": {
+    "anchors": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a dog",
+       "a photo of a cat"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "epochs as words": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling @5-8",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a man @-4",
+       "a dog @2"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "no -1 end": {
+     "preview": null,
+     "problems": [
+      "Slider from prompts: fill in what the -1 end adds"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "one line each": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "photo pairs": {
+     "preview": null,
+     "problems": [
+      "Slider: set the -1 end folder (Training tab, Slider)"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": null
+    },
+    "photo pairs, -1 folder": {
+     "preview": "a photo\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": [
+      [
+       "--slider_pairs"
+      ]
+     ]
+    },
+    "push 0": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push empty": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push number": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "2.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "ultra": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    }
+   },
+   "rows": {
+    "FAMILY_SLIDER_ANCHORS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_ANCHORS",
+     "kind": "text",
+     "label": "5. Leave these alone (optional)"
+    },
+    "FAMILY_SLIDER_ANCHOR_WEIGHT": {
+     "choices": [],
+     "default": "1",
+     "key": "FAMILY_SLIDER_ANCHOR_WEIGHT",
+     "kind": "entry",
+     "label": "6. How firmly"
+    },
+    "FAMILY_SLIDER_BASE": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_BASE",
+     "kind": "entry",
+     "label": "1. What the picture is"
+    },
+    "FAMILY_SLIDER_CAPTION": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_CAPTION",
+     "kind": "entry",
+     "label": "3. Caption for every pair"
+    },
+    "FAMILY_SLIDER_DIR": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_DIR",
+     "kind": "folder",
+     "label": "2. -1 end folder"
+    },
+    "FAMILY_SLIDER_GUIDANCE": {
+     "choices": [],
+     "default": "2",
+     "key": "FAMILY_SLIDER_GUIDANCE",
+     "kind": "entry",
+     "label": "4. Push strength"
+    },
+    "FAMILY_SLIDER_NEG": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_NEG",
+     "kind": "entry",
+     "label": "3. The -1 end adds"
+    },
+    "FAMILY_SLIDER_POS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_POS",
+     "kind": "entry",
+     "label": "2. The +1 end adds"
+    },
+    "FAMILY_SLIDER_SOURCE": {
+     "choices": [
+      "Photo pairs",
+      "Prompts"
+     ],
+     "default": "Photo pairs",
+     "key": "FAMILY_SLIDER_SOURCE",
+     "kind": "radio",
+     "label": "Slider from"
+    },
+    "_slider_help_pairs": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_pairs",
+     "kind": "note",
+     "label": "Photo pairs: two folders of the same shots, one for each end of the dial (e.g. the same person smiling, and not smiling). 4 to 10 pairs, each pair framed the same. For a dial about people, use a different person in each pair if you can: the dial then learns only the change, and works on anyone. A dial about something else (lighting, colour, a scene) works the same way: the same subject at both ends of a pair, and a different one in each pair."
+    },
+    "_slider_help_prompts": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_prompts",
+     "kind": "note",
+     "label": "Prompts: no photos - you describe the picture and what each end adds, and Fizgig renders its own practice pictures from the description and trains on them. The practice pictures are the size Target Megapixels sets (0.5 = 704 x 704). The previews are strips of three pictures on one seed, at -1, 0 and +1."
+    },
+    "_slider_plus_dir": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_plus_dir",
+     "kind": "shown",
+     "label": "1. +1 end folder"
+    }
+   }
+  },
+  "krea2": {
+   "cases": {
+    "anchors": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "FAMILY_SLIDER_ULTRA",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a dog",
+       "a photo of a cat"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "epochs as words": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "FAMILY_SLIDER_ULTRA",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling @5-8",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a man @-4",
+       "a dog @2"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "no -1 end": {
+     "preview": null,
+     "problems": [
+      "Slider from prompts: fill in what the -1 end adds"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "FAMILY_SLIDER_ULTRA",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "one line each": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "FAMILY_SLIDER_ULTRA",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "photo pairs": {
+     "preview": null,
+     "problems": [
+      "Slider: set the -1 end folder (Training tab, Slider)"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "FAMILY_SLIDER_ULTRA",
+      "_slider_help_pairs"
+     ],
+     "slider_args": null
+    },
+    "photo pairs, -1 folder": {
+     "preview": "a photo\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "FAMILY_SLIDER_ULTRA",
+      "_slider_help_pairs"
+     ],
+     "slider_args": [
+      [
+       "--slider_pairs"
+      ]
+     ]
+    },
+    "push 0": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "FAMILY_SLIDER_ULTRA",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push empty": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "FAMILY_SLIDER_ULTRA",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push number": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "FAMILY_SLIDER_ULTRA",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "2.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "ultra": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "FAMILY_SLIDER_ULTRA",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--train_blocks",
+       "block_0,block_1,block_2,block_3,block_4,block_5,block_6,block_7,txt_lw_0,txt_lw_1,txt_rf_0,txt_rf_1"
+      ],
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    }
+   },
+   "rows": {
+    "FAMILY_SLIDER_ANCHORS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_ANCHORS",
+     "kind": "text",
+     "label": "5. Leave these alone (optional)"
+    },
+    "FAMILY_SLIDER_ANCHOR_WEIGHT": {
+     "choices": [],
+     "default": "1",
+     "key": "FAMILY_SLIDER_ANCHOR_WEIGHT",
+     "kind": "entry",
+     "label": "6. How firmly"
+    },
+    "FAMILY_SLIDER_BASE": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_BASE",
+     "kind": "entry",
+     "label": "1. What the picture is"
+    },
+    "FAMILY_SLIDER_CAPTION": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_CAPTION",
+     "kind": "entry",
+     "label": "3. Caption for every pair"
+    },
+    "FAMILY_SLIDER_DIR": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_DIR",
+     "kind": "folder",
+     "label": "2. -1 end folder"
+    },
+    "FAMILY_SLIDER_GUIDANCE": {
+     "choices": [],
+     "default": "3",
+     "key": "FAMILY_SLIDER_GUIDANCE",
+     "kind": "entry",
+     "label": "4. Push strength"
+    },
+    "FAMILY_SLIDER_NEG": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_NEG",
+     "kind": "entry",
+     "label": "3. The -1 end adds"
+    },
+    "FAMILY_SLIDER_POS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_POS",
+     "kind": "entry",
+     "label": "2. The +1 end adds"
+    },
+    "FAMILY_SLIDER_SOURCE": {
+     "choices": [
+      "Photo pairs",
+      "Prompts"
+     ],
+     "default": "Photo pairs",
+     "key": "FAMILY_SLIDER_SOURCE",
+     "kind": "radio",
+     "label": "Slider from"
+    },
+    "FAMILY_SLIDER_ULTRA": {
+     "choices": [],
+     "default": false,
+     "key": "FAMILY_SLIDER_ULTRA",
+     "kind": "check",
+     "label": "Ultra mode"
+    },
+    "_slider_help_pairs": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_pairs",
+     "kind": "note",
+     "label": "Photo pairs: two folders of the same shots, one for each end of the dial (e.g. the same person smiling, and not smiling). 4 to 10 pairs, each pair framed the same. For a dial about people, use a different person in each pair if you can: the dial then learns only the change, and works on anyone. A dial about something else (lighting, colour, a scene) works the same way: the same subject at both ends of a pair, and a different one in each pair."
+    },
+    "_slider_help_prompts": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_prompts",
+     "kind": "note",
+     "label": "Prompts: no photos - you describe the picture and what each end adds, and Fizgig renders its own practice pictures from the description and trains on them. The practice pictures are the size Target Megapixels sets (0.5 = 704 x 704). The previews are strips of three pictures on one seed, at -1, 0 and +1."
+    },
+    "_slider_plus_dir": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_plus_dir",
+     "kind": "shown",
+     "label": "1. +1 end folder"
+    }
+   }
+  },
+  "minimax": {
+   "cases": {
+    "anchors": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a dog",
+       "a photo of a cat"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "epochs as words": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling @5-8",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a man @-4",
+       "a dog @2"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "no -1 end": {
+     "preview": null,
+     "problems": [
+      "Slider from prompts: fill in what the -1 end adds"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "one line each": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "photo pairs": {
+     "preview": null,
+     "problems": [
+      "Slider: set the -1 end folder (Training tab, Slider)"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": null
+    },
+    "photo pairs, -1 folder": {
+     "preview": "a photo\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": [
+      [
+       "--slider_pairs"
+      ]
+     ]
+    },
+    "push 0": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push empty": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push number": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "2.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "ultra": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    }
+   },
+   "rows": {
+    "FAMILY_SLIDER_ANCHORS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_ANCHORS",
+     "kind": "text",
+     "label": "5. Leave these alone (optional)"
+    },
+    "FAMILY_SLIDER_ANCHOR_WEIGHT": {
+     "choices": [],
+     "default": "1",
+     "key": "FAMILY_SLIDER_ANCHOR_WEIGHT",
+     "kind": "entry",
+     "label": "6. How firmly"
+    },
+    "FAMILY_SLIDER_BASE": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_BASE",
+     "kind": "entry",
+     "label": "1. What the picture is"
+    },
+    "FAMILY_SLIDER_CAPTION": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_CAPTION",
+     "kind": "entry",
+     "label": "3. Caption for every pair"
+    },
+    "FAMILY_SLIDER_DIR": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_DIR",
+     "kind": "folder",
+     "label": "2. -1 end folder"
+    },
+    "FAMILY_SLIDER_GUIDANCE": {
+     "choices": [],
+     "default": "2",
+     "key": "FAMILY_SLIDER_GUIDANCE",
+     "kind": "entry",
+     "label": "4. Push strength"
+    },
+    "FAMILY_SLIDER_NEG": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_NEG",
+     "kind": "entry",
+     "label": "3. The -1 end adds"
+    },
+    "FAMILY_SLIDER_POS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_POS",
+     "kind": "entry",
+     "label": "2. The +1 end adds"
+    },
+    "FAMILY_SLIDER_SOURCE": {
+     "choices": [
+      "Photo pairs",
+      "Prompts"
+     ],
+     "default": "Photo pairs",
+     "key": "FAMILY_SLIDER_SOURCE",
+     "kind": "radio",
+     "label": "Slider from"
+    },
+    "_slider_help_pairs": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_pairs",
+     "kind": "note",
+     "label": "Photo pairs: two folders of the same shots, one for each end of the dial (e.g. the same person smiling, and not smiling). 4 to 10 pairs, each pair framed the same. For a dial about people, use a different person in each pair if you can: the dial then learns only the change, and works on anyone. A dial about something else (lighting, colour, a scene) works the same way: the same subject at both ends of a pair, and a different one in each pair. Clips work too: a pair can be two clips with the same file name, the +1 clip and the same clip with the look you want at the other end (a frame-skip look, a visual effect, a rendering style). Looks that only exist in motion train this way, and the previews play -1, 0 and +1 side by side as one clip."
+    },
+    "_slider_help_prompts": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_prompts",
+     "kind": "note",
+     "label": "Prompts: no photos - you describe the picture and what each end adds, and Fizgig renders its own practice pictures from the description and trains on them. The practice pictures are the size Target Megapixels sets (0.5 = 704 x 704). The previews are strips of three pictures on one seed, at -1, 0 and +1."
+    },
+    "_slider_plus_dir": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_plus_dir",
+     "kind": "shown",
+     "label": "1. +1 end folder"
+    }
+   }
+  },
+  "minimax_image": {
+   "cases": {
+    "anchors": {
+     "preview": null,
+     "problems": [
+      "Slider: set the -1 end folder (Training tab, Slider)"
+     ],
+     "shown": [
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": null
+    },
+    "epochs as words": {
+     "preview": null,
+     "problems": [
+      "Slider: set the -1 end folder (Training tab, Slider)"
+     ],
+     "shown": [
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": null
+    },
+    "no -1 end": {
+     "preview": null,
+     "problems": [
+      "Slider: set the -1 end folder (Training tab, Slider)"
+     ],
+     "shown": [
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": null
+    },
+    "one line each": {
+     "preview": null,
+     "problems": [
+      "Slider: set the -1 end folder (Training tab, Slider)"
+     ],
+     "shown": [
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": null
+    },
+    "photo pairs": {
+     "preview": null,
+     "problems": [
+      "Slider: set the -1 end folder (Training tab, Slider)"
+     ],
+     "shown": [
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": null
+    },
+    "photo pairs, -1 folder": {
+     "preview": "a photo\n",
+     "problems": [],
+     "shown": [
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": [
+      [
+       "--slider_pairs"
+      ]
+     ]
+    },
+    "push 0": {
+     "preview": null,
+     "problems": [
+      "Slider: set the -1 end folder (Training tab, Slider)"
+     ],
+     "shown": [
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": null
+    },
+    "push empty": {
+     "preview": null,
+     "problems": [
+      "Slider: set the -1 end folder (Training tab, Slider)"
+     ],
+     "shown": [
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": null
+    },
+    "push number": {
+     "preview": null,
+     "problems": [
+      "Slider: set the -1 end folder (Training tab, Slider)"
+     ],
+     "shown": [
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": null
+    },
+    "ultra": {
+     "preview": null,
+     "problems": [
+      "Slider: set the -1 end folder (Training tab, Slider)"
+     ],
+     "shown": [
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": null
+    }
+   },
+   "rows": {
+    "FAMILY_SLIDER_CAPTION": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_CAPTION",
+     "kind": "entry",
+     "label": "3. Caption for every pair"
+    },
+    "FAMILY_SLIDER_DIR": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_DIR",
+     "kind": "folder",
+     "label": "2. -1 end folder"
+    },
+    "_slider_help_pairs": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_pairs",
+     "kind": "note",
+     "label": "Photo pairs: two folders of the same shots, one for each end of the dial (e.g. the same person smiling, and not smiling). 4 to 10 pairs, each pair framed the same. For a dial about people, use a different person in each pair if you can: the dial then learns only the change, and works on anyone. A dial about something else (lighting, colour, a scene) works the same way: the same subject at both ends of a pair, and a different one in each pair."
+    },
+    "_slider_plus_dir": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_plus_dir",
+     "kind": "shown",
+     "label": "1. +1 end folder"
+    }
+   }
+  },
+  "moss_image": {
+   "cases": {
+    "anchors": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a dog",
+       "a photo of a cat"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "epochs as words": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling @5-8",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a man @-4",
+       "a dog @2"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "no -1 end": {
+     "preview": null,
+     "problems": [
+      "Slider from prompts: fill in what the -1 end adds"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "one line each": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "photo pairs": {
+     "preview": null,
+     "problems": [
+      "Slider: set the -1 end folder (Training tab, Slider)"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": null
+    },
+    "photo pairs, -1 folder": {
+     "preview": "a photo\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": [
+      [
+       "--slider_pairs"
+      ]
+     ]
+    },
+    "push 0": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push empty": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push number": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "2.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "ultra": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    }
+   },
+   "rows": {
+    "FAMILY_SLIDER_ANCHORS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_ANCHORS",
+     "kind": "text",
+     "label": "5. Leave these alone (optional)"
+    },
+    "FAMILY_SLIDER_ANCHOR_WEIGHT": {
+     "choices": [],
+     "default": "1",
+     "key": "FAMILY_SLIDER_ANCHOR_WEIGHT",
+     "kind": "entry",
+     "label": "6. How firmly"
+    },
+    "FAMILY_SLIDER_BASE": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_BASE",
+     "kind": "entry",
+     "label": "1. What the picture is"
+    },
+    "FAMILY_SLIDER_CAPTION": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_CAPTION",
+     "kind": "entry",
+     "label": "3. Caption for every pair"
+    },
+    "FAMILY_SLIDER_DIR": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_DIR",
+     "kind": "folder",
+     "label": "2. -1 end folder"
+    },
+    "FAMILY_SLIDER_GUIDANCE": {
+     "choices": [],
+     "default": "2",
+     "key": "FAMILY_SLIDER_GUIDANCE",
+     "kind": "entry",
+     "label": "4. Push strength"
+    },
+    "FAMILY_SLIDER_NEG": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_NEG",
+     "kind": "entry",
+     "label": "3. The -1 end adds"
+    },
+    "FAMILY_SLIDER_POS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_POS",
+     "kind": "entry",
+     "label": "2. The +1 end adds"
+    },
+    "FAMILY_SLIDER_SOURCE": {
+     "choices": [
+      "Photo pairs",
+      "Prompts"
+     ],
+     "default": "Photo pairs",
+     "key": "FAMILY_SLIDER_SOURCE",
+     "kind": "radio",
+     "label": "Slider from"
+    },
+    "_slider_help_pairs": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_pairs",
+     "kind": "note",
+     "label": "Photo pairs: two folders of the same shots, one for each end of the dial (e.g. the same person smiling, and not smiling). 4 to 10 pairs, each pair framed the same. For a dial about people, use a different person in each pair if you can: the dial then learns only the change, and works on anyone. A dial about something else (lighting, colour, a scene) works the same way: the same subject at both ends of a pair, and a different one in each pair."
+    },
+    "_slider_help_prompts": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_prompts",
+     "kind": "note",
+     "label": "Prompts: no photos - you describe the picture and what each end adds, and Fizgig renders its own practice pictures from the description and trains on them. The practice pictures are the size Target Megapixels sets (0.5 = 704 x 704). The previews are strips of three pictures on one seed, at -1, 0 and +1."
+    },
+    "_slider_plus_dir": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_plus_dir",
+     "kind": "shown",
+     "label": "1. +1 end folder"
+    }
+   }
+  },
+  "qwen_image21": {
+   "cases": {
+    "anchors": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a dog",
+       "a photo of a cat"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "epochs as words": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling @5-8",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a man @-4",
+       "a dog @2"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "no -1 end": {
+     "preview": null,
+     "problems": [
+      "Slider from prompts: fill in what the -1 end adds"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "one line each": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "photo pairs": {
+     "preview": null,
+     "problems": [
+      "Slider: set the -1 end folder (Training tab, Slider)"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": null
+    },
+    "photo pairs, -1 folder": {
+     "preview": "a photo\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": [
+      [
+       "--slider_pairs"
+      ]
+     ]
+    },
+    "push 0": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push empty": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push number": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "2.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "ultra": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    }
+   },
+   "rows": {
+    "FAMILY_SLIDER_ANCHORS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_ANCHORS",
+     "kind": "text",
+     "label": "5. Leave these alone (optional)"
+    },
+    "FAMILY_SLIDER_ANCHOR_WEIGHT": {
+     "choices": [],
+     "default": "1",
+     "key": "FAMILY_SLIDER_ANCHOR_WEIGHT",
+     "kind": "entry",
+     "label": "6. How firmly"
+    },
+    "FAMILY_SLIDER_BASE": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_BASE",
+     "kind": "entry",
+     "label": "1. What the picture is"
+    },
+    "FAMILY_SLIDER_CAPTION": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_CAPTION",
+     "kind": "entry",
+     "label": "3. Caption for every pair"
+    },
+    "FAMILY_SLIDER_DIR": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_DIR",
+     "kind": "folder",
+     "label": "2. -1 end folder"
+    },
+    "FAMILY_SLIDER_GUIDANCE": {
+     "choices": [],
+     "default": "2",
+     "key": "FAMILY_SLIDER_GUIDANCE",
+     "kind": "entry",
+     "label": "4. Push strength"
+    },
+    "FAMILY_SLIDER_NEG": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_NEG",
+     "kind": "entry",
+     "label": "3. The -1 end adds"
+    },
+    "FAMILY_SLIDER_POS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_POS",
+     "kind": "entry",
+     "label": "2. The +1 end adds"
+    },
+    "FAMILY_SLIDER_SOURCE": {
+     "choices": [
+      "Photo pairs",
+      "Prompts"
+     ],
+     "default": "Photo pairs",
+     "key": "FAMILY_SLIDER_SOURCE",
+     "kind": "radio",
+     "label": "Slider from"
+    },
+    "_slider_help_pairs": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_pairs",
+     "kind": "note",
+     "label": "Photo pairs: two folders of the same shots, one for each end of the dial (e.g. the same person smiling, and not smiling). 4 to 10 pairs, each pair framed the same. For a dial about people, use a different person in each pair if you can: the dial then learns only the change, and works on anyone. A dial about something else (lighting, colour, a scene) works the same way: the same subject at both ends of a pair, and a different one in each pair."
+    },
+    "_slider_help_prompts": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_prompts",
+     "kind": "note",
+     "label": "Prompts: no photos - you describe the picture and what each end adds, and Fizgig renders its own practice pictures from the description and trains on them. The practice pictures are the size Target Megapixels sets (0.5 = 704 x 704). The previews are strips of three pictures on one seed, at -1, 0 and +1."
+    },
+    "_slider_plus_dir": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_plus_dir",
+     "kind": "shown",
+     "label": "1. +1 end folder"
+    }
+   }
+  },
+  "sdxl": {
+   "cases": {
+    "anchors": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a dog",
+       "a photo of a cat"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "epochs as words": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling @5-8",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a man @-4",
+       "a dog @2"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "no -1 end": {
+     "preview": null,
+     "problems": [
+      "Slider from prompts: fill in what the -1 end adds"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "one line each": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "photo pairs": {
+     "preview": null,
+     "problems": [
+      "Slider: set the -1 end folder (Training tab, Slider)"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": null
+    },
+    "photo pairs, -1 folder": {
+     "preview": "a photo\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": [
+      [
+       "--slider_pairs"
+      ]
+     ]
+    },
+    "push 0": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push empty": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push number": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "2.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "ultra": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    }
+   },
+   "rows": {
+    "FAMILY_SLIDER_ANCHORS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_ANCHORS",
+     "kind": "text",
+     "label": "5. Leave these alone (optional)"
+    },
+    "FAMILY_SLIDER_ANCHOR_WEIGHT": {
+     "choices": [],
+     "default": "1",
+     "key": "FAMILY_SLIDER_ANCHOR_WEIGHT",
+     "kind": "entry",
+     "label": "6. How firmly"
+    },
+    "FAMILY_SLIDER_BASE": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_BASE",
+     "kind": "entry",
+     "label": "1. What the picture is"
+    },
+    "FAMILY_SLIDER_CAPTION": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_CAPTION",
+     "kind": "entry",
+     "label": "3. Caption for every pair"
+    },
+    "FAMILY_SLIDER_DIR": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_DIR",
+     "kind": "folder",
+     "label": "2. -1 end folder"
+    },
+    "FAMILY_SLIDER_GUIDANCE": {
+     "choices": [],
+     "default": "2",
+     "key": "FAMILY_SLIDER_GUIDANCE",
+     "kind": "entry",
+     "label": "4. Push strength"
+    },
+    "FAMILY_SLIDER_NEG": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_NEG",
+     "kind": "entry",
+     "label": "3. The -1 end adds"
+    },
+    "FAMILY_SLIDER_POS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_POS",
+     "kind": "entry",
+     "label": "2. The +1 end adds"
+    },
+    "FAMILY_SLIDER_SOURCE": {
+     "choices": [
+      "Photo pairs",
+      "Prompts"
+     ],
+     "default": "Photo pairs",
+     "key": "FAMILY_SLIDER_SOURCE",
+     "kind": "radio",
+     "label": "Slider from"
+    },
+    "_slider_help_pairs": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_pairs",
+     "kind": "note",
+     "label": "Photo pairs: two folders of the same shots, one for each end of the dial (e.g. the same person smiling, and not smiling). 4 to 10 pairs, each pair framed the same. For a dial about people, use a different person in each pair if you can: the dial then learns only the change, and works on anyone. A dial about something else (lighting, colour, a scene) works the same way: the same subject at both ends of a pair, and a different one in each pair."
+    },
+    "_slider_help_prompts": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_prompts",
+     "kind": "note",
+     "label": "Prompts: no photos - you describe the picture and what each end adds, and Fizgig renders its own practice pictures from the description and trains on them. The practice pictures are the size Target Megapixels sets (0.5 = 704 x 704). The previews are strips of three pictures on one seed, at -1, 0 and +1."
+    },
+    "_slider_plus_dir": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_plus_dir",
+     "kind": "shown",
+     "label": "1. +1 end folder"
+    }
+   }
+  },
+  "vimoo": {
+   "cases": {
+    "anchors": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a dog",
+       "a photo of a cat"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "epochs as words": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling @5-8",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a man @-4",
+       "a dog @2"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "no -1 end": {
+     "preview": null,
+     "problems": [
+      "Slider from prompts: fill in what the -1 end adds"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "one line each": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "photo pairs": {
+     "preview": null,
+     "problems": [
+      "Slider: set the -1 end folder (Training tab, Slider)"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": null
+    },
+    "photo pairs, -1 folder": {
+     "preview": "a photo\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": [
+      [
+       "--slider_pairs"
+      ]
+     ]
+    },
+    "push 0": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push empty": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push number": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "2.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "ultra": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    }
+   },
+   "rows": {
+    "FAMILY_SLIDER_ANCHORS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_ANCHORS",
+     "kind": "text",
+     "label": "5. Leave these alone (optional)"
+    },
+    "FAMILY_SLIDER_ANCHOR_WEIGHT": {
+     "choices": [],
+     "default": "1",
+     "key": "FAMILY_SLIDER_ANCHOR_WEIGHT",
+     "kind": "entry",
+     "label": "6. How firmly"
+    },
+    "FAMILY_SLIDER_BASE": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_BASE",
+     "kind": "entry",
+     "label": "1. What the picture is"
+    },
+    "FAMILY_SLIDER_CAPTION": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_CAPTION",
+     "kind": "entry",
+     "label": "3. Caption for every pair"
+    },
+    "FAMILY_SLIDER_DIR": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_DIR",
+     "kind": "folder",
+     "label": "2. -1 end folder"
+    },
+    "FAMILY_SLIDER_GUIDANCE": {
+     "choices": [],
+     "default": "2",
+     "key": "FAMILY_SLIDER_GUIDANCE",
+     "kind": "entry",
+     "label": "4. Push strength"
+    },
+    "FAMILY_SLIDER_NEG": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_NEG",
+     "kind": "entry",
+     "label": "3. The -1 end adds"
+    },
+    "FAMILY_SLIDER_POS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_POS",
+     "kind": "entry",
+     "label": "2. The +1 end adds"
+    },
+    "FAMILY_SLIDER_SOURCE": {
+     "choices": [
+      "Photo pairs",
+      "Prompts"
+     ],
+     "default": "Photo pairs",
+     "key": "FAMILY_SLIDER_SOURCE",
+     "kind": "radio",
+     "label": "Slider from"
+    },
+    "_slider_help_pairs": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_pairs",
+     "kind": "note",
+     "label": "Photo pairs: two folders of the same shots, one for each end of the dial (e.g. the same person smiling, and not smiling). 4 to 10 pairs, each pair framed the same. For a dial about people, use a different person in each pair if you can: the dial then learns only the change, and works on anyone. A dial about something else (lighting, colour, a scene) works the same way: the same subject at both ends of a pair, and a different one in each pair. Clips work too: a pair can be two clips with the same file name, the +1 clip and the same clip with the look you want at the other end (a frame-skip look, a visual effect, a rendering style). Looks that only exist in motion train this way, and the previews play -1, 0 and +1 side by side as one clip."
+    },
+    "_slider_help_prompts": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_prompts",
+     "kind": "note",
+     "label": "Prompts: no photos - you describe the picture and what each end adds, and Fizgig renders its own practice pictures from the description and trains on them. The practice pictures are the size Target Megapixels sets (0.5 = 704 x 704). The previews are strips of three pictures on one seed, at -1, 0 and +1."
+    },
+    "_slider_plus_dir": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_plus_dir",
+     "kind": "shown",
+     "label": "1. +1 end folder"
+    }
+   }
+  },
+  "zimage": {
+   "cases": {
+    "anchors": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a dog",
+       "a photo of a cat"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "epochs as words": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling @5-8",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a man @-4",
+       "a dog @2"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "no -1 end": {
+     "preview": null,
+     "problems": [
+      "Slider from prompts: fill in what the -1 end adds"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "one line each": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "photo pairs": {
+     "preview": null,
+     "problems": [
+      "Slider: set the -1 end folder (Training tab, Slider)"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": null
+    },
+    "photo pairs, -1 folder": {
+     "preview": "a photo\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": [
+      [
+       "--slider_pairs"
+      ]
+     ]
+    },
+    "push 0": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push empty": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push number": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "2.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "ultra": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    }
+   },
+   "rows": {
+    "FAMILY_SLIDER_ANCHORS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_ANCHORS",
+     "kind": "text",
+     "label": "5. Leave these alone (optional)"
+    },
+    "FAMILY_SLIDER_ANCHOR_WEIGHT": {
+     "choices": [],
+     "default": "1",
+     "key": "FAMILY_SLIDER_ANCHOR_WEIGHT",
+     "kind": "entry",
+     "label": "6. How firmly"
+    },
+    "FAMILY_SLIDER_BASE": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_BASE",
+     "kind": "entry",
+     "label": "1. What the picture is"
+    },
+    "FAMILY_SLIDER_CAPTION": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_CAPTION",
+     "kind": "entry",
+     "label": "3. Caption for every pair"
+    },
+    "FAMILY_SLIDER_DIR": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_DIR",
+     "kind": "folder",
+     "label": "2. -1 end folder"
+    },
+    "FAMILY_SLIDER_GUIDANCE": {
+     "choices": [],
+     "default": "2",
+     "key": "FAMILY_SLIDER_GUIDANCE",
+     "kind": "entry",
+     "label": "4. Push strength"
+    },
+    "FAMILY_SLIDER_NEG": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_NEG",
+     "kind": "entry",
+     "label": "3. The -1 end adds"
+    },
+    "FAMILY_SLIDER_POS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_POS",
+     "kind": "entry",
+     "label": "2. The +1 end adds"
+    },
+    "FAMILY_SLIDER_SOURCE": {
+     "choices": [
+      "Photo pairs",
+      "Prompts"
+     ],
+     "default": "Photo pairs",
+     "key": "FAMILY_SLIDER_SOURCE",
+     "kind": "radio",
+     "label": "Slider from"
+    },
+    "_slider_help_pairs": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_pairs",
+     "kind": "note",
+     "label": "Photo pairs: two folders of the same shots, one for each end of the dial (e.g. the same person smiling, and not smiling). 4 to 10 pairs, each pair framed the same. For a dial about people, use a different person in each pair if you can: the dial then learns only the change, and works on anyone. A dial about something else (lighting, colour, a scene) works the same way: the same subject at both ends of a pair, and a different one in each pair."
+    },
+    "_slider_help_prompts": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_prompts",
+     "kind": "note",
+     "label": "Prompts: no photos - you describe the picture and what each end adds, and Fizgig renders its own practice pictures from the description and trains on them. The practice pictures are the size Target Megapixels sets (0.5 = 704 x 704). The previews are strips of three pictures on one seed, at -1, 0 and +1."
+    },
+    "_slider_plus_dir": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_plus_dir",
+     "kind": "shown",
+     "label": "1. +1 end folder"
+    }
+   }
+  },
+  "zimage_base": {
+   "cases": {
+    "anchors": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a dog",
+       "a photo of a cat"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "epochs as words": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling @5-8",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_anchors",
+       "a photo of a man @-4",
+       "a dog @2"
+      ],
+      [
+       "--slider_anchor_weight",
+       "1"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "no -1 end": {
+     "preview": null,
+     "problems": [
+      "Slider from prompts: fill in what the -1 end adds"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "one line each": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "photo pairs": {
+     "preview": null,
+     "problems": [
+      "Slider: set the -1 end folder (Training tab, Slider)"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": null
+    },
+    "photo pairs, -1 folder": {
+     "preview": "a photo\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "_slider_plus_dir",
+      "FAMILY_SLIDER_DIR",
+      "FAMILY_SLIDER_CAPTION",
+      "_slider_help_pairs"
+     ],
+     "slider_args": [
+      [
+       "--slider_pairs"
+      ]
+     ]
+    },
+    "push 0": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push empty": {
+     "preview": null,
+     "problems": [
+      "Slider push strength must be a number above 0"
+     ],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": null
+    },
+    "push number": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "2.5"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    },
+    "ultra": {
+     "preview": "a photo of a man,\n",
+     "problems": [],
+     "shown": [
+      "FAMILY_SLIDER_SOURCE",
+      "FAMILY_SLIDER_BASE",
+      "FAMILY_SLIDER_POS",
+      "FAMILY_SLIDER_NEG",
+      "FAMILY_SLIDER_GUIDANCE",
+      "FAMILY_SLIDER_ANCHORS",
+      "FAMILY_SLIDER_ANCHOR_WEIGHT",
+      "_slider_help_prompts"
+     ],
+     "slider_args": [
+      [
+       "--slider_prompts",
+       "a photo of a man,",
+       "a photo of a man, smiling",
+       "a photo of a man, frowning"
+      ],
+      [
+       "--slider_guidance",
+       "3"
+      ],
+      [
+       "--slider_bank_res",
+       "496"
+      ]
+     ]
+    }
+   },
+   "rows": {
+    "FAMILY_SLIDER_ANCHORS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_ANCHORS",
+     "kind": "text",
+     "label": "5. Leave these alone (optional)"
+    },
+    "FAMILY_SLIDER_ANCHOR_WEIGHT": {
+     "choices": [],
+     "default": "1",
+     "key": "FAMILY_SLIDER_ANCHOR_WEIGHT",
+     "kind": "entry",
+     "label": "6. How firmly"
+    },
+    "FAMILY_SLIDER_BASE": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_BASE",
+     "kind": "entry",
+     "label": "1. What the picture is"
+    },
+    "FAMILY_SLIDER_CAPTION": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_CAPTION",
+     "kind": "entry",
+     "label": "3. Caption for every pair"
+    },
+    "FAMILY_SLIDER_DIR": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_DIR",
+     "kind": "folder",
+     "label": "2. -1 end folder"
+    },
+    "FAMILY_SLIDER_GUIDANCE": {
+     "choices": [],
+     "default": "2",
+     "key": "FAMILY_SLIDER_GUIDANCE",
+     "kind": "entry",
+     "label": "4. Push strength"
+    },
+    "FAMILY_SLIDER_NEG": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_NEG",
+     "kind": "entry",
+     "label": "3. The -1 end adds"
+    },
+    "FAMILY_SLIDER_POS": {
+     "choices": [],
+     "default": "",
+     "key": "FAMILY_SLIDER_POS",
+     "kind": "entry",
+     "label": "2. The +1 end adds"
+    },
+    "FAMILY_SLIDER_SOURCE": {
+     "choices": [
+      "Photo pairs",
+      "Prompts"
+     ],
+     "default": "Photo pairs",
+     "key": "FAMILY_SLIDER_SOURCE",
+     "kind": "radio",
+     "label": "Slider from"
+    },
+    "_slider_help_pairs": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_pairs",
+     "kind": "note",
+     "label": "Photo pairs: two folders of the same shots, one for each end of the dial (e.g. the same person smiling, and not smiling). 4 to 10 pairs, each pair framed the same. For a dial about people, use a different person in each pair if you can: the dial then learns only the change, and works on anyone. A dial about something else (lighting, colour, a scene) works the same way: the same subject at both ends of a pair, and a different one in each pair."
+    },
+    "_slider_help_prompts": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_help_prompts",
+     "kind": "note",
+     "label": "Prompts: no photos - you describe the picture and what each end adds, and Fizgig renders its own practice pictures from the description and trains on them. The practice pictures are the size Target Megapixels sets (0.5 = 704 x 704). The previews are strips of three pictures on one seed, at -1, 0 and +1."
+    },
+    "_slider_plus_dir": {
+     "choices": [],
+     "default": "",
+     "key": "_slider_plus_dir",
+     "kind": "shown",
+     "label": "1. +1 end folder"
+    }
+   }
+  }
+ }
+}

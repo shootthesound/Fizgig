@@ -38,6 +38,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from fizgig.dataset.config import (BlueprintGenerator, ConfigSanitizer,  # noqa: E402
                                    generate_dataset_group_by_blueprint, load_user_config)
 from fizgig.families import quant  # noqa: E402
+from fizgig.families.launch import (slider_at, slider_first, slider_picture_lines, slider_push_at,  # noqa: E402
+                                    slider_push_problems, slider_push_text, slider_scheduled, slider_sort)
 from fizgig.families.lora import FamilyLoRA  # noqa: E402
 from fizgig.families.registry import get as get_family  # noqa: E402
 from fizgig.training.adaptive_lr import AdaptiveLR  # noqa: E402
@@ -400,16 +402,19 @@ SLIDER_LIVE = ".slider_prompts.json"            # written by the web UI while a 
 SLIDER_LIVE_APPLIED = ".slider_prompts_applied.json"   # what the trainer took, and at which epoch (the UI reads it)
 
 
-def _read_slider_live(output_dir):
+def _read_slider_live(output_dir, epochs=0, by_epoch=False):
     """A prompt slider's new prompts, set while it trains: {base, pos, neg, guidance, anchors} or None - the form's own
-    three (what the picture is, what each end adds), all needed, as at launch; anchors may be empty."""
+    three (what the picture is, what each end adds), all needed, as at launch; anchors may be empty. The push strength
+    is its plan as text (an older file's number as 3), refused as Start refuses it over the run's `epochs` (0: only its
+    form): with --slider_by_epoch (`by_epoch`) one number, a Split or a Slide, without it one number only."""
     try:
         with open(os.path.join(output_dir, SLIDER_LIVE), encoding="utf-8") as f:
             d = json.load(f)
         out = {"base": str(d.get("base") or "").strip(), "pos": str(d.get("pos") or "").strip(),
-               "neg": str(d.get("neg") or "").strip(), "guidance": float(d.get("guidance")),
+               "neg": str(d.get("neg") or "").strip(), "guidance": slider_push_text(d.get("guidance")),
                "anchors": _anchor_lines(d.get("anchors"))}
-        return out if out["base"] and out["pos"] and out["neg"] and out["guidance"] > 0 else None
+        return out if (out["base"] and out["pos"] and out["neg"] and (by_epoch or ":" not in out["guidance"])
+                       and not slider_push_problems(out["guidance"], epochs)) else None
     except (OSError, ValueError, TypeError):
         return None
 
@@ -425,6 +430,144 @@ def _prompt_texts(prompts):
     """--slider_prompts as typed: without the space the launch puts before one that starts with "-" (so argparse takes
     it as a value, launch._slider_value)."""
     return [str(x).strip() for x in prompts] if prompts else prompts
+
+
+def _state_epoch(state_dir):
+    """The epoch a saved state ends, read as _load_state reads it: its training_state.json, else its folder name (an
+    old trainer's pause: <name>-000012-state); 0 for none."""
+    if not state_dir:
+        return 0
+    try:
+        with open(os.path.join(state_dir, "training_state.json"), encoding="utf-8") as f:
+            return int(json.load(f).get("epoch", 0))
+    except (OSError, ValueError, TypeError, AttributeError):
+        pass
+    m = re.search(r"-(\d{6})-state$", os.path.basename(os.path.normpath(state_dir)))
+    return int(m.group(1)) if m else 0
+
+
+def _first_lines(boxes):
+    """A prompt slider's previews with lines of their own epochs: the first line with words of What the picture is and
+    of Leave these alone, in the order their lines join in, without their epochs (launch.slider_first) - the same all
+    run, so the epochs compare."""
+    first = [slider_first(boxes.get(k)) for k in ("base", "anchors")]
+    return first[:1] + [a for a in first[1:] if a]
+
+
+def _line_boxes(lines):
+    """--slider_line's (box, line) pairs as a prompt slider's boxes {base, pos, neg, anchors}: each line stripped (the
+    launch puts a space before one that starts with "-", so argparse takes it), in the order they join in."""
+    return {b: slider_sort("\n".join(t.strip() for k, t in lines if {"anchor": "anchors"}.get(k, k) == b))
+            for b in ("base", "pos", "neg", "anchors")}
+
+
+def _slider_line_start(desc, lines, by_epoch, epochs, first):
+    """--slider_line's (box, line) pairs, checked before any model loads, and what the prompt slider starts on: (its
+    boxes, what the picture is, each end and the anchors on at `first`, the first epoch this run trains - a Resume's
+    after its state's, one with no epoch left its last). RuntimeError for a box it doesn't know, a model that doesn't
+    train on pictures, no --slider_by_epoch (`by_epoch`), or no picture, +1 or -1 line on at that epoch."""
+    bad = sorted({k for k, _t in lines} - {"base", "pos", "neg", "anchor"})
+    if bad or not slider_picture_lines(desc) or not by_epoch:
+        raise RuntimeError(f"[slider] --slider_line takes base, pos, neg or anchor (not {', '.join(bad)})" if bad
+                           else f"[slider] lines with their own epochs are for models that train on pictures - give "
+                                f"{desc.display_name} --slider_prompts" if not slider_picture_lines(desc)
+                           else "[slider] lines with their own epochs need --slider_by_epoch (Change the prompts "
+                                "during the run (advanced))")
+    boxes = _line_boxes(lines)
+    at = max(1, min(first, int(epochs or first)))
+    base, pos, neg, anchors = slider_at(boxes, at)
+    none = [w for w, t in (("picture", base), ("+1", pos), ("-1", neg)) if not t]
+    if none:                 # the description can't be empty either, as the ends can't
+        raise RuntimeError(f"[slider] no {' / '.join(none)} line is on at epoch {at} - every epoch needs a picture, a "
+                           "+1 and a -1 line")
+    return boxes, base, pos, neg, anchors
+
+
+def _request_boxes(new, pictures=True):
+    """The Run card's request (_read_slider_live) as a prompt slider's boxes {base, pos, neg, anchors}: with lines of
+    their own epochs (`pictures`: the trainer's --slider_by_epoch) in the order they join in (launch.slider_sort),
+    else as it came."""
+    boxes = {"base": new["base"], "pos": new["pos"], "neg": new["neg"], "anchors": "\n".join(new["anchors"])}
+    return {k: slider_sort(t) for k, t in boxes.items()} if pictures else boxes
+
+
+def _slider_next(new, cur, done, by_epoch, desc):
+    """What a prompt slider trains on from epoch `done` + 1, decided at that epoch boundary - nothing encoded, rendered
+    or written (the trainer's slider_live does that). `new`: the Run card's request (_read_slider_live) or None; `cur`:
+    the slider now, {boxes, plan, prompts, anchors, texts, preview} (boxes and texts None while it trains one line
+    each, as it started); `by_epoch`: the trainer's --slider_by_epoch. Returns {took: the request when it brings
+    something new (else None), boxes, plan (the push strength as typed), guidance (the strength its plan gives that
+    epoch), push_only: the same prompts, anchors and previews (only the strength may change: nothing to encode or
+    render), prompts, anchors, preview, texts (what the picture is and each end adds), scheduled (lines with their own
+    epochs), base_changed (a new practice bank)}."""
+    if new is not None and not by_epoch:
+        # without --slider_by_epoch, as before: a request the same as what trains now (its three prompts, push strength
+        # and anchors) asks nothing - nothing taken, and nothing written for the Run card
+        base, pos, neg, anchors = slider_at(_request_boxes(new, False), done + 1, False)
+        if ([base, f"{base} {pos}", f"{base} {neg}"] == [str(x) for x in cur["prompts"]]
+                and anchors == list(cur["anchors"]) and new["guidance"] == cur["plan"]):
+            new = None
+    took, boxes, plan = None, cur["boxes"], cur["plan"]
+    if new is not None:
+        boxes, plan = _request_boxes(new, by_epoch), new["guidance"]     # in the order lines join in
+        if boxes != cur["boxes"] or plan != cur["plan"]:
+            took = new
+    out = {"took": took, "boxes": boxes, "plan": plan, "guidance": slider_push_at(plan, done + 1)}
+    old = [str(x) for x in cur["prompts"]]
+    if boxes is None:                        # one line each and no request: only the strength can change
+        return {**out, "push_only": True, "prompts": old, "anchors": list(cur["anchors"]), "preview": cur["preview"],
+                "texts": cur["texts"], "scheduled": False, "base_changed": False}
+    base, pos, neg, anchors = slider_at(boxes, done + 1, by_epoch)    # without it: as it came
+    if cur["texts"]:                         # a box with no line on that epoch keeps the one it had
+        base, pos, neg = (x or was for x, was in zip((base, pos, neg), cur["texts"]))
+    # each end is the base and its own words, as the launch builds them (families/launch.py)
+    prompts = [base, f"{base} {pos}", f"{base} {neg}"]
+    scheduled = slider_scheduled(desc, boxes, by_epoch)
+    preview = _first_lines(boxes) if scheduled else [prompts[0]] + anchors[:1]
+    return {**out, "push_only": prompts == old and anchors == list(cur["anchors"]) and preview == cur["preview"],
+            "prompts": prompts, "anchors": anchors, "preview": preview, "texts": [base, pos, neg],
+            "scheduled": scheduled, "base_changed": prompts[0] != old[0]}
+
+
+def _slider_failure(exc):
+    """A prompt slider's failed change for the Run card: the error's type and its message, short and on one line."""
+    text = " ".join(str(exc).split())
+    text = text[:160] + "…" if len(text) > 160 else text
+    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+
+
+def _lines_failure(epoch, failure):
+    """The Run card's words when the run's own lines for `epoch` couldn't be switched to (`failure`: why,
+    _slider_failure)."""
+    return f"Couldn't switch to the lines for epoch {epoch} ({failure}) - training goes on with the current lines."
+
+
+def _lines_key(nxt):
+    """The lines the run's own lines switch to at an epoch boundary (_slider_next's prompts, anchors and previews): a
+    switch that fails is counted for them (_slider_tries)."""
+    return tuple(nxt["prompts"]), tuple(nxt["anchors"]), tuple(nxt["preview"])
+
+
+# a change the trainer can't take (the by-epoch switch): tried at the epoch boundary it came to and once more at the
+# next - rather than loading the text encoder again at every epoch. Then a Run card request waits for a new Apply, and
+# the run's own lines train on as they are until other lines come
+SLIDER_TRIES = 2
+
+
+def _slider_tries(failed, at):
+    """How often a change failed to be taken: `at` is which change - a Run card request by its file's time (each Apply
+    writes it anew), the run's own lines by the lines they switch to (_lines_key) - and `failed` the last one that
+    failed and how often, {"at", "n"} or None."""
+    return failed["n"] if failed and failed.get("at") == at else 0
+
+
+def _history_entry(done, guidance, prompts=None, anchors=None):
+    """A prompt slider's change for its metadata (ss_slider_prompt_history), from epoch `done` + 1: its prompts, push
+    strength and anchors - the strength alone when only that changes by epoch (a Split or a Slide), so a Slide doesn't
+    write the whole prompts every epoch."""
+    return ({"epoch": done, "guidance": guidance} if prompts is None else
+            {"epoch": done, "prompts": prompts, "guidance": guidance, "anchors": anchors})
+
 
 
 def _encode_override(driver, te_path, prompts, dit, device, parkable=True, references=None):
@@ -1155,7 +1298,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  sample_height=None, sample_steps=None, sample_cfg_scale=None, sample_negative=None,
                  sample_at_first=False, sample_seed=42, sample_reference=None, sample_image=None,
                  sample_strengths=(), slider_pairs=False, slider_diff_weight=1.0, slider_prompts=None, slider_guidance=3.0,
-                 slider_anchors=(), slider_anchor_weight=1.0,
+                 slider_anchors=(), slider_anchor_weight=1.0, slider_lines=None, slider_by_epoch=False,
                  train_blocks=None,
                  slider_bank=16, slider_bank_res=768,
                  metadata_title=None, metadata_author=None, metadata_description=None, metadata_license=None,
@@ -1181,6 +1324,10 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     if desc is None or not desc.training_ready:
         raise RuntimeError(f"unknown or untrainable family {family!r}")
     validate_output_name(output_name)          # before any model loads, not at the first save an epoch in (#70)
+    _first = _state_epoch(resume_state_dir) + 1        # the first epoch this run trains (a Resume: after its state's)
+    # a prompt slider's lines with their own epochs: checked before any model loads too, and what it starts on
+    slider_line_start = (_slider_line_start(desc, slider_lines, bool(slider_by_epoch), max_train_epochs, _first)
+                         if slider_lines else None)
     # none given: a LoRA trains with AdamW, a fine-tune with Adafactor (#312)
     ft_optimizer_type, optimizer_type = optimizer_type or "adafactor", optimizer_type or "adamw"
     if context_lora_path and finetune:
@@ -1230,6 +1377,19 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
 
     # ---- sliders: a signed dial, trained at +1 and -1 ------------------------------------------------
     slider_prompts = _prompt_texts(slider_prompts)     # as typed (the launch's space before a "-" goes)
+    # The by-epoch switch, --slider_by_epoch: lines with their own epochs (the Run card's too), a push strength
+    # by epoch and their metadata - a picture model's, as the launch sends it (launch.slider_by_epoch). Without it a
+    # prompt slider trains as before
+    slider_by_epoch = bool(slider_by_epoch) and slider_picture_lines(desc)
+    slider_boxes = slider_texts = slider_preview = None
+    # a prompt slider's push strength: its plan as typed (one number, a Split or a Slide), and the number the epoch
+    # training takes - the first one below, the next one at each epoch boundary (slider_live)
+    slider_push_plan = slider_push_text(slider_guidance)
+    if slider_lines:         # a prompt slider's boxes, each line on for its own epochs: the prompts it starts on,
+        # checked before the driver loaded (_slider_line_start)
+        slider_boxes, _base, _pos, _neg, slider_anchors = slider_line_start
+        slider_prompts, slider_texts = [_base, f"{_base} {_pos}", f"{_base} {_neg}"], [_base, _pos, _neg]
+    slider_guidance = slider_push_at(slider_push_plan, _first)        # the strength its plan gives the first epoch
     slider = bool(slider_pairs or slider_prompts)
     if slider:
         if not desc.slider_training:
@@ -1250,9 +1410,19 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         if slider_pairs:
             logger.info("[slider] IMAGE-PAIR SLIDER: the adapter trains at +1 toward each image and at -1 toward "
                         "its pair (difference weight %g)", float(slider_diff_weight))
-        else:
-            logger.info("[slider] PROMPT-PAIR SLIDER: base '%s' | +1 -> '%s' | -1 -> '%s' (guidance %g)",
-                        *slider_prompts, float(slider_guidance))
+        else:            # the push strength as Start takes it; without --slider_by_epoch one number, as before
+            _bad = (slider_push_problems(slider_push_plan, max_train_epochs) if slider_by_epoch else
+                    [] if slider_guidance is not None and ":" not in slider_push_plan else
+                    [f"--slider_guidance takes one number without --slider_by_epoch (not {slider_push_plan!r})"])
+            if _bad:
+                raise RuntimeError("[slider] " + "; ".join(_bad))
+            logger.info("[slider] PROMPT-PAIR SLIDER: base '%s' | +1 -> '%s' | -1 -> '%s' (guidance %g%s)",
+                        *slider_prompts, slider_guidance,
+                        f", by epoch: {slider_push_plan}" if ":" in slider_push_plan else "")
+            if slider_boxes:
+                logger.info("[slider] lines with their own epochs, those on together joined into one: " + " | ".join(
+                    f"{k}: " + "; ".join(x.strip() for x in t.splitlines() if x.strip())
+                    for k, t in slider_boxes.items() if t.strip()))
             slider_anchors = _anchor_lines(slider_anchors)
             if slider_anchors:
                 logger.info("[slider] %d anchor prompt(s), one a step in turn, weight %g - the dial leaves them "
@@ -1260,9 +1430,12 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                             " | ".join(slider_anchors))
             if not (te_path and vae_path):
                 raise RuntimeError("[slider] prompt pairs need the text encoder and VAE paths")
-            if str(slider_prompts[0]).strip():     # the dial is shown on the picture it was trained on
-                # and on the first anchor, whose strip should barely move
-                sample_prompts = [str(slider_prompts[0]).strip()] + slider_anchors[:1]
+            # the dial is shown on the picture it was trained on and on the first anchor, whose strip should barely
+            # move (lines with their own epochs: the first line of each box)
+            slider_preview = (_first_lines(slider_boxes) if slider_boxes else
+                              [str(slider_prompts[0]).strip()] + slider_anchors[:1])
+            if slider_preview[0]:
+                sample_prompts = list(slider_preview)
     else:
         slider_anchors = []
 
@@ -1900,50 +2073,54 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             blocks = set(train_blocks)
             logger.info(f"[blocks] the LoRA trains {len(blocks)} of {len(known)} blocks only: {', '.join(train_blocks)}")
         net.add_trainable(network_dim, network_alpha, blocks=blocks, kind=network_type, factor=lokr_factor)
-    def render_bank():
-        """The practice bank: the base model's own renders of the neutral prompt (adapter at 0, training adapter
-        off, the speed LoRA on when it is loaded), decoded and re-encoded into training latents."""
+    def render_bank(neutral):
+        """The practice bank: the base model's own renders of the neutral prompt (`neutral`, its encoding; adapter at
+        0, training adapter off, the speed LoRA on when it is loaded), decoded and re-encoded into training latents.
+        The bank is replaced only when every picture rendered; a render that fails leaves the model as it was."""
         nonlocal vae
         if vae is None:
             vae = driver.load_vae(vae_path, device)
-        n_c = {k: v[0].to(device) for k, v in slider_enc[0].items()}
+        n_c = {k: v[0].to(device) for k, v in neutral.items()}
         was_training = dit.training
         net.set_trainable_multiplier(0.0)
         net.set_enabled(ADAPTER, False)
         use_speed = speed_lora is not None and speed_desc is not None and net.has(SPEED)
-        if use_speed:
-            net.move_adapter(SPEED, device)
-            net.set_enabled(SPEED, True)
-        dit.eval()
-        bank = []
-        with torch.no_grad(), driver.still_renders():     # practice pictures are stills, whatever the previews are
-            for i in tqdm(range(len(group)), desc="[slider] practice images"):
-                if use_speed:
-                    lat = driver.generate(dit, n_c, slider_bank_res, slider_bank_res, steps=speed_desc.settings.steps,
-                                          seed=seed + 1000 + i, cfg=speed_desc.settings.cfg,
-                                          sigmas=speed_desc.settings.sigmas, options=speed_desc.settings.options,
-                                          **({"neg_cond": {k: v[0].to(device) for k, v in slider_neg.items()}}
-                                             if slider_neg is not None and speed_desc.settings.cfg > 1.0 else {}))
-                else:
-                    lat = driver.generate(dit, n_c, slider_bank_res, slider_bank_res, steps=desc.preview_steps,
-                                          seed=seed + 1000 + i, cfg=sample_cfg_scale,
-                                          # on the GPU with the prompt: SDXL joins the two before moving them
-                                          **({"neg_cond": {k: v[0].to(device) for k, v in slider_neg.items()}}
-                                             if slider_neg is not None and sample_cfg_scale > 1.0 else {}))
-                bank.append(driver.practice_latent(vae, lat, slider_bank_res))
-        if use_speed:
-            net.set_enabled(SPEED, False)
-            net.move_adapter(SPEED, "cpu")
-        net.set_enabled(ADAPTER, True)
-        net.set_trainable_multiplier(1.0)
-        if was_training:
-            dit.train()
+        try:
+            if use_speed:
+                net.move_adapter(SPEED, device)
+                net.set_enabled(SPEED, True)
+            dit.eval()
+            bank = []
+            with torch.no_grad(), driver.still_renders():     # practice pictures are stills, whatever the previews are
+                for i in tqdm(range(len(group)), desc="[slider] practice images"):
+                    if use_speed:
+                        lat = driver.generate(dit, n_c, slider_bank_res, slider_bank_res,
+                                              steps=speed_desc.settings.steps, seed=seed + 1000 + i,
+                                              cfg=speed_desc.settings.cfg, sigmas=speed_desc.settings.sigmas,
+                                              options=speed_desc.settings.options,
+                                              **({"neg_cond": {k: v[0].to(device) for k, v in slider_neg.items()}}
+                                                 if slider_neg is not None and speed_desc.settings.cfg > 1.0 else {}))
+                    else:
+                        lat = driver.generate(dit, n_c, slider_bank_res, slider_bank_res, steps=desc.preview_steps,
+                                              seed=seed + 1000 + i, cfg=sample_cfg_scale,
+                                              # on the GPU with the prompt: SDXL joins the two before moving them
+                                              **({"neg_cond": {k: v[0].to(device) for k, v in slider_neg.items()}}
+                                                 if slider_neg is not None and sample_cfg_scale > 1.0 else {}))
+                    bank.append(driver.practice_latent(vae, lat, slider_bank_res))
+        finally:
+            if use_speed:
+                net.set_enabled(SPEED, False)
+                net.move_adapter(SPEED, "cpu")
+            net.set_enabled(ADAPTER, True)
+            net.set_trainable_multiplier(1.0)
+            if was_training:
+                dit.train()
         group.latents = bank
         torch.cuda.empty_cache()
         logger.info("[slider] %d practice images rendered at %dx%d", len(bank), slider_bank_res, slider_bank_res)
 
     if slider_prompts:
-        render_bank()
+        render_bank(slider_enc[0])
     if do_compile:                       # decided before the load (below the Auto plan), applied last
         driver.compile_blocks(dit, "outside" if do_compile == "outside" else "inside",
                               blocks_to_swap if swapped else 0)
@@ -2080,62 +2257,179 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 scheduler.step()
 
     last_prompt = [None]
-    slider_history = []                     # [{epoch, prompts, guidance}] - each live change, for the saved metadata
+    # [{epoch, prompts, guidance, anchors}] - each change, for the saved metadata; a push strength alone by epoch:
+    # {epoch, guidance} (_history_entry)
+    slider_history = []
+    # with --slider_by_epoch: the last Run card change it took (SLIDER_LIVE_APPLIED, kept beside a failure there), the
+    # time of the request file it last said it can't take (once a request), and the last request that failed to be
+    # taken and how often (_slider_tries)
+    slider_took, slider_unread, slider_failed = [None], [None], [None]
+    # ... and the run's own lines it last failed to switch to, how often and what the Run card says of it ({at, n,
+    # failed, said}: _slider_tries), and the last record about a request it wrote there (_said)
+    slider_lines_failed, slider_said = [None], [{}]
     anchor_losses = []                      # this epoch's anchor losses (a prompt slider with anchors)
 
     def slider_live(done):
-        """A prompt slider's new prompts (the web UI's Slider prompts panel), taken at an epoch boundary: the poles
-        encoded again, and a new base renders a new practice bank and becomes the previews' prompt. Training goes on
-        from where it is, toward the new ends."""
-        nonlocal slider_prompts, slider_guidance, slider_enc, encoded, sample_prompts, slider_anchors, anchor_enc
-        new = _read_slider_live(output_dir) if slider_prompts else None
-        if new is None:
-            return
-        # each end is the base and its own words, as the launch builds them (families/launch.py)
-        prompts = [new["base"], f"{new['base']} {new['pos']}", f"{new['base']} {new['neg']}"]
-        if (prompts == [str(x) for x in slider_prompts] and new["guidance"] == float(slider_guidance)
-                and new["anchors"] == list(slider_anchors)):
-            return
-        base_changed = prompts[0] != str(slider_prompts[0])
-        logger.info("[slider] new prompts from epoch %d: base '%s' | +1 -> '%s' | -1 -> '%s' (guidance %g)%s",
-                    done + 1, *prompts, new["guidance"],
-                    f" | anchors: {' | '.join(new['anchors'])}" if new["anchors"] else " | no anchors")
-        parked = []
-        try:
-            enc = _encode_override(driver, te_path, prompts + new["anchors"], dit, device, parkable=not swapped)
-            _all = [{k: v[None] for k, v in c.items()} for c in enc]
-            slider_enc, anchor_enc = _all[:3], _all[3:]
-            if base_changed:
-                if desc.preview_park_optimizer and optimizer is not None:     # room for the renders, as previews do
-                    for st in optimizer.state.values():
-                        for k, v in st.items():
-                            if torch.is_tensor(v) and v.is_cuda:
-                                st[k] = v.to("cpu")
-                                parked.append((st, k))
-                    torch.cuda.empty_cache()
-                render_bank()
-            # the previews followed the old base (and its first anchor): they follow the new ones
-            if prompts[0] and sample_prompts == [str(slider_prompts[0])] + list(slider_anchors[:1]):
-                sample_prompts = [prompts[0]] + new["anchors"][:1]
+        """A prompt slider's prompts and push strength for the next epoch, taken at an epoch boundary: new ones from the
+        web UI's Slider prompts panel, with lines of their own epochs the lines on then (a box's lines on together
+        joined into one), and the strength its plan gives that epoch (one number, a Split or a Slide) - as
+        _slider_next decides. New poles are encoded again, and a new base renders a new practice bank; a new strength
+        alone is only taken.
+        The previews stay on the slider's own (the first lines with words). Training goes on from where it is, toward
+        the new ends. With --slider_by_epoch, a request it can't encode or render is said on the Run card
+        (SLIDER_LIVE_APPLIED's failed) and tried again at the next boundary, then it waits for a new Apply
+        (SLIDER_TRIES); the epoch trains on the run's own lines meanwhile. The run's own lines it can't switch to are
+        said there too (lines_failed) and tried as often, then it trains on its current lines until other lines come."""
+        nonlocal slider_prompts, slider_guidance, slider_enc, encoded, sample_prompts, slider_anchors, anchor_enc, \
+            slider_boxes, slider_texts, slider_preview, slider_push_plan
+        at = None                                # the request file's time: each Apply writes it anew
+        if slider_by_epoch and slider_prompts:
+            try:
+                at = os.path.getmtime(os.path.join(output_dir, SLIDER_LIVE))
+            except OSError:
+                pass                             # none asked
+        new = _read_slider_live(output_dir, max_train_epochs, slider_by_epoch) if slider_prompts else None
+        if new is None and at is not None and at != slider_unread[0]:
+            slider_unread[0] = at                # a request there it can't take: said once
+            logger.warning("[slider] the Run card's request (%s) can't be taken - it can't be read, a box of the "
+                           "picture or an end is empty, or its push strength isn't one Start takes; training goes "
+                           "on with its own lines", SLIDER_LIVE)
+        tries = _slider_tries(slider_failed[0], at)
+        if new is not None and tries >= SLIDER_TRIES:
+            new = None                           # failed at two boundaries: it waits for a new Apply (said then)
+
+        def _push(plan, prompts=None, anchors=None):
+            """The strength the next epoch trains at, its plan's, the prompts as they are: nothing encoded or
+            rendered. Its metadata has the strength alone, with the prompts and anchors when a Run card request brought
+            it (`prompts`, `anchors`)."""
+            nonlocal slider_guidance, slider_push_plan
+            guidance, slider_push_plan = slider_push_at(plan, done + 1), plan
+            if guidance != slider_guidance:
+                slider_guidance = guidance
+                logger.info("[slider] push strength from epoch %d: %g", done + 1, round(guidance, 2))
+                slider_history.append(_history_entry(done, guidance, prompts, anchors))
+
+        def _said(record=None):
+            """What became of the Run card's request (`record`; none: the last one again), for its card
+            (SLIDER_LIVE_APPLIED) - and beside it, while the run trains on its current lines, the run's own lines it
+            couldn't switch to (lines_failed: the epoch, the card's words and what the epoch trains on)."""
+            if record is not None:
+                slider_said[0] = record
+            lines = slider_lines_failed[0] and slider_lines_failed[0]["said"]
+            try:
+                with open(os.path.join(output_dir, SLIDER_LIVE_APPLIED), "w", encoding="utf-8") as f:
+                    json.dump({**slider_said[0], **({"lines_failed": lines} if lines else {})}, f)
+            except OSError:
+                pass
+
+        def _took(took, rerendered):
+            if took is not None:
+                slider_took[0] = {"epoch": done, "base": took["base"], "pos": took["pos"], "neg": took["neg"],
+                                  "guidance": took["guidance"], "anchors": took["anchors"],
+                                  "practice_rerendered": rerendered, "at": time.time()}
+                _said(slider_took[0])
+
+        def _take(nxt, then="the ones it had"):
+            """Trains on what _slider_next decided (`nxt`) from the next epoch: None, or what stopped it encoding or
+            rendering (_slider_failure) - the slider then whole on the old prompts (ends, pictures, previews, log and
+            metadata), the optimizer's state back on the GPU. `then`: what the log says training goes on with."""
+            nonlocal slider_prompts, slider_guidance, slider_enc, encoded, sample_prompts, slider_anchors, anchor_enc, \
+                slider_boxes, slider_texts, slider_preview, slider_push_plan
+            took, prompts, anchors, preview = nxt["took"], nxt["prompts"], nxt["anchors"], nxt["preview"]
+            guidance = nxt["guidance"]
+            if nxt["push_only"]:                 # one line each and no request, or the same prompts and previews
+                slider_boxes = nxt["boxes"]
+                # a new strength alone: taken as it is - with its prompts in the metadata when a request brought it
+                _push(nxt["plan"], *((prompts, anchors) if took is not None else ()))
+                _took(took, False)               # its lines come in later, at their own epochs
+                return None
+            logger.info("[slider] %s from epoch %d: base '%s' | +1 -> '%s' | -1 -> '%s' (guidance %g)%s",
+                        "new prompts" if took is not None or not nxt["scheduled"] else "the lines on",
+                        done + 1, *prompts, guidance,
+                        f" | anchors: {' | '.join(anchors)}" if anchors else " | no anchors")
+            parked = []
+            try:
+                want = prompts + anchors + [t for t in preview if t not in prompts + anchors]
+                enc = _encode_override(driver, te_path, want, dit, device, parkable=not swapped)
+                _all = [{k: v[None] for k, v in c.items()} for c in enc]
+                if nxt["base_changed"]:
+                    if desc.preview_park_optimizer and optimizer is not None:     # room for the renders, as previews do
+                        for st in optimizer.state.values():
+                            for k, v in st.items():
+                                if torch.is_tensor(v) and v.is_cuda:
+                                    st[k] = v.to("cpu")
+                                    parked.append((st, k))
+                        torch.cuda.empty_cache()
+                    # the blocks run uncompiled for the renders, as previews do (Compile Blocks): eval mode and the
+                    # bank's size would each build a new graph, minutes of work
+                    with torch.compiler.set_stance("force_eager"):
+                        render_bank(_all[0])
+            except Exception as exc:
+                logger.warning(f"[slider] could not take the new prompts ({type(exc).__name__}: {str(exc)[:200]}) - "
+                               f"training goes on with {then}", exc_info=True)
+                return _slider_failure(exc)      # its words only: the error's frames, and their tensors, go now
+            finally:
+                for st, k in parked:
+                    st[k] = st[k].to(device)
+            # all encoded and the new bank rendered: only now does the slider move on, so a failure above leaves it
+            # whole on the old prompts (ends, pictures, previews, log and metadata) and the next boundary tries again
+            slider_enc, anchor_enc = _all[:3], _all[3:3 + len(anchors)]
+            # the previews followed the slider's own (its base and first anchor): they follow its new ones - only when
+            # those change, so unchanged previews keep their encodings and the epochs compare
+            if preview[0] and preview != slider_preview and sample_prompts == slider_preview:
+                sample_prompts = list(preview)
                 if encoded is not None and not sample_reference and not (sample_image and desc.preview_image):
-                    encoded = [enc[0]] + enc[3:4]           # text-only previews: the new prompts' own encodings
-        except Exception as exc:
-            logger.warning(f"[slider] could not take the new prompts ({type(exc).__name__}: {str(exc)[:200]}) - "
-                           "training goes on with the ones it had", exc_info=True)
-            return
-        finally:
-            for st, k in parked:
-                st[k] = st[k].to(device)
-        slider_prompts, slider_guidance, slider_anchors = prompts, new["guidance"], new["anchors"]
-        slider_history.append({"epoch": done, "prompts": prompts, "guidance": new["guidance"],
-                               "anchors": new["anchors"]})
-        try:
-            with open(os.path.join(output_dir, SLIDER_LIVE_APPLIED), "w", encoding="utf-8") as f:
-                json.dump({"epoch": done, "base": new["base"], "pos": new["pos"], "neg": new["neg"],
-                           "guidance": new["guidance"], "anchors": new["anchors"],
-                           "practice_rerendered": base_changed, "at": time.time()}, f)
-        except OSError:
-            pass
+                    encoded = [enc[want.index(t)] for t in preview]     # text-only previews: their own encodings
+            slider_boxes, slider_prompts, slider_guidance, slider_anchors = nxt["boxes"], prompts, guidance, anchors
+            slider_texts, slider_preview, slider_push_plan = nxt["texts"], preview, nxt["plan"]
+            slider_history.append(_history_entry(done, guidance, prompts, anchors))
+            if slider_lines_failed[0]:           # moved on: the lines it couldn't switch to before are past
+                slider_lines_failed[0] = None
+                if took is None:
+                    _said()                      # and so is the Run card's word on them
+            _took(took, nxt["base_changed"])
+            return None
+
+        def _own(nxt):
+            """The run's own lines from the next epoch (`nxt`: no Run card request, with --slider_by_epoch), as _take
+            takes them. Switching to new lines that fails is counted for those lines (_lines_key) and said on the Run
+            card (_lines_failure, with the prompts the epoch trains on instead): the next boundary tries them again, and
+            after SLIDER_TRIES failures they aren't tried any more - it trains on its current lines until other lines
+            come. None, or what stopped it."""
+            key = None if nxt["push_only"] else _lines_key(nxt)
+            n = _slider_tries(slider_lines_failed[0], key) if key else 0
+            if n >= SLIDER_TRIES:
+                return slider_lines_failed[0]["failed"]      # tried that often: the current lines go on
+            failed = _take(nxt, "its current lines" + ("" if n + 1 < SLIDER_TRIES else
+                                                       " - it doesn't try these lines again"))
+            if failed:
+                slider_lines_failed[0] = {"at": key, "n": n + 1, "failed": failed, "said": {
+                    "epoch": done + 1, "said": _lines_failure(done + 1, failed), "pos": str(slider_prompts[1]),
+                    "neg": str(slider_prompts[2]), "anchors": list(slider_anchors)}}
+                _said()
+            return failed
+
+        def _cur():                              # the slider now, as _slider_next takes it
+            return {"boxes": slider_boxes, "plan": slider_push_plan, "prompts": slider_prompts,
+                    "anchors": slider_anchors, "texts": slider_texts, "preview": slider_preview}
+
+        nxt = _slider_next(new, _cur(), done, slider_by_epoch, desc)
+        asked = slider_by_epoch and nxt["took"] is not None      # the Run card's request, with lines of their own
+        retry = tries + 1 < SLIDER_TRIES                         # should it fail now: tried again at the next epoch
+        failed = (_take(nxt, "its own lines, and the Run card's are tried again at the next epoch" if retry else
+                        "its own lines; the Run card's failed twice and wait for a new Apply") if asked else
+                  _own(nxt) if slider_by_epoch else _take(nxt))
+        if failed and asked:
+            # the Run card says so (its request stays: tried again at the next boundary, or waiting for a new Apply,
+            # and a change taken later writes over this), with what it asked and the last change it took; the epoch
+            # trains on the run's own lines, as it would have without the request
+            slider_failed[0] = {"at": at, "n": tries + 1}
+            _said({"epoch": done, "failed": failed, "at": time.time(), "asked": nxt["took"], "took": slider_took[0],
+                   "retry": retry, "request_at": at})
+            torch.cuda.empty_cache()             # what the failed attempt held, back before its own lines' turn
+            failed = _own(_slider_next(None, _cur(), done, slider_by_epoch, desc))
+        if failed:                               # the old prompts kept, at their own plan's strength
+            _push(slider_push_plan)
 
     def metadata(epoch):
         thumb = None if (metadata_thumbnail or "").lower() in ("off", "none") else (
@@ -2164,13 +2458,19 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             # the deploy contract: strength is the dial (-1 one pole, +1 the other); tools read this
             md.update({"ss_slider": "prompt_pairs" if slider_prompts else "image_pairs"})
             if slider_prompts:
+                # the push strength its plan starts on, and a Split or a Slide as typed (the strength by epoch)
                 md.update({"ss_slider_prompts": json.dumps([str(x) for x in slider_prompts]),
-                           "ss_slider_guidance": f"{float(slider_guidance):g}"})
+                           "ss_slider_guidance": f"{slider_push_at(slider_push_plan, 1):g}"})
+                if slider_by_epoch and ":" in slider_push_plan:
+                    md["ss_slider_push_plan"] = slider_push_plan
                 if slider_anchors:
                     md.update({"ss_slider_anchors": json.dumps(list(slider_anchors)),
                                "ss_slider_anchor_weight": f"{float(slider_anchor_weight):g}"})
                 if slider_history:          # the prompts it was steered through, from which epoch
                     md.update({"ss_slider_prompt_history": json.dumps(slider_history)})
+                if slider_boxes and slider_scheduled(desc, slider_boxes, slider_by_epoch):   # the lines, with epochs
+                    md.update({"ss_slider_lines": json.dumps({k: [x.strip() for x in t.splitlines() if x.strip()]
+                                                              for k, t in slider_boxes.items()})})
             else:
                 md.update({"ss_slider_diff_weight": f"{float(slider_diff_weight):g}"})
         if train_blocks:
@@ -3382,11 +3682,23 @@ def setup_parser():
                    help="Image-pair slider: 0 = plain loss, 1 = concentrate where the two images differ")
     p.add_argument("--slider_prompts", nargs=3, default=None, metavar=("NEUTRAL", "POSITIVE", "NEGATIVE"),
                    help="Slider from three prompts, no images (needs --text_encoder and --vae)")
-    p.add_argument("--slider_guidance", type=float, default=3.0, help="Prompt-pair slider: how hard to push")
+    p.add_argument("--slider_guidance", default="3",
+                   help="Prompt-pair slider: how hard to push - one number for the whole run; with --slider_by_epoch "
+                        "also A:N:B (A for the first N epochs, then B) or A:H:B:E (A until epoch H, then in a straight "
+                        "line to B by epoch E)")
     p.add_argument("--slider_anchors", nargs="+", default=None, metavar="PROMPT",
                    help="Prompt-pair slider: prompts the dial must leave as they are (one a step, in turn)")
     p.add_argument("--slider_anchor_weight", type=float, default=1.0,
                    help="Prompt-pair slider: how much the anchors count against the dial's own loss")
+    p.add_argument("--slider_by_epoch", action="store_true",
+                   help="Prompt-pair slider (picture models), Change the prompts during the run (advanced): lines with "
+                        "their own epochs (--slider_line, the Run card's too) and a push strength by epoch. Without it "
+                        "the slider trains as before")
+    p.add_argument("--slider_line", nargs=2, action="append", default=None, metavar=("BOX", "LINE"),
+                   help="Prompt-pair slider (picture models, with --slider_by_epoch), in place of --slider_prompts / "
+                        "--slider_anchors: a line of a box (base, pos, neg or anchor), on for the epochs after an @ - "
+                        "'smiling @5-8', '@5-' from 5 on, none = the whole run. Again for each line; a box's lines on "
+                        "together join into one")
     p.add_argument("--slider_bank", type=int, default=16, help="Prompt-pair slider: practice images to render")
     p.add_argument("--train_blocks", default="",
                    help="Comma-separated block ids (the driver's block map) to train; empty = every block")
@@ -3527,7 +3839,9 @@ def main():
         sample_reference=list(a.sample_reference) if a.sample_reference else None, sample_image=a.sample_image,
         slider_pairs=a.slider_pairs, slider_diff_weight=a.slider_diff_weight, slider_prompts=a.slider_prompts,
         slider_guidance=a.slider_guidance, slider_anchors=a.slider_anchors or (),
-        slider_anchor_weight=a.slider_anchor_weight, slider_bank=a.slider_bank, slider_bank_res=a.slider_bank_res,
+        slider_anchor_weight=a.slider_anchor_weight, slider_lines=[tuple(x) for x in a.slider_line or []] or None,
+        slider_by_epoch=a.slider_by_epoch,
+        slider_bank=a.slider_bank, slider_bank_res=a.slider_bank_res,
         train_blocks=[b.strip() for b in a.train_blocks.split(",") if b.strip()] or None,
         metadata_title=a.metadata_title, metadata_author=a.metadata_author,
         metadata_description=a.metadata_description, metadata_license=a.metadata_license,

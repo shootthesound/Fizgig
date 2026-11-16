@@ -1123,6 +1123,15 @@ _RESUME_SAMPLE_KEYS = ("SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_H
                        "LEARNING_RATE", "ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX")
 
 
+def _slider_live_boxes(desc, b):
+    """The Run card's Apply: its three boxes as the trainer takes them - a picture model's one a line (blanks dropped),
+    each line on for its own epochs ("smiling @5-8"); a song model's each one prompt, as before."""
+    if launch.slider_picture_lines(desc):
+        return {k: "\n".join(x.strip() for x in str(b.get(k) or "").splitlines() if x.strip())
+                for k in ("base", "pos", "neg")}
+    return {k: str(b.get(k) or "").strip() for k in ("base", "pos", "neg")}
+
+
 # a prompt slider's live prompts: the request the web UI writes, and what the trainer took (fizgig.families.train's
 # SLIDER_LIVE / SLIDER_LIVE_APPLIED - named here so the server never imports torch)
 SLIDER_LIVE, SLIDER_LIVE_APPLIED = ".slider_prompts.json", ".slider_prompts_applied.json"
@@ -1141,18 +1150,74 @@ def _prompt_slider_run(run) -> bool:
 
 
 def _slider_live_status(run):
-    """{base, pos, neg, guidance, epoch (when the trainer last took new ones, else None), waiting} for the Training
-    tab's Slider prompts panel, or None for any other run."""
+    """{base, pos, neg, guidance, epoch (when the trainer last took new ones, else None), waiting, failed, retry, now,
+    by_epoch, lines_failed} for the Training tab's Slider prompts panel, or None for any other run. by_epoch: the
+    run's by-epoch switch - off, its boxes are one line each and there is no now, as before. failed: with it on, why
+    the trainer couldn't take the change waiting (encoding or rendering it failed) at the end of epoch `epoch`, else
+    None - it trains on its own lines meanwhile; retry: it tries the change again at the next epoch (True), or it
+    failed twice and waits for a new Apply (False). lines_failed: with it on, the card's words when the trainer
+    couldn't switch to the run's own lines for an epoch (train.py _lines_failure) - now then shows the lines it trains
+    on instead - else None."""
     if not _prompt_slider_run(run):
         return None
     v, out = run.get("values") or {}, run.get("output_dir") or ""
     want = _read_json(os.path.join(out, SLIDER_LIVE)) if out else {}
     got = _read_json(os.path.join(out, SLIDER_LIVE_APPLIED)) if out else {}
+    # the run's own lines the trainer couldn't switch to, kept beside what it says of a request
+    lines_failed = got.pop("lines_failed", None)
+    lines_failed = lines_failed if isinstance(lines_failed, dict) else None
+    try:
+        asked_at = os.path.getmtime(os.path.join(out, SLIDER_LIVE)) if want else None     # each Apply writes it anew
+    except OSError:
+        asked_at = None
     lines = lambda x: [s.strip() for s in (x.splitlines() if isinstance(x, str) else (x or [])) if str(s).strip()]
+    # the push strength as text: a Split or a Slide as typed, a number as 3 (an older file's 3.0 too)
     same = lambda a, b: all(str(a.get(k) or "") == str(b.get(k) or "") for k in ("base", "pos", "neg")) and \
-        lines(a.get("anchors")) == lines(b.get("anchors")) and         float(a.get("guidance") or 0) == float(b.get("guidance") or 0)
-    return {**{k: str(v.get(key) or "") for k, key in _SLIDER_LIVE_KEYS.items()}, "epoch": got.get("epoch"),
-            "waiting": bool(want) and not (got and same(want, got))}
+        lines(a.get("anchors")) == lines(b.get("anchors")) and \
+        launch.slider_push_text(a.get("guidance")) == launch.slider_push_text(b.get("guidance"))
+    # a change the trainer couldn't take: the one it asked, and the last change it did take (what it trains on)
+    fail = got if got.get("failed") else {}
+    if fail:
+        got = fail.get("took") if isinstance(fail.get("took"), dict) else {}
+    asked = fail.get("asked") if isinstance(fail.get("asked"), dict) else {}
+    # a later Apply waits anew - the same values applied again too: the trainer tries them again (its file is newer)
+    later = fail.get("request_at") is not None and fail.get("request_at") != asked_at
+    failed = str(fail["failed"]) if want and asked and same(want, asked) and not later else None
+    waiting = bool(want) and not failed and not (got and same(want, got))
+    # what the epoch in progress trains on - with lines of their own epochs its prompts and the next epoch they change
+    # at, with a Split or a Slide its push strength - from what the trainer took: while a change waits for the end of
+    # the epoch (or failed to take), the run's values already hold it, so the last change taken shows instead (none
+    # yet: the values the run started with; a run without them, not shown)
+    desc, start = get_family(run.get("family") or ""), run.get("slider_start") or {}
+    by_epoch = launch.slider_by_epoch(desc, v)       # the tick as the run started (Apply keeps it): off, no now
+    if not waiting and not failed:
+        boxes, plan = launch.slider_boxes(v), v.get("FAMILY_SLIDER_GUIDANCE")
+    elif got:
+        boxes = {**{k: str(got.get(k) or "") for k in ("base", "pos", "neg")},
+                 "anchors": "\n".join(lines(got.get("anchors")))}
+        plan = got.get("guidance")
+    else:
+        boxes, plan = (launch.slider_boxes(start), start.get("FAMILY_SLIDER_GUIDANCE")) if start else (None, "")
+    plan = launch.slider_push_text(plan) or f"{desc.slider_guidance:g}"
+    if boxes and by_epoch:      # each box's lines in the order they join in, as the trainer's
+        boxes = {k: launch.slider_sort(t) for k, t in boxes.items()}
+    now, scheduled = None, bool(boxes) and launch.slider_scheduled(desc, boxes, by_epoch)
+    try:
+        ep, total = max(1, int((run.get("progress") or {}).get("epoch") or 1)), int(str(v.get("MAX_TRAIN_EPOCHS")))
+    except (TypeError, ValueError):
+        ep, total = 1, 0
+    if by_epoch and boxes and (scheduled or ":" in plan):
+        base, pos, neg, anchors = launch.slider_at(boxes, ep)
+        push = launch.slider_push_at(plan, ep)
+        now = {"epoch": ep, "pos": f"{base} {pos}".strip(), "neg": f"{base} {neg}".strip(), "anchors": anchors,
+               "push": None if push is None else f"{round(push, 2):g}",
+               "next": next((a for a, *_r in launch.slider_plan(boxes, total) if a > ep), None) if scheduled else None}
+        if lines_failed and int(lines_failed.get("epoch") or 0) <= ep:     # it couldn't switch: the lines it kept
+            now.update({k: lines_failed[k] for k in ("pos", "neg", "anchors") if k in lines_failed})
+    return {**{k: str(v.get(key) or "") for k, key in _SLIDER_LIVE_KEYS.items()},
+            "epoch": fail.get("epoch") if failed else got.get("epoch"), "waiting": waiting, "failed": failed,
+            "retry": fail.get("retry") is not False if failed else None,      # an older trainer's: it tried every epoch
+            "now": now, "by_epoch": by_epoch, "lines_failed": (lines_failed or {}).get("said") or None}
 
 
 def _size_changed(lora, out_dir, values):
@@ -1957,9 +2022,10 @@ def _start_one(family_key, values, image_folder, resume, ft_continue, note, mode
             os.remove(os.path.join(out_dir, f))      # an Apply while it loads waits for its first epoch, not deleted
         except OSError:
             pass
-    with _lock:
+    with _lock:                  # slider_start: its slider values as it started, kept as an Apply changes its values
         _run.update(state="starting", stage="", lora=inputs["LORA_NAME"], output_dir=out_dir, family=family_key,
-                    values=dict(values), image_folder=image_folder, pause=False, resume="", resume_mode="")
+                    values=dict(values), image_folder=image_folder, pause=False, resume="", resume_mode="",
+                    slider_start={key: values.get(key) for key in _SLIDER_LIVE_KEYS.values()})
     save_state({"last_run": {"family": family_key, "values": values, "image_folder": image_folder}})
     if _startup["offer"] or load_state().get("interrupted"):
         _startup_done()                              # a run is starting: the start-up question is answered
@@ -4521,21 +4587,45 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/run/slider_prompts":    # a prompt slider's new ends, taken at its next epoch boundary
                 with _lock:
                     running = _run["proc"] is not None and _run["proc"].poll() is None
-                    run = {k: _run.get(k) for k in ("family", "values", "output_dir", "history_id")}
+                    run = {k: _run.get(k) for k in ("family", "values", "output_dir", "history_id", "progress")}
                 if not running or not _prompt_slider_run(run):
                     return self.json({"error": "No prompt slider is training right now."}, 400)
-                new = {k: str(b.get(k) or "").strip() for k in ("base", "pos", "neg")}
+                desc = get_family(run["family"] or "")
+                new = _slider_live_boxes(desc, b)
+                by_epoch = launch.slider_by_epoch(desc, run.get("values") or {})     # as the run started
                 try:
-                    g = float(str(b.get("guidance") or "").strip())
+                    total = int(str((run.get("values") or {}).get("MAX_TRAIN_EPOCHS") or "0").strip())
                 except ValueError:
-                    g = 0.0
+                    total = 0
+                # the push strength as Start takes it: one number, or by epoch (a Split or a Slide), above 0 all run.
+                # the by-epoch switch off: the plain slider's one number, and several lines or a Split refused as
+                # Start does
+                push = launch.slider_push_text(b.get("guidance"))
                 if not all(new.values()):
                     return self.json({"error": "Fill in all three: what the picture is, and what each end adds."}, 400)
-                if g <= 0:
-                    return self.json({"error": "Push strength must be a number above 0."}, 400)
+                bad = (launch.slider_push_problems(push, total) if by_epoch else
+                       launch.slider_off_problems(desc, new, push, "Push strength must be a number above 0."))
+                if bad:
+                    return self.json({"error": "; ".join(bad)}, 400)
                 anchors = [a.strip() for a in str(b.get("anchors") or "").splitlines() if a.strip()]
-                _write_json(os.path.join(run["output_dir"], SLIDER_LIVE), {**new, "guidance": g, "anchors": anchors})
-                changes = {_SLIDER_LIVE_KEYS[k]: v for k, v in {**new, "guidance": f"{g:g}",
+                if by_epoch:                             # each box's lines in the order they join in, as the boxes
+                    new = {k: launch.slider_sort(t) for k, t in new.items()}       # keep them and the trainer joins
+                    anchors = launch.slider_sort("\n".join(anchors)).splitlines()
+                # as Start refuses them (a picture model's lines): an epoch with no line (lines on together join) -
+                # over the whole run, as the run keeps these for a Pause and Resume, which Start checks the same way
+                boxes = {**new, "anchors": "\n".join(anchors)}
+                bad = launch.slider_line_problems(desc, boxes, total) if by_epoch else []
+                if bad:
+                    try:
+                        first = int((run.get("progress") or {}).get("epoch") or 0) + 1      # where the change starts
+                    except (TypeError, ValueError):
+                        first = 1
+                    past = first > 1 and not launch.slider_line_problems(desc, boxes, total, first)
+                    return self.json({"error": "; ".join(bad) + (". Keep the lines of the epochs already trained: "
+                                                                 "a Pause and Resume starts from these" if past else "")},
+                                     400)
+                _write_json(os.path.join(run["output_dir"], SLIDER_LIVE), {**new, "guidance": push, "anchors": anchors})
+                changes = {_SLIDER_LIVE_KEYS[k]: v for k, v in {**new, "guidance": push,
                                                                  "anchors": "\n".join(anchors)}.items()}
                 with _lock:                              # a Pause and Resume, or Start again, keeps them
                     if isinstance(_run.get("values"), dict):

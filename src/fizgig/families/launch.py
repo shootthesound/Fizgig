@@ -41,6 +41,7 @@ active; delete a stale <LORA_OUTPUT_DIR>/.pause_requested (the trainer would sto
 .sample_override.json (it changes the previews); warn when the output drive is nearly full, or when a resume is
 already at Max Train Epochs.
 """
+import math
 import os
 import re
 from dataclasses import dataclass, field
@@ -154,6 +155,295 @@ def _slider_value(text):
     """A slider prompt or anchor as the command gives it: one that starts with "-" ("-a photo of a man,") gets a space
     before it, so argparse takes it as a value, not an option (the trainer strips it)."""
     return " " + text if text.startswith("-") else text
+
+
+# ---- a prompt slider's lines with their own epochs ---------------------------------------------------------------
+# Each box (what the picture is, each end, leave these alone) holds one line or more, each on for its own epochs: a
+# line ends in "@5-8" (epochs 5 to 8), "@5-" (from 5 on) or "@-8" (up to 8), and "/3" after them for every 3rd epoch
+# from its first ("@1-30/3": epochs 1, 4, 7 ...); no @ = the whole run. At each epoch the lines on then make the
+# prompts, as one line did: a box's lines joined into one, the anchors one a line.
+SLIDER_BOXES = (("base", "FAMILY_SLIDER_BASE"), ("pos", "FAMILY_SLIDER_POS"), ("neg", "FAMILY_SLIDER_NEG"),
+                ("anchors", "FAMILY_SLIDER_ANCHORS"))
+_SLIDER_AT = re.compile(r"\s*@\s*(\d*)\s*(?:-\s*(\d*))?\s*(?:/\s*(\d*))?\s*$")
+
+
+def slider_picture_lines(desc):
+    """Lines with their own epochs: a family whose prompt slider practises on pictures (not on songs)."""
+    return "photo" in desc.media
+
+
+BY_EPOCH = "Change the prompts during the run (advanced)"  # the Slider card's switch (FAMILY_SLIDER_BY_EPOCH)
+
+
+def slider_by_epoch(desc, inputs):
+    """Change the prompts during the run (advanced), a picture model's tick on the Slider card (off when missing):
+    lines with their own epochs, a push strength by epoch and the plan. Off, a prompt slider is the plain slider's -
+    its form, Start's checks, its command and the trainer (no --slider_by_epoch)."""
+    return slider_picture_lines(desc) and bool(inputs.get("FAMILY_SLIDER_BY_EPOCH"))
+
+
+def slider_line_parts(line):
+    """A slider box's line -> (its text, from epoch, until epoch, every Nth epoch); None for no limit (every: 1)."""
+    m = _SLIDER_AT.search(line)
+    if m is None or not (m.group(1) or m.group(2) or m.group(3)):
+        return line.strip(), None, None, None
+    num = lambda g: int(g) if g else None
+    return line[:m.start()].strip(), num(m.group(1)), num(m.group(2)), num(m.group(3)) if num(m.group(3)) and \
+        num(m.group(3)) > 1 else None
+
+
+def _slider_line_on(a, b, n, epoch):
+    return (a is None or a <= epoch) and (b is None or epoch <= b) and (n is None or (epoch - (a or 1)) % n == 0)
+
+
+def slider_lines_on(text, epoch, keys=False):
+    """A box's lines on at this epoch (1-based), in order, without their epochs (keys: with each one's epochs as
+    slider_range_key gives them, [(text, key)])."""
+    return [(t, slider_range_key(a, b, n)) if keys else t
+            for t, a, b, n in map(slider_line_parts, str(text or "").splitlines()) if t and _slider_line_on(a, b, n, epoch)]
+
+
+def slider_range_key(a, b, n=None):
+    """A line's epochs as the boxes and the plan show them ("5-8", "5-", "1-8", "1-30/3"), "" for the whole run: the
+    web UI colours a line by it, the same colour in its box and in the plan."""
+    if a is None and b is None and n is None:
+        return ""
+    return f"{a or 1}-{'' if b is None else b}" + (f"/{n}" if n else "")
+
+
+def slider_line_name(words, most=40):
+    """A line as a note names it with Change the prompts during the run (advanced) on - its words, quoted, cut to
+    about `most` characters ('"a close-up photo of a young woman..."'): a line's place in its box changes as the
+    lines take their places by epoch."""
+    t = " ".join(str(words).split())
+    if len(t) > most:
+        cut = t[:most - 3]
+        t = (cut[:cut.rfind(" ")] if cut.rfind(" ") > most // 2 else cut).rstrip(" ,;") + "..."
+    return f'"{t}"'
+
+
+def slider_epoch_notes(text, epochs):
+    """A box's lines whose epochs don't fit the run (Max Train Epochs), each named by its words (slider_line_name): one
+    that starts after its last epoch never trains, one that ends past it is cut short there, and one that runs
+    backwards never trains. A line with no words is never on: none for it."""
+    out = []
+    for line in str(text or "").splitlines():
+        t, a, b, _n = slider_line_parts(line)
+        if not t:
+            continue
+        name = slider_line_name(t)
+        if a and b and a > b:
+            out.append(f"the epochs of {name} run backwards ({a}-{b}): it never trains")
+        elif a and epochs and a > epochs:
+            out.append(f"{name} starts at epoch {a}, after the run's last ({epochs}): it never trains")
+        elif b and epochs and b > epochs:
+            out.append(f"{name} runs to epoch {b}, past the run's last ({epochs}): it stops at {epochs}")
+    return out
+
+
+def slider_join(parts):
+    """A box's lines on at the same time, as one: a comma between them (a space after one that ends in a comma)."""
+    out = ""
+    for p in parts:
+        out = p if not out else out + (" " if out.endswith((",", ";")) else ", ") + p
+    return out
+
+
+def slider_sort(text):
+    """A box's lines in the order they join in, the order the web UI keeps them in (app.js promptLines sortLines): the
+    lines with epochs of their own by start, then the later end first, then every how many, then as they stood - in
+    the rows such lines hold. A line without epochs (on all run) and a blank row keep their rows."""
+    rows = str(text or "").splitlines()
+    spans = [slider_line_parts(x)[1:] for x in rows]
+    own = [i for i, (a, b, n) in enumerate(spans) if slider_range_key(a, b, n)]
+    order = lambda i: (max(1, spans[i][0] or 1), -math.inf if spans[i][1] is None else -spans[i][1],
+                       spans[i][2] or 1, i)
+    out = list(rows)
+    for slot, i in zip(own, sorted(own, key=order)):
+        out[slot] = rows[i]
+    return "\n".join(out)
+
+
+def slider_first(text):
+    """A box's first line with words, in the order its lines join in (slider_sort), without its epochs ("" for none):
+    the previews show the dial on it all run, so the epochs compare."""
+    return next((t for t in (slider_line_parts(x)[0] for x in slider_sort(text).splitlines()) if t), "")
+
+
+def slider_boxes(inputs):
+    """A prompt slider's four boxes as typed: {base, pos, neg, anchors}."""
+    return {k: str(inputs.get(key) or "") for k, key in SLIDER_BOXES}
+
+
+def slider_scheduled(desc, boxes, by_epoch):
+    """Lines with their own epochs: with Change the prompts during the run (advanced) on (`by_epoch`: slider_by_epoch,
+    the trainer's --slider_by_epoch) on a picture model, a box of the picture or an end with several lines, or a line
+    ending in epochs of its own - even ones that mean the whole run ("@-/1"), which must not stay in its words.
+    Anything else trains as one line always did."""
+    if not (by_epoch and slider_picture_lines(desc)):
+        return False
+    lines = {k: [x for x in str(t).splitlines() if x.strip()] for k, t in boxes.items()}
+    return (any(len(lines.get(k, [])) > 1 for k in ("base", "pos", "neg"))
+            or any(slider_line_parts(x)[0] != x.strip() for ls in lines.values() for x in ls))
+
+
+def slider_at(boxes, epoch, pictures=True):
+    """A prompt slider's (what the picture is, +1 end, -1 end, [leave these alone]) at this epoch (1-based): each
+    box's lines on then, the first three joined into one. A model that doesn't practise on pictures takes its boxes
+    as typed."""
+    if not pictures:
+        return (*(str(boxes.get(k) or "").strip() for k in ("base", "pos", "neg")),
+                [x.strip() for x in str(boxes.get("anchors") or "").splitlines() if x.strip()])
+    return (*(slider_join(slider_lines_on(boxes.get(k), epoch)) for k in ("base", "pos", "neg")),
+            slider_lines_on(boxes.get("anchors"), epoch))
+
+
+def slider_gap(text, epochs, first=1):
+    """The first epoch (`first` to `epochs`) at which a box has no line on, or None."""
+    return next((e for e in range(max(1, first), epochs + 1) if not slider_lines_on(text, e)), None)
+
+
+def slider_gaps(text, epochs):
+    """Every epoch (1 to `epochs`) at which a box has no line on - a line with no words is never on."""
+    return [e for e in range(1, epochs + 1) if not slider_lines_on(text, e)]
+
+
+def slider_numbers(nums):
+    """A list as said - numbers, epochs, a note's lines: 1 and 2; 1, 2 and 3."""
+    return ", ".join(map(str, nums[:-1])) + f" and {nums[-1]}" if len(nums) > 1 else "".join(map(str, nums))
+
+
+def slider_epochs_said(epochs, most=None):
+    """Epochs as said, each run of them joined - ("Epochs 5–8 and 12", True), ("Epoch 12", False): more than one -
+    or ("", False) for none; past `most` runs the rest counted ("Epochs 2, 4, 6 and 7 more")."""
+    spans = []
+    for e in sorted(set(epochs)):
+        if spans and spans[-1][1] == e - 1:
+            spans[-1][1] = e
+        else:
+            spans.append([e, e])
+    if not spans:
+        return "", False
+    many = len(spans) > 1 or spans[0][1] > spans[0][0]
+    parts = [f"{a}–{b}" if b > a else f"{a}" for a, b in spans]
+    if most and len(parts) > most:
+        parts = parts[:most] + [f"{sum(b - a + 1 for a, b in spans[most:])} more"]
+    return ("Epochs " if many else "Epoch ") + slider_numbers(parts), many
+
+
+def slider_overlap(text, epochs, first=1):
+    """The first epoch (`first` to `epochs`) at which more than one of a box's lines is on, and those lines' words, in
+    the box's order (the note names them by their words) - or None. They join into one (the Slider card says so)."""
+    for e in range(max(1, first), epochs + 1):
+        on = slider_lines_on(text, e)
+        if len(on) > 1:
+            return e, on
+    return None
+
+
+def slider_line_problems(desc, boxes, epochs, first=1):
+    """Lines with their own epochs that can't train as they are, over the run's epochs (`first` to `epochs`; the Run
+    card's Apply at the next epoch checks only the epochs still to come): an epoch at which a box of the picture or
+    an end has no line on. Start (problems) and Apply refuse them alike, with Change the prompts during the run
+    (advanced) on (they ask only then; off, slider_off_problems); lines on together join into one, and anything that
+    trains as one line did has none."""
+    if not slider_scheduled(desc, boxes, True):
+        return []
+    out = []
+    for k, what in (("base", "What the picture is"), ("pos", "The +1 end adds"), ("neg", "The -1 end adds")):
+        gap = slider_gap(boxes[k], epochs, first)
+        if gap:
+            out.append(f"Slider: no line of \"{what}\" is on at epoch {gap} - every epoch needs one (a line with no "
+                       "epochs is on for the whole run)")
+    return out
+
+
+def slider_plan(boxes, epochs):
+    """A prompt slider's prompts epoch by epoch, the epochs alike taken together: [(first, last, base, pos, neg,
+    anchors)]."""
+    out = []
+    for e in range(1, epochs + 1):
+        now = slider_at(boxes, e)
+        if out and out[-1][2:] == now:
+            out[-1] = (out[-1][0], e, *now)
+        else:
+            out.append((e, e, *now))
+    return out
+
+
+# ---- a prompt slider's push strength by epoch ----------------------------------------------------------------------
+# The forms of MOSS-Image's Clean-end share box (moss_image/driver.py _share), without its fifth part: one number for
+# the whole run ("3"), a Split "A:N:B" (A for the first N epochs, then B) or a Slide "A:H:B:E" (A until epoch H, then
+# in a straight line to B by epoch E, and B after)
+def _slider_push_parts(text):
+    try:
+        parts = [float(x) for x in ("" if text is None else str(text)).split(":")]
+    except ValueError:
+        return None
+    return parts if len(parts) in (1, 3, 4) and all(map(math.isfinite, parts)) else None
+
+
+def slider_push_at(text, epoch):
+    """A prompt slider's push strength at this epoch (1-based), from its box as typed: one number, a Split or a Slide;
+    None when the text is none of those."""
+    p = _slider_push_parts(text)
+    if p is None or len(p) == 1:
+        return None if p is None else p[0]
+    first, until, rest = p[:3]
+    end = p[3] if len(p) == 4 else until
+    if epoch <= until or epoch >= end:
+        return first if epoch <= until else rest
+    return first + (rest - first) * (epoch - until) / (end - until)
+
+
+def slider_push_text(value):
+    """A push strength as one text: a number as 3 or 2.5 (an older Run card file's 3.0 too), else as typed."""
+    text = "" if value is None else str(value).strip()
+    try:
+        return f"{float(text):g}"
+    except ValueError:
+        return text
+
+
+def slider_push_problems(text, epochs):
+    """Why a prompt slider's push strength can't train as typed over the run's epochs (1 to `epochs`): none of the
+    forms, a strength at or below 0 at an epoch, or a Slide that ends before it starts. Start (problems) and the Run
+    card's Apply refuse it alike; one number is refused as it always was."""
+    p = _slider_push_parts(text)
+    if p is None and ":" in str(text or ""):
+        return ["Slider push strength must be a number above 0, a Split such as 3:10:2 (3 for the first 10 epochs, "
+                "then 2) or a Slide such as 3:10:2:20 (3 until epoch 10, then sliding to 2 by epoch 20)"]
+    if p is None or (len(p) == 1 and p[0] <= 0):
+        return ["Slider push strength must be a number above 0"]
+    if len(p) == 4 and p[3] < p[1]:
+        return [f"Slider push strength holds until epoch {p[1]:g} but slides by epoch {p[3]:g}, before that - give a "
+                "later one"]
+    low = next((e for e in range(1, epochs + 1) if slider_push_at(text, e) <= 0), None)
+    return [f"Slider push strength must be above 0 at every epoch - it is {round(slider_push_at(text, low), 2):g} at "
+            f"epoch {low}"] if low else []
+
+
+def slider_off_problems(desc, boxes, push, not_a_number="Slider push strength must be a number above 0"):
+    """With Change the prompts during the run (advanced) off, what a prompt slider can't train as before, refused by
+    Start (problems) and the Run card's Apply alike: a push strength that isn't a number above 0 (`not_a_number`, in
+    each one's words then) and, on a picture model (where the tick is), several lines in a box of the picture or an
+    end, or a push strength by epoch - those saying to turn it on. A line that ends in epochs ("smiling @5-8") trains
+    as typed, as the plain slider took it."""
+    tick, out = slider_picture_lines(desc), []
+    for k, what in (("base", "What the picture is"), ("pos", "The +1 end adds"), ("neg", "The -1 end adds")):
+        n = sum(1 for x in str(boxes.get(k) or "").splitlines() if x.strip())
+        if tick and n > 1:
+            out.append(f"Slider: \"{what}\" has {n} lines - turn on \"{BY_EPOCH}\" for lines with their own epochs, or "
+                       "keep one line")
+    if tick and ":" in str(push or ""):
+        return out + [f"Slider push strength {str(push).strip()} changes by epoch - turn on \"{BY_EPOCH}\" for a Split "
+                      "or a Slide, or give one number"]
+    try:
+        if float(push) <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        out.append(not_a_number)
+    return out
 
 
 def ft_on(desc, inputs):
@@ -689,11 +979,19 @@ def problems(desc, inputs):
                         "adds"), ("FAMILY_SLIDER_NEG", "what the -1 end adds")):
             if not _s(inputs.get(k)):
                 errors.append(f"Slider from prompts: fill in {what}")
-        try:
-            if float(inputs.get("FAMILY_SLIDER_GUIDANCE")) <= 0:
-                raise ValueError
-        except (TypeError, ValueError):
-            errors.append("Slider push strength must be a number above 0")
+        if slider_by_epoch(desc, inputs):
+            try:
+                epochs = int(_s(inputs.get("MAX_TRAIN_EPOCHS")))
+            except ValueError:
+                epochs = 0
+            # the push strength: one number above 0, or by epoch (a Split or a Slide) above 0 at every epoch of the run
+            errors += slider_push_problems(_s(inputs.get("FAMILY_SLIDER_GUIDANCE")), epochs)
+            # lines with their own epochs: every epoch needs a line of the picture and of each end (those on together
+            # join)
+            errors += slider_line_problems(desc, slider_boxes(inputs), epochs)
+        else:            # Change the prompts during the run (advanced) off: the plain slider's check, and what only the
+            # tick trains, saying so
+            errors += slider_off_problems(desc, slider_boxes(inputs), inputs.get("FAMILY_SLIDER_GUIDANCE"))
         if _s(inputs.get("FAMILY_SLIDER_ANCHORS")):
             try:
                 if float(_s(inputs.get("FAMILY_SLIDER_ANCHOR_WEIGHT")) or "1") <= 0:
@@ -1180,7 +1478,15 @@ def train_command(desc, inputs, plan):
     if slider_on(desc, st):
         if desc.slider_ultra_blocks and st.get("FAMILY_SLIDER_ULTRA"):
             cmd += ["--train_blocks", ",".join(desc.slider_ultra_blocks)]
-        if slider_on(desc, st, "prompts"):
+        if slider_on(desc, st, "prompts") and slider_scheduled(desc, slider_boxes(st), slider_by_epoch(desc, st)):
+            # lines with their own epochs: every box's lines in the order they join in (slider_sort), the trainer takes
+            # the ones on each epoch
+            for k, box in (("base", "base"), ("pos", "pos"), ("neg", "neg"), ("anchors", "anchor")):
+                for ln in (x.strip() for x in slider_sort(slider_boxes(st)[k]).splitlines() if x.strip()):
+                    cmd += ["--slider_line", box, _slider_value(ln)]
+            cmd += ["--slider_guidance", _s(st.get("FAMILY_SLIDER_GUIDANCE")) or f"{desc.slider_guidance:g}",
+                    "--slider_anchor_weight", _s(st.get("FAMILY_SLIDER_ANCHOR_WEIGHT")) or "1"]
+        elif slider_on(desc, st, "prompts"):
             base = _s(st.get("FAMILY_SLIDER_BASE"))
             # the user's own comma, if any; one that starts with "-" goes as a value (_slider_value)
             cmd += ["--slider_prompts", *map(_slider_value, (base, f"{base} {_s(st.get('FAMILY_SLIDER_POS'))}",
@@ -1190,12 +1496,15 @@ def train_command(desc, inputs, plan):
             if anchors:                  # prompts the dial must leave alone (#252)
                 cmd += ["--slider_anchors", *map(_slider_value, anchors),
                         "--slider_anchor_weight", _s(st.get("FAMILY_SLIDER_ANCHOR_WEIGHT")) or "1"]
+        if slider_on(desc, st, "prompts"):
             try:        # the practice pictures (and so the training) at Target Megapixels, a square on the 16 px grid
                 side = int((float(st.get("megapixels")) * 1_000_000) ** 0.5) // 16 * 16
                 if side >= 256:
                     cmd += ["--slider_bank_res", str(side)]
             except (TypeError, ValueError):
                 pass
+            if slider_by_epoch(desc, st):    # Change the prompts during the run (advanced): the trainer's own switch
+                cmd += ["--slider_by_epoch"]
             for flag, role in (("--text_encoder", "text_encoder"), ("--vae", "vae")):
                 if flag not in cmd:          # the practice images and the three prompts need both
                     cmd += [flag, _model(st, desc, role)]
@@ -1247,7 +1556,9 @@ def _preview_flags(desc, st, plan, cmd):
             plan.dirs.append(samples_dir)
             plan.files.append((prompts, "\n".join(instr) + "\n"))
     elif slider_on(desc, st):          # slider previews: the dial on its own picture, not the Samples tab
-        own = (st.get("FAMILY_SLIDER_BASE") if slider_on(desc, st, "prompts")
+        timed = slider_on(desc, st, "prompts") and slider_scheduled(desc, slider_boxes(st), slider_by_epoch(desc, st))
+        own = (slider_first(st.get("FAMILY_SLIDER_BASE")) if timed    # its first line with words, as the trainer's
+               else st.get("FAMILY_SLIDER_BASE") if slider_on(desc, st, "prompts")     # previews
                else st.get("FAMILY_SLIDER_CAPTION"))
         prompts = os.path.join(samples_dir, f"{desc.key}_slider_prompt.txt")
         plan.dirs.append(samples_dir)

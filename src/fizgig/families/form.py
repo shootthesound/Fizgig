@@ -21,6 +21,7 @@ self.settings defaults, and a family's first preset is applied over them on a fi
 import os
 
 from fizgig.families import launch
+from fizgig.moss_image.clean_share import clean_share
 
 ADAPTIVE_MIN = ("1e-5", "5e-5", "1e-4", "2e-4", "3e-4")
 ADAPTIVE_MAX = ("1e-4", "2e-4", "3e-4", "4e-4")
@@ -106,7 +107,7 @@ DEFAULTS = {
     "FAMILY_EDIT_PICTURES": launch.EDIT_PHOTO_ONLY, "FAMILY_EDIT_EXTRAS_DIR": "",
     "FAMILY_SLIDER_SOURCE": "pairs", "FAMILY_SLIDER_DIR": "", "FAMILY_SLIDER_CAPTION": "",
     "FAMILY_SLIDER_BASE": "", "FAMILY_SLIDER_POS": "", "FAMILY_SLIDER_NEG": "", "FAMILY_SLIDER_ANCHORS": "",
-    "FAMILY_SLIDER_ANCHOR_WEIGHT": "1", "FAMILY_SLIDER_ULTRA": False,
+    "FAMILY_SLIDER_ANCHOR_WEIGHT": "1", "FAMILY_SLIDER_ULTRA": False, "FAMILY_SLIDER_BY_EPOCH": False,
     "FAMILY_FT_ROTATIONS": "10", "FAMILY_FT_SAVE_EVERY": "1", "FAMILY_FT_ROTATE_EVERY": "1",
     "FAMILY_FT_FUSED": True, "FAMILY_FT_REG_DIR": "", "FAMILY_FT_REG_MULT": "0.2",
     "FAMILY_REG_ON": False, "FAMILY_REG_DIR": "", "FAMILY_REG_MULT": "1.0", "FAMILY_REG_USE": REG_MATCH,
@@ -591,8 +592,39 @@ def form(desc):
         srcs = slider_sources(desc)
         pn = {k: (h, t) for k, h, t in (getattr(desc, "slider_prompt_notes", ()) or ())}
         # the desktop's wording (lora_trainer_gui's Slider card), unless the family says it its own way
-        prompt_row = lambda key, label, hint: _row(key, pn.get(key, (label, hint))[0], hint=pn.get(key, (label, hint))[1])
+        prompt_row = lambda key, label, hint: _row(key, pn.get(key, (label, hint))[0],
+                                                   hint=pn.get(key, (label, hint))[1])
         clips = "clip" in desc.media
+        lines = launch.slider_picture_lines(desc)       # Change the prompts during the run: a model that practises
+        # on pictures. A row's look while that is on, laid over its plain one (app.js rowLook): numbered lines with
+        # + Add a line, as the Samples tab's prompts, each with the epochs it's on for, and the push strength by epoch -
+        # its hint the family's own when it has one, its first sentence shown and the rest behind More (more)
+        by_epoch = lambda row, hint, **look: {**row, "by_epoch": {
+            **look, "hint": pn.get(row["key"], ("", ""))[1] or hint, "more": True}} if lines else row
+        listed = {"kind": "text", "lines": True, "epochs": True}
+        one_a_line = (" Several lines: each on for its own epochs (empty: the whole run); lines on at the same epochs "
+                      "join into one, with a comma.")
+        who = ("One person: describe them, e.g. \"a close-up photo of a young woman with short dark hair,\" - the dial "
+               "changes the expression and keeps her the same. Anyone: keep it general, e.g. \"a close-up photo of a "
+               "person who is\" - the practice pictures show a different person each time, so the dial learns only the "
+               "change and works on anyone. Something else: describe it the same way, e.g. \"a photo of a living "
+               "room,\" for a lighting dial.")
+        pos_hint = ("e.g. \"happy\" - with the general line above the prompt reads \"a close-up photo of a person who "
+                    "is happy\".")
+        neg_hint = ("e.g. \"sad\". Words like this can bring more than a face (grey light, rain); if the whole scene "
+                    "changes, try a narrower word such as \"unsmiling\".")
+        anchors_hint = pn.get("FAMILY_SLIDER_ANCHORS", (None, None))[1] or (
+            "Prompts the dial must not change, one a line. For a hair-length dial meant for women, \"a photo of a "
+            "man\" keeps men's hair as it is; for a smile dial, \"a photo of a dog\" keeps it to people. Each step "
+            "checks one of them in turn, and the previews show the first one beside the dial, so you can see it stay "
+            "put. Each one makes a step about half as long again. Empty = none.")
+        # the push strength by epoch, as the Clean-end share box (Single, Split, Slide - no "then every"): its Split and
+        # Slide start from the number in Single, easing to about two thirds of it (from_single: app.js splitRow) -
+        # these, from the model's own, while Single holds no number
+        push, eased = f"{desc.slider_guidance:g}", f"{round(desc.slider_guidance * 4 / 3) / 2:g}"
+        push_rest = ("Higher gives a stronger dial but changes more than the one thing you asked for (a frown can turn "
+                     "into a different, older man). The plan below shows the push each epoch trains at. You can "
+                     "change the prompts and this while it trains, on the Run card.")
         add("slider", "Slider", "training", [
             _row("FAMILY_SLIDER_SOURCE", "Slider from", "radio", choices=[SLIDER_SOURCES[x] for x in srcs],
                  default=SLIDER_SOURCES[srcs[0]]) if len(srcs) > 1 else None,
@@ -609,28 +641,41 @@ def form(desc):
                  "about something else, describe the subject the same way, e.g. \"a photo of a room\" for a lighting "
                  "dial. Write captions saves the same line as the caption of every photo in the training (+1) folder, so "
                  "keep it general enough to fit every pair.", action="write_captions"),
-            prompt_row("FAMILY_SLIDER_BASE", "1. What the picture is",
-                       "The start of the prompt. Each end's words are added after it with a space, so end this line "
-                       "with a comma if you want one. One person: describe them, e.g. \"a close-up photo of a young "
-                       "woman with short dark hair,\" - the dial changes the expression and keeps her the same. Anyone: "
-                       "keep it general, e.g. \"a close-up photo of a person who is\" - the practice pictures show a "
-                       "different person each time, so the dial learns only the change and works on anyone. Something "
-                       "else: describe it the same way, e.g. \"a photo of a living room,\" for a lighting dial."),
-            prompt_row("FAMILY_SLIDER_POS", "2. The +1 end adds",
-                       "e.g. \"happy\" - with the general line above the prompt reads \"a close-up photo of a person "
-                       "who is happy\"."),
-            prompt_row("FAMILY_SLIDER_NEG", "3. The -1 end adds",
-                       "e.g. \"sad\". Words like this can bring more than a face (grey light, rain); if the whole scene "
-                       "changes, try a narrower word such as \"unsmiling\"."),
-            _row("FAMILY_SLIDER_GUIDANCE", "4. Push strength", default=f"{desc.slider_guidance:g}",
-                 hint="How hard the ends are pushed apart. Higher gives a stronger dial but changes more than the one "
-                      f"thing you asked for (a frown can turn into a different, older man). Start on "
-                      f"{desc.slider_guidance:g}. You can change the prompts and this while it trains, on the Run card."),
-            _row("FAMILY_SLIDER_ANCHORS", *pn.get("FAMILY_SLIDER_ANCHORS", ("5. Leave these alone (optional)", None))[:1],
-                 "text", hint=pn.get("FAMILY_SLIDER_ANCHORS", (None, None))[1] or "Prompts the dial must not change, one a line. For a hair-length dial meant for women, \"a photo "
-                      "of a man\" keeps men's hair as it is; for a smile dial, \"a photo of a dog\" keeps it to people. "
-                      "Each step checks one of them in turn, and the previews show the first one beside the dial, so "
-                      "you can see it stay put. Each one makes a step about half as long again. Empty = none."),
+            # Change the prompts during the run (advanced): the prompt part's first row, a picture model's only
+            # (form.state, rowLook) - its hint as every row's while it's off, as its mode's (more) while it's on
+            _row("FAMILY_SLIDER_BY_EPOCH", launch.BY_EPOCH, "check",
+                 hint="Use different words at different stages, so the dial learns only the change. It gives each box "
+                      "below lines with epochs of their own, a push strength that can change during the run and a "
+                      "plan of what each epoch trains on. Off: one line in each box and one push strength for the "
+                      "whole run.", more="on") if lines else None,
+            by_epoch(prompt_row("FAMILY_SLIDER_BASE", "1. What the picture is",
+                                "The start of the prompt. Each end's words are added after it with a space, so end "
+                                "this line with a comma if you want one. " + who),
+                     "The start of the prompt: each end's words are added after it with a space, so end it with a "
+                     "comma if you want one. + Add a line gives another picture line, and each line its epochs (empty: "
+                     "the whole run). Lines on at the same epoch join into one description, with a comma (e.g. \"a "
+                     "close-up photo of a woman,\" all run and \"wearing a red coat,\" from epoch 5). The previews "
+                     "show the dial on the first line with words, the same all run, so the epochs compare. Different "
+                     "people, clothes or camera angles in different epochs teach the dial only the change, not who the "
+                     "person is, what they wear or the camera angle. " + who, **listed),
+            by_epoch(prompt_row("FAMILY_SLIDER_POS", "2. The +1 end adds", pos_hint), pos_hint + one_a_line, **listed),
+            by_epoch(prompt_row("FAMILY_SLIDER_NEG", "3. The -1 end adds", neg_hint), neg_hint + one_a_line, **listed),
+            by_epoch(_row("FAMILY_SLIDER_GUIDANCE", "4. Push strength", default=push,
+                          hint="How hard the ends are pushed apart. Higher gives a stronger dial but changes more than "
+                               "the one thing you asked for (a frown can turn into a different, older man). Start on "
+                               f"{push}. You can change the prompts and this while it trains, on the Run card."),
+                     "How hard the +1 and -1 ends are pushed apart, one number for the whole run - this model's own "
+                     f"default is {push}. " + push_rest, kind="split", split=[push, "10", eased],
+                     slide=[push, "10", eased, "15"], from_single=True,
+                     split_hint="One push strength for the first epochs, then another to the end. Its boxes start "
+                                "from the number in Single, then about two thirds of it. " + push_rest,
+                     slide_hint="One push strength until an epoch, then changing a little each epoch until it reaches "
+                                "another by a later epoch, and that one to the end. Its boxes start from the number in "
+                                "Single, sliding to about two thirds of it. " + push_rest),
+            by_epoch(_row("FAMILY_SLIDER_ANCHORS",
+                          *pn.get("FAMILY_SLIDER_ANCHORS", ("5. Leave these alone (optional)", None))[:1], "text",
+                          hint=anchors_hint),
+                     anchors_hint + " Each line on for its own epochs, as above.", lines=True, epochs=True),
             _row("FAMILY_SLIDER_ANCHOR_WEIGHT", pn.get("FAMILY_SLIDER_ANCHOR_WEIGHT", ("6. How firmly",))[0],
                  default="1", hint=pn.get("FAMILY_SLIDER_ANCHOR_WEIGHT", (None, None))[1] or "How much keeping them as they are counts against the dial itself. 1 is equal weight; higher "
                       "holds them tighter but can weaken the dial; lower lets a little of the change through."),
@@ -638,6 +683,16 @@ def form(desc):
                  hint="Allows use at a much higher range of strengths. Affects fine detail less than a regular slider "
                       "LoRA. Best for sliders from prompts; with photo pairs, best when the change is compositional "
                       "(pose, framing, layout).") if desc.slider_ultra_blocks else None,
+            # what the boxes make, epoch by epoch (form.state fills it in), to check the lines' epochs before Start
+            _row("_slider_plan", "What it trains on, epoch by epoch", "plan",
+                 "Each section is a run of epochs that train on the same prompts and the same way, in order. Words "
+                 "from lines with epochs of their own are in bold, in the colour of their epochs (as in the boxes "
+                 "above). While this model's slider trains, its epoch now is marked." + (
+                     " Fine detail is the share of steps on lightly noised pictures (texture, skin, hair; the rest "
+                     "teach shape and layout), and rate 50% an epoch at half the learning rate: both come from "
+                     "Clean-end share on the Training tab." if any(str(o.tokens).startswith("lownoise_pct=")
+                                                                   for o in desc.options) else ""),
+                 more=True) if lines else None,
             # how it works, at the bottom: the source's own help (the desktop's "Where the two ends come from")
             _row("_slider_help_pairs", "Photo pairs: two folders of the same shots, one for each end of the dial (e.g. "
                  "the same person smiling, and not smiling). 4 to 10 pairs, each pair framed the same. For a dial about "
@@ -1357,10 +1412,33 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     pairs = (values.get("FAMILY_SLIDER_SOURCE") or SLIDER_SOURCES[srcs[0]]) != "Prompts" if len(srcs) > 1 \
         else srcs[0] == "pairs"
     hidden |= ({"FAMILY_SLIDER_BASE", "FAMILY_SLIDER_POS", "FAMILY_SLIDER_NEG", "FAMILY_SLIDER_GUIDANCE",
-                "FAMILY_SLIDER_ANCHORS", "FAMILY_SLIDER_ANCHOR_WEIGHT", "_slider_help_prompts"} if pairs else {"_slider_plus_dir", "FAMILY_SLIDER_DIR", "FAMILY_SLIDER_CAPTION",
+                "FAMILY_SLIDER_ANCHORS", "FAMILY_SLIDER_ANCHOR_WEIGHT", "FAMILY_SLIDER_BY_EPOCH",
+                "_slider_help_prompts"} if pairs else {"_slider_plus_dir", "FAMILY_SLIDER_DIR", "FAMILY_SLIDER_CAPTION",
                                                        "_slider_help_pairs"})
     if pairs:
         notes["_slider_plus_dir"] = image_folder or "Not chosen yet - pick it on the Start tab"
+    # Change the prompts during the run (advanced): its plan and the notes under the boxes; off, the card as before.
+    # The rows' look follows the tick in the page (app.js rowLook), and slider_by_epoch tells the Run card and the plan
+    by_epoch, slider_plan = launch.slider_by_epoch(desc, values), None
+    if pairs or not by_epoch:
+        hidden |= {"_slider_plan"}
+    if kind == "slider" and not pairs:
+        _plan_notes, slider_plan = _slider_plan(desc, values) if by_epoch else (_slider_off_notes(desc, values), None)
+        notes.update(_plan_notes)
+        if not by_epoch and launch.slider_picture_lines(desc):
+            # lines typed with it on, now off: the box shows them as lines to edit (app.js renderRow - a one-line box
+            # would run them together), each kept until you change it; Start trains one line in each box, as the plain
+            # slider did (launch.slider_off_problems); and a push strength by epoch says it's off too
+            for key in ("FAMILY_SLIDER_BASE", "FAMILY_SLIDER_POS", "FAMILY_SLIDER_NEG"):
+                n = sum(1 for x in str(values.get(key) or "").splitlines() if x.strip())
+                if n > 1:
+                    notes[key] = (f"Holds {n} lines from \"{launch.BY_EPOCH}\". With it off, each box trains one line, "
+                                  f"as the original slider does: keep one line here, or tick \"{launch.BY_EPOCH}\" to "
+                                  "use them all.")
+            push = str(values.get("FAMILY_SLIDER_GUIDANCE") or "")
+            if ":" in push:
+                notes["FAMILY_SLIDER_GUIDANCE"] = (f"{push.strip()} changes the push by epoch, which needs "
+                                                   f"\"{launch.BY_EPOCH}\": tick it, or give one number.")
     notes["_edit_edited_dir"] = image_folder or "Not chosen yet - pick it on the Start tab"
     # the folder's own media plus its sub-folders' when the run trains on them (the tick is shown and on): the clip
     # size row doesn't vanish when the clips sit only under a sub-folder
@@ -1498,7 +1576,8 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     return {"hidden": sorted(hidden), "disabled": sorted(disabled), "notes": notes, "kind": kind,
             "media": sorted(media), "turbo_file": bool(speed_file), "force": force, "actions": actions,
             "shown": shown, "checkpoint_file": bool(checkpoint_file), "labels": labels, "checkpoint_turbo": ck_turbo,
-            "disabled_choices": disabled_choices, "poll": poll}
+            "disabled_choices": disabled_choices, "poll": poll, "slider_plan": slider_plan,
+            "slider_by_epoch": by_epoch}
 
 
 def _extras_found(desc, values, image_folder):
@@ -1543,6 +1622,121 @@ def _timestep_note(values):
 
 
 _lr_counts = {}                     # folder -> (modified time, pictures)
+
+
+# the families whose driver reads a Split or a Slide in its Clean-end share box (moss_image/clean_share.py, as its
+# driver's _share does): after a Slide's end, every Rth epoch at the lower share and half the LR, the higher share
+# between. Any other takes one share
+_CLEAN_SHARE_SLIDES = {"moss_image"}
+
+
+def clean_share_at(desc, values, epoch):
+    """An epoch's Clean-end share as the family's driver reads its box - the share of steps on lightly noised pictures,
+    which teach fine detail (the rest teach shape and layout) - and whether the epoch trains at half the learning rate:
+    (share as text, half); None with no such box, an empty one (the model's own schedule) or one it doesn't read. Never
+    half under Automagic v3 / v4: they own the rate, and the trainer leaves a step's LR multiplier out (train.py
+    _update) - read as it picks the optimizer (a fine-tune's is never one of them)."""
+    opt = next((o for o in desc.options if str(o.tokens).startswith("lownoise_pct=")), None)
+    if opt is None:
+        return None
+    raw = values.get(opt.key)
+    pct = str(opt.default if raw is None else raw).replace("%", "").strip()
+    if not pct or (":" in pct and desc.key not in _CLEAN_SHARE_SLIDES):
+        return None
+    try:            # as MOSS-Image's driver reads it (moss_image/clean_share.py); one share as typed, when a number
+        share, half = clean_share(pct, epoch)
+        float(share)
+    except (ValueError, OverflowError):
+        return None
+    return share, half and not (launch.automagic(values) and _kind(desc, values) != "finetune")
+
+
+def _slider_off_notes(desc, values):
+    """Change the prompts during the run (advanced) off, on a picture model (where the tick is): under a box, its lines
+    that end in epochs ("smiling @5-8") - they train as typed, the @ part in their words, on every epoch, as before.
+    Several lines of the picture or an end have none: Start refuses those (launch.slider_off_problems)."""
+    notes = {}
+    for k, key in launch.SLIDER_BOXES if launch.slider_picture_lines(desc) else ():
+        rows = [(n, x.strip()) for n, x in enumerate(str(values.get(key) or "").splitlines(), 1) if x.strip()]
+        timed = [(n, x[len(launch.slider_line_parts(x)[0]):].strip()) for n, x in rows
+                 if launch.slider_line_parts(x)[0] != x]
+        if timed and (k == "anchors" or len(rows) == 1):    # numbered as the box shows them, blank rows too
+            said = "; ".join(f"line {n}: \"{e}\"" if len(rows) > 1 else f"\"{e}\"" for n, e in timed)
+            notes[key] = (f"With \"{launch.BY_EPOCH}\" off, an @ and the epochs after it at the end of a line are part "
+                          f"of its words, and the line trains on every epoch ({said}). Tick it to give lines epochs of "
+                          "their own.")
+    return notes
+
+
+def _slider_plan(desc, values):
+    """A prompt slider's notes - under a box of the picture or an end, the first epoch it has no line on - and what the
+    boxes make epoch by epoch, for the plan on the Slider card (app.js drawSliderPlan): a section for each run of
+    alike epochs (the same prompts and the same training: its Clean-end share and rate, clean_share_at, and its push
+    strength), each box's lines on then with their epochs, and whether its picture renders new practice pictures."""
+    boxes = launch.slider_boxes(values)       # as typed
+    # as they join in, the trainer's order - and the notes', which name lines by their words: a line's place in its
+    # box changes as the lines take their places by epoch (app.js promptLines)
+    ordered = {k: launch.slider_sort(t) for k, t in boxes.items()}
+    try:
+        epochs = max(0, int(str(values.get("MAX_TRAIN_EPOCHS") or "").strip()))
+    except ValueError:
+        epochs = 0
+    notes = {}
+    for k, key in launch.SLIDER_BOXES[:3]:
+        gap = launch.slider_gap(boxes[k], epochs) if boxes[k].strip() else None
+        if gap:                              # every epoch with none, so a line every other epoch shows as such
+            said, _many = launch.slider_epochs_said(launch.slider_gaps(boxes[k], epochs), most=5)
+            notes[key] = (f"No line is on at {said[:1].lower() + said[1:]}: every epoch needs one here. Let a line "
+                          "cover them (a line with no epochs is on for the whole run), or give them a line of their "
+                          "own - an empty line isn't on. Start won't run until each has one.")
+    for k, key in launch.SLIDER_BOXES:      # lines whose epochs don't fit the run: never on, or cut short
+        late = "; ".join(launch.slider_epoch_notes(ordered[k], epochs))
+        if late:
+            notes[key] = " ".join(x for x in (notes.get(key, ""), late[:1].upper() + late[1:] + ".") if x)
+    over = launch.slider_overlap(ordered["base"], epochs)
+    if over:                                 # picture lines on together train as one description: what it reads
+        e, words = over
+        notes["FAMILY_SLIDER_BASE"] = " ".join(x for x in (
+            notes.get("FAMILY_SLIDER_BASE", ""),
+            f"{launch.slider_numbers([launch.slider_line_name(w) for w in words])} are on together at epoch {e} and "
+            f"train as one description: \"{launch.slider_join(words)}\". For different pictures, give them epochs of "
+            "their own.") if x)
+    for k, key in launch.SLIDER_BOXES[1:3]:  # an end's lines on together train as one prompt: what it reads, and when
+        over = launch.slider_overlap(ordered[k], epochs)
+        if over:
+            e, words = over
+            said, _many = launch.slider_epochs_said([x for x in range(e, epochs + 1)
+                                                     if launch.slider_lines_on(ordered[k], x) == words], most=5)
+            notes[key] = " ".join(x for x in (
+                notes.get(key, ""),
+                f"{launch.slider_numbers([launch.slider_line_name(w) for w in words])} are on together at "
+                f"{said[:1].lower() + said[1:]} and train as one prompt: \"{launch.slider_join(words)}\". For a "
+                "change, give them epochs of their own.") if x)
+    cond = [clean_share_at(desc, values, e) for e in range(1, epochs + 1)]
+    # the push strength each epoch trains at, as the trainer reads the box (one number, a Split or a Slide): 3 or 2.5
+    guidance = str(values.get("FAMILY_SLIDER_GUIDANCE") or "").strip() or f"{desc.slider_guidance:g}"
+    push = [launch.slider_push_at(guidance, e) for e in range(1, epochs + 1)]
+    push = [None if x is None else f"{round(x, 2):g}" for x in push]
+    how = list(zip(cond, push))
+    plan = []
+    for seg in launch.slider_plan(ordered, epochs):    # each run of alike prompts, cut where its training changes
+        for e in range(seg[0], seg[1] + 1):
+            if e > seg[0] and how[e - 1] == how[e - 2]:
+                plan[-1] = (plan[-1][0], e, *seg[2:])
+            else:
+                plan.append((e, e, *seg[2:]))
+
+    def trains(a):          # how a section trains: its Clean-end share and rate, the schedule's, and its push strength
+        c = cond[a - 1]
+        return {"detail": c[0] if c else None, "half": bool(c and c[1]), "push": push[a - 1]}
+    view = [{"from": a, "to": b, "new_pictures": bool(n) and base != plan[n - 1][2],
+             **trains(a),
+             "changed": [k for i, k in ((3, "pos"), (4, "neg"), (5, "anchors")) if n and seg[i] != plan[n - 1][i]],
+             "lines": {k: [{"text": t, "key": key} for t, key in launch.slider_lines_on(ordered[k], a, keys=True)]
+                       for k in ("base", "pos", "neg", "anchors")}}
+            for n, seg in enumerate(plan) for a, b, base in [seg[:3]]]
+    return notes, view
+
 
 
 def _mask_note(desc, values, image_folder):
@@ -1648,6 +1842,7 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
         TRAINING_MAPS=b("TRAINING_MAPS") and desc.training_maps,
         SAVE_STATE_ON_TRAIN_END=b("SAVE_STATE_ON_TRAIN_END"), FAMILY_FT_FUSED=b("FAMILY_FT_FUSED"),
         FAMILY_SLIDER_ULTRA=b("FAMILY_SLIDER_ULTRA"),
+        FAMILY_SLIDER_BY_EPOCH=bool(v.get("FAMILY_SLIDER_BY_EPOCH")),   # Change the prompts...: off when missing
         FAMILY_FAST_ID=b("FAMILY_FAST_ID") and kind == "standard" and bool(desc.identity_blocks),
         **({"FAMILY_TRAIN_AREA": s("TARGET_LAYERS") or desc.train_areas[0][0],
             "FAMILY_TRAIN_BLOCKS": [k for k, on in (v.get("TRAINING_BLOCKS") or {}).items() if on]}

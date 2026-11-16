@@ -81,7 +81,7 @@ def test_live_prompts_carry_anchors(tmp_path):
         {"base": "a photo of a woman,", "pos": "long hair", "neg": "short hair", "guidance": 3,
          "anchors": ["a photo of a man"]}), encoding="utf-8")
     got = _read_slider_live(str(tmp_path))
-    assert got["anchors"] == ["a photo of a man"] and got["guidance"] == 3.0
+    assert got["anchors"] == ["a photo of a man"] and got["guidance"] == "3"      # the push strength's plan, as text
     (tmp_path / ".slider_prompts.json").write_text(json.dumps(
         {"base": "b", "pos": "p", "neg": "n", "guidance": 1}), encoding="utf-8")
     assert _read_slider_live(str(tmp_path))["anchors"] == []      # an older panel's request: no anchors

@@ -2437,6 +2437,28 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 .slider-live-row input, .slider-live-row textarea { width: 100%; box-sizing: border-box; }
 .slider-live-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .slider-live-actions input.w-port { width: 72px; }
+/* The by-epoch switch: each box as numbered lines with their own epochs, and the push strength as Single, Split
+   or Slide - compact versions of the Slider card's (app.js slLines, slPush) */
+#sliderLive[data-look="lines"] .slider-live-row { align-items: start; }
+#sliderLive[data-look="lines"] .slider-live-row > span { padding-top: 6px; }
+#sliderLive .sl-edit .prompt-lines { margin: 0; }
+/* ... a line: its number, its words with their bar under them (app.js slLines, as the Slider card's), its epochs and
+   ×, level with the words - on a narrow card the epochs go under the words */
+#sliderLive .sl-edit .prompt-line { align-items: flex-start; flex-wrap: wrap; padding-top: 3px; }
+#sliderLive .sl-edit .prompt-num { padding-top: 4px; }
+#sliderLive .sl-edit .prompt-main { flex: 1 1 180px; }
+#sliderLive .sl-edit input.sl-words { width: 100%; min-width: 0; padding: 5px 4px; border: none; border-radius: 0;
+  background: transparent; box-shadow: none; }
+#sliderLive .sl-edit .prompt-bar { margin-bottom: 3px; }
+#sliderLive .sl-edit .prompt-eps { padding: 0 4px; }
+#sliderLive .sl-edit .prompt-del { height: 24px; margin-top: 0; }
+#sliderLive .sl-edit .prompt-eps input, #sliderLive .sl-push input.sl-num { width: 46px; min-width: 0; padding: 2px 4px;
+  text-align: center; }
+#sliderLive .sl-add { margin-top: 4px; }
+#sliderLive .sl-push { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+#sliderLive .sl-push input[type="radio"] { width: auto; }
+#sliderLive .sl-push-line, #sliderLive .sl-push .cad-pair { display: inline-flex; flex-wrap: wrap; align-items: center;
+  gap: 6px; }
 @media (max-width: 760px) { .slider-live-row { grid-template-columns: 1fr; gap: 4px; } }
 .datasets-elsewhere-hint { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
   color: var(--text-secondary); margin-top: 4px; }
@@ -2644,10 +2666,95 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 .form-row .prompt-line textarea { flex: 1 1 auto; width: auto; max-width: none; min-height: 32px; resize: none;
   overflow: hidden; background: transparent; border: none; border-radius: 0; box-shadow: none; padding: 6px 4px; }
 .form-row .prompt-line textarea:focus { background: color-mix(in srgb, var(--accent) 8%, transparent); box-shadow: none; }
+/* a picture model's prompt slider: the Change the prompts switch on a line of its own, so the boxes after it lay out
+   as before with the switch off (on, its boxes of lines and the push strength's Split and Slide go across the card by
+   their kind) */
+.section-card[id^="sec-"] > .card-content > .form-row[data-key="FAMILY_SLIDER_BY_EPOCH"] { grid-column: 1 / -1; }
+/* Change the prompts during the run (advanced): its boxes of lines, the push strength and the plan one under another,
+   each set apart by some room and a line above (the push strength's box has its own frame); with it off, as before */
+.section-card[id^="sec-"] .form-row:is([data-look="by_epoch"], [data-key="_slider_plan"]) { margin-top: 12px; }
+.section-card[id^="sec-"] .form-row:is([data-look="by_epoch"], [data-key="_slider_plan"]):not(.kind-cadence) {
+  padding-top: 14px; border-top: 1px solid var(--border); }
+.section-card[id^="sec-"] .form-row[data-look="by_epoch"] .prompt-actions { margin-top: 8px; }
+/* ... its boxes' headings, 1 to 5, in one style: the push strength's (a Split box's title) as the others' labels */
+.section-card[id^="sec-"] .form-row.kind-cadence[data-look="by_epoch"] .cad-title { color: var(--text-secondary);
+  font-size: 12.5px; }
+.section-card[id^="sec-"] .form-row.kind-cadence[data-look="by_epoch"] .cad-title::after { content: ":"; }
+/* ... a long hint: its first sentence, then a small More that shows the rest (and Less) - app.js moreHint */
+.hint-more-link { font-size: 11.5px; font-weight: 600; white-space: nowrap; text-decoration: none; }
+.hint-more-link:hover { text-decoration: underline; }
+/* ... its switch: its hint as every row's while off, the first sentence and More while on */
+.form-row.hint-more-on:has(input:checked) > .row-hint, .form-row.hint-more-on:not(:has(input:checked)) > .hint-more {
+  display: none; }
+/* a prompt slider's line: its words box shows it takes typing - a faint tint when empty or pointed at */
+.form-row .prompt-timeline .prompt-line textarea:placeholder-shown:not(:focus),
+.form-row .prompt-timeline .prompt-line textarea:hover:not(:focus) {
+  background: color-mix(in srgb, var(--text-muted) 9%, transparent); border-radius: 4px; }
 .prompt-del { flex: 0 0 28px; height: 28px; margin: 2px 2px 0 0; background: none; border: none; cursor: pointer;
   color: var(--text-muted); font-size: 14pt; line-height: 1; visibility: hidden; }
 .prompt-line:hover .prompt-del, .prompt-line:focus-within .prompt-del { visibility: visible; }
 .prompt-del:hover { color: var(--text-primary); }
+/* a prompt slider's lines: ▲ ▼, the epochs each is on for beside it, a bar under it across the run in its epochs'
+   colour (the same colour as its words in the plan), and that colour down its left edge */
+.prompt-eps { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; padding: 3px 4px 0 6px;
+  color: var(--text-muted); font-size: 9pt; }
+.form-row .prompt-eps input[type="text"] { width: 46px; min-width: 0; padding: 2px 4px; text-align: center; }
+.prompt-main { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; }
+.prompt-timeline .prompt-line { flex-wrap: wrap; }      /* a narrow card (a phone): the epochs go under the words */
+.prompt-bar { position: relative; height: 5px; margin: 0 4px 6px; border-radius: 3px;
+  background: color-mix(in srgb, var(--text-muted) 18%, transparent); }
+.prompt-bar > i { position: absolute; top: 0; bottom: 0; border-radius: 3px; background: var(--c); }
+.prompt-line.prompt-timed { box-shadow: inset 4px 0 0 var(--c); }
+/* the line you left as the lines took their places: a short glow, and its number stays marked */
+.prompt-line.prompt-landed { animation: prompt-landed 1.6s ease-out; }
+.prompt-line.prompt-landed .prompt-num { color: var(--accent); font-weight: 700; }
+@keyframes prompt-landed { from { background-color: color-mix(in srgb, var(--accent) 24%, transparent); } }
+/* a line on every few epochs: faint on the epochs in its range it's off */
+.prompt-bar > i.off { background: color-mix(in srgb, var(--c) 22%, transparent); }
+/* the epochs a line shares with a line above it: sparse dashes in its bar, in its colour */
+.prompt-bar > i.dash { background: repeating-linear-gradient(90deg, var(--c) 0 4px, transparent 4px 11px); }
+/* the Run card: a thin mark across a line's bar at the epoch in progress (app.js showBar) */
+.prompt-bar > .prompt-at { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px;
+  border-radius: 1px; background: var(--text-primary); }
+.prompt-move { display: flex; flex-direction: column; flex: 0 0 auto; padding-top: 3px; }
+/* ▲ ▼: each one a 20 x 20 px target */
+.prompt-move button { display: flex; align-items: center; justify-content: center; flex: none; width: 20px;
+  height: 20px; padding: 0; background: none; border: none; border-radius: 3px; color: var(--text-muted);
+  cursor: pointer; font-size: 7.5pt; line-height: 1; }
+.prompt-move button:hover { color: var(--text-primary);
+  background: color-mix(in srgb, var(--text-muted) 14%, transparent); }
+.prompt-move button:disabled { visibility: hidden; }
+/* a line's empty words box: what to type - muted */
+.form-row .prompt-timeline .prompt-line textarea::placeholder { color: var(--text-muted); opacity: 1; }
+/* the plan: a folded section for each run of alike epochs */
+.slider-plan { display: flex; flex-direction: column; gap: 4px; width: 100%; margin: 4px 0 6px; }
+.plan-seg { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-inset); }
+.plan-seg > summary { cursor: pointer; padding: 6px 10px; display: flex; flex-wrap: wrap; align-items: baseline;
+  gap: 4px 10px; }
+.plan-seg[open] > summary { border-bottom: 1px solid var(--border); }
+.plan-seg.plan-now { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.plan-seg.plan-past { opacity: 0.6; }       /* the run's epochs already trained */
+.plan-gist { color: var(--text-secondary); font-size: 9pt; min-width: 0; }
+.plan-line { padding: 5px 10px; line-height: 1.5; }
+.plan-end, .slider-now .plan-end { display: inline-block; min-width: 86px; color: var(--text-muted); font-size: 9pt;
+  font-weight: 600; }
+/* the +1 and -1 ends told apart at a glance (the by-epoch switch): "+1" / "−1" as a tag in its end's colour on the
+   box's heading, in the plan and on the Run card, and the box of lines edged in it - the theme's data colours, which
+   every theme (Colour-safe too) keeps apart */
+.end-pos { --end: var(--data-teal); }
+.end-neg { --end: var(--data-orange); }
+.end-tag { display: inline-block; padding: 0 7px; border-radius: 999px; font-weight: 700; line-height: 1.45;
+  color: var(--text-primary); background: color-mix(in srgb, var(--end) 30%, transparent);
+  border: 1px solid color-mix(in srgb, var(--end) 75%, transparent); }
+.prompt-lines.end-zone { border-color: color-mix(in srgb, var(--end) 55%, var(--border));
+  border-left: 3px solid var(--end); }
+.plan-word { color: var(--c); }
+.plan-missing { color: var(--warning); }
+.plan-badge { font-size: 8.5pt; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border);
+  color: var(--text-secondary); }
+.plan-badge-now { border-color: var(--accent); color: var(--accent); }
+.slider-now { margin: 8px 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--bg-inset);
+  line-height: 1.5; }
 
 /* the Training tab's Extras: a lilac divider, and a lilac edge down each card under it */
 .extras-divider { display: flex; align-items: center; gap: 14px; margin: 22px 4px 12px; color: var(--special-soft);

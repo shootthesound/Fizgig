@@ -25,6 +25,7 @@ import torch.nn.functional as F
 
 from fizgig.families.driver import Block, BlockGroup, FamilyDriver, picture_losses, prior_base, weighted_loss, with_prior
 from fizgig.moss_image import sampling as S
+from fizgig.moss_image.clean_share import clean_share
 
 logger = logging.getLogger(__name__)
 
@@ -238,33 +239,16 @@ class MOSSImageDriver(FamilyDriver):
 
     def _share(self, epoch):
         """(the Clean-end share for 1-based `epoch` as typed / computed, "" = the reference schedule; whether the epoch
-        trains at half the LR). lownoise_pct=P: one share. Split, "A:N:B": A% for the first N epochs, then B%. Slide,
-        "A:H:B:E": A% until epoch H, then sliding in a straight line to B% by epoch E (and B% after); "A:H:B:E:R": and
-        after E, the higher of A and B, with every Rth epoch at the lower one, at half the LR (A or B first): those
-        epochs reset structure, but at the full rate they cost likeness each time (Peter, 28 Oct 2026)."""
+        trains at half the LR): lownoise_pct as clean_share.clean_share reads it - one share, a Split or a Slide, a
+        fine-tune's by rotation (ft_cycle) - which the Slider card's plan reads too (form.clean_share_at)."""
         pct = str(self.options.get("lownoise_pct", "") or "").replace("%", "").strip()
-        half = False
-        if ":" in pct:
-            try:
-                parts = [float(x) for x in pct.split(":")]
-                if len(parts) not in (3, 4, 5):
-                    raise ValueError
-            except ValueError:
-                raise RuntimeError(f"Clean-end share '{pct}': give share:epochs:share (75:5:40 = 75% for the first 5 "
-                                   "epochs, then 40%) or share:epoch:share:epoch (75:6:40:10 = 75% until epoch 6, "
-                                   "then slides to 40% by epoch 10; a fifth number R = after that, the higher share, "
-                                   "with every Rth epoch at the lower one)") from None
-            first, until, rest = parts[:3]
-            end = parts[3] if len(parts) >= 4 else until
-            every = int(parts[4]) if len(parts) == 5 else 0
-            cyc = getattr(self, "_ft_cycle", 0)
-            e = -(-int(epoch) // cyc) if cyc else int(epoch)      # a fine-tune: the rotation this epoch is in
-            share = first if e <= until else rest if e >= end else first + (rest - first) * (e - until) / (end - until)
-            if every > 0 and e > end:
-                refresh = (e - end) % every == 0      # the refresh epoch is at the lower share, the rest at the higher
-                share = min(first, rest) if refresh else max(first, rest)
-                half = first != rest and refresh
-            pct = f"{round(share, 2):g}"
+        try:
+            pct, half = clean_share(pct, epoch, getattr(self, "_ft_cycle", 0))
+        except ValueError:
+            raise RuntimeError(f"Clean-end share '{pct}': give share:epochs:share (75:5:40 = 75% for the first 5 "
+                               "epochs, then 40%) or share:epoch:share:epoch (75:6:40:10 = 75% until epoch 6, "
+                               "then slides to 40% by epoch 10; a fifth number R = after that, the higher share, "
+                               "with every Rth epoch at the lower one)") from None
         return pct, half
 
     def step_policy(self, batch, epoch):

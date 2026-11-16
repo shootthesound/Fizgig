@@ -2688,7 +2688,7 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 /* ... its switch: its hint as every row's while off, the first sentence and More while on */
 .form-row.hint-more-on:has(input:checked) > .row-hint, .form-row.hint-more-on:not(:has(input:checked)) > .hint-more {
   display: none; }
-/* ... Adjust each section: a short muted line under the switch */
+/* ... Auto-fill epochs, Pair +1 and -1 lines and Adjust each section: a short muted line under the switch */
 .form-row div.prompt-head:has(> .prompt-switch) { align-items: flex-start; }
 .prompt-switch { margin: 0 0 0 auto; max-width: min(100%, 420px); }
 .prompt-switch > .prompt-autofill { margin: 0; }
@@ -2731,13 +2731,32 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 .prompt-move button:hover { color: var(--text-primary);
   background: color-mix(in srgb, var(--text-muted) 14%, transparent); }
 .prompt-move button:disabled { visibility: hidden; }
-/* Adjust each section, a switch on the right of the plan's heading - div.prompt-head, so the Samples previews grid's
-   th.prompt-head keeps its own look */
+/* Auto-fill epochs, an optional switch on the right of a prompt slider's first box's heading, and each box's Paste
+   several lines under its lines (titled, one row growing to its text, its Add button beside it); the heads are
+   div.prompt-head, so the Samples previews grid's th.prompt-head keeps its own look */
 div.prompt-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 16px; }
 .prompt-autofill { width: fit-content; margin: 0 0 0 auto; color: var(--text-secondary); font-size: 12.5px;
   font-weight: 600; cursor: pointer; }
-/* a line's empty words box: what to type - muted */
+.prompt-quickbox { margin: 2px 0 0; }
+.prompt-quick-title { color: var(--text-secondary); font-size: 9pt; font-weight: 600; margin: 0 0 3px 2px; }
+.prompt-quick-row { display: flex; align-items: flex-start; gap: 6px; }
+.prompt-quick-row > .btn { flex: 0 0 auto; }
+.form-row textarea.prompt-quick { flex: 1 1 auto; width: auto; min-width: 0; max-width: none; min-height: 32px;
+  margin: 0; resize: none; overflow: hidden; }
+/* a line's empty words box: what to type, or a pair's hint - muted */
 .form-row .prompt-timeline .prompt-line textarea::placeholder { color: var(--text-muted); opacity: 1; }
+/* Pair +1 and -1 lines, on: "↔" before a pair's epochs, the chain button with its name on every line (Unpair, or Pair
+   on a line on its own), a line on its own set in by a tab (its letter in place of a number), and the partner of the
+   line pointed at marked */
+.prompt-pair { color: var(--text-muted); font-size: 8.5pt; white-space: nowrap; margin-right: 2px; }
+.prompt-pair:empty { display: none; }
+.prompt-chain { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px 1px 4px;
+  margin-right: 4px; background: none; border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text-secondary); font-size: 8.5pt; white-space: nowrap; cursor: pointer; }
+.prompt-chain:hover { color: var(--text-primary); background: color-mix(in srgb, var(--text-muted) 14%, transparent); }
+.prompt-chain svg { width: 14px; height: 14px; }
+.prompt-pairs > .prompt-line[data-alone] { padding-left: 28px; }
+.prompt-line.prompt-partner { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 /* the plan: a folded section for each run of alike epochs */
 .slider-plan { display: flex; flex-direction: column; gap: 4px; width: 100%; margin: 4px 0 6px; }
 .plan-seg { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-inset); }

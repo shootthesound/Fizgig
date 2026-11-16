@@ -965,8 +965,8 @@ function moreHint(text, open = false) {
   h.append(t.slice(0, at), rest, " ", more);
   return h;
 }
-// a switch on the right of a prompt slider's heading (Adjust each section, on the plan's), with a short muted line
-// under it that says what it does without a hover: a text, or a hint with its More
+// a switch on the right of a prompt slider's heading (Auto-fill epochs, Pair +1 and -1 lines, Adjust each section),
+// with a short muted line under it that says what it does without a hover: a text, or a hint with its More
 function switchSub(label, sub) {
   const s = typeof sub === "string" ? el("div", {class: "field-hint", text: sub}) : sub;
   if (s) s.classList.add("prompt-switch-sub");
@@ -981,6 +981,10 @@ function endTag(text, k) {
 }
 // a prompt slider's line ends in its epochs: "@5-8", "@5-", "@-8", and "/3" for every 3rd (launch.py's _SLIDER_AT)
 const SLIDER_AT = /\s*@\s*(\d*)\s*(?:-\s*(\d*))?\s*(?:\/\s*(\d*))?\s*$/;
+// Auto-fill epochs (an optional switch by a prompt slider's boxes, kept in this browser): as you type a line's epochs
+// the other box of that line fills in; no other line ever changes
+let autoFill = false;
+try { autoFill = localStorage.getItem("fizgig.autoFillEpochs") === "1"; } catch (e) { /* private window: off */ }
 // a line's epochs as saved after its words, [from, to, every] -> " @5-8", " @5-/3" (launch.py's slider_line_parts):
 // numbers only, and "every" only above 1 (empty or 1 is every epoch: a lone "@-/1" stayed in the prompt's words)
 function epochsText(eps) {
@@ -1058,13 +1062,95 @@ function showBar(it, b, run, at = 0) {
   it.style.setProperty("--c", b.colour);
   it.classList.toggle("prompt-timed", b.said);
 }
+// Pair +1 and -1 lines (FAMILY_SLIDER_PAIRED, the -1 box's switch): a box's pairs from the other box's - its paired
+// lines [{id, text, epochs: [from, to, every]}], in order - and its own words by pair id: a line for each, in its
+// order and on its epochs, with its own words (a new pair: none; a pair gone there goes here too), as saved. Either
+// box follows the other this way; a line on its own is in one box only
+function pairedLines(plus, words) {
+  return plus.map((p) => (words[p.id] ?? "") + epochsText(p.epochs));
+}
+// the pairs kept between draws (form.py r.pair.keep, FAMILY_SLIDER_PAIRS), from the boxes' lines (each as lineText) and
+// the pairs as [+1 line's place, -1 line's place] in the +1 box's order: [[place, text, place, text], ...] as JSON
+// ("": never paired, so the first switch-on pairs line by line)
+function pairsText(plus, minus, pairs) {
+  return JSON.stringify(pairs.map(([i, j]) => [i, plus[i], j, minus[j]]));
+}
+// ... and the pairs back, for the boxes' lines as they are now: each kept line where it was if its text is still there,
+// else the nearest line with its text. A pair with a line found nowhere is gone, its other line on its own
+function pairsFrom(text, plus, minus) {
+  let kept = [];
+  try { kept = JSON.parse(text); } catch (e) { /* none kept */ }
+  kept = Array.isArray(kept) ? kept.filter((k) => Array.isArray(k) && k.length === 4) : [];
+  const find = (lines, a) => {              // each kept line's place now (-1: found nowhere)
+    const used = new Set(), got = kept.map((k) => { const i = Number.isInteger(k[a]) ? k[a] : -1;
+      if (i < 0 || lines[i] !== k[a + 1] || used.has(i)) return -1;
+      used.add(i); return i; });
+    return got.map((g, n) => {
+      if (g >= 0) return g;
+      const at = Number(kept[n][a]) || 0;
+      let best = -1;
+      lines.forEach((t, i) => {
+        if (t === kept[n][a + 1] && !used.has(i) && (best < 0 || Math.abs(i - at) < Math.abs(best - at))) best = i;
+      });
+      used.add(best);
+      return best;
+    });
+  };
+  const p = find(plus, 0), m = find(minus, 2);
+  return kept.flatMap((k, n) => (p[n] >= 0 && m[n] >= 0 ? [[p[n], m[n]]] : []));
+}
+// a line of a box as the pairs keep it: its words (trimmed, as the Run card's Apply sends them) and its epochs
+const lineText = (it) => it.querySelector("textarea").value.trim() +
+  epochsText([...it.querySelectorAll(".prompt-eps input")].map((i) => i.value.trim()));
+// a line on its own is called by a letter in its box: A, B … Z, AA, AB …
+const pairLetter = (k) => (k >= 26 ? pairLetter(Math.floor(k / 26) - 1) : "") + String.fromCharCode(65 + (k % 26));
+// the chain button on a line (Lucide's link and unlink)
+const PAIR_ICON = {pair: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+  'stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 ' +
+  '1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
+unpair: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" ' +
+  'stroke-linejoin="round"><path d="m18.84 12.25 1.72-1.71h-.02a5.004 5.004 0 0 0-.12-7.07 5.006 5.006 0 0 0-6.95 ' +
+  '0l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5.004 5.004 0 0 0 .12 7.07 5.006 5.006 0 0 0 6.95 0l1.71-1.71"/>' +
+  '<line x1="8" x2="8" y1="2" y2="5"/><line x1="2" x2="5" y1="8" y2="8"/><line x1="16" x2="16" y1="19" y2="22"/>' +
+  '<line x1="19" x2="22" y1="16" y2="16"/></svg>'};
+// the boxes of a pair as drawn now, by key (promptLines), and the -1 box's row that follows a box (form.py: its pair
+// names it). The +1 box draws before the -1 box, so they pair up again once the whole draw is done (pairFresh: till
+// then, the pairs kept stay as they are)
+const pairBoxes = {};
+let pairSeq = 0, pairDue = false, pairFresh = false;
+const pairFollower = (key) => S.fam.form.sections.flatMap((s) => s.rows)
+  .find((x) => x && x.by_epoch && x.by_epoch.pair && x.by_epoch.pair.follows === key);
+function pairSoon() {
+  pairFresh = true;
+  if (pairDue) return;
+  pairDue = true;
+  queueMicrotask(() => {
+    pairDue = false; pairFresh = false;
+    Object.values(pairBoxes).forEach((b) => { if (b.pairUp && b.list.isConnected) b.pairUp(true); });
+  });
+}
+// paired, the lines take their places by epoch as pairs: the +1 box's all in order (its pairs' order is the -1 box's
+// too), then the -1 box's lines on their own among the pairs. True when a line moved
+function pairSort(p, m) {
+  p.follow(m.lines());                      // the -1 box's new pairs (a paste, Paste several lines) there first
+  const moved = p.order();
+  if (moved) { p.decorate(); p.save(); }    // its save brings the -1 box's pairs in its order
+  const placed = m.place();
+  if (placed) { m.decorate(); m.save(); }
+  return moved || placed;
+}
+// Undo in a prompt slider's boxes, one step: what both boxes of a pair (or the one box) and the pairs kept were before
+// a change that took words or lines away, and the Undo button by that box's buttons. The next change drops it - not
+// the change itself, nor lines taking their places as you leave one (lineUndoHold)
+let lineUndo = null, lineUndoHold = false;
+const lineUndoDrop = () => { if (lineUndo) lineUndo.btn.style.display = "none"; lineUndo = null; };
 
 // a list of prompts, one numbered box each (the gallery's Prompt 1, 2, 3…), saved as the one-per-line text it always was.
 // With epochs (a prompt slider's boxes) each line has the epochs it's on for beside it, saved after an @ ("smiling @5-8",
 // launch.py's slider_line_parts), and a bar under it across the run, in its epochs' colour. The lines with epochs keep
 // in order of when they start (then the longer first), a line taking its place as you leave it; a line with no epochs
 // stays where you put it. ▲ ▼ order lines with the same epochs (the order lines on together join in) and move past a
-// line with no epochs
+// line with no epochs. Paste several lines, under them, takes several prompts at once
 function promptLines(r, wrap) {
   const endK = r.epochs ? {FAMILY_SLIDER_POS: "pos", FAMILY_SLIDER_NEG: "neg"}[r.key] : undefined;  // +1, -1: own colour
   const list = el("div", {class: "prompt-lines" + (r.epochs ? " prompt-timeline" : "") +
@@ -1074,24 +1160,83 @@ function promptLines(r, wrap) {
   const eps = (item) => [...item.querySelectorAll(".prompt-eps input")].map((i) => i.value.trim());
   const suffix = (item) => epochsText(eps(item));          // saved after the words
   const value = (item) => item.querySelector("textarea").value + suffix(item);
-  const save = () => onValue(r, items().map(value).join("\n"));
+  // Pair +1 and -1 lines (form.py: r.pair on the -1 box - its switch, the box it follows and the key the pairs are kept
+  // in): while on, a pair is a line in each box, in the same order and on the same epochs (the same pair id on both,
+  // the same number shown), each with its own words; a change to a pair in either box goes to the other as it's saved,
+  // and the +1 box's order is the pairs' order. A line on its own (data-alone: a letter, set in) is in one box only.
+  // The pairs are kept as the boxes change (keepPairs), and found again as they draw (pairUp)
+  const mate = r.epochs ? pairFollower(r.key) : null;           // the -1 box's row, when this is the +1 box
+  const follows = () => !!(r.pair && S.values[r.pair.key]);     // this is the -1 box, paired
+  const leads = () => !!(mate && S.values[mate.by_epoch.pair.key]);
+  const live = (b) => (b && b.list.isConnected && list.isConnected ? b : null);
+  const mateBox = () => (r.pair ? live(pairBoxes[r.pair.follows]) : mate ? live(pairBoxes[mate.key]) : null);
+  const other = () => (follows() || leads() ? mateBox() : null);   // the other box of the pair, paired
+  // each pair's line as the other box follows it, and which of its epoch boxes Auto-fill filled in (they go along)
+  const lines = () => items().filter((it) => !it.dataset.alone).map((it) => ({id: it.dataset.pair,
+    text: it.querySelector("textarea").value, epochs: eps(it), auto: ins(it).map((x) => filled.has(x))}));
+  // saved (a change drops Undo, but the one it undoes and lines taking their places), and the other box follows (when
+  // that changed it, the -1 box names its pairs again), and the pairs kept
+  const store = () => { const v = items().map(value).join("\n");
+    if (!lineUndoHold && v !== String(S.values[r.key] ?? "")) lineUndoDrop();
+    onValue(r, v); };
+  const save = () => { store(); const o = other();
+    if (o && o.follow(lines()) && r.pair) decorate();
+    if (r.pair) keepPairs(); else if (mate) { const m = mateBox(); if (m) m.keepPairs(); } };
+  // a pair's line in the other box: pointing at a line marks it, and in either box a line whose partner has words
+  // doesn't join the one above (they'd go)
+  const mateOf = (item) => { const b = !item.dataset.alone && other();
+    return b && b.items().find((x) => !x.dataset.alone && x.dataset.pair === item.dataset.pair); };
+  const partner = (item, on) => { const it = mateOf(item); if (it) it.classList.toggle("prompt-partner", on); };
+  const mateSaid = (item) => { const it = mateOf(item); return !!(it && it.querySelector("textarea").value.trim()); };
+  // what each line is called: its number, or paired its pair's number (the same in both boxes, in the +1 box's order)
+  // and a letter for a line on its own - one run of letters over both boxes, the +1 box's first (A, B in the +1 box,
+  // C in the -1 box), so a line on its own in each box never reads as a pair
+  const labels = () => {
+    const o = other(), all = items();
+    if (!o) return all.map((it, i) => String(i + 1));
+    const ref = (r.pair ? o.items() : all).filter((x) => !x.dataset.alone).map((x) => x.dataset.pair);
+    let k = r.pair ? o.items().filter((x) => x.dataset.alone).length : 0;
+    return all.map((it) => (it.dataset.alone ? pairLetter(k++) : String(ref.indexOf(it.dataset.pair) + 1 || "?")));
+  };
   // a line's epochs as launch.slider_line_parts reads the saved line (lineParts), as [from, until, every] (lineSpan)
   // and its key for the colour (lineKey)
   const parts = (item) => lineParts(value(item));
   const span = (item) => lineSpan(parts(item));
   const key = (item) => lineKey(parts(item));
-  // two lines on just the same epochs (no epochs: the whole run)
+  // two lines on just the same epochs (no epochs: the whole run) - a line of either box
   const same = (x, y) => String(span(x)) === String(span(y));
-  // Backspace at a line's start joins it into the line above only when both are on the same epochs: else nothing
-  // happens
+  // Backspace at a line's start joins it into the line above only when both are on the same epochs and, paired, its
+  // partner has no words (it would go too): else nothing happens
   const joins = (item) => { const up = item.previousElementSibling;
-    return !!up && (!r.epochs || same(up, item)); };
+    return !!up && (!r.epochs || same(up, item)) && !mateSaid(item); };
   const grow = (b) => {                     // to its text; a hidden tab measures 0, so it waits to be seen
     if (!b.offsetParent) return;
     b.style.height = "auto"; b.style.height = b.scrollHeight + 2 + "px";
   };
-  new ResizeObserver(() => boxes().forEach(grow)).observe(list);     // shown at last, or a wider window
-  const renumber = () => list.querySelectorAll(".prompt-num").forEach((n, i) => { n.textContent = i + 1; });
+  // Paste several lines (a prompt slider's boxes, under the lines): several prompts typed or pasted at once, one a
+  // line, each a line of its own after the others
+  const QUICK_HINT = "Type or paste several prompts, one a line - each becomes a line of its own after the others, " +
+    "then set its epochs";
+  const quick = r.epochs ? el("textarea", {class: "prompt-quick", rows: 1, spellcheck: "false",
+    "aria-label": "Paste several lines", oninput: () => grow(quick),
+    placeholder: QUICK_HINT,
+    title: "Add, clicking away or Ctrl+Enter makes each line here a line of its own above. A line can bring its " +
+      "epochs with it, e.g. smiling @1-5 (epochs 1 to 5; \"@5\" is from epoch 5 to the end, \"@5-5\" epoch 5 " +
+      "only)"}) : null;
+  new ResizeObserver(() => [...boxes(), quick].forEach((b) => b && grow(b))).observe(list);   // shown, a wider window
+  // an empty line's words box: paired, a pair's line says its pair trains only the other end's words for now
+  const waits = (it, name) => { const m = mateOf(it), end = r.pair ? "+1" : "-1";
+    return !m ? "Type this line's prompt…" : m.querySelector("textarea").value.trim() ?
+      `No words yet: pair ${name} trains only its ${end} words` :
+      `No words yet in either box: pair ${name} trains nothing`; };
+  // each line's number or letter, and what its empty words box says - the other box's too, as they read this one's
+  // lines (its letters run on from the +1 box's, its hints follow their partners' words)
+  const renumber = (also = true) => {
+    const l = labels(), o = other();
+    items().forEach((it, i) => { it.querySelector(".prompt-num").textContent = l[i];
+      if (r.epochs) it.querySelector("textarea").placeholder = waits(it, l[i]); });
+    if (also && o) o.renumber(false);
+  };
   // the line you left as the lines took their places: a short glow, and its number stays marked until another moves
   const landed = (it) => {
     list.querySelectorAll(".prompt-landed").forEach((x) => x.classList.remove("prompt-landed"));
@@ -1101,10 +1246,15 @@ function promptLines(r, wrap) {
   // the lines with epochs, by start, then the longer first (a line on longer leads the one that starts with it: "woman
   // @1-10" and "red coat @1-5" join as "woman, red coat"), then how often (lines with the same epochs keep their
   // order), in the places they hold among them; a line with no epochs keeps its place: it's on all run, so it sits
-  // where you put it. True when a line moved
+  // where you put it. Paired, as pairs (pairSort)
+  function sortLines() {
+    const o = other(), me = pairBoxes[r.key];
+    if (o && me) return r.pair ? pairSort(o, me) : pairSort(me, o);
+    return order();
+  }
   const cmp = (x, y) => { const [a1, b1, n1] = span(x), [a2, b2, n2] = span(y);
     return (a1 - a2) || (b1 === b2 ? 0 : b1 > b2 ? -1 : 1) || (n1 - n2); };
-  function sortLines() {
+  function order() {
     const was = items(), slots = was.flatMap((it, i) => (key(it) ? [i] : []));
     const sorted = slots.map((i) => [was[i], i]).sort(([x, i], [y, j]) => cmp(x, y) || i - j);
     const now = [...was];
@@ -1125,21 +1275,66 @@ function promptLines(r, wrap) {
     if (f && document.activeElement !== f) { f.focus(); if (sel) f.setSelectionRange(...sel); }
     return true;
   }
-  // a line's epoch boxes (from, to, every)
+  // the -1 box paired: its lines on their own take their places by epoch among the pairs, whose order is the +1 box's -
+  // each before the first line with epochs that comes after it in sortLines' order (one with no epochs stays where it
+  // is). True when one moved
+  function place() {
+    const was = items(), loose = was.filter((it) => it.dataset.alone && key(it));
+    const seq = was.filter((it) => !loose.includes(it));
+    loose.sort((x, y) => cmp(x, y) || was.indexOf(x) - was.indexOf(y)).forEach((u) => {
+      const at = seq.findIndex((x) => key(x) && cmp(x, u) > 0);
+      seq.splice(at < 0 ? seq.length : at, 0, u);
+    });
+    return arrange(seq);
+  }
+  // the lines in this order (one left out goes), the box you're in keeping its focus and what's selected in it; false
+  // when they were in it
+  function arrange(seq) {
+    const was = items();
+    if (seq.length === was.length && seq.every((it, k) => it === was[k])) return false;
+    const f = list.contains(document.activeElement) ? document.activeElement : null;
+    const sel = f && typeof f.selectionStart === "number" ? [f.selectionStart, f.selectionEnd, f.selectionDirection]
+      : null;
+    seq.forEach((it, k) => { if (list.children[k] !== it) list.insertBefore(it, list.children[k] || null); });
+    [...list.children].slice(seq.length).forEach((it) => it.remove());
+    if (f && f.isConnected && document.activeElement !== f) { f.focus(); if (sel) f.setSelectionRange(...sel); }
+    return true;
+  }
+  // Auto-fill epochs: a line's epoch boxes (from, to, every), and the number in one (null: empty, or not a number)
   const ins = (item) => [...item.querySelectorAll(".prompt-eps input")];
+  const num = (i) => { const t = i.value.trim(); return /^\d+$/.test(t) ? Math.max(1, parseInt(t, 10)) : null; };
+  const timed = (item) => { const [a, b] = ins(item); return num(a) !== null || num(b) !== null; };
+  const filled = new WeakSet();             // the boxes Auto-fill filled in: it may fill them again, never yours
   // an epoch box takes numbers only: a letter left the "@" and the epochs in the prompt's words
   const digits = (i) => { const v = i.value.replace(/\D+/g, "");
     if (v === i.value) return;
     const at = Math.max(0, (i.selectionStart ?? v.length) - (i.value.length - v.length));
     i.value = v; i.setSelectionRange(at, at); };
+  // as you type a line's epochs (never in the box you're typing in): its first sets its last when that is empty, less
+  // or filled in; its last starts it, unless you typed its first, on the first epoch free above it - 1, or just after
+  // the nearest line above with epochs (left as it is when that one runs to the end) - only when that start isn't
+  // after the last you typed: never a range that runs backwards (a start it filled in that is after it now goes)
+  function fill(item, k) {
+    const [a, b] = ins(item), v = num(k ? b : a);
+    const put = (i, x) => { i.value = String(x); filled.add(i); };
+    if (v === null) return;
+    if (!k) { if (num(b) === null || num(b) < v || filled.has(b)) put(b, v); return; }
+    if (num(a) !== null && !filled.has(a)) return;
+    const all = items(), above = all.slice(0, all.indexOf(item)).reverse().find(timed);
+    const end = above ? num(ins(above)[1]) : 0;
+    if (end !== null && end + 1 <= v) put(a, end + 1);
+    else if (filled.has(a) && num(a) > v) { a.value = ""; filled.delete(a); }
+  }
   function decorate() {                     // each line's bar across the run, its colour, ▲ ▼ among lines alike
     if (r.epochs) {
       const maxEp = parseInt(S.values.MAX_TRAIN_EPOCHS, 10) || 0;      // Max Train Epochs, when it's set
       const all = items(), said = (it) => !!it.querySelector("textarea").value.trim();
-      // each line's bar across the run in its epochs' colour (lineBars, showBar) - Leave these alone's lines never
-      // join, so no dashes there
+      const named = labels(), paired = !!((mate || r.pair) && other());       // a pair box, paired
+      if (mate || r.pair) list.classList.toggle("prompt-pairs", paired);
+      // each line's bar across the run in its epochs' colour (lineBars, showBar), a line named as it's shown - Leave
+      // these alone's lines never join, so no dashes there
       const {run, bars} = lineBars(all.map((it) => ({parts: parts(it), said: said(it)})), maxEp,
-        r.key !== "FAMILY_SLIDER_ANCHORS", (j) => j + 1);
+        r.key !== "FAMILY_SLIDER_ANCHORS", (j) => named[j]);
       all.forEach((it, i) => {
         const k = key(it);
         showBar(it, bars[i], run);
@@ -1148,13 +1343,29 @@ function promptLines(r, wrap) {
         const may = (j) => j >= 0 && j < all.length && (key(all[j]) === k || !k || !key(all[j]));
         it.querySelector(".prompt-up").disabled = !may(i - 1);
         it.querySelector(".prompt-down").disabled = !may(i + 1);
+        // a pair box, paired: "↔" on a pair's line, and the chain button with its name, on every line (Unpair; on a
+        // line on its own, Pair)
+        if (mate || r.pair) {
+          const tag = it.querySelector(".prompt-pair"), btn = it.querySelector(".prompt-chain");
+          const alone = !!it.dataset.alone, want = !paired ? "" : alone ? "pair" : "unpair";
+          tag.textContent = paired && !alone ? "↔" : "";
+          tag.title = paired && !alone ? `Pair ${named[i]}: shares its epochs and its place with line ${named[i]} of ` +
+            `the ${r.pair ? "+1" : "-1"} box` : "";
+          btn.style.display = want ? "" : "none";
+          if (want && btn.dataset.k !== want) {
+            btn.dataset.k = want;
+            btn.replaceChildren(svgEl(PAIR_ICON[want]), el("span", {text: alone ? "Pair" : "Unpair"}));
+            btn.title = alone ? "Pair it: adds a partner in the other box, on the same epochs" :
+              "Unpair: this line and its partner go on their own";
+          }
+        }
       });
     }
     renumber();
   }
   if (r.epochs) list._decorate = decorate;  // refreshState: the run's length changed, the bars follow
-  // a line, after `after` or at the end
-  function line(text, after) {
+  // a line, after `after` or at the end; in a pair box `alone` (a line on its own) - by default, when it isn't paired
+  function line(text, after, alone = !other()) {
     const box = el("textarea", {rows: 1, spellcheck: "false", "aria-label": "Prompt",
       placeholder: r.epochs ? "Type this line's prompt…" : undefined});     // a slider line with no words yet: where
     const at = r.epochs ? SLIDER_AT.exec(text) : null;                  // its epochs, in their own boxes
@@ -1165,7 +1376,7 @@ function promptLines(r, wrap) {
     const ep = (v, ph, k) => { const i = el("input", {type: "text", inputmode: "numeric", placeholder: ph,
       title: k === 2 ? "On every Nth epoch of its range, counting from its first: every 2 on epochs 1-6 is epochs 1, " +
         "3 and 5 (its bar is bright on those, faint between). Empty or 1: every epoch of its range." : undefined,
-      oninput: () => { digits(i); decorate(); save(); },
+      oninput: () => { digits(i); filled.delete(i); if (autoFill && k < 2) fill(item, k); decorate(); save(); },
       onchange: () => { i.value = first(i.value); decorate(); save(); }});
       i.value = first(v); return i; };
     const move = (up) => el("button", {class: up ? "prompt-up" : "prompt-down", text: up ? "▲" : "▼", tabindex: -1,
@@ -1183,20 +1394,30 @@ function promptLines(r, wrap) {
       r.epochs ? el("span", {class: "prompt-eps", title: "The epochs this line is on for, counted from 1 as the log " +
         "counts them (empty: from the start, or to the end of the run), and every how many from its first (every 3 " +
         "from 1: epochs 1, 4, 7 …; empty or 1: every epoch). Lines on at the same epochs join into one."},
+        // a pair box: "↔" on a pair's line, and the chain button (decorate)
+        ...(mate || r.pair ? [el("span", {class: "prompt-pair"}), el("button", {class: "prompt-chain", tabindex: -1,
+          style: "display:none", onclick: () => chain(item)})] : []),
         el("span", {text: "epochs"}), ep(has ? at[1] : "", "1", 0), el("span", {text: "–"}),
         ep(has ? at[2] : "", "end", 1), el("span", {text: "every"}), ep(has ? at[3] : "", "1", 2))
         : null,
       el("button", {class: "prompt-del", text: "×", title: "Remove this prompt", tabindex: -1,
-        onclick: () => {
+        onclick: () => undoable(() => {
           if (boxes().length > 1) item.remove();
           else { box.value = ""; item.querySelectorAll(".prompt-eps input").forEach((i) => { i.value = ""; }); }
           decorate(); save();
-        }}));
+        })}));
+    if (mate || r.pair) {         // a line of a pair box: its id, and pointing at it marks its partner
+      item.dataset.pair = String(++pairSeq);
+      if (alone) item.dataset.alone = "1";
+      item.addEventListener("mouseenter", () => partner(item, true));
+      item.addEventListener("mouseleave", () => partner(item, false));
+    }
     if (r.epochs) {               // it keeps its place while you fill it in, and takes it among the others as you leave
       item.addEventListener("focusout", (e) => {
         // not for another box of the line, the window losing focus (the line keeps it) or the line going
         if (item.contains(e.relatedTarget) || item.contains(document.activeElement) || !item.isConnected) return;
-        if (sortLines()) { landed(item); decorate(); save(); }
+        lineUndoHold = true;              // lines taking their places keep Undo
+        try { if (sortLines()) { landed(item); decorate(); save(); } } finally { lineUndoHold = false; }
       });
     }
     box.addEventListener("input", () => { grow(box); if (r.epochs) decorate(); save(); });   // words: grey no more
@@ -1206,15 +1427,17 @@ function promptLines(r, wrap) {
         e.preventDefault();
         const rest = box.value.slice(box.selectionEnd);
         box.value = box.value.slice(0, at); grow(box);
-        const next = line(rest + suffix(item), item);
+        const next = line(rest + suffix(item), item, item.dataset.alone ? true : undefined);   // a pair's: a pair
         next.setSelectionRange(0, 0); next.focus();
         decorate(); save();
       } else if (e.key === "Backspace" && flat && at === 0 && joins(item)) {
         e.preventDefault();               // join the one above
-        const prev = item.previousElementSibling.querySelector("textarea"), end = prev.value.length;
-        prev.value += box.value; grow(prev);
-        item.remove(); prev.focus(); prev.setSelectionRange(end, end);
-        decorate(); save();
+        undoable(() => {
+          const prev = item.previousElementSibling.querySelector("textarea"), end = prev.value.length;
+          prev.value += box.value; grow(prev);
+          item.remove(); prev.focus(); prev.setSelectionRange(end, end);
+          decorate(); save();
+        });
       }
     });
     box.addEventListener("paste", (e) => {                 // pasted lines become prompts of their own
@@ -1225,11 +1448,13 @@ function promptLines(r, wrap) {
       const head = box.value.slice(0, box.selectionStart), tail = box.value.slice(box.selectionEnd);
       box.value = head + parts[0]; grow(box);
       let last = item, lastBox = box;
-      for (const p of parts.slice(1)) { lastBox = line(p, last); last = lastBox.closest(".prompt-line"); }
+      for (const p of parts.slice(1)) {                    // on their own after a line on its own, else pairs
+        lastBox = line(p, last, item.dataset.alone ? true : undefined); last = lastBox.closest(".prompt-line");
+      }
       const end = lastBox.value.length;
       lastBox.value += tail; grow(lastBox);
       lastBox.focus(); lastBox.setSelectionRange(end, end);
-      if (r.epochs) sortLines();               // in order of their epochs
+      if (r.epochs) { save(); sortLines(); }   // saved first: paired, the other box has their partners as they sort
       decorate(); save();
     });
     if (after) after.after(item); else list.append(item);
@@ -1237,20 +1462,152 @@ function promptLines(r, wrap) {
     return box;
   }
   function draw() {
+    lineUndoDrop();                         // the boxes as they are now: nothing to undo
+    if (mate || r.pair) pairFresh = true;   // the pairs kept stay as they are until the boxes pair up again (pairUp)
     list.replaceChildren();
     const v = String(S.values[r.key] ?? "").split(/\r?\n/);
-    for (const t of v) line(t);
-    // in order of their epochs, the order the trainer joins them in
-    if (r.epochs && sortLines()) save();
+    for (const t of v) line(t, null, true);
+    // in order of their epochs, the order the trainer joins them in (paired: once the boxes pair up again)
+    if (r.epochs && !leads() && !follows() && sortLines()) save();
     decorate();
+    if (mate || r.pair) pairSoon();
   }
   const sync = el("input", {type: "hidden", id: "f_" + r.key});    // syncInputs (a preset, Last Train) redraws it
   sync._sync = draw;
+  // paired: the other box's pairs as they are now (lines()) - here the same pairs, in their order and on their epochs
+  // (what Auto-fill filled in, too), each line's words kept (pairedLines): a pair new there comes as a line with no
+  // words, one gone there goes here too, and a line on its own stays after the pair it follows. The box you're in keeps
+  // its focus. False when there was nothing to follow
+  function follow(plus) {
+    const was = items(), mine = was.filter((it) => !it.dataset.alone);
+    const auto = (it) => String(ins(it).map((x) => filled.has(x)));
+    if (mine.length === plus.length && plus.every((p, k) => mine[k].dataset.pair === p.id &&
+      String(eps(mine[k])) === String(p.epochs) && auto(mine[k]) === String(p.auto))) return false;
+    const own = new Map(mine.map((it) => [it.dataset.pair, it])), ids = new Set(plus.map((p) => p.id));
+    const want = pairedLines(plus, Object.fromEntries(mine.map((it) => [it.dataset.pair,
+      it.querySelector("textarea").value])));
+    const pairs = plus.map((p, k) => {
+      const it = own.get(p.id) || line(want[k], null, false).closest(".prompt-line");    // new there: no words yet
+      it.dataset.pair = p.id;
+      ins(it).forEach((x, j) => { x.value = p.epochs[j] ?? "";
+        if ((p.auto || [])[j]) filled.add(x); else filled.delete(x); });
+      return it;
+    });
+    const after = new Map([[null, []], ...plus.map((p) => [p.id, []])]);   // each pair's lines on their own after it
+    let last = null;
+    was.forEach((it) => {
+      if (it.dataset.alone) after.get(last).push(it); else if (ids.has(it.dataset.pair)) last = it.dataset.pair;
+    });
+    arrange([...after.get(null), ...plus.flatMap((p, k) => [pairs[k], ...after.get(p.id)])]);
+    decorate(); save();
+    return true;
+  }
+  // as the boxes draw (pairSoon: drawn), or as it's switched on or off. Drawn: the pairs kept (r.pair.keep) are found
+  // again by their lines' places and text, and a line that matches none goes on its own. On: never paired, each +1
+  // line pairs with the first -1 line left on just the same epochs, in order - no line's epochs change and none is
+  // added, every other line on its own; a line whose partner went while it was off on its own; each pair on its +1
+  // line's epochs, and the lines in their places
+  function pairUp(drawn) {
+    const b = mateBox(), on = follows(), kept = S.values[r.pair.keep] || "", me = pairBoxes[r.key];
+    if (b && me) {
+      if (drawn || (on && !kept)) {
+        [...b.items(), ...items()].forEach((it) => { it.dataset.pair = String(++pairSeq); it.dataset.alone = "1"; });
+      }
+      const plus = b.items(), minus = items();
+      if (drawn) {
+        pairsFrom(kept, plus.map(lineText), minus.map(lineText)).forEach(([i, j]) => {
+          delete plus[i].dataset.alone; delete minus[j].dataset.alone; minus[j].dataset.pair = plus[i].dataset.pair;
+        });
+      }
+      if (on && !kept) {
+        const free = [...minus];
+        plus.forEach((it) => { const k = free.findIndex((x) => same(x, it));
+          if (k < 0) return;
+          const m = free.splice(k, 1)[0];
+          delete it.dataset.alone; delete m.dataset.alone; m.dataset.pair = it.dataset.pair; });
+      }
+      if (on) {
+        const has = (xs) => new Set(xs.filter((x) => !x.dataset.alone).map((x) => x.dataset.pair));
+        const p = has(b.items()), m = has(items());
+        b.items().forEach((x) => { if (!m.has(x.dataset.pair)) x.dataset.alone = "1"; });
+        items().forEach((x) => { if (!p.has(x.dataset.pair)) x.dataset.alone = "1"; });
+        follow(b.lines());                   // the +1 box's pairs, here
+        pairSort(b, me);
+      }
+      keepPairs();
+      b.look();
+    }
+    look();
+  }
+  // a pair box: the note under the -1 box, Paste several lines' words, and the lines' numbers, letters and chain
+  // buttons (decorate) - paired or not
+  function look() {
+    const on = !!other();
+    if (quick) quick.placeholder = !on ? QUICK_HINT : r.pair ? "Type or paste -1 words, one a line - they fill the " +
+      "pairs' -1 lines without words first, then each one more adds a pair" : "Type or paste +1 words, one a line - " +
+      "each becomes a new pair after the others, then set its epochs";
+    if (pairNote) pairNote.style.display = on ? "" : "none";
+    if (!on) list.querySelectorAll(".prompt-partner").forEach((x) => x.classList.remove("prompt-partner"));
+    decorate();
+  }
+  // the pairs kept between draws (r.pair.keep) as the boxes change, once there have been pairs
+  function keepPairs() {
+    const b = mateBox();
+    if (!b || pairFresh || (!S.values[r.pair.keep] && !follows())) return;
+    const plus = b.items(), minus = items(), at = new Map();
+    minus.forEach((it, j) => { if (!it.dataset.alone) at.set(it.dataset.pair, j); });
+    const text = pairsText(plus.map(lineText), minus.map(lineText),
+      plus.flatMap((it, i) => (!it.dataset.alone && at.has(it.dataset.pair) ? [[i, at.get(it.dataset.pair)]] : [])));
+    if (text !== S.values[r.pair.keep]) onValue({key: r.pair.keep}, text);
+  }
+  // a line of the pair `id` goes on its own - or goes, when it has no words (a box keeps one line)
+  const loose = (id) => {
+    const it = items().find((x) => !x.dataset.alone && x.dataset.pair === id);
+    if (!it) return;
+    if (!it.querySelector("textarea").value.trim() && items().length > 1) it.remove(); else it.dataset.alone = "1";
+  };
+  // the chain button: a pair's line and its partner go on their own (Unpair), or a line on its own gets a partner with
+  // no words in the other box, on its epochs, and the two take their places as a pair (Pair it)
+  function chain(item) {
+    const o = other(), id = item.dataset.pair;
+    if (!o) return;
+    if (item.dataset.alone) { delete item.dataset.alone; save(); sortLines(); }
+    else {
+      undoable(() => { const was = o.items().length + items().length;
+        o.loose(id); loose(id); o.store(); save();
+        return o.items().length + items().length < was; });             // Undo when a partner with no words went
+    }
+    decorate(); o.decorate();
+  }
+  // Undo: before a change that takes words or lines away (×, Backspace joining lines, Unpair dropping an empty partner,
+  // Paste several lines or a file in place of empty lines), what both boxes of a pair - or this box - and the pairs
+  // kept were; after it, Undo by this box's buttons puts them back, till the next change. `act` returns false when it
+  // took nothing away
+  const undoKeys = r.pair ? [r.pair.follows, r.key, r.pair.keep] : mate ? [r.key, mate.key, mate.by_epoch.pair.keep]
+    : [r.key];
+  const undoable = (act) => {
+    if (!r.epochs) { act(); return; }
+    const was = Object.fromEntries(undoKeys.map((k) => [k, String(S.values[k] ?? "")]));
+    let took;
+    lineUndoHold = true;
+    try { took = act(); } finally { lineUndoHold = false; }
+    const changed = undoKeys.some((k) => String(S.values[k] ?? "") !== was[k]);
+    if (changed) lineUndoDrop();
+    if (!changed || took === false) return;
+    lineUndo = {btn: undo, was, redraw: () => (mate || r.pair ? undoKeys.slice(0, 2).map((k) => pairBoxes[k])
+      : [{list, draw}]).forEach((b) => { if (b && b.list.isConnected) b.draw(); })};
+    undo.style.display = "";
+  };
+  const undo = r.epochs ? el("button", {class: "btn btn-sm prompt-undo", text: "Undo", style: "display:none",
+    title: "Puts back what you just removed: " + (mate || r.pair ? "both boxes and their pairs as they were" :
+      "the lines as they were"),
+    onclick: () => { const u = lineUndo; if (!u) return;
+      lineUndoDrop(); Object.entries(u.was).forEach(([k, v]) => onValue({key: k}, v)); u.redraw(); }}) : null;
   const addLine = () => {
     const last = list.lastElementChild, box = last && last.querySelector("textarea");
     // a prompt slider's + Add a line when its last line has no words and no epochs yet: into that one, not another
-    // empty line (every other box adds one, as before)
-    if (r.epochs && box && !box.value.trim() && !eps(last).some(Boolean)) {
+    // empty line (every other box adds one, as before; paired, a line on its own gets a pair after it)
+    if (r.epochs && box && !box.value.trim() && !eps(last).some(Boolean) && !(other() && last.dataset.alone)) {
       box.focus(); return;
     }
     line("", last).focus(); decorate(); save();
@@ -1261,13 +1618,117 @@ function promptLines(r, wrap) {
   const add = el("button", {class: "btn btn-sm", text: r.key === "SAMPLE_PROMPT" ? "+ Add prompt" : "+ Add a line",
     onclick: (e) => { if (!r.epochs || !e.detail) addLine(); },
     ...(r.epochs ? {onmousedown: (e) => { if (e.button === 0) { e.preventDefault(); addLine(); } }} : {})});
+  // Paste several lines' lines (or a text file's) become lines of the box, after the others (with their epochs:
+  // smiling @1-5); a line with no words and no epochs goes (a new box's empty line 1), unless you're clicking into it
+  // or, paired, its -1 line has words. Undo, when they took the place of empty lines
+  const takeLines = (text, next) => {
+    const got = String(text || "").replace(/^\uFEFF/, "").split(/\r?\n/).map((t) => t.trim()).filter(Boolean);
+    if (!got.length) return 0;
+    let n = got.length;
+    undoable(() => {
+      if (follows() && other()) {   // the -1 box paired: the words fill its pairs' lines with none yet, in order
+        // (their epochs stay the pairs'), and each one more comes as a new pair - an empty +1 line, on the epochs it
+        // brings ("crying @5-8"), and its -1 line with the words
+        const given = got.map((t) => { const at = SLIDER_AT.exec(t), has = !!(at && (at[1] || at[2] || at[3]));
+          return {words: (has ? t.slice(0, at.index) : t).trim(), at: has ? t.slice(at.index).trim() : ""}; })
+          .filter((x) => x.words);
+        const empty = items().filter((it) => !it.dataset.alone).map((it) => it.querySelector("textarea"))
+          .filter((b) => !b.value.trim());
+        given.slice(0, empty.length).forEach((x, k) => { empty[k].value = x.words; grow(empty[k]); });
+        const more = given.slice(empty.length), b = other();
+        if (more.length) {
+          const ids = more.map((x) => b.line(x.at, b.items()[b.items().length - 1]).closest(".prompt-line")
+            .dataset.pair);
+          b.decorate(); b.save();                // the +1 box's save brings their -1 lines here (follow)
+          ids.forEach((id, k) => {
+            const it = items().find((x) => !x.dataset.alone && x.dataset.pair === id);
+            const t = it && it.querySelector("textarea");
+            if (t) { t.value = more[k].words; grow(t); }
+          });
+          sortLines();                           // pairs brought with epochs take their places, each -1 with its +1
+        }
+        decorate(); save();
+        n = given.length;
+        return given.length > 0 && empty.length > 0;
+      }
+      const m = other(), gone = items().filter((it) => !it.contains(next) && !it.querySelector("textarea").value.trim()
+        && !eps(it).some(Boolean) && !(m && m.hasWords(it.dataset.pair)));
+      gone.forEach((it) => it.remove());
+      got.forEach((t) => line(t));
+      save(); sortLines(); decorate(); save();   // saved first: paired, the -1 box has their partners as they sort
+      return gone.length > 0;
+    });
+    return n;
+  };
+  const take = (next) => { const text = quick.value; quick.value = ""; grow(quick); takeLines(text, next); };
+  // Paste several lines: a box under the lines, titled, its Add button beside it (clicking away and Ctrl+Enter add
+  // too); Add keeps the box's focus as the mouse goes down, so it adds once
+  const quickBox = quick ? el("div", {class: "prompt-quickbox"},
+    el("div", {class: "prompt-quick-title", text: "Paste several lines"}),
+    el("div", {class: "prompt-quick-row"}, quick, el("button", {class: "btn btn-sm", text: "Add",
+      title: "Each line in the box beside it becomes a line of its own above (clicking away or Ctrl+Enter does too)",
+      onmousedown: (e) => { if (e.button === 0) e.preventDefault(); }, onclick: () => take(null)}))) : null;
+  // a text file of prompts, one a line: each becomes a line, as Paste several lines' do
+  const fileNote = el("span", {class: "field-hint"});
+  const fromFile = r.epochs ? el("input", {type: "file", accept: ".txt,text/plain", style: "display:none",
+    onchange: async (e) => {
+      const f = e.target.files && e.target.files[0];
+      e.target.value = "";                  // the same file can be loaded again
+      if (!f) return;
+      if (f.size > 1024 * 1024) { fileNote.textContent = `${f.name} is over 1 MB: a list of prompts is far smaller.`; return; }
+      try {
+        const n = takeLines(await f.text(), null);
+        fileNote.textContent = n ? `Added ${n} line${n === 1 ? "" : "s"} from ${f.name}.` : `${f.name} has no lines.`;
+      } catch (err) { fileNote.textContent = `Couldn't read ${f.name}: ${err.message}`; }
+    }}) : null;
+  if (quick) {        // as you leave it (not when the window loses focus: it keeps it), or Ctrl+Enter
+    quick.addEventListener("blur", (e) => {
+      if (quick.isConnected && document.activeElement !== quick) take(e.relatedTarget);
+    });
+    quick.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.isComposing) { e.preventDefault(); take(null); }
+    });
+  }
+  // Auto-fill epochs: an optional switch, once, on the right of a prompt slider's first box's heading (What the picture
+  // is); it works in all of its boxes
+  const auto = r.epochs && r.autofill ? el("label", {class: "checkbox-label prompt-autofill", title: "Fills in a " +
+    "line's other epoch for you, in every box here: type its first epoch and its last one follows; type its last and, " +
+    "unless you typed its first, the line starts just after the one above. Only the line you are filling in changes. " +
+    "Remembered in this browser."},
+    el("input", {type: "checkbox", checked: autoFill, onchange: (e) => { autoFill = e.target.checked;
+      try { localStorage.setItem("fizgig.autoFillEpochs", autoFill ? "1" : "0"); } catch (err) { /* not kept */ } }}),
+    "Auto-fill epochs") : null;
+  // Pair +1 and -1 lines: a switch on the right of the -1 box's heading (form.py r.pair), as Auto-fill epochs on the
+  // first box's - kept with the form's values (a preset, Last Train)
+  const pairTick = r.epochs && r.pair ? el("input", {type: "checkbox", id: "f_" + r.pair.key, "data-field": r.pair.key,
+    checked: !!S.values[r.pair.key], onchange: (e) => { onValue(r.pair, e.target.checked); pairUp(); }}) : null;
+  if (pairTick) pairTick._sync = () => { pairTick.checked = !!S.values[r.pair.key]; pairUp(); };   // syncInputs
+  const pairNote = r.pair ? el("div", {class: "field-hint", style: "display:none", text: "Paired: lines with the " +
+    "same number are a pair - added, removed, moved or given epochs in one box, the other follows. A line with a " +
+    "letter is on its own. The chain button unpairs a pair, or pairs a line on its own. Paste several lines and a " +
+    "file here fill the pairs' -1 lines without words first, then add pairs."}) : null;
+  // each with a short line under it (switchSub): Auto-fill's says it works in every box
+  const head = auto ? switchSub(auto, "Type a line's first or last epoch and the other fills in - in every box.") :
+    pairTick && switchSub(el("label", {class: "checkbox-label prompt-autofill", title: r.pair.hint}, pairTick,
+      r.pair.label), r.pair.sub);
   const label = endK ? el("span", {class: "field-label"}, ...endTag(r.label + ":", endK)) :
     el("span", {class: "field-label", text: r.label + ":"});
-  const actions = el("div", {class: "prompt-actions"}, add);
+  const actions = el("div", {class: "prompt-actions"}, add, ...(fromFile ? [el("button", {class: "btn btn-sm",
+    text: "Load lines from a file…", onclick: () => fromFile.click(), title: "A text file (.txt) with one prompt a " +
+      "line: each becomes a line here, after the others. A line can bring its epochs, e.g. smiling @1-5 (epochs 1 " +
+      "to 5; \"@5\" is from epoch 5 to the end, \"@5-5\" epoch 5 only)"}),
+    fromFile, undo, fileNote] : []));
   // a box of lines with their own epochs (a prompt slider's): what's wrong with them right under them - an epoch with
-  // no line, a line past the run - before the buttons and the help; elsewhere at the end, as before
+  // no line, a line past the run - then Paste several lines, before the buttons and the help; elsewhere at the end,
+  // as before
   const note = el("div", {class: "field-hint row-note", id: "note_" + r.key});
-  wrap.append(label, list, ...(r.epochs ? [note] : []), actions, sync);
+  wrap.append(head ? el("div", {class: "prompt-head"}, label, head) : label, list, ...(r.epochs ? [note] : []),
+    ...(pairNote ? [pairNote] : []), ...(quickBox ? [quickBox] : []), actions, sync);
+  if (mate || r.pair) {                     // a box of a pair, for the other one
+    pairBoxes[r.key] = {list, items, lines, line, decorate, look, store, save, follow, order, place, loose, draw,
+      renumber, hasWords: (id) => items().some((it) => !it.dataset.alone && it.dataset.pair === id &&
+        it.querySelector("textarea").value.trim()), ...(r.pair ? {pairUp, keepPairs} : {})};
+  }
   if (r.action === "write_captions") {            // the Edit instruction: its first line as the photos' caption
     const w = writeCaptions(() => String(S.values[r.key] ?? ""));
     actions.append(w.button);

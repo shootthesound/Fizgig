@@ -138,7 +138,7 @@ def test_the_tick_is_the_prompt_parts_first_row_and_off_when_missing():
     assert tick["kind"] == "check" and tick["default"] is False
     assert tick["label"] == launch.BY_EPOCH == "Change the prompts during the run (advanced)"
     base = rows[keys.index("FAMILY_SLIDER_BASE")]                # the plain slider's box, its lines look laid over it when on
-    assert base["kind"] == "entry" and base["by_epoch"]["lines"]
+    assert base["kind"] == "entry" and base["by_epoch"]["lines"] and base["by_epoch"]["autofill"]
     pairs = form.state(desc, {"FAMILY_KIND": "slider", "FAMILY_SLIDER_SOURCE": "Photo pairs"}, "")
     assert "FAMILY_SLIDER_BY_EPOCH" in pairs["hidden"]
     songs = get_family("acestep15xl")

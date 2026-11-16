@@ -169,6 +169,7 @@ def test_every_picture_slider_has_lines_with_epochs_and_songs_keep_theirs():
             pictures = "photo" in d.media
             for key in keys:
                 assert bool(rows[key].get("lines") and rows[key].get("epochs")) == pictures, (d.key, key)
+                assert bool(rows[key].get("autofill")) == (pictures and key == keys[0]), (d.key, key)   # one switch
             assert ("_slider_plan" in rows) == pictures == ("FAMILY_SLIDER_BY_EPOCH" in rows), d.key
     songs = next(d for d in training_families() if d.slider_training and "photo" not in d.media)
     assert not launch.slider_scheduled(songs, {**BOXES}, True)
@@ -202,9 +203,8 @@ def test_a_line_whose_epochs_mean_the_whole_run_trains_on_its_words(tmp_path):
 
 
 def test_the_notes_name_lines_by_their_words():
-    # with the by-epoch switch on a line's place in its box changes as the lines take their places by epoch: a note
-    # names a line by its words, quoted and cut short when long; a blank row or a line with no words (never on) isn't
-    # named
+    # with the by-epoch switch on a box shows a pair's number or a letter, not a line's place: a note names a line
+    # by its words, quoted and cut short when long; a blank row or a line with no words (never on) isn't named
     assert launch.slider_overlap("a man, @1-5\n\na woman, @5-8", 8) == (5, ["a man,", "a woman,"])
     assert launch.slider_epoch_notes("smiling @1-8\n\nlaughing @9-12", 8) == [
         '"laughing" starts at epoch 9, after the run\'s last (8): it never trains']

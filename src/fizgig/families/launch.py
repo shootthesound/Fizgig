@@ -215,8 +215,8 @@ def slider_range_key(a, b, n=None):
 
 def slider_line_name(words, most=40):
     """A line as a note names it with Change the prompts during the run (advanced) on - its words, quoted, cut to
-    about `most` characters ('"a close-up photo of a young woman..."'): a line's place in its box changes as the
-    lines take their places by epoch."""
+    about `most` characters ('"a close-up photo of a young woman..."'): the boxes may show a pair's number or a
+    letter, not its place."""
     t = " ".join(str(words).split())
     if len(t) > most:
         cut = t[:most - 3]

@@ -1,8 +1,9 @@
 """A prompt slider's Change the prompts during the run (advanced), in words read at a glance: the switch's name and
-what it's for, each long hint of its rows as its first sentence and a small More (and Less) - its rows only -, Split and
-Slide that start from the number in Single, the plan's how firmly in every section (greyed where no Leave these alone
-line is on) and its rate said one way, Reuse practice pictures under the plan, and the boxes' headings in one style.
-With the switch off the card is as before: test_slider_by_epoch.py."""
+what it's for, each long hint of its rows as its first sentence and a small More (and Less) - its rows only -, a short
+line under Auto-fill epochs, Pair +1 and -1 lines and Adjust each section, Split and Slide that start from the number in
+Single, the plan's how firmly in every section (greyed where no Leave these alone line is on) and its rate said one
+way, Reuse practice pictures under the plan, and the boxes' headings in one style. With the switch off the card is as
+before: test_slider_by_epoch.py."""
 import json
 import os
 import re
@@ -182,6 +183,32 @@ def test_the_modes_long_hints_open_on_a_short_first_sentence():
                                                       "practice pictures again, instead of rendering them anew.")
     assert first["krea2 FAMILY_SLIDER_GUIDANCE split_hint"] == ("One push strength for the first epochs, then another "
                                                                 "to the end.")
+
+
+def test_auto_fill_and_pair_say_what_they_do_under_their_switch():
+    card = _card("krea2")
+    got = _node(r"""
+      S.fam = {form: {sections: [{id: "slider", rows: ROWS}]}};
+      Object.assign(S.values, {FAMILY_SLIDER_BY_EPOCH: true, FAMILY_SLIDER_BASE: "a man,", FAMILY_SLIDER_NEG: "sad"});
+      const look = (k) => { const r = ROWS.find((x) => x && x.key === k); return {...r, ...r.by_epoch}; };
+      for (const k of ["FAMILY_SLIDER_BASE", "FAMILY_SLIDER_NEG", "FAMILY_SLIDER_ANCHORS"]) {
+        const w = promptLines(look(k), el("div", {})), sub = w.querySelector(".prompt-head .prompt-switch-sub");
+        log(k, sub && shown(sub), shown(w.querySelector(".hint-more")));
+      }
+      // a box of lines that isn't this mode's: its hint whole, as before
+      const plain = promptLines({key: "X", label: "Prompts", kind: "text", lines: true, hint: "One. Two."},
+        el("div", {}));
+      log(plain.querySelectorAll(".field-hint").filter((h) => h.textContent === "One. Two.").map((h) => h.className));
+    """, ROWS=list(card.values()))
+    assert got == [
+        ["FAMILY_SLIDER_BASE", "Type a line's first or last epoch and the other fills in - in every box.",
+         "The start of the prompt: each end's words are added after it with a space, so end it with a comma if you "
+         "want one. More"],
+        ["FAMILY_SLIDER_NEG", card["FAMILY_SLIDER_NEG"]["by_epoch"]["pair"]["sub"], 'e.g. "sad". More'],
+        ["FAMILY_SLIDER_ANCHORS", None, "Prompts the dial must not change, one a line. More"],
+        ["field-hint"]]
+    assert card["FAMILY_SLIDER_NEG"]["by_epoch"]["pair"]["sub"] == ("Ties each -1 line to a +1 line, so the two keep "
+                                                                    "the same epochs and order.")
 
 
 def test_the_push_strengths_hints_name_the_models_own_default():

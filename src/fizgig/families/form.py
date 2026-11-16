@@ -109,6 +109,7 @@ DEFAULTS = {
     "FAMILY_SLIDER_BASE": "", "FAMILY_SLIDER_POS": "", "FAMILY_SLIDER_NEG": "", "FAMILY_SLIDER_ANCHORS": "",
     "FAMILY_SLIDER_ANCHOR_WEIGHT": "1", "FAMILY_SLIDER_ULTRA": False, "FAMILY_SLIDER_KEEP": True,
     "FAMILY_SLIDER_BY_EPOCH": False, "FAMILY_SLIDER_TWEAKS_ON": False, "FAMILY_SLIDER_TWEAKS": "",
+    "FAMILY_SLIDER_PAIRED": False, "FAMILY_SLIDER_PAIRS": "",
     "FAMILY_FT_ROTATIONS": "10", "FAMILY_FT_SAVE_EVERY": "1", "FAMILY_FT_ROTATE_EVERY": "1",
     "FAMILY_FT_FUSED": True, "FAMILY_FT_REG_DIR": "", "FAMILY_FT_REG_MULT": "0.2",
     "FAMILY_REG_ON": False, "FAMILY_REG_DIR": "", "FAMILY_REG_MULT": "1.0", "FAMILY_REG_USE": REG_MATCH,
@@ -658,9 +659,21 @@ def form(desc):
                      "close-up photo of a woman,\" all run and \"wearing a red coat,\" from epoch 5). The previews "
                      "show the dial on the first line with words, the same all run, so the epochs compare. Different "
                      "people, clothes or camera angles in different epochs teach the dial only the change, not who the "
-                     "person is, what they wear or the camera angle. " + who, **listed),
+                     "person is, what they wear or the camera angle. " + who, **listed, autofill=True),   # Auto-fill
             by_epoch(prompt_row("FAMILY_SLIDER_POS", "2. The +1 end adds", pos_hint), pos_hint + one_a_line, **listed),
-            by_epoch(prompt_row("FAMILY_SLIDER_NEG", "3. The -1 end adds", neg_hint), neg_hint + one_a_line, **listed),
+            # Pair +1 and -1 lines: a switch on the right of its heading (app.js promptLines) that only shapes the
+            # page - a pair's two lines share their epochs and their place, whichever box you change; the pairs are
+            # kept as the boxes change (keep: FAMILY_SLIDER_PAIRS, which only the page reads)
+            by_epoch(prompt_row("FAMILY_SLIDER_NEG", "3. The -1 end adds", neg_hint), neg_hint + one_a_line, **listed,
+                     pair=_row("FAMILY_SLIDER_PAIRED", "Pair +1 and -1 lines", "check", follows="FAMILY_SLIDER_POS",
+                               keep="FAMILY_SLIDER_PAIRS",
+                               hint="Pairs -1 lines with +1 lines: a pair shows the same number in both boxes and "
+                                    "shares its epochs and its place - add, remove or move a pair's line in either "
+                                    "box and its partner does the same. A line with a letter is on its own. The "
+                                    "chain button on a line unpairs it or pairs it. Each end's words are typed "
+                                    "apart.",
+                               # a short line under the switch, so it says what it does without a hover
+                               sub="Ties each -1 line to a +1 line, so the two keep the same epochs and order.")),
             by_epoch(_row("FAMILY_SLIDER_GUIDANCE", "4. Push strength", default=push,
                           hint="How hard the ends are pushed apart. Higher gives a stronger dial but changes more than "
                                "the one thing you asked for (a frown can turn into a different, older man). Start on "
@@ -1695,8 +1708,8 @@ def _slider_plan(desc, values):
     box's lines on then with their epochs, and whether its picture renders new practice pictures or normally takes
     again those of an earlier epoch with the same description (train.py _BankCache)."""
     boxes = launch.slider_boxes(values)       # as typed
-    # as they join in, the trainer's order - and the notes', which name lines by their words: a line's place in its
-    # box changes as the lines take their places by epoch (app.js promptLines)
+    # as they join in, the trainer's order - and the notes', which name lines by their words: paired, a box shows a
+    # pair's number or a letter, not a line's place (app.js promptLines)
     ordered = {k: launch.slider_sort(t) for k, t in boxes.items()}
     try:
         epochs = max(0, int(str(values.get("MAX_TRAIN_EPOCHS") or "").strip()))
@@ -1948,6 +1961,8 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
         FAMILY_SLIDER_KEEP=bool(v.get("FAMILY_SLIDER_KEEP", True)),     # on unless unticked (older forms have none)
         FAMILY_SLIDER_BY_EPOCH=bool(v.get("FAMILY_SLIDER_BY_EPOCH")),   # Change the prompts...: off when missing
         FAMILY_SLIDER_TWEAKS_ON=bool(v.get("FAMILY_SLIDER_TWEAKS_ON")),  # Adjust each section: too
+        FAMILY_SLIDER_PAIRED=bool(v.get("FAMILY_SLIDER_PAIRED")),  # Pair +1 and -1 lines: too (only the page uses it)
+        FAMILY_SLIDER_PAIRS=str(v.get("FAMILY_SLIDER_PAIRS") or ""),  # and its pairs, kept as text: the page's too
         FAMILY_FAST_ID=b("FAMILY_FAST_ID") and kind == "standard" and bool(desc.identity_blocks),
         **({"FAMILY_TRAIN_AREA": s("TARGET_LAYERS") or desc.train_areas[0][0],
             "FAMILY_TRAIN_BLOCKS": [k for k, on in (v.get("TRAINING_BLOCKS") or {}).items() if on]}

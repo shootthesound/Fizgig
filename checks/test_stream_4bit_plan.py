@@ -42,6 +42,22 @@ def test_a_12gb_card_swaps_the_4bit_base():
     assert quant.plan(desc, drv, "auto", -1, free_gb=30.0, megapixels=0.25)[:2] == ("int8", 0)
 
 
+def test_small_card_figures_plan_fewer_blocks(monkeypatch):
+    """Under 20 GB H3 Image plans from its small-card figures (training's peak; the 2048 preview parks tail blocks to
+    decode), so the Standard preset (1.4 GB over the figures) on a 12 GB card swaps ~15 blocks, not 30, and Auto keeps
+    the 4-bit base even where int8 with most blocks streamed would fit."""
+    desc = get("minimax_image")
+    drv = desc.load_driver()
+    monkeypatch.setenv("FIZGIG_PREVIEW_LOWMEM", "0")
+    assert quant.plan(desc, drv, "auto", -1, free_gb=11.2, megapixels=0.25, adapter_gb=1.4)[:2] == ("nf4", 31)
+    monkeypatch.setenv("FIZGIG_PREVIEW_LOWMEM", "1")
+    for free, mp, n in ((11.2, 0.25, 15), (11.2, 1.0, 16), (10.7, 0.25, 18), (15.2, 1.0, 0), (14.7, 0.25, 0)):
+        assert quant.plan(desc, drv, "auto", -1, free_gb=free, megapixels=mp, adapter_gb=1.4)[:2] == ("nf4", n)
+    for free in (4.0, 8.0, 10.0, 12.0, 16.0, 18.0):
+        assert quant.plan(desc, drv, "auto", -1, free_gb=free, megapixels=1.0)[0] == "nf4"
+    assert quant.plan(desc, drv, "int8", -1, free_gb=15.2, megapixels=1.0, adapter_gb=1.4)[:2] == ("int8", 26)
+
+
 def test_other_families_4bit_never_swaps():
     for desc in training_families():
         if desc.key == "minimax_image" or desc.own_plan or not desc.train_memory or "nf4" not in desc.train_memory:

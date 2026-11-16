@@ -6281,8 +6281,9 @@ class GizmoRecorder:
                     wait_for_capture(self.raw, release + TAKE_POST_ROLL)
                     dur = slice_take(self.raw, press, release, path, self.app.ffmpeg)
             except Exception as exc:
+                err = str(exc)      # Python drops `exc` when the block ends; the lambda runs later
                 self.app.root.after(0, lambda: self.status.configure(
-                    text=f"take failed: {exc}", fg=COLORS["error"]))
+                    text=f"take failed: {err}", fg=COLORS["error"]))
                 return
             self.app.root.after(0, self._take_done, path, dur, sentence, delivery, free)
         threading.Thread(target=worker, daemon=True).start()

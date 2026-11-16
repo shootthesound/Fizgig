@@ -1,5 +1,15 @@
 # Fizgig news
 
+## 16 Nov 2026: MiniMax H3 at int8 on any pruned file, and H3 Image on 12 GB cards
+
+**int8 on any pruned H3 file.** A pruned bf16 or fp8 MiniMax H3 or H3 Image file, Comfy-Org's or a fine-tune or merge saved that way, is converted to int8 as it loads, so Auto trains it at int8 instead of stopping at load. H3's pruned bf16 file converts to Comfy-Org's int8 file value for value. The full unpruned checkpoint stays 4-bit.
+
+**H3 Image on 12 GB cards.** Auto swaps blocks for H3 Image's 4-bit base on a small card (15 at 0.25 MP on 12 GB), instead of a plan that spilled into system memory on Windows at about 40 s a step.
+
+**AMD and more.** The Linux AMD installer finds libnuma on Arch and CachyOS, the Training tab no longer loads optimizer libraries to list them, and the pod guide shows how to download a very big dataset straight onto the pod.
+
+[Fizgig v9.7.5 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.7.5)
+
 ## 15 Nov 2026: Gizmo's crop box reworked, AMD fixes, and Automagic v4's real rate
 
 **Gizmo's crop box.** Drag from any corner in any direction; a locked shape grows smoothly instead of jumping; the box reaches every edge of the frame. Move it by dragging inside, type its position and size, place it with the arrows or **Largest**, and keep **Saved boxes**.

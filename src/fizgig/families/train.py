@@ -421,6 +421,12 @@ def _anchor_lines(raw):
     return [str(x).strip() for x in (raw or []) if str(x).strip()]
 
 
+def _prompt_texts(prompts):
+    """--slider_prompts as typed: without the space the launch puts before one that starts with "-" (so argparse takes
+    it as a value, launch._slider_value)."""
+    return [str(x).strip() for x in prompts] if prompts else prompts
+
+
 def _encode_override(driver, te_path, prompts, dit, device, parkable=True, references=None):
     """Encode the override's prompts mid-run. The text encoder loads beside the training DiT when it fits; otherwise the
     DiT waits on CPU for the encode (a block-swapped DiT is small enough to stay, and the driver picks a smaller
@@ -1223,6 +1229,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     os.makedirs(output_dir, exist_ok=True)
 
     # ---- sliders: a signed dial, trained at +1 and -1 ------------------------------------------------
+    slider_prompts = _prompt_texts(slider_prompts)     # as typed (the launch's space before a "-" goes)
     slider = bool(slider_pairs or slider_prompts)
     if slider:
         if not desc.slider_training:

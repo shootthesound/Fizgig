@@ -28,7 +28,7 @@ def test_preference_ui_hides_sage_controls_without_capability():
     if not shutil.which("node"):
         pytest.skip("node not installed")
     app = Path(__file__).resolve().parents[1] / "src/fizgig/web/static/app.js"
-    source = app.read_text()
+    source = app.read_text(encoding="utf-8")
     card = source[source.index("const INFERENCE_SWAP"):source.index("// where the LoRA and reference pickers")]
     script = '''
 const assert = require('node:assert/strict');

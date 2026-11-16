@@ -34,6 +34,47 @@ def test_new_optimizers_listed():
         assert name in opts
 
 
+def test_ui_lists_installed_optimizers_without_importing_native_packages(monkeypatch, tmp_path):
+    # A package can exist even when importing its native library is expensive or
+    # broken. Building all families' forms must never execute its __init__.
+    package = tmp_path / "bitsandbytes"
+    package.mkdir()
+    marker = tmp_path / "imported"
+    (package / "__init__.py").write_text(
+        f"from pathlib import Path\nPath({str(marker)!r}).touch()\n"
+        "raise RuntimeError('native runtime loaded')\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.delitem(sys.modules, "bitsandbytes", raising=False)
+    for desc in registry.training_families():
+        form.form(desc)
+    assert "adamw8bit" in form._optimizers()
+    assert "bitsandbytes" not in sys.modules
+    assert not marker.exists()
+
+
+def test_ui_omits_missing_dependencies_and_keeps_builtin_optimizers(monkeypatch):
+    from fizgig.training import optimizers
+    monkeypatch.setattr(optimizers.importlib.util, "find_spec", lambda name: None)
+    opts = form._optimizers()
+    assert "adamw8bit" not in opts and "adafactor" not in opts
+    assert all(name in opts for name in (*NEW, "adamw", "automagic3"))
+
+
+def test_runtime_discovery_still_probes_native_imports(monkeypatch):
+    from fizgig.training import optimizers
+    calls = []
+
+    def load(name):
+        calls.append(name)
+        if name == "bitsandbytes":
+            raise ImportError("no usable GPU binary")
+
+    monkeypatch.setattr(optimizers.importlib, "import_module", load)
+    opts = available_optimizers()
+    assert "bitsandbytes" in calls and "transformers" in calls
+    assert "adamw8bit" not in opts and "adafactor" in opts
+
+
 # presets that pick a new optimizer by decision (Peter, 6 Nov 2026 - Muon's source-matching detail)
 CHOSEN = {k: "muon" for k in ("qwen_image21", "krea2", "moss_image", "vimoo", "zimage", "zimage_base",
                                     "klein", "sdxl", "flux3", "anima", "fibo2")}

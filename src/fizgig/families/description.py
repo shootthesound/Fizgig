@@ -236,6 +236,7 @@ class FamilyOption:
     #                                   check: tokens sent when ticked
     default: str = ""                 # entry text / "1" for a ticked check; a choice defaults to its first label
     hint: str = ""                    # the grey line under the control
+    explain: str = ""                 # web: a longer help behind an ⓘ beside the label (a blank line = a new paragraph)
     warn: str = ""                    # an amber line under the hint (web), with `warn_link` (an href) after it
     warn_link: str = ""
     featured: bool = False            # the row stands out (web): a soft accent panel, for a control worth noticing
@@ -287,6 +288,11 @@ class FamilyOption:
     # them", which puts `value` into the boxes. () = none
     slide_alt: tuple = ()
     single: str = ""                  # Single's value to start with when the default is a Split or Slide value
+    # (old label, new label): a choice renamed, so a saved run, preset or queued run keeps its pick
+    choice_renamed: tuple = ()
+    # a Samples-tab choice also offered in Studio (and the Royale / Profiler renders), picked there on its own and kept
+    # in prefs (studio_opt_<KEY>); its tokens reach the driver as render options (WorkbenchEngine.render_options)
+    studio: bool = False
 
     def choice_labels(self):
         return [c[0] for c in self.choices]
@@ -295,6 +301,7 @@ class FamilyOption:
         """The choice label for a stored value: itself, else the label that contains it (an old setting's value -
         "ref2va" -> "Reference (ref2va)") or that it starts with, else the first (the default)."""
         v = str(value or "").strip()
+        v = dict(self.choice_renamed).get(v, v)
         labels = self.choice_labels()
         if v in labels:
             return v
@@ -691,6 +698,9 @@ class FamilyDescription:
     # long side to this many px (quicker, but a 1 MP model looks worse below its size: MOSS-Image). 0 = no tick
     preview_small_card_option: int = 0
     preview_height: int = 1024
+    # sizes beyond the Samples tab's usual list (form.SIZES, up to 2048) for a model made for bigger pictures: H3 Image
+    # works at 4-20 MP (#348). The default stays preview_width / preview_height
+    preview_more_sizes: tuple = ()
     repair_size: int = 768            # Repair Studio's starting preview size (its Res dropdown) for the family
     block_activity: bool = False      # Repair Studio lights each block's slider as the song plays (BlockMeter)
     repair_default_strength: float = 1.0   # Repair Studio's primary / donor "at strength" on a family switch (ACE-Step 0.5)
@@ -772,6 +782,8 @@ class FamilyDescription:
     def load_driver(self):
         """Instantiate the family's FamilyDriver (imported lazily: the description stays importable without torch)."""
         import importlib
+        from fizgig.utils.gpu_backend import fix_rocm_sdpa_masks
+        fix_rocm_sdpa_masks()          # AMD: before any model attends (#341, #343); no-op on NVIDIA
         mod, _, cls = self.driver.partition(":")
         drv = getattr(importlib.import_module(mod), cls)()
         drv.description = self
@@ -782,6 +794,18 @@ class FamilyDescription:
         or above it; 1 past the last, or for a family with none. Torch-free: the Training tab's note reads it."""
         at = [p for p in (self.batch_auto or ()) if p[0] + 0.01 >= float(megapixels)]
         return int(min(at)[1]) if at else 1
+
+    def streams_blocks(self, precision):
+        """Whether a `precision` base can stream blocks (block swap). Any base but a 4-bit one; NF4 / HQQ only where
+        train_memory has a measured GB saved per swapped block for it (MiniMax H3 Image's rings) - everywhere else
+        the 4-bit weights aren't .weight and quant.load_base drops the swap. Torch-free (web/oom reads it)."""
+        if precision not in ("nf4", "hqq"):
+            return True
+        fig = (self.train_memory or {}).get(precision)
+        try:
+            return float(fig[1]) > 0
+        except (TypeError, ValueError, IndexError, KeyError):
+            return False
 
     def workbench_engine_class(self):
         """The class make_workbench_engine builds - read for its capabilities (supports_keyframes, ...) before any

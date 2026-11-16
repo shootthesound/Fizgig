@@ -89,7 +89,7 @@ Then double-click `install_fizgig_rocm.bat` (NVIDIA users never run this). It pi
 
 Override with `TORCH_PIN` / `TORCHVISION_PIN` / `ROCM_SDK_DEVEL_PIN` if needed. **bitsandbytes** stays a pinned community Windows ROCm wheel from [0xDELUXA/bitsandbytes_win_rocm](https://github.com/0xDELUXA/bitsandbytes_win_rocm), built by neither AMD nor Fizgig; when its ROCm DLL set does not match the torch stack, `write_rocm_env.py` falls back as before. Shared deps come from `requirements.txt` with CUDA `torch`/`bitsandbytes` and NVIDIA-only `nvidia-ml-py` filtered out (`filter_requirements_rocm.py`). Launch with `Launch Fizgig AMD.bat`; update with `update_fizgig_rocm.bat` — **not** `update_fizgig.bat`, which installs CUDA torch and would wipe the ROCm stack.
 
-**`--experimental` (unsupported):** `install_fizgig_rocm.bat --experimental` installs the same floating packages from AMD's **nightly** whl-next (`https://nightly.repo.amd.com/rocm/whl-next/`) and leaves `BNB_ROCM_VERSION` unset so bitsandbytes auto-selects its highest matching DLL. Same idea as Linux `ROCM_CHANNEL=nightly`. Local experimentation only. **Do not open GitHub issues for crashes, install failures, or training problems when `--experimental` was used** — those reports are not supported. Use the default stable install (no flag) for anything you expect help with.
+**`--experimental` (unsupported):** `install_fizgig_rocm.bat --experimental` installs floating packages from AMD's **nightly** whl-next by default (`https://nightly.repo.amd.com/rocm/whl-next/`) and leaves `BNB_ROCM_VERSION` unset so bitsandbytes auto-selects its highest matching DLL. Override the index with `ROCM_EXPERIMENTAL_INDEX` (PowerShell: `$env:ROCM_EXPERIMENTAL_INDEX="…"`). Same idea as Linux `ROCM_CHANNEL=nightly`. Local experimentation only. **Do not open GitHub issues for crashes, install failures, or training problems when `--experimental` was used** — those reports are not supported. Use the default stable install (no flag) for anything you expect help with.
 
 ### Linux (AMD ROCm — highly experimental)
 
@@ -101,15 +101,31 @@ chmod +x install_fizgig_rocm.sh
 ./launch_fizgig_amd.sh
 ```
 
-The script detects your gfx target (`detect_gpu_linux.py`). **Stable is the Linux default**: AMD's [stable whl-next](https://stable.repo.amd.com/rocm/whl-next/) index plus a `[device-gfx*]` extra for your GPU (e.g. `gfx1201` → `device-gfx1201`), pinned to **`torch==2.14.0+rocm10.1.0`** / **`torchvision==0.29.0a0+rocm10.1.0`** / **`rocm-sdk-devel==10.1.0`**. Override with `TORCH_PIN=…`, `TORCHVISION_PIN=…`, or `ROCM_SDK_PIN=…`.
+The script detects your gfx target (`detect_gpu_linux.py`). **Stable is the Linux default**: AMD's [stable whl-next](https://stable.repo.amd.com/rocm/whl-next/) index (fixed) plus a `[device-gfx*]` extra for your GPU (e.g. `gfx1201` → `device-gfx1201`), pinned to **`torch==2.14.0+rocm10.1.0`** / **`torchvision==0.29.0a0+rocm10.1.0`** / **`rocm-sdk-devel==10.1.0`**. Override versions with `TORCH_PIN=…`, `TORCHVISION_PIN=…`, or `ROCM_SDK_PIN=…`.
 
-**Nightly** (unsupported floating builds from `https://nightly.repo.amd.com/rocm/whl-next/`):
+**Nightly** (unsupported floating builds from `https://nightly.repo.amd.com/rocm/whl-next/` by default; override the index with `ROCM_NIGHTLY_INDEX`):
 
 ```bash
 ROCM_CHANNEL=nightly ./install_fizgig_rocm.sh
+# or: ROCM_CHANNEL=nightly ROCM_NIGHTLY_INDEX=https://rocm.nightlies.amd.com/whl-multi-arch/ ./install_fizgig_rocm.sh
 ```
 
 The installer then adds shared deps from `requirements.txt` (filtered) and `bitsandbytes>=0.50.0` for ROCm.
+
+On **RX 9070 / RX 9070 XT (`gfx1201`)**, it optionally builds
+[SageAttention-RDNA4](https://github.com/IxMxAMAR/SageAttention-RDNA4/) at pinned commit
+`068036781b2061d4ee89277b52749165e3f7a887` in `user_data/src/SageAttention-RDNA4`.
+It uses Fizgig's `venv/bin/python -m pip install . --no-build-isolation --no-deps`,
+with `ROCM_HOME=/opt/rocm/core`, `HIP_PATH=/opt/rocm/core`,
+`PYTORCH_ROCM_ARCH=gfx1201` and `MAX_JOBS=$(nproc)`. Set `ROCM_HOME` to use another
+toolkit location, or `MAX_JOBS` to lower compile parallelism. Before building, the
+clone's `setup.py` Python requirement is widened to `>=3.12,<3.15`.
+A failed clone, build or import check prints a warning and installation continues,
+including `ensure_face_models()` for the face finder and AdaFace. The ROCm pin,
+bitsandbytes, GPU kernel and VRAM monitor checks are retained. Other architectures
+skip this optional build. Once installed, enable **Force SageAttention for Krea 2
+image generation** under **Preferences → Inference performance**; leave it off if
+the optional build failed.
 
 Linux ROCm cache scripts import `fizgig.rocm.cache_exit` only when `FIZGIG_GPU_BACKEND=rocm` (set by `launch_fizgig_amd.sh`); NVIDIA and other platforms call `main()` directly. Opt out with `FIZGIG_ROCM_NO_FAST_EXIT=1 ./launch_fizgig_amd.sh`.
 

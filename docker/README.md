@@ -176,6 +176,14 @@ Prefer a terminal? `runpodctl` is preinstalled — `runpodctl send <path>` on th
 `runpodctl receive <code>` on your machine. `scp` and `rsync` over SSH work too, and rsync is the
 better bet for a large dataset since it resumes.
 
+**A very big dataset (tens of GB or more) is quicker to download onto the pod than to upload from home.** Turn on RunPod's **SSH Terminal Access** for the pod, connect, and fetch it into `/workspace/datasets`:
+
+- **Hugging Face:** `hf download <user>/<dataset> --repo-type dataset --local-dir /workspace/datasets/<name>`
+- **Google Drive:** `pip install gdown`, then `gdown --fuzzy <share link> -O /workspace/datasets/<name>.zip`
+- **Any direct link:** `curl -L -o /workspace/datasets/<name>.zip "<link>"`
+
+Unpack a zip with `python3 -m zipfile -e /workspace/datasets/<name>.zip /workspace/datasets/<name>`, then choose the folder on the Start tab.
+
 ## Your home GPU helping the pod
 
 Fizgig on your own computer can render a pod run's previews, so the pod's time goes on training, or train a share of each epoch's images, and bring the run's checkpoints home to try your own prompts on them: **Helpers** > **Help another Fizgig with this GPU** on your computer. A training share pays on big datasets only, as your home upload sets the transfer time: see [Helpers](../docs/TRAINING_SHARE.md#is-it-worth-it).

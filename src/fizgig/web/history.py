@@ -224,6 +224,23 @@ def end(run_id, result, progress=None):
         pass
 
 
+def stop_paused(lora, output_dir):
+    """Stop paused run: the newest paused record with this LoRA name and folder reads stopped (its saves stay, so
+    Continue on its card carries it on). Found by name and folder, as a resume finds it: a pause restored at start-up
+    has no record id."""
+    try:
+        with _Lock():
+            runs = _read()
+            for r in reversed(runs):
+                if _same_run(r, lora, output_dir):
+                    if r.get("result") == "paused":
+                        r["result"] = "stopped"
+                        _write(runs)
+                    break
+    except OSError:
+        pass
+
+
 def remove(run_id):
     """Take a run off the list (Runs & outputs' Delete run; its files are deleted by the caller)."""
     try:

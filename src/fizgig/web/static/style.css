@@ -1795,7 +1795,16 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .about-btn:hover { border-color: var(--accent); color: var(--text-primary); }
 .about-btn.update { background: var(--warning); border-color: var(--warning); color: var(--text-on-light); }
 .about-banner { border: 1px solid var(--warning); border-radius: 8px; padding: 10px 12px; margin: 8px 0; display: flex; flex-direction: column; gap: 4px; }
-.about-btn i { width: 17px; height: 17px; flex: 0 0 17px; background: currentColor;
+/* a Training-tab row's ⓘ (FamilyOption.explain) and the help it opens under the row */
+.explain-line { display: flex; align-items: center; gap: 6px; }
+.explain-btn { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 24px;
+  padding: 0; border: none; border-radius: 50%; background: none; color: var(--text-secondary); cursor: pointer; }
+.explain-btn:hover, .explain-btn[aria-expanded="true"] { color: var(--accent); }
+.row-explain { margin-top: 6px; padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--bg-inset);
+  font-size: 12.5px; line-height: 1.45; color: var(--text-secondary); max-width: 760px; }
+.row-explain p { margin: 0 0 8px; }
+.row-explain p:last-child { margin-bottom: 0; }
+.about-btn i, .explain-btn i { width: 17px; height: 17px; flex: 0 0 17px; background: currentColor;
   -webkit-mask: var(--info) center / contain no-repeat; mask: var(--info) center / contain no-repeat;
   --info: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 11v6M12 7.5v.5'/%3E%3C/svg%3E"); }
 .about-window { width: 560px; }

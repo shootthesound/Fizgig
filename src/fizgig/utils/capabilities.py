@@ -158,7 +158,7 @@ def detect() -> Capabilities:
 
     caps.has_cuda = True
     caps.is_rocm = is_rocm()
-    props = torch.cuda.get_device_properties(0)
+    props = torch.cuda.get_device_properties(torch.cuda.current_device())
     caps.device_name = props.name
     caps.sm = torch.cuda.get_device_capability(0)
     caps.vram_gb = props.total_memory / (1024 ** 3)
@@ -166,7 +166,7 @@ def detect() -> Capabilities:
         # What is ACTUALLY available: a "16 GB" card reports ~15.9 GiB total, and a browser or
         # a running ComfyUI can be holding several more. Deciding from total would hand those
         # users a config that OOMs or silently falls back to swapping.
-        free_b, _total_b = torch.cuda.mem_get_info(0)
+        free_b, _total_b = torch.cuda.mem_get_info()
         caps.vram_free_gb = free_b / (1024 ** 3)
     except Exception:
         caps.vram_free_gb = caps.vram_gb
@@ -535,7 +535,7 @@ def recommend_krea2_strategy(vram_gb: Optional[float] = None,
     if vram is None:
         try:
             import torch
-            free_b, _ = torch.cuda.mem_get_info(0)
+            free_b, _ = torch.cuda.mem_get_info()
             vram = free_b / (1024 ** 3)
         except Exception:
             vram = caps.vram_free_gb or caps.vram_gb

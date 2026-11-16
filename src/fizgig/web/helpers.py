@@ -134,7 +134,15 @@ def _needs(desc, job, prefs):
     s = _srv()
     from fizgig.families import launch
     out = []
-    for role in ("dit", "vae") if job.get("conds") else ("dit", "vae", "text_encoder"):
+    ck = job.get("checkpoint") if isinstance(job.get("checkpoint"), dict) else None
+    if ck:      # a round on the family's preview checkpoint (#339): that file and the VAE (the encodings come with it)
+        f = next((m for m in desc.model_files if m.pref_key == ck.get("pref_key")), None)
+        if f is not None:
+            out.append((f.label, s.pref_path(prefs, f.pref_key), f))
+        roles = ("vae",)
+    else:
+        roles = ("dit", "vae") if job.get("conds") else ("dit", "vae", "text_encoder")
+    for role in roles:
         f = next((m for m in desc.model_files if m.role == role), None)
         if f is not None:
             p = s.pref_path(prefs, f.pref_key)
@@ -146,7 +154,7 @@ def _needs(desc, job, prefs):
         f = next((m for m in desc.model_files if m.pref_key == sp.pref_key), None)
         out.append((sp.name, s.pref_path(prefs, sp.pref_key), f))
     lk = desc.preview_look()
-    if lk is not None and float(job.get("look") or 0) > 0:
+    if lk is not None and float(job.get("look") or 0) > 0 and not ck:
         out.append((lk.label, launch.look_path(desc, {"models": {lk.pref_key: s.pref_path(prefs, lk.pref_key)}}), lk))
     return out
 
@@ -256,6 +264,11 @@ def submit(body):
                        "look_lora": paths.get(lk.label) if lk is not None else None,
                        "context": _dir("files", body["context"]) if body.get("context") else None},
              "context_strength": (job.get("context") or [None, 1.0])[1]}
+    ck = job.get("checkpoint") if isinstance(job.get("checkpoint"), dict) else None
+    if ck:          # the worker loads the preview checkpoint instead of the base, the epoch's LoRA rides on it
+        f = next((m for m in desc.model_files if m.pref_key == ck.get("pref_key")), None)
+        setup["checkpoint"] = {"path": s.pref_path(prefs, f.pref_key) if f is not None else None,
+                               "int8": bool(ck.get("int8"))}
     if not setup["paths"]["speed_lora"] and sp is not None:      # this round has no Turbo: keep the worker's
         setup["paths"]["speed_lora"] = s.pref_path(prefs, sp.pref_key) if sp.pref_key and os.path.isfile(
             s.pref_path(prefs, sp.pref_key) or "") else None

@@ -20,10 +20,14 @@ except ImportError:
     flash_attn_func = None
 
 try:
-    from sageattention import sageattn_varlen, sageattn
+    from sageattention import sageattn
+except ImportError:
+    sageattn = None
+
+try:
+    from sageattention import sageattn_varlen
 except ImportError:
     sageattn_varlen = None
-    sageattn = None
 
 try:
     import xformers.ops as xops
@@ -36,14 +40,21 @@ except ImportError:
 # (exact trim, the old behaviour). See AttentionParams.__post_init__.
 # Guarded parse: this module is imported by the model, both trainers and the GUI — a typo'd
 # env var used to surface as a bare ValueError traceback at app start that never named it.
+# AMD (ROCm): trim exactly. The x64 rounding exists for cuDNN's per-shape planning, which ROCm doesn't have, and the
+# padding it leaves keeps the key-padding mask on - and masked attention is wrong on ROCm (measured on an MI350X against
+# an RTX 5090, same LoRA and seed: renders above 512 px came out different, training went to NaN) and can fall to the
+# math kernel, whose memory grows with the square of the tokens (#343: out of memory above 512 px on an RX 9070 XT).
+# Exact = no padding = no mask: the MI350X then matched the 5090, trained normally and peaked 0.3 GB lower.
+_HIP = bool(getattr(torch.version, "hip", None))
+_TRIM_DEFAULT = "1" if _HIP else "64"
 try:
-    _TRIM_MULTIPLE = int(os.environ.get("FIZGIG_ATTN_TRIM_MULTIPLE", "64") or 64)
+    _TRIM_MULTIPLE = int(os.environ.get("FIZGIG_ATTN_TRIM_MULTIPLE", _TRIM_DEFAULT) or _TRIM_DEFAULT)
 except ValueError:
     import logging as _logging
     _logging.getLogger(__name__).warning(
-        "FIZGIG_ATTN_TRIM_MULTIPLE=%r is not an integer — using the default 64",
-        os.environ.get("FIZGIG_ATTN_TRIM_MULTIPLE"))
-    _TRIM_MULTIPLE = 64
+        "FIZGIG_ATTN_TRIM_MULTIPLE=%r is not an integer — using the default %s",
+        os.environ.get("FIZGIG_ATTN_TRIM_MULTIPLE"), _TRIM_DEFAULT)
+    _TRIM_MULTIPLE = int(_TRIM_DEFAULT)
 
 COMPILED_BLOCKS = False      # the DiT's blocks are torch.compiled: attend the padded length, never trim (below)
 
@@ -191,6 +202,10 @@ def attention(
         assert k is not None and v is not None, "k and v must be provided if qkv_or_q is a tensor"
     if attn_params is None:
         attn_params = AttentionParams.create_attention_params("torch", False)
+    if attn_params.attn_mode == "sageattn" and attn_params.split_attn and attn_params.seqlens is None:
+        # Text fusion attends across layers with text tokens as its batch. With
+        # no padding, use one batched kernel rather than a launch per text token.
+        attn_params = AttentionParams.create_attention_params("sageattn", False)
 
     # GQA: q may carry more heads than k/v (e.g. Krea 2 = 48 query / 12 kv heads). Expanding
     # k/v stays the right call even on cuDNN — measured 0.128 ms (expand) vs 0.138 ms
@@ -223,6 +238,16 @@ def attention(
         attn_params.attention_mask = kept_mask
         attn_params.max_seqlen = max_seqlen  # keep max_seqlen for padding
         seqlen_trimmed = True
+
+    # AMD (ROCm): a masked SDPA call attends wrongly there (Krea 2 renders above 512 px unlike NVIDIA's same seed, NaN
+    # loss in training on an MI350X; #341 / #343) and can fall to the math kernel. A batch whose captions differ in
+    # length goes through the per-sample path instead: each sample sliced to its own length, no mask, the same result.
+    # (Compiled blocks keep the mask: the per-sample slices would recompile; Auto never compiles on ROCm.)
+    if (_HIP and attn_params.attn_mode == "torch" and not attn_params.split_attn and not seqlen_trimmed
+            and not COMPILED_BLOCKS and attn_params.attention_mask is not None and attn_params.seqlens is not None):
+        sp = AttentionParams.create_attention_params("torch", True)
+        sp.seqlens, sp.max_seqlen = attn_params.seqlens, attn_params.max_seqlen
+        attn_params = sp
 
     # Determine tensor layout based on attention implementation
     if attn_params.attn_mode == "torch" or (
@@ -310,8 +335,7 @@ def attention(
         if attn_params.split_attn:
             x = []
             for i in range(len(q)):
-                # HND seems to cause an error
-                x_i = sageattn(q[i], k[i], v[i])  # B, H, L, D. No dropout support
+                x_i = sageattn(q[i], k[i], v[i], tensor_layout="HND", is_causal=False)
                 q[i] = None
                 k[i] = None
                 v[i] = None
@@ -319,7 +343,7 @@ def attention(
             x = torch.cat(x, dim=0)
             q, k, v = None, None, None
         elif attn_params.cu_seqlens is None:  # all tokens are valid
-            x = sageattn(q, k, v)  # B, L, H, D. No dropout support
+            x = sageattn(q, k, v, tensor_layout="HND", is_causal=False)
             q, k, v = None, None, None
         else:
             # Reshape to [(bxs), a, d]

@@ -361,7 +361,7 @@ class KleinDriver(FamilyDriver):
         if sim:
             gb = float(sim)
         elif torch.cuda.is_available():
-            gb = torch.cuda.get_device_properties(0).total_memory / 1024 ** 3
+            gb = torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory / 1024 ** 3
         else:
             return 0, None, None
         if gb >= 23:

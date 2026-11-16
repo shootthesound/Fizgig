@@ -16,7 +16,8 @@ class MiniMaxH3ImageWorkbenchEngine(WorkbenchEngine):
         if self.pipeline is None and precision == "auto":
             from fizgig.families import quant
             free = _free_vram_gb()
-            precision, _, why = quant.plan(self.desc, self.driver, "auto", -1, free_gb=free)
+            dit = kw.get("dit_path") or (a[0] if a else None)
+            precision, _, why = quant.plan(self.desc, self.driver, "auto", -1, free_gb=free, dit_path=dit)
             peaks, per = self.desc.train_memory.get(precision, ((), 0.0))
             if peaks and per > 0:
                 peak = max(gb for _, gb in peaks)

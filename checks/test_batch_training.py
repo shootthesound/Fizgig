@@ -321,7 +321,8 @@ def test_h3_batch_note_and_move_ask_its_own_planner(tmp_path, monkeypatch):
     from fizgig.utils import device
     from fizgig.web import batch_plan
     h3 = get_family("minimax")
-    hdr = json.dumps({"adaln_t_table": {"dtype": "F32", "shape": [1], "data_offsets": [0, 4]}}).encode()
+    hdr = json.dumps({"adaln_t_table": {"dtype": "F32", "shape": [1], "data_offsets": [0, 4]},     # the pruned int8 file
+                      "blocks.0.attn.qkv.comfy_quant": {"dtype": "U8", "shape": [0], "data_offsets": [4, 4]}}).encode()
     dit = tmp_path / "h3.safetensors"
     dit.write_bytes(struct.pack("<Q", len(hdr)) + hdr + b"\0" * 4)
     v = {**form.DEFAULTS, "BATCH_SIZE": "4", "DATASET_MEGAPIXELS": "1.0", "BLOCKS_SWAP": "Auto (detect from GPU)"}

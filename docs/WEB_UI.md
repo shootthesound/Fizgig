@@ -2,6 +2,22 @@
 
 Fizgig is a web page: in its own app window on your computer, in your browser, on a pod, on a machine with no screen, or on your phone or another computer to set up and watch training.
 
+## Krea 2 generation on ROCm
+
+In **Preferences → Inference performance**, **Force SageAttention for Krea 2 image generation**
+uses SageAttention for Krea 2's denoiser, including training previews, Studio, Royale and Profiler.
+It takes effect on the next generated image; training steps keep their existing backend.
+This can avoid PyTorch's high-memory math attention fallback on ROCm. It does not change
+model weight precision, block swapping or VAE decoding.
+
+Install a SageAttention build compatible with your GPU and PyTorch/ROCm in Fizgig's own
+`venv` first (the working build in another app's environment is not automatically available).
+The toggle is shown on AMD launches or when SageAttention is installed, and defaults to off.
+When forced, a missing or failing kernel stops generation rather
+than silently falling back to PyTorch; disable it to restore the default backend. Other model
+families are unaffected. RX 9070 XT memory usage and maximum resolution need validation on
+that hardware; this setting does not guarantee a model and its generation fit in VRAM.
+
 ## On a RunPod pod
 
 The pod starts Fizgig by itself. In the pod's **Connect** menu, open **HTTP port 8081** and log in with the pod's password: the `FIZGIG_PASSWORD` you set in the template, or, if you didn't set one, the password printed in the pod's logs (generated on its first start and kept after that). There's no user name. On a pod from the Classic template it's the same page and the same `VNC_PASSWORD` as the remote desktop on port 6080. [The pod guide](../docker/README.md) has both.

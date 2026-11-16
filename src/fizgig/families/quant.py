@@ -287,17 +287,19 @@ def small_card_figures(desc) -> bool:
 
 
 def plan(desc, driver, precision="auto", blocks_to_swap=-1, free_gb=None, margin_gb=1.5, megapixels=1.0, pictures=1,
-         adapter_gb=0.0):
+         adapter_gb=0.0, dit_path=None):
     """Resolve 'auto' precision and/or block swap (-1) from free VRAM and the description's measured training
     memory (desc.train_memory: {precision: (peak GB at no swap, GB saved per swapped block)}).
 
     Auto precision takes the most precise base that fits without swap (bf16, then int8, then nf4), since swap costs
     far more speed than quantisation. If none fits with the full margin, nf4 still goes first when it fits with a
     small one: swapping int8 instead cost 4.4x the step time and 4x the CPU on a 16 GB card (#216; measured July
-    2026). Only if nothing fits does it swap (int8, the smaller swappable base). An explicit precision with auto swap
+    2026). Only if nothing fits does it swap (int8, the smaller swappable base; failing that, a 4-bit base that
+    streams - desc.streams_blocks). An explicit precision with auto swap
     gets the fewest blocks that fit. pictures: a batched step's (Batch size), each past the first adding
     desc.batch_gb's figure at megapixels. adapter_gb: what the run's trainable adapter holds beyond the figures'
-    (adapter_extra_gb). Returns (precision, blocks_to_swap, reason)."""
+    (adapter_extra_gb). dit_path: Auto leaves out a precision that file can't load at (driver.precision_problem:
+    MiniMax H3's int8 of its full unpruned file, #357). Returns (precision, blocks_to_swap, reason)."""
     if free_gb is None:
         free_gb = free_vram_gb()
     extra = batch_extra(desc, megapixels, pictures) + max(0.0, float(adapter_gb or 0))
@@ -308,11 +310,15 @@ def plan(desc, driver, precision="auto", blocks_to_swap=-1, free_gb=None, margin
     order = (getattr(desc, "auto_precisions_small", ()) if small else ()) or getattr(desc, "auto_precisions", ())
     if precision == "auto" and order:
         offered = [p for p in order if p in desc.precisions]
+    if precision == "auto" and dit_path:
+        offered = [p for p in offered if not driver.precision_problem(p, dit_path)] or offered
     cap = driver.max_blocks_to_swap()
     budget = free_gb - margin_gb
 
+    streams = getattr(desc, "streams_blocks", None) or (lambda p: p != "nf4")
+
     def swap_for(p):
-        if p not in mem or p == "nf4":
+        if p not in mem or not streams(p):
             return 0
         need, per_block = mem[p]
         if need <= budget or per_block <= 0 or cap <= 0:
@@ -335,7 +341,14 @@ def plan(desc, driver, precision="auto", blocks_to_swap=-1, free_gb=None, margin
             if mem[p][0] - n * mem[p][1] <= budget:
                 return p, n if blocks_to_swap < 0 else blocks_to_swap, f"{p} + {n} swapped blocks fit {free_gb:.1f} GB"
         p = "nf4" if "nf4" in offered else offered[-1]
-        return p, 0, f"nothing fits {free_gb:.1f} GB comfortably: {p}, the smallest base"
+        # a 4-bit base that streams (MiniMax H3 Image's NF4 ring) takes the blocks it needs: with none, a 12 GB card
+        # planned 12.8 GB, spilled into system memory on Windows and trained at 40 s/step; 16 swapped ran 4.1 (#354)
+        n = swap_for(p)
+        if n and mem[p][0] - n * mem[p][1] <= budget:
+            return p, n if blocks_to_swap < 0 else blocks_to_swap, f"{p} + {n} swapped blocks fit {free_gb:.1f} GB"
+        return (p, n if blocks_to_swap < 0 else (blocks_to_swap if n else 0),
+                f"nothing fits {free_gb:.1f} GB comfortably: {p}, the smallest base"
+                + (f", {n} blocks swapped (the most)" if n else ""))
     if precision not in offered:
         raise ValueError(f"{desc.display_name} offers {offered}, not {precision!r}")
     if blocks_to_swap < 0:
@@ -388,7 +401,7 @@ def card_gb():
         return float(sim)
     if not torch.cuda.is_available():
         return 0.0
-    return torch.cuda.get_device_properties(0).total_memory / 1024 ** 3
+    return torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory / 1024 ** 3
 
 
 def auto_batch(desc, megapixels):
@@ -475,7 +488,7 @@ def apply_vram_cap():
     sim = os.environ.get("FIZGIG_SIM_VRAM_GB", "").strip()
     if not sim or not torch.cuda.is_available():
         return
-    total = torch.cuda.get_device_properties(0).total_memory / 1024 ** 3
+    total = torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory / 1024 ** 3
     torch.cuda.set_per_process_memory_fraction(min(1.0, (float(sim) - _SIM_OTHERS_GB) / total))
     logger.info(f"[sim] behaving like a {float(sim):g} GB card ({float(sim) - _SIM_OTHERS_GB:.1f} GB for Fizgig)")
 

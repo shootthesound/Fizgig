@@ -41,6 +41,7 @@ from fizgig.families import refmod
 from fizgig.web import studio
 from fizgig.web.port import PORT_DEFAULT, PORT_WALK, listening, on_pod, on_runpod, on_vast, saved_port
 from fizgig.web.schema import get_schema
+from fizgig.krea2.generation_attention import preference_available as sageattention_option
 
 logger = logging.getLogger("fizgig.web")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -101,6 +102,15 @@ _stats = {"vram": [0, 0], "ram": [0, 0], "vram_peak": 0, "ram_peak": 0, "device_
 # no console window for helper commands: started from the desktop app the web UI has none, so each
 # nvidia-smi / taskkill would flash one up on Windows
 _NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
+
+
+def _min_face(v):
+    """Image Prep's Min face width (px): a number 0 or more, else the default."""
+    from fizgig.dataset.prep import MIN_FACE_PX
+    try:
+        return max(0, int(float(v)))
+    except (TypeError, ValueError):
+        return MIN_FACE_PX
 
 
 # ---- hardware meters (as the desktop status bar) ---------------------------------------------------------------
@@ -383,7 +393,7 @@ def _write_json(path, data):
 # the desktop's DEFAULT_PREFS that aren't empty: a web-only install starts where the desktop app would
 PREF_DEFAULTS = {"lora_output_dir": "output_loras", "profiles_dir": "user_data/profiles", "cache_dir": "user_data/cache",
                  "runpod_stop_when_done": "0", "inference_blocks_to_swap": "Auto (detect from GPU)",
-                 "inference_int8": "1", "lan_discovery": "1", "update_check": "1"}
+                 "inference_int8": "1", "inference_sageattention": "0", "lan_discovery": "1", "update_check": "1"}
 
 
 LAST_USED_FILE = user_data.LAST_USED_FILE           # the training folder, each folder's trigger word
@@ -445,7 +455,7 @@ def set_folder_trigger(folder, word):
 
 # the Preferences settings Reset to defaults puts back (the model files are never reset)
 SETTING_PREFS = ("lora_output_dir", "profiles_dir", "cache_dir", "input_lora_dir", "input_ref_dir",
-                 "inference_blocks_to_swap", "inference_int8", "lan_discovery", "update_check")
+                 "inference_blocks_to_swap", "inference_int8", "inference_sageattention", "lan_discovery", "update_check")
 
 
 def load_prefs() -> dict:
@@ -800,7 +810,8 @@ def _studio_post(what, b):
         ps = None
         if desc.workbench_follows_samples and "negative" in b:
             ps = studio.plan(desc, load_prefs(), pref_path, samples=_studio_samples(desc), negative=b.get("negative"))[1]
-        studio.settings(turbo=b.get("turbo"), preview_settings=ps)
+        ro = studio.studio_tokens(desc, load_prefs()) if b.get("options") else None    # Studio's own sampler pick
+        studio.settings(turbo=b.get("turbo"), preview_settings=ps, render_options=ro)
         return {"ok": True}
     if what == "save":
         out = str(b.get("out") or "").strip()
@@ -1466,6 +1477,71 @@ def delete_run(run_id, confirm=False) -> dict:
     return {"ok": True}
 
 
+def purge_runs(days, delete_data=False, include_paused=False, confirm=False, ids=None) -> dict:
+    """Purge older than X days on Runs & outputs. With confirm False it only says which runs are past the cut-off,
+    read off the history list alone: no folder is opened and nothing is sized, so a very long history previews
+    instantly. With confirm True it takes them out. The cut-off counts from a run's end date, so a run still training
+    - which has no end date at all - is never past it and is left alone; a paused run counts only when
+    include_paused asks. delete_data off takes the runs off the list and touches nothing on disk; on, each one goes
+    through delete_run exactly as the single Delete run does."""
+    try:
+        days = int(days)
+    except (TypeError, ValueError):
+        return {"error": "Enter a number of days."}
+    if not 1 <= days <= 365:
+        return {"error": "Between 1 and 365 days."}
+    cut = time.time() - days * 86400
+    past, held = [], 0
+    every = history.runs()
+    for r in every:
+        ended = r.get("ended_at")
+        if not ended or float(ended) > cut:
+            continue                        # no end date: still training, or a run nothing ever closed
+        if not str(r.get("id") or ""):
+            continue                        # no id: nothing to delete it by, so it isn't a purge candidate
+        if str(r.get("result") or "") == "paused" and not include_paused:
+            held += 1                       # past the cut-off, but a paused run only counts when asked
+            continue
+        past.append(r)
+    if not confirm:
+        listed = []
+        for r in past:
+            prog = r.get("progress") if isinstance(r.get("progress"), dict) else {}
+            listed.append({"id": r.get("id"), "name": str(r.get("lora") or "run"),
+                           "date": float(r.get("ended_at") or 0),
+                           # how far the run got, off its own last figures: the epoch it reached and the number it was
+                           # set to. Nothing is looked for on disk - a run that reported nothing simply shows no epoch.
+                           "epoch": prog.get("epoch"), "total_epochs": prog.get("total_epochs")})
+        return {"ok": True, "days": days, "count": len(past), "held": held, "runs": listed}
+    if ids is not None:                     # only what the preview showed: a run that came past the cut-off since stays
+        keep = {str(i) for i in ids}
+        past = [r for r in past if str(r.get("id")) in keep]
+    if not past:
+        return {"error": f"Nothing ended more than {days} days ago."}
+    # Files are found by output folder + LoRA name, so a run that shares both with a run staying on the list (two
+    # starts under one name before names were made unique) would delete that run's files: those only leave the list
+    going = {str(r.get("id")) for r in past}
+    norm = lambda r: (os.path.normcase(os.path.abspath(str(r.get("output_dir") or "."))), str(r.get("lora") or "").lower())
+    staying = {norm(r) for r in every if str(r.get("id")) not in going}
+    purged, failed, shared = 0, [], 0
+    for r in past:
+        rid = str(r.get("id"))
+        if delete_data and norm(r) in staying:
+            history.remove(rid)
+            purged += 1
+            shared += 1
+            continue
+        if delete_data:
+            out = delete_run(rid, confirm=True)
+            if out.get("error"):            # this run's own files are stuck; the others still go
+                failed.append(f"{r.get('lora') or 'run'}: {out['error']}")
+                continue
+        else:
+            history.remove(rid)
+        purged += 1
+    return {"ok": True, "days": days, "purged": purged, "failed": failed, "shared": shared}
+
+
 PAUSED_FILE = ".fizgig_paused.json"       # in the run's output folder, as the desktop writes it
 
 
@@ -2098,6 +2174,24 @@ def _stop():
             os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
         except OSError:
             proc.terminate()
+    return True
+
+
+def _stop_paused():
+    """Stop paused run (#348): the paused run ends here, so the queue can start. Its saves stay, and its record reads
+    stopped, so Continue on its card in Runs & outputs carries it on later. False if no run is paused."""
+    with _lock:
+        if _run["state"] != "paused" or _run["proc"] is not None or not _run.get("resume"):
+            return False
+        lora, out_dir = _run.get("lora") or "", _run.get("output_dir") or ""
+        _run.update(state="stopped", resume="", resume_mode="", ended_at=time.time())
+    try:
+        os.remove(os.path.join(out_dir, PAUSED_FILE))
+    except OSError:
+        pass
+    history.stop_paused(lora, out_dir)
+    append_log("\n■ Paused run stopped. Its saves are kept: Continue on its card in Runs & outputs carries it on.\n")
+    webqueue.on_run_ended("stopped", lora, _queue_starter)
     return True
 
 
@@ -3184,6 +3278,7 @@ class Handler(BaseHTTPRequestHandler):
                                          for k in form.model_keys(d)},
                               "cache_dir": str(p.get("cache_dir") or ""),
                               "settings": {k: str(p.get(k) or "") for k in SETTING_PREFS},
+                              "sageattention_option": sageattention_option(),
                               "captioning": {"main": pref_path(p, "krea2_text_encoder"),
                                              "main_ok": bool(pref_path(p, "krea2_text_encoder")
                                                              and os.path.isfile(pref_path(p, "krea2_text_encoder"))),
@@ -3506,7 +3601,7 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 mp, train = 1.0, None
             r = _prep.summary(folder, g("mode", _prep.MODES[0]), g("replace") == "1", mp, train,
-                              g("crops_only") == "1")
+                              g("crops_only") == "1", _min_face(g("min_face")))
             try:
                 names = os.listdir(folder)
             except OSError:
@@ -4334,8 +4429,8 @@ class Handler(BaseHTTPRequestHandler):
                 with _lock:
                     paused = _run["state"] == "paused"
                 if paused:                              # as the desktop's Start next now: it would leave the run
-                    return self.json({"error": "A run is paused. Resume it first: the queue carries on after it "
-                                               "finishes."}, 400)
+                    return self.json({"error": "A run is paused. Resume it (the queue carries on after it finishes), "
+                                               "or press Stop paused run to set it aside."}, 400)
                 webqueue.release(_queue_starter)
                 return self.json({"ok": True})
             if path == "/api/queue/hold":
@@ -4343,6 +4438,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"ok": True})
             if path == "/api/runs/delete":              # Delete run: asks first (confirm false = what it'd delete)
                 r = delete_run(str(b.get("id") or ""), confirm=bool(b.get("confirm")))
+                return self.json(r, 400 if r.get("error") else 200)
+            if path == "/api/runs/purge":               # Purge older than X days: preview first, then the purge
+                r = purge_runs(b.get("days"), delete_data=bool(b.get("data")),
+                               include_paused=bool(b.get("paused")), confirm=bool(b.get("confirm")),
+                               ids=b.get("ids") if isinstance(b.get("ids"), list) else None)
                 return self.json(r, 400 if r.get("error") else 200)
             if path == "/api/runs/continue":            # Continue: on from the run's newest save
                 from fizgig.web import helpers as _helpers
@@ -4521,7 +4621,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/fetch/cancel":
                 return self.json({"ok": _cancel_fetch()})
             if path == "/api/stop":
-                return self.json({"ok": _stop()})
+                return self.json({"ok": _stop() or _stop_paused()})
             if path == "/api/logout":                     # this device: its login cookie goes
                 return self.json({"ok": True}, extra=[("Set-Cookie", "fizgig_session=; Path=/; Max-Age=0; HttpOnly; "
                                                                      "SameSite=Strict")])
@@ -4533,17 +4633,21 @@ class Handler(BaseHTTPRequestHandler):
                 # the workbench's render choice per model that offers it (description.workbench_render_choice)
                 render_keys = {f"workbench_render_{d.key}" for d in training_families()
                                if getattr(d, "workbench_render_choice", False)}
+                # Studio's own pick of a Samples-tab choice it also offers (FamilyOption.studio): one of its labels
+                studio_keys = {f"studio_opt_{o.key}": set(o.choice_labels()) for d in training_families()
+                               for o in d.options if getattr(o, "studio", False)}
                 allowed = {k for d in training_families() for k in form.model_keys(d)} | set(SETTING_PREFS) | {
                     "input_dataset_dir", "welcome_v8_hidden", "sysmem_tip_hidden", "qt_disable_gpu",
-                    captions.SECONDARY_PREF} | render_keys
+                    captions.SECONDARY_PREF} | render_keys | set(studio_keys)
                 ch = b.get("changes") or {}
-                ch = {k: v for k, v in ch.items() if k not in render_keys or v in ("checkpoint", "samples")}
+                ch = {k: v for k, v in ch.items() if (k not in render_keys or v in ("checkpoint", "samples"))
+                      and (k not in studio_keys or v in studio_keys[k])}
                 if b.get("reset"):                      # Reset to defaults: the settings, never the model files
                     ch = {**{k: "" for k in SETTING_PREFS}, **{k: v for k, v in PREF_DEFAULTS.items()
                                                                   if k in SETTING_PREFS}}
                 if "inference_int8" in ch:
                     ch["inference_int8"] = "1" if ch["inference_int8"] in (True, "1", 1) else "0"
-                for k in ("lan_discovery", "update_check", "qt_disable_gpu"):
+                for k in ("lan_discovery", "update_check", "qt_disable_gpu", "inference_sageattention"):
                     if k in ch:
                         ch[k] = "1" if ch[k] in (True, "1", 1) else "0"
                 upd = {k: str(v) for k, v in ch.items() if k in allowed}
@@ -4663,10 +4767,9 @@ class Handler(BaseHTTPRequestHandler):
                 script = os.path.join(BASE_DIR, "src", "gizmo", "gizmo.pyw" if os.name == "nt" else "gizmo.py")
                 if not os.path.isfile(script):
                     return self.json({"error": "Gizmo is missing from your Fizgig folder - update Fizgig."}, 400)
-                exe = sys.executable
-                if os.name == "nt" and os.path.basename(exe).lower() == "python.exe":
-                    exe = os.path.join(os.path.dirname(exe), "pythonw.exe")    # no console window beside it
-                subprocess.Popen([exe, script], cwd=BASE_DIR, **({"creationflags": 0x08000000} if os.name == "nt" else {}))
+                err = _gizmo_start(script)
+                if err:
+                    return self.json({"error": err}, 400)
                 return self.json({"ok": True})
             if path == "/api/lan/firewall":          # Allow on my network: Windows asks for an administrator's OK
                 from fizgig.web import lan
@@ -4779,7 +4882,8 @@ class Handler(BaseHTTPRequestHandler):
                         return self.json(prep_jobs.start(folder, str(b.get("mode") or ""), b.get("mp") or 1.0,
                                                          str(b.get("face") or "Largest Face"),
                                                          b.get("padding") or 20, bool(b.get("replace")),
-                                                         bool(b.get("crops_only"))))
+                                                         bool(b.get("crops_only")),
+                                                         _min_face(b.get("min_face"))))
                     if path == "/api/look/scan":
                         captions.unload()
                         return self.json(prep_jobs.look_scan(folder, b.get("baselines") or []))
@@ -5155,6 +5259,49 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as e:
             return self.json({"error": str(e)}, 400)
         return self.json({"error": "not found"}, 404)
+
+
+def _tk_help() -> str:
+    """What to install when this Python has no Tk (Gizmo is a Tkinter window)."""
+    if sys.platform == "darwin":
+        return "In a terminal: brew install python-tk, then click Open Gizmo again."
+    if os.name == "nt":
+        return "Run the Fizgig installer again (repair), then click Open Gizmo again."
+    v = f"{sys.version_info.major}.{sys.version_info.minor}"
+    return (f"In a terminal: sudo apt install python3-tk (or python{v}-tk) on Ubuntu / Debian, "
+            "sudo dnf install python3-tkinter on Fedora, sudo pacman -S tk on Arch. Then click Open Gizmo again.")
+
+
+def _gizmo_start(script: str) -> str:
+    """Start Gizmo; '' when it's opening, else what went wrong and what to do (shown under the button)."""
+    exe = sys.executable
+    try:
+        probe = subprocess.run([exe, "-c", "import tkinter; tkinter.Tcl()"], capture_output=True, text=True,
+                               timeout=60, **({"creationflags": 0x08000000} if os.name == "nt" else {}))
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return f"Gizmo couldn't start: {e}"
+    if probe.returncode:
+        return "Gizmo needs Tk, which Fizgig's Python doesn't have. " + _tk_help()
+    if os.name == "nt" and os.path.basename(exe).lower() == "python.exe":
+        exe = os.path.join(os.path.dirname(exe), "pythonw.exe")    # no console window beside it
+    log = user_file("gizmo.log")
+    with open(log, "w", encoding="utf-8", errors="replace") as fh:
+        proc = subprocess.Popen([exe, script], cwd=BASE_DIR, stdout=fh, stderr=subprocess.STDOUT,
+                                **({"creationflags": 0x08000000} if os.name == "nt" else {}))
+    try:                                   # a start-up failure (no display, a missing package) ends at once
+        code = proc.wait(timeout=4)
+    except subprocess.TimeoutExpired:
+        return ""
+    if code == 0:
+        return ""
+    try:
+        lines = [ln.strip() for ln in open(log, encoding="utf-8", errors="replace") if ln.strip()]
+    except OSError:
+        lines = []
+    last = lines[-1] if lines else f"it stopped with code {code}"
+    if "display" in last.lower():
+        return f"Gizmo couldn't open a window ({last}). It needs a desktop session on this computer."
+    return f"Gizmo couldn't start: {last}. The full message is in {log}."
 
 
 class _Server(ThreadingHTTPServer):

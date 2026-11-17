@@ -10934,7 +10934,8 @@ function fitText(ta, grow) {
   if (!ta || !ta.isConnected || !ta.offsetParent) return;
   if (ta.id === "lightboxCapText" && matchMedia(LB_SIDE).matches) { ta.style.height = ""; return; }
   if (grow && ta.scrollHeight <= ta.clientHeight) return;
-  const max = Math.round(innerHeight * (ta.id === "lightboxCapText" ? 0.5 : 0.4));
+  // a caption line grows to all its text: the caption around it scrolls instead (.caption-lines)
+  const max = ta.closest(".caption-lines") ? Infinity : Math.round(innerHeight * (ta.id === "lightboxCapText" ? 0.5 : 0.4));
   const border = ta.offsetHeight - ta.clientHeight;
   ta.style.height = "";
   ta.style.height = Math.min(Math.max(ta.scrollHeight + border, ta.offsetHeight), max) + "px";

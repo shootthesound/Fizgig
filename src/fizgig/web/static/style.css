@@ -2661,7 +2661,10 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   overflow: hidden; background: transparent; border: none; border-radius: 0; box-shadow: none; padding: 6px 4px; }
 .form-row .prompt-line textarea:focus { background: color-mix(in srgb, var(--accent) 8%, transparent); box-shadow: none; }
 /* a caption file a line at a time (Captions tab, captionLines): the prompt box's look; numbers once there are two */
-.caption-lines { margin: 4px 0 6px; }
+/* a long caption scrolls, lines and all; the scrollbar's room is kept, so a line's width (and its fitted height)
+   doesn't change when the bar appears */
+.caption-lines { margin: 4px 0 6px; max-height: 40vh; overflow-y: auto; scrollbar-gutter: stable; }
+.caption-lines .prompt-line { flex-shrink: 0; }
 .caption-lines .prompt-num { flex-basis: 26px; }
 .caption-lines:not(.several) .prompt-num { display: none; }
 .caption-lines .prompt-line textarea { flex: 1 1 auto; width: auto; max-width: none; min-height: 32px; resize: none;

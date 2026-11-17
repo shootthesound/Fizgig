@@ -1067,7 +1067,7 @@ REPEATS_HINT = ("A sub-folder named with a number and an underscore, like 3_blue
 
 
 MULTI_CAPTION_HINT = ("Each line of a caption file is a separate caption, and each time a picture trains one of its "
-                      "lines is picked. Put the style you prompt with most on line 1: auto-recaption rewrites only "
+                      "lines is randomly picked. Put the style you prompt with most on line 1: auto-recaption rewrites only "
                       "line 1, and training maps and Leave the rest of the model alone use it.")
 
 

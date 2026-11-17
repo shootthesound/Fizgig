@@ -592,7 +592,7 @@ def plan_adapter_gb(params: int, optimizer_type: str = "adamw8bit", *,
     return total + frozen + ema, frozen, ema
 
 
-def plan_base_quant(free_gb: float, pruned: bool, mp: float = 0.25, adapter_gb: float = 0.0):
+def plan_base_quant(free_gb: float, pruned: bool, mp: float = 0.25, adapter_gb: float = 0.0, int8: bool = True):
     """Pick the base quantisation AND the swap plan together -> (mode, blocks_to_swap, ckpt, why).
 
     Choosing a swap count from VRAM alone, with the quantisation already fixed, produces the
@@ -616,12 +616,14 @@ def plan_base_quant(free_gb: float, pruned: bool, mp: float = 0.25, adapter_gb: 
                            genuinely cannot fit, and for the bf16 checkpoint (no int8 weights
                            to stream — H2D is ConvRot-specific).
 
-    Only applies to a pruned int8 checkpoint — the bf16 file has no int8 weights to keep, so
-    there is nothing to choose between.
+    Only applies to a pruned int8 checkpoint — a bf16 file has no int8 weights to keep, so
+    there is nothing to choose between. int8: whether int8 can load the file at all (int8_loadable:
+    its own codes, or a pruned file converted at load, #357).
     """
-    if not pruned:
-        n, c = plan_vram(free_gb, mp=mp, resident_gb=_RESIDENT_GB, adapter_gb=adapter_gb)
-        return "nf4", n, c, "bf16 checkpoint — NF4 is the only option"
+    if not pruned or not int8:
+        n, c = plan_vram(free_gb, mp=mp, resident_gb=_RESIDENT_PRUNED_GB if pruned else _RESIDENT_GB,
+                         adapter_gb=adapter_gb)
+        return "nf4", n, c, "the full unpruned checkpoint (int8 can't hold it) — 4-bit"
 
     i_swap, i_ckpt = plan_vram(free_gb, mp=mp, resident_gb=_RESIDENT_INT8_GB,
                                transient_gb=_INT8_TRANSIENT_GB, adapter_gb=adapter_gb)
@@ -861,6 +863,47 @@ def is_pruned_checkpoint(path: str) -> bool:
             return "adaln_t_table" in json.loads(f.read(n))
     except Exception:
         return False
+
+
+def has_int8_codes(path: str) -> bool:
+    """Does this DiT carry int8 ConvRot weights (the pruned int8 files: a `<module>.comfy_quant` marker on an int8
+    weight)? Reads only the safetensors header(s). The fp8_scaled builds mark their fp8 weights the same way, so the
+    weight's dtype decides, not the marker."""
+    import json
+    import struct
+    files = ([os.path.join(path, n) for n in sorted(os.listdir(path)) if n.endswith(".safetensors")]
+             if os.path.isdir(path) else [path])
+    for p in files:
+        try:
+            with open(p, "rb") as f:
+                n = struct.unpack("<Q", f.read(8))[0]
+                head = json.loads(f.read(n))
+        except Exception:
+            continue
+        for k in head:
+            if k.endswith(".comfy_quant"):
+                w = head.get(k[: -len(".comfy_quant")] + ".weight")
+                if isinstance(w, dict) and w.get("dtype") == "I8":
+                    return True
+    return False
+
+
+def int8_loadable(path: str) -> bool:
+    """Can base precision int8 load this DiT? Its own int8 ConvRot codes, or a pruned file without them (the pruned
+    bf16 / fp8 builds, a fine-tune or merge saved that way), converted to the same storage at load (#357). Not the full
+    unpruned checkpoint: int8 would leave its AdaLN projections dense, ~26 GB."""
+    return has_int8_codes(path) or is_pruned_checkpoint(path)
+
+
+def int8_problem(path: str, desc) -> str:
+    """Why int8 can't load this DiT ("" = it can, or the file isn't there - the model checks say so): the full
+    unpruned checkpoint (int8_loadable). desc: the family, whose DiT download is named."""
+    if not path or not os.path.exists(path) or int8_loadable(path):
+        return ""
+    int8_file = next((f.path.rsplit("/", 1)[-1] for f in desc.model_files if f.role == "dit"), "the pruned int8 file")
+    return (f"Base precision int8 needs a pruned MiniMax H3 file, and {os.path.basename(path)} is the full unpruned "
+            f"one: int8 would keep its timestep layers at full size (~26 GB). Pick 4-bit or 4-bit HQQ as the Base "
+            f"precision, or set the DiT on the Preferences tab to a pruned file such as {int8_file}.")
 
 
 def cap_preview_res_small_card(w, h):

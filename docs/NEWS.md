@@ -1,5 +1,27 @@
 # Fizgig news
 
+## 16 Nov 2026: MiniMax H3 at int8 on any pruned file, and H3 Image on 12 GB cards
+
+**int8 on any pruned H3 file.** A pruned bf16 or fp8 MiniMax H3 or H3 Image file, Comfy-Org's or a fine-tune or merge saved that way, is converted to int8 as it loads, so Auto trains it at int8 instead of stopping at load. H3's pruned bf16 file converts to Comfy-Org's int8 file value for value. The full unpruned checkpoint stays 4-bit.
+
+**H3 Image on 12 GB cards.** Auto swaps blocks for H3 Image's 4-bit base on a small card (15 at 0.25 MP on 12 GB), instead of a plan that spilled into system memory on Windows at about 40 s a step.
+
+**AMD and more.** The Linux AMD installer finds libnuma on Arch and CachyOS, the Training tab no longer loads optimizer libraries to list them, and the pod guide shows how to download a very big dataset straight onto the pod.
+
+[Fizgig v9.7.5 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.7.5)
+
+## 15 Nov 2026: Gizmo's crop box reworked, AMD fixes, and Automagic v4's real rate
+
+**Gizmo's crop box.** Drag from any corner in any direction; a locked shape grows smoothly instead of jumping; the box reaches every edge of the frame. Move it by dragging inside, type its position and size, place it with the arrows or **Largest**, and keep **Saved boxes**.
+
+**AMD.** A PC with built-in graphics as well as an AMD card now trains on the card (it stopped with "invalid kernel file" before), and `Launch Fizgig AMD.bat check` gives a diagnostic to paste into an issue. Krea 2 LoKR runs at 0.5 MP fit 16 GB AMD cards better: on Linux through expandable memory segments, and on Windows a run that only just fits warns to turn EMA off.
+
+**Automagic v4's real rate.** The run card, the loss chart and the log show the rate Automagic v4 really moves the weights at, not its flat 2.5e-4 cap.
+
+**Smaller things.** Resume Training catches a folder mix-up before the run starts, Image Prep skips face close-ups when the face is under 400 px wide, and Continue on a finished run says it keeps your checkpoints.
+
+[Fizgig v9.7.4 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.7.4)
+
 ## 15 Nov 2026: cleaner H3 Image pictures with LCM, and Stop for a paused run
 
 **H3 Image renders with LCM.** MiniMax H3 Image has a **Sampler** choice on the Samples tab and, separately, in Studio. The new default, **LCM, noise 1.1 → 0.9**, gives much cleaner skin, hands and faces than Euler on text-to-image, the epoch 0 previews included, in the same 6 steps. Euler is still there, and the ⓘ beside it gives the ComfyUI settings for each, so your LoRA renders the same way there. The recipe comes from u/Obvious-Bad7548 on r/StableDiffusion.

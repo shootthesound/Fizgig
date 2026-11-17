@@ -866,8 +866,10 @@ function startResumeNote(live) {
   if (box.dataset.path === path) return;
   box.dataset.path = path;
   box.replaceChildren(
-    el("span", {text: `Start will carry on from ${name}` + (m ? ` (epoch ${Number(m[1])})` : "") +
-      ", not begin a new run: the Resume Training box holds it. "}),
+    el("span", {text: m || /-state$/.test(name) ? `Start will carry on from ${name}` + (m ? ` (epoch ${Number(m[1])})` : "") +
+      ", not begin a new run: the Resume Training box holds it. " :
+      `The Resume Training box holds ${name}, which isn't a saved state: pick the state folder itself (named like ` +
+      "my_lora-000012-state), or clear it. "}),
     el("button", {class: "btn btn-sm", type: "button", text: "Clear it: start a new run", onclick: () => {
       S.values.RESUME_TRAINING = ""; syncInputs(["RESUME_TRAINING"]); saveStateSoon(); startResumeNote(false); }}));
 }
@@ -2407,8 +2409,12 @@ function runSummary() {
       live ? p.eta : (p.total_steps ? `${p.step} of ${p.total_steps}` : "")),
   ]);
   const lk = S.likeSummary;
+  const lrCell = cell("Learning rate", p.lr);
+  if (String(v.OPTIMIZER_TYPE || "").toLowerCase() === "automagic4") lrCell.title = "Automagic v4 sets its own " +
+    "rate and slows each weight's step by how sensitive that weight is. This is its working rate: its rate times " +
+    "that slowdown on average, so the weights' real movement. The epoch lines in the log give both parts.";
   const learning = sec("Learning", [
-    cell("Learning rate", p.lr), cell("Grad norm", p.grad_norm), cell("Loss", p.loss),
+    lrCell, cell("Grad norm", p.grad_norm), cell("Loss", p.loss),
     lk ? cell("Likeness", `${Math.round(lk.now * 100)}% (epoch ${lk.epoch})` +
       (lk.bestEpoch !== lk.epoch ? ` · best ${Math.round(lk.best * 100)}% at ${lk.bestEpoch}` : "")) : null,
   ]);
@@ -3545,7 +3551,9 @@ async function loadRuns() {
     const contAsk = (why) => {
       const box = el("input", {type: "number", min: String(cp.done + 1), step: "1", class: "w-num",
         value: String(cp.done + (cp.unit === "epoch" ? Math.max(1, Math.round(cp.done / 2)) : 1))});
-      contBox.replaceChildren(el("span", {class: "field-hint", text: why + " Train to:"}), box,
+      contBox.replaceChildren(el("span", {class: "field-hint", text: why + ` It carries on from ${cp.unit} ${cp.done} ` +
+        `in this same run, nothing restarts, and the ${cp.unit}s and checkpoints it has already saved stay as ` +
+        "they are. Train to:"}), box,
         el("span", {class: "field-hint", text: cp.unit + "s"}),
         el("button", {class: "btn btn-sm btn-primary", text: "Continue", onclick: () => {
           const n = parseInt(box.value, 10);
@@ -5478,6 +5486,7 @@ const thumbOf = (p) => `/api/thumb?path=${encodeURIComponent(p)}&t=${encodeURICo
 const prepSettings = () => ({
   mode: (document.querySelector('input[name="prepMode"]:checked') || {}).value || "Auto Prep (Face Crops)",
   mp: $("prepMp").value || "1.0", face: $("prepFace").value || "Largest Face", padding: $("prepPadding").value || "20",
+  min_face: $("prepMinFace").value === "" ? "400" : $("prepMinFace").value,
   replace: (document.querySelector('input[name="prepReplace"]:checked') || {}).value === "1",
   crops_only: $("prepCropsOnly").checked});
 const savePrepSoon = debounce(() => { S.prepSaved = prepSettings(); api("/api/state", {prep: S.prepSaved}).catch(() => {}); }, 600);
@@ -5491,6 +5500,7 @@ async function loadPrep() {
     $("prepMp").value = saved.mp || "1.0";
     $("prepFace").value = saved.face || "Largest Face";
     if (saved.padding) $("prepPadding").value = saved.padding;
+    if (saved.min_face !== undefined) $("prepMinFace").value = saved.min_face;
     const mode = saved.mode || "Auto Prep (Face Crops)";
     document.querySelectorAll('input[name="prepMode"]').forEach((r) => { r.checked = r.value === mode; });
     document.querySelectorAll('input[name="prepReplace"]').forEach((r) => { r.checked = r.value === (saved.replace ? "1" : "0"); });
@@ -5975,7 +5985,7 @@ async function prepSummary() {
   $("prepRunTitle").textContent = crops ? "2 · Run it" : "3 · Run it";
   if (!S.imageFolder) { $("prepSummary").textContent = ""; return; }
   const r = await api(`/api/prep/summary?folder=${encodeURIComponent(S.imageFolder)}&mode=${encodeURIComponent(p.mode)}` +
-    `&mp=${p.mp}&replace=${p.replace ? 1 : 0}&crops_only=${p.crops_only ? 1 : 0}` +
+    `&mp=${p.mp}&replace=${p.replace ? 1 : 0}&crops_only=${p.crops_only ? 1 : 0}&min_face=${encodeURIComponent(p.min_face)}` +
     `&train_mp=${encodeURIComponent(S.values.DATASET_MEGAPIXELS || "")}`).catch(() => null);
   if (!r) return;
   $("prepAudioOnly").style.display = r.audio_only ? "" : "none";
@@ -6268,7 +6278,7 @@ function presetSaveOpen() {
 function wirePrep() {
   document.querySelectorAll('input[name="prepMode"], input[name="prepReplace"]').forEach((r) =>
     r.addEventListener("change", () => { prepSummary(); savePrepSoon(); }));
-  for (const id of ["prepMp", "prepFace", "prepPadding", "prepCropsOnly"]) $(id).addEventListener("change", () => { prepSummary(); savePrepSoon(); });
+  for (const id of ["prepMp", "prepFace", "prepPadding", "prepMinFace", "prepCropsOnly"]) $(id).addEventListener("change", () => { prepSummary(); savePrepSoon(); });
   $("prepRun").addEventListener("click", prepRun);
   $("maskRun").addEventListener("click", maskRun);
   meWire();
@@ -8736,12 +8746,14 @@ async function pollCaptions() {
   $("capBar").style.width = (busy ? pct : 0).toFixed(1) + "%";
   $("capStatus").textContent = {
     idle: "No model loaded.", loaded: `${st.model} is loaded, ready.`,
-    loading: `Loading ${st.model}… (the first time it downloads)`,
+    loading: st.phase === "downloading" ? `Downloading ${st.model}… (the first time only). Stop cancels it.`
+      : `Loading ${st.model} into memory… Stop cancels it.`,
     running: `Captioning ${st.done} of ${st.total}` + (st.fail ? ` · ${st.fail} failed` : ""),
     translating: st.total ? `Translating ${st.done} of ${st.total}` : "Loading the translator…",
   }[st.state] || st.state;
   $("capAll").disabled = busy; $("capStatic").disabled = busy; $("capTranslate").disabled = busy;
-  $("capStop").disabled = !busy; $("capUnload").disabled = busy || !st.loaded;
+  // Unload while it is still loading too: it ends the load and frees what it took (#366)
+  $("capStop").disabled = !busy; $("capUnload").disabled = (busy && st.state !== "loading") || !st.loaded;
   const log = $("capLog");
   const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
   log.textContent = st.log.join("\n");

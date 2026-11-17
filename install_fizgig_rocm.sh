@@ -498,17 +498,38 @@ echo
 
 _ensure_python_dev_headers "$INSTALL_PYTHON"
 
-if [[ ! -e /usr/lib/x86_64-linux-gnu/libnuma.so ]] && [[ ! -e /lib/x86_64-linux-gnu/libnuma.so ]]; then
-    echo "Installing libnuma-dev (PyTorch rocSHMEM needs unversioned libnuma.so)..."
+# Is the unversioned libnuma.so where the loader finds it? Ask the loader's cache first, then the usual library
+# folders: Debian/Ubuntu keep it in x86_64-linux-gnu, Fedora in lib64, Arch and CachyOS in /usr/lib (#356).
+_have_libnuma() {
+    local ldc out d
+    for ldc in ldconfig /sbin/ldconfig /usr/sbin/ldconfig; do
+        if command -v "$ldc" >/dev/null 2>&1; then
+            out="$("$ldc" -p 2>/dev/null)" || true
+            [[ "$out" == *"libnuma.so ("* ]] && return 0
+            break
+        fi
+    done
+    for d in /usr/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu /usr/lib64 /lib64 /usr/lib /lib /usr/local/lib; do
+        [[ -e "$d/libnuma.so" ]] && return 0
+    done
+    return 1
+}
+
+if ! _have_libnuma; then
+    echo "Installing libnuma (PyTorch rocSHMEM needs unversioned libnuma.so)..."
     if command -v apt-get >/dev/null 2>&1; then
         sudo apt-get install -y libnuma-dev
     elif command -v dnf >/dev/null 2>&1; then
         sudo dnf install -y numactl-devel
     elif command -v yum >/dev/null 2>&1; then
         sudo yum install -y numactl-devel
+    elif command -v pacman >/dev/null 2>&1; then
+        sudo pacman -S --needed --noconfirm numactl
+    elif command -v zypper >/dev/null 2>&1; then
+        sudo zypper install -y libnuma-devel
     else
-        echo "ERROR: libnuma.so not found and no supported package manager (apt/dnf/yum)."
-        echo "Install libnuma-dev (Debian/Ubuntu) or numactl-devel (Fedora/RHEL), then re-run."
+        echo "ERROR: libnuma.so not found and no supported package manager (apt/dnf/yum/pacman/zypper)."
+        echo "Install libnuma-dev (Debian/Ubuntu), numactl-devel (Fedora/RHEL), numactl (Arch) or libnuma-devel (openSUSE), then re-run."
         exit 1
     fi
 fi

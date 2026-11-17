@@ -5,6 +5,30 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 
 NEWS = [
     {
+        "date": "16 Nov 2026",
+        "title": "MiniMax H3 at int8 on any pruned file, and H3 Image on 12 GB cards",
+        "body": (
+            "A pruned bf16 or fp8 MiniMax H3 or H3 Image file is converted to int8 as it loads, so Auto trains it at "
+            "int8 instead of stopping at load. The full unpruned checkpoint stays 4-bit.\n\n"
+            "H3 Image's Auto swaps blocks for its 4-bit base on 12 GB cards instead of spilling into system memory, "
+            "and the Linux AMD installer works on Arch and CachyOS."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#16-nov-2026-minimax-h3-at-int8-on-any-pruned-file-and-h3-image-on-12-gb-cards"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.7.5"}],
+    },
+    {
+        "date": "15 Nov 2026",
+        "title": "Gizmo's crop box reworked, AMD fixes, and Automagic v4's real rate",
+        "body": (
+            "Gizmo's crop box drags from any corner, keeps a locked shape smoothly, reaches every edge of the frame "
+            "and can be moved, typed, placed and saved.\n\n"
+            "An AMD PC with built-in graphics now trains on its graphics card, and Krea 2 LoKR fits 16 GB AMD cards "
+            "better. Automagic v4 shows the rate it really moves the weights at, on the run card, the chart and the log."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#15-nov-2026-gizmos-crop-box-reworked-amd-fixes-and-automagic-v4s-real-rate"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.7.4"}],
+    },
+    {
         "date": "15 Nov 2026",
         "title": "Cleaner H3 Image pictures with LCM, and Stop for a paused run",
         "body": (

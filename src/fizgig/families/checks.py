@@ -9,6 +9,7 @@ batch_size and megapixels. Every function returns a list of messages; an empty l
 """
 import glob
 import os
+import re
 
 
 def number(label, raw, cast, minimum=None):
@@ -118,10 +119,26 @@ def tidy_name(raw):
     return name, None
 
 
-def run(v, *, blocks_swap, swap_max, arch_label, name_error):
+def run(v, *, blocks_swap, swap_max, arch_label, name_error, numbers_checked=False):
     """Rank, alpha, epochs, the save cadence, the per-category stop epoch, block swap, the LoRA name, the output
     folder and a resume path. `blocks_swap` is the resolved number (None: not a number); `name_error` comes from
-    tidy_name."""
+    tidy_name. numbers_checked: network() and numbers() already named a bad rank / alpha / epochs / save cadence (the
+    family Start), so they aren't said twice."""
+    out = []
+    if not numbers_checked:
+        out += _run_numbers(v)
+    try:
+        stop = str(v.get("MIXED_STOP_EPOCH") or "").strip()
+        if stop and (not stop.isdigit() or int(stop) <= 0):
+            out.append(f"'Finish one category early: after epoch' must be blank or "
+                       f"a positive whole number, not {stop!r}")
+    except (TypeError, ValueError):
+        pass
+    return out + _run_rest(v, blocks_swap=blocks_swap, swap_max=swap_max, arch_label=arch_label,
+                           name_error=name_error)
+
+
+def _run_numbers(v):
     out = []
     try:
         if int(v.get("NETWORK_DIM")) <= 0:
@@ -141,12 +158,13 @@ def run(v, *, blocks_swap, swap_max, arch_label, name_error):
     try:
         if int(v.get("SAVE_EVERY_N_EPOCHS")) <= 0:
             out.append("Save every N epochs must be a positive integer")
-        stop = str(v.get("MIXED_STOP_EPOCH") or "").strip()
-        if stop and (not stop.isdigit() or int(stop) <= 0):
-            out.append(f"'Finish one category early: after epoch' must be blank or "
-                       f"a positive whole number, not {stop!r}")
     except (TypeError, ValueError):
         out.append("Save every N epochs must be a valid integer")
+    return out
+
+
+def _run_rest(v, *, blocks_swap, swap_max, arch_label, name_error):
+    out = []
     if blocks_swap is None:
         out.append("Blocks swap must be a valid integer")
     elif blocks_swap < 0:
@@ -157,10 +175,43 @@ def run(v, *, blocks_swap, swap_max, arch_label, name_error):
         out.append(name_error)
     if not v.get("LORA_OUTPUT_DIR"):
         out.append("LoRA output directory is empty")
-    resume = v.get("RESUME_TRAINING")
-    if resume and str(resume).strip() and not os.path.exists(resume):
+    resume = str(v.get("RESUME_TRAINING") or "").strip()
+    if resume and not os.path.exists(resume):
         out.append(f"Resume training path does not exist: {resume}")
+    elif resume and os.path.isdir(resume):     # a file is a fine-tune's checkpoint (its own continuation)
+        out += state_folder_problems(resume)
+    lora_out = str(v.get("LORA_OUTPUT_DIR") or "").strip()
+    if lora_out and _is_state(lora_out):
+        # #352: a state folder picked as the output folder - the run's files would land inside that saved state
+        out.append(f"The LoRA output folder is a saved training state ({os.path.basename(os.path.normpath(lora_out))}). "
+                   f"Set the output folder to the folder that holds it ({os.path.dirname(os.path.normpath(lora_out))}), "
+                   f"and put the state folder in Resume Training (Other Options) to carry that run on.")
     return out
+
+
+def _is_state(path):
+    """A saved training state folder: Fizgig's (training_state.json) or the old trainer's (model.safetensors, the
+    epoch in the folder name)."""
+    return os.path.isdir(path) and (os.path.isfile(os.path.join(path, "training_state.json")) or (
+        os.path.isfile(os.path.join(path, "model.safetensors"))
+        and re.search(r"-\d{6}-state$", os.path.basename(os.path.normpath(path))) is not None))
+
+
+def state_folder_problems(path):
+    """Resume Training must name the state folder itself (#352: the folder holding it was passed, and the trainer
+    stopped on "not a saved training state"). Names the newest state inside when there is one."""
+    if _is_state(path):
+        return []
+    try:
+        inside = [e for e in os.scandir(path) if e.is_dir() and _is_state(e.path)]
+    except OSError:
+        inside = []
+    if inside:
+        newest = max(inside, key=lambda e: e.stat().st_mtime)
+        return [f"Resume Training is set to {path}, the folder that holds the saved states, not a state itself. Pick "
+                f"the state folder inside it, e.g. {newest.name} (the newest)."]
+    return [f"Resume Training is set to {path}, which isn't a saved training state. Pick a folder named like "
+            f"'<lora name>-000012-state'."]
 
 
 def training_folder(image_dir, caption_ext, *, check_captions=True, media_exts=(), label="the training folder"):

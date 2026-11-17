@@ -51,7 +51,7 @@ In every mode the LoRA leaves the model's text token refiner alone, and blocks 0
 
 ## Optimizer
 
-Every H3 preset runs **automagic3**, the Automagic v3 optimizer (MIT, see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)), started at 1e-6. It sets its own learning rate from the update signs, one rate for the whole LoRA, rising while the signs hold steady and falling while they alternate. In practice it warms up over the first couple of epochs, then anneals a few percent an epoch. The Learning Rate box is only its start, so leave it at 1e-6 rather than an AdamW number. The scheduler, Adaptive LR, the adapter ramp and band multipliers all stand down while it owns the rate. Krea 2's Optimizer Type row lists it too, with the same rules.
+Every H3 preset runs **automagic3**, the Automagic v3 optimizer (MIT, see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)), started at 1e-6. It sets its own learning rate from the update signs, one rate for the whole LoRA, rising while the signs hold steady and falling while they alternate. In practice it warms up over the first couple of epochs, then anneals a few percent an epoch. The Learning Rate box is only its start, so leave it at 1e-6 rather than an AdamW number. The scheduler, Adaptive LR, the adapter ramp and band multipliers all stand down while it owns the rate. Krea 2's Optimizer Type row lists it too, with the same rules. With **Leave the rest of the model alone** or **Fizgig LoRA Isolation** on, a run trains with **adamw** at 2e-4 instead, and Start says so: the pass that keeps the rest of the model as it was runs on every second step, and Automagic reads the back-and-forth as overshooting and lowers its rate until nothing more is learned (a two-person Isolation run sat at its floor from the second epoch).
 
 The Optimizer Type dropdown also offers full-precision **adamw**, which measured as the single biggest likeness gain on H3 and is the right choice when you want a rate that does not move. For a style set, adamw is worth trying: its images all share the look being learned, so the signs agree for longer and automagic3 pushes harder than you want.
 
@@ -79,7 +79,7 @@ Each has a **Download link on its row in Preferences**:
 
 | Model | Size | Notes |
 |---|---|---|
-| DiT — pruned int8 | ~21 GB | The training base, `minimax_h3_fl2va_pruned_int8_convrot.safetensors`, the same file ComfyUI runs. The ~66 GB bf16 file also works for LoRA training (NF4 at load), but [full fine-tuning](FINETUNE.md) needs the int8 file |
+| DiT — pruned int8 | ~21 GB | The training base, `minimax_h3_fl2va_pruned_int8_convrot.safetensors`, the same file ComfyUI runs. The ~66 GB bf16 file also works for LoRA training (NF4 at load), and a pruned bf16 or fp8 file (`minimax_h3_fl2va_pruned_bf16`, a fine-tune saved that way) trains at int8 too, converted as it loads. [Full fine-tuning](FINETUNE.md) needs the int8 file |
 | Qwen3-VL-32B text encoder | ~15.7 GB | The **nvfp4** file, the same one ComfyUI uses. Loaded once for caching, then freed |
 | Video VAE | ~4.9 GB | Caching and preview decode |
 | Audio VAE *(optional)* | ~605 MB | Sound training and previews with sound |
@@ -147,7 +147,7 @@ Stills teach H3 a look; clips teach it **motion**, and clips with sound teach it
 
 <p align="center"><img src="assets/gizmo_video.png" alt="Gizmo — Find the moment: first/last frame previews with frame-accurate stepping" width="720"></p>
 
-**Gizmo makes clips that meet it.** Mark every section you want (frame-accurate stepping, first/last-frame previews, a ▶ Play of the exact clip), then export the lot in one go. **Crop to the subject**: a clip's cost is its pixels, so drag a rectangle and every token goes on what you want learned, with shape locks (1:1, 16:9, 9:16…) for consistent framing. High-frame-rate footage can keep extra frames as slow motion, offered as a choice. Clips are cut at native resolution and resized to your Target Megapixels at training time, so cutting large keeps the choice open.
+**Gizmo makes clips that meet it.** Mark every section you want (frame-accurate stepping, first/last-frame previews, a ▶ Play of the exact clip), then export the lot in one go. **Crop to the subject**: a clip's cost is its pixels, so drag a rectangle and every token goes on what you want learned, with shape locks (1:1, 16:9, 9:16…) for consistent framing. The box follows the mouse in any direction and stops flush at the frame's edges; drag inside it to move it, or a corner or side to resize it; type its X, Y, W and H for exact numbers; the Place arrows put it flush against an edge or in the centre (Largest then ← is a crop from the left); and Saved boxes keep a box for the next clip from the same camera. High-frame-rate footage can keep extra frames as slow motion, offered as a choice. Clips are cut at native resolution and resized to your Target Megapixels at training time, so cutting large keeps the choice open.
 
 **What it costs:** 22 frames is the shortest that shows real movement, at ~7× a still per step; 124 frames is ~37×. Gizmo says which lengths your card can train, at which megapixels, before you cut anything:
 

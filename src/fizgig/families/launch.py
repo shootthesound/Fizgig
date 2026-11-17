@@ -46,6 +46,7 @@ import re
 from dataclasses import dataclass, field
 from fizgig.utils.upright import upright_size
 
+from fizgig.dataset.caption_file import read_caption
 from fizgig.dataset.masks import is_mask_file
 
 PRECISION_LABELS = {"auto": "Auto (fits your free VRAM)", "bf16": "bf16 (full precision)",
@@ -148,6 +149,47 @@ def slider_on(desc, inputs, source=None):
         have = inputs.get("FAMILY_SLIDER_SOURCE") or "pairs"
         on = (have if have in offered else offered[0]) == source      # a family with one source always uses it
     return on
+
+
+def _slider_value(text):
+    """A slider prompt or anchor as the command gives it: one that starts with "-" ("-a photo of a man,") gets a space
+    before it, so argparse takes it as a value, not an option (the trainer strips it)."""
+    return " " + text if text.startswith("-") else text
+
+
+_FLAG = re.compile(r"--[A-Za-z][\w-]*")
+
+
+def _dash_values(cmd):
+    """A box's value that starts with "-" (a negative "-blurry", a title "-test", a trigger word) goes as
+    --flag=value: argparse reads a lone "-word" after a flag as another option and the run stopped at launch.
+    Numbers stay as they are (argparse takes "-1"); a value after another value (a list) is its builder's
+    (_slider_value)."""
+    out = []
+    for tok in cmd:
+        if tok.startswith("-") and not _FLAG.fullmatch(tok) and out and _FLAG.fullmatch(out[-1]):
+            try:
+                float(tok)
+            except ValueError:
+                out[-1] = f"{out[-1]}={tok}"
+                continue
+        out.append(tok)
+    return out
+
+
+_SWAPS = {}
+
+
+def swaps_blocks(desc):
+    """The family's driver can stream blocks between CPU and GPU (max_blocks_to_swap above 0). SDXL, Anima and ACE-Step
+    can't: their training loads without block swap whatever number it is given, so the Training tab has no Blocks
+    Swap row for them and Start never refuses one. Kept per family (loading the driver takes a second)."""
+    if desc.key not in _SWAPS:
+        try:
+            _SWAPS[desc.key] = desc.load_driver().max_blocks_to_swap() > 0
+        except Exception:
+            _SWAPS[desc.key] = True                  # can't tell: the row stays, as before
+    return _SWAPS[desc.key]
 
 
 def ft_on(desc, inputs):
@@ -275,8 +317,7 @@ def _reg_captions(folder, ext):
         return out
     for n in names:
         try:
-            with open(os.path.join(folder, os.path.splitext(n)[0] + ext), encoding="utf-8", errors="replace") as fh:
-                out[n] = fh.read()
+            out[n] = read_caption(os.path.join(folder, os.path.splitext(n)[0] + ext))   # as training reads it
         except OSError:
             out[n] = None
     return out
@@ -436,8 +477,7 @@ def start_checks(desc, st, image_folder):
         for f in items:
             p = os.path.join(folder, os.path.splitext(f)[0] + cap)
             try:
-                with open(p, encoding="utf-8", errors="replace") as fh:
-                    texts[f] = fh.read()
+                texts[f] = read_caption(p)          # as training reads it: UTF-16, Windows-1252 too
             except OSError:
                 texts[f] = None
         none = [f for f, t in texts.items() if t is None or not t.strip()]
@@ -452,6 +492,15 @@ def start_checks(desc, st, image_folder):
                 out.append(f"{len(lack)} caption{'s don' if len(lack) != 1 else ' doesn'}'t contain the trigger word "
                            f"'{trig}' ({', '.join(lack[:3])}{', ...' if len(lack) > 3 else ''}): "
                            + ("that picture trains" if len(lack) == 1 else "those pictures train") + " without it.")
+        by_name = {}
+        for f in items:
+            by_name.setdefault(os.path.splitext(f)[0], []).append(f)
+        twins = [fs for fs in by_name.values() if len(fs) > 1]
+        if twins:                        # a.jpg + a.png: one caption file, one cache name (the stem) for the two
+            shown = ", ".join(" and ".join(fs) for fs in twins[:2]) + (", ..." if len(twins) > 2 else "")
+            out.append(f"{len(twins)} name{'s are' if len(twins) != 1 else ' is'} used by two pictures ({shown}): "
+                       "the two share one caption file and one cache file name, so at the same size only one of "
+                       "them trains. Rename one of each.")
     trig = _s(st.get("CAPTION_TRIGGER_WORD"))
     for rel, d in (detail_crop_folders(desc, st) if trig and trig.lower() != "trigger_word" else []):
         # the detail crops for this size: a caption edited without the trigger (the crop stage writes it in)
@@ -462,8 +511,7 @@ def start_checks(desc, st, image_folder):
             if not f.lower().endswith(ext.lower()):
                 continue
             try:
-                with open(os.path.join(d, f), encoding="utf-8", errors="replace") as fh:
-                    text = fh.read()
+                text = read_caption(os.path.join(d, f))
             except OSError:
                 continue
             if text.strip() and not pat.search(text):
@@ -472,6 +520,8 @@ def start_checks(desc, st, image_folder):
             out.append(f"{len(lack)} detail crop caption{'s' if len(lack) != 1 else ''} in {rel} don't contain the "
                        f"trigger word '{trig}': those crops train without it.")
     out += lora_reg_warnings(desc, st)
+    if dop_automagic(desc, st):
+        out.append(dop_automagic_line(desc, st))
     if (not st.get("ADAPTIVE_LR") and (ft_on(desc, st) or not (automagic(st) or prodigy(st)))):
         # Automagic sets its own rate, Prodigy's 1.0 is a multiplier; a fine-tune trains at the box's rate
         kind = "finetune" if ft_on(desc, st) else "slider" if slider_on(desc, st) else "lora"
@@ -573,8 +623,7 @@ def edit_instructions(inputs):
             b, e = os.path.splitext(f)
             cap = os.path.join(folder, b + ext)
             if e.lower() in PAIR_EXTS and os.path.exists(cap):
-                with open(cap, encoding="utf-8") as fh:
-                    line = fh.read().strip().splitlines()
+                line = read_caption(cap).strip().splitlines()      # Windows-1252 / UTF-16 too: never a crash
                 if line and line[0].strip():
                     return [line[0].strip()]
     except OSError:
@@ -1176,12 +1225,13 @@ def train_command(desc, inputs, plan):
             cmd += ["--train_blocks", ",".join(desc.slider_ultra_blocks)]
         if slider_on(desc, st, "prompts"):
             base = _s(st.get("FAMILY_SLIDER_BASE"))
-            cmd += ["--slider_prompts", base, f"{base} {_s(st.get('FAMILY_SLIDER_POS'))}",
-                    f"{base} {_s(st.get('FAMILY_SLIDER_NEG'))}",       # the user's own comma, if any
+            # the user's own comma, if any; one that starts with "-" goes as a value (_slider_value)
+            cmd += ["--slider_prompts", *map(_slider_value, (base, f"{base} {_s(st.get('FAMILY_SLIDER_POS'))}",
+                                                              f"{base} {_s(st.get('FAMILY_SLIDER_NEG'))}")),
                     "--slider_guidance", _s(st.get("FAMILY_SLIDER_GUIDANCE")) or f"{desc.slider_guidance:g}"]
             anchors = [a.strip() for a in str(st.get("FAMILY_SLIDER_ANCHORS") or "").splitlines() if a.strip()]
             if anchors:                  # prompts the dial must leave alone (#252)
-                cmd += ["--slider_anchors", *anchors,
+                cmd += ["--slider_anchors", *map(_slider_value, anchors),
                         "--slider_anchor_weight", _s(st.get("FAMILY_SLIDER_ANCHOR_WEIGHT")) or "1"]
             try:        # the practice pictures (and so the training) at Target Megapixels, a square on the 16 px grid
                 side = int((float(st.get("megapixels")) * 1_000_000) ** 0.5) // 16 * 16
@@ -1201,7 +1251,7 @@ def train_command(desc, inputs, plan):
     cont = (st.get("FAMILY_FT_CONTINUE") or {}) if ft_on(desc, st) else {}
     if cont.get("checkpoint"):       # after the options: a model option's own --dit (H3's reference base) is what the
         cmd[cmd.index("--dit") + 1] = cont["checkpoint"]     # paused run started from; its checkpoint goes on
-    return cmd
+    return _dash_values(cmd)
 
 
 def _preview_flags(desc, st, plan, cmd):
@@ -1607,6 +1657,24 @@ def automagic(inputs):
     return _s(inputs.get("OPTIMIZER_TYPE")).lower() in ("automagic3", "automagic4")
 
 
+DOP_OPTIMIZER = ("adamw", "2e-4")     # what a DOP / Isolation run trains with in Automagic's place (H3's Slider recipe)
+
+
+def dop_automagic(desc, st):
+    """Automagic (v3 or v4) picked for a run with Leave the rest of the model alone or Fizgig LoRA Isolation. DOP's
+    pass runs on every second step and pulls the LoRA back, so each weight's update flips direction step to step;
+    Automagic reads that as overshooting and lowers its rate to its floor within two epochs, and nothing more is
+    learned (#364: H3 Isolation 5e-6 after epoch 1, 1e-8 from epoch 2; the same subject alone held 4e-4). Such a run
+    trains with full-precision AdamW at a fixed 2e-4 instead (plan)."""
+    return automagic(st) and not ft_on(desc, st) and (dop_on(desc, st) or multi_person_on(desc, st))
+
+
+def dop_automagic_line(desc, st):
+    mode = "Fizgig LoRA Isolation" if multi_person_on(desc, st) else "Leave the rest of the model alone"
+    return (f"{mode} trains with AdamW at {DOP_OPTIMIZER[1]} instead of Automagic: Automagic lowers its own rate "
+            "until training stops when the model is also being kept as it was.")
+
+
 def prodigy(inputs):
     return _s(inputs.get("OPTIMIZER_TYPE")).lower() == "prodigy"
 
@@ -1630,12 +1698,14 @@ def _dop_folders(st):
 
 
 def dop_rules(st):
-    """DOP's (words to remove, replacements) over every folder, in order."""
+    """DOP's (words to remove, replacements) over every folder, in order. A subject's "what they are" ("man") takes
+    its trigger's place as "a man" (#365); empty, the trigger is left out."""
+    from fizgig.families.multi_person import class_phrase
     trig, cls = [], []
     for _name, t, c in _dop_folders(st):
         if len(c) == len(t):
             trig += t
-            cls += c
+            cls += [class_phrase(x) for x in c]
     return trig, cls
 
 
@@ -1812,8 +1882,16 @@ def start_problems(desc, inputs):
     out = checks.learning_rate(v)
     out += checks.network(v, lokr="lokr" in desc.network_types and str(v.get("NETWORK_TYPE", "")).startswith("LoKR"))
     out += checks.numbers(v)
+    sm = v.get("samples") or {}
+    if sm.get("enabled"):                # the Samples tab's boxes: "3,5" fell back to the default CFG with nothing said,
+        for label, key, cast, least in (("Samples: CFG Scale", "cfg", float, 0),    # a seed was dropped, and steps
+                                        ("Samples: Steps", "steps", int, 1),       # stopped the trainer at launch
+                                        ("Samples: Seed", "seed", int, None)):
+            if str(sm.get(key) or "").strip():                  # empty = the model's own
+                out += checks.number(label, sm[key], cast, least)
     out += checks.dataset_config(v.get("DATASET_CONFIG"), must_exist=False)
     out += problems(desc, inputs)
+    out += precision_problems(desc, inputs)
     out += checks.learning_rate_range(v)
     out += multi_concept_problems(desc, v)
     out += dop_problems(desc, v)
@@ -1830,8 +1908,10 @@ def start_problems(desc, inputs):
     raw_swap = str(v.get("blocks_swap") or "").strip()
     m = re.match(r"\d+", raw_swap)
     swap = 0 if raw_swap.lower().startswith("auto") or not m else int(m.group())   # Auto always fits
+    if not swaps_blocks(desc):
+        swap = 0               # no block swap at all (no row on the form): a saved number loads without it, as it says
     out += checks.run(v, blocks_swap=swap, swap_max=max(0, desc.n_blocks - 2), arch_label=desc.gui_label,
-                      name_error=checks.tidy_name(v.get("LORA_NAME"))[1])
+                      name_error=checks.tidy_name(v.get("LORA_NAME"))[1], numbers_checked=True)
     # a Preferences file an option asks for (H3's ref2va base, an Ostris adapter): set and on disk
     miss = []
     option_tokens(desc, inputs, missing=miss)
@@ -1878,6 +1958,23 @@ def start_problems(desc, inputs):
     return out
 
 
+def precision_problems(desc, inputs):
+    """A Base precision picked by hand that the DiT file can't load at (MiniMax H3's int8 of its full unpruned file,
+    #357), refused at Start with what to pick instead. Auto leaves such a
+    precision out by itself (quant.plan with dit_path)."""
+    if len(desc.precisions) < 2 or not desc.driver or ft_on(desc, inputs):
+        return []
+    prec = precision_key(desc, inputs.get("FAMILY_PRECISION"))
+    if prec == "auto":
+        return []
+    dit = _model(inputs, desc, "dit")
+    toks = option_tokens(desc, inputs)[0]
+    if "--dit" in toks:                  # an option's own base (H3's reference base) is the one that trains
+        dit = toks[toks.index("--dit") + 1]
+    why = desc.load_driver().precision_problem(prec, dit) if dit else ""
+    return [why] if why else []
+
+
 _CLIP_CHECKED = {}          # (path, mtime, size) -> problem: a Start re-check does not probe an unchanged clip again
 
 
@@ -1919,6 +2016,10 @@ def plan(desc, inputs):
     if folder and not os.path.isabs(folder):
         inputs["image_folder"] = os.path.abspath(folder)     # the subprocesses run from the Fizgig folder
     inputs["LORA_NAME"] = tidy_name(_s(inputs.get("LORA_NAME")))[0]
+    dop_swap = dop_automagic(desc, inputs)
+    if dop_swap:                     # Automagic can't train with DOP (#364): the run's optimizer is AdamW at 2e-4
+        inputs["OPTIMIZER_TYPE"], inputs["LEARNING_RATE"] = DOP_OPTIMIZER
+        inputs["OPTIMIZER_ARGS"] = ""    # an Automagic setting isn't AdamW's
     if automagic(inputs):            # it owns the rate: Adaptive LR, per-image LR and the look warm-up are off
         inputs["ADAPTIVE_LR"] = False
         inputs["loss_watch"] = {**(inputs.get("loss_watch") or {}), "per_image_lr": False, "warmup": False}
@@ -1927,6 +2028,8 @@ def plan(desc, inputs):
         inputs["loss_watch"] = {**(inputs.get("loss_watch") or {}), "warmup": False}
         inputs["LEARNING_RATE"] = "1.0"            # a multiplier on the rate it finds
     p = LaunchPlan(problems=start_problems(desc, inputs))
+    if dop_swap:
+        p.console.append(f"[optimizer] {dop_automagic_line(desc, inputs)}\n")
     _cp = detail_crops_problem(desc, inputs) if not p.problems else ""
     if _cp:
         p.problems.append(_cp)
@@ -1982,7 +2085,7 @@ def plan(desc, inputs):
         trig = _s(inputs.get("caption_trigger"))
         if trig and trig.lower() != "trigger_word":
             cmd += ["--trigger", trig]
-        p.stages.append(Stage("Detail crops", cmd))
+        p.stages.append(Stage("Detail crops", _dash_values(cmd)))
     if caches(desc, inputs):
         p.stages += [Stage("Cache Preparation", cache_command(desc, inputs, "latents")),
                      Stage("Text Encoder Caching", cache_command(desc, inputs, "text"))]

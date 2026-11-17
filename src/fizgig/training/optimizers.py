@@ -23,7 +23,9 @@ from __future__ import annotations
 
 import ast
 import importlib
+import importlib.util
 import logging
+import math
 
 import torch
 
@@ -93,15 +95,23 @@ def ft_optimizer(name) -> str:
     return n if n in FT_OPTIMIZERS else FT_DEFAULT_OPTIMIZER
 
 
-def available_optimizers() -> list[str]:
-    """Catalog entries whose backing package is actually importable on this machine."""
+def available_optimizers(*, probe: bool = True) -> list[str]:
+    """Catalog entries with their backing package available.
+
+    UI discovery uses probe=False: check installation without loading optional
+    native libraries (notably bitsandbytes' ROCm runtime) merely to draw a combo.
+    Actual optimizer construction still imports and validates its implementation.
+    """
     out = []
     for name, (module, _desc) in _CATALOG.items():
         if module is None:
             out.append(name)
             continue
         try:
-            importlib.import_module(module)
+            if probe:
+                importlib.import_module(module)
+            elif importlib.util.find_spec(module) is None:
+                continue
             out.append(name)
         except Exception:
             pass
@@ -179,8 +189,80 @@ def group_rates(optimizer) -> str:
         rates = fn()
     except Exception:
         return ""
+    brakes = automagic4_brakes(optimizer)          # Automagic v4: each group's working rate (rate x mean brake)
+    if brakes:
+        rates = [r * b for r, (b, _s) in zip(rates, brakes)]
     return "  ".join(f"{g.get('family', i)} {r:.2e}"
                      for i, (g, r) in enumerate(zip(optimizer.param_groups, rates)))
+
+
+@torch.no_grad()
+def automagic4_brakes(optimizer):
+    """Automagic v4's brake per param group, read from its state after the last step: [(mean balance, share of
+    weights braked), ...], or None for another optimizer. v4 sits at its rate (usually its cap) and multiplies each
+    weight's step by balance = min(1, reference / sensitivity), sensitivity = sqrt(bias-corrected second moment)
+    (automagic4.py _update_param, recomputed here from the same state so the vendored file stays upstream's). The
+    weights' real movement is the rate times the balance, so the rate alone reads as a flat line at the cap (#349,
+    #353). Element-weighted; a param with no reference yet (the measuring first step) counts as unbraked. One GPU sync
+    per call: the caller reads it now and then, not every step."""
+    if optimizer is None or optimizer.__class__.__name__ != "Automagic4":
+        return None
+    out = []
+    for group in optimizer.param_groups:
+        sums, counts = [], []          # per param: (sum of balance, number braked) as GPU scalars, read once below
+        unbraked = n = 0
+        for p in group["params"]:
+            st = optimizer.state.get(p)
+            if not st or "step" not in st:
+                continue
+            n += p.numel()
+            ref = st.get("sens_ref")
+            if ref is None:
+                unbraked += p.numel()
+                continue
+            bias = 1.0 - group["beta2"] ** int(st["step"])
+            if p.dim() >= 2:
+                inv = optimizer._approx_sq_grad(st["exp_avg_sq_row"].float(), st["exp_avg_sq_col"].float())
+            else:
+                inv = (st["exp_avg_sq"].float() + group["eps"]).rsqrt()
+            bal = inv.mul_(ref.float() * math.sqrt(bias)).clamp_(max=1.0)
+            sums.append(bal.sum().double() if not sums else bal.sum().double().to(sums[0].device))
+            counts.append((bal < 1.0).sum().double().to(sums[0].device))
+            del bal, inv
+        if not n:
+            out.append((1.0, 0.0))
+            continue
+        bsum = float(torch.stack(sums).sum()) if sums else 0.0
+        braked = float(torch.stack(counts).sum()) if counts else 0.0
+        out.append(((bsum + unbraked) / n, braked / n))
+    return out
+
+
+def shown_lr(optimizer) -> float:
+    """The rate to show (the run card, the loss chart's rate line, the epoch log): optimizer_lr, except Automagic v4,
+    whose working rate is each group's rate times its mean brake (automagic4_brakes), averaged over the groups."""
+    brakes = automagic4_brakes(optimizer)
+    if not brakes:
+        return optimizer_lr(optimizer)
+    try:
+        rates = optimizer.get_learning_rates()
+    except Exception:
+        return optimizer_lr(optimizer)
+    return sum(r * b for r, (b, _s) in zip(rates, brakes)) / max(1, len(rates))
+
+
+def automagic4_detail(optimizer) -> str:
+    """For the epoch log: "rate 2.50e-04 x mean brake 0.41, 63% of weights braked", or "" for another optimizer."""
+    brakes = automagic4_brakes(optimizer)
+    if not brakes:
+        return ""
+    try:
+        rates = optimizer.get_learning_rates()
+    except Exception:
+        return ""
+    k = max(1, len(rates))
+    return (f"rate {sum(rates) / k:.2e} x mean brake {sum(b for b, _s in brakes) / k:.2f}, "
+            f"{100 * sum(s for _b, s in brakes) / k:.0f}% of weights braked")
 
 
 def owns_its_rate(optimizer) -> bool:

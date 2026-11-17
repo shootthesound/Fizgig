@@ -103,7 +103,8 @@ MINIMAX_IMAGE = FamilyDescription(
                   "The training base: the pruned int8 file ComfyUI runs, kept int8 on the card (~21 GB), or 4-bit "
                   "on smaller cards.", role="dit",
                   alt_repo=_COMFY, alt_path="diffusion_models/minimax_h3_image_pruned_bf16.safetensors",
-                  alt_label="bf16", alt_note="~40 GB pruned bf16 - loads as 4-bit (NF4 / HQQ), no int8"),
+                  alt_label="bf16", alt_note="~40 GB pruned bf16 - converted to int8 as it loads (a minute or two "
+                                             "longer), or 4-bit"),
         ModelFile("minimax_image_vae", "MiniMax H3 Image VAE", True, _COMFY,
                   "vae/minimax_h3_image_vae_fp16.safetensors", 1.17,
                   "Its own VAE: H3's encoder with a decoder made for pictures. Not the H3 video VAE.", role="vae"),
@@ -180,6 +181,18 @@ MINIMAX_IMAGE = FamilyDescription(
     # RTX PRO 6000, 11 Nov 2026).
     train_memory={"int8": (((0.25, 22.7), (1.0, 22.7)), 0.29), "nf4": (((0.25, 12.8), (1.0, 12.8)), 0.15),
                   "hqq": (((0.25, 17.3), (1.0, 17.3)), 0.22)},
+    # Under 20 GB the 2048 preview's peak above doesn't apply: the decode parks tail blocks until ~3 GB is free
+    # (driver.park_for), and the denoise holds at most 1.15 GB over the weights (measured under a 12 GB cap, #354), so
+    # training sets the peak. Measured 16 Nov 2026 on an RTX PRO 4500 with that preview treatment (Standard preset:
+    # rank 32, Automagic v4, EMA, the training adapter; 12 photos, 2048 previews), less the 1.4 GB adapter_extra_gb
+    # counts for that preset: training peaks NF4 11.8 / 12.3 GB (0.25 / 1 MP), HQQ 17.0 / 17.6, int8 21.4 / 22.0, each
+    # point at least the weights + 1.2 GB for the preview's denoise. Per swapped block (1 MP): NF4 0.17 (20 swapped:
+    # 8.9 GB), HQQ 0.245 (20: 12.7), int8 0.338 (34: 10.5).
+    train_memory_small={"int8": (((0.25, 20.5), (1.0, 20.6)), 0.33), "nf4": (((0.25, 10.8), (1.0, 10.9)), 0.17),
+                        "hqq": (((0.25, 15.6), (1.0, 16.2)), 0.24)},
+    # Auto keeps the 4-bit base there: int8 never fits under 20 GB unswapped, and int8 with ~37 blocks streamed (what
+    # those figures would allow on a 12 GB card) holds ~14 GB more in system RAM than 4-bit with ~15
+    auto_precisions_small=("nf4",),
     # GB each extra picture takes: fixed, per MP (int8 training peaks, batch 1 vs 3, previews off, RTX PRO 6000,
     # 10 Nov 2026): 20.7 / 21.2 GB at 0.25 MP, 21.3 / 23.0 at 1 MP. Batching is slower per picture here (1 MP: 17 s
     # an epoch at batch 1, 33 s at batch 3), so Auto never batches (batch_auto stays ())

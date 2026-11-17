@@ -17,7 +17,28 @@ import torch
 
 logger = logging.getLogger(__name__)
 
-_IMG_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
+def _picture_exts():
+    from fizgig.dataset.image_dataset import IMAGE_EXTENSIONS      # every format the training set reads
+    return tuple(dict.fromkeys(e.lower() for e in IMAGE_EXTENSIONS))
+
+
+def _picture(folder, name, listings):
+    """The training picture called `name` (its key's file name, no extension) in `folder`, matched as the dataset does:
+    the extension in any case (IMG_0001.JPG: on Linux pods names are case-sensitive, and a lowercase guess missed
+    it) and in every format training reads (.avif). listings: {folder: its file names}, filled on first use."""
+    if folder not in listings:
+        try:
+            listings[folder] = sorted(os.listdir(folder))
+        except OSError:
+            listings[folder] = []
+    have = {}
+    for n in listings[folder]:
+        stem, ext = os.path.splitext(n)
+        have.setdefault((stem, ext.lower()), n)
+    for ext in _picture_exts():
+        if (name, ext) in have:
+            return os.path.join(folder, have[(name, ext)])
+    return ""
 
 
 def _find_key(d, key):
@@ -250,15 +271,14 @@ class Watch:
                 return
         auto = []
         if self.auto_recaption and self.watch is not None and self.image_dir:
+            listings = {}
             for k in sorted(k for k, v in self.watch.verdicts.items() if v == "stuck"):
                 if k in updates or self.recaptioned.get(k, 0) >= 2:
                     continue
                 _p, folder, name = self.watch.where(k)
-                for ext in (_IMG_EXTS if folder else ()):
-                    p = os.path.join(folder, name + ext)
-                    if os.path.exists(p):
-                        auto.append((k, p, self.recaptioned.get(k, 0) + 1))
-                        break
+                p = _picture(folder, name, listings) if folder else ""
+                if p:
+                    auto.append((k, p, self.recaptioned.get(k, 0) + 1))
         if not updates and not auto:
             _remove(processing)
             return

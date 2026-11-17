@@ -792,6 +792,18 @@ class FamilyDescription:
         at = [p for p in (self.batch_auto or ()) if p[0] + 0.01 >= float(megapixels)]
         return int(min(at)[1]) if at else 1
 
+    def streams_blocks(self, precision):
+        """Whether a `precision` base can stream blocks (block swap). Any base but a 4-bit one; NF4 / HQQ only where
+        train_memory has a measured GB saved per swapped block for it (MiniMax H3 Image's rings) - everywhere else
+        the 4-bit weights aren't .weight and quant.load_base drops the swap. Torch-free (web/oom reads it)."""
+        if precision not in ("nf4", "hqq"):
+            return True
+        fig = (self.train_memory or {}).get(precision)
+        try:
+            return float(fig[1]) > 0
+        except (TypeError, ValueError, IndexError, KeyError):
+            return False
+
     def workbench_engine_class(self):
         """The class make_workbench_engine builds - read for its capabilities (supports_keyframes, ...) before any
         engine exists."""

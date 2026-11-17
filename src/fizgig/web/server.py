@@ -104,6 +104,15 @@ _stats = {"vram": [0, 0], "ram": [0, 0], "vram_peak": 0, "ram_peak": 0, "device_
 _NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
 
 
+def _min_face(v):
+    """Image Prep's Min face width (px): a number 0 or more, else the default."""
+    from fizgig.dataset.prep import MIN_FACE_PX
+    try:
+        return max(0, int(float(v)))
+    except (TypeError, ValueError):
+        return MIN_FACE_PX
+
+
 # ---- hardware meters (as the desktop status bar) ---------------------------------------------------------------
 def _rocm_launch() -> bool:
     """True only on the AMD launcher path. NVIDIA Launch Fizgig.bat must never enter the AMD VRAM reader."""
@@ -269,7 +278,10 @@ def _side_extras() -> dict:
     try:
         c = captions.status()
         if c["state"] in ("loading", "running", "translating"):
-            jobs.append({"what": "Translating captions" if c["state"] == "translating" else "Captioning",
+            jobs.append({"what": "Translating captions" if c["state"] == "translating" else
+                         f"Downloading {c.get('model') or 'the caption model'}" if c["state"] == "loading"
+                         and c.get("phase") == "downloading" else
+                         f"Loading {c.get('model') or 'the caption model'}" if c["state"] == "loading" else "Captioning",
                          "done": c.get("done") or 0, "total": c.get("total") or 0, "tab": "captions"})
         if c.get("loaded"):
             loaded.append({"what": "Caption model", "name": c.get("model") or "", "tab": "captions"})
@@ -986,8 +998,8 @@ def _multi_person_notes(vals, image_folder, multi_person=True):
         auto_trig = subject_trigger(folder, ext)
         if auto_trig:
             found[tkey] = auto_trig
-            got, _w = mp.subject(folder, auto_trig, "", ext)
-            if got:
+            got, _w = mp.subject(folder, auto_trig, "", ext) if multi_person else (None, "")
+            if got:              # Isolation reads it from the captions; DOP alone uses only what's typed (#365)
                 found[ckey] = got["phrase"].split()[-1]
         cap = mp.sample_caption(folder, trig.split(",")[0].strip() if trig else "", ext)
         lines = [f"Trigger word: {trig}" if trig else "Trigger word: none found in this folder's captions",
@@ -995,7 +1007,7 @@ def _multi_person_notes(vals, image_folder, multi_person=True):
         if not multi_person:
             if dop and cap and trig:
                 pairs = list(zip([t.strip() for t in trig.split(",") if t.strip()],
-                                 [c.strip() for c in cls.split(",")] * 8))
+                                 [mp.class_phrase(c) for c in cls.split(",")] * 8))
                 kept = mp.dop_caption(cap, pairs)
                 lines += [f"Trains on: {cap}", f"And keeps as the model made it: {kept}" if kept else
                           "And keeps as the model made it: nothing - this caption has no trigger word"]
@@ -3592,7 +3604,7 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 mp, train = 1.0, None
             r = _prep.summary(folder, g("mode", _prep.MODES[0]), g("replace") == "1", mp, train,
-                              g("crops_only") == "1")
+                              g("crops_only") == "1", _min_face(g("min_face")))
             try:
                 names = os.listdir(folder)
             except OSError:
@@ -4872,7 +4884,8 @@ class Handler(BaseHTTPRequestHandler):
                         return self.json(prep_jobs.start(folder, str(b.get("mode") or ""), b.get("mp") or 1.0,
                                                          str(b.get("face") or "Largest Face"),
                                                          b.get("padding") or 20, bool(b.get("replace")),
-                                                         bool(b.get("crops_only"))))
+                                                         bool(b.get("crops_only")),
+                                                         _min_face(b.get("min_face"))))
                     if path == "/api/look/scan":
                         captions.unload()
                         return self.json(prep_jobs.look_scan(folder, b.get("baselines") or []))

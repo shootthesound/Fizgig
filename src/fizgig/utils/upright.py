@@ -22,7 +22,22 @@ def upright(im):
 
 def open_upright(path):
     from PIL import Image
-    return upright(Image.open(path))
+    return eight_bit(upright(Image.open(path)))
+
+
+def eight_bit(im):
+    """A 16-bit (or 32-bit integer) greyscale picture as 8-bit greyscale over its full range; any other picture as it is.
+    convert("RGB") clips every value above 255, so a 16-bit grey PNG (a black-and-white photo saved from Photoshop or
+    GIMP) trained, captioned and went through Image Prep as pure white. 16-bit colour needs nothing: PIL reads it as
+    8-bit RGB."""
+    if im.mode not in ("I;16", "I;16L", "I;16B", "I;16N", "I"):
+        return im
+    import numpy as np
+    from PIL import Image
+    a = np.asarray(im)
+    if im.mode == "I" and a.size and 0 <= a.min() and a.max() <= 255:     # 8-bit values held as 32-bit
+        return Image.fromarray(a.astype(np.uint8), "L")
+    return Image.fromarray((a.astype(np.float32) / 257.0 + 0.5).clip(0, 255).astype(np.uint8), "L")
 
 
 def upright_size(im):

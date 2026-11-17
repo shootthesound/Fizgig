@@ -1,5 +1,17 @@
 # Fizgig news
 
+## 17 Nov 2026: LoRA Isolation learns on MiniMax H3 video, Royale renders part of a run, and Gizmo's crop box follows the mouse
+
+**LoRA Isolation with Automagic.** Fizgig LoRA Isolation and Leave the rest of the model alone learned nothing with Automagic (every MiniMax H3 and H3 Image preset). Such a run now trains with AdamW, at the Learning Rate box's rate or Adaptive LR's.
+
+**LoRA Royale renders part of a run.** **Epochs from ... to ...** renders the stretch around an epoch you liked, and a finished run's folder lists its epochs again.
+
+**Gizmo's crop box follows the mouse.** It is drawn from the corner you press, moved by dragging inside it and resized by its corners and sides. Whole frame keeps the full picture of a video with non-square pixels.
+
+**Smaller things.** Photos with a colour profile train as they look, captioning models can be stopped while they load, Krea 2 decodes with about 2 GB less VRAM, and Leave the rest of the model alone can be told what your subject is.
+
+[Fizgig v9.7.6 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.7.6)
+
 ## 16 Nov 2026: MiniMax H3 at int8 on any pruned file, and H3 Image on 12 GB cards
 
 **int8 on any pruned H3 file.** A pruned bf16 or fp8 MiniMax H3 or H3 Image file, Comfy-Org's or a fine-tune or merge saved that way, is converted to int8 as it loads, so Auto trains it at int8 instead of stopping at load. H3's pruned bf16 file converts to Comfy-Org's int8 file value for value. The full unpruned checkpoint stays 4-bit.

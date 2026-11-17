@@ -5,6 +5,19 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 
 NEWS = [
     {
+        "date": "17 Nov 2026",
+        "title": "LoRA Isolation learns on MiniMax H3 video, Royale renders part of a run, and Gizmo's crop box follows the mouse",
+        "body": (
+            "Fizgig LoRA Isolation and Leave the rest of the model alone learned nothing with Automagic (every MiniMax "
+            "H3 and H3 Image preset); such a run now trains with AdamW, at the Learning Rate box's rate or Adaptive "
+            "LR's.\n\n"
+            "LoRA Royale renders part of a run (Epochs from ... to ...), and Gizmo's crop box is drawn, moved and "
+            "resized as you drag."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#17-nov-2026-lora-isolation-learns-on-minimax-h3-video-royale-renders-part-of-a-run-and-gizmos-crop-box-follows-the-mouse"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.7.6"}],
+    },
+    {
         "date": "16 Nov 2026",
         "title": "MiniMax H3 at int8 on any pruned file, and H3 Image on 12 GB cards",
         "body": (

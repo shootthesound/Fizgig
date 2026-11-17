@@ -681,7 +681,7 @@ def form(desc):
     labels = {**launch.PRECISION_LABELS, **dict(desc.precision_labels or ())}
     add("memory", "Memory & Precision", "training", [
         _row("BLOCKS_SWAP", "Blocks Swap", "combo", "Auto plans the fewest swapped blocks that fit your free VRAM.",
-             SWAP),
+             SWAP) if launch.swaps_blocks(desc) else None,       # SDXL, Anima, ACE-Step: no block swap to set
         _row("FAMILY_PRECISION", desc.precision_label or "Base precision", "choice", desc.precision_hint,
              [labels[p] for p in precisions], default=labels["auto"]) if len(desc.precisions) > 1 else None,
         _row("COMPILE_BLOCKS", "Compile Blocks", "choice", desc.compile_hint, ["Auto", "On", "Off"])

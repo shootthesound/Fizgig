@@ -156,6 +156,21 @@ def _slider_value(text):
     return " " + text if text.startswith("-") else text
 
 
+_SWAPS = {}
+
+
+def swaps_blocks(desc):
+    """The family's driver can stream blocks between CPU and GPU (max_blocks_to_swap above 0). SDXL, Anima and ACE-Step
+    can't: their training loads without block swap whatever number it is given, so the Training tab has no Blocks
+    Swap row for them and Start never refuses one. Kept per family (loading the driver takes a second)."""
+    if desc.key not in _SWAPS:
+        try:
+            _SWAPS[desc.key] = desc.load_driver().max_blocks_to_swap() > 0
+        except Exception:
+            _SWAPS[desc.key] = True                  # can't tell: the row stays, as before
+    return _SWAPS[desc.key]
+
+
 def ft_on(desc, inputs):
     """A full fine-tune of the base model, for a family whose driver offers one (description.finetune)."""
     return bool(desc.finetune and inputs.get("FAMILY_FT"))
@@ -1838,6 +1853,8 @@ def start_problems(desc, inputs):
     raw_swap = str(v.get("blocks_swap") or "").strip()
     m = re.match(r"\d+", raw_swap)
     swap = 0 if raw_swap.lower().startswith("auto") or not m else int(m.group())   # Auto always fits
+    if not swaps_blocks(desc):
+        swap = 0               # no block swap at all (no row on the form): a saved number loads without it, as it says
     out += checks.run(v, blocks_swap=swap, swap_max=max(0, desc.n_blocks - 2), arch_label=desc.gui_label,
                       name_error=checks.tidy_name(v.get("LORA_NAME"))[1])
     # a Preferences file an option asks for (H3's ref2va base, an Ostris adapter): set and on disk

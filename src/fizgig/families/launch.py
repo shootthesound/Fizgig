@@ -1665,14 +1665,27 @@ def dop_automagic(desc, st):
     pass runs on every second step and pulls the LoRA back, so each weight's update flips direction step to step;
     Automagic reads that as overshooting and lowers its rate to its floor within two epochs, and nothing more is
     learned (#364: H3 Isolation 5e-6 after epoch 1, 1e-8 from epoch 2; the same subject alone held 4e-4). Such a run
-    trains with full-precision AdamW at a fixed 2e-4 instead (plan)."""
+    trains with full-precision AdamW instead (plan), at dop_adamw_rate or Adaptive LR's."""
     return automagic(st) and not ft_on(desc, st) and (dop_on(desc, st) or multi_person_on(desc, st))
+
+
+def dop_adamw_rate(st):
+    """AdamW's rate for such a run: the Learning Rate box when it holds an AdamW rate (1e-5 to 1e-3: H3 Image's
+    presets start Automagic at 2.5e-4 / 2.8e-4), else 2e-4 - Automagic's own tiny starting value (1e-6 on H3's
+    presets) would leave AdamW learning next to nothing. Adaptive LR, when ticked, sets the rate instead (plan)."""
+    try:
+        lr = float(_s(st.get("LEARNING_RATE")))
+    except ValueError:
+        lr = 0.0
+    return _s(st.get("LEARNING_RATE")) if 1e-5 <= lr <= 1e-3 else DOP_OPTIMIZER[1]
 
 
 def dop_automagic_line(desc, st):
     mode = "Fizgig LoRA Isolation" if multi_person_on(desc, st) else "Leave the rest of the model alone"
-    return (f"{mode} trains with AdamW at {DOP_OPTIMIZER[1]} instead of Automagic: Automagic lowers its own rate "
-            "until training stops when the model is also being kept as it was.")
+    adaptive = st.get("ADAPTIVE_LR") and desc.adaptive_lr      # a model without Adaptive LR (H3) ignores the tick
+    rate = "with Adaptive LR setting its rate" if adaptive else f"at {dop_adamw_rate(st)}"
+    return (f"{mode} trains with AdamW {rate} instead of Automagic: Automagic lowers its own rate until training "
+            "stops when the model is also being kept as it was.")
 
 
 def prodigy(inputs):
@@ -2017,8 +2030,9 @@ def plan(desc, inputs):
         inputs["image_folder"] = os.path.abspath(folder)     # the subprocesses run from the Fizgig folder
     inputs["LORA_NAME"] = tidy_name(_s(inputs.get("LORA_NAME")))[0]
     dop_swap = dop_automagic(desc, inputs)
-    if dop_swap:                     # Automagic can't train with DOP (#364): the run's optimizer is AdamW at 2e-4
-        inputs["OPTIMIZER_TYPE"], inputs["LEARNING_RATE"] = DOP_OPTIMIZER
+    if dop_swap:                     # Automagic can't train with DOP (#364): the run's optimizer is AdamW, at the box's
+        inputs["LEARNING_RATE"] = dop_adamw_rate(inputs)       # rate (or Adaptive LR's - left as ticked)
+        inputs["OPTIMIZER_TYPE"] = DOP_OPTIMIZER[0]
         inputs["OPTIMIZER_ARGS"] = ""    # an Automagic setting isn't AdamW's
     if automagic(inputs):            # it owns the rate: Adaptive LR, per-image LR and the look warm-up are off
         inputs["ADAPTIVE_LR"] = False

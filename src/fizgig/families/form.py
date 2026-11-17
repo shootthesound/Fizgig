@@ -1187,7 +1187,16 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
                                        f"with Adafactor. Pick Adafactor (recommended: what every Fizgig fine-tune is "
                                        f"tested on), or AdamW8bit, AdamW, AdEMAMix8bit or Lion8bit.")
     opt = str(values.get("OPTIMIZER_TYPE", "")) if kind != "finetune" else ""
-    if opt in ("automagic3", "automagic4"):
+    # with DOP (Leave the rest of the model alone, or Fizgig LoRA Isolation) Automagic can't train, so the run trains
+    # with AdamW (launch.dop_automagic, #364): its rate is the Learning Rate box's, or Adaptive LR's - none greyed
+    dop_swap = (opt in ("automagic3", "automagic4") and kind == "standard" and desc.subject_isolation
+                and bool(values.get("FAMILY_DOP") or values.get("FAMILY_MULTI_PERSON")))
+    if dop_swap:
+        notes["OPTIMIZER_TYPE"] = (f"With the Subjects card's {PEOPLE_MODES[2] if values.get('FAMILY_MULTI_PERSON') else PEOPLE_MODES[1]}, "
+                                   f"this run trains with AdamW instead: {opt} lowers its own rate until training "
+                                   "stops when the model is also being kept as it was. The Learning Rate box sets "
+                                   "AdamW's rate (2e-4 when it holds Automagic's tiny starting value), or Adaptive LR.")
+    elif opt in ("automagic3", "automagic4"):
         disabled |= {"ADAPTIVE_LR", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK"}
         force.update({k: False for k in ("ADAPTIVE_LR", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK") if values.get(k)})
         if values.get("ADAPTIVE_LR"):            # turned off now: as it shows with Adaptive LR off

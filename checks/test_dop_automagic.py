@@ -2,7 +2,9 @@
 on every second step makes each weight's update flip direction step to step, which Automagic reads as overshooting:
 on a pod, H3's Fast preset with two-subject Isolation fell to 5e-6 after epoch 1 and to its 1e-8 floor from epoch 2,
 and nothing was learned, while the same preset on one subject without DOP held about 4e-4 (v4 fell the same way). Such
-a run now trains with full-precision AdamW at 2e-4 (H3's Slider recipe), and Start and the log say so. Without DOP,
+a run now trains with full-precision AdamW, and Start and the log say so: at the Learning Rate box's rate when it holds
+an AdamW rate (H3 Image's presets start Automagic at 2.5e-4), at 2e-4 when it holds Automagic's tiny starting value (1e-6
+on H3's presets), or at Adaptive LR's when that is ticked - the form no longer greys it out then. Without DOP,
 Automagic is left as picked."""
 import sys
 
@@ -43,11 +45,17 @@ def _plan(tmp_path, fam="minimax", iso=True, dop=False, **values):
 
 
 def test_isolation_or_dop_with_automagic_trains_with_adamw(tmp_path):
-    for fam, opt, kw in (("minimax", "automagic3", {"iso": True}), ("minimax", "automagic4", {"iso": True}),
-                         ("minimax", "automagic3", {"iso": False, "dop": True}), ("krea2", "automagic3", {"iso": True})):
-        desc, inp, p, a = _plan(tmp_path, fam=fam, OPTIMIZER_TYPE=opt, **kw)      # any model, not only H3
-        assert (a.optimizer_type, a.learning_rate) == ("adamw", 2e-4)
-        assert any("AdamW at 2e-4 instead of Automagic" in c for c in p.console)
+    for fam, opt, kw, rate in (("minimax", "automagic3", {"iso": True}, "2e-4"),      # H3's presets start at 1e-6
+                               ("minimax", "automagic4", {"iso": True}, "2e-4"),
+                               ("minimax", "automagic3", {"iso": False, "dop": True}, "2e-4"),
+                               ("krea2", "automagic3", {"iso": True}, None)):     # any model: Krea 2's preset has
+        desc, inp, p, a = _plan(tmp_path, fam=fam, OPTIMIZER_TYPE=opt, **kw)           # Adaptive LR ticked
+        assert a.optimizer_type == "adamw"
+        if rate:
+            assert a.learning_rate == float(rate) and not a.adaptive_lr
+            assert any(f"AdamW at {rate} instead of Automagic" in c for c in p.console)
+        else:
+            assert a.adaptive_lr and any("AdamW with Adaptive LR setting its rate" in c for c in p.console)
         assert any("instead of Automagic" in w for w in launch.start_checks(desc, inp, ""))
 
 
@@ -57,3 +65,22 @@ def test_automagic_without_dop_is_left_as_picked(tmp_path):
     assert not any("instead of Automagic" in c for c in p.console + launch.start_checks(desc, inp, ""))
     desc, inp, p, a = _plan(tmp_path, OPTIMIZER_TYPE="adamw8bit", LEARNING_RATE="1e-4")      # not Automagic: as picked
     assert (a.optimizer_type, a.learning_rate) == ("adamw8bit", 1e-4)
+
+
+def test_the_rate_is_the_box_s_when_it_is_an_adamw_rate_or_adaptive_lr_s(tmp_path):
+    _d, _i, _p, a = _plan(tmp_path, OPTIMIZER_TYPE="automagic4", LEARNING_RATE="0.00025")   # H3 Image Standard's
+    assert (a.optimizer_type, a.learning_rate) == ("adamw", 2.5e-4)
+    _d, _i, _p, a = _plan(tmp_path, OPTIMIZER_TYPE="automagic3", LEARNING_RATE="0.005")      # too hot for AdamW
+    assert a.learning_rate == 2e-4
+    desc, inp, p, a = _plan(tmp_path, fam="krea2", OPTIMIZER_TYPE="automagic3", ADAPTIVE_LR=True)
+    assert a.optimizer_type == "adamw" and a.adaptive_lr
+    assert any("AdamW with Adaptive LR setting its rate" in c for c in p.console)
+
+
+def test_the_form_lets_adaptive_lr_on_with_dop_or_isolation(tmp_path):
+    desc = get("minimax")
+    v = {**form.DEFAULTS, **desc.presets[0][1], "FAMILY_DOP": True}
+    st = form.state(desc, v, "")
+    assert "ADAPTIVE_LR" not in st["disabled"] and "AdamW" in st["notes"]["OPTIMIZER_TYPE"]
+    st = form.state(desc, {**v, "FAMILY_DOP": False}, "")
+    assert "ADAPTIVE_LR" in st["disabled"]                                         # Automagic alone owns the rate

@@ -1869,7 +1869,7 @@ def start_problems(desc, inputs):
     if not swaps_blocks(desc):
         swap = 0               # no block swap at all (no row on the form): a saved number loads without it, as it says
     out += checks.run(v, blocks_swap=swap, swap_max=max(0, desc.n_blocks - 2), arch_label=desc.gui_label,
-                      name_error=checks.tidy_name(v.get("LORA_NAME"))[1])
+                      name_error=checks.tidy_name(v.get("LORA_NAME"))[1], numbers_checked=True)
     # a Preferences file an option asks for (H3's ref2va base, an Ostris adapter): set and on disk
     miss = []
     option_tokens(desc, inputs, missing=miss)

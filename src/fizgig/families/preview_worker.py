@@ -37,13 +37,6 @@ def _write(path, data):
     os.replace(path + ".tmp", path)
 
 
-def plan(desc, driver, precision, dit_path):
-    """(precision, blocks_to_swap, why) for the base this helper loads: a family that plans itself (own_plan,
-    MiniMax H3) plans for this card with its driver (plan_helper); the others from their train_memory (#372)."""
-    own = driver.plan_helper(precision, dit_path) if desc.own_plan else None
-    return own or quant.plan(desc, driver, precision, -1)
-
-
 class Worker:
     def __init__(self, setup, jobs):
         self.jobs = jobs
@@ -60,7 +53,8 @@ class Worker:
         if self.ck:
             self._load_checkpoint(setup, paths)
             return
-        precision, swap, why = plan(self.desc, self.driver, setup.get("precision") or "auto", paths["dit"])
+        precision = setup.get("precision") or "auto"
+        precision, swap, why = quant.plan(self.desc, self.driver, precision, -1)
         self.say("loading", f"Loading {self.desc.display_name} ({precision}" + (f", {swap} blocks swapped" if swap else "")
                  + ")")
         logger.info(f"[helper] {self.desc.display_name} at {precision}, block swap {swap} ({why})")

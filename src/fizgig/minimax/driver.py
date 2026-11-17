@@ -170,29 +170,6 @@ class MiniMaxDriver(FamilyDriver):
                            "re-launch.")
         return mode, n, why
 
-    def plan_helper(self, precision, dit_path):
-        """A preview helper's base on this card (#372): Studio's H3 render plan (H3RepairEngine.plan_base) for the
-        clip the previews draw - int8 with its last blocks streamed where 18 GB or more is free, the 4-bit base below
-        that (16 GB cards) - never more precise than the run's own base; then the previews' caps, as the trainer
-        applies them (_plan_previews: 768x640 / 22 frames on a 16 GB-class card, 22 frames on a streamed plan). The
-        shared planner has no H3 figures, so an int8 run's helper loaded int8 with nothing streamed and ran out of
-        memory loading it on a 16 GB card."""
-        from fizgig.minimax.common import int8_loadable
-        from fizgig.repair_studio.h3_engine import H3RepairEngine
-        from fizgig.utils import device as dev
-        free = float(dev.plannable_free_vram())
-        self._plan_previews(0)                       # a 16 GB-class card: 768x640, 22 frames
-        frames = int(self.options.get("preview_frames", 1) or 1)
-        w, h = (768, 640) if getattr(self, "_small_card", False) else (self.description.preview_width,
-                                                                       self.description.preview_height)
-        mode, n = H3RepairEngine.plan_base(free, "nf4" if precision == "nf4" else "auto",
-                                           H3RepairEngine.clip_need_gb(w, h, frames))
-        if mode == "int8" and not int8_loadable(dit_path):
-            mode, n = "nf4", 0                       # the full unpruned file can't take int8 (#357)
-        if n:
-            self._plan_previews(n)                   # a streamed plan: clips start at 22 frames, as on the trainer
-        return mode, n, f"Studio's H3 render plan for {free:.1f} GB free"
-
     def _plan_previews(self, n_swap):
         try:
             total = torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory / 1e9

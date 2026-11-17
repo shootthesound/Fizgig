@@ -1091,8 +1091,8 @@ def multi_caption_note(desc, values, image_folder):
         which = f" ({', '.join(names[:3])}{', ...' if len(names) > 3 else ''})" if len(names) <= 5 else ""
         captioned = sum(1 for k in counts.values() if k)
         return True, (f"{len(many):,} of your {captioned:,} caption files {'has' if len(many) == 1 else 'have'} more "
-                      f"than one line{which}. Tick to train each line as its own caption; unticked, each file is one "
-                      f"caption.")
+                      f"than one line{which}. Tick to train each line as its own caption, a random line each time the "
+                      f"picture trains; unticked, each file is one caption.")
     if not counts:
         return True, ""
     if not many:

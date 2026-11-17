@@ -6,6 +6,18 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 NEWS = [
     {
         "date": "17 Nov 2026",
+        "title": "Repeats from folder names, and several captions per picture",
+        "body": (
+            "Sub-folders named like 10_Laffey_base train that many times an epoch (Repeats from folder names, under "
+            "Also train on its sub-folders), the naming kohya's sd-scripts and OneTrainer use.\n\n"
+            "Caption files can hold several captions, one per line, picked at random each time a picture trains "
+            "(Several captions per picture), and the Captions tab shows them a line at a time."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#17-nov-2026-repeats-from-folder-names-and-several-captions-per-picture"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.7.7"}],
+    },
+    {
+        "date": "17 Nov 2026",
         "title": "LoRA Isolation learns on MiniMax H3 video, Royale renders part of a run, and Gizmo's crop box follows the mouse",
         "body": (
             "Fizgig LoRA Isolation and Leave the rest of the model alone learned nothing with Automagic (every MiniMax "

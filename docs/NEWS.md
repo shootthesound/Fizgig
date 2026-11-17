@@ -1,5 +1,15 @@
 # Fizgig news
 
+## 17 Nov 2026: Repeats from folder names, and several captions per picture
+
+**Repeats from folder names.** With Also train on its sub-folders ticked, **Repeats from folder names** reads `10_Laffey_base` as ten times an epoch, the naming kohya's sd-scripts and OneTrainer use, with a table of each folder's share and the Max Epochs that keeps the run as long.
+
+**Several captions per picture.** A caption file can hold several captions, one per line, and each time a picture trains one is picked at random. The Captions tab shows them a line at a time, and Add as another line builds tag-plus-sentence files.
+
+**Fixes.** Resume at a new size works with Enable Cache unticked, and a helper on a 16 GB card renders MiniMax H3 previews instead of running out of memory.
+
+[Fizgig v9.7.7 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.7.7)
+
 ## 17 Nov 2026: LoRA Isolation learns on MiniMax H3 video, Royale renders part of a run, and Gizmo's crop box follows the mouse
 
 **LoRA Isolation with Automagic.** Fizgig LoRA Isolation and Leave the rest of the model alone learned nothing with Automagic (every MiniMax H3 and H3 Image preset). Such a run now trains with AdamW, at the Learning Rate box's rate or Adaptive LR's.

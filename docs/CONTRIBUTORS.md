@@ -131,7 +131,7 @@ size row for clips kept in sub-folders ([#278](https://github.com/shootthesound/
 96 GB card ([#282](https://github.com/shootthesound/Fizgig/pull/282)) found that H3 clip runs with TREAD off could go without gradient
 checkpointing and run out of memory; those runs now keep it on.
 
-Since then: **Fibo 2.0** as a trainable family, with measured planner figures ([#250](https://github.com/shootthesound/Fizgig/pull/250), v9.0.4); **Purge run history** on Runs & outputs ([#345](https://github.com/shootthesound/Fizgig/pull/345), v9.7.2); and LoRA Royale treating a run's Save now snapshots and last checkpoint as its own epochs ([#355](https://github.com/shootthesound/Fizgig/pull/355), v9.7.6). Their exact reports found the H3 Context LoRA crash at step 0 ([#298](https://github.com/shootthesound/Fizgig/issues/298)) and MOSS-Image block swap leaving weights on the CPU at a batch size above 1 ([#335](https://github.com/shootthesound/Fizgig/issues/335)).
+Since then: **Fibo 2.0** as a trainable family, with measured planner figures ([#250](https://github.com/shootthesound/Fizgig/pull/250), v9.0.4); **Purge run history** on Runs & outputs ([#345](https://github.com/shootthesound/Fizgig/pull/345), v9.7.2); and LoRA Royale treating a run's Save now snapshots and last checkpoint as its own epochs ([#355](https://github.com/shootthesound/Fizgig/pull/355), v9.7.6). Their exact reports found the H3 Context LoRA crash at step 0 ([#298](https://github.com/shootthesound/Fizgig/issues/298)) and MOSS-Image block swap leaving weights on the CPU at a batch size above 1 ([#335](https://github.com/shootthesound/Fizgig/issues/335)). In v9.7.7, a resume at a new size caches again whatever Enable Cache says, and its record waits until training starts ([#370](https://github.com/shootthesound/Fizgig/pull/370)).
 
 ## DmitryAkDev
 
@@ -192,10 +192,10 @@ Start at a smaller size, the run summary, the sidebar meters and the captions ta
 
 Since November:
 
-- [tsk5cb-cmyk](https://github.com/tsk5cb-cmyk): the logs and OneTrainer settings behind 9.2's speed work ([#221](https://github.com/shootthesound/Fizgig/issues/221))
+- [tsk5cb-cmyk](https://github.com/tsk5cb-cmyk): the logs and OneTrainer settings behind 9.2's speed work ([#221](https://github.com/shootthesound/Fizgig/issues/221)), and the case for repeats from folder names ([#300](https://github.com/shootthesound/Fizgig/issues/300))
 - [pomoe136](https://github.com/pomoe136): Extract on MOSS-Image ([#301](https://github.com/shootthesound/Fizgig/issues/301))
 - [spinolover](https://github.com/spinolover): a Fast Identity run error ([#302](https://github.com/shootthesound/Fizgig/issues/302))
-- [Nessa2026691](https://github.com/Nessa2026691): Context LoRAs in LoKR format ([#304](https://github.com/shootthesound/Fizgig/issues/304)) and tracking down the Context LoRA slowdown ([#307](https://github.com/shootthesound/Fizgig/issues/307))
+- [Nessa2026691](https://github.com/Nessa2026691): Context LoRAs in LoKR format ([#304](https://github.com/shootthesound/Fizgig/issues/304)) and tracking down the Context LoRA slowdown ([#307](https://github.com/shootthesound/Fizgig/issues/307)), and the diagnosis and fix for MiniMax H3 helper previews on 16 GB cards ([#372](https://github.com/shootthesound/Fizgig/issues/372))
 - [MrB4000](https://github.com/MrB4000): a MOSS-Image LoRA that wouldn't start ([#305](https://github.com/shootthesound/Fizgig/issues/305))
 - [arkinson9](https://github.com/arkinson9): MOSS-Image preview quality on small cards ([#309](https://github.com/shootthesound/Fizgig/issues/309))
 - [josm2026](https://github.com/josm2026): the installer's "from was unexpected" error, with the fix ([#310](https://github.com/shootthesound/Fizgig/issues/310))
@@ -213,10 +213,11 @@ Since November:
 - [johnstephendonahue-ux](https://github.com/johnstephendonahue-ux): which card an AMD PC trains on ([#342](https://github.com/shootthesound/Fizgig/issues/342))
 - [Aleksandr-AI90](https://github.com/Aleksandr-AI90): ACE-Step's song encoding memory ([#347](https://github.com/shootthesound/Fizgig/issues/347))
 - [RandomTurtle](https://github.com/RandomTurtle): Resume Training folder mix-ups ([#352](https://github.com/shootthesound/Fizgig/issues/352))
-- [prookyon](https://github.com/prookyon): Automagic v4's real rate ([#353](https://github.com/shootthesound/Fizgig/issues/353))
+- [prookyon](https://github.com/prookyon): Automagic v4's real rate ([#353](https://github.com/shootthesound/Fizgig/issues/353)) and several captions per picture, as OneTrainer writes them ([#300](https://github.com/shootthesound/Fizgig/issues/300))
 - [howDoILearnPython](https://github.com/howDoILearnPython): H3 Image on 12 GB cards ([#354](https://github.com/shootthesound/Fizgig/issues/354))
 - [Aymenbayoss](https://github.com/Aymenbayoss): H3 at int8 on pruned files ([#357](https://github.com/shootthesound/Fizgig/issues/357)) and stopping a captioning model while it loads ([#366](https://github.com/shootthesound/Fizgig/issues/366))
 - [girzai](https://github.com/girzai): big datasets on a pod ([#308](https://github.com/shootthesound/Fizgig/issues/308))
+- [CrypticCherry](https://github.com/CrypticCherry): repeats from folder names and several captions per picture ([#300](https://github.com/shootthesound/Fizgig/issues/300))
 - [whitejt2](https://github.com/whitejt2): checks that failed on smaller cards ([#359](https://github.com/shootthesound/Fizgig/pull/359))
 - [ofung30-sketch](https://github.com/ofung30-sketch): LoRA Isolation with Automagic ([#364](https://github.com/shootthesound/Fizgig/issues/364))
 - [Marhalt](https://github.com/Marhalt): saying what your subject is ([#365](https://github.com/shootthesound/Fizgig/issues/365))

@@ -421,6 +421,12 @@ def _anchor_lines(raw):
     return [str(x).strip() for x in (raw or []) if str(x).strip()]
 
 
+def _prompt_texts(prompts):
+    """--slider_prompts as typed: without the space the launch puts before one that starts with "-" (so argparse takes
+    it as a value, launch._slider_value)."""
+    return [str(x).strip() for x in prompts] if prompts else prompts
+
+
 def _encode_override(driver, te_path, prompts, dit, device, parkable=True, references=None):
     """Encode the override's prompts mid-run. The text encoder loads beside the training DiT when it fits; otherwise the
     DiT waits on CPU for the encode (a block-swapped DiT is small enough to stay, and the driver picks a smaller
@@ -1224,6 +1230,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     os.makedirs(output_dir, exist_ok=True)
 
     # ---- sliders: a signed dial, trained at +1 and -1 ------------------------------------------------
+    slider_prompts = _prompt_texts(slider_prompts)     # as typed (the launch's space before a "-" goes)
     slider = bool(slider_pairs or slider_prompts)
     if slider:
         if not desc.slider_training:
@@ -1657,7 +1664,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         _all = [{k: v[None] for k, v in c.items()}
                 for c in driver.encode_text(te, [str(x) for x in slider_prompts] + list(slider_anchors))]
         slider_enc, anchor_enc = _all[:3], _all[3:]
-        if sample_cfg_scale > 1.0 and desc.preview_negative is not None:
+        # a Turbo LoRA's own recipe can use CFG too (MOSS-Image's: CFG 2), and then it needs the negative as well
+        if ((sample_cfg_scale > 1.0 or (speed_desc is not None and speed_desc.settings.cfg > 1.0))
+                and desc.preview_negative is not None):
             # the practice pictures render as previews do: the Samples tab's negative (else the family's default)
             text = sample_negative if sample_negative is not None else desc.preview_negative
             slider_neg = {k: v[None] for k, v in driver.encode_text(te, [text])[0].items()}
@@ -1914,13 +1923,15 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 if use_speed:
                     lat = driver.generate(dit, n_c, slider_bank_res, slider_bank_res, steps=speed_desc.settings.steps,
                                           seed=seed + 1000 + i, cfg=speed_desc.settings.cfg,
-                                          sigmas=speed_desc.settings.sigmas, options=speed_desc.settings.options)
+                                          sigmas=speed_desc.settings.sigmas, options=speed_desc.settings.options,
+                                          **({"neg_cond": {k: v[0].to(device) for k, v in slider_neg.items()}}
+                                             if slider_neg is not None and speed_desc.settings.cfg > 1.0 else {}))
                 else:
                     lat = driver.generate(dit, n_c, slider_bank_res, slider_bank_res, steps=desc.preview_steps,
                                           seed=seed + 1000 + i, cfg=sample_cfg_scale,
                                           # on the GPU with the prompt: SDXL joins the two before moving them
                                           **({"neg_cond": {k: v[0].to(device) for k, v in slider_neg.items()}}
-                                             if slider_neg is not None else {}))
+                                             if slider_neg is not None and sample_cfg_scale > 1.0 else {}))
                 bank.append(driver.practice_latent(vae, lat, slider_bank_res))
         if use_speed:
             net.set_enabled(SPEED, False)

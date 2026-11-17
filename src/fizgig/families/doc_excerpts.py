@@ -50,7 +50,7 @@ def main():
     g.add_argument("--update", action="store_true")
     a = ap.parse_args()
     stale, total = [], 0
-    for md in sorted(glob.glob(os.path.join(DOCS, "*.md"))):
+    for md in sorted(glob.glob(os.path.join(glob.escape(DOCS), "*.md"))):
         doc = open(md, encoding="utf-8").read()
 
         def fix(m):

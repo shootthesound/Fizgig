@@ -526,9 +526,9 @@ def load_qwen21_dit(path, device="cuda", dtype=torch.bfloat16, config=None, keep
     from safetensors.torch import load_file
     files = []
     if os.path.isdir(path):
-        files = sorted(glob.glob(os.path.join(path, "*.safetensors")))
+        files = sorted(glob.glob(os.path.join(glob.escape(path), "*.safetensors")))
     elif path.endswith(".json"):
-        files = sorted(glob.glob(os.path.join(os.path.dirname(path), "*.safetensors")))
+        files = sorted(glob.glob(os.path.join(glob.escape(os.path.dirname(path)), "*.safetensors")))
     else:
         files = [path]
     with torch.device("meta"):

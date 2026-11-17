@@ -184,7 +184,7 @@ class Worker:
     def loop(self, idle):
         last = time.time()
         while True:
-            todo = sorted(glob.glob(os.path.join(self.jobs, "*.job.json")))
+            todo = sorted(glob.glob(os.path.join(glob.escape(self.jobs), "*.job.json")))
             if not todo:
                 if os.path.exists(os.path.join(self.jobs, "stop")) or time.time() - last > idle:
                     self.say("stopped", "Stopped")

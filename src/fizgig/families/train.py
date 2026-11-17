@@ -1512,7 +1512,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     if share_worker is None and not slider_prompts:
         try:                     # for a helper's training share (web/helpers.py): this run's command and its cache
             os.makedirs(os.path.join(output_dir, SHARE_DIR), exist_ok=True)
-            for _old in glob.glob(os.path.join(output_dir, SHARE_DIR, "[0-9]" * 6)):
+            for _old in glob.glob(os.path.join(glob.escape(output_dir), SHARE_DIR, "[0-9]" * 6)):
                 shutil.rmtree(_old, ignore_errors=True)     # an earlier run's rounds: never this run's to combine
             with open(dataset_config, encoding="utf-8") as f:
                 _ds_text = f.read()
@@ -2848,7 +2848,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         _write_json(os.path.join(share_worker, "ready.json"), {"at": time.time(), "steps_per_epoch": steps_per_epoch})
         idle = time.time()
         while True:
-            jobs = sorted(glob.glob(os.path.join(share_worker, "*.job.json")))
+            jobs = sorted(glob.glob(os.path.join(glob.escape(share_worker), "*.job.json")))
             if os.path.exists(os.path.join(share_worker, "stop")) or (not jobs and time.time() - idle > 1800):
                 return
             if not jobs:
@@ -3265,7 +3265,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     while face_phase.get("said"):
         logger.info(face_phase["said"].pop(0))
     steplog.flush()
-    for _old in glob.glob(os.path.join(output_dir, SHARE_DIR, "*")):   # the share's rounds and bundles: done with
+    # the share's rounds and bundles: done with
+    for _old in glob.glob(os.path.join(glob.escape(output_dir), SHARE_DIR, "*")):
         if os.path.basename(_old) != "setup.json":
             try:                         # a file the web UI has open stays (Windows): never the run's final save
                 shutil.rmtree(_old, ignore_errors=True) if os.path.isdir(_old) else os.remove(_old)

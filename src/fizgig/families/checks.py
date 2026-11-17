@@ -119,10 +119,26 @@ def tidy_name(raw):
     return name, None
 
 
-def run(v, *, blocks_swap, swap_max, arch_label, name_error):
+def run(v, *, blocks_swap, swap_max, arch_label, name_error, numbers_checked=False):
     """Rank, alpha, epochs, the save cadence, the per-category stop epoch, block swap, the LoRA name, the output
     folder and a resume path. `blocks_swap` is the resolved number (None: not a number); `name_error` comes from
-    tidy_name."""
+    tidy_name. numbers_checked: network() and numbers() already named a bad rank / alpha / epochs / save cadence (the
+    family Start), so they aren't said twice."""
+    out = []
+    if not numbers_checked:
+        out += _run_numbers(v)
+    try:
+        stop = str(v.get("MIXED_STOP_EPOCH") or "").strip()
+        if stop and (not stop.isdigit() or int(stop) <= 0):
+            out.append(f"'Finish one category early: after epoch' must be blank or "
+                       f"a positive whole number, not {stop!r}")
+    except (TypeError, ValueError):
+        pass
+    return out + _run_rest(v, blocks_swap=blocks_swap, swap_max=swap_max, arch_label=arch_label,
+                           name_error=name_error)
+
+
+def _run_numbers(v):
     out = []
     try:
         if int(v.get("NETWORK_DIM")) <= 0:
@@ -142,12 +158,13 @@ def run(v, *, blocks_swap, swap_max, arch_label, name_error):
     try:
         if int(v.get("SAVE_EVERY_N_EPOCHS")) <= 0:
             out.append("Save every N epochs must be a positive integer")
-        stop = str(v.get("MIXED_STOP_EPOCH") or "").strip()
-        if stop and (not stop.isdigit() or int(stop) <= 0):
-            out.append(f"'Finish one category early: after epoch' must be blank or "
-                       f"a positive whole number, not {stop!r}")
     except (TypeError, ValueError):
         out.append("Save every N epochs must be a valid integer")
+    return out
+
+
+def _run_rest(v, *, blocks_swap, swap_max, arch_label, name_error):
+    out = []
     if blocks_swap is None:
         out.append("Blocks swap must be a valid integer")
     elif blocks_swap < 0:

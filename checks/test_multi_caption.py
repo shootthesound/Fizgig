@@ -15,7 +15,7 @@ from fizgig.families.registry import get as get_family
 def _pic(path, caption):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     Image.new("RGB", (32, 32)).save(path)
-    with open(os.path.splitext(path)[0] + ".txt", "w", encoding="utf-8") as f:
+    with open(os.path.splitext(path)[0] + ".txt", "w", encoding="utf-8", newline="\n") as f:    # same bytes on any OS
         f.write(caption)
 
 

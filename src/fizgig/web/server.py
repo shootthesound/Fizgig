@@ -278,7 +278,10 @@ def _side_extras() -> dict:
     try:
         c = captions.status()
         if c["state"] in ("loading", "running", "translating"):
-            jobs.append({"what": "Translating captions" if c["state"] == "translating" else "Captioning",
+            jobs.append({"what": "Translating captions" if c["state"] == "translating" else
+                         f"Downloading {c.get('model') or 'the caption model'}" if c["state"] == "loading"
+                         and c.get("phase") == "downloading" else
+                         f"Loading {c.get('model') or 'the caption model'}" if c["state"] == "loading" else "Captioning",
                          "done": c.get("done") or 0, "total": c.get("total") or 0, "tab": "captions"})
         if c.get("loaded"):
             loaded.append({"what": "Caption model", "name": c.get("model") or "", "tab": "captions"})
@@ -995,8 +998,8 @@ def _multi_person_notes(vals, image_folder, multi_person=True):
         auto_trig = subject_trigger(folder, ext)
         if auto_trig:
             found[tkey] = auto_trig
-            got, _w = mp.subject(folder, auto_trig, "", ext)
-            if got:
+            got, _w = mp.subject(folder, auto_trig, "", ext) if multi_person else (None, "")
+            if got:              # Isolation reads it from the captions; DOP alone uses only what's typed (#365)
                 found[ckey] = got["phrase"].split()[-1]
         cap = mp.sample_caption(folder, trig.split(",")[0].strip() if trig else "", ext,
                                 multi=bool(vals.get("MULTI_CAPTION")))
@@ -1005,7 +1008,7 @@ def _multi_person_notes(vals, image_folder, multi_person=True):
         if not multi_person:
             if dop and cap and trig:
                 pairs = list(zip([t.strip() for t in trig.split(",") if t.strip()],
-                                 [c.strip() for c in cls.split(",")] * 8))
+                                 [mp.class_phrase(c) for c in cls.split(",")] * 8))
                 kept = mp.dop_caption(cap, pairs)
                 lines += [f"Trains on: {cap}", f"And keeps as the model made it: {kept}" if kept else
                           "And keeps as the model made it: nothing - this caption has no trigger word"]
@@ -4989,7 +4992,7 @@ class Handler(BaseHTTPRequestHandler):
                 from fizgig.web import royale
                 fams = {d.key: d for d in royale.families()}
                 scan = royale.scan(str(b.get("folder") or "").strip())
-                items = royale.pick(scan["items"], b.get("max") or "12")
+                items = royale.pick(scan["items"], b.get("max") or "12", b.get("from"), b.get("to"))
                 if not items:
                     raise ValueError("No checkpoints found - pick a folder with trained LoRAs.")
                 prompt = str(b.get("prompt") or "").strip()

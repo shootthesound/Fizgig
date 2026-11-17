@@ -2215,6 +2215,7 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 .ry-tab { background: var(--bg-surface); border: 1px solid var(--border); color: var(--text-secondary); padding: 7px 14px;
   cursor: pointer; font: inherit; }
 .ry-tab.active { background: var(--accent); border-color: var(--accent); color: var(--text-on-color); }
+.ry-tab.ry-tab-off { opacity: .45; cursor: not-allowed; }
 #tab-royale [data-ry].ry-off { display: none !important; }
 /* a hint under a row starts under its box, not under the label (175 px labels + the 10 px gap) */
 #tab-royale .card-content > .field-hint, #tab-royale .card-content > .pf-hint { padding-left: 185px; }

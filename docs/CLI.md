@@ -272,7 +272,7 @@ Field notes:
 - **`photos_only = true`** — a family that trains clips or voice (MiniMax H3) reads only the pictures in this folder. Fizgig LoRA Isolation sets it on H3, which trains people from their photos.
 - **`is_reg = true`** — marks a regularisation set, a fine-tune's or a LoRA's: those images train at `--reg_lr_multiplier` (default 0.2 on the command line; the Training tab's LoRA regularisation dataset sends 1.0 unless you pick another) times the learning rate, as an anchor on the kind of thing your subject is. `--reg_per_epoch N` trains on N of them an epoch, a different N each epoch (0, the default, trains every one). The per-image loss watch, masks, Boost the face and training maps leave the set alone.
 
-If you change captions, re-run the text cache step. If you add/remove/edit images, re-run both cache steps (a picture edited after it was cached is encoded again even with `--skip_existing`).
+If you change captions, re-run the text cache step. If you add/remove/edit images, re-run both cache steps (a picture edited after it was cached is encoded again even with `--skip_existing`). Pictures are read in sRGB: a photo's embedded colour profile (an iPhone's Display P3, Adobe RGB) is applied as it's read. Latents cached before 9.7.6 from such photos keep the old colours until you re-run the latent step without `--skip_existing`.
 
 ---
 
@@ -957,12 +957,14 @@ Every family, Standard LoRA and fine-tune runs. `--dop` adds a second pass to ea
 
 A caption with several triggers (a photo of both people) has each one swapped. Images whose caption has no trigger train as usual. Each epoch logs the preservation loss: how far the LoRA moves the trigger-free prompt from the base model.
 
-The web app's **Subjects** card always uses the tested recipe, `--dop --dop_every 2 --dop_weight 2`. **Fizgig LoRA Isolation** adds three things, which the launch builds for you:
+The web app's **Subjects** card always uses the tested recipe, `--dop --dop_every 2 --dop_weight 2`. Its **Subject 1 - what they are** box is `--dop_class`, sent as a phrase (`man` goes as `a man`); a caption that already names the class right after the trigger (`zwxem, a man walking`) isn't doubled, it trains as `a man walking`. **Fizgig LoRA Isolation** adds three things, which the launch builds for you:
 - each subject's 16 side-by-side pictures, built first by `src/fizgig/scripts/multi_person.py --subject FOLDER FUSED_WORD OUT_DIR` (one `--subject` per person) and trained as one more dataset block per subject;
 - `--lr_boost fizgig_mp_=2`, so those pictures train at 2x the learning rate;
 - a `caption_replace` list in each subject's dataset block, which reads `zwxem, a woman` as `zwxemwoman`, with `--dop_trigger zwxemwoman --dop_class "a woman"`.
 
 How to caption for it: [People in group pictures](MULTI_PERSON.md).
+
+**With Automagic, train DOP and Isolation with AdamW.** A preservation pass on every second step makes the update's sign alternate; `automagic3` / `automagic4` read that as overshooting and lower their rate to its floor within two epochs, so the LoRA learns nothing. The web app sends `--optimizer_type adamw` in their place, at the Learning Rate box's rate (2e-4 when it holds Automagic's tiny starting value) or with `--adaptive_lr` when that's ticked. Do the same by hand. Two subjects of the same class (two women, two men) need more epochs than one.
 
 ## Sample previews during training
 
@@ -1097,6 +1099,7 @@ python -m fizgig.scripts.extract_finetune --base /models/base.safetensors --tune
 - **Auto-recaption's tasks** — `--recaption_instruction TEXT` and `--recaption_instruction_detailed TEXT` are the first and second tries' instructions (the GUI fills them from its **First try uses** / **Second try uses** picks); `--recaption_task` and `--recaption_task_detailed` name those tasks for the log. `--recaption_triggers '{"outfits/red/": "zwxred"}'` gives other dataset blocks their own trigger word, keyed by `item_prefix`.
 - **Fine-tune windows** — `--ft_fused_backward` steps each weight as its gradient lands and frees it (the GUI's "Free each gradient as soon as it's used", on by default: less VRAM, no clipping or accumulation); `--ft_max_parts N` caps the parts per window (0 = as many as fit; 1 = one part per window, the most headroom).
 - `--preview_small_card_cap PX` — on a card under 20 GB, the previews' long side is capped at this many pixels (the Samples tab's Faster, smaller previews).
+- **A value that starts with `-`** (a trigger word, a title, a negative, a slider prompt) — write it as `--flag=value`: argparse reads `--sample_negative -blurry` as two options. The web app sends such values this way.
 - **Cache steps** — `--batch_size`, `--num_workers` and `--device` tune the cache scripts; the defaults suit most machines.
 
 The trainer also has options Fizgig itself uses between computers (`--share_worker`, the `--ft_*` window and continue options, `--preview_checkpoint_cache`); you don't need them by hand.

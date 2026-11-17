@@ -32,6 +32,7 @@ from fizgig.training.metadata import (ARCHITECTURE_KLEIN_9B, ARCHITECTURE_KLEIN_
 
 import logging
 from fizgig.utils.upright import open_upright
+from fizgig.dataset.caption_file import decode_caption, read_caption  # noqa: F401  (light: Start reads captions too)
 
 logger = logging.getLogger(__name__)
 
@@ -66,41 +67,6 @@ def text_cache_alts(te_path: str) -> list:
     return out
 
 
-def decode_caption(raw: bytes, caption_path: str) -> str:
-    """Decode a caption file's bytes, tolerating encodings other than UTF-8.
-
-    Captions written by the Captions tab are UTF-8, but datasets assembled elsewhere
-    routinely carry Windows-1252 text — one curly apostrophe (0x92) in one file out of a
-    hundred used to abort the whole caching run with a bare UnicodeDecodeError deep in a
-    worker thread that named no file at all.
-
-    Order: UTF-16 if there's a BOM (Notepad's "Unicode" save), then UTF-8 (BOM tolerated),
-    then cp1252, then latin-1 — which maps every byte and so cannot fail. Anything past
-    UTF-8 is logged with the path, so a genuinely mis-encoded caption is still visible
-    instead of being silently mangled into the training data.
-    """
-    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
-        try:
-            text = raw.decode("utf-16")
-            logger.warning("Caption %s is UTF-16 — decoded, but re-save it as UTF-8.", caption_path)
-            return text
-        except UnicodeDecodeError:
-            pass
-    try:
-        return raw.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        pass
-    for encoding in ("cp1252", "latin-1"):
-        try:
-            text = raw.decode(encoding)
-        except UnicodeDecodeError:
-            continue  # cp1252 leaves a handful of bytes undefined; latin-1 won't.
-        logger.warning("Caption %s is not valid UTF-8 — decoded as %s. Re-save it as UTF-8 to "
-                       "silence this warning.", caption_path, encoding)
-        return text
-    logger.warning("Caption %s could not be decoded in any known encoding — undecodable bytes "
-                   "replaced.", caption_path)
-    return raw.decode("utf-8", errors="replace")
 logging.basicConfig(level=logging.INFO)
 
 

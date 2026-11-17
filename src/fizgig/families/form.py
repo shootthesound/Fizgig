@@ -488,7 +488,10 @@ def form(desc):
                       "The box shows the word Fizgig found. Type over it only if that is wrong."),
             _row("FAMILY_DOP_CLASS" + ("" if n == 1 else str(n)), f"Subject {n} - what they are",
                  hint="One word: woman, man, girl, boy, dog, cat, car ...\n"
-                      "The box shows what Fizgig found. Type over it only if that is wrong."))],
+                      "Leave the rest of the model alone: it takes the trigger word's place in the captions that keep "
+                      "the model as it was, so the model's own man (or woman ...) is what stays. Empty, the trigger "
+                      "word is just left out of them.\n"
+                      "Fizgig LoRA Isolation: the box shows what Fizgig found. Type over it only if that is wrong."))],
         # how often and how strongly the trigger-free pass runs is the tested recipe (every second step, x2): no control
         # last, under everything that changes them: what training will use, per subject (one of its own captions)
         *[_row(f"_subject{n}_as", f"Subject {n} - what training will use", "note", hint_labels=True)
@@ -685,7 +688,7 @@ def form(desc):
     labels = {**launch.PRECISION_LABELS, **dict(desc.precision_labels or ())}
     add("memory", "Memory & Precision", "training", [
         _row("BLOCKS_SWAP", "Blocks Swap", "combo", "Auto plans the fewest swapped blocks that fit your free VRAM.",
-             SWAP),
+             SWAP) if launch.swaps_blocks(desc) else None,       # SDXL, Anima, ACE-Step: no block swap to set
         _row("FAMILY_PRECISION", desc.precision_label or "Base precision", "choice", desc.precision_hint,
              [labels[p] for p in precisions], default=labels["auto"]) if len(desc.precisions) > 1 else None,
         _row("COMPILE_BLOCKS", "Compile Blocks", "choice", desc.compile_hint, ["Auto", "On", "Off"])
@@ -1348,7 +1351,16 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
                                        f"with Adafactor. Pick Adafactor (recommended: what every Fizgig fine-tune is "
                                        f"tested on), or AdamW8bit, AdamW, AdEMAMix8bit or Lion8bit.")
     opt = str(values.get("OPTIMIZER_TYPE", "")) if kind != "finetune" else ""
-    if opt in ("automagic3", "automagic4"):
+    # with DOP (Leave the rest of the model alone, or Fizgig LoRA Isolation) Automagic can't train, so the run trains
+    # with AdamW (launch.dop_automagic, #364): its rate is the Learning Rate box's, or Adaptive LR's - none greyed
+    dop_swap = (opt in ("automagic3", "automagic4") and kind == "standard" and desc.subject_isolation
+                and bool(values.get("FAMILY_DOP") or values.get("FAMILY_MULTI_PERSON")))
+    if dop_swap:
+        notes["OPTIMIZER_TYPE"] = (f"With the Subjects card's {PEOPLE_MODES[2] if values.get('FAMILY_MULTI_PERSON') else PEOPLE_MODES[1]}, "
+                                   f"this run trains with AdamW instead: {opt} lowers its own rate until training "
+                                   "stops when the model is also being kept as it was. The Learning Rate box sets "
+                                   "AdamW's rate (2e-4 when it holds Automagic's tiny starting value), or Adaptive LR.")
+    elif opt in ("automagic3", "automagic4"):
         disabled |= {"ADAPTIVE_LR", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK"}
         force.update({k: False for k in ("ADAPTIVE_LR", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK") if values.get(k)})
         if values.get("ADAPTIVE_LR"):            # turned off now: as it shows with Adaptive LR off
@@ -1456,9 +1468,13 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     if not (kind == "standard" and values.get("FAMILY_MULTI_PERSON")):
         hidden |= {"FAMILY_MP_MANUAL", "FAMILY_MP_FACECROPS_FIRST"}
         hidden |= set(KIND_ROWS)            # what a subject is only changes the group-picture recipe
-    if not (dop and values.get("FAMILY_SUBJECT_FIX")):
-        hidden |= {"FAMILY_DOP_TRIGGER", "FAMILY_DOP_CLASS"} | DOP_EXTRA_ROWS
-    if not (kind == "standard" and values.get("FAMILY_MULTI_PERSON")):   # "what they are" is the joined word's
+    iso = kind == "standard" and values.get("FAMILY_MULTI_PERSON")
+    fix = dop and values.get("FAMILY_SUBJECT_FIX")
+    if not fix:
+        hidden |= {"FAMILY_DOP_TRIGGER"} | {t for _d, t, _c in CONCEPT_ROWS}
+    # "what they are": Isolation's joined word (a correction, so with Correct ticked); with DOP alone, what the trigger
+    # word becomes in the captions that keep the model as it was - Fizgig can't read that, so it's always shown (#365)
+    if not ((iso and fix) or (dop and not iso)):
         hidden |= {"FAMILY_DOP_CLASS"} | {c for _d, _t, c in CONCEPT_ROWS}
     for i, (d, t, c) in enumerate(CONCEPT_ROWS, start=2):     # subject i's folder, line and words, up to the count
         if i > n_sub:

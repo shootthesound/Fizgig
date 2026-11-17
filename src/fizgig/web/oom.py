@@ -71,7 +71,12 @@ def _swap_number(text):
     return int(m.group(1)) if m else None
 
 
-NO_SWAP = ("nf4", "hqq")           # a 4-bit base can't stream (quant.load_base drops block swap for it)
+NO_SWAP = ("nf4", "hqq")           # a 4-bit base can't stream (quant.load_base drops block swap for it)...
+
+
+def _no_swap(desc, precision):
+    """...except where the family streams it (desc.streams_blocks: MiniMax H3 Image's NF4 / HQQ rings, #354)."""
+    return precision in NO_SWAP and not (hasattr(desc, "streams_blocks") and desc.streams_blocks(precision))
 
 
 def step_down(desc, values, plan, max_swap, precision_key, precision_labels):
@@ -81,7 +86,7 @@ def step_down(desc, values, plan, max_swap, precision_key, precision_labels):
     used_prec, used_swap = plan if plan else (precision_key(desc, v.get("FAMILY_PRECISION")), None)
     if used_swap is None:
         used_swap = _swap_number(v.get("BLOCKS_SWAP")) or 0
-    if used_prec in NO_SWAP:
+    if _no_swap(desc, used_prec):
         max_swap = 0                     # more block swap wouldn't change anything on a 4-bit base
     if max_swap and used_swap < max_swap:
         step = max(2, math.ceil(max_swap / 8))
@@ -92,12 +97,12 @@ def step_down(desc, values, plan, max_swap, precision_key, precision_labels):
         return v, f"block swap {used_swap} -> {new}"
     if precision_key(desc, v.get("FAMILY_PRECISION")) != "auto":
         return None, ("the precision is your own choice, so it's left as it is, and "
-                      + ("a 4-bit base can't swap blocks" if used_prec in NO_SWAP else "block swap is at its most"))
+                      + ("a 4-bit base can't swap blocks" if _no_swap(desc, used_prec) else "block swap is at its most"))
     order = [p for p in ("bf16", "int8", "nf4") if p in (desc.precisions or ())]
     lower = order[order.index(used_prec) + 1:] if used_prec in order else []
     if not lower:
         return None, ("it's already on the 4-bit base, which can't swap blocks, and there's nothing lighter"
-                      if used_prec in NO_SWAP else
+                      if _no_swap(desc, used_prec) else
                       "block swap is at its most and there's no lighter precision for this model")
     v["FAMILY_PRECISION"] = precision_labels.get(lower[0], lower[0])
     v["BLOCKS_SWAP"] = "Auto (detect from GPU)"

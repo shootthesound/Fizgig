@@ -80,6 +80,11 @@ class MiniMaxDriver(FamilyDriver):
             return "clips", eff
         return super().nogc_load(group)
 
+    def precision_problem(self, precision, dit_path):
+        """int8 needs a pruned file (its own int8 codes, or bf16 / fp8 converted at load), not the unpruned one (#357)."""
+        from fizgig.minimax import common as T
+        return T.int8_problem(dit_path, self.description) if precision == "int8" else ""
+
     def plan_run(self, precision, blocks_to_swap, *, group, run):
         """The old trainer's Auto plan, unchanged: the precision and the streamed-block count chosen together from
         free VRAM, the run's real adapter size (header shapes, optimizer, frozen LoRAs, EMA shadow) and the
@@ -118,6 +123,7 @@ class MiniMaxDriver(FamilyDriver):
         path = run["dit_path"]
         free = plannable_free_vram()
         pruned = T.is_pruned_checkpoint(path)
+        int8 = T.int8_loadable(path)       # its own int8 codes, or a pruned bf16 / fp8 file converted at load (#357)
         pats = [x for x in T.DEFAULT_INCLUDE_PATTERNS
                 if "token_refiner" not in x or self.options.get("train_token_refiner") == "1"]
         params = T.adapter_param_count(path, pats,
@@ -136,13 +142,15 @@ class MiniMaxDriver(FamilyDriver):
             adapter += more
         if precision == "auto" and blocks_to_swap >= 0:
             # a hand-set swap skips the planner: the precision is the file's own, as in the old trainer
-            mode, n = ("int8" if pruned else "nf4"), blocks_to_swap
+            mode, n = ("int8" if int8 else "nf4"), blocks_to_swap
             why = (f"chosen from the checkpoint, not from free VRAM, because Blocks Swap is set to {n} rather than "
                    f"Auto. Set Blocks Swap to Auto to have the precision and the swap count planned together.")
         elif precision == "auto":
-            mode, n, _ckpt, why = T.plan_base_quant(free, pruned, mp=mp, adapter_gb=adapter)
+            mode, n, _ckpt, why = T.plan_base_quant(free, pruned, mp=mp, adapter_gb=adapter, int8=int8)
         else:
-            mode = precision
+            mode = "nf4" if precision == "int8" and not int8 else precision   # the loader would load it 4-bit
+            if mode != precision:
+                logger.warning(f"[precision] {T.int8_problem(path, self.description)} Training on 4-bit.")
             resident = {"int8": T._RESIDENT_INT8_GB,
                         "hqq": T._RESIDENT_HQQ_PRUNED_GB if pruned else T._RESIDENT_HQQ_GB}.get(
                 mode, T._RESIDENT_PRUNED_GB if pruned else T._RESIDENT_GB)
@@ -154,7 +162,7 @@ class MiniMaxDriver(FamilyDriver):
         extra = (f" +{frozen:.2f} GB frozen LoRAs" if frozen else "") + (f" +{ema:.2f} GB EMA shadow" if ema else "")
         logger.info(f"[vram] auto plan: free {free:.1f} GB, largest item {mp:.2f} MP, adapter ~{adapter:.1f} GB "
                     f"({params / 1e6:.0f} M params){extra} -> {mode}, blocks_to_swap={n}")
-        if mode == "nf4" and pruned and precision == "auto":
+        if mode == "nf4" and int8 and precision == "auto":
             logger.warning("[vram] this run trains on a 4-bit base (~9% error) instead of the checkpoint's own int8 "
                            "(~0.17%). It is much faster here, but the LoRA spends some capacity correcting "
                            "quantization error that will NOT exist at inference. To force the accurate base, set Base "

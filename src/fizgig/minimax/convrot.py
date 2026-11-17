@@ -78,6 +78,14 @@ def dequantize_int8_convrot(qweight: torch.Tensor, scale: torch.Tensor, conf: di
     return rotate(w, group).to(out_dtype)
 
 
+def dequantize_comfy(qweight: torch.Tensor, scale: torch.Tensor, conf: dict, out_dtype=torch.bfloat16) -> torch.Tensor:
+    """A ComfyUI pre-quantized Linear -> the dense weight: int8 ConvRot (dequantize_int8_convrot) or fp8 with one
+    scale per tensor (`{"format": "float8_e4m3fn"}`, the pruned fp8_scaled builds: weight * weight_scale)."""
+    if str(conf.get("format", "")).startswith("float8"):
+        return (qweight.to(torch.float32) * scale.to(torch.float32)).to(out_dtype)
+    return dequantize_int8_convrot(qweight, scale, conf, out_dtype=out_dtype)
+
+
 def quantize_int8_convrot(w: torch.Tensor, rot: int = 256, stochastic: bool = False,
                           generator: torch.Generator = None):
     """The ENCODE direction — a TRUE-basis dense weight -> int8 codes + per-row scale.

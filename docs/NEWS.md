@@ -1,5 +1,47 @@
 # Fizgig news
 
+## 16 Nov 2026: MiniMax H3 at int8 on any pruned file, and H3 Image on 12 GB cards
+
+**int8 on any pruned H3 file.** A pruned bf16 or fp8 MiniMax H3 or H3 Image file, Comfy-Org's or a fine-tune or merge saved that way, is converted to int8 as it loads, so Auto trains it at int8 instead of stopping at load. H3's pruned bf16 file converts to Comfy-Org's int8 file value for value. The full unpruned checkpoint stays 4-bit.
+
+**H3 Image on 12 GB cards.** Auto swaps blocks for H3 Image's 4-bit base on a small card (15 at 0.25 MP on 12 GB), instead of a plan that spilled into system memory on Windows at about 40 s a step.
+
+**AMD and more.** The Linux AMD installer finds libnuma on Arch and CachyOS, the Training tab no longer loads optimizer libraries to list them, and the pod guide shows how to download a very big dataset straight onto the pod.
+
+[Fizgig v9.7.5 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.7.5)
+
+## 15 Nov 2026: Gizmo's crop box reworked, AMD fixes, and Automagic v4's real rate
+
+**Gizmo's crop box.** Drag from any corner in any direction; a locked shape grows smoothly instead of jumping; the box reaches every edge of the frame. Move it by dragging inside, type its position and size, place it with the arrows or **Largest**, and keep **Saved boxes**.
+
+**AMD.** A PC with built-in graphics as well as an AMD card now trains on the card (it stopped with "invalid kernel file" before), and `Launch Fizgig AMD.bat check` gives a diagnostic to paste into an issue. Krea 2 LoKR runs at 0.5 MP fit 16 GB AMD cards better: on Linux through expandable memory segments, and on Windows a run that only just fits warns to turn EMA off.
+
+**Automagic v4's real rate.** The run card, the loss chart and the log show the rate Automagic v4 really moves the weights at, not its flat 2.5e-4 cap.
+
+**Smaller things.** Resume Training catches a folder mix-up before the run starts, Image Prep skips face close-ups when the face is under 400 px wide, and Continue on a finished run says it keeps your checkpoints.
+
+[Fizgig v9.7.4 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.7.4)
+
+## 15 Nov 2026: cleaner H3 Image pictures with LCM, and Stop for a paused run
+
+**H3 Image renders with LCM.** MiniMax H3 Image has a **Sampler** choice on the Samples tab and, separately, in Studio. The new default, **LCM, noise 1.1 → 0.9**, gives much cleaner skin, hands and faces than Euler on text-to-image, the epoch 0 previews included, in the same 6 steps. Euler is still there, and the ⓘ beside it gives the ComfyUI settings for each, so your LoRA renders the same way there. The recipe comes from u/Obvious-Bad7548 on r/StableDiffusion.
+
+**Bigger pictures and a clearer schedule.** H3 Image previews go up to 3072 and 4096, Studio starts at 1280, and Likeness optimization has an ⓘ explaining its schedule, with rows worded like MOSS-Image's Clean-end share.
+
+**Stop a paused run.** While a run is paused, **Stop paused run** ends the pause so the queue can start; **Continue** on its card carries it on later.
+
+[Fizgig v9.7.3 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.7.3)
+
+## 15 Nov 2026: a regularisation set for LoRAs, AMD fixes, and Gizmo prepares a whole folder
+
+**Train a LoRA against a regularisation dataset.** The Subjects card has a new fold: a folder of captioned pictures of the class you're training, so the LoRA bleeds less into everything else. In our testing DOP and Fizgig LoRA Isolation still do better for most people, so start there; a regularisation set is for the cases that need it.
+
+**Gizmo prepares a whole folder of videos.** **Prepare a folder…** on the video tab makes every video in a folder trainable in one go, into a new folder: 24 fps at real speed, a size and length H3 takes, 32 kHz sound, captions brought along. **Longest clip** keeps clips to what your card trains (56 frames on 16 GB). Clips with 48 kHz or mono sound now train as they are.
+
+**AMD:** Krea 2 renders above 512 px and LoKR training are fixed, a PC with built-in graphics trains on the graphics card, the Linux installer works again, and RX 9070 cards can try SageAttention for Krea 2. **ACE-Step** caches long songs without running out of memory, a helper GPU renders MOSS-Image's SFT previews, and Runs & outputs can purge old runs in one go.
+
+[Fizgig v9.7.2 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.7.2)
+
 ## 14 Nov 2026: every job keeps its own view
 
 **Switch between the run that's training, the runs in your queue and what you're setting up, without losing your place.** A pill at the top right (bottom right on a phone) always says what the tabs are showing: a job's name, or **not yet queued**. Press it and pick another, and the Start, Image Prep, Captions, Samples and Training tabs all change to that job's training folder, captions, masks, sample prompts, settings and previews. The run training now is there to look at, with its Samples tab still changeable; a queued run can be changed and saved back; a paused run takes what you change before Resume. **Set up a new run with these settings** copies the job on show into a new setup named with `_2`, and **Back to the normal view** gives you a clean start.

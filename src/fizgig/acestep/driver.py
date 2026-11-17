@@ -462,8 +462,8 @@ class AceStepDriver(FamilyDriver):
     def encode_source(self, vae, path, seconds):
         """Any audio (or video) file -> its latent (1, T, 64) at the render's length: the first `seconds`, padded
         with silence when shorter. The posterior's mean, so the same file always gives the same start."""
-        x = torch.from_numpy(self.source_wave(path, seconds)).to(vae.device, vae.dtype)[None]
-        lat = vae.encode(x).latent_dist.mean.transpose(1, 2).float()
+        from fizgig.acestep.vae import encode_mean
+        lat = encode_mean(vae, torch.from_numpy(self.source_wave(path, seconds)))      # in pieces: a whole song
         frames = self._frames()
         if lat.shape[1] < frames:
             lat = torch.cat([lat, self.silence[:, :frames - lat.shape[1]].to(lat)], 1)

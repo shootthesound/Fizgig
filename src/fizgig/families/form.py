@@ -147,7 +147,7 @@ def _recaption_key(label, default):
 def _optimizers():
     from fizgig.training.optimizers import available_optimizers
     try:
-        return list(available_optimizers())
+        return list(available_optimizers(probe=False))
     except Exception:
         return ["adamw8bit", "adamw"]
 
@@ -179,6 +179,8 @@ def _option_row(opt):
                 **({"labels": list(opt.suggestions)} if kind == "combo" else {}),
                 **({"warn": opt.warn, "warn_link": opt.warn_link} if opt.warn else {}),
                 **({"featured": True} if opt.featured else {}),
+                **({"explain": opt.explain} if opt.explain else {}),
+                **({"renamed": dict(opt.choice_renamed)} if opt.choice_renamed else {}),
                 **({"advanced_of": opt.requires.partition("=")[0]} if opt.advanced and opt.requires else {}),
                 **({"split": list(opt.split), "split_hint": opt.split_hint} if kind == "split" and opt.split else {}),
                 **({"slide": list(opt.slide), "slide_hint": opt.slide_hint,
@@ -281,6 +283,7 @@ SUBJECTS_PEOPLE_HINT = ("For people: up to 4 work well, with 2 or 3 of them in o
 def form(desc):
     opts = [o for o in desc.options if o.kind != "fixed"]
     pictures = bool({"photo", "clip"} & set(desc.media))     # sizes and megapixels only mean something for pictures
+    sizes = SIZES + tuple(str(s) for s in desc.preview_more_sizes)     # a model made for bigger pictures: more (#348)
     by_section = lambda tab, section=None, mode=None: [_option_row(o) for o in opts if o.tab == tab and (
         section is None or o.section == section) and (mode is None or (o.mode == "finetune") == (mode == "finetune"))]
     sections = []
@@ -825,8 +828,8 @@ def form(desc):
              upload=True, start="data") if desc.reference_kind else None,
         # a picture size only for a model that makes pictures (ACE-Step's previews are songs: the launcher then
         # uses the description's own preview size)
-        _row("SAMPLE_WIDTH", "Width", "choice", choices=SIZES, default=str(desc.preview_width)) if pictures else None,
-        _row("SAMPLE_HEIGHT", "Height", "choice", choices=SIZES, default=str(desc.preview_height)) if pictures else None,
+        _row("SAMPLE_WIDTH", "Width", "choice", choices=sizes, default=str(desc.preview_width)) if pictures else None,
+        _row("SAMPLE_HEIGHT", "Height", "choice", choices=sizes, default=str(desc.preview_height)) if pictures else None,
         _row("SAMPLE_STEPS", "Steps", default=str(desc.preview_steps)),
         _row("SAMPLE_SEED", "Seed", hint="0 = random"),
         *by_section("samples"),

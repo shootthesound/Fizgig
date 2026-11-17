@@ -37,13 +37,24 @@ def pin_rocm_device() -> None:
     "cuda" tensor lands on it. When the variable worked (one device left), nothing changes."""
     import os
     want = (os.environ.get("HIP_VISIBLE_DEVICES") or "").strip()
-    if not want.isdigit():
+    unset = not any((os.environ.get(k) or "").strip()
+                    for k in ("HIP_VISIBLE_DEVICES", "CUDA_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES"))
+    if not want.isdigit() and not unset:
         return
     try:
         import torch
         if not is_rocm():
             return
         n = torch.cuda.device_count()
+        if unset:
+            # nothing picked a card (#342: the launcher's pick never ran): pick it here by the launcher's rule
+            idx = training_device(n)
+            if idx:
+                torch.cuda.set_device(idx)
+                import sys
+                print(f"[AMD-ROCm] nothing set HIP_VISIBLE_DEVICES: using device {idx}, "
+                      f"{torch.cuda.get_device_name(idx)} (built-in graphics skipped)", file=sys.stderr, flush=True)
+            return
         idx = int(want)
         if n > 1 and idx < n:
             torch.cuda.set_device(idx)
@@ -53,6 +64,42 @@ def pin_rocm_device() -> None:
                   f"using device {idx}, {torch.cuda.get_device_name(idx)}", file=sys.stderr, flush=True)
     except Exception:
         pass
+
+
+def training_device(n) -> int:
+    """The device to train on among n: not built-in graphics, the most VRAM of the rest (src/install/pick_gpu.py's
+    rule, which the launcher runs); 0 when there's one device or every one is built in."""
+    import torch
+    if n < 2:
+        return 0
+    devs = []
+    for i in range(n):
+        p = torch.cuda.get_device_properties(i)
+        built_in = bool(getattr(p, "is_integrated", False)) or (getattr(p, "name", "") or "").strip() == \
+            "AMD Radeon(TM) Graphics"
+        devs.append((i, int(getattr(p, "total_memory", 0)), built_in))
+    cards = [d for d in devs if not d[2]] or devs
+    return max(cards, key=lambda d: d[1])[0]
+
+
+def report_rocm_devices() -> None:
+    """One line per process on AMD (#342), on stderr so a stage's line lands in its run log: the variables that pick
+    the card, the devices this process sees, and the one "cuda" means here."""
+    import os
+    import sys
+    env = " ".join(f"{k}={os.environ.get(k) or '-'}"
+                   for k in ("HIP_VISIBLE_DEVICES", "CUDA_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES"))
+    try:
+        import torch
+        if not is_rocm():
+            return
+        n = torch.cuda.device_count()
+        cur = torch.cuda.current_device()
+        names = ", ".join(f"{i}: {torch.cuda.get_device_name(i)}" for i in range(n))
+        print(f"[AMD-ROCm] {env} - {n} device{'s' if n != 1 else ''} ({names}); using {cur}, "
+              f"{torch.cuda.get_device_name(cur)}", file=sys.stderr, flush=True)
+    except Exception as e:
+        print(f"[AMD-ROCm] {env} - couldn't list the devices: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
 
 
 def fix_rocm_sdpa_masks() -> None:

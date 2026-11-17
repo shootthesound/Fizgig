@@ -6,5 +6,12 @@ if [ ! -x venv/bin/python ]; then
     exit 1
 fi
 source venv/bin/activate
+if ! python -c "import tkinter; tkinter.Tcl()" 2>/dev/null; then
+    v=$(python -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')
+    echo "Gizmo needs Tk, which Fizgig's Python doesn't have. Install it, then run this again:"
+    echo "  Ubuntu / Debian: sudo apt install python3-tk   (or python${v}-tk)"
+    echo "  Fedora: sudo dnf install python3-tkinter    Arch: sudo pacman -S tk"
+    exit 1
+fi
 python src/gizmo/gizmo.py "$@" &
 disown

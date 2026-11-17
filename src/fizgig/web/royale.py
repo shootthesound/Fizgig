@@ -26,7 +26,8 @@ def scan(folder):
     if not cps:
         return {"items": [], "summary": "No .safetensors checkpoints found in this folder.", "run": ""}
     labels = [e for e, _ in cps]
-    n_ep = sum(1 for x in labels if str(x).isdigit())        # Save now snapshots are labelled, not numbered
+    epochs = [x for x in labels if str(x).isdigit()]          # Save now snapshots are labelled, not numbered
+    n_ep = len(epochs)
     if n_ep == len(labels):
         summary = f"{len(cps)} checkpoints found (epochs {labels[0]}–{labels[-1]})."
     elif n_ep:
@@ -37,7 +38,8 @@ def scan(folder):
             extra.append(f"{snaps} Save now snapshot{'' if snaps == 1 else 's'}")
         if lasts:
             extra.append(f"{lasts} last checkpoint{'' if lasts == 1 else 's'}")
-        summary = (f"{len(cps)} checkpoints found (epochs {labels[0]}–{labels[n_ep - 1]}, "
+        # snapshots sit between the epochs they were taken in, so the range is the epochs' own first and last
+        summary = (f"{len(cps)} checkpoints found (epochs {epochs[0]}–{epochs[-1]}, "
                    f"plus {' and '.join(extra)}).")
     else:
         summary = f"{len(cps)} LoRAs found — compared by filename."
@@ -160,8 +162,12 @@ def promote(path, label, run, out_dir, name=""):
     """A copy of the chosen epoch's LoRA to drop into ComfyUI (never over a file)."""
     if not path or not os.path.isfile(path):
         raise ValueError("Render epochs first, then slide to the one you want to promote.")
-    name = (name or "").strip() or (f"{run or 'lora'}-epoch{label}-pick.safetensors" if str(label).isdigit()
-                                    else f"{label}-pick.safetensors")
+    # a run's snapshot ("step 4064") or last checkpoint keeps the run's name, as its epochs do; a label that is
+    # already a file's own name (a folder of unrelated LoRAs) is used as it is
+    in_run = str(label).startswith("step ") or str(label) == "last"
+    name = (name or "").strip() or (f"{run or 'lora'}-epoch{label}-pick.safetensors" if str(label).isdigit() else
+                                    f"{run or 'lora'}-{str(label).replace(' ', '')}-pick.safetensors" if in_run else
+                                    f"{label}-pick.safetensors")
     if not name.lower().endswith(".safetensors"):
         name += ".safetensors"
     os.makedirs(out_dir, exist_ok=True)

@@ -15,15 +15,32 @@ from typing import List, Tuple
 _CKPT_RE = re.compile(r"^(?P<name>.+?)(?:-(?:step(?P<step>\d{7})|(?P<epoch>\d{6})))?\.safetensors$")
 
 
+def _saved_epoch(path):
+    """The epoch a checkpoint was saved at (the trainer's ss_epoch), read from the file's header alone; None when it
+    has none or can't be read."""
+    import json
+    import struct
+    try:
+        with open(path, "rb") as f:
+            n = struct.unpack("<Q", f.read(8))[0]
+            if n > 64 * 2 ** 20:
+                return None
+            head = json.loads(f.read(n))
+        return int((head.get("__metadata__") or {}).get("ss_epoch")) or None
+    except Exception:
+        return None
+
+
 def scan_checkpoints(folder: str):
     """Find LoRA checkpoints in `folder`, sorted ascending.
 
     Returns a list of (label, path):
       - **Clean training run** (exactly one `<name>-NNNNNN.safetensors` run, with nothing
-        beside it but that run's own files) → `label` is the integer epoch number, the
-        run's own **Save now** snapshots join it last (newest step last, each labelled
-        `step 4064`), and its **last checkpoint** follows them - the bare
-        `<run>.safetensors` written when the final epoch completes, labelled `last`.
+        beside it but that run's own files) → `label` is the integer epoch number. The
+        run's own **Save now** snapshots join it in time order, each labelled `step 4064`,
+        and its **last checkpoint** - the bare `<run>.safetensors` written when the final
+        epoch completes - is that epoch: left out when the epoch's own file is there (the
+        same weights), numbered as the epoch when it isn't, `last` when unreadable.
       - **Anything else** (a bag of arbitrary LoRAs, multiple runs, a run mixed with
         stray files, or Save now snapshots of some *other* run) → EVERY .safetensors
         in the folder, labelled by its filename stem (string), sorted by name. This is
@@ -62,10 +79,23 @@ def scan_checkpoints(folder: str):
         own_saves = all(n == run for n in saves)  # another run's snapshot still counts as a stray
         own_last = all(os.path.splitext(os.path.basename(p))[0] == run for p in others)
         if own_saves and own_last:
-            epochs = sorted(by_run[run], key=lambda t: t[0])
-            snaps = sorted(saves.get(run, []), key=lambda t: t[0])
-            return ([(e, p) for e, p in epochs] + [(f"step {s}", p) for s, p in snaps]
-                    + [("last", p) for p in others])
+            epochs = by_run[run]
+            have = {e for e, _ in epochs}
+            rows = [((e, 0, 0), e, p) for e, p in epochs]
+            for s, p in saves.get(run, []):
+                # in time order: a snapshot taken during epoch e sits after epoch e - 1 (its ss_epoch); one
+                # whose epoch can't be read goes after every epoch
+                e = _saved_epoch(p)
+                rows.append(((e - 1, 1, s) if e else (float("inf"), 1, s), f"step {s}", p))
+            for p in others:
+                # the last checkpoint holds the run's final epoch (its ss_epoch): the same weights as that epoch's
+                # own file when there is one, so it is left out rather than rendered twice; when the run didn't
+                # save that epoch it is that epoch, numbered as one. Unreadable, it stays "last", at the end.
+                e = _saved_epoch(p)
+                if e in have:
+                    continue
+                rows.append(((e, 0, 0), e, p) if e else ((float("inf"), 2, 0), "last", p))
+            return [(label, p) for _key, label, p in sorted(rows, key=lambda r: r[0])]
 
     # Otherwise: compare every .safetensors, labelled by filename stem.
     all_paths = [p for bucket in (by_run, saves) for group in bucket.values() for _, p in group] + others

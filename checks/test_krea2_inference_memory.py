@@ -372,6 +372,17 @@ class InferenceMemoryChecks(unittest.TestCase):
         self.assertFalse(engine.driver._file_backed_inference)
         self.assertEqual(load.call_args.kwargs, dict(precision="auto", blocks_to_swap="auto", device="cuda", lowmem=False))
 
+    def test_non_rocm_parking_uses_generic_policy(self):
+        with patch.object(torch.version, "hip", None), \
+                patch.object(WorkbenchEngine, "_park_dit") as park:
+            self.engine._park_dit("cpu")
+        park.assert_called_once_with("cpu")
+
+    def test_amd_pr_preserves_original_turbo_recipe(self):
+        recipe = get("krea2").preview_checkpoint_sampling
+        self.assertEqual((recipe.steps, recipe.cfg, recipe.scheduler), (8, 1., "simple"))
+        self.assertFalse(recipe.sigmas)
+
     def test_non_rocm_worker_keeps_block_swap_preference(self):
         from fizgig.scripts import studio_worker
         with patch.object(torch.version, "hip", None), patch.object(studio_worker, "_auto_swap", return_value=12):

@@ -46,107 +46,35 @@ Compare warmed-up renders; weight offloading and VAE decoding can still differ.
 
 ## High-resolution generation
 
-For the Turbo checkpoint, use **Blocks Swap: Auto**. Krea 2 starts with its block weights mostly on CPU,
-then chooses how many can stay on the GPU using available VRAM and the requested resolution. If sampling
-still runs out of memory, it retries the same seed with more blocks offloaded, up to the model's swap limit.
-The log reports the activation reserve and block count. Manual block counts stay fixed; NF4 does not support
-block swapping. Auto preserves stored FP8 weights and uses INT8 for dense checkpoints.
+On ROCm, **Blocks Swap: Auto** starts Krea 2 with most block weights on CPU, then budgets GPU
+residency against the requested resolution and available VRAM. Sampling OOM retries use the same seed
+with additional blocks offloaded. Manual block counts remain fixed; NF4 does not support block swapping.
+Auto preserves stored FP8 weights and uses INT8 for dense checkpoints. NVIDIA keeps the generic
+workbench loading defaults and Studio/Profiler block-swap preferences.
 
-The DiT parks on CPU during text encoding and VAE decoding, including when block swapping is enabled.
-On ROCm, Krea 2 leaves the DiT and VAE on CPU after rendering and releases unused GPU allocations. The next render
-restores the streaming layout; Auto also budgets for CPU-resident embedders, adapters and buffers that must
-return to the GPU. Keeping weights in system RAM does not match ComfyUI's fast-disk storage policy.
-ROCm renders cap the PyTorch allocator at available memory with no additional desktop reserve.
-Auto plans against this cap; a stricter existing cap is preserved, and the previous cap is restored after
-the DiT parks. The previous 1.5 GiB margin passed a 2048×2048 RX 9070 XT run and subsequent user-reported
-repeated runs without crashes, with slightly higher RAM usage than ComfyUI. The reduced 500 MiB margin
-also passed subsequent user-reported repeated-run testing on the RX 9070 XT. The zero-headroom setting
-passed user testing and four consecutive local renders with the AMD launcher's allocator garbage collection
-enabled (`garbage_collection_threshold:0.8`). Disabling it caused desktop framebuffer allocation failures
-and slower sampling (69.75 s versus 45.70–46.63 s with collection enabled). The sampling activation budget remains.
-Two local ROCm inference renders using the existing pinned-memory weight exchange path took 46.04 / 46.29 s
-for sampling, versus 45.70–46.63 s for the staged path. Faster logged weight exchanges did not improve sampling
-time, so that pinned-memory policy was not retained. Output was repeatable within each setting, with a small pixel
-difference between settings (RMSE 0.00124 on a 0–1 scale); its cause was not isolated.
-A subsequent H2D-only candidate used six streaming blocks and two reusable GPU buffers. Its two renders
-sampled in 46.22 / 46.08 s, with identical pixels to the staged baseline and no new kernel GPU faults.
-Sampling transfer volume fell from an estimated 64.69 GiB to a counted 19.41 GiB, excluding stage placement,
-but sampling time did not improve and peak allocated VRAM rose by about 0.4 GiB. The candidate was not retained.
-The Linux ROCm workbench keeps stored FP8 DiT Linear weights in private, file-backed CPU
-views. Parking rebinds those frozen weights instead of copying the GPU model into anonymous RAM; block swaps
-reuse their CPU masters with one pinned staging pool and no return copy. Adapters and mutable biases still move
-normally, and the existing GPU block budget is unchanged. Clean mapped pages are released after transfers.
-The text encoder is deleted without a preceding copy to CPU in this path. Other backends, training and
-additional quantization retain their existing loading policy. Keep the base checkpoint unchanged while loaded.
-The first file-backed comparison completed two images per policy with identical pixels and no kernel faults.
-Peak RSS fell from 22.66 to 14.72 GiB, but sampling slowed from 49.82 / 51.49 s to 59.76 / 59.03 s, and the
-warm render rose from 61.43 to 76.14 s. A small ROCm copy diagnostic showed private file pages becoming anonymous
-during direct uploads. The current refinement uploads through pinned staging first; its 256 KiB copy check
-preserved values and left the source mapping with zero resident anonymous pages. Two subsequent 2048×2048
-RX 9070 XT renders validated the refinement: peak RSS was 5.67 GiB (75% below the 22.66 GiB control), and
-sampling took 47.58 / 49.00 s. The warm render fell from 61.43 to 56.97 s; initial pipeline loading fell from
-13.02 to 1.49 s, without flushing the system file cache. Whole-GPU peak VRAM remained 15.65 GiB. Both
-outputs matched the control pixels exactly, with no worker failures or kernel GPU faults. Both VAE decodes
-recovered through tiled fallback. These two runs retain the existing five swapped blocks and allocator GC 0.8.
-The saved ComfyUI comparison remains faster (37.41 s warm sampling, 41.03 s warm total) with 4.50 GiB peak RSS.
-Raw measurements and comparison limits are in `user_data/profiles/file_backed_refined_2026-11-17/report.json`.
-A four-image repeat peaked at 6.02 GiB RSS (6% above the two-image test, 73% below the old memory policy),
-with render times of 64.15 / 57.16 / 56.05 / 56.00 s and whole-GPU peak VRAM of 15.34 GiB. All four completed
-without worker failures or kernel GPU faults and used tiled VAE fallback. Studio's retained images from runs
-three and four matched control pixels exactly; both preview panes were checked equal during every render.
-The control uses this ROCm branch with zero additional desktop reserve and file-backed loading disabled,
-not original main or the unchanged 500 MiB commit. Both policies preserve the same FP8 DiT and FP8 text
-encoder with BF16 VAE; the `bf16` workbench label means no additional DiT quantization. See
-`user_data/profiles/file_backed_four_2026-11-17/report.json` for the repeat measurements.
-If ordinary VAE decoding runs out of memory, it retries with the existing tiled decoder and releases its
-feature cache. Single-frame VAE cache removal is proposed separately. The temporal convolution shortcut is deferred. BF16 rounding and tiled decoding
-can change pixels slightly. More offloading also means more CPU RAM and
-transfer time; this does not guarantee that every resolution fits.
+ROCm separates text encoding, sampling and VAE decoding into low-memory stages. The DiT and VAE
+park on CPU after rendering. The allocator cap respects existing allocations and stricter limits,
+restores the previous limit afterward, and adds no fixed desktop reserve. The activation budget remains.
+Keep the AMD launcher's `garbage_collection_threshold:0.8`; disabling collection caused desktop
+framebuffer allocation failures during earlier hardware tests.
 
-The Turbo checkpoint preset retains **8 steps, CFG 1, Euler / simple**. The beta schedule is proposed separately.
-Other step counts retain the existing simple schedule. These changes apply to the workbench engine used
-by Studio, Royale and Profiler; they do not change training's memory policy.
+On Linux ROCm, stored FP8 DiT Linear weights use private file-backed CPU views. Pinned staging avoids
+registering those mappings directly with ROCm. Block swaps upload immutable CPU weights without a
+return copy; parking rebinds the CPU views. Adapters and mutable biases retain their normal handling.
+The text encoder is deleted without first copying it to CPU. Keep the base checkpoint unchanged while loaded.
+Training and additional quantization retain their existing loading policies.
 
-The memory reserve follows [ComfyUI's Krea 2 estimate](https://github.com/Comfy-Org/ComfyUI/blob/master/comfy/model_base.py),
+VAE OOM recovery retries the existing tiled decoder. Tiling can change pixels slightly and does not
+ensure every resolution fits. Single-frame VAE cache removal and the Turbo beta schedule are separate
+proposals. This branch retains **8 steps, CFG 1, Euler / simple** for the Turbo checkpoint.
+
+CPU checks cover ROCm selection, NVIDIA default preservation, immutable weight storage, offloading,
+OOM recovery and attention correctness. Earlier RX 9070 XT testing reduced peak process RSS from
+22.66 to 6.02 GiB across four renders, but included the separately proposed schedule and VAE changes.
+Those measurements do not validate performance or stability of the split branch; new GPU validation is pending.
+
+The activation reserve follows [ComfyUI's Krea 2 estimate](https://github.com/Comfy-Org/ComfyUI/blob/master/comfy/model_base.py),
 using Fizgig's existing block offloader.
-
-RX 9070 XT measurements before idle CPU parking (16 November 2026, PyTorch 2.14.0+rocm10.1.0,
-SageAttention, stored FP8 Turbo, BF16 Qwen-Image VAE, eight steps, CFG 1, Auto swap):
-
-| Check | Before single-frame convolution shortcut | After |
-| --- | ---: | ---: |
-| Warm 1024×1024 VAE decode, identical latents | 1.14 s | 0.24 s |
-| VAE peak allocated VRAM | 6.69 GiB | 4.44 GiB |
-
-Full 1184×1776 generation completed in 29.2 s without a LoRA (21.4 s sampling, 1.0 s decoding),
-and 32.1 s with the rank-64 Turbo LoRA attached (23.4 s sampling, 1.0 s decoding). These totals include
-offloader reconfiguration and stage transfers, excluding initial model loading and text encoding.
-Both runs also completed 1024×1024 renders; no new kernel GPU faults were logged. The separate VAE
-comparison had an RMS pixel difference of 0.00147 on a 0–1 scale from BF16 convolution rounding.
-
-These are bounded hardware checks, not speed parity or a guarantee against resets. The reference ComfyUI
-sampling time was 14.7 s; its prompt and INT8 text encoder differ from this test's neutral teapot prompt
-and FP8 text encoder.
-
-The 17 November 2048×2048 validation completed two seed-42 images with a rank-32 primary, no donor and
-unchanged sliders, but **failed desktop stability**. Sampling took 83.4 / 55.0 s and decoding 5.0 / 2.8 s;
-both decodes required the tiled fallback. There were 748 allocator OOM warnings. Idle GPU allocation fell
-to 0.078 GiB, while process RSS reached 17.7 / 20.1 GiB after the two images.
-
-During the first sampling pass, the kernel reported insufficient memory for command submission and
-`Failed to pin framebuffer: -ENOMEM`. Xwayland aborted and ChatGPT exited. No GPU reset was logged, so
-the absence of a reset does not establish desktop stability. This run predates the hard allocator cap above.
-The original Studio worker exit remains unreproduced.
-
-With the corrected cap and its original 1.5 GiB headroom, one further gfx1201 / RX 9070 XT run completed
-at 2048×2048, seed 42, with the same
-rank-32 primary and neutral prompt. Auto offloaded 8 blocks instead of 5. Sampling took 46.7 s, with 11.95 GiB
-peak allocated / 12.44 GiB peak reserved and no allocator OOM warnings. Decode took 5.1 s including its
-recoverable switch to tiled decoding. Idle GPU allocation was 0.078 GiB; process RSS was 17.8 GiB.
-No new GPU fault, framebuffer allocation failure or desktop coredump was logged. The previous allocator
-limit was restored after rendering, and the worker exited normally. The user subsequently confirmed
-repeated-run stability on the RX 9070 XT. Exact-prompt quality, speed parity and system-RAM parity with
-ComfyUI remain unverified.
 
 Profiler logs include the total render count, Auto's memory budget, sampling backend, VAE decode and image
 completion. Two seeds run sequentially for every ablation condition, not as a two-image batch. PyTorch's
@@ -200,7 +128,3 @@ The text-encoder slot is **open**: any Qwen3-VL-4B in the ComfyUI layout loads �
 The two DiT slots are open too: point them at your own Krea 2 checkpoints from ComfyUI's `diffusion_models` folder, fine-tunes included. fp8 builds (fp8_scaled, fp8mixed) run as they are. int8 builds (int8 ConvRot, int8mixed) and older scaled_fp8 files are decoded to bf16 as they load, and then Fizgig's own precision applies, so they take a couple of minutes longer to load. A Turbo build goes in the Turbo slot, since previews render it in 8 steps without CFG.
 
 General install steps are in [INSTALL.md](INSTALL.md).
-
-Review scope: custom low-memory mode, Auto precision and resolution-aware block swapping apply only on ROCm.
-NVIDIA retains the generic workbench defaults and Studio/Profiler block-swap preferences. Historical timings
-above include the separately proposed beta schedule and VAE optimizations; they do not validate this split.

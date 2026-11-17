@@ -27,7 +27,7 @@ import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif", ".avif"}   # as the Captions tab (web/captions.py)
 VIDEO_EXTENSIONS = {".mp4"}
 
 

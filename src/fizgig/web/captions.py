@@ -147,7 +147,7 @@ def captioner_problem(path) -> str:
 
 
 CUSTOM_TASK = "Custom…"
-IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif", ".avif"}   # every format training reads, and more
 
 
 def caption_ext(ext) -> str:

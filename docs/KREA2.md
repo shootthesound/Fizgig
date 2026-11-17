@@ -65,8 +65,9 @@ The text encoder is deleted without first copying it to CPU. Keep the base check
 Training and additional quantization retain their existing loading policies.
 
 VAE OOM recovery retries the existing tiled decoder. Tiling can change pixels slightly and does not
-ensure every resolution fits. Single-frame VAE cache removal and the Turbo beta schedule are separate
-proposals. This branch retains **8 steps, CFG 1, Euler / simple** for the Turbo checkpoint.
+ensure every resolution fits. Single-frame VAE cache removal is proposed separately. Turbo previews retain
+**8 steps, CFG 1, Euler / simple**, preferred for predictable results in this workflow. The beta scheduler
+experiment has been reverted; adopting it remains open for separate discussion.
 
 CPU checks cover ROCm selection, NVIDIA default preservation, immutable weight storage, offloading,
 OOM recovery and attention correctness. Earlier RX 9070 XT testing reduced peak process RSS from

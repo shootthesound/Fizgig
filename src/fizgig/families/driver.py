@@ -103,6 +103,11 @@ class FamilyDriver:
         decodes a smaller file at load (an int8 build read as bf16) gives the decoded size."""
         return os.path.getsize(path) / 1e9
 
+    def plan_helper(self, precision: str, dit_path: str):
+        """A preview helper's base on this card: (precision, blocks_to_swap, why), or None to plan it from the
+        description's train_memory (quant.plan). A family that plans itself (description.own_plan) answers here."""
+        return None
+
     # ---- block swap (optional) --------------------------------------------------------------------
     def max_blocks_to_swap(self, dit=None) -> int:
         """How many blocks may stream between CPU and GPU; 0 = the family has no block swap."""

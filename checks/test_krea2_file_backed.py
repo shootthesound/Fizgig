@@ -1,8 +1,10 @@
 """CPU checks for immutable checkpoint storage; HIP ordering still needs hardware validation."""
 from contextlib import nullcontext
 import hashlib
+import sys
 from unittest.mock import Mock, patch
 
+import pytest
 import torch
 from safetensors.torch import save_file
 
@@ -13,6 +15,9 @@ from fizgig.krea2 import utils as U
 from fizgig.krea2 import workbench as W
 from fizgig.krea2.model import SingleMMDiTConfig, SingleStreamDiT
 from fizgig.krea2.safetensors_utils import MemoryEfficientSafeOpen, release_mapped_pages, move_frozen_weights
+
+# file-backed weights are a Linux ROCm feature (mmap.madvise has no Windows or macOS form): checks pass on any machine
+pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="file-backed weights are Linux only")
 
 
 def test_mapped_fp8_load_matches_existing_loader(tmp_path):

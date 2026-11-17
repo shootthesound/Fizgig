@@ -41,6 +41,8 @@ class InferenceMemoryChecks(unittest.TestCase):
         self.enterContext(patch.object(torch.cuda, "is_available", return_value=False))
         self.enterContext(patch.object(torch.cuda, "current_device", return_value=0))
         self.enterContext(patch.object(torch.version, "hip", "test"))
+        # a small ROCm card (the memory policy's reach) whenever these checks set ROCm; generic otherwise
+        self.enterContext(patch.object(W, "rocm_small_card", side_effect=lambda device: bool(torch.version.hip)))
 
     def test_auto_reserves_more_memory_for_higher_resolution(self):
         engine = self.engine
@@ -417,3 +419,18 @@ class InferenceMemoryChecks(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BigRocmCardChecks(unittest.TestCase):
+    def test_a_big_rocm_card_keeps_the_generic_engine(self):
+        """An MI300X (192 GB) keeps the generic engine: low-memory mode and parking the model after every render are
+        for consumer cards, and only slow a big one. Auto block swap there is none."""
+        engine = get("krea2").make_workbench_engine()
+        with patch.object(torch.version, "hip", "test"), patch.object(W, "rocm_small_card", return_value=False),                 patch.object(WorkbenchEngine, "ensure_pipeline") as generic:
+            engine.ensure_pipeline("dit.safetensors", "vae", "te", blocks_to_swap="auto", device="cuda")
+        kw = generic.call_args.kwargs
+        self.assertEqual(kw["blocks_to_swap"], 0)
+        self.assertNotIn("lowmem", kw)
+        self.assertFalse(engine._auto_swap)
+        self.assertFalse(engine._small_rocm())
+

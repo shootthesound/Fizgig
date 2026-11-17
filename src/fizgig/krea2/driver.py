@@ -317,7 +317,7 @@ class Krea2Driver(FamilyDriver):
     @configured_generation
     def generate(self, dit, cond, width, height, *, steps, seed, cfg=1.0, neg_cond=None, sigmas=None, options=(),
                  noise=None, on_step=None, refs=None):
-        logging.getLogger(__name__).info("Krea 2 sampling: %dx%d, seed %s, %d steps, attention=%s",
+        logging.getLogger(__name__).debug("Krea 2 sampling: %dx%d, seed %s, %d steps, attention=%s",
                                         width, height, seed, steps, dit.attn_mode)
         from fizgig.krea2.sampling import prepare, timesteps
         device = next(p for p in dit.parameters() if p.device.type != "meta").device
@@ -355,7 +355,7 @@ class Krea2Driver(FamilyDriver):
     def decode(self, vae, latents, width, height):
         from PIL import Image
         dev = next(vae.parameters()).device
-        logging.getLogger(__name__).info("Krea 2 VAE decoding: %dx%d, dtype=%s, tiled=%s",
+        logging.getLogger(__name__).debug("Krea 2 VAE decoding: %dx%d, dtype=%s, tiled=%s",
                                         width, height, next(vae.parameters()).dtype, vae.use_tiling)
         latents = latents.to(dev, torch.bfloat16)
         try:
@@ -379,7 +379,7 @@ class Krea2Driver(FamilyDriver):
         finally:
             vae.clear_cache()
         arr = (pixels[0].float().permute(1, 2, 0).clamp(0, 1) * 255.0).byte().cpu().numpy()
-        logging.getLogger(__name__).info("Krea 2 image complete: %dx%d", width, height)
+        logging.getLogger(__name__).debug("Krea 2 image complete: %dx%d", width, height)
         return Image.fromarray(arr)
 
     # ---- LoRA and the block map -------------------------------------------------------------------

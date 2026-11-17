@@ -25,13 +25,35 @@ def _block_weights(block):
                 yield weight
 
 
+# The ROCm memory policy is for consumer cards (RX 9070 XT 16 GB, 7900 XTX 24 GB). A bigger AMD card (MI300X's
+# 192 GB) keeps the generic engine: low-memory mode and parking the model in RAM after every render would only slow it.
+SMALL_CARD_GB = 24
+
+
+def rocm_small_card(device):
+    """A ROCm card this engine's memory policy is for (SMALL_CARD_GB or less)."""
+    if not torch.version.hip or torch.device(device).type != "cuda" or not torch.cuda.is_available():
+        return False
+    d = torch.device(device)
+    index = d.index if d.index is not None else torch.cuda.current_device()
+    return torch.cuda.get_device_properties(index).total_memory <= SMALL_CARD_GB * 1.05 * GIB
+
+
 class Krea2WorkbenchEngine(WorkbenchEngine):
+    def _small_rocm(self):
+        """The ROCm memory policy applies: decided when the model loads; before that, from the device."""
+        known = self.__dict__.get("_rocm")
+        return rocm_small_card(getattr(self, "device", None) or "cuda") if known is None else known
+
     def ensure_pipeline(self, dit_path, *args, precision="auto", blocks_to_swap="auto", device="cuda", **kw):
         if self.pipeline is not None:
             return
-        if not torch.version.hip:
+        self._rocm = rocm_small_card(device)
+        if not self._rocm:
             self._auto_swap = False
             self.driver._file_backed_inference = False
+            if torch.version.hip and str(blocks_to_swap).lower().startswith("auto"):
+                blocks_to_swap = 0     # on ROCm the worker leaves Auto to this engine: a big card needs no swap
             return super().ensure_pipeline(dit_path, *args, precision=precision,
                                            blocks_to_swap=blocks_to_swap, device=device, **kw)
         self._auto_swap = str(blocks_to_swap).lower().startswith("auto") and torch.device(device).type == "cuda"
@@ -54,7 +76,7 @@ class Krea2WorkbenchEngine(WorkbenchEngine):
         release_mapped_pages(getattr(self.dit, "_cpu_weight_masters", {}).values())
 
     def _park_dit(self, where):
-        if not torch.version.hip:
+        if not self._small_rocm():
             return super()._park_dit(where)
         if self.dit is None:
             return
@@ -92,7 +114,7 @@ class Krea2WorkbenchEngine(WorkbenchEngine):
 
     def _finish_decode(self):
         # Keep the DiT parked between images; the next render restores its streaming layout.
-        if torch.version.hip and torch.device(self.device).type == "cuda":
+        if self._small_rocm():
             torch.cuda.empty_cache()
         else:
             super()._finish_decode()
@@ -113,7 +135,7 @@ class Krea2WorkbenchEngine(WorkbenchEngine):
 
     def render(self, cond, width, height, seed, **kwargs):
         device = torch.device(self.device)
-        rocm = device.type == "cuda" and bool(torch.version.hip)
+        rocm = self._small_rocm()          # a small ROCm card (rocm_small_card)
         previous_fraction = allocator_limit = None
         try:
             if rocm and torch.cuda.is_available():

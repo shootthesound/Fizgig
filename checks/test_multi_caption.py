@@ -81,9 +81,9 @@ def test_row_shows_only_for_multi_line_captions(folder, tmp_path):
     assert form.DEFAULTS["MULTI_CAPTION"] is False
     st = form.state(desc, {}, str(folder))
     assert "MULTI_CAPTION" not in st["hidden"]
-    assert st["notes"]["MULTI_CAPTION"].startswith("1 of your 2 caption files has more than one line (a.txt). Tick this")
+    assert st["notes"]["MULTI_CAPTION"].startswith("1 of your 2 caption files has more than one line (a.txt). Tick to train each line")
     st = form.state(desc, {"MULTI_CAPTION": True}, str(folder))
-    assert st["notes"]["MULTI_CAPTION"].startswith("2 pictures, 4 captions: 1 picture has 3 lines.")
+    assert st["notes"]["MULTI_CAPTION"].startswith("4 captions for 2 pictures (1 with 3 lines).")
     plain = tmp_path / "plain"
     _pic(str(plain / "c.png"), "one line")
     assert "MULTI_CAPTION" in form.state(desc, {}, str(plain))["hidden"]

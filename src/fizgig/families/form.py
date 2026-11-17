@@ -311,11 +311,12 @@ def form(desc):
              "note"),
         _row("FAMILY_KIND", "Kind of training", "radio", choices=[label for _, label in ks], default=ks[0][1],
              sets={label: kind_sets(desc, k) for k, label in ks if kind_sets(desc, k)}) if len(ks) > 1 else None,
-        _row("TRAIN_SUBFOLDERS", "Also train on its sub-folders", "check", SUBFOLDERS_HINT, default=False),
+        _row("TRAIN_SUBFOLDERS", "Also train on its sub-folders", "check", SUBFOLDERS_HINT, default=False,
+             full=True),
         _row("TRAIN_SUBFOLDER_REPEATS", "Repeats from folder names", "check", REPEATS_HINT, default=False,
-             note_table=True),
+             note_table=True, full=True, child=True),
         _row("MULTI_CAPTION", "Several captions per picture (one per line)", "check", MULTI_CAPTION_HINT,
-             default=False, note_info=True) if desc.multi_caption else None,
+             default=False, note_info=True, full=True) if desc.multi_caption else None,
         _row("LEARNING_RATE", "Learning Rate", default=DEFAULTS["LEARNING_RATE"]),
     ]
     if desc.adaptive_lr:
@@ -1056,29 +1057,18 @@ def _on(values, o):
     return v not in (None, "", False, "0", 0)
 
 
-SUBFOLDERS_HINT = ("Off: only the pictures directly in the training folder are used.\nOn: the pictures in its "
-                   "sub-folders are trained on too, at any depth, each sub-folder as its own set with its own captions "
-                   "and cache, so a big dataset can stay organised. Every picture trains once an epoch, wherever it "
-                   "is, unless Repeats from folder names is on. Image Prep and Captions work on one folder at a time: "
-                   "to caption or mask a sub-folder, choose it as the training folder on the Start tab.")
+SUBFOLDERS_HINT = ("Trains the pictures in every sub-folder too, each with its own captions. Image Prep and "
+                   "Captions work on one folder at a time: choose a sub-folder as the training folder on the Start "
+                   "tab to caption or mask it.")
 
 
-REPEATS_HINT = ("Lets a small folder count as much as a big one, or one folder count more. Start a sub-folder's name "
-                "with a number and an underscore, like 3_blue, and its pictures are seen 3 times each epoch (each pass "
-                "through the pictures); folders without a number are seen once. Only the folder's own name counts "
-                "(10_a/3_b is seen 3 times), and the rest of the name is just a label: captions still come from the "
-                "caption files. The same naming kohya and OneTrainer use.\nOff: a number in a folder's name means "
-                "nothing.")
+REPEATS_HINT = ("A sub-folder named with a number and an underscore, like 3_blue, is seen that many times each "
+                "epoch; one without a number is seen once. The same naming kohya and OneTrainer use.")
 
 
-MULTI_CAPTION_HINT = ("Each line of a caption file is a caption of its own: each time training uses a picture, it "
-                      "takes one of its lines, every line equally likely (blank lines are skipped). For a line of tags "
-                      "plus a sentence, or captions from several captioners, so no single caption dominates. Caption "
-                      "files from OneTrainer often have several lines."
-                      "\nOff: a file's lines are joined into one caption.\n"
-                      "Put the caption style you prompt with most first: what needs a single caption uses line 1 "
-                      "(training maps, the Subjects card's Leave the rest of the model alone), and auto-recaption "
-                      "rewrites line 1 only, keeping your other lines.")
+MULTI_CAPTION_HINT = ("Each line of a caption file is a separate caption, and each time a picture trains one of its "
+                      "lines is picked. Put the style you prompt with most on line 1: auto-recaption rewrites only "
+                      "line 1, and training maps and Leave the rest of the model alone use it.")
 
 
 def multi_caption_note(desc, values, image_folder):
@@ -1101,21 +1091,18 @@ def multi_caption_note(desc, values, image_folder):
         which = f" ({', '.join(names[:3])}{', ...' if len(names) > 3 else ''})" if len(names) <= 5 else ""
         captioned = sum(1 for k in counts.values() if k)
         return True, (f"{len(many):,} of your {captioned:,} caption files {'has' if len(many) == 1 else 'have'} more "
-                      f"than one line{which}. Tick this if each line is a separate caption. If a caption just wraps "
-                      f"onto the next line, leave it off: its lines train together as one caption.")
+                      f"than one line{which}. Tick to train each line as its own caption; unticked, each file is one "
+                      f"caption.")
     if not counts:
         return True, ""
     if not many:
-        return True, ("No caption file here has more than one line yet, so this changes nothing: each picture has "
-                      "its one caption.")
+        return True, "No caption file here has more than one line, so this changes nothing yet."
     pics, total = len(counts), sum(max(k, 1) for k in counts.values())
     span = f"{min(many.values())}-{max(many.values())}" if min(many.values()) != max(many.values()) else \
         str(max(many.values()))
-    return True, (f"{pics:,} picture{'s' if pics != 1 else ''}, {total:,} captions: {len(many):,} "
-                  f"picture{'s' if len(many) != 1 else ''} {'have' if len(many) != 1 else 'has'} {span} lines. "
-                  f"Preparing the captions before training (the text cache) takes about {total / pics:.1f}x as long; "
-                  f"the pictures' cache and training speed don't change. Each picture is used as often as before, so "
-                  f"each of its captions comes up less often.")
+    return True, (f"{total:,} captions for {pics:,} picture{'s' if pics != 1 else ''} ({len(many):,} with {span} "
+                  f"lines). Preparing the captions takes about {total / pics:.1f}x as long; training speed doesn't "
+                  f"change.")
 
 
 def _num(values, key, default):
@@ -1158,9 +1145,9 @@ def repeats_note(desc, values, image_folder):
     if not total:
         return ""
     numbered = [rel for rel, _f in subs if launch.looks_like_repeats(rel)]
-    out = [(f"Each epoch now shows the model {total:,} pictures: the {pics:,} in the folders, each repeated by its "
+    out = [(f"Each epoch: {total:,} pictures, from {pics:,} in the folders, each seen as many times as its "
             f"folder's number." if total > pics else
-            f"Each epoch shows the model each of the {pics:,} pictures once."),
+            f"Each epoch: each of the {pics:,} pictures once."),
            "| Folder | Pictures | Repeats | Seen per epoch | Share of training |"]
     small = 3.0
     for label, _f, n, r in sorted(rows, key=lambda x: -x[2] * x[3]):
@@ -1182,10 +1169,9 @@ def repeats_note(desc, values, image_folder):
     if total > pics:
         epochs = _num(values, "MAX_TRAIN_EPOCHS", DEFAULTS["MAX_TRAIN_EPOCHS"])
         same = max(1, round(epochs * pics / total))
-        line = (f"An epoch is now {total / pics:.1f}x as long. Your {epochs} epochs (Max Epochs) show "
-                f"{total * epochs:,} pictures instead of {pics * epochs:,}, and previews and saves every N epochs come "
-                f"{total / pics:.1f}x further apart."
-                + (f" For about the same length of run, set Max Epochs to {same}." if same != epochs else ""))
+        line = (f"An epoch takes {total / pics:.1f}x as long, so previews and saves come {total / pics:.1f}x further "
+                f"apart." + (f" For a run of about the same length, set Max Epochs to {same} (it is {epochs})."
+                             if same != epochs else ""))
         batch = launch.batch_size(desc, values)
         if batch > 1:
             line += f" At Batch size {batch} that is about {-(-total // batch):,} steps an epoch."
@@ -1210,7 +1196,8 @@ def subfolders_note(desc, values, image_folder):
     counts = [(rel, launch._media_count(f), _uncaptioned(f, ext)) for rel, f in subs]
     more = sum(n for _r, n, _u in counts)
     own = launch._media_count(image_folder)
-    numbered = [rel for rel, _f in subs if launch.looks_like_repeats(rel)]
+    numbered = sorted((rel for rel, _f in subs if launch.looks_like_repeats(rel)),
+                      key=lambda rel: -launch.folder_repeats(rel)[0])       # the clearest example first (3_name)
     looks = len(numbered) >= 2 and not values.get("TRAIN_SUBFOLDER_REPEATS")
     if not values.get("TRAIN_SUBFOLDERS"):
         s = "s" if len(subs) != 1 else ""

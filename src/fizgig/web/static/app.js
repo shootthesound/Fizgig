@@ -369,7 +369,7 @@ function renderRow(r) {
   const kind = {check: "check", radio: "radio", note: "note", text: "wide", path: "wide", folder: "wide", shown: "wide",
     cadence: "cadence", split: "cadence"}[r.kind] || "field";
   const wrap = el("div", {class: "form-row kind-" + kind + (r.featured ? " row-featured" : "") +
-    (r.boxed ? " row-boxed" : ""), "data-key": r.key});
+    (r.boxed ? " row-boxed" : "") + (r.full ? " row-full" : "") + (r.child ? " row-child" : ""), "data-key": r.key});
   if (r.kind === "shown") {                       // a value from elsewhere (the Start tab's folder), read-only here
     const shownRow = el("div", {class: "field-row"}, el("span", {class: "field-label", text: r.label + ":"}),
       el("input", {type: "text", class: "w-path", id: "note_" + r.key, readonly: true, tabindex: -1}));
@@ -8754,7 +8754,7 @@ async function captionsLive() {
   for (const it of S.cap.items) {
     const n = now.get(it.path);
     if (!n || (n.caption ?? "") === (it.caption ?? "")) continue;
-    const ta = it._ta, untouched = !ta || (document.activeElement !== ta && ta.value === (it.caption ?? ""));
+    const ta = it._ta, untouched = !ta || (!ta.contains(document.activeElement) && ta.value === (it.caption ?? ""));
     if (!untouched) continue;
     const pic = S.lb.list[S.lb.at], big = $("lightboxCapText");
     if (pic && pic.cap && pic.cap.ta === ta && $("lightbox").style.display !== "none" &&
@@ -8763,7 +8763,7 @@ async function captionsLive() {
       $("lightboxCapNote").textContent = "Re-captioned";
     }
     it.caption = n.caption;
-    if (ta) { ta.value = n.caption ?? ""; fitText(ta); }
+    if (ta) { ta.value = n.caption ?? ""; if (ta.tagName === "TEXTAREA") fitText(ta); }
     if (big.value === (n.caption ?? "")) fitText(big);
   }
 }
@@ -8860,8 +8860,7 @@ function renderCaptions() {
   }
   for (const it of items.slice(S.cap.page * CAP_PAGE, (S.cap.page + 1) * CAP_PAGE)) {
     const src = `/api/media?path=${encodeURIComponent(it.path)}&t=${encodeURIComponent(TOKEN)}`;
-    const ta = el("textarea", {rows: 4, class: "fit-text"});
-    ta.value = it.caption ?? "";
+    const ta = captionLines(it.caption ?? "");
     it._ta = ta;                                 // for the live refresh while captioning runs
     const status = el("span", {class: "field-hint"});
     const saveCap = async () => {
@@ -8908,9 +8907,7 @@ function renderCaptions() {
     const remove = it.crop ? null : el("button", {class: "btn btn-sm", text: "Remove",
       title: "Take it out of the training set: it and its caption move into the folder's removed subfolder (nothing is deleted).",
       onclick: () => capRemove(it, card, status)});
-    const lines = capLines(it.caption);         // several captions per picture: one a line
-    const size = [it.size ? `${it.size[0]}×${it.size[1]} · ${(it.size[0] * it.size[1] / 1e6).toFixed(1)} MP` : "",
-      lines > 1 ? (capMulti() ? `${lines} captions, one per line` : `${lines} lines`) : ""].filter(Boolean).join(" · ");
+    const size = it.size ? `${it.size[0]}×${it.size[1]} · ${(it.size[0] * it.size[1] / 1e6).toFixed(1)} MP` : "";
     // masked training: the picture's mask (photo-masklabel.png), shown in its place on a click
     const pic = it.mask ? media.querySelector("img") || (media.tagName === "IMG" ? media : null) : null;
     const maskBtn = pic ? el("button", {class: "btn btn-sm", text: "Show mask",
@@ -8932,6 +8929,53 @@ function renderCaptions() {
   fitTexts(host);
 }
 
+// a caption file a line at a time, every other line shaded and numbered once there are two (the Samples tab's prompt
+// box): several captions per picture read at a glance. Enter starts a new line, Backspace at a line's start joins it to
+// the one above. .value is the whole file, so Save, Re-caption, the big view and the live refresh use it as they did
+// the plain box; a "change" on any line (or a new / joined line) reaches listeners on the editor itself.
+function captionLines(text, extra = "") {
+  const list = el("div", {class: "prompt-lines caption-lines" + (extra ? " " + extra : "")});
+  const boxes = () => [...list.querySelectorAll("textarea")];
+  const renumber = () => {
+    list.querySelectorAll(".prompt-num").forEach((n, i) => { n.textContent = i + 1; });
+    list.classList.toggle("several", boxes().length > 1);
+  };
+  const changed = () => list.dispatchEvent(new Event("change"));
+  function line(t, after) {
+    const box = el("textarea", {rows: 1, class: "fit-text", spellcheck: "false", "aria-label": "Caption line"});
+    box.value = t;
+    const item = el("div", {class: "prompt-line"}, el("span", {class: "prompt-num"}), box);
+    box.addEventListener("input", () => fitText(box));
+    box.addEventListener("keydown", (e) => {
+      const at = box.selectionStart, flat = at === box.selectionEnd;
+      if (e.key === "Enter" && !e.isComposing) {           // the rest of the line becomes the next line
+        e.preventDefault();
+        const rest = box.value.slice(box.selectionEnd);
+        box.value = box.value.slice(0, at); fitText(box);
+        const next = line(rest, item);
+        renumber(); fitText(next); next.setSelectionRange(0, 0); next.focus(); changed();
+      } else if (e.key === "Backspace" && flat && at === 0 && item.previousElementSibling) {
+        e.preventDefault();                                 // joined to the line above, the caret at the join
+        const up = item.previousElementSibling.querySelector("textarea"), join = up.value.length;
+        up.value += box.value; item.remove();
+        renumber(); fitText(up); up.focus(); up.setSelectionRange(join, join); changed();
+      }
+    });
+    if (after) after.after(item); else list.append(item);
+    return box;
+  }
+  Object.defineProperty(list, "value", {
+    get: () => boxes().map((b) => b.value).join("\n"),
+    set: (v) => {
+      list.replaceChildren();
+      for (const t of String(v ?? "").split(/\r?\n/)) line(t);
+      renumber();
+      requestAnimationFrame(() => boxes().forEach((b) => fitText(b)));
+    }});
+  list.value = text;
+  return list;
+}
+
 // a caption file's non-blank lines: more than one = several captions (the Training tab's Several captions per picture)
 const capLines = (text) => String(text || "").split(/\r?\n/).filter((l) => l.trim()).length;
 // the Training tab's Several captions per picture, ticked for this model: a file's lines are captions of their own
@@ -8945,12 +8989,11 @@ function capLinesWarn() {
   const had = items.filter((i) => capLines(i.caption) >= 1).length;
   const add = $("capAddLine").checked, over = $("capOverwrite").checked;
   const w = $("capLinesWarn");
-  w.textContent = add && had ? `${had} file${had === 1 ? " has" : "s have"} a caption already: each gets one more line. ` +
-      "Running the same model twice adds a second, slightly different line." :
-    !add && over && multi && capMulti() ? `${multi} file${multi === 1 ? " has" : "s have"} several captions (one a ` +
-      "line): Overwrite replaces all of them with one. Tick Add as another line to add one instead." :
+  w.textContent = add && had ? `${had} file${had === 1 ? " already has" : "s already have"} a caption: each gets ` +
+      "one more line (running the same model again adds a near-copy)." :
     !add && over && multi && S.fam && S.fam.multi_caption ? `${multi} file${multi === 1 ? " has" : "s have"} more ` +
-      "than one line: Overwrite replaces each whole file with the new caption." : "";
+      "than one line: Overwrite replaces all of a file's lines with one caption. Tick Add as another line to keep " +
+      "them." : "";
   w.hidden = !w.textContent;
 }
 
@@ -8969,8 +9012,7 @@ function captionsTable(items, ext) {
     text: c.label + (ts.key === c.key ? (ts.dir > 0 ? " ▲" : " ▼") : ""), title: "Sort by this column",
     onclick: () => { S.cap.tsort = {key: c.key, dir: ts.key === c.key ? -ts.dir : 1}; S.cap.page = 0; renderCaptions(); }})));
   const rows = items.map((it) => {
-    const ta = el("textarea", {rows: 2, class: "cap-cell-text fit-text"});
-    ta.value = it.caption ?? "";
+    const ta = captionLines(it.caption ?? "", "cap-cell-text");
     it._ta = ta;                                 // the live refresh while captioning runs fills it too
     const words = el("td", {class: "cap-num", text: String(capWords(it))});
     ta.addEventListener("change", async () => {  // saved when you leave the box, as typed

@@ -1686,7 +1686,9 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .section-card[id^="sec-"] .form-row .field-row { margin-bottom: 0; }
 .section-card[id^="sec-"] .form-row .field-hint { margin-top: 5px; line-height: 1.4; }
 .section-card[id^="sec-"] .form-row.kind-wide, .section-card[id^="sec-"] .form-row.kind-radio,
-.section-card[id^="sec-"] .form-row.kind-note { grid-column: 1 / -1; }
+.section-card[id^="sec-"] .form-row.kind-note, .section-card[id^="sec-"] .form-row.row-full { grid-column: 1 / -1; }
+/* a switch that belongs to the one above it (Repeats under the sub-folder tick): indented under it */
+.section-card[id^="sec-"] .form-row.row-child { margin-left: 32px; }
 /* a switch: a tile, so a row of them lines up whatever their labels' length */
 .section-card[id^="sec-"] .form-row.kind-check { align-self: stretch; background: var(--bg-raised);
   border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 11px 12px; }
@@ -2658,6 +2660,23 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 .form-row .prompt-line textarea { flex: 1 1 auto; width: auto; max-width: none; min-height: 32px; resize: none;
   overflow: hidden; background: transparent; border: none; border-radius: 0; box-shadow: none; padding: 6px 4px; }
 .form-row .prompt-line textarea:focus { background: color-mix(in srgb, var(--accent) 8%, transparent); box-shadow: none; }
+/* a caption file a line at a time (Captions tab, captionLines): the prompt box's look; numbers once there are two */
+.caption-lines { margin: 4px 0 6px; }
+.caption-lines .prompt-num { flex-basis: 26px; }
+.caption-lines:not(.several) .prompt-num { display: none; }
+.caption-lines .prompt-line textarea { flex: 1 1 auto; width: auto; max-width: none; min-height: 32px; resize: none;
+  overflow: hidden; background: transparent; border: none; border-radius: 0; box-shadow: none; padding: 6px 8px;
+  color: var(--text-primary); font: inherit; line-height: 1.4; }
+.caption-lines .prompt-line textarea:focus { background: color-mix(in srgb, var(--accent) 8%, transparent);
+  box-shadow: none; outline: none; }
+.captions-table .caption-lines.cap-cell-text { min-width: 260px; margin: 0; }
+/* the Captions tab's write choices: each switch on a line of its own with room around it, its note under its words */
+#tab-captions .checkbox-label:has(#capOverwrite), #tab-captions .checkbox-label:has(#capAddLine) { display: flex;
+  margin: 8px 0 0; }
+#capAddLineNote, #capLinesWarn { margin: 4px 0 0 46px; max-width: 900px; line-height: 1.45; }
+#frEachLineRow { margin: 10px 0 8px; }
+#frEachLineRow .checkbox-label { display: flex; }
+#frEachLineRow .field-hint { margin: 4px 0 0 46px; max-width: 900px; line-height: 1.45; }
 .prompt-del { flex: 0 0 28px; height: 28px; margin: 2px 2px 0 0; background: none; border: none; cursor: pointer;
   color: var(--text-muted); font-size: 14pt; line-height: 1; visibility: hidden; }
 .prompt-line:hover .prompt-del, .prompt-line:focus-within .prompt-del { visibility: visible; }

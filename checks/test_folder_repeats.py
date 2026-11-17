@@ -81,10 +81,10 @@ def test_row_shows_only_under_the_ticked_subfolder_row(tree):
     assert "look like repeat counts" not in st["notes"]["TRAIN_SUBFOLDERS"]
     assert "TRAIN_SUBFOLDERS" not in st["actions"]                            # the table lists the folders
     note = st["notes"]["TRAIN_SUBFOLDER_REPEATS"]
-    assert note.startswith("Each epoch now shows the model 57 pictures: the 13 in the folders")
+    assert note.startswith("Each epoch: 57 pictures, from 13 in the folders")
     assert "| 10_base | 4 | 10x | 40 | 70% |" in note
     assert "|! plain | 1 | 1x | 1 | 2% |" in note and "Marked:" in note      # under 3%: flagged
-    assert "An epoch is now 4.4x as long. Your 12 epochs (Max Epochs) show 684 pictures instead of 156" in note and "set Max Epochs to 3" in note
+    assert "An epoch takes 4.4x as long" in note and "set Max Epochs to 3 (it is 12)" in note
 
 
 def test_unticked_numbered_folders_offer_both_ticks(tree):

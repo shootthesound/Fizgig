@@ -26,7 +26,7 @@ worker keeping single-image Regenerate instant. Validated on AMD by them and on 
 Since then they've kept the AMD path working: a safe ROCm update ([#107](https://github.com/shootthesound/Fizgig/pull/107)), the nightly
 wheels behind `--experimental` ([#129](https://github.com/shootthesound/Fizgig/pull/129)), RDNA1/2 attention overrides and the MIOpen /
 rocBLAS paths ([#130](https://github.com/shootthesound/Fizgig/pull/130)), and the ROCm settings and VRAM readout for the web UI
-([#192](https://github.com/shootthesound/Fizgig/pull/192)).
+([#192](https://github.com/shootthesound/Fizgig/pull/192)). In November they made AMD installs default to AMD's stable ROCm index ([#319](https://github.com/shootthesound/Fizgig/pull/319)) with the experimental and nightly indexes overridable ([#340](https://github.com/shootthesound/Fizgig/pull/340)), added Preferences' **Disable GPU for the app window** ([#325](https://github.com/shootthesound/Fizgig/pull/325)), and bisected a Krea 2 LoKR out-of-memory on AMD ([#341](https://github.com/shootthesound/Fizgig/issues/341)).
 
 ## Murf-Code
 
@@ -36,9 +36,9 @@ MOSS-Image SFT and the workbench tools. Since then: a **pluggable face finder an
 ([#190](https://github.com/shootthesound/Fizgig/pull/190)) so furry, anime and drawn characters get likeness scores too; Resume taking the
 learning rate from the form ([#214](https://github.com/shootthesound/Fizgig/pull/214)); three bug fixes in one ([#259](https://github.com/shootthesound/Fizgig/pull/259)); the
 **loss graph views** ([#290](https://github.com/shootthesound/Fizgig/pull/290)); **Prodigy, Muon and Automagic v4** ([#292](https://github.com/shootthesound/Fizgig/pull/292)); and
-Stop asking for a second click ([#294](https://github.com/shootthesound/Fizgig/pull/294)). Two ideas came over from their Fizgig Advanced
-fork with credit: Adaptive LR judging plateaus on a 3-epoch average, and the Samples gallery's
-**Style score**.
+Stop asking for a second click ([#294](https://github.com/shootthesound/Fizgig/pull/294)). From their Fizgig Advanced fork, with credit: Adaptive LR judging plateaus on a 3-epoch average, the Samples gallery's
+**Style score**, the **Cosmic Pigeon** and **Deep Space** themes (v9.4.0, their own commits) and
+**out-of-memory recovery**, which tries a failed run again lighter (v9.6.0).
 
 ## rintic-13
 
@@ -131,6 +131,8 @@ size row for clips kept in sub-folders ([#278](https://github.com/shootthesound/
 96 GB card ([#282](https://github.com/shootthesound/Fizgig/pull/282)) found that H3 clip runs with TREAD off could go without gradient
 checkpointing and run out of memory; those runs now keep it on.
 
+Since then: **Fibo 2.0** as a trainable family, with measured planner figures ([#250](https://github.com/shootthesound/Fizgig/pull/250), v9.0.4); **Purge run history** on Runs & outputs ([#345](https://github.com/shootthesound/Fizgig/pull/345), v9.7.2); and LoRA Royale treating a run's Save now snapshots and last checkpoint as its own epochs ([#355](https://github.com/shootthesound/Fizgig/pull/355), v9.7.6). Their exact reports found the H3 Context LoRA crash at step 0 ([#298](https://github.com/shootthesound/Fizgig/issues/298)) and MOSS-Image block swap leaving weights on the CPU at a batch size above 1 ([#335](https://github.com/shootthesound/Fizgig/issues/335)).
+
 ## DmitryAkDev
 
 [DmitryAkDev](https://github.com/DmitryAkDev) fixed the **app window on Linux**: closing it no
@@ -155,6 +157,19 @@ detection on Linux** ([#281](https://github.com/shootthesound/Fizgig/pull/281), 
 model parked ([#152](https://github.com/shootthesound/Fizgig/pull/152)); the fix restores it whatever happens. Their RDNA2 speed-ups for
 Krea 2 on the RX 6800 ([#158](https://github.com/shootthesound/Fizgig/pull/158)) are in progress.
 
+## xGnome
+
+[xGnome](https://github.com/xGnome) works on **AMD RDNA4 under Linux**: an optional pinned **SageAttention-RDNA4** build with a
+Force SageAttention preference for Krea 2 ([#344](https://github.com/shootthesound/Fizgig/pull/344), v9.7.2, tested with [daxter93](https://github.com/daxter93)), a Training tab that
+lists optimizers without loading their libraries ([#346](https://github.com/shootthesound/Fizgig/pull/346), v9.7.5), and Krea 2's VAE decoding a still picture
+with about 2 GB less VRAM ([#369](https://github.com/shootthesound/Fizgig/pull/369), v9.7.6). They also found three helpers missing from the Linux AMD installer
+(v9.7.2) and where Arch-based systems keep libnuma ([#356](https://github.com/shootthesound/Fizgig/issues/356)).
+
+## pastuh
+
+[pastuh](https://github.com/pastuh) fixed two **prompt slider** bugs ([#361](https://github.com/shootthesound/Fizgig/pull/361), v9.7.6): a MOSS-Image slider with the Turbo LoRA
+stopped before training, and a slider prompt or anchor starting with "-" didn't reach the trainer as typed.
+
 ## Ideas and bug reports
 
 Features and fixes that started as someone's issue, credited in the release notes:
@@ -174,6 +189,39 @@ right-click menu, [#296](https://github.com/shootthesound/Fizgig/issues/296)), [
 reference distillation crash, [#264](https://github.com/shootthesound/Fizgig/issues/264)) and [amoszach](https://github.com/amoszach)
 (taking a folder off the training data list, [#266](https://github.com/shootthesound/Fizgig/issues/266)). [Nynxz](https://github.com/Nynxz)'s ZenTrainer gave Fizgig the ideas for
 Start at a smaller size, the run summary, the sidebar meters and the captions table.
+
+Since November:
+
+- [tsk5cb-cmyk](https://github.com/tsk5cb-cmyk): the logs and OneTrainer settings behind 9.2's speed work ([#221](https://github.com/shootthesound/Fizgig/issues/221))
+- [pomoe136](https://github.com/pomoe136): Extract on MOSS-Image ([#301](https://github.com/shootthesound/Fizgig/issues/301))
+- [spinolover](https://github.com/spinolover): a Fast Identity run error ([#302](https://github.com/shootthesound/Fizgig/issues/302))
+- [Nessa2026691](https://github.com/Nessa2026691): Context LoRAs in LoKR format ([#304](https://github.com/shootthesound/Fizgig/issues/304)) and tracking down the Context LoRA slowdown ([#307](https://github.com/shootthesound/Fizgig/issues/307))
+- [MrB4000](https://github.com/MrB4000): a MOSS-Image LoRA that wouldn't start ([#305](https://github.com/shootthesound/Fizgig/issues/305))
+- [arkinson9](https://github.com/arkinson9): MOSS-Image preview quality on small cards ([#309](https://github.com/shootthesound/Fizgig/issues/309))
+- [josm2026](https://github.com/josm2026): the installer's "from was unexpected" error, with the fix ([#310](https://github.com/shootthesound/Fizgig/issues/310))
+- [RitschRatsch666](https://github.com/RitschRatsch666): fine-tunes training with the optimizer you pick ([#312](https://github.com/shootthesound/Fizgig/issues/312))
+- [mart-hill](https://github.com/mart-hill): JoyCaption ([#313](https://github.com/shootthesound/Fizgig/issues/313))
+- [axymeus](https://github.com/axymeus): the WD tagger ([#315](https://github.com/shootthesound/Fizgig/issues/315)), the regularisation dataset ([#332](https://github.com/shootthesound/Fizgig/issues/332)), LoRA Royale on a range of epochs ([#318](https://github.com/shootthesound/Fizgig/issues/318)) and Gizmo's crop box ([#367](https://github.com/shootthesound/Fizgig/issues/367))
+- [AlexWolfgangDRG](https://github.com/AlexWolfgangDRG): JoyCaption in 4-bit on ROCm ([#316](https://github.com/shootthesound/Fizgig/issues/316)) and a Continue training problem ([#333](https://github.com/shootthesound/Fizgig/issues/333))
+- [CognitiveDiffusion](https://github.com/CognitiveDiffusion): Resume Training's place on the page ([#317](https://github.com/shootthesound/Fizgig/issues/317)), long runs and the queue ([#348](https://github.com/shootthesound/Fizgig/issues/348)) and Gizmo's crop box ([#350](https://github.com/shootthesound/Fizgig/issues/350))
+- [daxter93](https://github.com/daxter93): ROCm crashes on tight VRAM ([#321](https://github.com/shootthesound/Fizgig/issues/321)), high-resolution renders on AMD ([#343](https://github.com/shootthesound/Fizgig/issues/343)) and testing SageAttention-RDNA4
+- [Ferocit](https://github.com/Ferocit): download progress ([#327](https://github.com/shootthesound/Fizgig/issues/327))
+- [jordanjay29](https://github.com/jordanjay29): steps remaining in the epoch ([#328](https://github.com/shootthesound/Fizgig/issues/328))
+- [DaRoamer](https://github.com/DaRoamer): H3 Image edit LoRAs' text caching on 24 GB cards ([#334](https://github.com/shootthesound/Fizgig/issues/334))
+- [8-lab1627](https://github.com/8-lab1627): Krea 2 LoKR speed on 16 GB cards ([#337](https://github.com/shootthesound/Fizgig/issues/337))
+- [raymondgp](https://github.com/raymondgp): helper previews ([#339](https://github.com/shootthesound/Fizgig/issues/339))
+- [johnstephendonahue-ux](https://github.com/johnstephendonahue-ux): which card an AMD PC trains on ([#342](https://github.com/shootthesound/Fizgig/issues/342))
+- [Aleksandr-AI90](https://github.com/Aleksandr-AI90): ACE-Step's song encoding memory ([#347](https://github.com/shootthesound/Fizgig/issues/347))
+- [RandomTurtle](https://github.com/RandomTurtle): Resume Training folder mix-ups ([#352](https://github.com/shootthesound/Fizgig/issues/352))
+- [prookyon](https://github.com/prookyon): Automagic v4's real rate ([#353](https://github.com/shootthesound/Fizgig/issues/353))
+- [howDoILearnPython](https://github.com/howDoILearnPython): H3 Image on 12 GB cards ([#354](https://github.com/shootthesound/Fizgig/issues/354))
+- [Aymenbayoss](https://github.com/Aymenbayoss): H3 at int8 on pruned files ([#357](https://github.com/shootthesound/Fizgig/issues/357)) and stopping a captioning model while it loads ([#366](https://github.com/shootthesound/Fizgig/issues/366))
+- [girzai](https://github.com/girzai): big datasets on a pod ([#308](https://github.com/shootthesound/Fizgig/issues/308))
+- [whitejt2](https://github.com/whitejt2): checks that failed on smaller cards ([#359](https://github.com/shootthesound/Fizgig/pull/359))
+- [ofung30-sketch](https://github.com/ofung30-sketch): LoRA Isolation with Automagic ([#364](https://github.com/shootthesound/Fizgig/issues/364))
+- [Marhalt](https://github.com/Marhalt): saying what your subject is ([#365](https://github.com/shootthesound/Fizgig/issues/365))
+- WiseDuck (by email): Gizmo's **Prepare a folder** and clips at any audio sample rate
+- u/Obvious-Bad7548 on r/StableDiffusion: the LCM sampler recipe for H3 Image
 
 ## FNGarvin
 

@@ -3354,8 +3354,10 @@ class Gizmo:
         tw, th = self._size()
         # The box is any size; the clip is the nearest /32 pair at its shape (never bigger), as for
         # the whole frame - say both, so the numbers in the boxes and the file's size never disagree.
+        # How to move and resize it stays in view: #367 didn't know a box could be moved at all.
         text = (f"Cropping to {w} x {h} at ({x}, {y}) — {share:.0f}% of the frame. "
-                f"Exports at {tw} x {th}, the nearest size on the 32-pixel grid.")
+                f"Exports at {tw} x {th}, the nearest size on the 32-pixel grid. Drag inside the box to move "
+                f"it, drag a corner or side to resize it, or drag outside it for a new one.")
         self.crop_note.configure(text=text, fg=COLORS["text_explain"])
 
     # -- listening --------------------------------------------------------------------------------

@@ -1678,12 +1678,14 @@ def _dop_folders(st):
 
 
 def dop_rules(st):
-    """DOP's (words to remove, replacements) over every folder, in order."""
+    """DOP's (words to remove, replacements) over every folder, in order. A subject's "what they are" ("man") takes
+    its trigger's place as "a man" (#365); empty, the trigger is left out."""
+    from fizgig.families.multi_person import class_phrase
     trig, cls = [], []
     for _name, t, c in _dop_folders(st):
         if len(c) == len(t):
             trig += t
-            cls += c
+            cls += [class_phrase(x) for x in c]
     return trig, cls
 
 

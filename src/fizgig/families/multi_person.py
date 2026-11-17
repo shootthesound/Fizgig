@@ -57,9 +57,19 @@ def _kind(kind, noun):
     return kind if kind in ("person", "thing") else ("person" if noun.lower() in PEOPLE_WORDS else "thing")
 
 
+def class_phrase(word):
+    """What a subject is, as DOP puts it in the trigger word's place: "man" -> "a man", "old man" -> "an old man"; a
+    phrase that already starts with a / an / the, or nothing, as it is."""
+    w = str(word or "").strip()
+    if not w or re.match(r"^(a|an|the)\s", w, re.I):
+        return w
+    return ("an " if w[0].lower() in "aeiou" else "a ") + w
+
+
 def dop_caption(caption, pairs):
-    """DOP's caption (the trainer's): every trigger in it swapped for its class word (dropped when that is empty), or
-    None when the caption has none of the triggers - that image has nothing to keep apart."""
+    """DOP's caption (the trainer's): every trigger in it swapped for its class word (dropped when that is empty, or
+    when the caption already says it right after the trigger - "slcp, a man walking" is "a man walking", never "a man,
+    a man walking"), or None when the caption has none of the triggers - that image has nothing to keep apart."""
     if not caption:
         return None
     out, hit = caption, False
@@ -67,7 +77,11 @@ def dop_caption(caption, pairs):
         pat = re.compile(r"(?<!\w)" + re.escape(trigger) + r"(?!\w)", re.I)
         if pat.search(out):
             hit = True
-            out = pat.sub(lambda _m, c=cls: c, out)
+            noun = cls.split()[-1] if cls.strip() else ""
+            said = re.compile(r"\s*,?\s*(?:(?:a|an|the)\s+)?(?:[\w'-]+\s+){0,2}?" + re.escape(noun) + r"(?!\w)",
+                              re.I) if noun else None
+            src = out
+            out = pat.sub(lambda m, c=cls: "" if said and said.match(src, m.end()) else c, src)
     if not hit:
         return None
     out = re.sub(r"\s*,\s*(?:,\s*)+", ", ", out)            # a dropped trigger leaves ", ," or a stray comma behind

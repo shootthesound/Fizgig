@@ -995,8 +995,8 @@ def _multi_person_notes(vals, image_folder, multi_person=True):
         auto_trig = subject_trigger(folder, ext)
         if auto_trig:
             found[tkey] = auto_trig
-            got, _w = mp.subject(folder, auto_trig, "", ext)
-            if got:
+            got, _w = mp.subject(folder, auto_trig, "", ext) if multi_person else (None, "")
+            if got:              # Isolation reads it from the captions; DOP alone uses only what's typed (#365)
                 found[ckey] = got["phrase"].split()[-1]
         cap = mp.sample_caption(folder, trig.split(",")[0].strip() if trig else "", ext)
         lines = [f"Trigger word: {trig}" if trig else "Trigger word: none found in this folder's captions",
@@ -1004,7 +1004,7 @@ def _multi_person_notes(vals, image_folder, multi_person=True):
         if not multi_person:
             if dop and cap and trig:
                 pairs = list(zip([t.strip() for t in trig.split(",") if t.strip()],
-                                 [c.strip() for c in cls.split(",")] * 8))
+                                 [mp.class_phrase(c) for c in cls.split(",")] * 8))
                 kept = mp.dop_caption(cap, pairs)
                 lines += [f"Trains on: {cap}", f"And keeps as the model made it: {kept}" if kept else
                           "And keeps as the model made it: nothing - this caption has no trigger word"]

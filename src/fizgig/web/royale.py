@@ -46,8 +46,38 @@ def scan(folder):
     return {"items": [[e, p] for e, p in cps], "summary": summary, "run": run_name_for_folder(folder)}
 
 
-def pick(items, max_renders):
-    """Max renders: that many, evenly spread across the run, the first and last always in (the desktop's rule)."""
+def _epoch_box(value, which):
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return int(float(text))
+    except ValueError:
+        raise ValueError(f"Epochs: the {which} epoch must be a number (got '{text}').") from None
+
+
+def epoch_range(items, first=None, last=None):
+    """The part of a run from epoch `first` to epoch `last` (#318: render around a good epoch), either empty for that
+    end of the run; the Save now snapshots taken in those epochs come along. A folder of unrelated LoRAs has no
+    epochs, so it is all of it."""
+    lo, hi = _epoch_box(first, "first"), _epoch_box(last, "last")
+    nums = [i for i, (label, _p) in enumerate(items) if str(label).isdigit()]
+    if (lo is None and hi is None) or not nums:
+        return items
+    if lo is not None and hi is not None and lo > hi:
+        lo, hi = hi, lo
+    inside = [i for i in nums if (lo is None or int(items[i][0]) >= lo) and (hi is None or int(items[i][0]) <= hi)]
+    if not inside:
+        raise ValueError(f"Epochs: this run has no epochs from {lo if lo is not None else 'its start'} to "
+                         f"{hi if hi is not None else 'its end'} (it has {items[nums[0]][0]} to {items[nums[-1]][0]}).")
+    before = [i for i in nums if i < inside[0]]
+    return items[(before[-1] + 1 if before else 0):inside[-1] + 1]   # a snapshot sits before the epoch it was taken in
+
+
+def pick(items, max_renders, first=None, last=None):
+    """Max renders: that many, evenly spread across the run (or the part of it from epoch `first` to `last`), the first
+    and last always in (the desktop's rule)."""
+    items = epoch_range(items, first, last)
     if str(max_renders).lower() == "all":
         return items
     n = int(max_renders)

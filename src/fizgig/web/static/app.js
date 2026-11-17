@@ -4485,7 +4485,7 @@ async function royaleRender() {
     const r = await api("/api/royale/render", {family: $("ryFamily").value, folder: $("ryFolder").value.trim(),
       prompt: $("ryPrompt").value.trim(), seed: seedOf("rySeed"), ref: $("ryRef").value.trim(),
       ref_strength: refStrength($("ryRefStr").value), width: Number($("ryW").value), height: Number($("ryH").value),
-      max: $("ryMax").value});
+      max: $("ryMax").value, from: $("ryFrom").value.trim(), to: $("ryTo").value.trim()});
     if (r.family !== $("ryFamily").value) {         // the checkpoints are another model's: follow them (as the desktop)
       await royaleFamily(r.family);
       $("ryStatus").textContent = `Switched to ${$("ryFamily").selectedOptions[0].text} to match the checkpoints.`;

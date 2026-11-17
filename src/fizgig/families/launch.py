@@ -1840,6 +1840,13 @@ def start_problems(desc, inputs):
     out = checks.learning_rate(v)
     out += checks.network(v, lokr="lokr" in desc.network_types and str(v.get("NETWORK_TYPE", "")).startswith("LoKR"))
     out += checks.numbers(v)
+    sm = v.get("samples") or {}
+    if sm.get("enabled"):                # the Samples tab's boxes: "3,5" fell back to the default CFG with nothing said,
+        for label, key, cast, least in (("Samples: CFG Scale", "cfg", float, 0),    # a seed was dropped, and steps
+                                        ("Samples: Steps", "steps", int, 1),       # stopped the trainer at launch
+                                        ("Samples: Seed", "seed", int, None)):
+            if str(sm.get(key) or "").strip():                  # empty = the model's own
+                out += checks.number(label, sm[key], cast, least)
     out += checks.dataset_config(v.get("DATASET_CONFIG"), must_exist=False)
     out += problems(desc, inputs)
     out += precision_problems(desc, inputs)

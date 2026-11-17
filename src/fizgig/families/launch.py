@@ -589,13 +589,13 @@ def start_checks(desc, st, image_folder):
 
 
 def caches(desc, inputs):
-    """Whether the cache stages run: not on a resume (the cache is already built) unless it trains at a different
-    size from now on (recache: the latents that still fit are kept), not for a prompt slider (no photos), not with
-    Enable Cache off."""
+    """Whether the cache stages run: a fresh run with Enable Cache on; a resume only when it trains at a different
+    size from now on (recache: the latents that still fit are kept), and then whatever Enable Cache says, because
+    nothing is cached at that size; never for a prompt slider (no photos)."""
     resuming = inputs.get("resuming") or bool(_s(inputs.get("RESUME_TRAINING")))
     if multi_person_on(desc, inputs) and not slider_on(desc, inputs, "prompts"):
         return True      # Fizgig LoRA Isolation builds its side-by-sides every start: always cache them (only what's new)
-    return bool(inputs.get("enable_cache", True) and (not resuming or inputs.get("recache"))
+    return bool((inputs.get("recache") or (not resuming and inputs.get("enable_cache", True)))
                 and not slider_on(desc, inputs, "prompts"))
 
 

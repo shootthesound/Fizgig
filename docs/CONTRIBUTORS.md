@@ -155,7 +155,7 @@ detection on Linux** ([#281](https://github.com/shootthesound/Fizgig/pull/281), 
 
 [Linkram](https://github.com/Linkram) spotted that a failed Krea 2 preview decode could leave the
 model parked ([#152](https://github.com/shootthesound/Fizgig/pull/152)); the fix restores it whatever happens. Their RDNA2 speed-ups for
-Krea 2 on the RX 6800 ([#158](https://github.com/shootthesound/Fizgig/pull/158)) are in progress.
+Krea 2 on the RX 6800 ([#158](https://github.com/shootthesound/Fizgig/pull/158)) were offered and are not merged yet.
 
 ## xGnome
 

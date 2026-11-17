@@ -8990,7 +8990,7 @@ function capLinesWarn() {
   const add = $("capAddLine").checked, over = $("capOverwrite").checked;
   const w = $("capLinesWarn");
   w.textContent = add && had ? `${had} file${had === 1 ? " already has" : "s already have"} a caption: each gets ` +
-      "one more line (running the same model again adds a near-copy)." :
+      "one more line (captioning again with the same model adds a near-copy)." :
     !add && over && multi && S.fam && S.fam.multi_caption ? `${multi} file${multi === 1 ? " has" : "s have"} more ` +
       "than one line: Overwrite replaces all of a file's lines with one caption. Tick Add as another line to keep " +
       "them." : "";

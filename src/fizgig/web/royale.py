@@ -44,17 +44,8 @@ def scan(folder):
     return {"items": [[e, p] for e, p in cps], "summary": summary, "run": run_name_for_folder(folder)}
 
 
-def pick(items, max_renders, start=None, end=None):
-    """Max renders: that many, evenly spread across the run, the first and last always in (the desktop's rule).
-    start/end: the epoch-range slider's window into items, inclusive - the spread happens inside it. Both None
-    (no slider, or both knobs at the ends) is the whole run, exactly as before."""
-    if start is not None or end is not None:
-        n = len(items) - 1
-        lo = 0 if start is None else max(0, int(start))
-        hi = n if end is None else min(n, int(end))
-        if hi < lo:
-            lo, hi = hi, lo                       # crossed knobs: the window the other way round
-        items = items[lo:hi + 1]
+def pick(items, max_renders):
+    """Max renders: that many, evenly spread across the run, the first and last always in (the desktop's rule)."""
     if str(max_renders).lower() == "all":
         return items
     n = int(max_renders)

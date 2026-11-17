@@ -4196,8 +4196,7 @@ function imageLossCaption(im, run, live) {
 }
 
 // ---- LoRA Royale: every epoch on one seed, crossfaded (fizgig/web/royale.py; renders on the GPU worker) ----
-S.ry = {wired: false, info: null, items: [], gen: 0, shown: -1, scores: {}, best: null, poll: null,
-  all: [], er: {a: 0, b: 0}, erKey: "", erDirty: false};
+S.ry = {wired: false, info: null, items: [], gen: 0, shown: -1, scores: {}, best: null, poll: null};
 const RY_KEY = "fizgig_royale";
 const rySaved = () => { try { return JSON.parse(localStorage.getItem(RY_KEY) || "{}"); } catch (e) { return {}; } };
 function ryRemember() {
@@ -4214,96 +4213,9 @@ function ryRemember() {
     single: v("rySingle"), cmp: v("ryCPrompts"),
     family: v("ryFamily"), folder: v("ryFolder"), prompt: v("ryPrompt"),
     seed: v("rySeed"), ref: v("ryRef"), refStr: v("ryRefStr"), w: v("ryW"), h: v("ryH"), max: v("ryMax"),
-    like: S.ry.likeRefs || [], out: v("ryOut"), fmt: v("ryFmt"), speed: v("rySpeed"),
-    er: [S.ry.er.a, S.ry.er.b], erKey: S.ry.erKey})); } catch (e) { /* private */ }
+    like: S.ry.likeRefs || [], out: v("ryOut"), fmt: v("ryFmt"), speed: v("rySpeed")})); } catch (e) { /* private */ }
 }
 const ryLabel = (l) => (String(l).match(/^\d+$/) ? `Epoch ${l}` : String(l));
-
-// ---- Royale: the epoch-range slider (the bar is the selection's epochs, the knobs its window) ----
-const ryRound = (x) => {                        // Python's round(): a tie goes to the nearer even whole number
-  const f = Math.floor(x), d = x - f;
-  return Math.abs(d - 0.5) < 1e-9 ? (f % 2 === 0 ? f : f + 1) : (d > 0.5 ? f + 1 : f);
-};
-const ryErNum = (l) => {
-  // the epoch number: an int label as it is, a stem's trailing digits, a snapshot keeps its marker
-  if (typeof l === "number") return String(l);
-  const s = String(l);
-  if (s.startsWith("step ")) return s;
-  const m = s.match(/\d+$/);
-  return m ? String(parseInt(m[0], 10)) : s;
-};
-function ryErPickIdx(win, max) {
-  // the server's own even-spread rule (fizgig/web/royale.py pick), as indexes into win
-  if (String(max).toLowerCase() === "all" || win.length <= Number(max)) return win.map((_, i) => i);
-  const n = Number(max);
-  if (n <= 1) return [0];
-  return [...new Set(Array.from({length: n}, (_, i) => ryRound(i * (win.length - 1) / (n - 1))))]
-    .sort((x, y) => x - y);
-}
-const ryErPicks = (win, max) => ryErPickIdx(win, max).map((i) => win[i][0]);
-const RY_ER_THUMB = 16;                  // the knob's width, and so the distance its centre keeps from each end
-const ryErPos = (frac) => `calc(${(100 * frac).toFixed(3)}% + ${((0.5 - frac) * RY_ER_THUMB).toFixed(3)}px)`;
-function ryErTicks() {
-  // a tick for every epoch the selection holds, oldest to newest, on the line the knob's centre actually travels
-  const items = S.ry.all, n = items.length;
-  $("ryErTicks").replaceChildren(...items.map((it, i) => el("span",
-    {class: "ry-er-tick", title: ryErNum(it[0]), style: `left:${ryErPos(n > 1 ? i / (n - 1) : 0)}`})));
-}
-function ryErRead() {
-  // (window of the selection): the epochs Max renders picks from it - every one, nothing else
-  const items = S.ry.all, n = items.length;
-  if (!n) { $("ryErRead").textContent = ""; return; }
-  const er = S.ry.er, win = items.slice(er.a, er.b + 1);
-  $("ryErRead").textContent = `(${win.length} of ${n}): ${ryErPicks(win, $("ryMax").value).map(ryErNum).join(", ")}` +
-    (S.ry.erDirty ? "  ·  press Render epochs" : "");
-}
-function ryErDraw() {
-  const items = S.ry.all, hi = Math.max(0, items.length - 1), er = S.ry.er, span = hi || 1;
-  er.a = Math.max(0, Math.min(er.a, hi)); er.b = Math.max(er.a, Math.min(er.b, hi));   // a window read back from storage is only so trustworthy
-  $("ryEpochRange").style.display = items.length ? "" : "none";
-  for (const [id, k] of [["ryErStart", "a"], ["ryErEnd", "b"]]) { $(id).max = hi; $(id).value = er[k]; }
-  const fa = er.a / span, fb = er.b / span;
-  $("ryErFill").style.left = ryErPos(fa);
-  $("ryErFill").style.width = `calc(${(100 * (fb - fa)).toFixed(3)}% + ${((fa - fb) * RY_ER_THUMB).toFixed(3)}px)`;
-  $("ryErReset").disabled = !items.length || (er.a === 0 && er.b === hi);   // nothing scanned, or already every epoch: nothing to bounce
-  ryErHighlight();
-  ryErRead();
-}
-function ryErHighlight() {
-  // three states on the bar: outside the window, inside it, and picked for rendering by Max renders
-  const er = S.ry.er, items = S.ry.all, win = items.slice(er.a, er.b + 1);
-  const picked = new Set(ryErPickIdx(win, $("ryMax").value).map((i) => er.a + i));
-  for (const [i, t] of [...$("ryErTicks").children].entries()) {
-    t.classList.toggle("ry-er-in", i >= er.a && i <= er.b);
-    t.classList.toggle("ry-er-pick", picked.has(i));
-  }
-}
-function ryErFollow(items) {
-  // the slider takes the selection from the scan: a new one resets the window to all of it, the same one keeps it
-  const key = `${items.length}|${items[0] ? items[0][1] : ""}|${items.length ? items[items.length - 1][1] : ""}`;
-  S.ry.all = items;
-  if (key !== S.ry.erKey) { S.ry.erKey = key; S.ry.er = {a: 0, b: Math.max(0, items.length - 1)}; S.ry.erDirty = false; }
-  ryErTicks();
-  ryErDraw();
-}
-function ryErMove(which, val) {
-  // the knobs never cross: the window stays a window, and takes effect only when Render epochs is pressed
-  const er = S.ry.er, n = Number(val);
-  if (which === "a") { if (n === er.a) return; er.a = Math.min(n, er.b); }
-  else { if (n === er.b) return; er.b = Math.max(n, er.a); }
-  S.ry.erDirty = true;
-  $("ryErStart").style.zIndex = which === "a" ? "4" : "2";      // the knob you last moved stays the grabbable one
-  $("ryErEnd").style.zIndex = which === "b" ? "4" : "3";
-  ryErDraw();
-}
-function ryErFull() {
-  // both knobs to the ends of the bar: the window is every epoch the folder holds, as it was when scanned
-  const hi = Math.max(0, S.ry.all.length - 1), er = S.ry.er;
-  if (er.a === 0 && er.b === hi) return;
-  er.a = 0; er.b = hi;
-  S.ry.erDirty = true;
-  ryErDraw();                     // like a knob drag: the window is pending until Render epochs, so nothing is persisted
-}
 
 async function royaleOpen() {
   if (!S.ry.wired) {
@@ -4315,8 +4227,6 @@ async function royaleOpen() {
     ryLikeShow();
     for (const [id, k] of [["ryW", "w"], ["ryH", "h"], ["ryMax", "max"], ["ryFmt", "fmt"], ["rySpeed", "speed"]])
       if (sv[k]) $(id).value = sv[k]; else if (id === "ryW" || id === "ryH") $(id).value = "512";
-    if (Array.isArray(sv.er)) S.ry.er = {a: Number(sv.er[0]) || 0, b: Number(sv.er[1]) || 0};
-    if (sv.erKey) S.ry.erKey = String(sv.erKey);
     await royaleFamily(sv.family);
     wireRoyale();
     await wireRoyaleTravel();
@@ -4557,10 +4467,9 @@ async function royaleFamily(key) {
 
 async function royaleScan() {
   const f = $("ryFolder").value.trim();
-  if (!f) { $("ryScan").textContent = ""; ryErFollow([]); return; }
+  if (!f) { $("ryScan").textContent = ""; return; }
   const r = await api("/api/royale/scan?folder=" + encodeURIComponent(f)).catch(() => ({summary: ""}));
   $("ryScan").textContent = r.summary || "";
-  ryErFollow(r.items || []);
 }
 
 async function royaleRender() {
@@ -4568,14 +4477,13 @@ async function royaleRender() {
     const r = await api("/api/royale/render", {family: $("ryFamily").value, folder: $("ryFolder").value.trim(),
       prompt: $("ryPrompt").value.trim(), seed: seedOf("rySeed"), ref: $("ryRef").value.trim(),
       ref_strength: refStrength($("ryRefStr").value), width: Number($("ryW").value), height: Number($("ryH").value),
-      max: $("ryMax").value, start: S.ry.er.a, end: S.ry.er.b});
+      max: $("ryMax").value});
     if (r.family !== $("ryFamily").value) {         // the checkpoints are another model's: follow them (as the desktop)
       await royaleFamily(r.family);
       $("ryStatus").textContent = `Switched to ${$("ryFamily").selectedOptions[0].text} to match the checkpoints.`;
     }
     S.ry.items = []; S.ry.shown = -1; S.ry.scores = {}; S.ry.best = null;
     $("ryLikeStatus").textContent = ""; $("ryBest").disabled = true;
-    S.ry.erDirty = false; ryErRead();               // the window is being rendered now: no pending change
     ryRemember();
     royalePoll();
   } catch (e) { $("ryStatus").textContent = e.message; }
@@ -4681,10 +4589,6 @@ function wireRoyale() {
   const remember = () => ryRemember();
   for (const id of ["ryPrompt", "rySeed", "ryRefStr", "ryW", "ryH", "ryMax", "ryFmt", "rySpeed", "ryOut"])
     $(id).addEventListener("change", remember);
-  for (const [id, k] of [["ryErStart", "a"], ["ryErEnd", "b"]])
-    $(id).addEventListener("input", () => ryErMove(k, $(id).value));
-  $("ryErReset").addEventListener("click", ryErFull);   // both knobs back to the ends of the bar, in one press
-  $("ryMax").addEventListener("change", ryErDraw);   // a different Max renders: the preview and the picked ticks change with it
   $("ryFamily").addEventListener("change", () => { royaleFamily($("ryFamily").value); remember(); });
   $("ryFolder").addEventListener("change", () => { royaleScan(); remember(); });
   $("ryFolderPick").addEventListener("click", () => pick($("ryFolder").value || S.outputDefault, true, (p) => {

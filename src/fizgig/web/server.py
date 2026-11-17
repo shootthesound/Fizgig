@@ -4967,7 +4967,7 @@ class Handler(BaseHTTPRequestHandler):
                 from fizgig.web import royale
                 fams = {d.key: d for d in royale.families()}
                 scan = royale.scan(str(b.get("folder") or "").strip())
-                items = royale.pick(scan["items"], b.get("max") or "12", b.get("start"), b.get("end"))
+                items = royale.pick(scan["items"], b.get("max") or "12")
                 if not items:
                     raise ValueError("No checkpoints found - pick a folder with trained LoRAs.")
                 prompt = str(b.get("prompt") or "").strip()

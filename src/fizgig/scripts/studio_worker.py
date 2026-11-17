@@ -15,6 +15,8 @@ import sys
 import threading
 import traceback
 
+import torch
+
 EV = "@@EV "
 _out_lock = threading.Lock()
 
@@ -65,7 +67,7 @@ def cmd_load(c):
         plan["preview_sampling"] = ck[1] if ck else None
     else:
         plan["preview_sampling"] = None
-    if str(plan.get("blocks_to_swap", "")).lower().startswith("auto") and desc.key != "krea2":
+    if str(plan.get("blocks_to_swap", "")).lower().startswith("auto") and not (torch.version.hip and desc.key == "krea2"):
         plan["blocks_to_swap"] = _auto_swap()
     with _engine_lock:
         eng = S["engine"]
@@ -548,7 +550,7 @@ def _plan_for(desc, plan):
         plan["preview_sampling"] = ck[1] if ck else None
     else:
         plan["preview_sampling"] = None
-    if str(plan.get("blocks_to_swap", "")).lower().startswith("auto") and desc.key != "krea2":
+    if str(plan.get("blocks_to_swap", "")).lower().startswith("auto") and not (torch.version.hip and desc.key == "krea2"):
         plan["blocks_to_swap"] = _auto_swap()
     return plan
 

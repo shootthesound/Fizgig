@@ -15,6 +15,8 @@ import sys
 import time
 import traceback
 
+import torch
+
 
 def out(tag, **d):
     sys.stdout.write(f"@@{tag} " + json.dumps(d, default=str) + "\n")
@@ -69,7 +71,7 @@ def main(job_path):
                 plan["preview_sampling"] = ck[1] if ck else None
             else:
                 plan["preview_sampling"] = None
-            if str(plan.get("blocks_to_swap", "")).lower().startswith("auto") and desc.key != "krea2":
+            if str(plan.get("blocks_to_swap", "")).lower().startswith("auto") and not (torch.version.hip and desc.key == "krea2"):
                 plan["blocks_to_swap"] = _auto_swap()
             out("P", text=f"Loading {desc.display_name}…")
             eng = desc.make_workbench_engine()

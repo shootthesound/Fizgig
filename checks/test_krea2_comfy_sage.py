@@ -62,40 +62,12 @@ class ComfySageChecks(unittest.TestCase):
         torch.testing.assert_close(got, want.transpose(1, 2).flatten(2))
         self.assertEqual(self.calls, [(12, 4, 3, 8)])
 
-    def test_benchmark_compares_equivalent_masked_attention(self):
-        from checks.bench_krea2_sageattention import before
-        def exact(q, k, v, **kwargs):
-            return F.scaled_dot_product_attention(q, k, v, enable_gqa=q.shape[1] != k.shape[1])
-        q = torch.randn(2, 9, 4, 8)
-        k, v = torch.randn(2, 9, 2, 8), torch.randn(2, 9, 2, 8)
-        for lens in ([6, 6], [6, 8]):
-            mask = torch.arange(5)[None, :] < torch.tensor(lens)[:, None] - 4
-            params = A.AttentionParams.create_attention_params_from_mask("sageattn", True, 4, mask)
-            with torch.no_grad(), patch.object(A, "sageattn", side_effect=exact):
-                torch.testing.assert_close(before(q, k, v, params), A.attention(q, k, v, params))
 
     def model(self):
         return SingleStreamDiT(SingleMMDiTConfig(
             features=64, tdim=32, txtdim=24, heads=4, kvheads=2, multiplier=2,
             layers=2, patch=2, channels=16, txtlayers=3, txtheads=4, txtkvheads=2)).float().eval()
 
-    def test_fp32_reference_chunks_queries_and_preserves_padding(self):
-        from checks.bench_krea2_sageattention import reference
-        q = torch.randn(2, 273, 4, 8).to(torch.bfloat16)
-        k, v = [torch.randn(2, 273, 2, 8).to(torch.bfloat16) for _ in range(2)]
-        lens = [267, 259]
-        mask = torch.arange(273)[None, :] < torch.tensor(lens)[:, None]
-        params = A.AttentionParams.create_attention_params_from_mask("sageattn", True, 0, mask)
-        got = reference(q, k, v, params)
-        self.assertEqual(got.dtype, torch.float32)
-        for i, length in enumerate(lens):
-            qh = q[i:i+1, :length].transpose(1, 2).double()
-            kh = k[i:i+1, :length].transpose(1, 2).double().repeat_interleave(2, dim=1)
-            vh = v[i:i+1, :length].transpose(1, 2).double().repeat_interleave(2, dim=1)
-            want = ((qh @ kh.transpose(-1, -2) / q.shape[-1] ** .5).softmax(-1) @ vh)
-            torch.testing.assert_close(got[i:i+1, :length], want.transpose(1, 2).flatten(2).float(),
-                                       atol=1e-6, rtol=1e-5)
-            self.assertEqual(torch.count_nonzero(got[i, length:]).item(), 0)
 
     def test_forward_and_cached_resume_skip_shape_padding(self):
         model = self.model()

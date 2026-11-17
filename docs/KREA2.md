@@ -41,16 +41,8 @@ shape padding, including Studio's cached forwards. A failing forced kernel stops
 Reference: [ComfyUI attention](https://github.com/Comfy-Org/ComfyUI/blob/master/comfy/ldm/modules/attention.py)
 and [Krea 2 model](https://github.com/Comfy-Org/ComfyUI/blob/master/comfy/ldm/krea2/model.py).
 
-To compare the previous Sage wrapper with this one on your GPU:
-
-```bash
-venv/bin/python checks/bench_krea2_sageattention.py > krea2-sage-results.json
-```
-
-This measures synthetic attention timing and allocated VRAM over repeated runs, then compares both wrappers
-against FP32 math attention outside the timed region. It does not measure complete images or certify their
-quality. For a ComfyUI comparison, also match the checkpoint, weight precision, resolution,
-prompt, steps and CFG, and compare warmed-up renders. Weight offloading and VAE decoding can still differ.
+For a ComfyUI comparison, match the checkpoint, precision, resolution, prompt, steps and CFG.
+Compare warmed-up renders; weight offloading and VAE decoding can still differ.
 
 ## High-resolution generation
 
@@ -107,13 +99,11 @@ not original main or the unchanged 500 MiB commit. Both policies preserve the sa
 encoder with BF16 VAE; the `bf16` workbench label means no additional DiT quantization. See
 `user_data/profiles/file_backed_four_2026-11-17/report.json` for the repeat measurements.
 If ordinary VAE decoding runs out of memory, it retries with the existing tiled decoder and releases its
-feature cache. Single-image encoding and decoding skip temporal feature caches, as ComfyUI does; video
-passes retain them. On ROCm, single causal frames also use only the final temporal convolution slice, avoiding
-two zero frames of padding and their convolution work, as ComfyUI does. BF16 rounding and tiled decoding
+feature cache. Single-frame VAE cache removal is proposed separately. The temporal convolution shortcut is deferred. BF16 rounding and tiled decoding
 can change pixels slightly. More offloading also means more CPU RAM and
 transfer time; this does not guarantee that every resolution fits.
 
-The Turbo checkpoint preset uses **8 steps, CFG 1, Euler / beta**, matching ComfyUI's eight-step schedule.
+The Turbo checkpoint preset retains **8 steps, CFG 1, Euler / simple**. The beta schedule is proposed separately.
 Other step counts retain the existing simple schedule. These changes apply to the workbench engine used
 by Studio, Royale and Profiler; they do not change training's memory policy.
 
@@ -210,3 +200,7 @@ The text-encoder slot is **open**: any Qwen3-VL-4B in the ComfyUI layout loads â
 The two DiT slots are open too: point them at your own Krea 2 checkpoints from ComfyUI's `diffusion_models` folder, fine-tunes included. fp8 builds (fp8_scaled, fp8mixed) run as they are. int8 builds (int8 ConvRot, int8mixed) and older scaled_fp8 files are decoded to bf16 as they load, and then Fizgig's own precision applies, so they take a couple of minutes longer to load. A Turbo build goes in the Turbo slot, since previews render it in 8 steps without CFG.
 
 General install steps are in [INSTALL.md](INSTALL.md).
+
+Review scope: custom low-memory mode, Auto precision and resolution-aware block swapping apply only on ROCm.
+NVIDIA retains the generic workbench defaults and Studio/Profiler block-swap preferences. Historical timings
+above include the separately proposed beta schedule and VAE optimizations; they do not validate this split.

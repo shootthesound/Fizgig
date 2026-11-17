@@ -1,5 +1,4 @@
-"""CPU checks for Krea 2's inference memory lifecycle and ComfyUI Turbo recipe."""
-import math
+"""CPU checks for Krea 2's inference memory lifecycle."""
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
@@ -364,6 +363,20 @@ class InferenceMemoryChecks(unittest.TestCase):
         self.assertEqual([c.args[0] for c in park.call_args_list], ["cuda", "cpu", "cpu"])
         self.assertEqual([c.args[0] for c in engine.vae.to.call_args_list], ["cuda", "cpu"])
 
+    def test_non_rocm_pipeline_preserves_generic_arguments(self):
+        engine = self.engine
+        with patch.object(torch.version, "hip", None), \
+                patch.object(WorkbenchEngine, "ensure_pipeline") as load:
+            engine.ensure_pipeline("model", "vae", "te", precision="auto", blocks_to_swap="auto", device="cuda", lowmem=False)
+        self.assertFalse(engine._auto_swap)
+        self.assertFalse(engine.driver._file_backed_inference)
+        self.assertEqual(load.call_args.kwargs, dict(precision="auto", blocks_to_swap="auto", device="cuda", lowmem=False))
+
+    def test_non_rocm_worker_keeps_block_swap_preference(self):
+        from fizgig.scripts import studio_worker
+        with patch.object(torch.version, "hip", None), patch.object(studio_worker, "_auto_swap", return_value=12):
+            self.assertEqual(studio_worker._plan_for(get("krea2"), {"blocks_to_swap": "auto"})["blocks_to_swap"], 12)
+
     def test_auto_survives_worker_plan_only_for_krea2(self):
         from fizgig.scripts.studio_worker import _plan_for
         from fizgig.scripts import studio_worker
@@ -389,15 +402,6 @@ class InferenceMemoryChecks(unittest.TestCase):
             vae.clear_cache.assert_called()
             self.assertEqual(vae.calls, 2 if error is torch.OutOfMemoryError else 1)
 
-    def test_turbo_recipe_matches_comfy_beta_grid(self):
-        recipe = get("krea2").preview_checkpoint_sampling
-        self.assertEqual((recipe.steps, recipe.cfg, recipe.sampler, recipe.scheduler), (8, 1., "euler", "beta"))
-        # ComfyUI beta(.6,.6) inverse-CDF grid indices; compare the Flux shift independently.
-        indices = [9999, 9427, 8242, 6706, 5000, 3293, 1757, 572]
-        want = [math.exp(1.15) / (math.exp(1.15) + 10000 / (i + 1) - 1) for i in indices]
-        self.assertEqual(len(recipe.sigmas), 8)
-        for got, expected in zip(recipe.sigmas, want):
-            self.assertAlmostEqual(got, expected, places=6)
 
 
 if __name__ == "__main__":

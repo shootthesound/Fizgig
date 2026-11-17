@@ -127,12 +127,9 @@ KREA2 = FamilyDescription(
     "Blocks Swap, since swapping moves weights and compiled graphs assume they stay put."),
     preview_image=True,
     preview_checkpoint_sampling=SamplingSettings(
-        "Turbo checkpoint", steps=8, cfg=1.0, sampler="euler", scheduler="beta", options=(("mu", 1.15),),
-        # ComfyUI beta(.6, .6), eight steps on ModelSamplingFlux's 10,000-point grid, shift=1.15.
-        sigmas=(1.0, 0.9811515808105469, 0.9367757439613342, 0.8654545545578003,
-                0.7595839500427246, 0.6080445647239685, 0.4024982750415802, 0.16104847192764282),
-        note="The distilled Turbo: 8 steps, CFG 1, Euler / beta, matching ComfyUI. Other step counts use the simple schedule.",
-        source="ComfyUI comfy/samplers.py beta_scheduler and comfy/model_sampling.py ModelSamplingFlux"),
+        "Turbo checkpoint", steps=8, cfg=1.0, sampler="euler", scheduler="simple", options=(("mu", 1.15),),
+        note="The distilled Turbo: CFG-free, mu pinned at 1.15, as the original workbench.",
+        source="the original Krea 2 workbench engine (removed with the original family)"),
     int8_attention=True,              # workbench renders: comfy-kitchen's INT8 attention
     activation_cache=True,            # Reuse unchanged blocks: step-1 replay, identical to a full render
     finetune=True,

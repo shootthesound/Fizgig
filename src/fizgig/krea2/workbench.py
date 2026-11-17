@@ -29,6 +29,11 @@ class Krea2WorkbenchEngine(WorkbenchEngine):
     def ensure_pipeline(self, dit_path, *args, precision="auto", blocks_to_swap="auto", device="cuda", **kw):
         if self.pipeline is not None:
             return
+        if not torch.version.hip:
+            self._auto_swap = False
+            self.driver._file_backed_inference = False
+            return super().ensure_pipeline(dit_path, *args, precision=precision,
+                                           blocks_to_swap=blocks_to_swap, device=device, **kw)
         self._auto_swap = str(blocks_to_swap).lower().startswith("auto") and torch.device(device).type == "cuda"
         self._reserve_extra = 0
         if self._auto_swap:
@@ -49,6 +54,8 @@ class Krea2WorkbenchEngine(WorkbenchEngine):
         release_mapped_pages(getattr(self.dit, "_cpu_weight_masters", {}).values())
 
     def _park_dit(self, where):
+        if not torch.version.hip:
+            return super()._park_dit(where)
         if self.dit is None:
             return
         if torch.device(where).type == "cpu":

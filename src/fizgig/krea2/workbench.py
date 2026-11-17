@@ -101,9 +101,9 @@ class Krea2WorkbenchEngine(WorkbenchEngine):
                 previous_fraction = torch.cuda.get_per_process_memory_fraction(device)
                 free, total = torch.cuda.mem_get_info(device)
                 # Allocator retries can otherwise consume the desktop's framebuffer memory on ROCm.
-                available = free + torch.cuda.memory_reserved(device) - int(1.5 * GIB)
+                available = free + torch.cuda.memory_reserved(device) - 500 * 1024 ** 2
                 if available <= 0:
-                    raise torch.OutOfMemoryError("Krea 2 needs 1.5 GiB of GPU headroom for the desktop")
+                    raise torch.OutOfMemoryError("Krea 2 needs 500 MiB of GPU headroom for the desktop")
                 fraction = min(previous_fraction, available / total)
                 torch.cuda.set_per_process_memory_fraction(fraction, device)
                 allocator_limit = fraction * total

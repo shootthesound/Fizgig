@@ -134,19 +134,19 @@ class InferenceMemoryChecks(unittest.TestCase):
                     else:
                         self.assertEqual(engine.render({}, 2048, 2048, 42), "image")
                 self.assertEqual([c.args for c in limit.call_args_list],
-                                 [(min(previous, 10.5 / 16), expected_device),
+                                 [(min(previous, (12 - 500 / 1024) / 16), expected_device),
                                   (previous, expected_device)])
 
     def test_no_desktop_headroom_fails_before_sampling(self):
         with patch.object(torch.version, "hip", "test"), \
                 patch.object(torch.cuda, "is_available", return_value=True), \
                 patch.object(torch.cuda, "get_per_process_memory_fraction", return_value=1.), \
-                patch.object(torch.cuda, "mem_get_info", return_value=(W.GIB, 16 * W.GIB)), \
+                patch.object(torch.cuda, "mem_get_info", return_value=(250 * 1024 ** 2, 16 * W.GIB)), \
                 patch.object(torch.cuda, "memory_reserved", return_value=0), \
                 patch.object(torch.cuda, "set_per_process_memory_fraction"), \
                 patch.object(self.engine, "_park_dit"), \
                 patch.object(WorkbenchEngine, "render") as sample, \
-                self.assertRaisesRegex(torch.OutOfMemoryError, "desktop"):
+                self.assertRaisesRegex(torch.OutOfMemoryError, "500 MiB.*desktop"):
             self.engine.render({}, 2048, 2048, 42)
         sample.assert_not_called()
 
@@ -168,7 +168,7 @@ class InferenceMemoryChecks(unittest.TestCase):
                 patch.object(engine, "_set_swap") as change, patch.object(engine, "_park_dit"), \
                 patch.object(WorkbenchEngine, "render", return_value="image"):
             engine.render({}, 512, 512, 42)
-        change.assert_called_once_with(5)
+        change.assert_called_once_with(4)
 
     def test_nvidia_render_does_not_change_allocator_limit(self):
         with patch.object(torch.version, "hip", None), \

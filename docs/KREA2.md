@@ -64,10 +64,11 @@ The DiT parks on CPU during text encoding and VAE decoding, including when block
 On ROCm, Krea 2 leaves the DiT and VAE on CPU after rendering and releases unused GPU allocations. The next render
 restores the streaming layout; Auto also budgets for CPU-resident embedders, adapters and buffers that must
 return to the GPU. Keeping weights in system RAM does not match ComfyUI's fast-disk storage policy.
-ROCm renders also cap the PyTorch allocator to leave 1.5 GiB beyond memory already used by other processes.
+ROCm renders also cap the PyTorch allocator to leave 500 MiB beyond memory already used by other processes.
 Auto plans against this cap; a stricter existing cap is preserved, and the previous cap is restored after
-the DiT parks. One 2048×2048 RX 9070 XT run passed with this guard; the user subsequently confirmed
-repeated runs without crashes, with slightly higher RAM usage than ComfyUI.
+the DiT parks. The previous 1.5 GiB margin passed a 2048×2048 RX 9070 XT run and subsequent user-reported
+repeated runs without crashes, with slightly higher RAM usage than ComfyUI. The reduced 500 MiB margin
+also passed subsequent user-reported repeated-run testing on the RX 9070 XT.
 If ordinary VAE decoding runs out of memory, it retries with the existing tiled decoder and releases its
 feature cache. Single-image encoding and decoding skip temporal feature caches, as ComfyUI does; video
 passes retain them. On ROCm, single causal frames also use only the final temporal convolution slice, avoiding
@@ -110,7 +111,8 @@ During the first sampling pass, the kernel reported insufficient memory for comm
 the absence of a reset does not establish desktop stability. This run predates the hard allocator cap above.
 The original Studio worker exit remains unreproduced.
 
-With the corrected cap, one further gfx1201 / RX 9070 XT run completed at 2048×2048, seed 42, with the same
+With the corrected cap and its original 1.5 GiB headroom, one further gfx1201 / RX 9070 XT run completed
+at 2048×2048, seed 42, with the same
 rank-32 primary and neutral prompt. Auto offloaded 8 blocks instead of 5. Sampling took 46.7 s, with 11.95 GiB
 peak allocated / 12.44 GiB peak reserved and no allocator OOM warnings. Decode took 5.1 s including its
 recoverable switch to tiled decoding. Idle GPU allocation was 0.078 GiB; process RSS was 17.8 GiB.

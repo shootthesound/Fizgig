@@ -21,6 +21,7 @@ import re
 from fizgig.utils.image import flatten
 from fizgig.utils.upright import open_upright
 
+from fizgig.dataset.caption_file import read_caption
 from fizgig.dataset.masks import is_mask_file
 
 REPO = "ShootTheSound/fizgig-multi-person-strangers"
@@ -104,8 +105,7 @@ def sample_caption(folder, trigger, ext=".txt"):
     first = ""
     for n in names:
         try:
-            with open(os.path.join(folder, n), encoding="utf-8", errors="replace") as f:
-                c = f.read().strip()
+            c = read_caption(os.path.join(folder, n)).strip()      # as training reads it
         except OSError:
             continue
         first = first or c
@@ -192,8 +192,7 @@ def _captions(folder, ext):
     out = []
     for n in names:
         try:
-            with open(os.path.join(folder, n), encoding="utf-8", errors="replace") as f:
-                out.append(f.read().strip())
+            out.append(read_caption(os.path.join(folder, n)).strip())
         except OSError:
             pass
     return out

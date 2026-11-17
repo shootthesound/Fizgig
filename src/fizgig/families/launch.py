@@ -46,6 +46,7 @@ import re
 from dataclasses import dataclass, field
 from fizgig.utils.upright import upright_size
 
+from fizgig.dataset.caption_file import read_caption
 from fizgig.dataset.masks import is_mask_file
 
 PRECISION_LABELS = {"auto": "Auto (fits your free VRAM)", "bf16": "bf16 (full precision)",
@@ -296,8 +297,7 @@ def _reg_captions(folder, ext):
         return out
     for n in names:
         try:
-            with open(os.path.join(folder, os.path.splitext(n)[0] + ext), encoding="utf-8", errors="replace") as fh:
-                out[n] = fh.read()
+            out[n] = read_caption(os.path.join(folder, os.path.splitext(n)[0] + ext))   # as training reads it
         except OSError:
             out[n] = None
     return out
@@ -457,8 +457,7 @@ def start_checks(desc, st, image_folder):
         for f in items:
             p = os.path.join(folder, os.path.splitext(f)[0] + cap)
             try:
-                with open(p, encoding="utf-8", errors="replace") as fh:
-                    texts[f] = fh.read()
+                texts[f] = read_caption(p)          # as training reads it: UTF-16, Windows-1252 too
             except OSError:
                 texts[f] = None
         none = [f for f, t in texts.items() if t is None or not t.strip()]
@@ -483,8 +482,7 @@ def start_checks(desc, st, image_folder):
             if not f.lower().endswith(ext.lower()):
                 continue
             try:
-                with open(os.path.join(d, f), encoding="utf-8", errors="replace") as fh:
-                    text = fh.read()
+                text = read_caption(os.path.join(d, f))
             except OSError:
                 continue
             if text.strip() and not pat.search(text):
@@ -594,8 +592,7 @@ def edit_instructions(inputs):
             b, e = os.path.splitext(f)
             cap = os.path.join(folder, b + ext)
             if e.lower() in PAIR_EXTS and os.path.exists(cap):
-                with open(cap, encoding="utf-8") as fh:
-                    line = fh.read().strip().splitlines()
+                line = read_caption(cap).strip().splitlines()      # Windows-1252 / UTF-16 too: never a crash
                 if line and line[0].strip():
                     return [line[0].strip()]
     except OSError:

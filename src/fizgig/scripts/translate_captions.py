@@ -77,8 +77,8 @@ def main():
         _say(f"PROGRESS: {i} {len(files)}")
         name = os.path.basename(fp)
         try:
-            with open(fp, encoding="utf-8") as f:
-                original = f.read().strip()
+            from fizgig.dataset.caption_file import read_caption
+            original = read_caption(fp).strip()          # as training reads it: a Windows-1252 caption no longer FAILs
             if not original:
                 skipped += 1
                 _say(f"SKIP: {name} (empty)")

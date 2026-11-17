@@ -43,8 +43,9 @@ def _plan(tmp_path, fam="minimax", iso=True, dop=False, **values):
 
 
 def test_isolation_or_dop_with_automagic_trains_with_adamw(tmp_path):
-    for opt, kw in (("automagic3", {"iso": True}), ("automagic4", {"iso": True}), ("automagic3", {"iso": False, "dop": True})):
-        desc, inp, p, a = _plan(tmp_path, OPTIMIZER_TYPE=opt, **kw)
+    for fam, opt, kw in (("minimax", "automagic3", {"iso": True}), ("minimax", "automagic4", {"iso": True}),
+                         ("minimax", "automagic3", {"iso": False, "dop": True}), ("krea2", "automagic3", {"iso": True})):
+        desc, inp, p, a = _plan(tmp_path, fam=fam, OPTIMIZER_TYPE=opt, **kw)      # any model, not only H3
         assert (a.optimizer_type, a.learning_rate) == ("adamw", 2e-4)
         assert any("AdamW at 2e-4 instead of Automagic" in c for c in p.console)
         assert any("instead of Automagic" in w for w in launch.start_checks(desc, inp, ""))

@@ -157,6 +157,26 @@ def _slider_value(text):
     return " " + text if text.startswith("-") else text
 
 
+_FLAG = re.compile(r"--[A-Za-z][\w-]*")
+
+
+def _dash_values(cmd):
+    """A box's value that starts with "-" (a negative "-blurry", a title "-test", a trigger word) goes as
+    --flag=value: argparse reads a lone "-word" after a flag as another option and the run stopped at launch.
+    Numbers stay as they are (argparse takes "-1"); a value after another value (a list) is its builder's
+    (_slider_value)."""
+    out = []
+    for tok in cmd:
+        if tok.startswith("-") and not _FLAG.fullmatch(tok) and out and _FLAG.fullmatch(out[-1]):
+            try:
+                float(tok)
+            except ValueError:
+                out[-1] = f"{out[-1]}={tok}"
+                continue
+        out.append(tok)
+    return out
+
+
 _SWAPS = {}
 
 
@@ -1229,7 +1249,7 @@ def train_command(desc, inputs, plan):
     cont = (st.get("FAMILY_FT_CONTINUE") or {}) if ft_on(desc, st) else {}
     if cont.get("checkpoint"):       # after the options: a model option's own --dit (H3's reference base) is what the
         cmd[cmd.index("--dit") + 1] = cont["checkpoint"]     # paused run started from; its checkpoint goes on
-    return cmd
+    return _dash_values(cmd)
 
 
 def _preview_flags(desc, st, plan, cmd):
@@ -2037,7 +2057,7 @@ def plan(desc, inputs):
         trig = _s(inputs.get("caption_trigger"))
         if trig and trig.lower() != "trigger_word":
             cmd += ["--trigger", trig]
-        p.stages.append(Stage("Detail crops", cmd))
+        p.stages.append(Stage("Detail crops", _dash_values(cmd)))
     if caches(desc, inputs):
         p.stages += [Stage("Cache Preparation", cache_command(desc, inputs, "latents")),
                      Stage("Text Encoder Caching", cache_command(desc, inputs, "text"))]

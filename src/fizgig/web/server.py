@@ -278,7 +278,10 @@ def _side_extras() -> dict:
     try:
         c = captions.status()
         if c["state"] in ("loading", "running", "translating"):
-            jobs.append({"what": "Translating captions" if c["state"] == "translating" else "Captioning",
+            jobs.append({"what": "Translating captions" if c["state"] == "translating" else
+                         f"Downloading {c.get('model') or 'the caption model'}" if c["state"] == "loading"
+                         and c.get("phase") == "downloading" else
+                         f"Loading {c.get('model') or 'the caption model'}" if c["state"] == "loading" else "Captioning",
                          "done": c.get("done") or 0, "total": c.get("total") or 0, "tab": "captions"})
         if c.get("loaded"):
             loaded.append({"what": "Caption model", "name": c.get("model") or "", "tab": "captions"})

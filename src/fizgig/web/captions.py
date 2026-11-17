@@ -172,6 +172,7 @@ def _log(line):
 def status():
     with _lock:
         out = {k: _st[k] for k in ("state", "job", "done", "total", "ok", "fail", "model")}
+        out["phase"] = _st.get("phase") or "loading"      # while state is "loading": "downloading" or "loading"
         out["log"] = _st["log"][-200:]
         out["loaded"] = _st["proc"] is not None and _st["proc"].poll() is None
     return out
@@ -437,6 +438,10 @@ def _reader(proc):
                 if _st["state"] == "loading":
                     _st["state"] = "running" if _st["job"] else "loaded"     # a queued job goes straight on
                 continue
+            if line.startswith("INFO: Downloading "):     # loading in two steps the first time (#366)
+                _st["phase"] = "downloading"
+            elif line.startswith("INFO: Loading "):
+                _st["phase"] = "loading"
             m = re.match(r"PROGRESS: (\d+) (\d+)", line)
             if m:
                 _st["done"], _st["total"] = int(m.group(1)), int(m.group(2))
@@ -517,7 +522,7 @@ def ai_captions(prefs, captioner, folder, model, task_label, instruction, max_to
         proc = _popen([sys.executable, "-m", "fizgig.scripts.batch_caption", "--serve", "--config", cfg_path], prefs,
                       stdin=True)
         with _lock:
-            _st.update(proc=proc, key=key, state="loading", model=model, ready=threading.Event())
+            _st.update(proc=proc, key=key, state="loading", model=model, ready=threading.Event(), phase="loading")
         _log(f"Loading {model}…")
         threading.Thread(target=_reader, args=(proc,), daemon=True).start()
     list_file, stop_file = os.path.join(JOB_DIR, "images.txt"), os.path.join(JOB_DIR, "stop")
@@ -607,7 +612,13 @@ def translate(prefs, folder, skip_existing, ext=".txt"):
 
 
 def stop():
-    """Stop the running job after the file it is on (the model stays loaded)."""
+    """Stop the running job after the file it is on (the model stays loaded). While the model is still downloading
+    or loading there is no file yet: Stop cancels the load and frees its memory (#366: it couldn't be stopped)."""
+    with _lock:
+        loading = _st["state"] == "loading"
+    if loading:
+        unload()
+        return True
     os.makedirs(JOB_DIR, exist_ok=True)
     open(os.path.join(JOB_DIR, "stop"), "w").close()
     _log("Stopping after the current file…")
@@ -617,10 +628,12 @@ def stop():
 def unload():
     """Quit the worker: its GPU memory is freed. Called before any training run starts."""
     with _lock:
-        proc = _st["proc"]
+        proc, loading = _st["proc"], _st["state"] == "loading"
     if proc is None or proc.poll() is not None:
         return False
     try:
+        if loading:              # downloading or loading: it reads no command until READY, so it's ended
+            raise RuntimeError("still loading")
         proc.stdin.write("QUIT\n")
         proc.stdin.flush()
         proc.wait(timeout=20)

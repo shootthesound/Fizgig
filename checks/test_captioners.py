@@ -118,6 +118,7 @@ def test_a_stub_captioner_goes_through_the_worker(tmp_path, monkeypatch):
                                 files=HFRepo("a/b", "0" * 40), licence="MIT", vram_gb=1.0)
     monkeypatch.setattr(captioners, "get", lambda k: desc if k == "stub" else None)
     monkeypatch.setattr(captioners, "make", lambda d, dev, files, precision="": _Stub(d, dev, files, precision))
+    monkeypatch.setattr(bc, "_download_first", lambda d, files: None)      # its repo is made up: nothing to fetch
     img = tmp_path / "a.png"
     Image.new("RGBA", (16, 16), (0, 0, 0, 0)).save(img)      # see-through: must reach the captioner as white
     (tmp_path / "list.txt").write_text(str(img) + "\n", encoding="utf-8")

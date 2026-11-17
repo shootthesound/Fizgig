@@ -101,6 +101,18 @@ class CaptionState:
         self.desc, self.captioner, self.include_video = desc, captioner, include_video
 
 
+def _download_first(desc, files) -> None:
+    """A captioner not on this machine yet is downloaded before it loads, saying so (#366): the page shows
+    "Downloading ..." and then "Loading ... into memory", not one message for both."""
+    from fizgig import captioners
+    try:
+        from huggingface_hub import snapshot_download
+        snapshot_download(files["repo"], revision=files["revision"], local_files_only=True)
+    except Exception:
+        print(f"INFO: Downloading {desc.label} (the first time only)...", flush=True)
+        captioners.captioner_class(desc).fetch(desc, files)
+
+
 def _load_state_from_config(config: dict, device: str) -> CaptionState:
     """config: {"captioner": a registry key, "files": {"path"} for one whose file Preferences holds, "include_video"}."""
     from fizgig import captioners
@@ -113,6 +125,8 @@ def _load_state_from_config(config: dict, device: str) -> CaptionState:
         files = {"path": (config.get("files") or {}).get("path") or ""}
         if not files["path"]:
             raise ValueError(f"{desc.label} needs its model file")
+    if isinstance(desc.files, captioners.HFRepo):
+        _download_first(desc, files)
     free = None
     if device == "cuda" and desc.precisions:
         free = torch.cuda.mem_get_info()[0] / 2 ** 30

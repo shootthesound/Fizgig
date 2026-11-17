@@ -8746,12 +8746,14 @@ async function pollCaptions() {
   $("capBar").style.width = (busy ? pct : 0).toFixed(1) + "%";
   $("capStatus").textContent = {
     idle: "No model loaded.", loaded: `${st.model} is loaded, ready.`,
-    loading: `Loading ${st.model}… (the first time it downloads)`,
+    loading: st.phase === "downloading" ? `Downloading ${st.model}… (the first time only). Stop cancels it.`
+      : `Loading ${st.model} into memory… Stop cancels it.`,
     running: `Captioning ${st.done} of ${st.total}` + (st.fail ? ` · ${st.fail} failed` : ""),
     translating: st.total ? `Translating ${st.done} of ${st.total}` : "Loading the translator…",
   }[st.state] || st.state;
   $("capAll").disabled = busy; $("capStatic").disabled = busy; $("capTranslate").disabled = busy;
-  $("capStop").disabled = !busy; $("capUnload").disabled = busy || !st.loaded;
+  // Unload while it is still loading too: it ends the load and frees what it took (#366)
+  $("capStop").disabled = !busy; $("capUnload").disabled = (busy && st.state !== "loading") || !st.loaded;
   const log = $("capLog");
   const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
   log.textContent = st.log.join("\n");

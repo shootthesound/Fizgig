@@ -85,7 +85,8 @@ def test_swaps_and_parking_preserve_frozen_weights_and_editable_state(tmp_path):
         blocks[0][0].base.bias.add_(.25)  # A Studio bias delta must survive parking.
         x = torch.randn(2, 8)
         expected = [b(x).clone() for b in blocks]
-        with patch.object(torch.cuda, 'synchronize'), patch.object(torch.cuda, 'is_available', return_value=False):
+        with patch.object(torch.version, 'hip', 'test'), patch.object(torch.cuda, 'synchronize'), \
+                patch.object(torch.cuda, 'is_available', return_value=False):
             engine._park_dit('cpu')
         for block, reference in zip(blocks, expected):
             torch.testing.assert_close(block(x), reference)

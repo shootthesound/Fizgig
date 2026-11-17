@@ -520,6 +520,8 @@ def start_checks(desc, st, image_folder):
             out.append(f"{len(lack)} detail crop caption{'s' if len(lack) != 1 else ''} in {rel} don't contain the "
                        f"trigger word '{trig}': those crops train without it.")
     out += lora_reg_warnings(desc, st)
+    if dop_automagic(desc, st):
+        out.append(dop_automagic_line(desc, st))
     if (not st.get("ADAPTIVE_LR") and (ft_on(desc, st) or not (automagic(st) or prodigy(st)))):
         # Automagic sets its own rate, Prodigy's 1.0 is a multiplier; a fine-tune trains at the box's rate
         kind = "finetune" if ft_on(desc, st) else "slider" if slider_on(desc, st) else "lora"
@@ -1655,6 +1657,24 @@ def automagic(inputs):
     return _s(inputs.get("OPTIMIZER_TYPE")).lower() in ("automagic3", "automagic4")
 
 
+DOP_OPTIMIZER = ("adamw", "2e-4")     # what a DOP / Isolation run trains with in Automagic's place (H3's Slider recipe)
+
+
+def dop_automagic(desc, st):
+    """Automagic (v3 or v4) picked for a run with Leave the rest of the model alone or Fizgig LoRA Isolation. DOP's
+    pass runs on every second step and pulls the LoRA back, so each weight's update flips direction step to step;
+    Automagic reads that as overshooting and lowers its rate to its floor within two epochs, and nothing more is
+    learned (#364: H3 Isolation 5e-6 after epoch 1, 1e-8 from epoch 2; the same subject alone held 4e-4). Such a run
+    trains with full-precision AdamW at a fixed 2e-4 instead (plan)."""
+    return automagic(st) and not ft_on(desc, st) and (dop_on(desc, st) or multi_person_on(desc, st))
+
+
+def dop_automagic_line(desc, st):
+    mode = "Fizgig LoRA Isolation" if multi_person_on(desc, st) else "Leave the rest of the model alone"
+    return (f"{mode} trains with AdamW at {DOP_OPTIMIZER[1]} instead of Automagic: Automagic lowers its own rate "
+            "until training stops when the model is also being kept as it was.")
+
+
 def prodigy(inputs):
     return _s(inputs.get("OPTIMIZER_TYPE")).lower() == "prodigy"
 
@@ -1996,6 +2016,10 @@ def plan(desc, inputs):
     if folder and not os.path.isabs(folder):
         inputs["image_folder"] = os.path.abspath(folder)     # the subprocesses run from the Fizgig folder
     inputs["LORA_NAME"] = tidy_name(_s(inputs.get("LORA_NAME")))[0]
+    dop_swap = dop_automagic(desc, inputs)
+    if dop_swap:                     # Automagic can't train with DOP (#364): the run's optimizer is AdamW at 2e-4
+        inputs["OPTIMIZER_TYPE"], inputs["LEARNING_RATE"] = DOP_OPTIMIZER
+        inputs["OPTIMIZER_ARGS"] = ""    # an Automagic setting isn't AdamW's
     if automagic(inputs):            # it owns the rate: Adaptive LR, per-image LR and the look warm-up are off
         inputs["ADAPTIVE_LR"] = False
         inputs["loss_watch"] = {**(inputs.get("loss_watch") or {}), "per_image_lr": False, "warmup": False}
@@ -2004,6 +2028,8 @@ def plan(desc, inputs):
         inputs["loss_watch"] = {**(inputs.get("loss_watch") or {}), "warmup": False}
         inputs["LEARNING_RATE"] = "1.0"            # a multiplier on the rate it finds
     p = LaunchPlan(problems=start_problems(desc, inputs))
+    if dop_swap:
+        p.console.append(f"[optimizer] {dop_automagic_line(desc, inputs)}\n")
     _cp = detail_crops_problem(desc, inputs) if not p.problems else ""
     if _cp:
         p.problems.append(_cp)

@@ -378,12 +378,18 @@ class H3RepairEngine(ClipContract):
         canvas = getattr(self, "plan_canvas", None)        # the clip the caller expects to render first
         base_quant, n_swap = self.plan_base(free, getattr(self, "base_mode", "auto"),
                                             self.clip_need_gb(*canvas) if canvas else None)
+        from fizgig.minimax.common import int8_loadable
+        if base_quant == "int8" and not int8_loadable(self.dit_path):
+            base_quant = "nf4"            # the full unpruned file can't take int8 (#357)
         self._plan_free = free
         self._blocks_swapped = int(n_swap)
         self.base_plan = (base_quant, int(n_swap))
         if getattr(self, "base_mode", "auto") != "auto":
             logger.info("[h3-workbench] Base picker: %s -> %s base, %d blocks streamed (%.1f GB free)",
                         self.base_mode, base_quant, n_swap, free)
+        elif n_swap and base_quant != "int8":
+            logger.info("[h3-workbench] %.1f GB free -> %s base (the full unpruned DiT can't take int8), the last %d "
+                        "blocks streamed", free, base_quant, n_swap)
         elif n_swap:
             logger.info("[h3-workbench] %.1f GB free -> int8 base with the last %d blocks streamed "
                         "from CPU per pass (24 GB-class card: the int8 weights, 0.2%% error, "

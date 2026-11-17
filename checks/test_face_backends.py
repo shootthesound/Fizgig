@@ -277,11 +277,33 @@ def test_prep_face_crops_with_the_defaults(tmp_path, monkeypatch):
     Image.fromarray(pic).save(tmp_path / "a.png")
     log = []
     prep.Prep(log.append, F.FaceDetector(settings={})).run("Face Crop Only", str(tmp_path), 1.0, "Largest Face",
-                                                          20.0, False)
+                                                          20.0, False, min_face=0)
     text = "".join(log)
     assert "Face finder" not in text and "[face: female]" in text
     old = F.crop_to_face(Image.fromarray(pic), F.FaceInfo((20, 10, 60, 58), "female", 0.8, 40 * 48, (40, 34)), 20.0)
     assert np.array_equal(np.asarray(Image.open(tmp_path / "a.png")), np.asarray(old))
+
+
+def test_prep_skips_a_face_too_small_for_a_close_up(tmp_path, monkeypatch):
+    """A face narrower than Min face width gets no close-up: Auto Prep makes none, Face close-ups only keeps the
+    photo whole."""
+    from fizgig.dataset import prep
+    monkeypatch.setattr(F.InsightFaceBackend, "available", staticmethod(lambda: True))
+    pic = np.random.default_rng(2).integers(0, 255, (100, 120, 3), dtype=np.uint8)
+    Image.fromarray(pic).save(tmp_path / "a.png")
+    log = []
+
+    def run(mode, min_face):
+        monkeypatch.setitem(F.InsightFaceBackend._shared, ("detection", "genderage"),
+                            _App([_face([20.6, 10.2, 60.9, 58.7], 0, 0.8)]))   # 40 px wide
+        prep.Prep(log.append, F.FaceDetector(settings={})).run(mode, str(tmp_path), 1.0, min_face=min_face)
+    run("Auto Prep (Face Crops)", 41)
+    assert not list(tmp_path.glob("FaceCrop_*.png")) and "Face too small: 1" in "".join(log)
+    run("Auto Prep (Face Crops)", 40)
+    assert len(list(tmp_path.glob("FaceCrop_*.png"))) == 1, "".join(log)
+    log.clear()
+    run("Face Crop Only", 41)
+    assert Image.open(tmp_path / "a.png").size == (120, 100) and "kept whole" in "".join(log)
 
 
 def _fi(x1, y1, x2, y2, gender="unknown", src="yolo"):

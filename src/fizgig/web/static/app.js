@@ -396,10 +396,12 @@ function renderRow(r) {
   if (r.lines) return promptLines(r, wrap);
   if (r.kind === "cadence") return cadenceRow(r, wrap);
   if (r.kind === "split") return splitRow(r, wrap);
+  const explain = r.explain ? explainParts(r.explain) : null;
   if (r.kind === "check") {
     input = el("input", {type: "checkbox", id: "f_" + r.key, onchange: (e) => set(e.target.checked)});
     input.checked = !!v;
-    wrap.append(el("label", {class: "checkbox-label"}, input, " " + r.label));
+    const lab = el("label", {class: "checkbox-label"}, input, " " + r.label);
+    wrap.append(explain ? el("div", {class: "explain-line"}, lab, explain.btn) : lab);
   } else if (r.kind === "radio") {
     const box = el("div", {class: "radio-row"});
     for (const c of r.choices) {
@@ -412,9 +414,11 @@ function renderRow(r) {
   } else {
     if (r.kind === "choice") {
       input = el("select", {id: "f_" + r.key, onchange: (e) => set(e.target.value)});
+      // a choice since renamed (FamilyOption.choice_renamed): the saved value reads as its new label
+      const cv = r.renamed && v != null && r.renamed[v] ? r.renamed[v] : v;
       // a saved value in another case is the same choice ("auto" saved before the box read "Auto")
-      const same = v != null && r.choices.find((c) => c.toLowerCase() === String(v).toLowerCase());
-      const val = same || v;
+      const same = cv != null && r.choices.find((c) => c.toLowerCase() === String(cv).toLowerCase());
+      const val = same || cv;
       if (same && same !== v) S.values[r.key] = same;
       const opts = r.choices.includes(String(val)) || !val ? r.choices : [String(val), ...r.choices];
       for (const c of opts) input.append(el("option", {value: c, text: c}));
@@ -461,6 +465,7 @@ function renderRow(r) {
         title: "Back to the LoRA output folder in Preferences", onclick: () => { input.value = ""; set(""); }}));
     }
     if (r.suffix) row.append(el("span", {class: "field-hint", text: r.suffix}));
+    if (explain) row.append(explain.btn);
     let actMsg = null;
     if (r.action === "write_captions") {          // the typed line as every photo's caption (Edit, Slider pairs)
       const w = writeCaptions(() => input.value);
@@ -492,7 +497,18 @@ function renderRow(r) {
   if (link) wrap.append(el("div", {class: "field-hint"}, link));
   if (r.warn) wrap.append(el("div", {class: "field-hint tc-warn"}, r.warn, r.warn_link ? el("a", {class: "inline-link",
     target: "_blank", rel: "noopener", href: r.warn_link, text: " Best values: the Reddit discussion →"}) : ""));
+  if (explain) wrap.append(explain.box);
   return wrap;
+}
+
+// a row's longer help (FamilyOption.explain): an ⓘ beside its label opens it under the row; a blank line = a paragraph
+function explainParts(text) {
+  const box = el("div", {class: "row-explain", hidden: true});
+  for (const p of text.split("\n\n")) box.append(el("p", {text: p}));
+  const btn = el("button", {type: "button", class: "explain-btn", title: "What this does", "aria-label": "What this does",
+    "aria-expanded": "false"}, el("i"));
+  btn.addEventListener("click", () => { box.hidden = !box.hidden; btn.setAttribute("aria-expanded", String(!box.hidden)); });
+  return {btn, box};
 }
 
 // How often to preview: one sentence of boxes - "Every [N] epochs", then (ticked) "then from epoch [10], every
@@ -850,8 +866,10 @@ function startResumeNote(live) {
   if (box.dataset.path === path) return;
   box.dataset.path = path;
   box.replaceChildren(
-    el("span", {text: `Start will carry on from ${name}` + (m ? ` (epoch ${Number(m[1])})` : "") +
-      ", not begin a new run: the Resume Training box holds it. "}),
+    el("span", {text: m || /-state$/.test(name) ? `Start will carry on from ${name}` + (m ? ` (epoch ${Number(m[1])})` : "") +
+      ", not begin a new run: the Resume Training box holds it. " :
+      `The Resume Training box holds ${name}, which isn't a saved state: pick the state folder itself (named like ` +
+      "my_lora-000012-state), or clear it. "}),
     el("button", {class: "btn btn-sm", type: "button", text: "Clear it: start a new run", onclick: () => {
       S.values.RESUME_TRAINING = ""; syncInputs(["RESUME_TRAINING"]); saveStateSoon(); startResumeNote(false); }}));
 }
@@ -1286,10 +1304,9 @@ function inferenceCard() {
   });
   const sageControls = S.sageAttentionOption ? [
     el("label", {class: "checkbox-label"}, sage, " Force SageAttention for Krea 2 image generation"),
-    el("div", {class: "field-hint", text: "Applies to Krea 2 training previews, Studio, Royale and Profiler from the " +
-      "next generated image. Requires a compatible SageAttention build in Fizgig's Python environment (including " +
-      "ROCm builds). Generation fails if it is unavailable; turn this off to use the default attention. " +
-      "Training steps keep their own attention backend."})] : [];
+    el("div", {class: "field-hint", text: "Krea 2 pictures (training previews, Studio, Royale, the Profiler) use the " +
+      "SageAttention the installer built for your card, from the next picture. Off by default. If pictures fail " +
+      "with it on, turn it off. Training keeps its own attention."})] : [];
   return el("div", {class: "section-card"}, el("div", {class: "card-title"}, el("span", {text: "Inference performance"})),
     el("div", {class: "card-desc", text: "For Studio, Royale, the Profiler and Extract. Block swap moves blocks to the CPU " +
       "between steps to save memory, at some speed. Training manages its own and ignores these."}),
@@ -1930,7 +1947,7 @@ function stopConfirmReset() {
   if (STOP_CONFIRM.timer) clearTimeout(STOP_CONFIRM.timer);
   STOP_CONFIRM.timer = null;
   const b = $("btnStop");
-  if (b) { b.textContent = "Stop"; b.title = ""; }
+  if (b) { b.textContent = b.dataset.idle || "Stop"; b.title = ""; }
 }
 const RUN_LABELS = {idle: "Idle", starting: "Starting", running: "Running", pausing: "Pausing", paused: "Paused",
                     completed: "Finished", failed: "Failed", stopped: "Stopped", moved: "Moved"};
@@ -1966,8 +1983,12 @@ async function pollRun() {
   // a model that can't pause (a RefMod is made in one go): no Pause button for its runs
   const runFam = S.schema.families.find((f) => f.key === (r.family || S.family)) || {};
   $("btnPause").style.display = runFam.no_pause ? "none" : "";
-  $("btnStop").disabled = !live;
-  if (!live) stopConfirmReset();                    // run ended: Stop goes back to one plain button
+  // a paused run holds the queue: Stop paused run ends the pause (its saves stay; Continue on its card carries it on)
+  const heldPause = !live && r.state === "paused" && !!r.resume && !moveBusy;
+  $("btnStop").dataset.idle = heldPause ? "Stop paused run" : "Stop";
+  $("btnStop").disabled = !live && !heldPause;
+  if (!live && !heldPause) stopConfirmReset();      // run ended: Stop goes back to one plain button
+  else if (!STOP_CONFIRM.timer) $("btnStop").textContent = $("btnStop").dataset.idle;
   $("btnResume").style.display = !live && r.resume && !moveBusy ? "" : "none";
   renderWebQueue(r.web_queue || {items: []});
   queueSummary(r.web_queue || {items: []}, r);
@@ -2388,8 +2409,12 @@ function runSummary() {
       live ? p.eta : (p.total_steps ? `${p.step} of ${p.total_steps}` : "")),
   ]);
   const lk = S.likeSummary;
+  const lrCell = cell("Learning rate", p.lr);
+  if (String(v.OPTIMIZER_TYPE || "").toLowerCase() === "automagic4") lrCell.title = "Automagic v4 sets its own " +
+    "rate and slows each weight's step by how sensitive that weight is. This is its working rate: its rate times " +
+    "that slowdown on average, so the weights' real movement. The epoch lines in the log give both parts.";
   const learning = sec("Learning", [
-    cell("Learning rate", p.lr), cell("Grad norm", p.grad_norm), cell("Loss", p.loss),
+    lrCell, cell("Grad norm", p.grad_norm), cell("Loss", p.loss),
     lk ? cell("Likeness", `${Math.round(lk.now * 100)}% (epoch ${lk.epoch})` +
       (lk.bestEpoch !== lk.epoch ? ` · best ${Math.round(lk.best * 100)}% at ${lk.bestEpoch}` : "")) : null,
   ]);
@@ -3526,7 +3551,9 @@ async function loadRuns() {
     const contAsk = (why) => {
       const box = el("input", {type: "number", min: String(cp.done + 1), step: "1", class: "w-num",
         value: String(cp.done + (cp.unit === "epoch" ? Math.max(1, Math.round(cp.done / 2)) : 1))});
-      contBox.replaceChildren(el("span", {class: "field-hint", text: why + " Train to:"}), box,
+      contBox.replaceChildren(el("span", {class: "field-hint", text: why + ` It carries on from ${cp.unit} ${cp.done} ` +
+        `in this same run, nothing restarts, and the ${cp.unit}s and checkpoints it has already saved stay as ` +
+        "they are. Train to:"}), box,
         el("span", {class: "field-hint", text: cp.unit + "s"}),
         el("button", {class: "btn btn-sm btn-primary", text: "Continue", onclick: () => {
           const n = parseInt(box.value, 10);
@@ -3638,6 +3665,75 @@ async function loadRuns() {
   }
   if (!r.runs.length) host.append(el("div", {class: "field-hint", text: "No runs yet. Every run you start is listed here " +
     "with its results."}));
+}
+
+// ---- Purge older than X days: the run history in bulk. The preview reads the history list alone - no folder is
+// opened and nothing is sized - so a very long history previews at once, and the purge then applies Delete run's own
+// behaviour to every match, with or without the files each run saved. A run still training has no end date at all,
+// so it is never past the cut-off; a paused one counts only when Include Paused is ticked.
+const purgeDays = () => { const n = parseInt($("purgeDays").value, 10); return n >= 1 && n <= 365 ? n : 14; };
+const purgeState = () => ({days: purgeDays(), data: $("purgeData").checked, paused: $("purgePaused").checked});
+const purgeWord = (n) => `${n} run${n === 1 ? "" : "s"}`;
+const purgeLabel = () => { $("purgeBtn").textContent = "Purge…"; };    // the preview comes first, then two asks
+let purgeIds = [];                                             // the runs the preview showed: the purge takes only these
+const purgeHide = () => { const s = $("purgeSay"); s.style.display = "none"; s.innerHTML = ""; };
+
+// what it found, what it will do, the two buttons, and only then the runs themselves: the choice is at the top where
+// it is read, not at the bottom of a list of hundreds
+async function purgePreview() {
+  const st = purgeState(), say = $("purgeSay");
+  say.style.display = "";
+  say.textContent = "Checking…";
+  let p;
+  try { p = await api("/api/runs/purge", {...st, confirm: false}); }
+  catch (e) { say.replaceChildren(el("div", {class: "problems", text: e.message})); return; }
+  purgeIds = p.runs.map(r => r.id);
+  const unit = p.days === 1 ? "day" : "days";
+  const scope = st.data
+    ? "A purge deletes each run's LoRA files - the finished LoRA too, and every epoch's - its saved states and its " +
+      "previews, and takes it off this list. They can't be got back. Your training pictures are never touched."
+    : "A purge takes these runs off this list only; their LoRAs and everything else they saved stay where they are.";
+  const kids = [el("div", {class: "field-hint", text: p.count
+    ? `${purgeWord(p.count)} ended more than ${p.days} ${unit} ago.`
+    : `Nothing ended more than ${p.days} ${unit} ago.`})];
+  if (p.held) kids.push(el("div", {class: "field-hint", text: `${purgeWord(p.held)} paused ${p.held === 1 ? "run" : "runs"} ` +
+    "past the cut-off aren't counted: tick Include Paused to add them."}));
+  kids.push(el("div", {class: "field-hint", text: scope}));
+  kids.push(el("div", {class: "field-row"},
+    el("button", {class: "btn btn-sm btn-danger", text: `Purge ${purgeWord(p.count)}`,
+      ...(p.count ? {} : {disabled: true}), onclick: () => purgeAsk(st, p)}),
+    el("button", {class: "btn btn-sm", text: "Cancel", onclick: purgeHide})));
+  for (const r of p.runs) kids.push(el("div", {class: "field-hint", text: `${r.name} · ` +
+    `${new Date(r.date * 1000).toLocaleString()}` +
+    (r.epoch ? ` · epoch ${r.epoch}${r.total_epochs ? "/" + r.total_epochs : ""}` : "")}));
+  say.replaceChildren(...kids);
+}
+
+// the second confirmation: one plain sentence saying exactly what goes and which runs it covers, answered yes or no
+function purgeAsk(st, p) {
+  const doWhat = st.data
+    ? `delete ${purgeWord(p.count)} and everything they saved, their finished LoRAs included`
+    : `take ${purgeWord(p.count)} off this list, leaving their LoRAs and everything else they saved where they are`;
+  const which = st.paused ? "including paused runs" : "leaving paused runs out";
+  $("purgeSay").replaceChildren(
+    el("div", {class: "field-hint", text: `Are you really sure you want to ${doWhat}, ${which}?`}),
+    el("div", {class: "field-row"},
+      el("button", {class: "btn btn-sm btn-danger", text: `Yes, purge ${purgeWord(p.count)}`, onclick: purgeGo}),
+      el("button", {class: "btn btn-sm", text: "No, go back", onclick: () => purgePreview()})));
+}
+
+async function purgeGo() {
+  const say = $("purgeSay");
+  say.textContent = "Purging…";
+  try {
+    const d = await api("/api/runs/purge", {...purgeState(), confirm: true, ids: purgeIds});
+    say.replaceChildren(el("div", {class: "field-hint", text: `${purgeWord(d.purged)} purged.` +
+      (d.shared ? ` ${purgeWord(d.shared)} shared a name and folder with a run still on the list, so ` +
+        `${d.shared === 1 ? "its" : "their"} files were kept and only the list line went.` : "") +
+      (d.failed.length ? ` ${d.failed.length} couldn't be deleted: ${d.failed.join("; ")}` : "")}));
+    loadRuns();
+    loadOutputs();
+  } catch (e) { say.replaceChildren(el("div", {class: "problems", text: e.message})); }
 }
 
 // ---- per-image loss: each image's residual by epoch (its loss minus the dataset's mean at the same noise level, the
@@ -5393,6 +5489,7 @@ const thumbOf = (p) => `/api/thumb?path=${encodeURIComponent(p)}&t=${encodeURICo
 const prepSettings = () => ({
   mode: (document.querySelector('input[name="prepMode"]:checked') || {}).value || "Auto Prep (Face Crops)",
   mp: $("prepMp").value || "1.0", face: $("prepFace").value || "Largest Face", padding: $("prepPadding").value || "20",
+  min_face: $("prepMinFace").value === "" ? "400" : $("prepMinFace").value,
   replace: (document.querySelector('input[name="prepReplace"]:checked') || {}).value === "1",
   crops_only: $("prepCropsOnly").checked});
 const savePrepSoon = debounce(() => { S.prepSaved = prepSettings(); api("/api/state", {prep: S.prepSaved}).catch(() => {}); }, 600);
@@ -5406,6 +5503,7 @@ async function loadPrep() {
     $("prepMp").value = saved.mp || "1.0";
     $("prepFace").value = saved.face || "Largest Face";
     if (saved.padding) $("prepPadding").value = saved.padding;
+    if (saved.min_face !== undefined) $("prepMinFace").value = saved.min_face;
     const mode = saved.mode || "Auto Prep (Face Crops)";
     document.querySelectorAll('input[name="prepMode"]').forEach((r) => { r.checked = r.value === mode; });
     document.querySelectorAll('input[name="prepReplace"]').forEach((r) => { r.checked = r.value === (saved.replace ? "1" : "0"); });
@@ -5890,7 +5988,7 @@ async function prepSummary() {
   $("prepRunTitle").textContent = crops ? "2 · Run it" : "3 · Run it";
   if (!S.imageFolder) { $("prepSummary").textContent = ""; return; }
   const r = await api(`/api/prep/summary?folder=${encodeURIComponent(S.imageFolder)}&mode=${encodeURIComponent(p.mode)}` +
-    `&mp=${p.mp}&replace=${p.replace ? 1 : 0}&crops_only=${p.crops_only ? 1 : 0}` +
+    `&mp=${p.mp}&replace=${p.replace ? 1 : 0}&crops_only=${p.crops_only ? 1 : 0}&min_face=${encodeURIComponent(p.min_face)}` +
     `&train_mp=${encodeURIComponent(S.values.DATASET_MEGAPIXELS || "")}`).catch(() => null);
   if (!r) return;
   $("prepAudioOnly").style.display = r.audio_only ? "" : "none";
@@ -6183,7 +6281,7 @@ function presetSaveOpen() {
 function wirePrep() {
   document.querySelectorAll('input[name="prepMode"], input[name="prepReplace"]').forEach((r) =>
     r.addEventListener("change", () => { prepSummary(); savePrepSoon(); }));
-  for (const id of ["prepMp", "prepFace", "prepPadding", "prepCropsOnly"]) $(id).addEventListener("change", () => { prepSummary(); savePrepSoon(); });
+  for (const id of ["prepMp", "prepFace", "prepPadding", "prepMinFace", "prepCropsOnly"]) $(id).addEventListener("change", () => { prepSummary(); savePrepSoon(); });
   $("prepRun").addEventListener("click", prepRun);
   $("maskRun").addEventListener("click", maskRun);
   meWire();
@@ -6296,6 +6394,7 @@ async function studioFamily(res, w, h) {
     `${L.follow_steps} steps, CFG ${L.follow_cfg}${L.follow_look ? ", " + L.follow_look : ""} - from this model's Samples tab.` :
     !L.dit_fast ? L.dit_full.replace(", slow", "") : "";
   renderChoiceDraw("stRender", L);
+  studioOptionsDraw(L);
   studioNegRow();
   S.st.blocks = {};
   for (const g of L.groups) for (const b of g.blocks) S.st.blocks[b.id] = {pe: true, ps: 1, de: true, ds: 1};
@@ -7929,6 +8028,34 @@ function studioState() {
 
 // a setting changed (size, length, steps, seed, a LoRA's strength, the negative, a reference...): nothing renders until
 // Update, so several can change first - only the block sliders render as they move
+// Studio's own pick of the Samples-tab choices a model also offers here (FamilyOption.studio, e.g. H3 Image's
+// sampler): independent of the Samples tab, kept in prefs studio_opt_<KEY>, and used from the next render
+function studioOptionsDraw(L) {
+  const box = $("stOpts");
+  if (!box) return;
+  const opts = (L && L.studio_options) || [];
+  box.replaceChildren();
+  box.style.display = opts.length ? "" : "none";
+  for (const o of opts) {
+    const ex = o.explain ? explainParts(o.explain) : null;
+    const pick = (v) => async () => {
+      o.value = v;
+      try {
+        await api("/api/prefs", {changes: {[`studio_opt_${o.key}`]: v}});
+        if (S.st.ready) { await api("/api/studio/settings", {family: L.key, options: 1}); studioPending(); }
+      } catch (e) { showProblems([e.message]); }
+    };
+    const row = el("div", {class: "field-row"}, el("span", {class: "field-label", text: o.label + ":"}),
+      ...o.choices.map((c) => el("label", {class: "radio-label"}, el("input", {type: "radio", name: "stOpt_" + o.key,
+        ...(o.value === c ? {checked: true} : {}), onchange: pick(c)}), " " + c)),
+      ...(ex ? [ex.btn] : []));
+    box.append(row);
+    if (o.hint) box.append(el("div", {class: "field-hint", text: o.hint + " Studio's own choice: the Samples tab " +
+      "keeps its own for training previews."}));
+    if (ex) box.append(ex.box);
+  }
+}
+
 function studioPending() {
   if (!S.st.ready) return;
   $("stStart").textContent = "Update";
@@ -10973,6 +11100,10 @@ function wire() {
     if (S.outputsOpen) loadOutputs();
   });
   $("runsReload").addEventListener("click", loadRuns);
+  purgeLabel();                                                 // the button keeps pace with the days box
+  $("purgeDays").addEventListener("input", () => { purgeLabel(); purgeHide(); });
+  for (const t of ["purgeData", "purgePaused"]) $(t).addEventListener("change", purgeHide);
+  $("purgeBtn").addEventListener("click", purgePreview);
   $("datasetsReload").addEventListener("click", loadDatasets);
   $("aboutBtn").addEventListener("click", async () => {
     $("aboutModal").classList.add("active");
@@ -11176,8 +11307,11 @@ function wire() {
   $("btnStop").addEventListener("click", () => {
     if (!STOP_CONFIRM.timer) {
       const b = $("btnStop");
+      const held = b.dataset.idle === "Stop paused run";
       b.textContent = "Confirm stop";
-      b.title = "Click again within 30 s to stop the run now (it won't save a restore point; Pause does)";
+      b.title = held ? "Click again within 30 s to end the pause, so the queue can start. Its saves stay: Continue " +
+                       "on its card in Runs & outputs carries it on later"
+                     : "Click again within 30 s to stop the run now (it won't save a restore point; Pause does)";
       STOP_CONFIRM.timer = setTimeout(stopConfirmReset, 30000);
       return;
     }

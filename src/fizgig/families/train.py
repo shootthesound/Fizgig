@@ -606,7 +606,8 @@ def _apply_auto_batch(desc, driver, user_config, precision, blocks_to_swap, run)
     elif blockers:
         n, why = 1, f"this run reads one picture a step ({', '.join(blockers)})"
     elif not desc.own_plan:
-        p, swap, _w = quant.plan(desc, driver, precision, blocks_to_swap, megapixels=mp, pictures=n)
+        p, swap, _w = quant.plan(desc, driver, precision, blocks_to_swap, megapixels=mp, pictures=n,
+                                 dit_path=run.get("dit"))
         if swap > 0:
             n, why = 1, f"{n} pictures a step would need block swap on this card"
     if n > 1:
@@ -1315,7 +1316,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         user_config = load_user_config(dataset_config)
         if batch_size_auto:
             _apply_auto_batch(desc, driver, user_config, precision, blocks_to_swap, dict(
-                slider=slider, finetune=finetune, dop=bool(dop), share=share_worker is not None,
+                dit=dit_path, slider=slider, finetune=finetune, dop=bool(dop), share=share_worker is not None,
                 stage=bool(stage_dataset_config), mask_prior=bool(masked_training and mask_prior),
                 lora=str(network_type).lower() == "lora", accumulation=int(gradient_accumulation_steps or 1) > 1,
                 paired=any(d.get("control_directory") for d in user_config.get("datasets", []))))
@@ -1553,9 +1554,10 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         else:
             # the figures are a rank-16 LoRA's: a bigger adapter (LoKR, fp32 Adam, EMA) is counted on top (#337)
             adapter_gb = quant.adapter_extra_gb(driver, run_plan) if not finetune else 0.0
-            plain = quant.plan(desc, driver, precision, blocks_to_swap, megapixels=mp, pictures=bsz)
+            plain = quant.plan(desc, driver, precision, blocks_to_swap, megapixels=mp, pictures=bsz,
+                               dit_path=dit_path)
             counted = quant.plan(desc, driver, precision, blocks_to_swap, megapixels=mp, pictures=bsz,
-                                 adapter_gb=adapter_gb) if adapter_gb >= 0.1 else plain
+                                 adapter_gb=adapter_gb, dit_path=dit_path) if adapter_gb >= 0.1 else plain
             precision, blocks_to_swap, why = counted
             kept = counted[:2] != plain[:2] and plain[:2] == ("nf4", 0)
             if kept:
@@ -1569,6 +1571,15 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     "more than a rank-16 LoRA, so the 4-bit base may not fit this card. If steps slow down as the "
                     "run goes (Windows spilling into system memory), or it runs out of memory: turn Weight averaging "
                     "(EMA) off, lower Target Megapixels, or use a standard LoRA")
+            from fizgig.utils.gpu_backend import is_rocm
+            if not kept and precision == "nf4" and "closely" in why and os.name == "nt" and is_rocm():
+                # Windows AMD has no expandable segments: a close fit runs short once pictures of many shapes train at
+                # full size (1.8 GB in unusable pieces, #341, measured on ROCm); a Windows card then spills into system
+                # memory and crawls. EMA off fitted the same run (15.5 GB peak of 15.8)
+                logger.warning(
+                    "[precision] tight fit: on an AMD card on Windows this run may run short once its full-size "
+                    "pictures start. If steps slow down as the run goes, or it runs out of memory: turn Weight "
+                    "averaging (EMA) off, lower Target Megapixels, or use a standard LoRA")
             why += f" at {mp:.2f} MP" + (f" x {bsz} pictures a step" if bsz > 1 else "")
             if adapter_gb >= 0.1 and not kept:
                 why += (f", counting {adapter_gb:.1f} GB more for the "
@@ -1927,7 +1938,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     if do_compile:                       # decided before the load (below the Auto plan), applied last
         driver.compile_blocks(dit, "outside" if do_compile == "outside" else "inside",
                               blocks_to_swap if swapped else 0)
-    from fizgig.training.optimizers import create_optimizer, group_rates, optimizer_lr, owns_its_rate
+    from fizgig.training.optimizers import (automagic4_detail, create_optimizer, group_rates, owns_its_rate,
+                                            shown_lr)
     if ftr is not None:
         params, optimizer, opt_label = [], None, ftr.opt_label
     else:
@@ -2645,12 +2657,21 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     # one-step-behind loss read). Flushed at the epoch's end, before anything reads the records.
     lag = []
 
+    live_rate = [None]          # the last live rate read (every 20 steps): the bar's for an optimizer owning its rate
+
     def _step_rate(raw=False):
-        """The rate the step applied: the optimizer's (raw: its group rate, as the bar shows it), or under a
-        fine-tune's free-each-gradient - one optimizer per weight, none to read (#312) - the stepper's rate times
-        this step's multiplier."""
+        """The rate the step applied: the optimizer's (Automagic v4: its working rate, rate x mean brake, #353), or
+        under a fine-tune's free-each-gradient - one optimizer per weight, none to read (#312) - the stepper's rate
+        times this step's multiplier. raw (the bar, every step): the group rate, read without a GPU sync - except
+        for an optimizer that owns its rate (Automagic, Prodigy), whose group rate is only its start: the last live
+        rate read instead (#353: the run card showed the Learning rate box's value)."""
         if optimizer is not None:
-            return float(optimizer.param_groups[0]["lr"]) if raw else optimizer_lr(optimizer)
+            if raw:
+                if owns_its_rate(optimizer) and live_rate[0] is not None:
+                    return live_rate[0]
+                return float(optimizer.param_groups[0]["lr"])
+            live_rate[0] = shown_lr(optimizer)
+            return live_rate[0]
         if ftr is not None and ftr.fused is not None:
             return float(ftr.fused.lr) * float(ftr.fused.scale)
         return float(learning_rate)
@@ -3140,6 +3161,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         logger.info(f"epoch {epoch + 1 + _off}/{max_train_epochs + _off}  avr_loss={recorder.moving_average:.4f}  "
                     f"step={global_step}  {(time.time() - t0) / max(1, steps_per_epoch):.2f}s/step  "
                     f"lr={_step_rate():.3e}  "
+                    + (f"({automagic4_detail(optimizer)})  " if automagic4_detail(optimizer) else "")
                     + (f"({group_rates(optimizer)})  " if optimizer is not None and group_rates(optimizer) else "") +
                     f"peak VRAM {torch.cuda.max_memory_reserved() / 1024 ** 3:.1f} GB")
         steplog.flush()
@@ -3453,9 +3475,10 @@ def setup_parser():
 
 
 def main():
-    if (sys.platform != "win32" and not os.environ.get("PYTORCH_CUDA_ALLOC_CONF")
-            and os.environ.get("FIZGIG_NO_EXPANDABLE") != "1"):
-        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+    if sys.platform != "win32" and os.environ.get("FIZGIG_NO_EXPANDABLE") != "1":
+        os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+        if os.environ.get("FIZGIG_GPU_BACKEND") == "rocm":    # ROCm reads its own name, not the CUDA one (#341)
+            os.environ.setdefault("PYTORCH_HIP_ALLOC_CONF", "expandable_segments:True")
     os.environ.setdefault("KMP_BLOCKTIME", "0")
     os.environ.setdefault("OMP_WAIT_POLICY", "PASSIVE")
     logging.basicConfig(level=logging.INFO)

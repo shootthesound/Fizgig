@@ -8,10 +8,15 @@ source venv/bin/activate
 
 export MIOPEN_FIND_MODE=2
 export FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE
-# Allocator: upstream GUI honours FIZGIG_NO_EXPANDABLE=1 (A/B opt-out, fizgig.py).
-export FIZGIG_NO_EXPANDABLE=1
-export PYTORCH_ALLOC_CONF=max_split_size_mb:512,garbage_collection_threshold:0.8
-export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512,garbage_collection_threshold:0.8
+# Allocator: expandable segments, under ROCm's own name too (it doesn't read PYTORCH_CUDA_ALLOC_CONF). Without them a
+# 16 GB card's Krea 2 LoKR run at 0.5 MP on pictures of many shapes ran out with 1.8 GB held in unusable pieces; with
+# them the same run trained through at the same speed (#341, MI350X capped to 15.8 GB, 15 Nov 2026).
+# FIZGIG_NO_EXPANDABLE=1 before launching opts out.
+if [[ "${FIZGIG_NO_EXPANDABLE:-}" != "1" ]]; then
+    export PYTORCH_ALLOC_CONF=expandable_segments:True
+    export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True
+    export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+fi
 export FIZGIG_GPU_BACKEND=rocm
 # Cache fast-exit: src/fizgig/rocm/cache_exit.py (Linux ROCm only). Opt out: FIZGIG_ROCM_NO_FAST_EXIT=1
 

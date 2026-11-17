@@ -306,6 +306,12 @@
                   <input type="text" id="prepPadding" class="w-num" value="20">
                   <span class="field-hint">% around the face</span>
                 </div>
+                <div class="field-row prep-opts prep-face">
+                  <span class="field-label">Min face width:</span>
+                  <input type="text" id="prepMinFace" class="w-num" value="400">
+                  <span class="field-hint">px in the photo. A smaller face has too little detail to be worth a
+                    close-up, so that photo gets none (0: every face)</span>
+                </div>
                 <details class="tc-box prep-chars" id="prepChars">
                   <summary>Anime/furry/drawn characters</summary>
                   <div class="field-hint">Face close-ups, the Look Filter and likeness scores are made for people's
@@ -791,6 +797,7 @@
               <div class="field-row"><span class="field-label">Model:</span><select id="stFamily" class="w-combo"></select>
                 <span class="field-hint" id="stDitNote"></span></div>
               <div class="field-row" id="stRender" style="display:none"></div>
+              <div id="stOpts" style="display:none"></div>
               <div class="field-row" id="stDitRow"><span class="field-label">Preview with:</span>
                 <label class="radio-label"><input type="radio" name="stDit" value="fast" checked> <span id="stDitFast"></span></label>
                 <label class="radio-label"><input type="radio" name="stDit" value="full"> <span id="stDitFull"></span></label></div>
@@ -1687,7 +1694,21 @@
           </div>
           <div class="section-card">
             <div class="card-title"><span>Runs</span><button class="btn btn-sm" id="runsReload">Reload</button></div>
-            <div class="card-content"><div id="runsList" class="runs-list"></div></div>
+            <div class="card-content">
+              <div class="field-row" id="purgeRow">
+                <span class="field-label">Clear out runs that ended more than</span>
+                <input type="number" id="purgeDays" class="w-num" min="1" max="365" step="1" value="14"
+                  title="How far back the run history goes. A run is counted by the date it ended, so a run still training is never caught. 1-365 days.">
+                <span class="field-hint">days ago</span>
+                <label class="checkbox-label" title="Ticked, a purge also deletes what each run saved in its output folder: its LoRA files (the finished LoRA and every epoch's), saved states and previews. Unticked, only its line here goes and nothing on disk is touched. Training pictures are never touched either way."><input
+                  type="checkbox" id="purgeData"> Delete their LoRAs and saved files too</label>
+                <label class="checkbox-label" title="Ticked, a run you paused counts from the moment it paused. Unticked, paused runs stay on the list however long ago they paused."><input
+                  type="checkbox" id="purgePaused"> Include paused runs</label>
+                <button class="btn btn-sm btn-danger" id="purgeBtn">Purge…</button>
+              </div>
+              <div id="purgeSay" style="display:none"></div>
+              <div id="runsList" class="runs-list"></div>
+            </div>
           </div>
           <div class="section-card">
             <div class="card-title"><span>Saved files</span>

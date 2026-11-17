@@ -37,6 +37,23 @@ def _write(path, data):
     os.replace(path + ".tmp", path)
 
 
+def plan(desc, driver, setup, precision):
+    """(precision, blocks_to_swap, why) for the base this helper loads. A model that plans itself (description.own_plan:
+    MiniMax H3) is asked as the Batch size note asks it (driver.plan_pictures, web/batch_plan.py), at the run's
+    precision, then the trainer's preview caps apply (_plan_previews: 768x640 / 22 frames on a 16 GB card). The shared
+    planner has no figures for it: an int8 run's helper loaded int8 with nothing streamed and ran out of memory on a
+    16 GB card (#372, @Nessa2026691). The others plan from their measured figures, as before."""
+    if not desc.own_plan:
+        return quant.plan(desc, driver, precision, -1)
+    paths, n = setup["paths"], setup.get("network") or {}
+    run = {"dit_path": paths["dit"], "network_type": n.get("type") or "lora", "network_dim": int(n.get("dim") or 16),
+           "lokr_factor": int(n.get("factor") or 8), "context_lora_path": paths.get("context") or ""}
+    mode, swap = driver.plan_pictures(precision, -1, megapixels=1.0, pictures=1, run=run)
+    if hasattr(driver, "_plan_previews"):
+        driver._plan_previews(swap)
+    return mode, swap, "the model's own plan for this card"
+
+
 class Worker:
     def __init__(self, setup, jobs):
         self.jobs = jobs
@@ -53,8 +70,7 @@ class Worker:
         if self.ck:
             self._load_checkpoint(setup, paths)
             return
-        precision = setup.get("precision") or "auto"
-        precision, swap, why = quant.plan(self.desc, self.driver, precision, -1)
+        precision, swap, why = plan(self.desc, self.driver, setup, setup.get("precision") or "auto")
         self.say("loading", f"Loading {self.desc.display_name} ({precision}" + (f", {swap} blocks swapped" if swap else "")
                  + ")")
         logger.info(f"[helper] {self.desc.display_name} at {precision}, block swap {swap} ({why})")

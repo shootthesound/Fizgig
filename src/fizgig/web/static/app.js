@@ -4261,7 +4261,15 @@ function ryShowTool(key) {
 
 function rySource() { return (document.querySelector('input[name="rySource"]:checked') || {}).value || "folder"; }
 function rySourceChanged() {
-  $("tab-royale").classList.toggle("single", rySource() === "single"); ryRemember();
+  const single = rySource() === "single";
+  $("tab-royale").classList.toggle("single", single); ryRemember();
+  // Epochs stays in the row so it can be found: greyed with a Single LoRA, saying what it needs (a class, not
+  // disabled - a disabled button shows no hover text)
+  const ep = document.querySelector('#ryTabs .ry-tab[data-ry="epochs"]');
+  ep.classList.toggle("ry-tab-off", single);
+  ep.setAttribute("aria-disabled", single ? "true" : "false");
+  ep.title = single ? "Epochs compares a training run's epochs: choose Training folder (compare epochs) as the " +
+    "Source above." : "Every epoch of the run on one seed, crossfaded";
   ryShowTool(S.ry.tool || rySaved().tool || "epochs");
 }
 
@@ -4402,7 +4410,9 @@ async function ryScSave(sc, fmt) {
 
 async function wireRoyaleTravel() {
   document.querySelectorAll('input[name="rySource"]').forEach((r) => r.addEventListener("change", rySourceChanged));
-  document.querySelectorAll("#ryTabs .ry-tab").forEach((b) => b.addEventListener("click", () => ryShowTool(b.dataset.ry)));
+  document.querySelectorAll("#ryTabs .ry-tab").forEach((b) => b.addEventListener("click", () => {
+    if (!b.classList.contains("ry-tab-off")) ryShowTool(b.dataset.ry);       // greyed Epochs: its hover text says why
+  }));
   const setSingle = (p) => { $("rySingle").value = p; ryRemember(); };
   const up = uploadButton({kind: "path", key: "ROYALE_SINGLE"}, $("rySingle"), setSingle);
   $("rySingleBtns").replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () => pick($("rySingle").value || loraStart(), false, setSingle)}),

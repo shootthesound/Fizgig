@@ -78,6 +78,7 @@ def load_safetensors_with_lora_and_fp8(
     weight_transform_hooks: Optional[WeightTransformHooks] = None,
     allow_prequantized_fp8: bool = False,
     quantization_mode: str = "block",
+    mmap_cpu: bool = False,
 ) -> dict[str, torch.Tensor]:
     """
     Merge LoRA weights into the state dict of a model with fp8 optimization if needed.
@@ -237,6 +238,7 @@ def load_safetensors_with_lora_and_fp8(
         weight_transform_hooks=weight_transform_hooks,
         allow_prequantized_fp8=allow_prequantized_fp8,
         quantization_mode=quantization_mode,
+        mmap_cpu=mmap_cpu,
     )
 
     for lora_weight_keys in list_of_lora_weight_keys:
@@ -262,6 +264,7 @@ def load_safetensors_with_fp8_optimization_and_hook(
     weight_transform_hooks: Optional[WeightTransformHooks] = None,
     allow_prequantized_fp8: bool = False,
     quantization_mode: str = "block",
+    mmap_cpu: bool = False,
 ) -> dict[str, torch.Tensor]:
     """
     Load state dict from safetensors files and merge LoRA weights into the state dict with fp8 optimization if needed.
@@ -282,6 +285,7 @@ def load_safetensors_with_fp8_optimization_and_hook(
             weight_transform_hooks=weight_transform_hooks,
             allow_prequantized_fp8=allow_prequantized_fp8,
             quantization_mode=quantization_mode,
+            mmap_cpu=mmap_cpu,
         )
     else:
         logger.info(

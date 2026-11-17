@@ -86,6 +86,7 @@ class BlockSwapConfig:
     h2d_only: bool = False  # frozen-base (LoRA / LoHa / LoKr) only: H2D-only streaming, no device->host copy
     ring_size: int = 2  # (h2d_only) number of GPU ring buffers for streamed blocks; 2 = double buffering
     debug: bool = False
+    cpu_weights: Optional[dict[nn.Parameter, torch.Tensor]] = None
 
     @classmethod
     def from_args(cls, args, device: torch.device, supports_backward: bool) -> "BlockSwapConfig":
@@ -148,6 +149,7 @@ def create_offloader(block_type: str, blocks: list[nn.Module], num_blocks: int, 
         config.device,
         config.use_pinned_memory,
         debug=config.debug,
+        cpu_weights=config.cpu_weights,
     )
 
 
@@ -247,6 +249,9 @@ class Offloader:
 
         with T.section("synchronize before swap"):
             torch.cuda.current_stream().synchronize()  # this prevents the illegal loss value by ensuring offloading layer's calculation is done
+
+        if getattr(self, "cpu_weights", None):
+            return self._swap_from_masters(device, weight_swap_jobs)
 
         if not self.use_pinned_memory:
             # Minimize using pinned memory for lower shared GPU RAM usage
@@ -445,11 +450,16 @@ class ModelOffloader(Offloader):
         device: torch.device,
         use_pinned_memory: bool = False,
         debug: bool = False,
+        cpu_weights: Optional[dict[nn.Parameter, torch.Tensor]] = None,
     ):
         super().__init__(block_type, num_blocks, blocks_to_swap, device, use_pinned_memory, debug)
 
         self.supports_backward = supports_backward
         self.forward_only = not supports_backward  # forward only offloading: can be changed to True for inference
+        self.cpu_weights = cpu_weights
+        self._copy_done = None
+        if cpu_weights and supports_backward:
+            raise ValueError("Immutable CPU masters are for inference only")
 
         if self.supports_backward:
             # register backward hooks
@@ -466,6 +476,24 @@ class ModelOffloader(Offloader):
             self._wait_blocks_move(block_idx)
 
         self.forward_only = forward_only
+
+    def _swap_from_masters(self, device, jobs):
+        from fizgig.krea2.safetensors_utils import release_mapped_pages
+        if self._copy_done is not None:
+            self._copy_done.synchronize()  # The next CPU fill must not overwrite an in-flight DMA source.
+        if self.staging_buffer_b is None:
+            self.staging_buffer_b = [torch.empty_like(gpu, device="cpu").pin_memory(device=device)
+                                     for _, _, gpu, _ in jobs]
+        for staging, (outgoing, incoming, gpu, _) in zip(self.staging_buffer_b, jobs):
+            source = self.cpu_weights[incoming.weight]
+            staging.copy_(source)
+            release_mapped_pages((source,))
+            with torch.cuda.stream(self.stream):
+                gpu.copy_(staging, non_blocking=True)
+            outgoing.weight.data = self.cpu_weights[outgoing.weight]
+            incoming.weight.data = gpu
+        self._copy_done = self.stream.record_event()
+        return self._copy_done
 
     def remove_hooks(self):
         """Detach backward hooks NOW, not at GC. A replaced offloader's stale hooks
@@ -515,13 +543,28 @@ class ModelOffloader(Offloader):
             print(f"[{self.block_type}] Prepare block devices before forward")
 
         for b in blocks[0 : self.num_blocks - self.blocks_to_swap]:
+            if self.cpu_weights:
+                from fizgig.krea2.safetensors_utils import move_frozen_weights
+                move_frozen_weights(b, self.device, self.cpu_weights)
             b.to(self.device)
             weighs_to_device(b, self.device)  # make sure weights are on device
 
         cpu_device = torch.device("cpu")
         for b in blocks[self.num_blocks - self.blocks_to_swap :]:
-            b.to(self.device)  # move block to device first. this makes sure that buffers (non weights) are on the device
-            weighs_to_device(b, cpu_device)  # make sure weights are on cpu
+            if self.cpu_weights:
+                modules = [(m, m.weight) for m in b.modules()
+                           if getattr(m, "weight", None) is not None and m.weight in self.cpu_weights]
+                for module, _ in modules:
+                    module.weight = None
+                try:
+                    b.to(self.device)  # Adapters, biases and buffers still move normally.
+                finally:
+                    for module, weight in modules:
+                        weight.data = self.cpu_weights[weight]
+                        module.weight = weight
+            else:
+                b.to(self.device)  # move block to device first. this makes sure that buffers (non weights) are on the device
+                weighs_to_device(b, cpu_device)  # make sure weights are on cpu
 
         _synchronize_device(self.device)
         _clean_memory_on_device(self.device)

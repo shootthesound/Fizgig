@@ -408,6 +408,10 @@ class SingleStreamDiT(nn.Module):
             saved_blocks = self.blocks
             self.blocks = nn.ModuleList()
         try:
+            masters = getattr(self, "_cpu_weight_masters", None)
+            if masters:
+                from fizgig.krea2.safetensors_utils import move_frozen_weights
+                move_frozen_weights(self, device, masters)
             self.to(device)
         finally:
             if self.blocks_to_swap:

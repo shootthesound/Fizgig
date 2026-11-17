@@ -1,6 +1,7 @@
 # Adapted from musubi-tuner (https://github.com/kohya-ss/musubi-tuner), Apache-2.0.
 # Modified for Fizgig. See docs/THIRD_PARTY_NOTICES.md.
 from dataclasses import dataclass
+import mmap
 import os
 import re
 import numpy as np
@@ -12,6 +13,31 @@ from typing import Dict, Any, Union, Optional
 from safetensors.torch import load_file
 
 from fizgig.krea2.device_utils import synchronize_device
+
+
+def release_mapped_pages(weights):
+    """Drop resident pages of immutable checkpoint views; the file remains unchanged."""
+    seen = set()
+    for weight in weights:
+        mapping = getattr(weight.untyped_storage(), "_fizgig_mmap", None)
+        if mapping is not None and id(mapping) not in seen:
+            seen.add(id(mapping))
+            try:
+                mapping.madvise(mmap.MADV_DONTNEED)
+            except OSError:
+                pass  # The OS can still reclaim these clean file-backed pages.
+
+
+def move_frozen_weights(module, device, masters):
+    """Stage file-backed CPU weights so ROCm never pins their private file mappings."""
+    if not masters or torch.device(device).type != "cuda":
+        return
+    for parameter in module.parameters():
+        source = masters.get(parameter)
+        if source is not None and parameter.device.type == "cpu":
+            staging = source.pin_memory(device=device)
+            release_mapped_pages((source,))
+            parameter.data = staging.to(device)  # Blocking: the pinned buffer can then be reused safely.
 
 
 def mem_eff_save_file(tensors: Dict[str, torch.Tensor], filename: str, metadata: Dict[str, Any] = None):
@@ -160,17 +186,19 @@ class MemoryEfficientSafeOpen:
     by using memory mapping for large tensors and avoiding unnecessary copies.
     """
 
-    def __init__(self, filename, disable_numpy_memmap=False):
+    def __init__(self, filename, disable_numpy_memmap=False, mmap_cpu=False):
         """Initialize the SafeTensor reader.
 
         Args:
             filename (str): Path to the safetensors file to read.
             disable_numpy_memmap (bool): If True, disable numpy memory mapping for large tensors, using standard file read instead.
+            mmap_cpu (bool): Keep frozen inference weights in private file-backed CPU mappings.
         """
         self.filename = filename
         self.file = open(filename, "rb")
         self.header, self.header_size = self._read_header()
         self.disable_numpy_memmap = disable_numpy_memmap
+        self.mmap_cpu = mmap_cpu
 
     def __enter__(self):
         """Enter context manager."""
@@ -248,19 +276,20 @@ class MemoryEfficientSafeOpen:
         # Calculate absolute file offset
         tensor_offset = self.header_size + 8 + offset_start  # adjust offset by header size
 
-        # Memory mapping strategy for large tensors to GPU
-        # Use memmap for large tensors to avoid intermediate copies.
-        # If device is cpu, tensor is not copied to gpu, so using memmap locks the file, which is not desired.
-        # So we only use memmap if device is not cpu.
-        # If disable_numpy_memmap is True, skip numpy memory mapping to load with standard file read.
-        if not self.disable_numpy_memmap and num_bytes > 10 * 1024 * 1024 and device is not None and device.type != "cpu":
+        # CPU targets normally use reads; frozen inference explicitly requests private mappings.
+        cpu_mapping = self.mmap_cpu and (device is None or device.type == "cpu")
+        if not self.disable_numpy_memmap and (cpu_mapping or
+                (num_bytes > 10 * 1024 * 1024 and device is not None and device.type != "cpu")):
             # Create memory map for zero-copy reading
             mm = np.memmap(self.filename, mode="c", dtype=np.uint8, offset=tensor_offset, shape=(num_bytes,))
+            mapping = mm._mmap
             byte_tensor = torch.from_numpy(mm)  # zero copy
             del mm
 
             # Deserialize tensor (view and reshape)
             cpu_tensor = self._deserialize_tensor(byte_tensor, metadata)  # view and reshape
+            if cpu_mapping:
+                cpu_tensor.untyped_storage()._fizgig_mmap = mapping
             del byte_tensor
 
             # Transfer to target device and dtype

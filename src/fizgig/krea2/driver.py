@@ -78,8 +78,15 @@ class Krea2Driver(FamilyDriver):
     # ---- models ---------------------------------------------------------------------------------
     def load_dit(self, path, device):
         from fizgig.krea2.utils import load_krea2_dit
-        dit = load_krea2_dit(path, device=device, dtype=DTYPE, fp8_scaled=False, loading_device=device)
-        return dit.eval().requires_grad_(False)
+        mapped = getattr(self, "_file_backed_inference", False) and torch.device(device).type == "cpu"
+        dit = load_krea2_dit(path, device=device, dtype=DTYPE, fp8_scaled=False, loading_device=device,
+                             mmap_cpu=mapped)
+        dit.eval().requires_grad_(False)
+        if mapped:
+            weights = {m.weight: m.weight.detach() for m in dit.modules() if isinstance(m, torch.nn.Linear)}
+            if any(hasattr(w.untyped_storage(), "_fizgig_mmap") for w in weights.values()):
+                dit._cpu_weight_masters = weights
+        return dit
 
     def stream_dit(self, path):
         """For a short-RAM load (families/quant.py _stream_load): the model on meta, the open file and the dtype
@@ -106,7 +113,9 @@ class Krea2Driver(FamilyDriver):
 
     def enable_block_swap(self, dit, num_blocks, device, supports_backward=True):
         from fizgig.krea2.offloading import BlockSwapConfig
-        dit.enable_block_swap(num_blocks, BlockSwapConfig(torch.device(device), supports_backward=supports_backward))
+        cpu_weights = getattr(dit, "_cpu_weight_masters", None) if not supports_backward else None
+        dit.enable_block_swap(num_blocks, BlockSwapConfig(torch.device(device), supports_backward=supports_backward,
+                                                         cpu_weights=cpu_weights))
         dit.move_to_device_except_swap_blocks(torch.device(device))
         dit.switch_block_swap_for_training()
 
@@ -126,10 +135,11 @@ class Krea2Driver(FamilyDriver):
         return load_krea2_text_encoder(path, dtype=DTYPE, device=device)
 
     def unload_text_encoder(self, te):
-        try:
-            te.to("cpu")
-        except Exception:
-            pass
+        if not getattr(self, "_file_backed_inference", False):
+            try:
+                te.to("cpu")
+            except Exception:
+                pass
         del te
         import gc
         gc.collect()

@@ -1,12 +1,14 @@
 """Krea 2 inference: reserve activation memory and offload between pipeline stages."""
 import gc
 import logging
+import sys
 from itertools import chain
 
 import torch
 
 from fizgig.families import quant
 from fizgig.families.workbench import WorkbenchEngine, _free_vram_gb
+from fizgig.krea2.safetensors_utils import release_mapped_pages
 
 logger = logging.getLogger(__name__)
 GIB = 1024 ** 3
@@ -39,9 +41,12 @@ class Krea2WorkbenchEngine(WorkbenchEngine):
             blocks_to_swap = 0
         if torch.device(device).type == "cuda":
             kw["lowmem"] = True  # Text encoding, sampling and VAE decoding get separate VRAM budgets.
+        self.driver._file_backed_inference = (bool(torch.version.hip) and sys.platform == "linux"
+                                              and torch.device(device).type == "cuda" and precision == "bf16")
         super().ensure_pipeline(dit_path, *args, precision=precision, blocks_to_swap=blocks_to_swap,
                                 device=device, **kw)
         self._auto_swap = self._auto_swap and precision != "nf4" and not getattr(self.dit, "_nf4_quantized", False)
+        release_mapped_pages(getattr(self.dit, "_cpu_weight_masters", {}).values())
 
     def _park_dit(self, where):
         if self.dit is None:
@@ -50,15 +55,25 @@ class Krea2WorkbenchEngine(WorkbenchEngine):
             offloader = getattr(self.dit, "offloader", None)
             if offloader is not None:
                 offloader.set_forward_only(True)  # Drain pending transfers before moving their weights.
+            masters = getattr(self.dit, "_cpu_weight_masters", {})
+            if masters:
+                torch.cuda.synchronize()  # File pages must outlive all pending DMA reads.
+                for parameter, master in masters.items():
+                    parameter.data = master
             quant.move(self.dit, "cpu")
+            release_mapped_pages(masters.values())
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
         elif self.swapped:
             self.dit.move_to_device_except_swap_blocks(torch.device(where))
             self.driver.block_swap_mode(self.dit, inference=True)
+        elif getattr(self.dit, "_cpu_weight_masters", None):
+            self.dit.move_to_device_except_swap_blocks(torch.device(where))
         else:
             quant.move(self.dit, where)
+        if torch.device(where).type != "cpu":
+            release_mapped_pages(getattr(self.dit, "_cpu_weight_masters", {}).values())
 
     def _close_offloader(self):
         offloader = getattr(self.dit, "offloader", None)
@@ -87,7 +102,7 @@ class Krea2WorkbenchEngine(WorkbenchEngine):
             self.driver.enable_block_swap(self.dit, count, self.device, supports_backward=False)
             self.driver.block_swap_mode(self.dit, inference=True)
         else:
-            quant.move(self.dit, self.device)
+            self._park_dit(self.device)
 
     def render(self, cond, width, height, seed, **kwargs):
         device = torch.device(self.device)
@@ -100,10 +115,10 @@ class Krea2WorkbenchEngine(WorkbenchEngine):
                 torch.cuda.empty_cache()
                 previous_fraction = torch.cuda.get_per_process_memory_fraction(device)
                 free, total = torch.cuda.mem_get_info(device)
-                # Allocator retries can otherwise consume the desktop's framebuffer memory on ROCm.
-                available = free + torch.cuda.memory_reserved(device) - 500 * 1024 ** 2
+                # Respect other processes' allocations without reserving additional desktop VRAM.
+                available = free + torch.cuda.memory_reserved(device)
                 if available <= 0:
-                    raise torch.OutOfMemoryError("Krea 2 needs 500 MiB of GPU headroom for the desktop")
+                    raise torch.OutOfMemoryError("Krea 2 has no available GPU memory")
                 fraction = min(previous_fraction, available / total)
                 torch.cuda.set_per_process_memory_fraction(fraction, device)
                 allocator_limit = fraction * total

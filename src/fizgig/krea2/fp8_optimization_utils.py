@@ -252,6 +252,7 @@ def load_safetensors_with_fp8_optimization(
     disable_numpy_memmap: bool = False,
     weight_transform_hooks: Optional[WeightTransformHooks] = None,
     allow_prequantized_fp8: bool = False,
+    mmap_cpu: bool = False,
 ) -> dict:
     """
     Load weight tensors from safetensors files and merge LoRA weights into the state dict with explicit FP8 optimization.
@@ -299,7 +300,7 @@ def load_safetensors_with_fp8_optimization(
     # Process each file
     state_dict = {}
     for model_file in model_files:
-        with MemoryEfficientSafeOpen(model_file, disable_numpy_memmap=disable_numpy_memmap) as original_f:
+        with MemoryEfficientSafeOpen(model_file, disable_numpy_memmap=disable_numpy_memmap, mmap_cpu=mmap_cpu) as original_f:
             f = TensorWeightAdapter(weight_transform_hooks, original_f) if weight_transform_hooks is not None else original_f
 
             keys = f.keys()

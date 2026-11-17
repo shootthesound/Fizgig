@@ -472,6 +472,15 @@ def start_checks(desc, st, image_folder):
                 out.append(f"{len(lack)} caption{'s don' if len(lack) != 1 else ' doesn'}'t contain the trigger word "
                            f"'{trig}' ({', '.join(lack[:3])}{', ...' if len(lack) > 3 else ''}): "
                            + ("that picture trains" if len(lack) == 1 else "those pictures train") + " without it.")
+        by_name = {}
+        for f in items:
+            by_name.setdefault(os.path.splitext(f)[0], []).append(f)
+        twins = [fs for fs in by_name.values() if len(fs) > 1]
+        if twins:                        # a.jpg + a.png: one caption file, one cache name (the stem) for the two
+            shown = ", ".join(" and ".join(fs) for fs in twins[:2]) + (", ..." if len(twins) > 2 else "")
+            out.append(f"{len(twins)} name{'s are' if len(twins) != 1 else ' is'} used by two pictures ({shown}): "
+                       "the two share one caption file and one cache file name, so at the same size only one of "
+                       "them trains. Rename one of each.")
     trig = _s(st.get("CAPTION_TRIGGER_WORD"))
     for rel, d in (detail_crop_folders(desc, st) if trig and trig.lower() != "trigger_word" else []):
         # the detail crops for this size: a caption edited without the trigger (the crop stage writes it in)

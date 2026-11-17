@@ -1174,6 +1174,11 @@ def _size_changed(lora, out_dir, values):
     return any(num(old.get(k, "")) != num(values.get(k, "")) for k in _SIZE_KEYS)
 
 
+def _rebuilding_cache(plan):
+    """Whether a plan is making the cache it will train on: its settings aren't proven until that pass finishes."""
+    return any(s.name.startswith(n) for s in plan.stages for n in ("Cache Preparation", "Text Encoder Caching"))
+
+
 def _ref_strength(v):
     """Royale's reference strength: 0 to 2 (0 = the reference off), 1 when there is none - as the desktop's."""
     try:
@@ -1960,14 +1965,19 @@ def _start_one(family_key, values, image_folder, resume, ft_continue, note, mode
             os.remove(os.path.join(out_dir, f))      # an Apply while it loads waits for its first epoch, not deleted
         except OSError:
             pass
+    resuming = bool(resume or ft_continue)
+    # a resume that is rebuilding its cache hasn't trained at these settings yet: the record keeps what the last
+    # completed pass proved, and takes the new ones when the Training stage starts (in _run_stages)
+    recaching = resuming and _rebuilding_cache(plan)
     with _lock:
         _run.update(state="starting", stage="", lora=inputs["LORA_NAME"], output_dir=out_dir, family=family_key,
-                    values=dict(values), image_folder=image_folder, pause=False, resume="", resume_mode="")
+                    values=dict(values), image_folder=image_folder, pause=False, resume="", resume_mode="",
+                    recaching=recaching)
     save_state({"last_run": {"family": family_key, "values": values, "image_folder": image_folder}})
     if _startup["offer"] or load_state().get("interrupted"):
         _startup_done()                              # a run is starting: the start-up question is answered
-    hid = history.start("web", family_key, inputs["LORA_NAME"], out_dir, image_folder, dict(values),
-                        resume=bool(resume or ft_continue), carry=carry)
+    hid = history.start("web", family_key, inputs["LORA_NAME"], out_dir, image_folder,
+                        None if recaching else dict(values), resume=resuming, carry=carry)
     with _lock:
         _run["history_id"] = hid
     append_log(LOG_CLEAR)                    # this run's log on a clean console
@@ -2076,6 +2086,9 @@ def _run_stages(stages, out_dir):
             _run["stage"] = stage.name
             if stage.name == "Training" and not _run.get("training_at"):
                 _run["training_at"] = time.time()
+                if _run.get("recaching"):
+                    # the cache stages all exited 0: this run trains at what it asked for, so its record can say so
+                    history.set_values(_run.get("history_id"), _run.get("values") or {})
             if str((_run.get("progress") or {}).get("note") or "").startswith("Caching"):
                 _run["progress"] = None          # the last stage's cache count isn't this stage's
         append_log(f"\n▶ {stage.name}\n")

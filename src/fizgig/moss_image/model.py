@@ -335,12 +335,12 @@ def _files(path):
     import glob
     import os
     if os.path.isdir(path):
-        return sorted(glob.glob(os.path.join(path, "*.safetensors")))
+        return sorted(glob.glob(os.path.join(glob.escape(path), "*.safetensors")))
     if path.endswith(".json"):                       # a diffusers index.json: its shards beside it
-        return sorted(glob.glob(os.path.join(os.path.dirname(path), "*.safetensors")))
+        return sorted(glob.glob(os.path.join(glob.escape(os.path.dirname(path)), "*.safetensors")))
     if "-of-" in os.path.basename(path):            # one shard of a set: the whole set
         stem = os.path.basename(path).rsplit("-", 3)[0]
-        return sorted(glob.glob(os.path.join(os.path.dirname(path), stem + "-*-of-*.safetensors")))
+        return sorted(glob.glob(os.path.join(glob.escape(os.path.dirname(path)), stem + "-*-of-*.safetensors")))
     return [path]
 
 

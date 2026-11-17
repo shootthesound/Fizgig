@@ -22,7 +22,8 @@ def test_which_bases_stream():
         assert desc.streams_blocks("bf16") and desc.streams_blocks("int8")
 
 
-def test_a_12gb_card_swaps_the_4bit_base():
+def test_a_12gb_card_swaps_the_4bit_base(monkeypatch):
+    monkeypatch.setenv("FIZGIG_PREVIEW_LOWMEM", "0")       # the big-card figures, whatever card runs the check
     desc = get("minimax_image")
     drv = desc.load_driver()
     peak, per_block = quant._peak(desc.train_memory["nf4"], 0.25), desc.train_memory["nf4"][1]

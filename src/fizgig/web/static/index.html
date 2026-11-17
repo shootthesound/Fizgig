@@ -1150,7 +1150,7 @@
             </div>
           </div>
           <div class="ry-tabs" id="ryTabs">
-            <button class="ry-tab ry-folder-only" data-ry="epochs">Epochs</button>
+            <button class="ry-tab" data-ry="epochs">Epochs</button>
             <button class="ry-tab" data-ry="seed">Seed travel</button>
             <button class="ry-tab" data-ry="prompt">Prompt travel</button>
             <button class="ry-tab" data-ry="strength">Strength travel</button>
@@ -1167,6 +1167,11 @@
                 <select id="ryMax" class="w-combo st-small-select"><option>All</option><option>6</option><option>8</option>
                   <option>10</option><option selected>12</option><option>16</option><option>20</option></select>
                 <span class="field-hint">how many epochs to render, spread across the run</span></div>
+              <div class="field-row"><span class="field-label">Epochs:</span>
+                <input type="text" id="ryFrom" class="w-num" placeholder="first" title="The first epoch to render. Empty: the start of the run.">
+                <span class="field-hint">to</span>
+                <input type="text" id="ryTo" class="w-num" placeholder="last" title="The last epoch to render. Empty: the end of the run.">
+                <span class="field-hint">render part of the run only, e.g. 75 to 90 around a good epoch; Max renders spreads its picks inside it. Empty: the whole run</span></div>
               <div class="field-row"><button class="btn btn-primary" id="ryRender">Render epochs</button>
                 <button class="btn" id="ryStop" disabled>Stop</button>
                 <button class="btn" id="ryUnload" title="Free the GPU: the model leaves the card (the next render loads it again).">Unload model</button><span class="field-hint" id="ryStatus">Pick a folder, set a

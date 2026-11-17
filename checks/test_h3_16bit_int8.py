@@ -48,7 +48,8 @@ def test_header_tells_the_files_apart(tmp_path):
     assert not T.has_int8_codes(str(tmp_path / "missing.safetensors"))
 
 
-def test_h3_image_plans_int8_for_any_pruned_file(tmp_path):
+def test_h3_image_plans_int8_for_any_pruned_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("FIZGIG_PREVIEW_LOWMEM", "0")       # the big-card figures, whatever card runs the check
     f = _files(tmp_path)
     desc = get("minimax_image")
     drv = desc.load_driver()

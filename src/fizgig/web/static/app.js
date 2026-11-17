@@ -4261,7 +4261,15 @@ function ryShowTool(key) {
 
 function rySource() { return (document.querySelector('input[name="rySource"]:checked') || {}).value || "folder"; }
 function rySourceChanged() {
-  $("tab-royale").classList.toggle("single", rySource() === "single"); ryRemember();
+  const single = rySource() === "single";
+  $("tab-royale").classList.toggle("single", single); ryRemember();
+  // Epochs stays in the row so it can be found: greyed with a Single LoRA, saying what it needs (a class, not
+  // disabled - a disabled button shows no hover text)
+  const ep = document.querySelector('#ryTabs .ry-tab[data-ry="epochs"]');
+  ep.classList.toggle("ry-tab-off", single);
+  ep.setAttribute("aria-disabled", single ? "true" : "false");
+  ep.title = single ? "Epochs compares a training run's epochs: choose Training folder (compare epochs) as the " +
+    "Source above." : "Every epoch of the run on one seed, crossfaded";
   ryShowTool(S.ry.tool || rySaved().tool || "epochs");
 }
 
@@ -4402,7 +4410,9 @@ async function ryScSave(sc, fmt) {
 
 async function wireRoyaleTravel() {
   document.querySelectorAll('input[name="rySource"]').forEach((r) => r.addEventListener("change", rySourceChanged));
-  document.querySelectorAll("#ryTabs .ry-tab").forEach((b) => b.addEventListener("click", () => ryShowTool(b.dataset.ry)));
+  document.querySelectorAll("#ryTabs .ry-tab").forEach((b) => b.addEventListener("click", () => {
+    if (!b.classList.contains("ry-tab-off")) ryShowTool(b.dataset.ry);       // greyed Epochs: its hover text says why
+  }));
   const setSingle = (p) => { $("rySingle").value = p; ryRemember(); };
   const up = uploadButton({kind: "path", key: "ROYALE_SINGLE"}, $("rySingle"), setSingle);
   $("rySingleBtns").replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () => pick($("rySingle").value || loraStart(), false, setSingle)}),
@@ -4485,7 +4495,7 @@ async function royaleRender() {
     const r = await api("/api/royale/render", {family: $("ryFamily").value, folder: $("ryFolder").value.trim(),
       prompt: $("ryPrompt").value.trim(), seed: seedOf("rySeed"), ref: $("ryRef").value.trim(),
       ref_strength: refStrength($("ryRefStr").value), width: Number($("ryW").value), height: Number($("ryH").value),
-      max: $("ryMax").value});
+      max: $("ryMax").value, from: $("ryFrom").value.trim(), to: $("ryTo").value.trim()});
     if (r.family !== $("ryFamily").value) {         // the checkpoints are another model's: follow them (as the desktop)
       await royaleFamily(r.family);
       $("ryStatus").textContent = `Switched to ${$("ryFamily").selectedOptions[0].text} to match the checkpoints.`;
@@ -8749,12 +8759,14 @@ async function pollCaptions() {
   $("capBar").style.width = (busy ? pct : 0).toFixed(1) + "%";
   $("capStatus").textContent = {
     idle: "No model loaded.", loaded: `${st.model} is loaded, ready.`,
-    loading: `Loading ${st.model}… (the first time it downloads)`,
+    loading: st.phase === "downloading" ? `Downloading ${st.model}… (the first time only). Stop cancels it.`
+      : `Loading ${st.model} into memory… Stop cancels it.`,
     running: `Captioning ${st.done} of ${st.total}` + (st.fail ? ` · ${st.fail} failed` : ""),
     translating: st.total ? `Translating ${st.done} of ${st.total}` : "Loading the translator…",
   }[st.state] || st.state;
   $("capAll").disabled = busy; $("capStatic").disabled = busy; $("capTranslate").disabled = busy;
-  $("capStop").disabled = !busy; $("capUnload").disabled = busy || !st.loaded;
+  // Unload while it is still loading too: it ends the load and frees what it took (#366)
+  $("capStop").disabled = !busy; $("capUnload").disabled = (busy && st.state !== "loading") || !st.loaded;
   const log = $("capLog");
   const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
   log.textContent = st.log.join("\n");

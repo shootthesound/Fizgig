@@ -117,10 +117,16 @@ def _gfx_from_kfd_topology() -> list[str]:
                 text = fh.read()
         except OSError:
             continue
-        m = re.search(r"gfx_target_version\s+\d+\s+(gfx[0-9]{1,2}[0-9a-f]{2})(?![-0-9a-z])", text, re.I)
-        if m:
-            hits.append(m.group(1).lower())
+        # the file holds a bare number: 90402 -> gfx942, 110001 -> gfx1101, 90010 -> gfx90a (CPU nodes are 0)
+        m = re.search(r"gfx_target_version\s+(\d+)", text)
+        if m and int(m.group(1)):
+            hits.append(_gfx_name(int(m.group(1))))
     return hits
+
+
+def _gfx_name(version: int) -> str:
+    """The kernel driver's gfx_target_version as its gfx name."""
+    return f"gfx{version // 10000}{version // 100 % 100:x}{version % 100:x}"
 
 
 def _gfx_from_drm_pci() -> list[str]:

@@ -183,6 +183,25 @@
               <div class="dataset-grid" id="datasetsGrid"></div>
             </div>
           </div>
+          <div class="section-card accent-card" id="podFetchCard" style="display:none">
+            <div class="card-title"><span>Download a training folder to this pod</span></div>
+            <div class="card-desc">For a big dataset, download it straight onto the pod instead of sending it up from
+              your computer. Paste a Hugging Face dataset link (or a link to one of its folders), a Google Drive share
+              link to a zip, or a direct link to a zip or tar. Archives are unpacked into a folder of their own; if the
+              download stops, Download again with the same link carries on where it left off.</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Link:</span>
+                <input type="text" id="podFetchLink" class="w-path"
+                  placeholder="https://huggingface.co/datasets/… or a Google Drive / zip link"></div>
+              <div class="field-row"><span class="field-label">Folder name:</span>
+                <input type="text" id="podFetchName" class="w-path" placeholder="from the link"></div>
+              <div class="field-row">
+                <button class="btn btn-primary" id="podFetchGo">Download</button>
+                <button class="btn" id="podFetchStop" style="display:none">Stop</button>
+                <button class="btn" id="podFetchUse" style="display:none">Train on this folder</button></div>
+              <div class="field-hint" id="podFetchStatus"></div>
+            </div>
+          </div>
           <div class="section-card accent-card" id="podLocalCard" style="display:none">
             <div class="card-title"><span>From this computer</span>
               <div class="card-title-tools"><select id="podLocalSort" class="w-combo-md" title="Order of the folders">

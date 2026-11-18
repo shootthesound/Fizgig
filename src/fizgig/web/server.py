@@ -3349,6 +3349,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({"word": folder_trigger((qs.get("folder") or [""])[0])})
         if path == "/api/fetch":
             return self.json(_fetch_status())
+        if path == "/api/pod/dataset":                # Start tab, on a pod: the training-folder download (#308)
+            from fizgig.web import pod_dataset
+            return self.json(pod_dataset.status())
         if path.startswith(("/api/helper/", "/api/helpers")):   # helpers: another Fizgig's GPU (web/helpers.py)
             from fizgig.web import helpers
             g = lambda k: (qs.get(k) or [""])[0]
@@ -4647,6 +4650,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"ok": True})
             if path == "/api/fetch/cancel":
                 return self.json({"ok": _cancel_fetch()})
+            if path in ("/api/pod/dataset/fetch", "/api/pod/dataset/stop"):   # a training folder from a link (#308)
+                from fizgig.web import pod_dataset
+                if path.endswith("/stop"):
+                    return self.json(pod_dataset.stop())
+                try:
+                    return self.json(pod_dataset.start(str(b.get("link") or ""), str(b.get("name") or "")))
+                except ValueError as e:
+                    return self.json({"error": str(e)})
             if path == "/api/stop":
                 return self.json({"ok": _stop() or _stop_paused()})
             if path == "/api/logout":                     # this device: its login cookie goes

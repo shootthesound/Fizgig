@@ -77,6 +77,7 @@ async function boot() {
   S.webPort = pr.web_port;
   S.portNow = pr.port_now;
   S.onPod = pr.on_pod;
+  podFetchInit();                          // on a pod: the Start tab's Download a training folder card
   S.hostName = pr.host_name || "";
   if (S.podLocal && S.podLocal.list.length) podLocalDraw();   // drawn before login: now it can say where it sends to
   S.passwordOn = pr.password_on;
@@ -10698,6 +10699,45 @@ const PODLOCAL_SORT = {
   za: (a, b) => b.name.localeCompare(a.name, undefined, {numeric: true, sensitivity: "base"}),
   big: (a, b) => (b.bytes || 0) - (a.bytes || 0),
   many: (a, b) => (b.pictures + b.clips + b.songs) - (a.pictures + a.clips + a.songs)};
+
+// ---- Start tab, on a pod: download a training folder from a link (web/pod_dataset.py, to-do #13, #308) ----------
+const podFetchGB = (b) => b >= 1e9 ? (b / 1e9).toFixed(1) + " GB" : (b / 1e6).toFixed(0) + " MB";
+function podFetchShow(s) {
+  const run = s.state === "running";
+  $("podFetchGo").style.display = run ? "none" : "";
+  $("podFetchStop").style.display = run ? "" : "none";
+  $("podFetchUse").style.display = s.state === "done" ? "" : "none";
+  const left = s.seconds_left ? `, about ${Math.max(1, Math.round(s.seconds_left / 60))} min left` : "";
+  $("podFetchStatus").textContent =
+    run ? `Downloading into ${s.folder}: ${podFetchGB(s.bytes)}` + (s.total ? ` of ${podFetchGB(s.total)}` : "") +
+          (s.speed ? `, ${podFetchGB(s.speed)}/s` : "") + left + "." :
+    s.state === "done" ? `Downloaded: ${s.folder} (${podFetchGB(s.bytes)}).` :
+    s.state === "failed" || s.state === "stopped" ? s.message : "";
+}
+async function podFetchPoll() {
+  let s;
+  try { s = await api("/api/pod/dataset"); } catch (e) { return; }
+  podFetchShow(s);
+  if (s.state === "running") setTimeout(podFetchPoll, 2000);
+}
+function podFetchInit() {
+  if (!S.onPod || S._podFetchOn) return;
+  S._podFetchOn = true;
+  $("podFetchCard").style.display = "";
+  $("podFetchGo").onclick = async () => {
+    $("podFetchStatus").textContent = "Checking the link and the disk…";
+    const r = await api("/api/pod/dataset/fetch", {link: $("podFetchLink").value, name: $("podFetchName").value})
+      .catch((e) => ({error: e.message}));
+    if (r.error) { $("podFetchStatus").textContent = r.error; return; }
+    podFetchShow(r); podFetchPoll();
+  };
+  $("podFetchStop").onclick = async () => podFetchShow(await api("/api/pod/dataset/stop", {}));
+  $("podFetchUse").onclick = async () => {
+    const s = await api("/api/pod/dataset");
+    $("imageFolder").value = s.folder; $("imageFolder").dispatchEvent(new Event("change"));
+  };
+  podFetchPoll();                          // a download already going (the page reloaded)
+}
 
 async function podLocalInit() {
   const api_ = appBridge();

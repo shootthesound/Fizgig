@@ -725,6 +725,12 @@ class MiniMaxDriver(FamilyDriver):
     def encode_text(self, te, captions):
         return [{"hidden_states": te.encode(c)[0].detach().cpu()} for c in captions]       # (L, 5120)
 
+    def save_text_cache(self, item, cond):
+        """A caption re-encoded mid-run (the loss watch): H3's own text cache layout (hidden_states + mask), which
+        batch_cond reads - not the shared cond__ file, which would leave the next step without its text."""
+        from fizgig.minimax.caching import save_text_encoder_output_cache_minimax
+        save_text_encoder_output_cache_minimax(item, cond["hidden_states"])
+
     def load_vae(self, path, device):
         """The video decoder in fp16 on the CPU (it rides to the GPU for the decode only, as the old previews) and,
         with the audio_vae option, the audio decoder."""

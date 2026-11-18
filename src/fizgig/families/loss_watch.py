@@ -325,7 +325,7 @@ class Watch:
                     for (item, alt, text), cond in zip(chunk, self.driver.encode_text(te, [t for _, _, t in chunk])):
                         if alt is None:
                             item.caption = text
-                            cache.save_cond(desc, item, cond)     # the loader reads this file every step
+                            self.driver.save_text_cache(item, cond)   # the loader reads this file every step
                         else:
                             cache.save_cond_file(desc, alt, text, cond, item.item_key)
                 if self.multi_caption:     # a caption that lost lines: its old lines' caches go, or they'd still train

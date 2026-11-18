@@ -238,6 +238,12 @@ class FamilyDriver:
         family that keeps its own cache layout (H3's hidden_states + audio rows) maps its keys here."""
         return {k[len("cond__"):]: v.to(device) for k, v in batch.items() if k.startswith("cond__")}
 
+    def save_text_cache(self, item, cond: dict) -> None:
+        """A caption re-encoded mid-run (a Problem Images edit, auto-recaption) written to the item's text cache, in
+        the layout batch_cond reads. Default: the shared `cond__` file. A family with its own layout (H3) writes that."""
+        from fizgig.families import cache
+        cache.save_cond(self.description, item, cond)
+
     # ---- edit training (optional) -----------------------------------------------------------------
     supports_references = False       # reference ("before") images: pair datasets and edit previews
 

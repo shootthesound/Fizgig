@@ -309,17 +309,16 @@ MINIMAX = FamilyDescription(
     multi_concept_hint="See the MiniMax section of the README.",
     int8_attention=True,              # workbench renders: comfy-kitchen's INT8 attention
     activation_cache=True,            # Reuse unchanged blocks: step-1 replay, identical to a full render
-    adaptive_lr=False,
+    # Adaptive LR and the per-image loss watch: on since 18 Nov 2026 (tested on H3 the night before: the watch's
+    # verdicts and per-image LR worked; Adaptive LR only steers AdamW-type runs - Automagic sets its own rate). A caption
+    # re-encoded mid-run goes into H3's own text cache (driver.save_text_cache). The presets are unchanged.
     not_offered={
-        "adaptive_lr": "retired for H3 by decision (its LR is set by the adapter ramp)",
-        "loss_watch": "off for H3 by decision (CLAUDE.md, Per-Image Loss Watch)",
         "training_maps": "clips: the maps draw on a still's latent grid (a clip's frames would need their own view)",
         "caption_dropout": "H3 has its own caption dropout option (H3_CAPTION_DROPOUT), not the shared row",
         "detail_crops": "a crop of a clip's frame isn't a clip",
         "resolution_stages": "clips train at their own size: not measured with stages",
     },
     slider_training=True,             # prompt pairs, photo pairs and clip pairs (driver: _slider_loss / predict)
-    loss_watch=False,
     multi_caption=False,              # H3 caches its text its own way (minimax/caching.py): one caption a clip
     training_maps=False,
     lora_regularisation=False,        # clips: the regularisation dataset is for still-picture LoRAs

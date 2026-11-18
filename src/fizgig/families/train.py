@@ -1579,14 +1579,16 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     "run goes (Windows spilling into system memory), or it runs out of memory: turn Weight averaging "
                     "(EMA) off, lower Target Megapixels, or use a standard LoRA")
             from fizgig.utils.gpu_backend import is_rocm
-            if not kept and precision == "nf4" and "closely" in why and os.name == "nt" and is_rocm():
-                # Windows AMD has no expandable segments: a close fit runs short once pictures of many shapes train at
-                # full size (1.8 GB in unusable pieces, #341, measured on ROCm); a Windows card then spills into system
-                # memory and crawls. EMA off fitted the same run (15.5 GB peak of 15.8)
+            from fizgig.utils.rocm_alloc import expandable_in_effect
+            if not kept and precision == "nf4" and "closely" in why and is_rocm() and not expandable_in_effect():
+                # AMD without expandable segments (Windows, and consumer Radeons on Linux: they corrupt memory there,
+                # #363): a close fit runs short once pictures of many shapes train at full size (1.8 GB in unusable
+                # pieces, #341, measured on ROCm); a Windows card then spills into system memory and crawls. EMA off
+                # fitted the same run (15.5 GB peak of 15.8)
                 logger.warning(
-                    "[precision] tight fit: on an AMD card on Windows this run may run short once its full-size "
-                    "pictures start. If steps slow down as the run goes, or it runs out of memory: turn Weight "
-                    "averaging (EMA) off, lower Target Megapixels, or use a standard LoRA")
+                    "[precision] tight fit: on this AMD card this run may run short once its full-size pictures "
+                    "start. If steps slow down as the run goes, or it runs out of memory: turn Weight averaging (EMA) "
+                    "off, lower Target Megapixels, or use a standard LoRA")
             why += f" at {mp:.2f} MP" + (f" x {bsz} pictures a step" if bsz > 1 else "")
             if adapter_gb >= 0.1 and not kept:
                 why += (f", counting {adapter_gb:.1f} GB more for the "

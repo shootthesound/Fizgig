@@ -44,6 +44,13 @@ def amd_archs():
     return out
 
 
+def expandable_in_effect():
+    """This AMD process's allocator has expandable segments: ROCm's own name or PyTorch's generic one (ROCm ignores
+    PYTORCH_CUDA_ALLOC_CONF, #341)."""
+    return any("expandable_segments:true" in os.environ.get(k, "").replace(" ", "").lower()
+               for k in ("PYTORCH_HIP_ALLOC_CONF", "PYTORCH_ALLOC_CONF"))
+
+
 def expandable_ok(archs=None):
     """Expandable segments for this AMD machine: every GPU is a datacenter card, and FIZGIG_NO_EXPANDABLE isn't set."""
     if os.environ.get("FIZGIG_NO_EXPANDABLE") == "1":

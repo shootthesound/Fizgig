@@ -63,6 +63,7 @@ The line under the repeats tick is a table: each folder's pictures, its repeats,
 **On a pod or another computer** the tick decides what goes:
 - **Upload a folder** on the Start tab keeps the sub-folders as they are when it is ticked. Unticked, the files of the sub-folders all go into the one new folder.
 - **Send to this pod** (the Fizgig window's **From this computer** card) sends the sub-folders too when it is ticked; each tile says whether its sub-folders go ("sent too" or "not sent"). Sending again sends only what isn't there yet.
+- **Download a training folder to this pod** (Start tab, on a pod) unpacks a dataset with its sub-folders as they are. Tick the box to train them all, or press **Choose…** after **Train on this folder** to pick one sub-folder (it opens at the downloaded folder).
 - **Move a run** takes the sub-folders with the run, and captions edited over there come back into each folder. See [Move a run](MOVE_RUN.md).
 
 **Not with** Subjects 2-4, DOP or Fizgig LoRA Isolation, which keep one folder per subject, nor Edit or slider training, which pair their files: the tick is hidden in those modes. To train several people, use Subjects; to train one subject's outfits or forms, use sub-folders or one folder with the outfit named in each caption.

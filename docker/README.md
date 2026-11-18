@@ -176,7 +176,20 @@ Prefer a terminal? `runpodctl` is preinstalled — `runpodctl send <path>` on th
 `runpodctl receive <code>` on your machine. `scp` and `rsync` over SSH work too, and rsync is the
 better bet for a large dataset since it resumes.
 
-**A very big dataset (tens of GB or more) is quicker to download onto the pod than to upload from home.** Turn on RunPod's **SSH Terminal Access** for the pod, connect, and fetch it into `/workspace/datasets`:
+**A very big dataset (tens of GB or more) is quicker to download onto the pod than to upload from home.** On a pod, the Start tab has a **Download a training folder to this pod** card:
+
+1. Paste a link into **Link**:
+   - a Hugging Face dataset (`https://huggingface.co/datasets/<user>/<dataset>`), or one of its folders (`…/tree/main/<folder>`). A private dataset needs the pod's `HF_TOKEN`;
+   - a Google Drive share link to a **zip** (Drive won't hand over a folder as one download, so zip the folder first);
+   - a direct link to a zip or tar.
+2. **Folder name** is optional: empty, the name comes from the link. The folder goes in `/workspace/datasets/`.
+3. Press **Download**. Fizgig checks the pod's free disk first (an archive needs room for itself and its unpacked copy) and says so plainly when it won't fit. While it downloads, the card shows how much has arrived, the speed and the time left.
+4. An archive is unpacked and then deleted. If **Stop** is pressed or the connection drops, **Download** again with the same link and folder name carries on where it stopped.
+5. When it's done, **Train on this folder** makes it the training folder.
+
+**A dataset with sub-folders** keeps them: the archive unpacks as it is (only a single wrapper folder, `portrait-set/portrait-set/…`, is taken away). To train one sub-folder, press **Choose…** on the Training folder card after **Train on this folder**: it opens at the downloaded folder, so click into the sub-folder you want. To train them all, keep the top folder and tick **Also train on its sub-folders** on the Training tab ([Sub-folders](../docs/TRAINING.md#sub-folders)). **Folder name** only names the download's own folder; it doesn't pick a folder inside the archive.
+
+Prefer a terminal? Turn on RunPod's **SSH Terminal Access** for the pod, connect, and fetch it into `/workspace/datasets`:
 
 - **Hugging Face:** `hf download <user>/<dataset> --repo-type dataset --local-dir /workspace/datasets/<name>`
 - **Google Drive:** `pip install gdown`, then `gdown --fuzzy <share link> -O /workspace/datasets/<name>.zip`

@@ -38,6 +38,8 @@ With your RunPod API key (RunPod > Settings > API Keys, pasted into the tab), yo
 
 On a pod in the Fizgig window, the Start tab's **From this computer** card lists the training folders on your own computer: **Send to this pod** uploads one, captions and all, and makes it the training folder (its sub-folders go too when **Also train on its sub-folders** is ticked). A dropped connection carries on where it stopped, and sending it again only sends what isn't there yet. (In a browser tab the card isn't there: use Upload a folder.)
 
+For a big dataset, the Start tab's **Download a training folder to this pod** card (on a pod only, window or browser) downloads it straight onto the pod instead: paste a Hugging Face dataset link (or one of its folders), a Google Drive share link to a zip, or a direct zip or tar link, and press **Download**. It checks the disk first, unpacks an archive, carries on where it stopped if you Download again, and offers **Train on this folder** when it's done. Sub-folders stay as they are: pick one with **Choose…** (it opens at the downloaded folder), or tick **Also train on its sub-folders** to train them all. More in the [pod guide](../docker/README.md#getting-files-in-and-out).
+
 On a pod, the sidebar's **File manager** button opens the pod's file manager (port 8080) in a new tab: drag folders in, take big files out, anywhere in `/workspace`. Log in as `admin` with the pod's password; if it refused that password as too common, the button's tooltip says what to use instead. The Start tab's upload card and Runs & outputs link to it too.
 
 Logging in on a pod, tick **Keep me logged in on this device** and it remembers you for 30 days, through pod restarts.

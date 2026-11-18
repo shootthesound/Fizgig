@@ -1123,7 +1123,11 @@ def write_preview_mp4(path, frames, wav_path, fps=24):
            "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{w}x{h}", "-r", str(fps), "-i", "-",
            *(["-i", wav_path] if wav_path else []),
            "-c:v", "libx264", "-crf", "18", "-preset", "veryfast", "-pix_fmt", "yuv420p",
-           *(["-c:a", "aac", "-b:a", "192k", "-shortest"] if wav_path else []), "-movflags", "+faststart", path]
+           # the sound padded / trimmed to exactly the clip's length: -shortest cut the last frame (a 56-frame clip
+           # came out 55) when the wav ran a hair short of the frames
+           *(["-c:a", "aac", "-b:a", "192k", "-af",
+              f"apad=whole_dur={f / float(fps):.4f},atrim=end={f / float(fps):.4f}"]
+             if wav_path else []), "-movflags", "+faststart", path]
     p = subprocess.run(cmd, input=raw, capture_output=True,
                        creationflags=0x08000000 if os.name == "nt" else 0)
     if p.returncode != 0 or not os.path.isfile(path):

@@ -2075,6 +2075,10 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 #tab-studio .field-row select.st-small-select { flex: 0 0 auto; width: auto; min-width: 96px; }
 #tab-studio .st-inline { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
 #tab-studio .st-inline input { width: 64px; flex: 0 0 64px; }
+/* a narrow window: a row's group of controls wraps onto further lines instead of running off the card; a label stays
+   with its box (.st-pair) */
+#tab-studio .field-row > .st-inline { flex: 0 1 auto; min-width: 0; flex-wrap: wrap; white-space: normal; row-gap: 6px; }
+#tab-studio .st-pair { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
 .st-lock { cursor: pointer; background: none; border: 0; font-size: 12px; padding: 0; opacity: .6; }
 .st-lock.on { opacity: 1; }
 

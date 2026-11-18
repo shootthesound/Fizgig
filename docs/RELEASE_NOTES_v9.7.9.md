@@ -16,6 +16,7 @@
 - **Studio: a finished render always shows.** One failed status check stopped the page asking, so a render could finish and never appear.
 - **Studio clips: changing the donor's strength no longer renders the Baseline clip again.** The donor is off in that clip.
 - **MiniMax H3 Studio on 24 GB cards:** the text encoder no longer runs out of memory when the base steps aside for a new prompt.
+- **LoRA Royale likeness clips in portrait:** the Fizgig tag moves to the top-right corner when it would run over the epoch label, and the Training Run Visualiser's tag does the same over its epoch ticker (#374, thanks @mart-hill).
 - **Linux AMD installer:** finding the card works on systems without `rocminfo`.
 
 **To update:** run the updater as usual.

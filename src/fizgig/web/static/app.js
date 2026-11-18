@@ -3325,18 +3325,22 @@ function rvDraw(g, im, fr, W, H) {
   const sc = Math.min(W / im.naturalWidth, H / im.naturalHeight), dw = im.naturalWidth * sc, dh = im.naturalHeight * sc;
   g.fillStyle = "#fff"; g.fillRect((W - dw) / 2, (H - dh) / 2, dw, dh);    // a transparent sample on white
   g.drawImage(im, (W - dw) / 2, (H - dh) / 2, dw, dh);
+  let tickerEnd = 0;                             // where the epoch ticker's box ends, across the bottom
   if ($("rvTicker").checked) {
     const label = "Epoch " + fr.epoch;
     g.font = "bold 26px sans-serif";
     const tw = g.measureText(label).width;
     g.fillStyle = "rgba(0,0,0,0.65)"; g.fillRect(16, H - 56, tw + 24, 40);
     g.fillStyle = "#fff"; g.fillText(label, 28, H - 28);
+    tickerEnd = 16 + tw + 24;
   }
-  if ($("rvTag").checked) {                      // scaled with the frame, so it reads at full size too
-    const fs = Math.max(28, Math.round(H * 0.055));
+  if ($("rvTag").checked) {                      // scaled with the frame (its shorter side), so it reads at full size too
+    const fs = Math.max(28, Math.round(Math.min(W, H) * 0.055));
     g.font = `bold ${fs}px sans-serif`;
-    const tw = g.measureText("Fizgig").width;
-    g.fillStyle = "rgba(255,255,255,0.7)"; g.fillText("Fizgig", W - tw - 20, H - 20);
+    const tw = g.measureText("Fizgig").width, x = W - tw - 20;
+    // no room beside the ticker (a portrait or small frame, #374): the tag goes to the top-right corner instead
+    const y = tickerEnd && x < tickerEnd + 16 ? 20 + fs : H - 20;
+    g.fillStyle = "rgba(255,255,255,0.7)"; g.fillText("Fizgig", x, y);
   }
 }
 const rvLoad = (fr) => new Promise((res) => { const im = new Image(); im.onload = () => res({fr, im}); im.onerror = () => res(null); im.src = rvSrc(fr.path); });

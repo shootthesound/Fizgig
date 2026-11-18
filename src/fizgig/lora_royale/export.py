@@ -343,12 +343,20 @@ def build_likeness_frames(ref_image: Image.Image, images: List[Tuple], scores: d
         s_h = (asc + desc) + 2 * spad[1]
         sw = int(draw_len(d, stext, sf) + spad[0] * 2)
         _pill_lines(d, [stext], sf, (W - sw) // 2, margin + s_h, (20, 20, 22, 255), scol, spad)
-        # Brand pill (bottom-right of the whole composite).
+        # Brand pill: bottom-right of the whole composite, or top-right when it would run into the EPOCH pill (a
+        # narrow, portrait epoch panel, #374), below the score when the score is in the way there too.
         if brand:
             bf = _load_font(fs)
             bt = "Fizgig · LoRA Royale"
             bw = int(draw_len(d, bt, bf) + pad[0] * 2)
-            _pill_lines(d, [bt], bf, W - margin - bw, H - margin, (255, 255, 255, 235), (0, 0, 0, 140), pad)
+            bx = W - margin - bw
+            bottom = H - margin
+            if bx < ref_w + gap + margin + draw_len(d, ep_lbl, f) + pad[0] * 2 + margin:
+                b_asc, b_desc = bf.getmetrics()
+                bottom = margin + b_asc + b_desc + 2 * pad[1]
+                if bx < (W + sw) // 2 + margin:
+                    bottom += margin + s_h
+            _pill_lines(d, [bt], bf, bx, bottom, (255, 255, 255, 235), (0, 0, 0, 140), pad)
         return Image.alpha_composite(base, overlay).convert("RGB")
 
     frames: List[Image.Image] = []

@@ -6551,7 +6551,7 @@ function studioKind(L, sv) {
   $("stH3Boost").parentElement.style.display = V.speed_boost ? "" : "none";   // a family ability (H3 has it)
   $("stH3Early").checked = h3.early !== false;
   $("stH3Only").checked = h3.only === true;
-  $("stLoopRow").style.display = V.pieces ? "" : "none";                      // with the In pieces ability (H3)
+  $("stLoopRow").style.display = $("stLoopHint").style.display = V.pieces ? "" : "none";   // with the In pieces ability (H3)
   $("stLoopPrompt").value = h3.loopPrompt || "";
   $("stLoopS").value = h3.loopS || "";
   const up = h3.up || {};                                                     // the Upscale fold (a family ability)

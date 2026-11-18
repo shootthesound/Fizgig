@@ -37,8 +37,9 @@ if not exist "%~dp0venv\Scripts\python.exe" (
 echo [AMD-ROCm] Setting environment variables...
 set "MIOPEN_FIND_MODE=2"
 set "FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE"
-REM expandable_segments mirrors upstream train scripts' CUDA alloc policy (ROCm key).
-set "PYTORCH_ALLOC_CONF=expandable_segments:True,max_split_size_mb:512,garbage_collection_threshold:0.8"
+REM No expandable segments: Windows AMD cards are consumer Radeons, where they corrupt memory silently on current
+REM ROCm (zeroed tensors, NaN weights, garbage pictures: #363, src\fizgig\utils\rocm_alloc.py).
+set "PYTORCH_ALLOC_CONF=max_split_size_mb:512,garbage_collection_threshold:0.8"
 set "FIZGIG_GPU_BACKEND=rocm"
 
 REM BNB_ROCM_VERSION / ROCM_PATH / HIP_PATH - written by

@@ -3543,9 +3543,12 @@ def setup_parser():
 
 def main():
     if sys.platform != "win32" and os.environ.get("FIZGIG_NO_EXPANDABLE") != "1":
-        os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
-        if os.environ.get("FIZGIG_GPU_BACKEND") == "rocm":    # ROCm reads its own name, not the CUDA one (#341)
-            os.environ.setdefault("PYTORCH_HIP_ALLOC_CONF", "expandable_segments:True")
+        from fizgig.utils.rocm_alloc import expandable_ok
+        if os.environ.get("FIZGIG_GPU_BACKEND") != "rocm":
+            os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+        elif expandable_ok():      # AMD: datacenter cards only - consumer Radeons corrupt memory with them (#363)
+            os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+            os.environ.setdefault("PYTORCH_HIP_ALLOC_CONF", "expandable_segments:True")   # ROCm's own name (#341)
     os.environ.setdefault("KMP_BLOCKTIME", "0")
     os.environ.setdefault("OMP_WAIT_POLICY", "PASSIVE")
     logging.basicConfig(level=logging.INFO)

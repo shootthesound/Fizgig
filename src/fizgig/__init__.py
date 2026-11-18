@@ -22,11 +22,13 @@ _logging.getLogger("bitsandbytes.cextension").addFilter(
     lambda r: "No prebuilt binary for CUDA" not in r.getMessage())
 
 # AMD on Linux: expandable segments under ROCm's own name (it ignores PYTORCH_CUDA_ALLOC_CONF), set before the lines
-# below first touch the GPU - the allocator reads it then. Without them a 16 GB card's Krea 2 LoKR run at 0.5 MP ran
-# out with 1.8 GB held in unusable pieces (#341). Windows has no expandable segments. FIZGIG_NO_EXPANDABLE=1 opts out.
-if (_os.environ.get("FIZGIG_GPU_BACKEND") == "rocm" and _os.name != "nt"
-        and _os.environ.get("FIZGIG_NO_EXPANDABLE") != "1"):
-    _os.environ.setdefault("PYTORCH_HIP_ALLOC_CONF", "expandable_segments:True")
+# below first touch the GPU - the allocator reads it then. Only on AMD's datacenter cards: on consumer Radeon cards
+# they corrupt memory silently (utils/rocm_alloc.py, #363). Without them a 16 GB-capped MI350X's Krea 2 LoKR run at
+# 0.5 MP ran out with 1.8 GB held in unusable pieces (#341). FIZGIG_NO_EXPANDABLE=1 opts out.
+if _os.environ.get("FIZGIG_GPU_BACKEND") == "rocm" and _os.name != "nt":
+    from fizgig.utils.rocm_alloc import expandable_ok as _expandable_ok
+    if _expandable_ok():
+        _os.environ.setdefault("PYTORCH_HIP_ALLOC_CONF", "expandable_segments:True")
 # AMD with built-in graphics listed first: the card is the one used - the launcher's pick even where the ROCm build
 # ignores HIP_VISIBLE_DEVICES, and the card itself when nothing picked one (#342). Only on AMD launches.
 if _os.environ.get("FIZGIG_GPU_BACKEND") == "rocm":

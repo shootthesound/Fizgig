@@ -8,15 +8,6 @@ source venv/bin/activate
 
 export MIOPEN_FIND_MODE=2
 export FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE
-# Allocator: expandable segments, under ROCm's own name too (it doesn't read PYTORCH_CUDA_ALLOC_CONF). Without them a
-# 16 GB card's Krea 2 LoKR run at 0.5 MP on pictures of many shapes ran out with 1.8 GB held in unusable pieces; with
-# them the same run trained through at the same speed (#341, MI350X capped to 15.8 GB, 15 Nov 2026).
-# FIZGIG_NO_EXPANDABLE=1 before launching opts out.
-if [[ "${FIZGIG_NO_EXPANDABLE:-}" != "1" ]]; then
-    export PYTORCH_ALLOC_CONF=expandable_segments:True
-    export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True
-    export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-fi
 export FIZGIG_GPU_BACKEND=rocm
 # Cache fast-exit: src/fizgig/rocm/cache_exit.py (Linux ROCm only). Opt out: FIZGIG_ROCM_NO_FAST_EXIT=1
 
@@ -69,6 +60,23 @@ IS_LEGACY_GPU=0
 case "${GPU_ARCH}" in
     gfx101*|gfx103*) IS_LEGACY_GPU=1 ;;
 esac
+[[ -n "$GPU_ARCH" ]] && export FIZGIG_AMD_GFX="$GPU_ARCH"     # Fizgig decides the same (src/fizgig/utils/rocm_alloc.py)
+
+# Allocator: expandable segments (under ROCm's own name too: it doesn't read PYTORCH_CUDA_ALLOC_CONF) on AMD's
+# datacenter cards only. A 16 GB-capped MI350X's Krea 2 LoKR run at 0.5 MP ran out with 1.8 GB held in unusable pieces
+# without them (#341). On consumer Radeon cards (RDNA2/3/4) they corrupt memory silently on current ROCm: zeroed
+# tensors, NaN weights, garbage pictures (#363). An unknown card gets none. FIZGIG_NO_EXPANDABLE=1 opts out everywhere.
+if [[ "${FIZGIG_NO_EXPANDABLE:-}" != "1" ]]; then
+    case "${GPU_ARCH}" in
+        gfx908|gfx90a|gfx94*|gfx95*)
+            export PYTORCH_ALLOC_CONF=expandable_segments:True
+            export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True
+            export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+            echo "[AMD-ROCm] Expandable memory segments: on (datacenter card)" ;;
+        *)
+            echo "[AMD-ROCm] Expandable memory segments: off (consumer or unknown card)" ;;
+    esac
+fi
 
 if [[ "$IS_LEGACY_GPU" -eq 1 ]]; then
     echo "[AMD-ROCm] Legacy GPU ${GPU_ARCH} - RDNA1/2 SDP overrides (no aotriton experimental)"

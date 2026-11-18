@@ -1,5 +1,15 @@
 # Fizgig news
 
+## 18 Nov 2026: MiniMax H3 Studio twice as fast, long clips in pieces, Continue and Loop back
+
+**Faster H3 Studio.** On the int8 base, Studio renders through the int8 kernel ComfyUI uses, with each LoRA added in one pass: a 5-second 512 × 512 clip's six steps went from 24.9 s to 11.2 s on a 5090. The int8 video VAE now works and is the default download.
+
+**Longer clips.** In pieces makes a clip of any length as 5.2-second pieces that carry on from each other, in one piece's memory, and a prompt line starting with a time changes the prompt from there. Continue adds a new clip on the end of the one you rendered; Loop back adds one that comes back round to its first frame.
+
+**Also:** Cancel in Studio, an Aspect list and a Width/Height swap, the big caption view edited a line at a time with Join lines, and a fix for LoRAs that failed in Studio with a dtype error.
+
+[Fizgig v9.7.9 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.7.9)
+
 ## 18 Nov 2026: Download a dataset onto a pod, caption jobs in the queue, and every preview setting in one place
 
 **Download a training folder onto a pod.** On a pod, the Start tab downloads a dataset straight from a Hugging Face, Google Drive or zip link, checks the disk first, unpacks it and carries on after a stop, so a big dataset no longer goes up from your home connection.

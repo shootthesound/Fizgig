@@ -6,6 +6,19 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 NEWS = [
     {
         "date": "18 Nov 2026",
+        "title": "MiniMax H3 Studio twice as fast, long clips in pieces, Continue and Loop back",
+        "body": (
+            "On the int8 base, MiniMax H3 Studio renders through the int8 kernel ComfyUI uses: a 5-second clip's "
+            "six steps take about half the time, and the int8 video VAE works.\n\n"
+            "In pieces makes clips of any length, Continue adds a clip on the end of the one you rendered, and Loop "
+            "back adds one that returns to its first frame. Plus Cancel in Studio and the big caption view a line "
+            "at a time."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#18-nov-2026-minimax-h3-studio-twice-as-fast-long-clips-in-pieces-continue-and-loop-back"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.7.9"}],
+    },
+    {
+        "date": "18 Nov 2026",
         "title": "Download a dataset onto a pod, caption jobs in the queue, and every preview setting in one place",
         "body": (
             "On a pod, the Start tab downloads a training folder straight from a Hugging Face, Google Drive or zip "

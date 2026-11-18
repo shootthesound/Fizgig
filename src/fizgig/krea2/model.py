@@ -202,7 +202,7 @@ class Attention(torch.nn.Module):
             attn_probe.see(q, k)
 
         # The shared attention expects [B, L, H, D] and returns [B, L, H*D]. GQA (heads != kvheads)
-        # is detected and handled inside it (enable_gqa for SDPA; native for flash/sageattn).
+        # is detected and handled inside it (expanded for SDPA/fixed Sage; native for flash).
         q, k, v = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
         x = common_attention([q, k, v], attn_params=attn_params)
         out = self.wo(x * F.sigmoid(gate))
@@ -408,6 +408,10 @@ class SingleStreamDiT(nn.Module):
             saved_blocks = self.blocks
             self.blocks = nn.ModuleList()
         try:
+            masters = getattr(self, "_cpu_weight_masters", None)
+            if masters:
+                from fizgig.krea2.safetensors_utils import move_frozen_weights
+                move_frozen_weights(self, device, masters)
             self.to(device)
         finally:
             if self.blocks_to_swap:
@@ -466,7 +470,8 @@ class SingleStreamDiT(nn.Module):
         # The pad lands on the text tail; extending txtmask with False makes the shared attention
         # machinery (cu_seqlens / key-padding mask / trim) exclude it, so it is numerically inert.
         fulllen = combined.shape[1]
-        padlen = (-fulllen) % 256
+        # ComfyUI's Sage inference runs the real sequence, without training's shape padding.
+        padlen = 0 if self.attn_mode == "sageattn" and not torch.is_grad_enabled() else (-fulllen) % 256
         if padlen > 0:
             combined = F.pad(combined, (0, 0, 0, padlen))
             pos = F.pad(pos, (0, 0, 0, padlen))
@@ -548,7 +553,7 @@ class SingleStreamDiT(nn.Module):
             context = self.txtmlp(context)
             combined = torch.cat((img, context), dim=1)
             fulllen = combined.shape[1]
-            padlen = (-fulllen) % 256
+            padlen = 0 if self.attn_mode == "sageattn" and not torch.is_grad_enabled() else (-fulllen) % 256
             if padlen > 0:
                 combined = F.pad(combined, (0, 0, 0, padlen))
                 pos = F.pad(pos, (0, 0, 0, padlen))

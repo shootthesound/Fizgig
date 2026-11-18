@@ -82,6 +82,13 @@ class AttentionParams:
         # plans or compiles per shape (cuDNN, torch.compile), so it needs to be measurable.
         self.uniform_seqlen = None
         self.uniform_exact = True     # False -> the trimmed window still contains padding
+        self.split_seqlens = None
+        if self.attn_mode == "sageattn" and self.split_attn and self.seqlens is not None:
+            # Resolve GPU lengths once per forward, not for q/k/v in every block.
+            self.split_seqlens = self.seqlens.tolist()
+            if len(set(self.split_seqlens)) == 1:
+                self.uniform_seqlen = self.split_seqlens[0]
+                self.split_attn = False
         # Compiled blocks keep the padded length too (COMPILED_BLOCKS, set by the driver's compile_blocks): the trim
         # length is a plain number, so every new one recompiled every block - with DOP's alternating passes (no
         # gradients, the LoRA off, trigger-free captions) a run with many picture sizes kept rebuilding for minutes.
@@ -168,6 +175,16 @@ from fizgig.modules import int8_attention as _int8_attention  # noqa: E402
 logger = logging.getLogger(__name__)
 
 
+def _sage_fixed(q, k, v):
+    # Match ComfyUI's Krea 2 attention: HND, expanded K/V heads, no mask.
+    if q.shape[1] != k.shape[1]:
+        groups = q.shape[1] // k.shape[1]
+        k = k.repeat_interleave(groups, dim=1)
+        v = v.repeat_interleave(groups, dim=1)
+    # The RDNA4 package may override smooth_k for numerical safety, as it does in ComfyUI.
+    return sageattn(q, k, v, tensor_layout="HND", is_causal=False, sm_scale=None, smooth_k=False)
+
+
 def attention(
     qkv_or_q: Union[torch.Tensor, list],
     k: Optional[torch.Tensor] = None,
@@ -209,8 +226,8 @@ def attention(
 
     # GQA: q may carry more heads than k/v (e.g. Krea 2 = 48 query / 12 kv heads). Expanding
     # k/v stays the right call even on cuDNN — measured 0.128 ms (expand) vs 0.138 ms
-    # (enable_gqa) at seq 1024, and enable_gqa on the DEFAULT backend is 1.802 ms. flash and
-    # sageattn group heads natively inside the kernel (verified), so they ignore this. For the
+    # (enable_gqa) at seq 1024, and enable_gqa on the DEFAULT backend is 1.802 ms. Flash groups
+    # heads natively; fixed-length Sage expands them as ComfyUI does. For the
     # torch (SDPA) path we expand k/v to q's head count below instead of passing enable_gqa=True,
     # because enable_gqa forces SDPA onto the slow math kernel (~7x slower than the fused kernels
     # at K2 scale); the repeat is numerically identical. Revert to enable_gqa=True once PyTorch's
@@ -268,9 +285,10 @@ def attention(
             attn_params = AttentionParams.create_attention_params(attn_params.attn_mode, True)  # do not in-place modify
             attn_params.seqlens = torch.tensor([q.shape[1]] * q.shape[0], device=q.device)
             attn_params.max_seqlen = q.shape[1]
-        q = [transpose_fn(q[i : i + 1, : attn_params.seqlens[i]]) for i in range(len(q))]
-        k = [transpose_fn(k[i : i + 1, : attn_params.seqlens[i]]) for i in range(len(k))]
-        v = [transpose_fn(v[i : i + 1, : attn_params.seqlens[i]]) for i in range(len(v))]
+        lengths = attn_params.split_seqlens if attn_params.split_seqlens is not None else attn_params.seqlens
+        q = [transpose_fn(q[i : i + 1, : lengths[i]]) for i in range(len(q))]
+        k = [transpose_fn(k[i : i + 1, : lengths[i]]) for i in range(len(k))]
+        v = [transpose_fn(v[i : i + 1, : lengths[i]]) for i in range(len(v))]
     else:
         q = transpose_fn(q)
         k = transpose_fn(k)
@@ -335,7 +353,7 @@ def attention(
         if attn_params.split_attn:
             x = []
             for i in range(len(q)):
-                x_i = sageattn(q[i], k[i], v[i], tensor_layout="HND", is_causal=False)
+                x_i = _sage_fixed(q[i], k[i], v[i])
                 q[i] = None
                 k[i] = None
                 v[i] = None
@@ -343,7 +361,7 @@ def attention(
             x = torch.cat(x, dim=0)
             q, k, v = None, None, None
         elif attn_params.cu_seqlens is None:  # all tokens are valid
-            x = sageattn(q, k, v, tensor_layout="HND", is_causal=False)
+            x = _sage_fixed(q, k, v)
             q, k, v = None, None, None
         else:
             # Reshape to [(bxs), a, d]
@@ -403,7 +421,7 @@ def attention(
     x = transpose_fn(x)  # [B, L, H, D]
     x = x.reshape(x.shape[0], x.shape[1], -1)  # [B, L, H*D]
 
-    if seqlen_trimmed:
+    if seqlen_trimmed and x.shape[1] != attn_params.max_seqlen:
         x = torch.nn.functional.pad(x, (0, 0, 0, attn_params.max_seqlen - x.shape[1]), value=0)  # pad back to max_seqlen
 
     return x

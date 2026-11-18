@@ -9,10 +9,13 @@ profiles_dir}. Progress leaves as "@@P {json}" lines, the end as "@@DONE {json}"
 or "@@FAIL {json}".
 """
 import json
+import logging
 import os
 import sys
 import time
 import traceback
+
+import torch
 
 
 def out(tag, **d):
@@ -41,6 +44,7 @@ def _embedder(baselines):
 
 
 def main(job_path):
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", force=True)
     with open(job_path, encoding="utf-8") as f:
         job = json.load(f)
     from fizgig.families.block_profile import (conditions, renders_needed, run_ablation, verdicts,
@@ -67,7 +71,7 @@ def main(job_path):
                 plan["preview_sampling"] = ck[1] if ck else None
             else:
                 plan["preview_sampling"] = None
-            if str(plan.get("blocks_to_swap", "")).lower().startswith("auto"):
+            if str(plan.get("blocks_to_swap", "")).lower().startswith("auto") and not (torch.version.hip and desc.key == "krea2"):
                 plan["blocks_to_swap"] = _auto_swap()
             out("P", text=f"Loading {desc.display_name}…")
             eng = desc.make_workbench_engine()
@@ -97,6 +101,7 @@ def main(job_path):
             per_block = mode == "thorough"
             log.append(f"{len(seeds)} seed(s), {size}x{size}: "
                        f"{renders_needed(eng, len(seeds), bool(class_prompt), per_block)} renders.")
+            logging.info(log[-1])
             out("P", text=log[-1])
             abl = run_ablation(eng, prompt=prompt, class_prompt=class_prompt, seeds=seeds, width=size, height=size,
                                embed=embed, baselines=base_embs, per_block=per_block, on_progress=prog)

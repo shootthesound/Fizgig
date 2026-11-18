@@ -519,6 +519,9 @@ class WorkbenchEngine:
         self._cancel_event.clear()
 
     # ---- rendering ----------------------------------------------------------------------------------
+    def _sample_with_memory(self, sample):
+        return sample()
+
     def _park_dit(self, where):
         if self.dit is not None and not getattr(self, "swapped", 0):   # a swapped DiT keeps its streaming layout
             from fizgig.families import quant
@@ -526,6 +529,9 @@ class WorkbenchEngine:
             if where == "cpu":
                 gc.collect()
                 torch.cuda.empty_cache()
+
+    def _finish_decode(self):
+        self._park_dit(self.device)
 
     @property
     def reference_kind(self):
@@ -557,8 +563,9 @@ class WorkbenchEngine:
         if key not in self._prompt_cache:
             if self.lowmem:
                 self._park_dit("cpu")
-                self.vae.to(self.device)
             try:
+                if self.lowmem:
+                    self.vae.to(self.device)
                 z = self.driver.encode_images(self.vae, [self._fit_reference(path, width, height)])[0]
             finally:
                 if self.lowmem:
@@ -796,27 +803,30 @@ class WorkbenchEngine:
                                                if source is not None and self.source_repaint is not None else {}),
                                             **({"refer": refer} if refer is not None else {}),
                                             **({"refs": [r.to(self.device) for r in refs]} if refs else {}))
-        try:
-            if act is None:
-                lat = _generate()
-            else:
+        def _sample():
+            nonlocal act
+            if act is not None:
                 try:
                     with act.render(self.dit, self._act_modules, key, sig):
-                        lat = _generate()
+                        return _generate()
                 except torch.OutOfMemoryError:
                     # the cache's share of the card was the difference: give it back and render plainly
                     logger.warning("Reuse unchanged blocks: out of memory with the cache - rendering without it")
                     self._invalidate_activation_cache()
                     act = None
-                    lat = _generate()
+            return _generate()
+
+        try:
+            lat = self._sample_with_memory(_sample)
         finally:
             activity = self._stop_meter(meter)
         if getattr(self.desc, "reference_strength", False):
             self._last_frame_latent = lat[0].detach().to("cpu")     # the next travel frame may edit this one
         if self.lowmem:
             self._park_dit("cpu")
-            self.vae.to(self.device)
         try:
+            if self.lowmem:
+                self.vae.to(self.device)
             try:
                 out = self.driver.decode(self.vae, lat, width, height)
             except torch.OutOfMemoryError:
@@ -838,7 +848,7 @@ class WorkbenchEngine:
         finally:
             if self.lowmem:
                 self.vae.to("cpu")
-                self._park_dit(self.device)
+                self._finish_decode()
 
     def _start_meter(self):
         """Block activity (description block_activity): tag each wrapped Linear with its block - only those along

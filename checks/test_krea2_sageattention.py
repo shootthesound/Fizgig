@@ -52,8 +52,10 @@ def _prefs(monkeypatch, tmp_path, on):
     return path
 
 
-def _sage(q, k, v, *, tensor_layout, is_causal):
+def _sage(q, k, v, *, tensor_layout, is_causal, sm_scale, smooth_k):
     assert tensor_layout == "HND" and not is_causal
+    assert sm_scale is None and smooth_k is False
+    assert q.shape[1] == k.shape[1] == v.shape[1]
     return F.scaled_dot_product_attention(q, k, v, enable_gqa=q.shape[1] != k.shape[1])
 
 
@@ -86,7 +88,7 @@ def test_split_sage_preserves_mask_and_grouped_query_heads(monkeypatch):
         torch.testing.assert_close(got[i:i+1, :n], want.transpose(1, 2).flatten(2))
         assert torch.count_nonzero(got[i, n:]) == 0
     assert [s[0][2] for s in calls] == [6, 8]
-    assert all(qs[1] == 4 and ks[1] == 2 for qs, ks in calls)  # no GQA expansion
+    assert all(qs[1] == 4 and ks[1] == 4 for qs, ks in calls)  # ComfyUI expands GQA heads
 
 
 def test_unmasked_text_fusion_uses_one_batched_kernel(monkeypatch):

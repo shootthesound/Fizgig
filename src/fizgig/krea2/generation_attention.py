@@ -1,7 +1,7 @@
 """Krea 2's inference-only attention preference, read once per generated image.
 
-Use fixed-length SageAttention calls per sample: ROCm builds need not export the
-variable-length CUDA API. The model's existing split path removes padding first.
+Use ComfyUI-style fixed-length calls, batching equal-length samples and splitting
+ragged batches to exclude padding. ROCm builds need not export the variable-length API.
 """
 import json
 import logging
@@ -47,7 +47,7 @@ def configured_generation(fn):
         previous = dit.attn_mode, dit.split_attn
         try:
             dit.attn_mode, dit.split_attn = "sageattn", True
-            logging.getLogger(__name__).info("[attention] forcing SageAttention for Krea 2 generation")
+            logging.getLogger(__name__).info("[attention] forcing SageAttention for Krea 2 generation (ComfyUI-style calls)")
             return fn(self, dit, *args, **kwargs)
         finally:
             dit.attn_mode, dit.split_attn = previous

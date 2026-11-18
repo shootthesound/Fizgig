@@ -199,6 +199,7 @@ def load_krea2_dit(
     lora_weights: Optional[list] = None,
     lora_multipliers: Optional[list] = None,
     fp8_fast: bool = False,
+    mmap_cpu: bool = False,
 ) -> SingleStreamDiT:
     """Build the K2 single-stream MMDiT on meta and load weights (assign=True).
 
@@ -265,6 +266,7 @@ def load_krea2_dit(
             exclude_keys=KREA2_FP8_OPTIMIZATION_EXCLUDE_KEYS,
             weight_transform_hooks=hooks,
             allow_prequantized_fp8=True,
+            mmap_cpu=mmap_cpu,
         )
         apply_fp8_monkey_patch(dit, sd, use_scaled_mm=False)
         if loading_device.type != "cpu":

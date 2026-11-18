@@ -28,6 +28,62 @@ Users train full Krea 2 LoRAs on 8 GB with everything on **Auto** and batch size
 
 If a preview can't fit, previews auto-disable and **training keeps running and saving**.
 
+## SageAttention image generation on AMD
+
+With a compatible SageAttention build installed in Fizgig's Python environment, an AMD launch offers
+**Preferences → Inference performance → Force SageAttention for Krea 2 image generation**.
+It takes effect on the next image in training previews, Studio, Royale and Profiler. Training keeps its own backend.
+
+Generation follows ComfyUI's fixed-length attention calls: expanded K/V heads, explicit HND layout and
+`smooth_k=False` (the RDNA4 package can override smoothing for accuracy). Equal-length samples share one call;
+ragged samples are split so padding never enters attention. Sage generation also skips the extra 256-token
+shape padding, including Studio's cached forwards. A failing forced kernel stops generation.
+Reference: [ComfyUI attention](https://github.com/Comfy-Org/ComfyUI/blob/master/comfy/ldm/modules/attention.py)
+and [Krea 2 model](https://github.com/Comfy-Org/ComfyUI/blob/master/comfy/ldm/krea2/model.py).
+
+For a ComfyUI comparison, match the checkpoint, precision, resolution, prompt, steps and CFG.
+Compare warmed-up renders; weight offloading and VAE decoding can still differ.
+
+## High-resolution generation
+
+On ROCm, **Blocks Swap: Auto** starts Krea 2 with most block weights on CPU, then budgets GPU
+residency against the requested resolution and available VRAM. Sampling OOM retries use the same seed
+with additional blocks offloaded. Manual block counts remain fixed; NF4 does not support block swapping.
+Auto preserves stored FP8 weights and uses INT8 for dense checkpoints. NVIDIA keeps the generic
+workbench loading defaults and Studio/Profiler block-swap preferences.
+
+ROCm separates text encoding, sampling and VAE decoding into low-memory stages. The DiT and VAE
+park on CPU after rendering. The allocator cap respects existing allocations and stricter limits,
+restores the previous limit afterward, and adds no fixed desktop reserve. The activation budget remains.
+Keep the AMD launcher's `garbage_collection_threshold:0.8`; disabling collection caused desktop
+framebuffer allocation failures during earlier hardware tests.
+
+On Linux ROCm, stored FP8 DiT Linear weights use private file-backed CPU views. Pinned staging avoids
+registering those mappings directly with ROCm. Block swaps upload immutable CPU weights without a
+return copy; parking rebinds the CPU views. Adapters and mutable biases retain their normal handling.
+The text encoder is deleted without first copying it to CPU. Keep the base checkpoint unchanged while loaded.
+Training and additional quantization retain their existing loading policies.
+
+VAE OOM recovery retries the existing tiled decoder. Tiling can change pixels slightly and does not
+ensure every resolution fits. Single-frame VAE cache removal is proposed separately. Turbo previews retain
+**8 steps, CFG 1, Euler / simple**, preferred for predictable results in this workflow. The beta scheduler
+experiment has been reverted; adopting it remains open for separate discussion.
+
+CPU checks cover ROCm selection, NVIDIA default preservation, immutable weight storage, offloading,
+OOM recovery and attention correctness. Earlier RX 9070 XT testing reduced peak process RSS from
+22.66 to 6.02 GiB across four renders, but included the separately proposed schedule and VAE changes.
+Those measurements do not validate performance or stability of the split branch; new GPU validation is pending.
+
+The activation reserve follows [ComfyUI's Krea 2 estimate](https://github.com/Comfy-Org/ComfyUI/blob/master/comfy/model_base.py),
+using Fizgig's existing block offloader.
+
+Profiler logs include the total render count, Auto's memory budget, sampling backend, VAE decode and image
+completion. Two seeds run sequentially for every ablation condition, not as a two-image batch. PyTorch's
+allocator can print OOM warnings and recover by releasing cached allocations; a warning alone is not a failed
+render. Check whether image completion and progress continue, or whether the job reports an exception.
+An unexpected Studio worker exit now includes its process exit code in the error and log. Native crashes
+also print a Python fault traceback to the worker log where the runtime can provide one.
+
 ## The trainer curates your dataset while it trains (experimental)
 
 Four Training-tab toggles no other trainer has. They work on Krea 2 and [Qwen Image 2.1](QWEN_IMAGE.md).

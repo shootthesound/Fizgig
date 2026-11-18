@@ -134,6 +134,7 @@ KREA2 = FamilyDescription(
     activation_cache=True,            # Reuse unchanged blocks: step-1 replay, identical to a full render
     finetune=True,
     workbench=("repair", "profiler", "extract", "royale"),
+    workbench_engine="fizgig.krea2.workbench:Krea2WorkbenchEngine",
     # the text-fusion boosts (15 Sep 2026, #137): the four text-fusion blocks at x2 / x3, everything else untouched.
     # Measured across several LoRAs, x3 lifted the detail metric ~72 -> ~77 and likeness 2-7 points on every LoRA but
     # an overtrained one, composition unchanged

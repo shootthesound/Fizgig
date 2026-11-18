@@ -104,9 +104,12 @@ class MiniMaxDriver(FamilyDriver):
         if clip_t > 1:
             logger.info(f"[vram] the heaviest item is a {clip_t}-latent-frame clip - planning against its effective "
                         f"{mp:.2f} MP (spatial size x frames).")
-        bsz = max(int(getattr(ds, "batch_size", 1) or 1) for ds in group.datasets)
+        bsz = max((int(getattr(ds, "batch_size", 1) or 1) for ds in group.datasets), default=1)
         stills = [k[-2] * k[-1] / 1e6 for ds in group.datasets for k in ds.batch_manager.bucket_resos
                   if k[0] not in ("clip", "audio")]
+        if not group.datasets and getattr(group, "megapixels", 0):   # a prompt-pair slider: no dataset, one practice
+            mp = group.megapixels                                     # still a step at its bank size
+            stills = [mp]
         mode, n, why = self._plan(precision, blocks_to_swap, run, mp, max(stills or [0.0]), bsz)
         self._plan_previews(n)
         return mode, n, why

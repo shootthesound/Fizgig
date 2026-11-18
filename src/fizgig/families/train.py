@@ -1317,6 +1317,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     if slider_prompts:
         user_config = {"general": {"resolution": [slider_bank_res, slider_bank_res]}}
         group = _SliderBank([None] * max(1, int(slider_bank)))    # filled once the DiT is loaded
+        group.megapixels = slider_bank_res * slider_bank_res / 1e6  # what a step trains at, for a memory plan
     else:
         if not dataset_config:
             raise RuntimeError("--dataset_config is required (only a prompt-pair slider trains without a dataset)")

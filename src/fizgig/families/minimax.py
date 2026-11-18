@@ -221,10 +221,12 @@ MINIMAX = FamilyDescription(
                                 "conditioning to bf16 (validated), just a slower one-off load",
                   alt_repo=_H, alt_path="text_encoders/qwen3vl_32b_minimax_h3_bf16.safetensors", alt_label="bf16",
                   alt_note="~51.5GB bf16 — the full-precision original; loads faster, 3.3x the disk"),
-        ModelFile("minimax_vae", "Video VAE", True, _H, "vae/minimax_h3_video_vae_fp16.safetensors", 4.9, role="vae",
-                  hint="The H3 video VAE — encodes each training image to a 24-channel latent (used only during "
-                       "caching).",
-                  download_note="~4.9GB — Comfy-Org/MiniMax-H3 → vae/minimax_h3_video_vae_fp16.safetensors"),
+        ModelFile("minimax_vae", "Video VAE", True, _H, "vae/minimax_h3_video_vae_int8_convrot.safetensors", 2.8,
+                  role="vae",
+                  hint="The H3 video VAE — encodes each training image to a 24-channel latent while caching, and "
+                       "decodes previews and Studio clips. The int8 file decodes faster and takes half the VRAM; "
+                       "the fp16 file (minimax_h3_video_vae_fp16) works here too.",
+                  download_note="~2.8GB — Comfy-Org/MiniMax-H3 → vae/minimax_h3_video_vae_int8_convrot.safetensors"),
         ModelFile("minimax_audio_vae", "Audio VAE", False, _H, "vae/minimax_h3_audio_vae_fp32.safetensors", 0.61,
                   role="audio_vae", fetch_optional=False,
                   announce="Audio VAE (~605 MB) — train on the sound in video clips, and on voices",
@@ -359,7 +361,7 @@ MINIMAX = FamilyDescription(
                             VideoCheckpoint("First / Last Frame (fl2va)", "dit")),
         refmod_lengths=(("Still (1 frame)", 1), ("22 frames (~1s)", 22), ("39 frames (~1.6s)", 39),
                         ("56 frames (~2.3s)", 56), ("73 frames (~3s)", 73)),
-        refmod_size=(640, 768), sweep_frames=22, speed_boost=True),
+        refmod_size=(640, 768), sweep_frames=22, speed_boost=True, pieces=124, upscale=True),
 
     latent_channels=24,
     spatial_factor=16,                # dataset/image_dataset.py LATENT_SPATIAL_FACTOR[minimaxh3]

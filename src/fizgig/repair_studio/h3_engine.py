@@ -157,6 +157,8 @@ class H3RepairEngine(ClipContract):
         self._turbo_lora_strength = 0.75
         self.base_mode = "auto"          # the Base picker: auto / stream / nf4
         self.int8_attention = True       # comfy-kitchen's int8 attention wherever it exists
+        # comfy-kitchen's int8 GEMM for the int8 base's linears (modules/int8_linear.py): what ComfyUI runs
+        self.int8_linear = os.environ.get("FIZGIG_NO_INT8_LINEAR") != "1"
         self.base_plan = None            # (base_quant, blocks streamed) actually loaded
         self._te_parked_vision = False # ...built with the vision tower (serves text too)
         self.dit_path: Optional[str] = None
@@ -261,21 +263,45 @@ class H3RepairEngine(ClipContract):
     # GB plannable_free_vram reports. The base at rest beside its LoRA + Turbo nets measured
     # 22.0 GB fully resident (20.49 GiB). A reference render that peaked ~1 GB under the free
     # figure still paged (Windows starts before the card is full): 2 GB margin.
+    #
+    # Past 56 frames the per-frame slope above overstated it: the decode works in fixed chunks and tiles, so
+    # its peak barely grows with length, and a long clip's sampling runs with the decoder parked. Measured
+    # fully resident on the 5090 at 512x512 (12 Nov): 22, 56 and 124 frames all peak at the decode, 6.1-6.8
+    # GiB over the base at rest; sampling a 124-frame clip alone takes 4.6. The old slope asked 10.3 GiB for
+    # that clip and reloaded the base to stream 12 blocks it didn't need. So: the fitted line up to 56 frames,
+    # then per extra frame only the decoded clip itself (fp32 on the card), and never less than the sampling
+    # alone (2.3 + 0.052 per frame, plus a GiB).
     _INT8_REST_GB = 22.0
     _ROOM_MARGIN_GB = 2.0
+    _NEED_FIT_FRAMES = 56
+
+    # The decoder's weights on the card: the fp16 file 4.5 GiB, the int8 ConvRot file 2.3 (measured 12 Nov).
+    _DECODER_FP16_GIB, _DECODER_INT8_GIB = 4.5, 2.3
+
+    def _decoder_gib(self) -> float:
+        d = getattr(self, "_decoder_gib_cached", None)
+        if d is None:
+            from fizgig.minimax.vae import video_decoder_is_int8
+            d = self._decoder_gib_cached = (self._DECODER_INT8_GIB if video_decoder_is_int8(
+                getattr(self, "_vae_path", "") or "") else self._DECODER_FP16_GIB)
+        return d
 
     @classmethod
-    def clip_need_gb(cls, width=768, height=640, frames=22, keyframes=2, references=0) -> float:
+    def clip_need_gb(cls, width=768, height=640, frames=22, keyframes=2, references=0, decoder_gib=None) -> float:
         s = int(width) * int(height) / float(768 * 640)
-        gib = 4.5 + s * (0.92 + 0.081 * int(frames) + 0.4 * int(keyframes) + 0.75 * int(references))
-        return gib * 2 ** 30 / 1e9
+        f, extra = min(int(frames), cls._NEED_FIT_FRAMES), max(0, int(frames) - cls._NEED_FIT_FRAMES)
+        conds = 0.4 * int(keyframes) + 0.75 * int(references)
+        decode = (cls._DECODER_FP16_GIB if decoder_gib is None else float(decoder_gib))             + s * (0.92 + 0.081 * f + 0.006 * extra + conds)
+        sampling = 1.0 + s * (2.3 + 0.052 * int(frames) + conds)
+        return max(decode, sampling) * 2 ** 30 / 1e9
 
     @classmethod
-    def plan_base(cls, free_gb: float, mode: str = "auto", need_gb: float = None):
+    def plan_base(cls, free_gb: float, mode: str = "auto", need_gb: float = None, keep_int8: bool = False):
         """(base_quant, blocks_to_swap) for `free_gb` of plannable VRAM.
         mode: "auto" (by free VRAM, room for a clip needing `need_gb` - the default canvas when
         None), "stream" (int8, blocks streamed for big-clip room on any card), "nf4" (the 4-bit
-        base, smallest — 9.5% base error)."""
+        base, smallest — 9.5% base error). keep_int8: a session already on the int8 base stays on it
+        (a reload for more room streams more blocks; it never changes the base under the user)."""
         import math
         free_gb = float(free_gb or 0.0)
         mode = (mode or "auto").lower()
@@ -284,17 +310,17 @@ class H3RepairEngine(ClipContract):
         if mode == "stream":
             n = math.ceil((cls._INT8_RESIDENT_GB + cls._STREAM_HEADROOM_GB - free_gb) / cls._INT8_BLOCK_GB)
             return "int8", max(1, min(40, n))
-        if free_gb >= cls._INT8_SWAP_MIN_FREE_GB:
+        if free_gb >= cls._INT8_SWAP_MIN_FREE_GB or keep_int8:
             need = cls.clip_need_gb() if need_gb is None else float(need_gb)
             n = math.ceil((cls._INT8_REST_GB + need + cls._ROOM_MARGIN_GB - free_gb) / cls._INT8_BLOCK_GB)
-            return "int8", max(0, min(40, n))
+            return "int8", max(0, min(cls._MAX_STREAMED, n))
         return "nf4", 0
 
     def ensure_room(self, width, height, frames, keyframes=0, references=0, state=None) -> None:
         """Before a render, under Auto on the int8 base: when this clip needs more room than the load planned
-        for, reload the base planned for it (~45 s once, against minutes of the driver paging). Never for less
-        room - a smaller clip keeps the plan it has. Streaming more blocks into the loaded base mid-session
-        didn't free the card (12 Oct), so it is a reload."""
+        for, stream more of the loaded base's blocks from system RAM (_stream_more: a second or two, nothing
+        re-read from disk). Never for less room - a smaller clip keeps the plan it has. If the card's free
+        memory doesn't rise by what those blocks hold, the base is reloaded planned for the clip instead."""
         import math
         if getattr(self, "base_mode", "auto") != "auto" or self.dit is None:
             return
@@ -302,10 +328,13 @@ class H3RepairEngine(ClipContract):
         free = getattr(self, "_plan_free", None)
         if not plan or plan[0] != "int8" or not free:
             return
-        need = self.clip_need_gb(width, height, frames, keyframes, references)
+        need = self.clip_need_gb(width, height, frames, keyframes, references, decoder_gib=self._decoder_gib())
         want = math.ceil((self._INT8_REST_GB + need + self._ROOM_MARGIN_GB - free) / self._INT8_BLOCK_GB)
+        want = min(self._MAX_STREAMED, want)         # what plan_base can give: asking past it reloaded every render
         have = int(plan[1])
         if want <= have:
+            return
+        if self._stream_more(want):
             return
         logger.info("[h3-workbench] %dx%d x%d, %d keyframe(s), %d reference(s) needs ~%.1f GB: more than the "
                     "%d-block plan leaves - reloading the base for it", int(width), int(height), int(frames),
@@ -316,7 +345,11 @@ class H3RepairEngine(ClipContract):
             self.decoder = self.decoder.to("cpu")     # the plan judges free VRAM: not with the decoder on it
             self._decoder_resident = False
         self._dit_strip()
-        self._load_dit_and_turbo()
+        self._keep_int8 = True                       # more blocks streamed, never another base
+        try:
+            self._load_dit_and_turbo()
+        finally:
+            self._keep_int8 = False
         if self.primary_path:
             self._wire_primary(self.primary_path)
         if self.donor_path:
@@ -327,6 +360,42 @@ class H3RepairEngine(ClipContract):
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
+    _MAX_STREAMED = 40
+
+    def _stream_more(self, want: int) -> bool:
+        """`want` of the loaded int8 base's blocks streamed instead of the count it has now, without unloading
+        it: enable_block_swap rebuilds the ring over the longer tail, the newly streamed blocks' int8 weights
+        are copied to RAM and their copies on the card dropped. True when torch's allocation fell by what those
+        blocks hold; False (the caller reloads) when it didn't or anything failed. Judged by the allocation, not
+        the driver's free figure: about a third of the freed memory stays in torch's pool as free pieces between
+        weights still in use (measured 12 Nov: 6 blocks, 1.8 GiB out of the allocation, 1.2 back to the driver) -
+        the render and the decoder allocate from that pool, so it is room all the same. Judging by the driver's
+        figure is why this was a reload from 12 Oct."""
+        have = int(self.base_plan[1])
+        self._status("Making room on the card for this clip…")
+        try:
+            self._invalidate_activation_cache()      # the pass-1 resume sits out on a streamed plan
+            gc.collect()
+            torch.cuda.empty_cache()
+            before = torch.cuda.memory_allocated()
+            got = int(self.dit.enable_block_swap(int(want), h2d_only=True, ring_size=2))
+            gc.collect()
+            torch.cuda.empty_cache()
+            freed = (before - torch.cuda.memory_allocated()) / 1e9
+        except Exception:
+            logger.exception("[h3-workbench] streaming more blocks into the loaded base failed - reloading it")
+            return False
+        ring = min(2, got) - min(2, have)            # the ring's slots are on the card too
+        expect = (got - have - ring) * self._INT8_BLOCK_GB
+        if got < want or freed < 0.8 * expect:
+            logger.warning("[h3-workbench] %d -> %d blocks streamed freed %.1f GB of the ~%.1f expected - "
+                           "reloading the base instead", have, got, freed, expect)
+            return False
+        logger.info("[h3-workbench] %d -> %d blocks streamed in place: %.1f GB freed on the card", have, got, freed)
+        self._blocks_swapped = got
+        self.base_plan = ("int8", got)
+        return True
 
     def _dit_strip(self) -> None:
         """The base and its LoRA / Turbo nets off the card for good, as reset() does it (their storages
@@ -376,11 +445,17 @@ class H3RepairEngine(ClipContract):
         except Exception:
             free = 0.0
         canvas = getattr(self, "plan_canvas", None)        # the clip the caller expects to render first
+        keep = bool(getattr(self, "_keep_int8", False))
         base_quant, n_swap = self.plan_base(free, getattr(self, "base_mode", "auto"),
-                                            self.clip_need_gb(*canvas) if canvas else None)
+                                            self.clip_need_gb(*(canvas or ()), decoder_gib=self._decoder_gib()),
+                                            keep_int8=keep)
         from fizgig.minimax.common import int8_loadable
         if base_quant == "int8" and not int8_loadable(self.dit_path):
             base_quant = "nf4"            # the full unpruned file can't take int8 (#357)
+        if keep and free < float(getattr(self, "_plan_free", 0.0) or 0.0) - 4.0:
+            logger.warning("[h3-workbench] reloading for more room: %.1f GB free with the base unloaded, %.1f "
+                           "when it was first loaded - something else is holding the card's memory; the int8 "
+                           "base stays, with %d blocks streamed", free, self._plan_free, n_swap)
         self._plan_free = free
         self._blocks_swapped = int(n_swap)
         self.base_plan = (base_quant, int(n_swap))
@@ -463,6 +538,7 @@ class H3RepairEngine(ClipContract):
         self.te_path = text_encoder_path
         self.dit_path = dit_path
         self._vae_path = vae_path
+        self._decoder_gib_cached = None
         self._audio_vae_path = audio_vae_path or None
         self._te_cache_dir = te_cache_dir or None
 
@@ -501,14 +577,11 @@ class H3RepairEngine(ClipContract):
     def _ensure_decoder(self):
         if self.decoder is not None:
             return self.decoder
-        from safetensors import safe_open
-        from fizgig.minimax.vae import MiniMaxH3VideoVAEDecoder
-        dec = MiniMaxH3VideoVAEDecoder()
-        with safe_open(self._vae_path, framework="pt", device="cpu") as f:
-            dec.load_state_dict({k: f.get_tensor(k) for k in f.keys()}, strict=False)
+        from fizgig.minimax.vae import load_video_decoder
         # FP16, not bf16 — the weights ship fp16 and this decoder was excluded from bf16 by
-        # ComfyUI on purpose (see the trainer's decode-phase comment for the full story).
-        self.decoder = dec.to(torch.float16).eval()
+        # ComfyUI on purpose (see the trainer's decode-phase comment for the full story). The
+        # int8 ConvRot decoder file loads here too (its Linears as int8 codes).
+        self.decoder = load_video_decoder(self._vae_path)
         return self.decoder
 
     def _ensure_audio_decoder(self):
@@ -1262,9 +1335,10 @@ class H3RepairEngine(ClipContract):
 
         def _render(block_cache):
             from fizgig.minimax import model as _mm
+            from fizgig.modules import int8_linear as _i8l
             _mm.set_int8_attention(bool(getattr(self, "int8_attention", False)))
             try:
-                with torch.no_grad():
+                with torch.no_grad(), _i8l.renders(bool(getattr(self, "int8_linear", False))):
                     return _sample(block_cache)
             finally:
                 _mm.set_int8_attention(False)
@@ -1310,7 +1384,7 @@ class H3RepairEngine(ClipContract):
                       steps: Optional[int] = None, turbo_strength: Optional[float] = None,
                       keyframes=None, on_denoised=None, no_lora: bool = False,
                       references=None, ref_latents=None, ref_schedule=None, ref_images=None,
-                      ref_items=None):
+                      ref_items=None, model=None, guide_rows: int = 0):
         """Apply the slider state and sample ONE clip: returns (latent [1,24,T,H/16,W/16] on
         CPU fp32, audio_rows [2*A, 32] on CPU fp32 or None). No decode — the caller decides
         (decode_clip_frames / decode_audio, or store it in the render cache).
@@ -1338,7 +1412,11 @@ class H3RepairEngine(ClipContract):
         ref_latents: bare reference latents ([1,24,T,h,w] each — RefMods) riding as condition
         rows with the prompt encoded WITHOUT pictures (no vision side, no token tags), what
         refmod.render_previews does; ref_schedule(step, n, sigma) -> that step's list (the
-        RefMod Toolkit's step curve). Either one turns the pass-1 resume off."""
+        RefMod Toolkit's step curve). Either one turns the pass-1 resume off.
+
+        model: what the sampler calls in place of the loaded model (a clip in pieces: minimax/continuation.py's
+        Continue, which calls the loaded model itself); guide_rows: the condition rows it adds, for the room this
+        render needs. The pass-1 resume sits out."""
         from fizgig.minimax import sampling
         self.apply_state(state)
         if no_lora and self.primary_network is not None:
@@ -1402,10 +1480,10 @@ class H3RepairEngine(ClipContract):
                round(float(getattr(state, "primary_scale", 1.0)), 4),
                round(float(getattr(state, "donor_scale", 1.0)), 4),
                getattr(self, "dit_path", None), bool(getattr(self, "int8_attention", False)),
-               bool(getattr(self, "speed_boost", False)))
+               bool(getattr(self, "speed_boost", False)), bool(getattr(self, "int8_linear", False)))
         resume_ok = (self.resume_enabled and not keyframes and not references and not no_lora
                      and not bare_refs and not getattr(self, "_blocks_swapped", 0)
-                     and hasattr(self.dit, "forward_cached"))
+                     and model is None and hasattr(self.dit, "forward_cached"))
         if self._act_cache and not (resume_ok and self._act_cache_key == key):
             # Another setup's cache is dead weight — on the GPU it can be several GB
             # (56 frames at 768² records ~5.1 GB), and it must go BEFORE the free-VRAM
@@ -1419,7 +1497,8 @@ class H3RepairEngine(ClipContract):
         # (These sat inside the resume branch until 4 Sep — on the streamed-block tier,
         # and for keyframe / reference / no-LoRA renders, the rule ran on a 2 GB guess.)
         self._last_canvas = (int(width), int(height), int(frames))
-        self.ensure_room(width, height, frames, len(keyframes or ()), len(ref_latents or ()), state)
+        self.ensure_room(width, height, frames, len(keyframes or ()) + int(guide_rows), len(ref_latents or ()),
+                         state)
         self._park_decoder_if_tight(width, height, frames)
         self._evict_gpu_cache_if_tight(width, height, frames)
         if resume_ok:
@@ -1440,9 +1519,10 @@ class H3RepairEngine(ClipContract):
 
         def _render(block_cache):
             from fizgig.minimax import model as _mm
+            from fizgig.modules import int8_linear as _i8l
             _mm.set_int8_attention(bool(getattr(self, "int8_attention", False)))
             try:
-                with torch.no_grad():
+                with torch.no_grad(), _i8l.renders(bool(getattr(self, "int8_linear", False))):
                     return _sample(block_cache)
             finally:
                 _mm.set_int8_attention(False)
@@ -1450,7 +1530,7 @@ class H3RepairEngine(ClipContract):
         def _sample(block_cache):
             with torch.no_grad():
                 return sampling.sample_image(
-                    self.dit, emb.to(self.device, self.dtype),
+                    model if model is not None else self.dit, emb.to(self.device, self.dtype),
                     width=width, height=height, steps=steps, cfg_scale=1.0,
                     seed=int(seed), device=self.device, dtype=self.dtype,
                     num_frames=frames, on_slow_step=_abort_check, slow_step_s=0.0,
@@ -1558,6 +1638,261 @@ class H3RepairEngine(ClipContract):
     default_clip_frames = H3_PREVIEW_FRAMES
     supports_keyframes = supports_base_modes = supports_banks = True
     supports_show_early = True
+
+    def render_clip(self, state, *, frames=None, regime="confirm", with_audio=True, cache=None, no_lora=False,
+                    steps=None, turbo_strength=None, decode=True, **kw):
+        """The contract's render_clip; a clip longer than one piece with Studio's In pieces tick on (clip_pieces)
+        is built by minimax/continuation.py instead: the same dict, its frames already joined. Such a clip is not
+        kept in the render library (its joins are made on the decoded frames, not in the latent)."""
+        from fizgig.minimax import continuation as _co
+        n = self._clip_frames(state, frames)
+        piece = _co.piece_frames(getattr(self, "clip_piece_frames", 0))       # the page's piece length box
+        if not (getattr(self, "clip_pieces", False) and decode and n > piece):
+            return super().render_clip(state, frames=frames, regime=regime, with_audio=with_audio, cache=cache,
+                                       no_lora=no_lora, steps=steps, turbo_strength=turbo_strength, decode=decode,
+                                       **kw)
+        from fizgig.repair_studio.h3_render_cache import NOLORA_SIG, signature
+        st, strength = self.regime_params(regime, steps, turbo_strength)
+        lat, aud, imgs = _co.render_long(self, state, frames=n, steps=st, turbo_strength=strength,
+                                         with_audio=with_audio, no_lora=no_lora, piece=piece)
+        return {"latent": lat, "audio_rows": aud, "frames": imgs, "wav": self.decode_audio(aud) if with_audio else None,
+                "middle": imgs[len(imgs) // 2], "regime": regime, "steps": st, "turbo_strength": strength,
+                "frames_n": n, "cached": False, "sig": NOLORA_SIG if no_lora else signature(state),
+                "int8_attention": self._int8_tag()}
+
+    def loop_back_clip(self, state, clip, *, frames_new=0, regime="confirm", with_audio=True, steps=None,
+                       turbo_strength=None, loop=True, **_ignored):
+        """Studio's Loop back: `clip` (a render_clip dict) with a return after it. The return is an ordinary first /
+        last frame clip on the state's prompt: its first frame is the clip's last frame and its last frame is the
+        clip's first, so the two together end where they began. Nothing else is done to the join, and the clip
+        itself is not rendered again. frames_new: the return's length (0 = the clip's own), on the frame grid.
+        loop=False is Studio's Continue: the same first frame and no last frame, so the clip simply carries on."""
+        from fizgig.repair_studio.h3_render_cache import signature
+        frames = clip.get("frames") or []
+        if len(frames) < 2:
+            raise ValueError("Render a clip first: Loop back adds a return to the clip in the Tweaked pane.")
+        w, h = int(state.preview_width), int(state.preview_height)
+        n = max(22, 17 * round((int(frames_new or len(frames)) - 5) / 17) + 5)
+        sts, strength = self.regime_params(regime, steps, turbo_strength)
+        st = state.copy()
+        st.references = getattr(state, "references", None)
+        st.preview_frames = n
+        st.keyframes = [(0, self.encode_keyframe(frames[-1], w, h))]
+        if loop:
+            st.keyframes.append((n - 1, self.encode_keyframe(frames[0], w, h)))
+        lat, aud = self.render_latent(st, frames=n, steps=sts, turbo_strength=strength)
+        back = self.decode_clip_frames(lat)
+        wav = self.decode_audio(aud) if with_audio else None
+        if wav is not None and clip.get("wav") is not None:
+            # the return's first frame is the clip's last one, shown once: its sound starts one frame in
+            wav = torch.cat([clip["wav"], wav[:, round(wav.shape[1] / len(back)):]], dim=1)
+        elif clip.get("wav") is not None:
+            wav = clip["wav"]
+        imgs = list(frames) + back[1:]
+        return {"latent": lat, "audio_rows": aud, "frames": imgs, "wav": wav, "middle": imgs[len(imgs) // 2],
+                "regime": regime, "steps": sts, "turbo_strength": strength, "frames_n": len(imgs), "cached": False,
+                "sig": signature(state), "int8_attention": self._int8_tag()}
+
+    @_locked
+    def upscale_clip(self, state, clip, *, width, height, denoise=None, steps=None, section=0, turbo_strength=None,
+                     preview=0, first_guide=True, last_guide=True, bias=0.0, low=0.0, guide="light", **_ignored):
+        """Studio's Upscale: `clip` (a render_clip dict) made again at width x height, on the state's prompt. The
+        clip's frames are stretched and finished a section at a time at a low denoise (minimax/upscale.py): each
+        section is a first / last frame clip pinned to its own two end frames, upscaled on their own first, and
+        starts on the finished last frame of the section before. denoise: the noise level the stretched frames start
+        from (0-1); steps: the passes from there; section: a section's frames (0 = 124). The sound is the clip's
+        own, left as it is. The clip itself is not rendered again.
+
+        first_guide / last_guide: the end frames upscaled on their own and shown to the model. Without first_guide
+        the clip's first frame is finished like every other frame; without last_guide so is each section's last
+        frame. A later section always starts on the finished last frame of the one before (that is the join).
+        guide: how a guide frame is made from the clip's frame, one value for both or (first, last). "light" (the default): made again on its own at the
+        denoise or GUIDE_DENOISE, whichever is lower, so it stays that frame however high the denoise goes; "full":
+        at the denoise itself (at 1.0 that is a new picture from the prompt); "source": the frame as it is, only
+        stretched.
+
+        preview: a quick look at these settings on the middle of the clip. 1 = its middle frame alone, upscaled the
+        way a section's end frames are; more = one section of that many frames (22 is the shortest clip) around the
+        middle. The dict then also carries "before": the same frame(s) of the clip as rendered."""
+        from fizgig.minimax import model as _mm
+        from fizgig.minimax import sampling
+        from fizgig.minimax import upscale as _up
+        from fizgig.minimax.model import AUDIO_CHANNELS, audio_latents_for_frames
+        from fizgig.modules import int8_linear as _i8l
+        from fizgig.repair_studio.h3_render_cache import signature
+        frames = list(clip.get("frames") or [])
+        if len(frames) < 2:
+            raise ValueError("Render a clip first: Upscale makes a larger copy of the clip in the Tweaked pane.")
+        w, h = max(256, (int(width) // 32) * 32), max(256, (int(height) // 32) * 32)
+        # The 4-bit base (16 GB cards) stays whole on the card, so a section is held to what fits beside it and
+        # the base leaves the card for each decode. Only here, and only on that base
+        nf4 = (getattr(self, "base_plan", None) or ("",))[0] == "nf4" and bool(getattr(self, "_plan_free", None))
+        if nf4:
+            fit = _up.room_frames(self._plan_free, w, h, nf4=True)
+            if not fit:
+                raise ValueError(f"{w} x {h} is too large to upscale on this card. Set a smaller size in the "
+                                 f"Upscale fold's To boxes.")
+            if _up.section_frames(section) > fit:
+                section = fit
+                self._status(f"Upscale: sections of {fit} frames, the longest this card fits at {w} x {h}")
+        plan = _up.sections(len(frames), section)
+        pv, mid = int(preview or 0), len(frames) // 2
+        if pv:
+            n = min(_up.grid_floor(pv), _up.grid_floor(len(frames)))
+            plan = [(max(0, min(mid - n // 2, len(frames) - n)), n)]
+        den = float(denoise) if denoise not in (None, "") else _up.DENOISE
+        # bias: the steps' weighting (-1 to 1); low: the low end of the range the steps are taken in (0 = to clean)
+        sig = _up.low_sigmas(den, int(steps or _up.STEPS), bias, low)
+        den, k = sig[0], len(sig) - 1
+        seed = int(state.seed)
+        self.apply_state(state)
+        if turbo_strength is not None:
+            self.set_turbo_strength(turbo_strength)
+        emb = self._encode_prompt(state.prompt).to(self.device, self.dtype)
+        n_max = max(n for _a, n in plan)
+        self._invalidate_activation_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        self._last_canvas = (w, h, n_max)
+        self.ensure_room(w, h, n_max, 2, 0, state)
+        self._park_decoder_if_tight(w, h, n_max)
+        self._evict_gpu_cache_if_tight(w, h, n_max)
+        d_a = int(self.dit.config.audio_latents_dim) if getattr(self.dit, "pack_audio_rows", False) else 0
+        rows, n_all = clip.get("audio_rows"), audio_latents_for_frames(len(frames))
+        if rows is not None and (not d_a or rows.shape[0] != n_all * AUDIO_CHANNELS):
+            rows = None                        # a clip with something added after it: its rows are not the whole sound
+        first_guide, last_guide = bool(first_guide), bool(last_guide)
+        g_first, g_last = [g if g in ("full", "source") else "light"
+                           for g in (guide if isinstance(guide, (list, tuple)) and len(guide) == 2 else (guide, guide))]
+        den_g = min(den, _up.GUIDE_DENOISE)
+        sig_g = sig if den_g >= den else _up.low_sigmas(den_g, k)      # a lighter guide: the model's own spacing
+        stills = ((1 if first_guide and g_first != "source" else 0)
+                  + (len(plan) if last_guide and g_last != "source" else 0))
+        done, total = [0], (len(plan) + stills) * k
+
+        def tick(_i, _n):
+            if self._cancel_event.is_set():
+                raise sampling.PreviewAborted("upscale cancelled")
+            done[0] += 1
+            cb = self.on_step
+            if cb is not None:
+                try:
+                    cb(done[0], total)
+                except Exception:
+                    pass
+
+        def noise(shape, s):
+            return torch.randn(shape, generator=torch.Generator("cpu").manual_seed(int(s) & 0xFFFFFFFF),
+                               dtype=torch.float32)
+
+        def run(x, levels=None, **kw):
+            _mm.set_int8_attention(bool(getattr(self, "int8_attention", False)))
+            try:
+                with torch.no_grad(), _i8l.renders(bool(getattr(self, "int8_linear", False))):
+                    return _up.finish(self.dit, x.to(self.device), emb, levels or sig, dtype=self.dtype, on_step=tick,
+                                      **kw)
+            finally:
+                _mm.set_int8_attention(False)
+
+        def keyframe(img):
+            """A frame's keyframe latent at the upscale's size. On the 4-bit base it is encoded in tiles: a whole
+            frame at this size does not fit beside that base."""
+            if not nf4:
+                return self.encode_keyframe(img, w, h)
+            img = img.convert("RGB")
+            enc = self._ensure_encoder().to(self.device)
+            try:
+                return _up.encode_still_tiled(enc, img if img.size == (w, h) else img.resize((w, h), Image.LANCZOS),
+                                              self.device)
+            finally:
+                self.encoder = enc.to("cpu")
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
+        def still(img, s, d=None, levels=None):
+            """One frame upscaled on its own: stretched, then finished as a single-frame clip (d: from that noise
+            level, over those levels; the upscale's own without)."""
+            d = den if d is None else d
+            z = keyframe(img)
+            an = (noise((audio_latents_for_frames(1) * AUDIO_CHANNELS, d_a), s + 1).to(self.device) if d_a else None)
+            return run((1.0 - d) * z + d * noise(z.shape, s), levels=levels, audio_noise=an).float().cpu()
+
+        def guide_frame(img, s, how):
+            """A guide frame from the clip's frame: as it is, or made again on its own (see guide)."""
+            if how == "source":
+                return keyframe(img)
+            return still(img, s) if how == "full" else still(img, s, den_g, sig_g)
+
+        def result(imgs, **more):
+            return {"latent": None, "audio_rows": clip.get("audio_rows"), "frames": imgs, "wav": clip.get("wav"),
+                    "middle": imgs[len(imgs) // 2], "regime": "custom", "steps": k,
+                    "turbo_strength": self._turbo_strength, "frames_n": len(imgs), "cached": False,
+                    "sig": signature(state), "int8_attention": self._int8_tag(),
+                    "upscaled": (w, h, round(den, 3), k, len(plan)), **more}
+
+        if pv == 1:
+            self._status(f"Upscale preview: the middle frame at {w} x {h}")
+            z = still(frames[mid].convert("RGB").resize((w, h), Image.LANCZOS), seed + 100)
+            self._last_canvas = (w, h, 1)
+            return result(self.decode_clip_frames(z), wav=None, before=[frames[mid]])
+        out = []
+        for j, (a, n) in enumerate(plan):
+            self._status(f"Upscale preview: {n} frames from the middle at {w} x {h}" if pv else
+                         f"Upscale to {w} x {h}: section {j + 1} of {len(plan)}")
+            sub = [im.convert("RGB").resize((w, h), Image.LANCZOS) for im in frames[a:a + n]]
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                from fizgig.utils.device import plannable_free_vram
+                free = min(torch.cuda.mem_get_info()[0], plannable_free_vram() * 1e9) / 2 ** 30
+            else:
+                free = 99.0
+            enc = self._ensure_encoder().to(self.device)
+            try:
+                up = _up.encode_tiled(enc, sub, self.device, tile=_up.tile_for(free - 1.5))
+            finally:
+                self.encoder = enc.to("cpu")
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            first = (keyframe(out[a]) if out else
+                     guide_frame(sub[0], seed + 100, g_first) if first_guide else None)
+            last = guide_frame(sub[-1], seed + 101 + j, g_last) if last_guide else None
+            kf = [(i, z.to(self.device, torch.float32)) for i, z in ((0, first), (n - 1, last)) if z is not None]
+            audio = an = None
+            if d_a:
+                n_a = audio_latents_for_frames(n)
+                an = noise((n_a * AUDIO_CHANNELS, d_a), seed + 12 + j).to(self.device)
+                if rows is not None:
+                    r0 = max(0, min(int(round(a * n_all / len(frames))), n_all - n_a))
+                    audio = rows.reshape(AUDIO_CHANNELS, n_all, d_a)[:, r0:r0 + n_a].reshape(-1, d_a).to(self.device)
+            x = run((1.0 - den) * up + den * noise(up.shape, seed + 11 + j), audio=audio, audio_noise=an, keyframes=kf or None)
+            self._last_canvas = (w, h, n)
+            token = self._dit_offload() if nf4 else None
+            try:
+                imgs = self.decode_clip_frames(x.float().cpu())
+            finally:
+                if token is not None:
+                    self._dit_restore(token)
+                    self._last_state = None
+                    self.apply_state(state)
+            out = (out[:a + 1] + imgs[1:]) if out else imgs
+        if pv:
+            a, n = plan[0]
+            wav = clip.get("wav")
+            if wav is not None:                # the sound of those frames
+                per = wav.shape[1] / float(len(frames))
+                wav = wav[:, int(round(a * per)):int(round((a + n) * per))]
+            return result(out, wav=wav, before=frames[a:a + n])
+        return result(out)
+
+    def upscale_room(self):
+        """[positions, guide frames] for the fold's section hint: the largest section Upscale fits on this card, in
+        latent positions (frames x width/16 x height/16), from the memory planned at load, and the latent frames
+        the guide rows take from it (the 4-bit base: 2). None unplanned."""
+        from fizgig.minimax import upscale as _up
+        plan, free = getattr(self, "base_plan", None), getattr(self, "_plan_free", None)
+        if not plan or not free:
+            return None
+        return [_up.room_positions_nf4(free), 2] if plan[0] == "nf4" else [_up.room_positions(free), 0]
 
     def _clip_regimes(self):
         from fizgig.families.minimax import MINIMAX

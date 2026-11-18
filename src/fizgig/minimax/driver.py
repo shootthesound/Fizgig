@@ -734,17 +734,14 @@ class MiniMaxDriver(FamilyDriver):
     def load_vae(self, path, device):
         """The video decoder in fp16 on the CPU (it rides to the GPU for the decode only, as the old previews) and,
         with the audio_vae option, the audio decoder."""
-        from safetensors import safe_open
-        from fizgig.minimax.vae import MiniMaxH3VideoVAEDecoder
-        dec = MiniMaxH3VideoVAEDecoder()
-        with safe_open(path, framework="pt", device="cpu") as f:
-            dec.load_state_dict({k: f.get_tensor(k) for k in f.keys()}, strict=False)
+        from fizgig.minimax.vae import load_video_decoder
+        dec = load_video_decoder(path)
         audio = None
         apath = self.options.get("audio_vae")
         if apath:
             from fizgig.minimax.audio_vae import load_minimax_h3_audio_vae_decoder
             audio = load_minimax_h3_audio_vae_decoder(apath, device="cpu")
-        return {"video": dec.to(torch.float16).eval(), "audio": audio, "device": device, "path": path}
+        return {"video": dec, "audio": audio, "device": device, "path": path}
 
     def initial_noise(self, seed, width, height):
         raise NotImplementedError("H3 travel previews come with the workbench wrap")

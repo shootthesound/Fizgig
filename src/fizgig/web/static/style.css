@@ -2091,6 +2091,21 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 .st-pane.audio img { aspect-ratio: 4 / 1; }
 .start-resume { color: var(--warning); margin: 6px 0 2px; }
 .start-resume .btn { margin-left: 6px; }
+.st-up-video { flex: 1; min-width: 0; }
+.st-up-video .field-row { margin: 0; }
+.st-up-video-ends { display: flex; gap: 18px; flex-wrap: wrap; }
+.st-up-video-ends > div { display: flex; flex-direction: column; gap: 6px; width: 220px; }
+.st-up-video-ends img { width: 220px; height: 124px; object-fit: contain; border-radius: 6px; background: var(--bg-deep); }
+.st-film { position: relative; flex: 1; min-width: 260px; max-width: 760px; height: 64px; border-radius: 6px; background: var(--bg-deep);
+  touch-action: none; user-select: none; cursor: pointer; }
+.st-film-pics { position: absolute; inset: 0; display: flex; overflow: hidden; border-radius: 6px; pointer-events: none; }
+.st-film-pics img { flex: 1 1 0; min-width: 0; height: 100%; object-fit: cover; opacity: 0.45; }
+.st-film-sel { position: absolute; top: 0; bottom: 0; box-sizing: border-box; border: 2px solid var(--accent); border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent); cursor: grab; }
+.st-film-sel:active { cursor: grabbing; }
+.st-film-sel .st-range-h { cursor: ew-resize; }
+.st-film-sel .st-range-h[data-end="a"] { left: -7px; }
+.st-film-sel .st-range-h[data-end="b"] { right: -7px; }
 .st-slot { display: grid; grid-template-columns: 110px 72px 1fr; gap: 10px; align-items: center; margin: 6px 0; }
 .st-slot img { width: 72px; height: 72px; object-fit: cover; border-radius: 6px; background: var(--bg-deep); }
 .st-slot .field-row { margin: 0; }
@@ -2721,6 +2736,39 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 .mask-step { margin: 18px 0 6px; color: var(--text-primary); font-weight: 600; font-size: 10.5pt; }
 #maskMethod { margin-bottom: 4px; }
 .mask-sam-state { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0 2px; }
+
+/* Studio's clip settings: a fold for a group of extra controls (Upscale). Closed, its heading says what is set */
+.st-fold { margin: 8px 0 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-raised); }
+.st-fold > summary { list-style: none; cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline;
+  gap: 2px 12px; padding: 8px 12px 8px 32px; position: relative; border-radius: var(--radius-sm); }
+.st-fold > summary::-webkit-details-marker { display: none; }
+.st-fold > summary::before { content: "▶"; position: absolute; left: 12px; top: 10px; color: var(--accent);
+  font-size: 8.5pt; }
+.st-fold[open] > summary::before { content: "▼"; }
+.st-fold > summary:hover { background: var(--bg-hover); }
+.st-fold[open] > summary { border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+.st-fold[open] { padding-bottom: 8px; }
+.st-fold > .field-row { padding: 0 12px; }
+.st-fold-title { font-weight: 600; color: var(--text-primary); }
+.st-fold-sub { color: var(--text-secondary); font-size: 9.5pt; }
+/* a row or button the fold hides (Edit prompt's box, the noise range bar) stays hidden whatever its class lays out */
+.st-fold [hidden] { display: none !important; }
+/* Upscale, Advanced: the noise range bar (a section dragged along a track, two ends to resize, a dot per step) */
+.st-range-box { flex: 1; min-width: 260px; max-width: 560px; }
+.st-range { position: relative; height: 26px; border-radius: 13px; background: var(--bg-inset); border: 1px solid var(--border);
+  touch-action: none; user-select: none; }
+.st-range-sel { position: absolute; top: 2px; bottom: 2px; border-radius: 11px; background: var(--accent-subtle);
+  border: 1px solid var(--accent); cursor: grab; }
+.st-range-sel:active { cursor: grabbing; }
+.st-range-h { position: absolute; top: -3px; bottom: -3px; width: 12px; border-radius: 6px; background: var(--accent);
+  cursor: ew-resize; }
+.st-range-h[data-end="hi"] { left: -6px; }
+.st-range-h[data-end="lo"] { right: -6px; }
+.st-range-h:hover { background: var(--accent-hover); }
+.st-range-dots { position: absolute; inset: 0; pointer-events: none; }
+.st-range-dots > i { position: absolute; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%;
+  background: var(--text-primary); }
+.st-range-ends { display: flex; justify-content: space-between; color: var(--text-secondary); font-size: 9pt; margin-top: 3px; }
 
 /* the masks card's Edit masks: a picture at a time with its mask, painted on a canvas */
 .mask-edit { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 12px; }

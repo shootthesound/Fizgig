@@ -6523,7 +6523,9 @@ function studioKind(L, sv) {
   const fill = (id, opts, val) => { const s = $(id); s.innerHTML = ""; for (const o of opts) s.append(el("option", {value: o, text: o})); s.value = opts.includes(val) ? val : opts[0]; };
   fill("stH3Model", V.models, h3.model || V.models[0]);
   fill("stH3Base", V.bases, h3.base);
-  fill("stH3Len", V.lengths, h3.len || V.length);
+  fill("stH3Len", V.clip ? [...V.lengths, ST_LEN_OTHER] : V.lengths, h3.len || V.length);
+  $("stH3LenS").value = h3.lenS || "";
+  studioLenOther();
   fill("stH3W", V.dims, h3.w || V.size[0]);
   fill("stH3H", V.dims, h3.h || V.size[1]);
   $("stH3ModelRow").style.display = (V.models || []).length || (V.bases || []).length ? "" : "none";
@@ -6548,6 +6550,36 @@ function studioKind(L, sv) {
   $("stH3Boost").checked = h3.boost !== false;           // on unless turned off
   $("stH3Boost").parentElement.style.display = V.speed_boost ? "" : "none";   // a family ability (H3 has it)
   $("stH3Early").checked = h3.early !== false;
+  $("stH3Only").checked = h3.only === true;
+  $("stLoopRow").style.display = V.pieces ? "" : "none";                      // with the In pieces ability (H3)
+  $("stLoopPrompt").value = h3.loopPrompt || "";
+  $("stLoopS").value = h3.loopS || "";
+  const up = h3.up || {};                                                     // the Upscale fold (a family ability)
+  $("stUpBox").style.display = V.upscale ? "" : "none";
+  $("stUpW").value = up.w || ""; $("stUpH").value = up.h || "";
+  $("stUpDen").value = up.den || "0.4"; $("stUpSteps").value = up.steps || "3"; $("stUpSec").value = up.sec || "";
+  $("stUpAuto").checked = up.auto === true;
+  $("stUpFirst").checked = up.first !== false;
+  $("stUpGuide").value = ["full", "source"].includes(up.guide) ? up.guide : "light";
+  $("stUpGuideL").value = ["full", "source"].includes(up.guideL) ? up.guideL : "light";
+  $("stUpBias").value = up.bias || "0";
+  $("stUpAdv").checked = up.adv === true;
+  studioUpPresets("");
+  S.st.upLow = Math.max(0, Math.min(0.95, Number(up.low) || 0));
+  $("stUpRangeRow").hidden = !$("stUpAdv").checked;
+  $("stUpOwnPrompt").checked = up.ownPrompt === true;
+  $("stUpPrompt").value = up.prompt || "";
+  $("stUpPromptRow").hidden = $("stUpPromptCopy").hidden = !$("stUpOwnPrompt").checked;
+  $("stUpLast").checked = up.last !== false;
+  $("stUpWhich").value = ["baseline", "both"].includes(up.which) ? up.which : "tweaked";
+  S.st.upVideo = null; studioUpVideoDraw();                                   // the fold's own video, as remembered
+  if ($("stUpVideoPath")) $("stUpVideoPath").value = "";
+  if (V.upscale && up.video && up.video.path) studioUpVideoSet(up.video.path, Object.assign({which: up.which}, up.video));
+  $("stUpBox").open = up.open === true;
+  $("stH3Pieces").checked = h3.pieces === true;          // off unless turned on
+  $("stH3PiecesBox").style.display = V.pieces ? "" : "none";                  // a family ability (H3 has it)
+  $("stH3PieceS").value = h3.pieceS || "";
+  studioLenOther();
   S.st.kf = h3.kf || {};
   S.st.kfRect = h3.kfRect || {};
   studioClipNote();
@@ -6613,15 +6645,18 @@ function studioSlotThumb(cv, path, rect) {
   img.src = mediaUrl(path);
 }
 
-function studioCrop(path, initial, ok, cancel) {
+function studioCrop(path, initial, ok, cancel, opt) {
   // the desktop's crop window: the photo fitted, a box locked to the clip's shape (W x H) - drag to move, drag a
   // corner to resize. ok([x0, y0, x1, y1] in the photo's pixels); cancel() leaves things as they were.
-  const W = Number($("stH3W").value) || 640, H = Number($("stH3H").value) || 768, aspect = W / H;
+  // opt (Upscale's own video): {url: the picture shown, W, H: the shape, sw, sh: the size the box is measured in,
+  // fit(w, h): the size a box that large is made at - given, a corner changes the box's shape as well as its size}
+  const o = opt || {};
+  const W = o.W || Number($("stH3W").value) || 640, H = o.H || Number($("stH3H").value) || 768, aspect = W / H;
   const cv = $("cropCanvas"), ctx = cv.getContext("2d"), img = new Image();
-  $("cropTitle").textContent = `Crop to the clip's shape (${W}×${H})`;
+  $("cropTitle").textContent = o.title || `Crop to the clip's shape (${W}×${H})`;
   img.onerror = () => { $("stStatus").textContent = "Couldn't open that photo."; if (cancel) cancel(); };
   img.onload = () => {
-    const sw = img.naturalWidth, sh = img.naturalHeight;
+    const sw = o.sw || img.naturalWidth, sh = o.sh || img.naturalHeight;
     const scale = Math.min((window.innerWidth * 0.9 - 40) / sw, (window.innerHeight * 0.85 - 200) / sh, 1);
     const dw = Math.max(1, Math.round(sw * scale)), dh = Math.max(1, Math.round(sh * scale));
     cv.width = dw; cv.height = dh;
@@ -6642,7 +6677,8 @@ function studioCrop(path, initial, ok, cancel) {
       for (const [hx, hy] of [[box.x0, box.y0], [box.x1, box.y0], [box.x0, box.y1], [box.x1, box.y1]])
         ctx.fillRect(hx - HANDLE, hy - HANDLE, HANDLE * 2, HANDLE * 2);
       const r = src();
-      $("cropSize").textContent = `crop ${r[2] - r[0]}×${r[3] - r[1]} of ${sw}×${sh} → ${W}×${H}`;
+      const to = o.fit ? o.fit(r[2] - r[0], r[3] - r[1]) : [W, H];
+      $("cropSize").textContent = `crop ${r[2] - r[0]}×${r[3] - r[1]} of ${sw}×${sh} → ${to[0]}×${to[1]}`;
     };
     const at = (e) => { const b = cv.getBoundingClientRect(); return [(e.clientX - b.left) * dw / b.width, (e.clientY - b.top) * dh / b.height]; };
     let drag = null;
@@ -6667,10 +6703,13 @@ function studioCrop(path, initial, ok, cancel) {
         const c = drag.c, east = c === "ne" || c === "se", south = c === "sw" || c === "se";
         const ax = east ? box.x0 : box.x1, ay = south ? box.y0 : box.y1;
         let w = Math.abs(Math.min(Math.max(x, 0), dw) - ax), h = Math.abs(Math.min(Math.max(y, 0), dh) - ay);
-        w = Math.max(MIN_W, w, h * aspect); h = w / aspect;
         const maxW = east ? dw - ax : ax, maxH = south ? dh - ay : ay;
-        if (w > maxW) { w = maxW; h = w / aspect; }
-        if (h > maxH) { h = maxH; w = h * aspect; }
+        if (o.fit) { w = Math.min(maxW, Math.max(MIN_W, w)); h = Math.min(maxH, Math.max(MIN_W, h)); }   // any shape
+        else {
+          w = Math.max(MIN_W, w, h * aspect); h = w / aspect;
+          if (w > maxW) { w = maxW; h = w / aspect; }
+          if (h > maxH) { h = maxH; w = h * aspect; }
+        }
         box = {x0: east ? ax : ax - w, x1: east ? ax + w : ax, y0: south ? ay : ay - h, y1: south ? ay + h : ay};
       }
       draw();
@@ -6683,16 +6722,18 @@ function studioCrop(path, initial, ok, cancel) {
     draw();
     $("cropModal").classList.add("active");
   };
-  img.src = mediaUrl(path);
+  img.src = o.url || mediaUrl(path);
 }
 
 function studioH3Remember() {
   try {
     const d = stSaved();
     d.video = d.video || {};
-    d.video[(S.st.layout || {}).key || "minimax"] = {model: $("stH3Model").value, base: $("stH3Base").value, len: $("stH3Len").value, w: $("stH3W").value,
+    d.video[(S.st.layout || {}).key || "minimax"] = {model: $("stH3Model").value, base: $("stH3Base").value, len: $("stH3Len").value,
+      lenS: $("stH3LenS").value, w: $("stH3W").value,
       h: $("stH3H").value, steps: $("stH3Steps").value, turbo: $("stH3Turbo").value,
-      sound: $("stH3Sound").checked, boost: $("stH3Boost").checked, early: $("stH3Early").checked, kf: S.st.kf,
+      sound: $("stH3Sound").checked, boost: $("stH3Boost").checked, early: $("stH3Early").checked, pieces: $("stH3Pieces").checked, pieceS: $("stH3PieceS").value, only: $("stH3Only").checked, loopPrompt: $("stLoopPrompt").value, loopS: $("stLoopS").value,
+      up: {w: $("stUpW").value, h: $("stUpH").value, den: $("stUpDen").value, steps: $("stUpSteps").value, sec: $("stUpSec").value, auto: $("stUpAuto").checked, first: $("stUpFirst").checked, last: $("stUpLast").checked, guide: $("stUpGuide").value, guideL: $("stUpGuideL").value, bias: $("stUpBias").value, adv: $("stUpAdv").checked, low: S.st.upLow || 0, ownPrompt: $("stUpOwnPrompt").checked, prompt: $("stUpPrompt").value, which: $("stUpWhich").value, open: $("stUpBox").open, video: S.st.upVideo ? {path: S.st.upVideo.path, rect: S.st.upVideo.rect, a: S.st.upVideo.a, b: S.st.upVideo.b} : null}, kf: S.st.kf,
       kfRect: S.st.kfRect};
     localStorage.setItem(ST_KEY, JSON.stringify(d));
   } catch (e) { /* private window */ }
@@ -6707,10 +6748,13 @@ function studioExtra() {
   const w = Number($("stH3W").value) || 640, h = Number($("stH3H").value) || 768;     // the clip at its Width x Height
   const ref = !!V.references[$("stH3Model").value];
   const slots = ref ? ["ref1", "ref2"] : (V.frame_slots || ["first", "last"]);
-  return {video: {frames: V.length_frames[$("stH3Len").value] || 22, width: w, height: h,
+  return {video: {frames: studioClipFrames(V), width: w, height: h,
     steps: Math.max(1, Math.min(40, parseInt($("stH3Steps").value, 10) || 4)),
     turbo: Math.max(0, Math.min(1.5, Number($("stH3Turbo").value) || 0)), sound: $("stH3Sound").checked,
     speed_boost: !!V.speed_boost && $("stH3Boost").checked, early: $("stH3Early").checked,
+    pieces: !!V.pieces && $("stH3Pieces").checked, piece: studioPieceFrames(V),
+    tweaked_only: $("stH3Only").checked, loop_back: S.st.loopBack || null,
+    upscale: V.upscale && (S.st.upNow || S.st.upPrev || $("stUpAuto").checked) ? Object.assign(studioUpscale(V), {now: !!S.st.upNow, preview: S.st.upPrev || 0}) : null,
     negative: $("stNeg").value.trim()},
     keyframes: slots.filter((s) => S.st.kf[s]).map((s) => ({slot: s, path: S.st.kf[s], rect: S.st.kfRect[s] || null})),
     ref_mode: ref};
@@ -7711,8 +7755,218 @@ function wireStudioSetups() {
 function studioCanvas() {
   // H3: [width, height, frames, keyframes, references] of the first clip, so Auto loads the base with room for it
   if (S.st.layout.kind !== "video") return null;
-  const x = studioExtra(), n = x.keyframes.length;
-  return [x.video.width, x.video.height, x.video.frames, x.ref_mode ? 0 : n, x.ref_mode ? n : 0];
+  const x = studioExtra(), n = x.keyframes.length, P = x.video.piece;
+  // a clip in pieces: the room one piece needs (with the 12 frames of the piece before it is shown), not the whole clip
+  const long = x.video.pieces && x.video.frames > P, kf = (x.ref_mode ? 0 : n) + (long ? 12 : 0);
+  return [x.video.width, x.video.height, long ? P : x.video.frames, kf, x.ref_mode ? n : 0];
+}
+
+// The Clip row's length. "Other…" takes seconds and moves them to the nearest length on the model's frame grid
+// (H3: 17n + 5 frames at 24 fps). Past the model's own longest clip is allowed, with no upper limit: a clip too
+// long for the card fails for memory (Peter, 12 Nov 2026: longer than 20 s works in ComfyUI).
+const ST_LEN_OTHER = "Other…";
+function studioSnapFrames(V, sec) {
+  const c = V.clip, want = Math.max(0, Number(sec) || 0) * c.fps;
+  return c.offset + Math.max(0, Math.round((want - c.offset) / c.step)) * c.step;
+}
+function studioClipFrames(V) {
+  if ($("stH3Len").value !== ST_LEN_OTHER || !V.clip) return V.length_frames[$("stH3Len").value] || 22;
+  return $("stH3LenS").value.trim() ? studioSnapFrames(V, $("stH3LenS").value) : V.clip.offset + V.clip.step;
+}
+// a piece's length in frames for a clip In pieces: the box's seconds on the frame grid (no shorter than the 39 frames
+// a piece is shown plus 17 new ones), the model's own when the box is empty
+// Upscale (the fold under the Then row). Its size: the two boxes on the 32-px grid, an empty one the clip's side x 1.5
+function studioUpSize(k) {
+  const snap = (n) => Math.max(256, Math.round(n / 32) * 32);
+  const vb = $("stUpWhich").value === "video" ? studioUpVideoBase() : null;      // the loaded video's own size
+  const w = vb ? vb[0] : Number($("stH3W").value) || 768, h = vb ? vb[1] : Number($("stH3H").value) || 448;
+  return k ? [snap(w * k), snap(h * k)] : [snap(Number($("stUpW").value) || w * 1.5), snap(Number($("stUpH").value) || h * 1.5)];
+}
+function studioUpscale(V) {
+  const [width, height] = studioUpSize(), sec = Number($("stUpSec").value) || 0, den = Number($("stUpDen").value);
+  return {width, height, denoise: Math.max(0.05, Math.min(1, den > 0 ? den : 0.4)),
+    steps: Math.max(1, Math.min(20, parseInt($("stUpSteps").value, 10) || 3)),
+    section: sec > 0 && V.clip ? Math.max(22, studioSnapFrames(V, sec)) : 0, auto: $("stUpAuto").checked,
+    which: $("stUpWhich").value, first_guide: $("stUpFirst").checked, last_guide: $("stUpLast").checked,
+    guide: [$("stUpGuide").value, $("stUpGuideL").value],
+    prompt: $("stUpOwnPrompt").checked ? $("stUpPrompt").value.trim() : "",
+    bias: Math.max(-1, Math.min(1, Number($("stUpBias").value) || 0)),
+    low: $("stUpAdv").checked ? Math.max(0, Math.min(S.st.upLow || 0, (den > 0 ? den : 0.4) - 0.02)) : 0,
+    video: $("stUpWhich").value === "video" && S.st.upVideo
+      ? {path: S.st.upVideo.path, rect: S.st.upVideo.rect, start: S.st.upVideo.a, end: S.st.upVideo.b} : null};
+}
+// Upscale's own video (the fold's Video row): a file upscaled in place of a rendered clip. S.st.upVideo = {path, info
+// (its size, seconds, sound), rect (the crop placed, in its pixels; none = the middle), a, b (From and to, seconds)}
+const upVideoUrl = (p, at, side) =>
+  `/api/studio/video_frame?path=${encodeURIComponent(p)}&at=${at}&side=${side}&t=${encodeURIComponent(TOKEN)}`;
+function studioUpVideoBase() {
+  const v = S.st.upVideo;
+  if (!v || !v.info) return null;
+  return v.rect ? [v.rect[2] - v.rect[0], v.rect[3] - v.rect[1]] : [v.info.width, v.info.height];
+}
+function studioUpVideoFit(cw, ch) {
+  const [w0, h0] = studioUpSize(), k = Math.sqrt(w0 * h0 / Math.max(1, cw * ch));
+  const snap = (n) => Math.max(256, Math.round(n / 32) * 32);
+  return [snap(cw * k), snap(ch * k)];
+}
+// the Size list: the video's shape at the model's sizes (sides on the 32-px grid, one side at 768 or more)
+function studioUpVideoSizes() {
+  const sel = $("stUpVideoSize"), b = studioUpVideoBase();
+  sel.innerHTML = "";
+  if (!b) return;
+  const snap = (n) => Math.max(256, Math.round(n / 32) * 32), seen = new Set();
+  sel.append(el("option", {value: "", text: "Pick a size…"}));
+  for (const k of [2, 1.5, 1, 0.75, 2 / 3, 0.5, 0.375, 1 / 3, 0.25]) {
+    const w = snap(b[0] * k), h = snap(b[1] * k), key = w + "x" + h;
+    if (seen.has(key) || (Math.max(w, h) < 768 && k !== 1)) continue;
+    seen.add(key);
+    const o = el("option", {value: key, text: `${w} × ${h}` + (k === 1 ? " (the video's size)" : k > 1 ? ` (×${k})` : ` (${Math.round(k * 100)}%)`)});
+    o.dataset.k = k;
+    sel.append(o);
+  }
+  const now = (k) => studioUpSize(k).join("x");
+  sel.value = [...sel.options].some((o) => o.value === now()) ? now() : "";
+}
+function studioUpVideoDraw(thumbs) {
+  const v = S.st.upVideo, on = !!(v && v.info), sel = $("stUpWhich");
+  $("stUpVideoBox").hidden = !on;
+  const opt = [...sel.options].find((o) => o.value === "video");
+  if (on && !opt) sel.append(el("option", {value: "video", text: "The loaded video"}));
+  if (!on && opt) { if (sel.value === "video") sel.value = "tweaked"; opt.remove(); }
+  if (!on) return;
+  const i = v.info, fps = S.st.layout.video.clip.fps, r2 = (n) => Math.round(n * 100) / 100;
+  $("stUpVideoInfo").textContent = `${i.width} × ${i.height}, ${r2(i.seconds)} s` + (i.has_audio ? "" : ", no sound");
+  $("stUpVideoCropSay").textContent = v.rect ? `crop ${v.rect[2] - v.rect[0]} × ${v.rect[3] - v.rect[1]}` : "the whole frame";
+  studioUpVideoSizes();
+  $("stUpVideoA").value = r2(v.a); $("stUpVideoB").value = r2(v.b);
+  // the strip: frames across the whole video (made once per file), the part to upscale bright over it
+  const len = Math.max(0.01, i.seconds), sel2 = $("stUpVideoSel"), pics = $("stUpVideoPics");
+  sel2.style.left = (v.a / len * 100) + "%"; sel2.style.width = (Math.max(0, v.b - v.a) / len * 100) + "%";
+  if (pics.dataset.path !== v.path) {
+    pics.dataset.path = v.path;
+    pics.innerHTML = "";
+    for (let j = 0; j < 12; j++) pics.append(el("img", {alt: "", loading: "lazy", src: upVideoUrl(v.path, r2((j + 0.5) / 12 * len), 200)}));
+  }
+  const want = Math.floor((v.b - v.a) * fps + 1e-3), n = want >= 22 ? 17 * Math.floor((want - 5) / 17) + 5 : 0;
+  $("stUpVideoLen").textContent = n
+    ? `${r2(n / fps)} seconds from ${r2(v.a)} s are upscaled (${n} frames, the nearest length the model makes)`
+    : `Too short: it needs at least ${r2(22 / fps)} seconds between From and to`;
+  if (thumbs) { $("stUpVideoAImg").src = upVideoUrl(v.path, v.a, 440); $("stUpVideoBImg").src = upVideoUrl(v.path, v.b, 440); }
+}
+// a video picked (saved: the one remembered, with its crop and its From and to), or "" to take it away
+async function studioUpVideoSet(path, saved) {
+  const box = $("stUpVideoPath");
+  if (!path) {
+    S.st.upVideo = null;
+    if (box) box.value = "";
+    studioUpVideoDraw(); studioUpSummary(); studioH3Remember();
+    return;
+  }
+  let info;
+  try { info = await api("/api/studio/video_info?path=" + encodeURIComponent(path)); }
+  catch (e) { if (!saved) $("stStatus").textContent = e.message; return; }
+  const keep = saved && saved.path === path ? saved : {};
+  const b = Number(keep.b) > 0 ? Math.min(Number(keep.b), info.seconds) : info.seconds;
+  S.st.upVideo = {path, info, rect: Array.isArray(keep.rect) ? keep.rect : null, a: Math.max(0, Math.min(Number(keep.a) || 0, b)), b};
+  if (box) box.value = path;
+  studioUpVideoDraw(true);
+  if (!saved) {
+    // a new video is what Upscale works on, at its own shape and near a megapixel (or its own size when smaller)
+    $("stUpWhich").value = "video";
+    const fits = [...$("stUpVideoSize").options].filter((o) => o.value && Number(o.dataset.k) <= 1)
+      .map((o) => o.value.split("x").map(Number)).sort((p, q) => q[0] * q[1] - p[0] * p[1]);
+    const pickd = fits.find(([w, h]) => w * h <= 1100000) || fits[fits.length - 1];
+    if (pickd) [$("stUpW").value, $("stUpH").value] = pickd;
+  } else if (saved.which === "video") $("stUpWhich").value = "video";
+  studioUpVideoSizes(); studioUpSummary(); studioH3Remember();
+  // a new video: choose what of the frame is used straight away, as a photo's crop is placed when it is picked. The
+  // box starts as the whole frame in the nearest shape the model's sizes allow; Cancel keeps that
+  if (!saved) $("stUpVideoCrop").click();
+}
+// The fold's presets: the built-in ones, then your own (kept on the server beside Studio's block presets, under the
+// model's key + "_upscale"). A preset holds the look, never the size, the prompt or which clip
+const UP_PRESETS = {
+  standard: {den: 0.4, steps: 3, sec: "", bias: 0, adv: false, low: 0, first: true, last: true},
+  creative: {den: 0.97, steps: 2, sec: "2.33", bias: 0.8, adv: true, low: 0, first: false, last: false},
+  creative2: {den: 0.99, steps: 2, sec: "2.33", bias: 0, adv: true, low: 0, first: false, last: false},
+  creative3: {den: 0.98, steps: 4, sec: "2.33", bias: -0.4, adv: true, low: 0, first: false, last: false},
+};
+function studioUpPresetKey() { return ((S.st.layout || {}).key || "minimax") + "_upscale"; }
+async function studioUpPresets(pick) {
+  const sel = $("stUpPreset");
+  const user = (await api("/api/studio/presets?family=" + encodeURIComponent(studioUpPresetKey())).catch(() => ({user: []}))).user;
+  sel.innerHTML = "";
+  sel.append(el("option", {value: "", text: "Pick a preset…"}), el("option", {value: "standard", text: "✨ Standard"}),
+    el("option", {value: "creative", text: "✨ Creative: light"}),
+    el("option", {value: "creative2", text: "✨ Creative: strong"}),
+    el("option", {value: "creative3", text: "✨ Creative: maximum"}));
+  if (user.length) sel.append(el("optgroup", {label: "Your presets"}, ...user.map((n) => el("option", {value: "u:" + n, text: n}))));
+  sel.value = pick && [...sel.options].some((o) => o.value === pick) ? pick : "";
+  $("stUpPresetDel").hidden = !sel.value.startsWith("u:");
+}
+// the noise levels an upscale's steps run through (minimax/upscale.py low_sigmas: the model's shift-12 spacing)
+function studioUpLevels(u) {
+  const p = Math.pow(3, u.bias), tOf = (s) => s / (12 - 11 * s), t0 = tOf(u.denoise), tl = tOf(u.low || 0), out = [];
+  const add = (t) => out.push(Math.round(12 * t / (1 + 11 * t) * 100) / 100);
+  if (!(u.low > 0)) { for (let i = 0; i <= u.steps; i++) add(t0 * Math.pow(1 - i / u.steps, p)); return out; }
+  for (let i = 0; i < u.steps; i++) add(i === 0 ? t0 : tl + (t0 - tl) * Math.pow(1 - i / (u.steps - 1), p));
+  out.push(0);
+  return out;
+}
+// Advanced: the noise range bar. Left is all noise, right is none; the section runs from Denoise to the low end
+function studioUpRangeDraw(u) {
+  const sel = $("stUpRangeSel"), lv = studioUpLevels(u);
+  sel.style.left = ((1 - u.denoise) * 100) + "%";
+  sel.style.width = ((u.denoise - u.low) * 100) + "%";
+  $("stUpRangeDots").innerHTML = lv.slice(0, u.steps).map((s) => `<i style="left:${(1 - s) * 100}%"></i>`).join("");
+  $("stUpRangeSay").textContent = u.low > 0
+    ? `${u.steps} step${u.steps === 1 ? "" : "s"} between ${u.denoise} and ${u.low}, then straight to clean`
+    : `${u.steps} step${u.steps === 1 ? "" : "s"} from ${u.denoise} all the way down to clean`;
+}
+// the longest section that fits this card at the fold's size (minimax/upscale.py room_positions), beside the Sections box
+function studioUpRoom(V, u) {
+  const [k, kf] = Array.isArray(S.st.upRoom) ? S.st.upRoom : [0, 0], el = $("stUpRoom");   // the card's room in latent positions, guide frames
+  if (!k || !V.clip) { el.textContent = ""; return; }
+  const n = Math.floor((Math.floor(k / ((u.width >> 4) * (u.height >> 4))) - kf - 2) / 5), frames = n >= 1 ? 17 * n + 5 : 0;
+  const secs = (f) => Math.round(f / V.clip.fps * 10) / 10, want = u.section || 124;
+  el.textContent = !frames ? `${u.width} × ${u.height} is too large for this card`
+    : want > frames ? `too long for this card at ${u.width} × ${u.height}: up to about ${secs(frames)} s fits`
+    : `up to about ${secs(frames)} s fits this card at ${u.width} × ${u.height}`;
+  el.style.color = !frames || want > frames ? "var(--warning, var(--accent-text))" : "";
+}
+// the fold's heading says what is set, so it reads without being opened
+function studioUpSummary() {
+  const L = S.st.layout, V = L && L.kind === "video" ? L.video : null;
+  if (!V || !V.upscale) return;
+  const u = studioUpscale(V);
+  $("stUpLevels").textContent = "noise levels " + studioUpLevels(u).join(" → ");
+  studioUpRangeDraw(u); studioUpRoom(V, u);
+  $("stUpSum").textContent = `to ${u.width} × ${u.height}, denoise ${u.denoise}, ${u.steps} step${u.steps === 1 ? "" : "s"}`
+    + (u.first_guide ? (u.last_guide ? "" : ", no last guide frame") : (u.last_guide ? ", no first guide frame" : ", no guide frames"))
+    + (u.first_guide && u.guide[0] !== "light" ? (u.guide[0] === "source" ? ", first frame as the source" : ", first frame at the Denoise") : "")
+    + (u.last_guide && u.guide[1] !== "light" ? (u.guide[1] === "source" ? ", last frame as the source" : ", last frame at the Denoise") : "")
+    + (u.low > 0 ? `, noise range ${u.low} to ${u.denoise}` : "")
+    + (u.bias > 0 ? ", steps weighted low" : u.bias < 0 ? ", steps weighted high" : "") + (u.prompt ? ", its own prompt" : "")
+    + ({baseline: ", the Baseline clip", both: ", both clips", video: ", the loaded video"}[u.which] || "") + (u.auto ? ", after every render" : "");
+  if (S.st.upVideo) studioUpVideoSizes();
+}
+function studioPieceFrames(V) {
+  const s = $("stH3PieceS").value.trim();
+  return V.pieces && V.clip && s ? Math.max(56, studioSnapFrames(V, s)) : (V.pieces || 0);
+}
+function studioLenOther(snap) {
+  const L = S.st.layout, V = L && L.kind === "video" ? L.video : null, box = $("stH3LenS"), note = $("stH3LenNote");
+  $("stH3PieceRow").style.display = V && V.pieces && $("stH3Pieces").checked ? "" : "none";
+  if (snap && V && V.pieces && V.clip && $("stH3PieceS").value.trim())
+    $("stH3PieceS").value = String(Math.round(studioPieceFrames(V) / V.clip.fps * 100) / 100);
+  const other = !!V && !!V.clip && $("stH3Len").value === ST_LEN_OTHER;
+  box.style.display = other ? "" : "none";
+  note.textContent = "";
+  if (!other) return;
+  const f = studioClipFrames(V), c = V.clip, secs = (n) => String(Math.round(n / c.fps * 100) / 100);
+  if (snap && box.value.trim()) box.value = secs(f);
+  const pf = studioPieceFrames(V), P = V.pieces && $("stH3Pieces").checked && f > pf ? 1 + Math.ceil((f - pf) / (pf - 39)) : 0;
+  note.textContent = `${f} frames (${secs(f)} s)` + (P ? `, in ${P} pieces of up to ${secs(pf)} s` : f > c.max ? `, past the model's ${secs(c.max)} s range` : "");
 }
 
 // the clip row's line under the boxes: what the Steps and speed-LoRA boxes give (a model with a speed LoRA)
@@ -8157,13 +8411,15 @@ async function studioRender() {
   }
   try { await api("/api/studio/render", {state, ...studioExtra(), ...studioMixExtra()}); studioPoll(); }
   catch (e) { $("stStatus").textContent = e.message; }
+  finally { if (S.st.upHold) S.st.upHold = S.st.upNow = S.st.upPrev = 0; }     // the held Upscale request has gone
 }
 
 function studioRollSeed() { S.st.seedUsed = 1 + Math.floor(Math.random() * (2 ** 31 - 2)); }
 
 async function studioStart() {
   stRemember();
-  if (seedOf("stSeed") === 0) studioRollSeed();      // Update with seed 0: a new random picture
+  // Update with seed 0: a new random picture (not for an Upscale: it works on the clip already rendered)
+  if (seedOf("stSeed") === 0 && !S.st.upHold) studioRollSeed();
   const L = S.st.layout;
   try {
     const st = await api("/api/studio/status");
@@ -8190,13 +8446,20 @@ async function studioStart() {
     S.st.loadedKey = key;
     S.st.pendingFirst = true;
     studioPoll();
-  } catch (e) { $("stStatus").textContent = e.message; }
+  } catch (e) { $("stStatus").textContent = e.message; S.st.upHold = S.st.upNow = S.st.upPrev = 0; }
 }
 
+// Studio's status poll. It always comes round again while the tab is open: a status request that failed, or an error
+// while drawing one, used to end it, and then a finished render never showed until something else polled (Cancel did)
 async function studioPoll() {
   clearTimeout(S.st.poll);
-  let st;
-  try { st = await api("/api/studio/status"); } catch (e) { return; }
+  let active = false;
+  try { active = await studioPollOnce(); }
+  catch (e) { console.error("[studio] status poll", e); }
+  if ($("tab-studio").classList.contains("active")) S.st.poll = setTimeout(studioPoll, active ? 400 : 2000);
+}
+async function studioPollOnce() {
+  const st = await api("/api/studio/status");
   const wasReady = S.st.ready;
   S.st.ready = st.state === "ready";
   S.st.donor = !!st.donor;
@@ -8205,6 +8468,7 @@ async function studioPoll() {
   const actKey = [S.st.ready, st.donor || "", (st.primary_blocks || []).length, (st.donor_blocks || []).length].join("|");
   if (wasReady && S.st.ready && actKey !== S.st.actKey) studioActivity();
   S.st.actKey = actKey;
+  if (String(st.up_room) !== String(S.st.upRoom)) { S.st.upRoom = st.up_room; studioUpSummary(); }
   // loaded with nothing to render yet: say what it waits for (a prompt), not that a preview is coming
   const waiting = st.state === "ready" && !st.rendering && !st.shown && !$("stPrompt").value.trim();
   $("stStatus").textContent = (waiting ? "Loaded. Enter a prompt (include the LoRA's trigger word), then press Update." :
@@ -8216,6 +8480,7 @@ async function studioPoll() {
   $("stBar").style.width = p && p[1] ? `${Math.round(100 * p[0] / p[1])}%` : st.rendering || st.state === "loading" ? "100%" : "0";
   $("stBar").parentElement.classList.toggle("indeterminate", !(p && p[1]) && (st.rendering || st.state === "loading"));
   $("stStart").textContent = S.st.ready ? "Update" : "Start";
+  $("stCancel").disabled = !(st.rendering || st.pending);
   if (S.st.ready && !wasReady) {
     studioActivity();
     if (!$("stOut").value) S.st.autoOut = "";
@@ -8237,7 +8502,7 @@ async function studioPoll() {
     $("stBase").src = q("baseline");
     $("stBaseVid").style.display = kind === "video" && has ? "" : "none";
     $("stBase").style.display = kind === "video" && has ? "none" : "";
-    if (kind === "video" && has) { $("stBaseVid").poster = q("baseline"); $("stBaseVid").src = q("baseline_media"); }
+    if (kind === "video" && has) { $("stBaseVid").poster = q("baseline"); $("stBaseVid").src = clipLoopSrc(q("baseline_media")); }
   }
   if (st.early && st.early !== S.st.earlyShown) {        // H3 Show early: the unfinished look, until the clip lands
     S.st.earlyShown = st.early;
@@ -8248,7 +8513,8 @@ async function studioPoll() {
     S.st.shown = st.shown;
     const q = (w) => `/api/studio/image?which=${w}&gen=${st.shown}&t=${encodeURIComponent(TOKEN)}`;
     const keepBase = S.st.baseEarlyShown === st.shown;      // the Baseline already showed (and plays): left alone
-    if (!keepBase) $("stBase").src = q("baseline");
+    const noBase = !!st.baseline_skipped;                   // Tweaked only: no Baseline clip was rendered
+    if (!keepBase && !noBase) $("stBase").src = q("baseline");
     $("stTweak").src = q("tweaked");
     // a clip plays in its pane (the picture its poster); a song gets its player under the waveform
     const kind = S.st.layout && S.st.layout.kind;
@@ -8258,15 +8524,20 @@ async function studioPoll() {
       $(vid).style.display = kind === "video" && has ? "" : "none";
       $(aud).style.display = "none";
       $(img).style.display = kind === "video" && has ? "none" : "";
-      if (kind === "video" && has) { $(vid).poster = q(w); $(vid).src = q(w + "_media"); }
+      if (kind === "video" && has) { $(vid).poster = q(w); $(vid).src = clipLoopSrc(q(w + "_media")); }
       if (kind === "audio" && has) songLoad(w, q(w + "_media"), st.shown, st.act && st.act[w] ? q(w + "_act") : "");
+    }
+    if (noBase) {
+      $("stBase").style.display = $("stBaseVid").style.display = "none";
+      $("stBaseVid").removeAttribute("src"); $("stBaseVid").load();
     }
     studioMetrics();
     S.st.same = !!st.same;
     studioMapsAfterRender(S.st.same);
     studioDownloads(st, q);
     const ps = Number($("stPScale").value) || 1;
-    $("stBaseCap").textContent = (ps === 1 ? "Baseline (LoRA at default 1.0)" : `Baseline (LoRA at ${ps})`) +
+    $("stBaseCap").textContent = noBase ? "Baseline (not rendered for this clip)" :
+      (ps === 1 ? "Baseline (LoRA at default 1.0)" : `Baseline (LoRA at ${ps})`) +
       (st.donor ? " - the donor is not in the baseline" : "");
     $("stTweakCap").textContent = "Tweaked (current sliders)" + (st.donor ? " - includes the donor" : "");
   }
@@ -8287,8 +8558,7 @@ async function studioPoll() {
     $("stReport").href = `/api/studio/report?t=${encodeURIComponent(TOKEN)}`;
   }
   if (st.saved && st.saved.out !== S.st.savedShown) { S.st.savedShown = st.saved.out; studioSavedSay(st.saved); }
-  const active = st.state === "loading" || st.rendering || st.pending;
-  if ($("tab-studio").classList.contains("active")) S.st.poll = setTimeout(studioPoll, active ? 400 : 2000);
+  return st.state === "loading" || st.rendering || !!st.pending;
 }
 
 // Download original / Download tweaked: the pair as rendered (a still's picture, a clip's mp4); songs have their
@@ -8303,6 +8573,7 @@ function studioDownloads(st, q) {
   for (const [w, id, word] of [["baseline", "stDlBase", "original"], ["tweaked", "stDlTweak", "tweaked"]]) {
     const video = kind === "video" && st.media && st.media[w];
     const name = `${lora}_${word}${seed ? "_seed" + seed : ""}${video ? ".mp4" : ".png"}`;
+    $(id).style.display = w === "baseline" && st.baseline_skipped ? "none" : "";
     $(id).href = q(video ? w + "_media" : w) + "&dl=" + encodeURIComponent(name);
     $(id).setAttribute("download", name);
   }
@@ -8325,7 +8596,7 @@ function studioNoLoraPane(st) {
     $("stNolVid").style.display = kind === "video" && media ? "" : "none";
     $("stNolAud").style.display = "none";
     $("stNol").style.display = kind === "video" && media ? "none" : "";
-    if (kind === "video" && media) { $("stNolVid").poster = q("nolora"); $("stNolVid").src = q("nolora_media"); }
+    if (kind === "video" && media) { $("stNolVid").poster = q("nolora"); $("stNolVid").src = clipLoopSrc(q("nolora_media")); }
     if (kind === "audio" && media) songLoad("nolora", q("nolora_media"), st.nolora_gen);
   }
 }
@@ -8481,9 +8752,233 @@ function wireStudio() {
   window.addEventListener("resize", debounce(() => { const d = $("stDock"); if (d && d.classList.contains("floating")) studioDockClamp(d); }, 150));
   $("stFamily").addEventListener("change", () => { studioFamily(); stRemember(); });
   // the clip row: length / size / steps / speed LoRA / sound wait for Update, as Model and Base do
-  for (const id of ["stH3Len", "stH3W", "stH3H", "stH3Steps", "stH3Turbo", "stH3Sound", "stH3Boost"])
-    $(id).addEventListener("change", () => { studioH3Remember(); studioPending(); });
+  for (const id of ["stH3Len", "stH3LenS", "stH3W", "stH3H", "stH3Steps", "stH3Turbo", "stH3Sound", "stH3Boost", "stH3Pieces", "stH3PieceS"])
+    $(id).addEventListener("change", () => { if (id.startsWith("stH3Len") || id === "stH3PieceS") studioLenOther(true); if (id === "stH3Pieces") studioLenOther(); studioH3Remember(); studioPending(); });
   $("stH3Early").addEventListener("change", studioH3Remember);
+  // the swap buttons between a width and a height (pictures and clips): the two values change places, and each
+  // picker reports its change as if picked by hand
+  $("stH3Only").addEventListener("change", () => { studioH3Remember(); studioPending(); });
+  // Continue and Loop back: a new clip after the one in the Tweaked pane, on its own prompt, starting on its last
+  // frame (Loop back: and ending on its first). Its length is the seconds box on the frame grid (empty: the rendered clip's own length,
+  // sent as 0), sent with an ordinary render request
+  for (const id of ["stLoopPrompt", "stLoopS"]) $(id).addEventListener("change", studioH3Remember);
+  // Upscale: the fold's boxes are remembered and its heading follows them; they wait for Update only while After
+  // every render is on. Upscale this clip sends them with an ordinary render request, for the clip in the Tweaked pane
+  for (const id of ["stUpW", "stUpH", "stUpDen", "stUpSteps", "stUpSec", "stUpAuto", "stUpWhich", "stUpFirst", "stUpLast", "stUpGuide", "stUpGuideL", "stUpBias"])
+    $(id).addEventListener("change", () => {
+      const V = S.st.layout.video, u = studioUpscale(V);
+      if (id === "stUpW" && $(id).value.trim()) $(id).value = u.width;
+      if (id === "stUpH" && $(id).value.trim()) $(id).value = u.height;
+      if (id === "stUpDen") $(id).value = u.denoise;
+      if (id === "stUpSteps") $(id).value = u.steps;
+      if (id === "stUpBias") $(id).value = u.bias;
+      if (id === "stUpSec" && u.section) $(id).value = String(Math.round(u.section / V.clip.fps * 100) / 100);
+      if (id !== "stUpAuto" && id !== "stUpWhich") { $("stUpPreset").value = ""; $("stUpPresetDel").hidden = true; }   // no longer the preset's values
+      studioUpSummary(); studioH3Remember();
+      if (id === "stUpAuto" || $("stUpAuto").checked) studioPending();
+    });
+  for (const id of ["stH3W", "stH3H"]) $(id).addEventListener("change", studioUpSummary);
+  // Upscale's own video: its row (a path, Choose, Upload, Clear), its Size, Crop, and the From / to boxes and sliders
+  {
+    const input = el("input", {type: "text", class: "w-path", id: "stUpVideoPath", placeholder: "a video file (optional)"});
+    const set = (p) => studioUpVideoSet(String(p || "").trim());
+    input.addEventListener("change", () => set(input.value));
+    const up = uploadButton({kind: "path", key: "STUDIO_upvideo", accept: "video/*,.mp4,.mov,.m4v,.mkv,.webm,.avi"}, input, set);
+    $("stUpVideoSlot").append(el("div", {class: "field-row"}, input,
+      el("button", {class: "btn", type: "button", text: "Choose…", onclick: () => pick(input.value || S.imageFolder, false, set)}), up.btn,
+      el("button", {class: "btn", type: "button", text: "Clear", onclick: () => set("")})), up.status);
+    const changed = (thumbs) => { studioUpVideoDraw(thumbs); studioUpSummary(); studioH3Remember(); };
+    $("stUpVideoSize").addEventListener("change", () => {
+      const v = $("stUpVideoSize").value;
+      if (!v) return;
+      [$("stUpW").value, $("stUpH").value] = v.split("x");
+      changed();
+    });
+    $("stUpVideoCrop").addEventListener("click", () => {
+      const v = S.st.upVideo;
+      if (!v) return;
+      // the box starts in the To size's shape (the video's own, as near as the sizes allow); a corner changes its
+      // shape, and the To size follows it at the area it has now
+      const [W, H] = studioUpSize();
+      studioCrop(v.path, v.rect, (rect) => {
+        v.rect = rect;
+        [$("stUpW").value, $("stUpH").value] = studioUpVideoFit(rect[2] - rect[0], rect[3] - rect[1]);
+        changed();
+      }, null, {url: upVideoUrl(v.path, v.a, 1600), W, H, sw: v.info.width, sh: v.info.height, fit: studioUpVideoFit,
+                title: "Crop the video: drag the box to move it, a corner to change its size and shape"});
+    });
+    // From and to: the slider moves the number as it is dragged; the frame shown follows when it is let go
+    const ends = (k, val) => {
+      const v = S.st.upVideo;
+      if (!v) return;
+      const t = Math.max(0, Math.min(v.info.seconds, Number(val) || 0));
+      if (k === "a") v.a = Math.min(t, v.b); else v.b = Math.max(t, v.a);
+    };
+    for (const [k, box] of [["a", "stUpVideoA"], ["b", "stUpVideoB"]])
+      $(box).addEventListener("change", () => { ends(k, $(box).value); changed(true); });
+    // the strip: drag an end, drag the section, or click outside it to bring the nearer end there. The two pictures
+    // follow a moment behind the drag
+    const shots = debounce((k) => {
+      const v = S.st.upVideo;
+      if (!v) return;
+      if (k !== "b") $("stUpVideoAImg").src = upVideoUrl(v.path, v.a, 440);
+      if (k !== "a") $("stUpVideoBImg").src = upVideoUrl(v.path, v.b, 440);
+    }, 180);
+    $("stUpVideoFilm").addEventListener("pointerdown", (e) => {
+      const v = S.st.upVideo;
+      if (!v) return;
+      const film = $("stUpVideoFilm"), box = film.getBoundingClientRect(), len = v.info.seconds;
+      const tAt = (ev) => Math.max(0, Math.min(len, (ev.clientX - box.left) / box.width * len));
+      let end = e.target.dataset && e.target.dataset.end;
+      const inSel = e.target === $("stUpVideoSel");
+      if (!end && !inSel) end = Math.abs(tAt(e) - v.a) <= Math.abs(tAt(e) - v.b) ? "a" : "b";
+      e.preventDefault();
+      film.setPointerCapture(e.pointerId);
+      const t0 = tAt(e), a0 = v.a, b0 = v.b;
+      const move = (ev) => {
+        const t = tAt(ev);
+        if (end === "a") v.a = Math.min(t, v.b);
+        else if (end === "b") v.b = Math.max(t, v.a);
+        else { const w = b0 - a0, a = Math.max(0, Math.min(len - w, a0 + t - t0)); v.a = a; v.b = a + w; }
+        studioUpVideoDraw(); shots(end);
+      };
+      const up = () => { film.removeEventListener("pointermove", move); film.removeEventListener("pointerup", up);
+        film.removeEventListener("pointercancel", up); changed(true); };
+      film.addEventListener("pointermove", move); film.addEventListener("pointerup", up); film.addEventListener("pointercancel", up);
+      move(e);
+    });
+  }
+  $("stUpBox").addEventListener("toggle", studioH3Remember);
+  for (const [id, k] of [["stUp1", 1], ["stUp15", 1.5], ["stUp2", 2]])
+    $(id).addEventListener("click", () => {
+      [$("stUpW").value, $("stUpH").value] = studioUpSize(k);
+      studioUpSummary(); studioH3Remember();
+      if ($("stUpAuto").checked) studioPending();
+    });
+  // Presets: tested sets of the fold's values. The prompt, which clip and After every render are left alone
+  $("stUpPreset").addEventListener("change", async () => {
+    const v = $("stUpPreset").value;
+    $("stUpPresetDel").hidden = !v.startsWith("u:");
+    let p = UP_PRESETS[v];
+    if (v.startsWith("u:")) {
+      try { p = (await api("/api/studio/preset_load", {family: studioUpPresetKey(), name: v.slice(2)})).blocks; }
+      catch (e) { $("stStatus").textContent = e.message; return; }
+    }
+    if (!p) return;
+    $("stUpDen").value = p.den;                                // the size is yours: no preset sets it $("stUpSteps").value = p.steps; $("stUpSec").value = p.sec || ""; $("stUpBias").value = p.bias || 0;
+    $("stUpAdv").checked = !!p.adv; S.st.upLow = Number(p.low) || 0; $("stUpRangeRow").hidden = !p.adv;
+    $("stUpFirst").checked = p.first !== false; $("stUpLast").checked = p.last !== false;
+    for (const [id, g] of [["stUpGuide", p.guide], ["stUpGuideL", p.guideL]])                       // a preset of yours
+      if (g) $(id).value = ["full", "source"].includes(g) ? g : "light";
+    studioUpSummary(); studioH3Remember();
+    if ($("stUpAuto").checked) studioPending();
+  });
+  // Save preset…: the fold's values under a name of your own (a name box opens under the row, as Studio's block
+  // presets do). The size is not part of a preset
+  $("stUpPresetSave").addEventListener("click", () => {
+    const host = $("stUpPresetSaveRow");
+    if (host.childNodes.length) { host.innerHTML = ""; return; }
+    const name = el("input", {type: "text", class: "w-path", placeholder: "A name for these upscale settings"});
+    const msg = el("span", {class: "field-hint"});
+    const save = async (overwrite) => {
+      const u = studioUpscale(S.st.layout.video);
+      const data = {den: u.denoise, steps: u.steps, sec: $("stUpSec").value.trim(), bias: u.bias, adv: $("stUpAdv").checked,
+        low: u.low, first: u.first_guide, last: u.last_guide, guide: u.guide[0], guideL: u.guide[1]};
+      try {
+        const r = await api("/api/studio/preset_save", {family: studioUpPresetKey(), name: name.value, blocks: data, overwrite: !!overwrite});
+        if (r.exists) { msg.replaceChildren(document.createTextNode("That name is taken. "), el("button", {class: "btn btn-sm btn-danger", text: "Replace it", onclick: () => save(true)})); return; }
+        const kept = name.value.trim();
+        host.innerHTML = "";
+        await studioUpPresets("u:" + kept);
+        $("stStatus").textContent = "Upscale preset saved.";
+      } catch (e) { msg.textContent = e.message; }
+    };
+    host.append(el("div", {class: "field-row"}, el("span", {class: "field-label"}), name,
+      el("button", {class: "btn btn-primary", text: "Save", onclick: () => save(false)}),
+      el("button", {class: "btn", text: "Cancel", onclick: () => { host.innerHTML = ""; }}), msg));
+    name.focus();
+  });
+  $("stUpPresetDel").addEventListener("click", async () => {
+    const v = $("stUpPreset").value;
+    if (!v.startsWith("u:")) return;
+    try { await api("/api/studio/preset_delete", {family: studioUpPresetKey(), name: v.slice(2)}); }
+    catch (e) { $("stStatus").textContent = e.message; return; }
+    await studioUpPresets("");
+    $("stStatus").textContent = "Upscale preset deleted.";
+  });
+  // Advanced: the noise range bar. Dragging the section moves both ends, a handle moves one; the high end is Denoise
+  const upRange = () => { $("stUpPreset").value = ""; $("stUpPresetDel").hidden = true; studioUpSummary(); studioH3Remember(); if ($("stUpAuto").checked) studioPending(); };
+  $("stUpAdv").addEventListener("change", () => { $("stUpRangeRow").hidden = !$("stUpAdv").checked; upRange(); });
+  $("stUpRange").addEventListener("pointerdown", (e) => {
+    const bar = $("stUpRange"), box = bar.getBoundingClientRect(), u0 = studioUpscale(S.st.layout.video);
+    const end = e.target.dataset && e.target.dataset.end, inSel = e.target === $("stUpRangeSel");
+    if (!end && !inSel) return;
+    e.preventDefault();
+    bar.setPointerCapture(e.pointerId);
+    const x0 = e.clientX, r2 = (v) => Math.round(v * 100) / 100;
+    const move = (ev) => {
+      const d = (x0 - ev.clientX) / box.width;            // rightward is less noise
+      let lo = u0.low, hi = u0.denoise;
+      if (end === "lo") lo = Math.max(0, Math.min(hi - 0.02, lo + d));
+      else if (end === "hi") hi = Math.max(Math.max(0.05, lo + 0.02), Math.min(1, hi + d));
+      else { const w = hi - lo, a = Math.max(0, Math.min(1 - w, lo + d)); lo = a; hi = a + w; }
+      S.st.upLow = r2(lo);
+      $("stUpDen").value = r2(Math.max(0.05, hi));
+      studioUpSummary();
+    };
+    const up = () => { bar.removeEventListener("pointermove", move); bar.removeEventListener("pointerup", up);
+      bar.removeEventListener("pointercancel", up); upRange(); };
+    bar.addEventListener("pointermove", move); bar.addEventListener("pointerup", up); bar.addEventListener("pointercancel", up);
+  });
+  // Edit prompt: the upscale's own prompt. Ticking it opens the box, filled with the main Prompt when it is empty
+  const upPrompt = () => { studioUpSummary(); studioH3Remember(); if ($("stUpAuto").checked) studioPending(); };
+  $("stUpOwnPrompt").addEventListener("change", () => {
+    const on = $("stUpOwnPrompt").checked;
+    if (on && !$("stUpPrompt").value.trim()) $("stUpPrompt").value = $("stPrompt").value;
+    $("stUpPromptRow").hidden = $("stUpPromptCopy").hidden = !on;
+    upPrompt();
+  });
+  $("stUpPrompt").addEventListener("change", upPrompt);
+  $("stUpPromptCopy").addEventListener("click", () => { $("stUpPrompt").value = $("stPrompt").value; upPrompt(); });
+  // Preview: the middle of the clip (1 frame, or the shortest clip) with the fold's settings, sent like Upscale now
+  // Both go by way of Update's check (studioStart): a primary or donor LoRA changed since the clip was rendered is
+  // loaded first, then the clip already rendered is upscaled on it. The request is held until it has been sent
+  $("stUpPrev").addEventListener("click", () => {
+    S.st.upPrev = Number($("stUpPrevN").value) || 22; S.st.upNow = 0; S.st.upHold = 1;   // 22 or 39 frames
+    studioStart();
+  });
+  $("stUpGo").addEventListener("click", () => {
+    S.st.upNow = 1; S.st.upPrev = 0; S.st.upHold = 1;
+    studioStart();
+  });
+  for (const [id, loop] of [["stContinue", false], ["stLoopBack", true]])
+    $(id).addEventListener("click", async () => {
+      const V = S.st.layout.video, sec = Number($("stLoopS").value) || 0;
+      S.st.loopBack = {prompt: $("stLoopPrompt").value.trim(), frames: sec > 0 ? studioSnapFrames(V, sec) : 0, loop};
+      try { await studioRender(); } finally { S.st.loopBack = null; }
+    });
+  // the Aspect lists: the longer side stays, the other goes to the nearest size on offer for that shape; a portrait
+  // size stays portrait
+  for (const [a, w, h] of [["stAspect", "stW", "stH"], ["stH3Aspect", "stH3W", "stH3H"]])
+    $(a).addEventListener("change", () => {
+      const [x, y] = $(a).value.split(":").map(Number);
+      $(a).value = "";
+      if (!x || !y) return;
+      const W = Number($(w).value), H = Number($(h).value), long = Math.max(W, H), want = long * y / x;
+      const sizes = [...$(w).options].map((o) => Number(o.value)).filter((n) => n > 0);
+      const short = sizes.reduce((best, n) => (Math.abs(n - want) < Math.abs(best - want) ? n : best), sizes[0]);
+      $(w).value = String(H > W ? short : long); $(h).value = String(H > W ? long : short);
+      for (const id of [w, h]) $(id).dispatchEvent(new Event("change", {bubbles: true}));
+    });
+  for (const [b, w, h] of [["stSwap", "stW", "stH"], ["stH3Swap", "stH3W", "stH3H"]])
+    $(b).addEventListener("click", () => {
+      const a = $(w).value;
+      $(w).value = $(h).value; $(h).value = a;
+      for (const id of [w, h]) $(id).dispatchEvent(new Event("change", {bubbles: true}));
+    });
+  // the note beside the length follows the two seconds boxes as they are typed in (the box itself moves to the
+  // nearest length when it is left)
+  for (const id of ["stH3LenS", "stH3PieceS"]) $(id).addEventListener("input", () => studioLenOther());
   $("stH3Model").addEventListener("change", () => { studioH3Remember(); studioSlots(); $("stStart").textContent = "Update"; });
   $("stH3Base").addEventListener("change", () => { studioH3Remember(); $("stStart").textContent = "Update"; });
   playTogether($("stPlayBothBtn"), () => {
@@ -8491,7 +8986,7 @@ function wireStudio() {
     if ($("stNolPane").style.display !== "none") ids.unshift(v ? "stNolVid" : "stNolAud");
     return ids;
   });
-  $("stStart").addEventListener("click", studioStart);
+  $("stStart").addEventListener("click", () => { S.st.upHold = S.st.upNow = S.st.upPrev = 0; studioStart(); });
   wireStudioAce();
   S.st.eq = {primary: false, donor: false}; S.st.eqSaved = {};
   $("stEqP").addEventListener("click", () => studioEq("primary", !S.st.eq.primary));
@@ -8499,6 +8994,7 @@ function wireStudio() {
   wireStudioMetrics();
   wireStudioSetups();
   $("stEqD").addEventListener("click", () => studioEq("donor", !S.st.eq.donor));
+  $("stCancel").addEventListener("click", () => api("/api/studio/cancel", {}).then(studioPoll).catch(() => {}));
   $("stUnload").addEventListener("click", async () => { await api("/api/studio/reset", {}); S.st.ready = false; S.st.loadedKey = ""; studioPoll(); });
   $("stPrimaryPick").addEventListener("click", () => pick($("stPrimary").value || loraStart(), false, (p) => { $("stPrimary").value = p; stRemember(); }));
   $("stDonorPick").addEventListener("click", () => pick($("stDonor").value || $("stPrimary").value, false, (p) => { $("stDonor").value = p; stRemember();
@@ -9556,7 +10052,7 @@ function rmShow(img, vid, it) {
   $(vid).style.display = clip ? "" : "none";
   $(img).style.display = clip ? "none" : "";
   if (!it) { $(img).removeAttribute("src"); $(vid).removeAttribute("src"); return; }
-  if (clip) { $(vid).poster = rmMedia(it); if ($(vid).dataset.src !== rmMedia(it, true)) { $(vid).dataset.src = rmMedia(it, true); $(vid).src = rmMedia(it, true); } }
+  if (clip) { $(vid).poster = rmMedia(it); if ($(vid).dataset.src !== rmMedia(it, true)) { $(vid).dataset.src = rmMedia(it, true); $(vid).src = clipLoopSrc(rmMedia(it, true)); } }
   else $(img).src = rmMedia(it);
 }
 function rmShowLeft(it, caption) {
@@ -9801,6 +10297,34 @@ function rmWire() {
 // Play together / Pause together: one button for the panes' players (ids() names the ones in use). Play starts
 // them from the top unless they were paused together (then they carry on, still in step); the label follows the
 // players, so pausing one by its own controls turns the button back to Play.
+// Repeat / Ping-pong for the Studio and RefMod Toolkit clip panes (one choice, kept in this browser). Ping-pong
+// plays a file the server makes from the clip (forward then backward: &pp=1), looped like any other.
+const CLIP_LOOP_KEY = "fizgig_clip_loop", CLIP_LOOP_VIDS = ["stBaseVid", "stTweakVid", "stNolVid", "rmTweakVid", "rmBaseVid"];
+function clipLoopMode() {
+  try { return localStorage.getItem(CLIP_LOOP_KEY) === "pingpong" ? "pingpong" : "repeat"; } catch (e) { return "repeat"; }
+}
+function clipLoopSrc(url) {
+  const bare = url.replace(/&pp=1/g, "");
+  return clipLoopMode() === "pingpong" ? bare + "&pp=1" : bare;
+}
+function clipLoopInit() {
+  const sels = [...document.querySelectorAll(".clip-loop-mode")];
+  for (const s of sels) {
+    s.value = clipLoopMode();
+    s.addEventListener("change", () => {
+      try { localStorage.setItem(CLIP_LOOP_KEY, s.value); } catch (e) { /* the choice lasts for this page only */ }
+      for (const o of sels) o.value = clipLoopMode();
+      for (const id of CLIP_LOOP_VIDS) {              // the clips on show swap to the other file, playing on if they were
+        const v = $(id), src = v && v.getAttribute("src");
+        if (!src || clipLoopSrc(src) === src) continue;
+        const playing = !v.paused;
+        v.src = clipLoopSrc(src);
+        if (playing) v.play().catch(() => {});
+      }
+    });
+  }
+}
+
 function playTogether(btn, ids) {
   const media = () => ids().map((id) => $(id)).filter((m) => m && m.getAttribute("src"));
   const label = () => { btn.textContent = media().some((m) => !m.paused) ? "⏸ Pause together" : "▶ Play together"; };
@@ -11303,6 +11827,7 @@ function wire() {
   window.addEventListener("focus", catchUp);
   wireLightbox();
   wireStudio();
+  clipLoopInit();                      // the clip panes' Repeat / Ping-pong (Studio and RefMod Toolkit)
   wirePrep();
   $("presetSave").addEventListener("click", presetSaveOpen);
   $("btnTrainMaps").addEventListener("click", async () => {      // the same view as Runs & outputs, for the run going now

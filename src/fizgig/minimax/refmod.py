@@ -1182,12 +1182,8 @@ def run_refmod(*, dataset_config: str, output_dir: str, output_name: str, dit_pa
         logger.info("[refmod] plain encode — no steps and no previews, so the H3 base is not loaded")
     decoder = None
     if vae_path and encoded:
-        from safetensors import safe_open
-        from fizgig.minimax.vae import MiniMaxH3VideoVAEDecoder
-        decoder = MiniMaxH3VideoVAEDecoder()
-        with safe_open(vae_path, framework="pt", device="cpu") as f:
-            decoder.load_state_dict({k: f.get_tensor(k) for k in f.keys()}, strict=False)
-        decoder = decoder.to(torch.float16).eval()
+        from fizgig.minimax.vae import load_video_decoder
+        decoder = load_video_decoder(vae_path)
     turbo = None
     if encoded and turbo_lora_path:
         from fizgig.minimax.common import load_preview_turbo

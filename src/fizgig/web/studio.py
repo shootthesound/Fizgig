@@ -150,6 +150,7 @@ def _event(ev):
                 _S.update(state="ready", family=ev.get("family", ""), primary=ev.get("primary", ""),
                           donor=ev.get("donor", ""), status="Loaded.", error="")
                 _S["profile"] = _profile(ev.get("hash", ""))
+                _S["up_room"] = ev.get("up_room")      # H3 Upscale: the memory its section hint is worked out from
             else:
                 _S.update(donor=ev.get("donor", ""), status="Donor loaded, fully on in its blocks: turn a block down or off to use less of it."
                           if ev.get("donor") else "Donor unloaded.")
@@ -178,6 +179,8 @@ def _event(ev):
                 _S["status"] = "The No-LoRA render failed: " + ev["msg"]
         elif kind == "aborted":
             _S.update(rendering=False, progress=None)
+            if _S.pop("cancel_asked", False):    # the Cancel button: said so, and the early look goes
+                _S.update(status="Cancelled.", early="")
             nxt, _S["pending"] = _S["pending"], None
         elif kind == "error":
             where = ev.get("where")
@@ -388,7 +391,7 @@ def render(state, extra=None):
         else:
             _S["gen"] += 1
             gen = _S["gen"]
-            _S.update(rendering=True, progress=None, status="Generating preview…")
+            _S.update(rendering=True, progress=None, status="Generating preview…", cancel_asked=False)
             busy = False
             cut = _S.get("nolora_busy")
     if busy or cut:                              # the newest edit takes the engine (from a No-LoRA render too)
@@ -397,6 +400,20 @@ def render(state, extra=None):
         return {"ok": True, "queued": True}
     _send({"cmd": "render", "gen": gen, "state": state, "out_dir": OUT_DIR, **(extra or {})})
     return {"ok": True, "gen": gen}
+
+
+def cancel():
+    """The Cancel button: the render going stops within a block, and nothing waiting takes its place. True when
+    there was one to stop."""
+    with _lock:
+        busy = bool(_S.get("rendering") or _S.get("nolora_busy"))
+        if busy:
+            _S["pending"] = None
+            _S["cancel_asked"] = bool(_S.get("rendering"))
+            _S["status"] = "Cancelling…"
+    if busy:
+        _send({"cmd": "cancel"})
+    return busy
 
 
 def lora_trigger(path):
@@ -748,9 +765,12 @@ def status():
         d = {k: _S[k] for k in ("state", "family", "primary", "donor", "primary_blocks", "donor_blocks", "status",
                                 "progress", "shown", "rendering", "error", "saved", "profile")}
         d["notes"] = _S.get("notes")
+        d["up_room"] = _S.get("up_room")
         d["same"] = bool(_S.get("same"))           # the Tweaked render on screen is the Baseline
         d["eq"] = _S.get("eq") or {}
         d["media"] = {k: bool(_S.get(k + "_media")) for k in ("baseline", "tweaked", "nolora")}
+        # a clip rendered with Tweaked only ticked: there is no Baseline to show beside it
+        d["baseline_skipped"] = bool(_S.get("shown")) and bool(_S.get("tweaked")) and not _S.get("baseline")
         d["act"] = {k: bool(_S.get(k + "_act")) for k in ("baseline", "tweaked")}
         d["nolora_gen"], d["nolora_busy"] = _S.get("nolora_gen", 0), bool(_S.get("nolora_busy"))
         d["pending"] = _S["pending"] is not None
@@ -765,6 +785,39 @@ def image(which, gen):
         p = _S.get(which) if which in ("baseline", "tweaked", "nolora", "baseline_media", "tweaked_media",
                                        "nolora_media", "baseline_act", "tweaked_act", "early") else ""
     return p if p and os.path.isfile(p) else ""
+
+
+_pp_lock = threading.Lock()
+
+
+def pingpong(path):
+    """A clip's ping-pong file: the clip forward then backward (the turn-around frame once), made once beside it
+    as <name>_pp.mp4 and looped by the page. Its sound plays on the way out only. The clip itself comes back when
+    ffmpeg is missing or fails."""
+    if not path.lower().endswith(".mp4"):
+        return path
+    out = path[:-4] + "_pp.mp4"
+    with _pp_lock:
+        try:
+            if os.path.isfile(out) and os.path.getmtime(out) >= os.path.getmtime(path):
+                return out
+            from fizgig.minimax.common import _find_ffmpeg
+            ff = _find_ffmpeg()
+            if not ff:
+                return path
+            tmp = path[:-4] + "_pp.tmp.mp4"
+            cmd = [ff, "-y", "-hide_banner", "-loglevel", "error", "-i", path, "-filter_complex",
+                   "[0:v]split[a][b];[b]reverse,trim=start_frame=1,setpts=PTS-STARTPTS[r];[a][r]concat=n=2:v=1:a=0[v]",
+                   "-map", "[v]", "-map", "0:a?", "-c:v", "libx264", "-crf", "18", "-preset", "veryfast",
+                   "-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart", tmp]
+            r = subprocess.run(cmd, capture_output=True, timeout=120,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            if r.returncode != 0 or not os.path.isfile(tmp):
+                return path
+            os.replace(tmp, out)
+            return out
+        except Exception:
+            return path
 
 
 SETUP_KEY = "fizgig_studio_setup"     # the PNG text chunk Download tweaked writes the setup into
@@ -911,6 +964,10 @@ def layout(desc, prefs, pref_path, samples=None):
     vc = desc.video_controls
     return {"key": desc.key, "name": desc.display_name, "groups": groups, "kind": kind,
             "video": {"lengths": [n for n, _ in vc.lengths], "length_frames": dict(vc.lengths),
+                      # the model's frame grid, for a length typed in seconds (the Clip row's Other…)
+                      "clip": {"fps": desc.clip_spec.fps, "step": desc.clip_spec.frame_step,
+                               "offset": desc.clip_spec.frame_offset, "max": desc.clip_spec.max_frames}
+                      if desc.clip_spec else None,
                       "length": vc.default_length or vc.lengths[0][0], "dims": [str(d) for d in vc.sizes],
                       "size": [str(d) for d in vc.default_size],
                       "scales": [n for n, _ in vc.scales], "scale_of": dict(vc.scales),
@@ -929,6 +986,7 @@ def layout(desc, prefs, pref_path, samples=None):
                       # the clip row's line on what Steps and the speed LoRA give: for the shared video engine's sampling
                       "clip_note": _shared_clip_engine(desc),
                       "bases": [n for n, _ in vc.bases], "speed_boost": bool(vc.speed_boost),
+                      "pieces": int(vc.pieces), "upscale": bool(vc.upscale),
                       "sound": bool(audio_vae and os.path.exists(audio_vae))} if kind == "video" and vc else None,
             "song_lengths": SONG_LENGTHS if kind == "audio" else None,
             "prompt_blend": bool(getattr(desc.load_driver(), "supports_prompt_blend", False)),

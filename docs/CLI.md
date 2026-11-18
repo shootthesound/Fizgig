@@ -122,7 +122,7 @@ Headless, there is no Preferences tab: **model locations are passed as flags on 
 | DiT, pruned int8 (~21 GB) | [minimax_h3_fl2va_pruned_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors) | training (`--dit`) — the same file ComfyUI runs |
 | DiT, reference build *(optional)* | [minimax_h3_ref2va_pruned_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors) | `--dit` for LoRAs that live in the reference-to-video workflow, and for reference distillation (`--family_option distill=1`) |
 | Text encoder, nvfp4 (~15.7 GB) | [qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors) | `--text_encoder` (caching, and pre-encoding preview prompts) |
-| Video VAE | [minimax_h3_video_vae_fp16.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/vae/minimax_h3_video_vae_fp16.safetensors) | `--vae` |
+| Video VAE | [minimax_h3_video_vae_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/vae/minimax_h3_video_vae_int8_convrot.safetensors) (the fp16 file works too) | `--vae` |
 | Audio VAE *(optional)* | [minimax_h3_audio_vae_fp32.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/vae/minimax_h3_audio_vae_fp32.safetensors) | `--aux audio_vae=` (caching) and `--family_option audio_vae=` (training) — sound in clips, voice recordings, previews with sound |
 | Turbo LoRA *(optional)* | [minimax_h3_turbo_v4_step600.safetensors](https://huggingface.co/larryvrh/MiniMax-H3-Turbo-Lora/blob/main/minimax_h3_turbo_v4_step600.safetensors) | 6-step previews (`--speed_lora`) |
 | Training adapter *(recommended)* | [minimax_h3_training_adapter_v3.safetensors](https://huggingface.co/ostris/minimax_h3_training_adapter/blob/main/minimax_h3_training_adapter_v3.safetensors) (fl2va) · [ref2va file](https://huggingface.co/ostris/minimax_h3_training_adapter/blob/main/minimax_h3_ref2va_training_adapter_v3.safetensors) | `--training_adapter` — match it to `--dit` |
@@ -224,7 +224,7 @@ python src/fizgig/families/train.py --family krea2 --dataset_config my_dataset.t
 **MiniMax H3:**
 
 ```bash
-python src/fizgig/families/cache.py --family minimax --stage latents --dataset_config my_dataset.toml --model /models/minimax_h3_video_vae_fp16.safetensors --aux audio_vae=/models/minimax_h3_audio_vae_fp32.safetensors --aux clip_still=1
+python src/fizgig/families/cache.py --family minimax --stage latents --dataset_config my_dataset.toml --model /models/minimax_h3_video_vae_int8_convrot.safetensors --aux audio_vae=/models/minimax_h3_audio_vae_fp32.safetensors --aux clip_still=1
 python src/fizgig/families/cache.py --family minimax --stage text    --dataset_config my_dataset.toml --model /models/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors
 python src/fizgig/families/train.py --family minimax --dataset_config my_dataset.toml ...   # full example below
 ```
@@ -604,7 +604,7 @@ The GUI's default recipe as it builds it (rank 8 LoRA, the Default training mode
 python src/fizgig/families/train.py --family minimax \
   --dataset_config my_dataset.toml \
   --dit /models/minimax_h3_fl2va_pruned_int8_convrot.safetensors \
-  --vae /models/minimax_h3_video_vae_fp16.safetensors \
+  --vae /models/minimax_h3_video_vae_int8_convrot.safetensors \
   --text_encoder /models/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors \
   --output_dir ./output_loras/my_subject --output_name my_subject_mmh3 \
   --network_dim 8 --network_alpha 8 --learning_rate 2e-4 \

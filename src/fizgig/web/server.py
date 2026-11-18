@@ -829,7 +829,9 @@ def _studio_post(what, b):
     if what == "reset":
         studio.reset()
         return {"ok": True}
-    if what in ("preset_save", "preset_load"):
+    if what == "cancel":
+        return {"ok": studio.cancel()}
+    if what in ("preset_save", "preset_load", "preset_delete"):
         key = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(b.get("family") or ""))
         name = str(b.get("name") or "").strip()        # any name a file can have, as the desktop's
         if not name or name.startswith("✨") or any(c in name for c in '<>:"/\\|?*') or name in (".", ".."):
@@ -838,6 +840,10 @@ def _studio_post(what, b):
         if what == "preset_load":
             with open(path_, encoding="utf-8") as f:
                 return {"blocks": (json.load(f) or {}).get("blocks") or {}}
+        if what == "preset_delete":                      # one of your own presets (the Upscale fold's Delete)
+            if os.path.isfile(path_):
+                os.remove(path_)
+            return {"ok": True}
         if os.path.exists(path_) and not b.get("overwrite"):
             return {"exists": True}
         os.makedirs(os.path.dirname(path_), exist_ok=True)
@@ -2255,6 +2261,7 @@ UPLOAD_EXTS = (MEDIA - {".gif", ".webm"}) | {".txt", ".caption", ".json", ".zip"
 UPLOAD_DEFAULT = os.path.join(BASE_DIR, "training_data")     # when Preferences has no input folder set
 UPLOAD_FILES = os.path.join(BASE_DIR, "uploads")              # single files: a context LoRA, a test photo
 UPLOAD_FILE_EXTS = (UPLOAD_EXTS - {".zip"}) | {".safetensors", ".onnx"}      # .onnx: a YOLO face model (Image Prep)
+UPLOAD_FILE_EXTS |= {".mov", ".m4v", ".mkv", ".webm", ".avi"}                 # a video for Studio's Upscale to read
 
 
 def uploads_root() -> str:
@@ -3467,11 +3474,15 @@ class Handler(BaseHTTPRequestHandler):
             p = (it or {}).get("mp4" if (qs.get("mp4") or [""])[0] else "png") or ""
             if not p or not os.path.isfile(p):
                 return self.json({"error": "no picture"}, 404)
+            if (qs.get("pp") or [""])[0]:              # the page's Ping-pong loop
+                p = studio.pingpong(p)
             return self._stream(p, attachment=False)
         if path == "/api/studio/image":
             p = studio.image((qs.get("which") or [""])[0], (qs.get("gen") or [""])[0])
             if not p:
                 return self.json({"error": "no picture yet"}, 404)
+            if (qs.get("pp") or [""])[0]:              # the page's Ping-pong loop
+                p = studio.pingpong(p)
             dl = re.sub(r'[\\/:*?"<>|]+', "_", (qs.get("dl") or [""])[0])        # a Save / Download button
             if dl:                                    # the name the page asks for, with the file's own extension
                 dl = os.path.splitext(dl)[0] + os.path.splitext(p)[1]
@@ -3482,6 +3493,18 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, png, "image/png",
                                       [("Content-Disposition", f"attachment; filename=\"{dl}\"")])
             return self._stream(p, attachment=bool(dl), filename=dl or None, keep=bool((qs.get("gen") or [""])[0]))
+        if path in ("/api/studio/video_info", "/api/studio/video_frame"):     # Upscale's own video (its fold)
+            from fizgig.utils import video_in
+            p = (qs.get("path") or [""])[0]
+            if os.path.splitext(p)[1].lower() not in video_in.VIDEO_EXT or not os.path.isfile(p):
+                return self.json({"error": "Not a video Fizgig can read here (mp4, mov, m4v, mkv, webm or avi)."}, 404)
+            try:
+                if path.endswith("_info"):
+                    return self.json(video_in.info(p))
+                at, side = (qs.get("at") or ["0"])[0], (qs.get("side") or ["1280"])[0]
+                return self._send(200, video_in.frame_jpeg(p, float(at or 0), int(side or 1280)), "image/jpeg")
+            except (ValueError, OSError) as e:
+                return self.json({"error": str(e)}, 404)
         if path == "/api/studio/peaks":             # a song's waveform for the player's strip
             p = studio.image((qs.get("which") or [""])[0], (qs.get("gen") or [""])[0])
             if not p or not p.lower().endswith(".wav"):

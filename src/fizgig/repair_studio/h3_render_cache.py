@@ -28,7 +28,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 import torch
 
-CACHE_FORMAT = 6     # 6: the library is banks of five blocks (overlap 1), not single blocks     # 5: int8 attention (comfy-kitchen) is part of the setup key     # 4: the DiT (fl2va / ref2va) is part of the setup key     # 3: load-strength scales in the key; Turbo AdaLN rows follow the dialled strength
+CACHE_FORMAT = 7     # 7: renders changed (the int8 base's linears on the int8 GEMM, LoRAs added in one pass)     # 6: the library is banks of five blocks (overlap 1), not single blocks     # 5: int8 attention (comfy-kitchen) is part of the setup key     # 4: the DiT (fl2va / ref2va) is part of the setup key     # 3: load-strength scales in the key; Turbo AdaLN rows follow the dialled strength
 MANIFEST = "manifest.json"
 BASE_SIG = "base"
 NOLORA_SIG = "nolora"       # the base model with no LoRA at all (primary + donor off)

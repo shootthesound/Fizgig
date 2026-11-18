@@ -104,13 +104,16 @@ class ClipContract:
             sig.append(("ref", i, tuple(t.shape), round(float(t.sum()), 3), round(float(t.abs().mean()), 5)))
         return tuple(sig)
 
-    def clip_key(self, state, *, frames, steps, turbo_strength, with_audio):
+    def clip_key(self, state, *, frames, steps, turbo_strength, with_audio, primary_scale=True):
+        """What the Baseline clip (and the No LoRA one) is kept on in memory: everything those renders depend on.
+        The donor's strength is not part of it - the donor is off in both - so moving it never renders them again;
+        the No LoRA clip leaves the primary's strength out too (primary_scale=False)."""
         return (self.primary_path, self.donor_path, int(state.seed), state.prompt,
                 int(state.preview_width), int(state.preview_height), int(frames), int(steps),
                 turbo_strength, bool(with_audio), self.keyframe_signature(state),
-                round(float(getattr(state, "primary_scale", 1.0)), 4),
-                round(float(getattr(state, "donor_scale", 1.0)), 4),
-                bool(getattr(self, "int8_attention", False)), bool(getattr(self, "speed_boost", False)))
+                round(float(getattr(state, "primary_scale", 1.0)), 4) if primary_scale else None,
+                bool(getattr(self, "int8_attention", False)), bool(getattr(self, "speed_boost", False)),
+                bool(getattr(self, "clip_pieces", False)), int(getattr(self, "clip_piece_frames", 0) or 0))
 
     def cache_key_for(self, state, *, frames, regime, steps=None, turbo_strength=None, **_ignored):
         """The render library's setup key for this state's render setup, or None before a primary is loaded. Sound
@@ -261,7 +264,8 @@ class ClipContract:
         "nolora"."""
         steps, strength = self.regime_params(regime, steps, turbo_strength)
         frames = self._clip_frames(state, frames)
-        key = self.clip_key(state, frames=frames, steps=steps, turbo_strength=strength, with_audio=with_audio)
+        key = self.clip_key(state, frames=frames, steps=steps, turbo_strength=strength, with_audio=with_audio,
+                            primary_scale=False)
         if getattr(self, "_nolora_clip_key", None) == key and getattr(self, "_nolora_clip", None) is not None:
             return self._nolora_clip
         clip = self.render_clip(self._base_like(state, frames, False), frames=frames, regime=regime,

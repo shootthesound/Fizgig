@@ -912,7 +912,9 @@
                 <button class="btn btn-sm" id="stSeedNew" title="A random seed, rendered at once">↻</button>
                 <span class="field-label" id="stResLabel">Length (s):</span><select id="stRes" class="w-combo st-small-select"></select>
                 <span class="st-inline" id="stSizeRow"><span class="field-hint">Width</span><select id="stW" class="w-combo st-small-select"></select>
-                  <span class="field-hint">Height</span><select id="stH" class="w-combo st-small-select"></select></span>
+                  <button class="btn" id="stSwap" type="button" title="Swap the width and the height (landscape to portrait and back)">⇄</button>
+                  <span class="field-hint">Height</span><select id="stH" class="w-combo st-small-select"></select>
+                  <select id="stAspect" class="w-combo st-small-select" title="Set the width and height to a shape. The longer side stays as it is and the other moves to the nearest size in the list; portrait stays portrait (the swap button turns it)."><option value="">Aspect…</option><option>1:1</option><option>5:4</option><option>4:3</option><option>3:2</option><option>16:9</option><option>21:9</option></select></span>
                 <label class="checkbox-label" id="stTurboRow" title="Keeps the results of the blocks before the one you moved, so the next render only reruns from there. The same picture as a full render. Uses extra memory (in system RAM when the card is tight): untick it if memory is short."><input type="checkbox" id="stTurbo" checked> Reuse unchanged blocks
                   (a late-block change renders almost at once; the same picture as a full render)</label></div>
               <div id="stVideoRows" style="display:none">
@@ -920,15 +922,97 @@
                   <span class="field-label">Base:</span><select id="stH3Base" class="w-combo st-small-select"></select></div>
                 <div class="field-row"><span class="field-label">Clip:</span>
                   <span class="st-inline"><select id="stH3Len" class="w-combo st-small-select"></select>
+                    <input type="text" id="stH3LenS" style="display:none" placeholder="seconds" title="The clip's length in seconds. It moves to the nearest length the model can make. Lengths past the model's own range are allowed, with no upper limit: they need more memory, and one too long for the card fails with an out-of-memory message.">
+                    <label class="checkbox-label" id="stH3PiecesBox" title="A clip longer than one piece (5.2 seconds unless you set another length in the box beside this) is made in pieces, each one shown the end of the piece before, then joined. Memory stays at one piece's worth however long the clip, and the model stays inside the clip length it was trained on. In the prompt, a line starting with a time (8s: ...) is the prompt from that time on; the change arrives at the nearest start of a piece. Speed Boost and Show early are off for such a clip."><input type="checkbox" id="stH3Pieces"> In pieces</label>
+                    <span class="st-inline" id="stH3PieceRow"><span class="field-hint">of</span><input type="text" id="stH3PieceS" placeholder="5.2" title="How long each piece is, in seconds (it moves to the nearest length the model can make; empty is 5.2). Longer pieces give the model more time for an action to happen and mean fewer joins; they need more memory, like a single clip of that length."><span class="field-hint">s</span></span>
+                    <span class="field-hint" id="stH3LenNote"></span>
                     <span class="field-hint">W</span><select id="stH3W" class="w-combo st-small-select"></select>
-                    <span class="field-hint">H</span><select id="stH3H" class="w-combo st-small-select"></select></span></div>
+                    <button class="btn" id="stH3Swap" type="button" title="Swap the width and the height (landscape to portrait and back)">⇄</button>
+                    <span class="field-hint">H</span><select id="stH3H" class="w-combo st-small-select"></select>
+                    <select id="stH3Aspect" class="w-combo st-small-select" title="Set the width and height to a shape. The longer side stays as it is and the other moves to the nearest size in the list; portrait stays portrait (the swap button turns it)."><option value="">Aspect…</option><option>1:1</option><option>5:4</option><option>4:3</option><option>3:2</option><option>16:9</option><option>21:9</option></select></span></div>
                 <div class="field-row"><span class="field-label"></span>
                   <span class="st-inline"><span class="field-hint">Steps</span><input type="text" id="stH3Steps" value="4" title="Sampling steps for the clip. With Turbo at 1.0, 4 steps is the fast loop; Turbo 0 needs about 20.">
                     <span class="field-hint" id="stH3TurboLabel">Turbo</span><input type="text" id="stH3Turbo" value="1" title="Strength of the built-in Turbo LoRA: 1.0 for the fast loop, 0.75 matches the in-training previews. 0 switches it off - the render is the base plus your LoRAs at the steps set. That is how you edit a Turbo LoRA: load it as the primary and set this to 0.">
                     <label class="checkbox-label" id="stH3SoundBox"><input type="checkbox" id="stH3Sound" checked> Sound</label>
                     <label class="checkbox-label" title="The first half of the steps (rounded down: 7 steps gives 3) render at half size, then the clip grows to full size for the rest - a faster render. The layout is worked out at half size, so a seed frames differently with it on. From Fizgig's H3 Speed Boost node (SPEED, Xiao et al. 2026, via LC Speed Boost)."><input type="checkbox" id="stH3Boost" checked> Speed Boost</label>
+                    <label class="checkbox-label" id="stH3OnlyBox" title="Skip the Baseline clip when a slider or the donor has moved: only the Tweaked clip renders, in half the time. For exploring prompts and motion; untick it to compare against the Baseline again."><input type="checkbox" id="stH3Only"> Tweaked only</label>
                     <label class="checkbox-label" id="stH3EarlyBox" title="Put up the pass-2 estimate in the Tweaked pane while the remaining passes run"><input type="checkbox" id="stH3Early" checked> Show early</label></span></div>
                 <div class="field-row"><span class="field-label"></span><span class="field-hint" id="stH3Note"></span></div>
+                <div class="field-row" id="stLoopRow"><span class="field-label">Then:</span>
+                  <input type="text" id="stLoopPrompt" class="w-path" placeholder="the prompt for what comes next (empty: the prompt above)" title="The prompt for the clip that Continue or Loop back adds after the one in the Tweaked pane.">
+                  <span class="st-inline"><input type="text" id="stLoopS" placeholder="seconds" title="How long the added clip is, in seconds. Leave it empty and it is the same length as the clip you rendered."><span class="field-hint">s</span>
+                    <button class="btn" id="stContinue" type="button" title="Adds a new clip after the one in the Tweaked pane, made on this prompt and starting on its last frame. Your clip is not rendered again. Press it again to carry on further.">Continue</button>
+                    <button class="btn" id="stLoopBack" type="button" title="Adds a return after the clip in the Tweaked pane: a new clip made on this prompt that starts on its last frame and ends on its first, so the whole thing ends where it began and loops. Like ping-pong, but the way back is made new. Pressing it again with another prompt makes another return for the same clip.">Loop back</button></span></div>
+                <details class="st-fold" id="stUpBox">
+                  <summary title="Makes a clip you have rendered again at a larger size. The clip is stretched, then finished at the new size a section at a time, each section pinned to its own first and last frame, so a size and length too big to render in one go still fit. Render the clip small first (one side at 768), then upscale it."><span class="st-fold-title">Upscale</span><span class="st-fold-sub" id="stUpSum"></span></summary>
+                  <div class="field-row"><span class="field-label">Preset:</span>
+                    <span class="st-inline"><select id="stUpPreset" class="w-combo st-small-select" title="Fill the boxes below with a tested set of values. Standard stays close to your clip: denoise 0.4, 3 steps, guide frames on. The three Creative presets make the clip again almost from scratch, in short sections with no guide frames, each changing more than the one before. Light keeps the scene and adds new detail: denoise 0.97, 2 steps weighted to the low end. Strong lets the scene itself change: denoise 0.99, 2 steps. Maximum changes the most and can even swap the character: denoise 0.98, 4 steps weighted to the high end. The size in the To boxes, your prompt and which clip is upscaled are left as they are: the creative presets were made at twice the clip's size and work at 1.5 times too."><option value="">Pick a preset…</option><option value="standard">✨ Standard</option><option value="creative">✨ Creative: light</option><option value="creative2">✨ Creative: strong</option><option value="creative3">✨ Creative: maximum</option></select>
+                      <button class="btn" id="stUpPresetSave" type="button" title="Keep the values below as a preset of your own, under a name. It keeps the denoise, steps, section length, step weighting, noise range and guide frames. The size, your prompt and which clip is upscaled are not part of a preset.">Save preset…</button>
+                      <button class="btn" id="stUpPresetDel" type="button" hidden title="Delete the preset of yours that is picked">Delete</button></span></div>
+                  <div id="stUpPresetSaveRow"></div>
+                  <div class="field-row"><span class="field-label">Video:</span>
+                    <div class="st-up-video" id="stUpVideoSlot" title="Optional: a video of your own to upscale in place of a clip rendered here. When you pick one, a window opens to choose the part of the frame that is used: it starts as the whole frame, in the nearest shape the model's sizes allow, and you can move the box anywhere and change its size and shape. The video is read at the model's 24 frames a second and keeps its sound. Most videos need a prompt of their own: tick Edit prompt and describe it."></div></div>
+                  <div id="stUpVideoBox" hidden>
+                    <div class="field-row"><span class="field-label"></span>
+                      <span class="st-inline"><span class="field-hint" id="stUpVideoInfo"></span>
+                        <span class="field-hint">Size</span><select id="stUpVideoSize" class="w-combo st-small-select" title="The size the video is made at, in its own shape as closely as the model's sizes allow (each side a multiple of 32). It fills the To boxes. Pick a smaller one for a video too large to work on at its own size, a larger one to upscale it."></select>
+                        <button class="btn" id="stUpVideoCrop" type="button" title="Choose the part of the frame that is used, over a frame of the video. Drag the box anywhere on the frame to move it, and drag a corner to change its size and its shape. The To size then follows the box's shape, on the model's sizes. Until you place a box, the whole frame is used (trimmed by a few pixels where its shape is not one the model makes).">Crop…</button>
+                        <span class="field-hint" id="stUpVideoCropSay"></span></span></div>
+                    <div class="field-row"><span class="field-label"></span>
+                      <div class="st-up-video-ends">
+                        <div><img id="stUpVideoAImg" alt=""><span class="st-inline"><span class="field-hint">From</span><input type="text" id="stUpVideoA" value="0" title="Where the part to upscale starts, in seconds from the start of the video"><span class="field-hint">s</span></span></div>
+                        <div><img id="stUpVideoBImg" alt=""><span class="st-inline"><span class="field-hint">to</span><input type="text" id="stUpVideoB" value="" title="Where the part to upscale ends, in seconds from the start of the video"><span class="field-hint">s</span></span></div>
+                      </div></div>
+                    <div class="field-row"><span class="field-label"></span>
+                      <div class="st-film" id="stUpVideoFilm" title="The whole video, start to end. The bright section is the part that is upscaled: drag an end to set where it starts or stops, drag the section to move it, or click outside it to bring the nearer end there. The two pictures above follow.">
+                        <div class="st-film-pics" id="stUpVideoPics"></div>
+                        <div class="st-film-sel" id="stUpVideoSel"><span class="st-range-h" data-end="a"></span><span class="st-range-h" data-end="b"></span></div>
+                      </div></div>
+                    <div class="field-row"><span class="field-label"></span><span class="field-hint" id="stUpVideoLen"></span></div>
+                  </div>
+                  <div class="field-row"><span class="field-label">To:</span>
+                    <span class="st-inline"><input type="text" id="stUpW" placeholder="width" title="The width of the larger clip, in pixels (it moves to a multiple of 32). Empty: the clip's width times 1.5."><span class="field-hint">×</span><input type="text" id="stUpH" placeholder="height" title="The height of the larger clip, in pixels (it moves to a multiple of 32). Empty: the clip's height times 1.5.">
+                      <button class="btn" id="stUp1" type="button" title="Fill the two boxes with the clip's own Width and Height: the clip is made again at the same size, to change it without making it larger (the creative presets, or a low denoise for a clean-up)">×1</button>
+                      <button class="btn" id="stUp15" type="button" title="Fill the two boxes with the clip's Width and Height times 1.5">×1.5</button>
+                      <button class="btn" id="stUp2" type="button" title="Fill the two boxes with the clip's Width and Height times 2">×2</button></span></div>
+                  <div class="field-row"><span class="field-label"></span>
+                    <span class="st-inline"><span class="field-hint">Denoise</span><input type="text" id="stUpDen" value="0.4" title="How much of the stretched clip is made again, from 0 to 1. Low values (0.3) stay closest to the clip you rendered and add the least; higher values (0.5 and up) add more detail and change more.">
+                      <span class="field-hint">Steps</span><input type="text" id="stUpSteps" value="3" title="The passes the larger clip is finished in. 3 is the tested value; more takes longer in proportion.">
+                      <span class="field-hint">Sections of</span><input type="text" id="stUpSec" placeholder="5.2" title="How long each section is, in seconds (it moves to the nearest length the model can make; empty is 5.2). Longer sections mean fewer joins and need more memory."><span class="field-hint">s</span>
+                      <span class="field-hint" id="stUpRoom"></span></span></div>
+                  <div class="field-row"><span class="field-label"></span>
+                    <span class="st-inline"><span class="field-hint">Step weighting</span><input type="text" id="stUpBias" value="0" title="Where the steps are spent, from -1 to 1. 0 is the model's own spacing. Above 0 the steps crowd toward the low end, so more of them go on fine detail; below 0 they crowd toward the high end, so more go on the larger changes. The noise levels beside the box show the result. It matters more with 4 or more steps.">
+                      <span class="field-hint" id="stUpLevels"></span>
+                      <label class="checkbox-label" title="Choose the range of noise the steps work in. A bar opens: drag the section, or its two ends. High noise is on the left and low noise on the right, so the steps run left to right. The high noise end is the Denoise above. The low noise end is where the last step is taken; from there the clip goes straight to clean. Unticked, the steps run all the way down, as usual."><input type="checkbox" id="stUpAdv"> Advanced: noise range</label></span></div>
+                  <div class="field-row" id="stUpRangeRow" hidden><span class="field-label"></span>
+                    <div class="st-range-box">
+                      <div class="st-range" id="stUpRange" title="Drag the section to move it, or drag an end. The dots are the steps.">
+                        <div class="st-range-sel" id="stUpRangeSel"><span class="st-range-h" data-end="hi"></span><span class="st-range-h" data-end="lo"></span></div>
+                        <div class="st-range-dots" id="stUpRangeDots"></div>
+                      </div>
+                      <div class="st-range-ends"><span>High noise: bigger changes</span><span>Low noise: fine detail</span></div>
+                      <div class="field-hint" id="stUpRangeSay"></div>
+                    </div></div>
+                  <div class="field-row"><span class="field-label"></span>
+                    <span class="st-inline"><span class="field-hint">Guide frames</span>
+                      <label class="checkbox-label" title="The clip's first frame is upscaled on its own as a still and shown to the model as the first frame. Unticked, the first frame is made like every other frame, from the stretched clip. Untick it if the first frame's detail jumps against the second."><input type="checkbox" id="stUpFirst" checked> First</label>
+                      <select id="stUpGuide" class="w-combo st-small-select" title="How the first guide frame is made from the clip's own frame. Refined lightly: the frame is made again on its own at the Denoise or 0.4, whichever is lower, so it gains the upscale's detail and stays that frame however high the Denoise goes. Refined at the Denoise: made again at the Denoise itself, which at high values is a new picture from the prompt, not the clip's frame. As the source: the frame as it is, only stretched to the size, so the clip starts (and each section ends) exactly on it; with a high Denoise that is a clip made from your first frame."><option value="light">refined lightly</option><option value="full">refined at the Denoise</option><option value="source">as the source</option></select>
+                      <label class="checkbox-label" title="Each section's last frame is upscaled on its own as a still and shown to the model as the last frame. Unticked, it is made like every other frame, from the stretched clip. A section still starts on the finished last frame of the one before, so the joins stay."><input type="checkbox" id="stUpLast" checked> Last</label>
+                      <select id="stUpGuideL" class="w-combo st-small-select" title="How each section's last guide frame is made from the clip's own frame. Refined lightly: the frame is made again on its own at the Denoise or 0.4, whichever is lower, so it gains the upscale's detail and stays that frame however high the Denoise goes. Refined at the Denoise: made again at the Denoise itself, which at high values is a new picture from the prompt, not the clip's frame. As the source: the frame as it is, only stretched to the size, so the clip starts (and each section ends) exactly on it; with a high Denoise that is a clip made from your first frame."><option value="light">refined lightly</option><option value="full">refined at the Denoise</option><option value="source">as the source</option></select></span></div>
+                  <div class="field-row"><span class="field-label"></span>
+                    <span class="st-inline"><label class="checkbox-label" title="Give the upscale its own prompt. Unticked, it uses the main Prompt. Ticked, a box opens with a copy of the main Prompt for you to change: add detail words, or describe a clip that Continue or Loop back made on another prompt."><input type="checkbox" id="stUpOwnPrompt"> Edit prompt</label>
+                      <button class="btn" id="stUpPromptCopy" type="button" hidden title="Replace the text below with the main Prompt as it is now">Copy the main Prompt</button></span></div>
+                  <div class="field-row" id="stUpPromptRow" hidden><span class="field-label"></span>
+                    <textarea id="stUpPrompt" rows="2" spellcheck="false" placeholder="The prompt the upscale uses"></textarea></div>
+                  <div class="field-row"><span class="field-label"></span>
+                    <span class="st-inline"><select id="stUpWhich" class="w-combo st-small-select" title="Which clip is upscaled. Each larger clip goes to its own pane, and the other pane keeps the clip as rendered. Both takes twice as long (when no slider has moved the two are one clip, upscaled once)."><option value="tweaked">The Tweaked clip</option><option value="baseline">The Baseline clip</option><option value="both">Both clips</option></select>
+                      <button class="btn" id="stUpGo" type="button" title="Upscale now, with these settings. The clip is not rendered again, and the clip as rendered stays what an upscale is made from: change the denoise or the size and press again to compare.">Upscale now</button>
+                      <label class="checkbox-label" title="Every clip you render is upscaled straight after, and its pane shows the larger clip."><input type="checkbox" id="stUpAuto"> After every render</label></span></div>
+                  <div class="field-row"><span class="field-label">Preview:</span>
+                    <span class="st-inline"><select id="stUpPrevN" class="w-combo st-small-select" title="How much of the clip the preview is made of, always from its middle. 0.9 seconds is the shortest clip the model makes; 1.6 seconds is the next length up, and takes longer."><option value="22" selected>0.9 seconds</option><option value="39">1.6 seconds</option></select>
+                      <button class="btn" id="stUpPrev" type="button" title="Try the settings above on a short piece from the middle of the clip before upscaling all of it. The Tweaked pane shows the preview and the Baseline pane the same frames as rendered, to compare. Your clips are kept: press again with other values, then Upscale now.">Preview</button>
+                      <span class="field-hint">from the middle of the clip, with the settings above</span></span></div>
+                </details>
               </div>
               <div class="field-row" id="stNegRow"><span class="field-label">Negative:</span>
                 <textarea id="stNeg" rows="2" spellcheck="false"></textarea></div>
@@ -939,6 +1023,7 @@
                   <option selected>1.0</option><option>2.0</option></select>
                   <span class="field-hint" id="stRefStrLabel">Strength</span><input type="text" id="stRefStr" value="1"></span></div>
               <div class="field-row"><button class="btn btn-primary" id="stStart">Start</button>
+                <button class="btn" id="stCancel" disabled title="Stop the render that's going. The model stays loaded.">Cancel</button>
                 <button class="btn" id="stUnload">Unload model</button>
                 <span class="field-hint" id="stStatus">Choose a LoRA and press Start: the model loads on the Fizgig machine
                   (the first time takes a minute).</span></div>
@@ -1002,7 +1087,8 @@
                 </div>
                 <div class="st-map-note" id="stMapSay" style="display:none"></div>
               </div>
-              <div class="field-row" id="stPlayBoth" style="display:none"><button class="btn btn-sm" id="stPlayBothBtn">▶ Play together</button></div>
+              <div class="field-row" id="stPlayBoth" style="display:none"><button class="btn btn-sm" id="stPlayBothBtn">▶ Play together</button>
+                <span class="field-hint">Loop</span><select id="stLoopMode" class="w-combo st-small-select clip-loop-mode" title="Repeat plays the clip again from its start. Ping-pong plays it forward then backward (its sound on the way out only)."><option value="repeat">Repeat</option><option value="pingpong">Ping-pong</option></select></div>
               <div class="field-row" id="stDownloads" style="display:none">
                 <a class="btn btn-sm" id="stDlBase" title="The Baseline as rendered: the LoRA at its load strength, before your slider changes">💾 Download original</a>
                 <a class="btn btn-sm" id="stDlTweak" title="The Tweaked render as it is now, with your slider changes. A picture keeps Studio's settings inside it (the LoRAs, every slider, the prompt and seed): drop it on this tab to get them all back.">💾 Download tweaked</a></div>
@@ -1535,7 +1621,8 @@
                 <figure class="gallery-item st-pane"><img id="rmBaseImg" alt=""><video id="rmBaseVid" controls loop muted playsinline preload="auto" style="display:none"></video>
                   <figcaption id="rmBaseCap">No mod (base, same seed)</figcaption></figure>
               </div>
-              <div class="field-row" id="rmPlayBoth" style="display:none"><button class="btn btn-sm" id="rmPlayBothBtn">▶ Play together</button></div>
+              <div class="field-row" id="rmPlayBoth" style="display:none"><button class="btn btn-sm" id="rmPlayBothBtn">▶ Play together</button>
+                <span class="field-hint">Loop</span><select id="rmLoopMode" class="w-combo st-small-select clip-loop-mode" title="Repeat plays the clip again from its start. Ping-pong plays it forward then backward (its sound on the way out only)."><option value="repeat">Repeat</option><option value="pingpong">Ping-pong</option></select></div>
               <div id="rmSweepBox" style="display:none">
                 <div class="rm-sub">Sweep <span class="field-hint" id="rmSweepName"></span>
                   <button class="btn btn-sm" id="rmStrip">💾 Save strip</button></div>

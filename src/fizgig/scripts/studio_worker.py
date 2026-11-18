@@ -99,7 +99,8 @@ def cmd_load(c):
         eng.load_primary(c["primary"])
         if c.get("donor"):
             eng.load_donor(c["donor"])
-        emit(ev="loaded", family=desc.key, primary=c["primary"], donor=c.get("donor") or "", **_blocks(eng))
+        emit(ev="loaded", family=desc.key, primary=c["primary"], donor=c.get("donor") or "",
+             up_room=eng.upscale_room() if hasattr(eng, "upscale_room") else None, **_blocks(eng))
 
 
 def cmd_donor(c):
@@ -297,6 +298,8 @@ def _render_clips(eng, desc, st, c, out, gen):
     st.preview_width, st.preview_height, st.preview_frames = width, height, frames
     st.keyframes, st.references = _cond(eng, c, width, height, frames)
     eng.speed_boost = bool(v.get("speed_boost"))      # the Studio's H3 tick: the first half of the steps at half size
+    eng.clip_pieces = bool(v.get("pieces"))           # the Studio's In pieces tick: a long clip built piece by piece
+    eng.clip_piece_frames = int(v.get("piece") or 0)  # each piece's length (the box beside the tick); 0 = 124
     eng.clip_negative = v.get("negative")             # the page's Negative (used when the render runs with CFG)
     opts = dict(frames=frames, regime="custom", steps=int(v.get("steps") or 4),
                 turbo_strength=float(v.get("turbo") if v.get("turbo") not in (None, "") else 1.0),
@@ -306,12 +309,181 @@ def _render_clips(eng, desc, st, c, out, gen):
     import torch
     torch.cuda.reset_peak_memory_stats()
     rest = torch.cuda.memory_allocated() / 2**30
-    base = eng.baseline_clip(st, cache=None, **opts)
-    if _clip_same_as_baseline(eng, st):
-        # nothing moved: the tweaked clip IS the baseline - one render for both panes, as the picture path does
-        tweak = base
-    else:
-        tweak = None
+    lb = v.get("loop_back")
+    if lb:
+        # Continue / Loop back: the clip in the Tweaked pane gets a new clip after it on this prompt, starting on
+        # its last frame. Loop back also ends it on the clip's first frame, and the kept clip stays the one before
+        # the return (another prompt makes another return). Continue keeps its result, so pressing it again carries
+        # on from there and a Loop back after it returns to the very start
+        last = S.get("last_clip")
+        if not last or last.get("engine") is not eng or not hasattr(eng, "loop_back_clip"):
+            raise ValueError("Render a clip first: Continue and Loop back add to the clip in the Tweaked pane.")
+        st.preview_width, st.preview_height, st.keyframes = last["width"], last["height"], None
+        if str(lb.get("prompt") or "").strip():
+            st.prompt = str(lb["prompt"]).strip()
+        loop = bool(lb.get("loop", True))
+        tweak = eng.loop_back_clip(st, last["clip"], frames_new=int(lb.get("frames") or 0) or last["base_frames"],
+                                   loop=loop, **opts)
+        if not loop:
+            last["clip"], last["base"] = tweak, None
+        last["shown"] = tweak                           # what Upscale works on: the clip in the pane, return included
+        png = os.path.join(out, f"tweaked_{gen}.png")
+        paths = {"baseline": "", "baseline_media": "", "tweaked": png,
+                 "tweaked_media": _write_clip(tweak, png, os.path.join(out, f"tweaked_{gen}.mp4"), fps, rate)}
+        torch.cuda.empty_cache()
+        return paths, None
+    up = v.get("upscale") if hasattr(eng, "upscale_clip") else None
+
+    def upscaled(state, clip, w0, h0, preview=0):
+        """Upscale (the page's fold): the clip made again at the fold's size, a section at a time."""
+        own = str(up.get("prompt") or "").strip()
+        if own:                                         # Edit prompt: the upscale's own prompt, the sliders as they are
+            import copy
+            state = copy.copy(state)
+            state.prompt = own
+        big = eng.upscale_clip(state, clip, preview=preview, width=int(up.get("width") or 0) or int(w0 * 1.5),
+                               height=int(up.get("height") or 0) or int(h0 * 1.5), denoise=up.get("denoise"),
+                               steps=int(up.get("steps") or 0) or None, section=int(up.get("section") or 0),
+                               first_guide=up.get("first_guide", True), last_guide=up.get("last_guide", True),
+                               guide=up.get("guide") or "light",
+                               bias=float(up.get("bias") or 0.0), low=float(up.get("low") or 0.0),
+                               turbo_strength=opts["turbo_strength"])
+        print(f"[studio] upscale to {big['upscaled'][0]}x{big['upscaled'][1]}, denoise {big['upscaled'][2]}, "
+              f"{big['upscaled'][3]} step(s), {big['upscaled'][4]} section(s): peak "
+              f"{torch.cuda.max_memory_allocated() / 2**30:.2f} GB allocated (base {getattr(eng, 'base_plan', None)})",
+              flush=True)
+        return big
+
+    def up_panes(low_t, low_b, w0, h0, n):
+        """The two panes after an upscale of the fold's pick (the Tweaked clip, the Baseline or both): the larger clip
+        where one was made, the clip as rendered in the other. The Baseline is upscaled on the Baseline's own sliders;
+        with nothing moved the two are one clip, upscaled once."""
+        which = str(up.get("which") or "tweaked")
+        if which == "baseline" and low_b is None:
+            raise ValueError("There is no Baseline clip to upscale: it was not rendered (Tweaked only is on, or the "
+                             "clip came from Continue or Loop back). Upscale the Tweaked clip, or untick Tweaked only "
+                             "and render again.")
+        big_t = upscaled(st, low_t, w0, h0) if which in ("tweaked", "both") else None
+        big_b = None
+        if which in ("baseline", "both") and low_b is not None:
+            big_b = big_t if (low_b is low_t and big_t is not None) else upscaled(eng._base_like(st, n, True), low_b,
+                                                                                  w0, h0)
+        got = {"baseline": "", "baseline_media": ""}
+        for pane, clip in (("baseline", big_b or low_b), ("tweaked", big_t or low_t)):
+            if clip is not None:
+                p = os.path.join(out, f"{pane}_{gen}.png")
+                got[pane], got[pane + "_media"] = p, _write_clip(clip, p, os.path.join(out, f"{pane}_{gen}.mp4"), fps,
+                                                                 rate)
+        return got
+
+    def video_clip():
+        """Upscale's own video (the fold's Video row): the picked stretch of the file, cut to the placed box in the
+        upscale's shape, at the model's frame rate, with its sound -> (clip, its width, its height). Never made
+        larger here (the upscale does that); read once per file, stretch, box and size."""
+        from fizgig.minimax import upscale as _up
+        from fizgig.utils import video_in
+        lv = up.get("video") or {}
+        path = str(lv.get("path") or "")
+        if not os.path.isfile(path):
+            raise ValueError("The video to upscale isn't there any more. Choose it again in the Upscale fold.")
+        info = video_in.info(path)
+        vw, vh = info["width"], info["height"]
+
+        def snap(n):
+            return max(256, int(round(float(n) / 32)) * 32)
+        to_w, to_h = snap(up.get("width") or vw), snap(up.get("height") or vh)
+        rect = lv.get("rect")
+        if rect:                                 # the box placed for another shape: this shape, centred inside it
+            x0, y0, x1, y1 = (int(v) for v in rect)
+            x0, y0, x1, y1 = max(0, x0), max(0, y0), min(vw, x1), min(vh, y1)
+            c = _centre_crop((x1 - x0, y1 - y0), to_w, to_h)
+            rect = (x0 + c[0], y0 + c[1], x0 + c[2], y0 + c[3])
+        else:
+            rect = _centre_crop((vw, vh), to_w, to_h)
+        cw, ch = rect[2] - rect[0], rect[3] - rect[1]
+        dw, dh = (to_w, to_h) if cw >= to_w and ch >= to_h else (max(2, cw // 2 * 2), max(2, ch // 2 * 2))
+        a = max(0.0, float(lv.get("start") or 0))
+        b = float(lv.get("end") or 0) or info["seconds"] or a + 3600
+        if info["seconds"]:
+            b = min(b, info["seconds"])
+        want = int((b - a) * fps + 1e-3)
+        if want < _up.MIN_SECTION:
+            raise ValueError(f"The part of the video to upscale is too short: it needs at least "
+                             f"{_up.MIN_SECTION / fps:.2f} seconds between From and to.")
+        n = _up.grid_floor(want)
+        key = (path, os.path.getmtime(path), round(a, 3), n, rect, dw, dh)
+        hit = S.get("up_video")
+        if hit and hit[0] == key:
+            return hit[1]
+        S["up_video"] = None
+        emit(ev="status", text=f"Reading {n} frames of the video…")
+        frames, wav = video_in.read(path, a, n, rect, dw, dh, fps, rate)
+        if len(frames) < _up.MIN_SECTION:
+            raise ValueError(f"Only {len(frames)} frames could be read from that part of the video: it needs at "
+                             f"least {_up.MIN_SECTION}. Move From earlier.")
+        if len(frames) < n:                                  # the file ended first: the longest length on the grid
+            frames = frames[:_up.grid_floor(len(frames))]
+            if wav is not None:
+                wav = wav[:, :int(round(rate * len(frames) / fps))]
+        got = ({"frames": frames, "wav": wav, "audio_rows": None, "middle": frames[len(frames) // 2]}, snap(cw),
+               snap(ch))
+        S["up_video"] = (key, got)
+        return got
+
+    def show(base_clip, tweak_clip):
+        paths = {}
+        for pane, clip in (("baseline", base_clip), ("tweaked", tweak_clip)):
+            p = os.path.join(out, f"{pane}_{gen}.png")
+            paths[pane], paths[pane + "_media"] = p, _write_clip(clip, p, os.path.join(out, f"{pane}_{gen}.mp4"), fps,
+                                                                 rate)
+        torch.cuda.empty_cache()
+        return paths, None
+
+    if up and str(up.get("which")) == "video" and (up.get("preview") or up.get("now")):
+        # The fold's own video, not a rendered clip: the Baseline pane shows it as read (cut, scaled, From to to), the
+        # Tweaked pane what the upscale made of it. A preview is the middle of that part. The rendered clips are kept
+        src, w0, h0 = video_clip()
+        big = upscaled(st, src, w0, h0, preview=max(1, int(up["preview"])) if up.get("preview") else 0)
+        if up.get("preview"):
+            return show({"frames": big["before"], "middle": big["before"][len(big["before"]) // 2],
+                         "wav": big.get("wav")}, big)
+        return show(src, big)
+    if up and up.get("preview"):
+        # Preview: the middle of the picked clip (its middle frame, or the shortest clip around it) upscaled with the
+        # fold's settings. The Tweaked pane shows it and the Baseline pane the same frames as rendered, to compare;
+        # the kept clips are untouched, so Upscale now and another Preview work from them
+        last = S.get("last_clip")
+        if not last or last.get("engine") is not eng:
+            raise ValueError("Render a clip first: the preview is made from the middle of a clip you have rendered.")
+        shown = last.get("shown") or last["clip"]
+        of_base = str(up.get("which")) == "baseline" and last.get("base") is not None and shown is last["clip"]
+        big = upscaled(eng._base_like(st, last["base_frames"], True) if of_base else st,
+                       last["base"] if of_base else shown, last["width"], last["height"],
+                       preview=max(1, int(up["preview"])))
+        was = {"frames": big["before"], "middle": big["before"][len(big["before"]) // 2], "wav": big.get("wav")}
+        paths = {}
+        for pane, clip in (("baseline", was), ("tweaked", big)):
+            p = os.path.join(out, f"{pane}_{gen}.png")
+            paths[pane], paths[pane + "_media"] = p, _write_clip(clip, p, os.path.join(out, f"{pane}_{gen}.mp4"), fps,
+                                                                 rate)
+        torch.cuda.empty_cache()
+        return paths, None
+    if up and up.get("now"):
+        # Upscale now: the clips in the panes, as they were rendered, made again larger. The kept clips stay the ones
+        # they were made from, so another denoise or size is another press
+        last = S.get("last_clip")
+        if not last or last.get("engine") is not eng:
+            raise ValueError("Render a clip first: Upscale makes a larger copy of a clip you have rendered.")
+        shown = last.get("shown") or last["clip"]       # after Loop back: the clip with its return (no Baseline then)
+        paths = up_panes(shown, last.get("base") if shown is last["clip"] else None, last["width"], last["height"],
+                         last["base_frames"])
+        torch.cuda.empty_cache()
+        return paths, None
+    same = _clip_same_as_baseline(eng, st)
+    # Tweaked only (the page's tick): with something moved, the Baseline clip is not rendered at all
+    base = None if (v.get("tweaked_only") and not same) else eng.baseline_clip(st, cache=None, **opts)
+    # nothing moved: the tweaked clip IS the baseline - one render for both panes, as the picture path does
+    tweak = base if same else None
     early = {}
     if v.get("early") and opts["steps"] > 2:     # Show early: the pass-2 estimate while the rest runs (the desktop's)
         def on_early(img, step, n):
@@ -323,12 +495,14 @@ def _render_clips(eng, desc, st, c, out, gen):
             img.save(p)
             emit(ev="early", gen=gen, png=p, step=step, n=n)
         early = dict(early_step=2, on_early=on_early)
-    paths = {}
-    png = os.path.join(out, f"baseline_{gen}.png")
-    paths["baseline"], paths["baseline_media"] = png, _write_clip(base, png, os.path.join(out, f"baseline_{gen}.mp4"),
-                                                                  fps, rate)
+    paths = {"baseline": "", "baseline_media": ""}
+    if base is not None:
+        png = os.path.join(out, f"baseline_{gen}.png")
+        paths["baseline"], paths["baseline_media"] = png, _write_clip(base, png,
+                                                                      os.path.join(out, f"baseline_{gen}.mp4"), fps, rate)
     if tweak is None:                                   # the Baseline plays while the Tweaked clip renders
-        emit(ev="baseline_ready", gen=gen, baseline=paths["baseline"], baseline_media=paths["baseline_media"])
+        if base is not None:
+            emit(ev="baseline_ready", gen=gen, baseline=paths["baseline"], baseline_media=paths["baseline_media"])
         tweak = eng.render_clip(st, cache=None, **opts, **early)
     print(f"[studio] clip {width}x{height} x{frames}, {len(st.keyframes or [])} keyframe(s), "
           f"{len(st.references or [])} reference(s): peak {torch.cuda.max_memory_allocated() / 2**30:.2f} GB allocated, "
@@ -337,6 +511,11 @@ def _render_clips(eng, desc, st, c, out, gen):
     png = os.path.join(out, f"tweaked_{gen}.png")
     paths["tweaked"], paths["tweaked_media"] = png, _write_clip(tweak, png, os.path.join(out, f"tweaked_{gen}.mp4"),
                                                                 fps, rate)
+    # what Continue and Loop back add to (base_frames: the length they add when the seconds box is empty)
+    S["last_clip"] = {"clip": tweak, "width": width, "height": height, "engine": eng, "base_frames": frames,
+                      "base": base}
+    if up and up.get("auto"):                           # After every render: the picked pane gets the larger clip
+        paths = up_panes(tweak, base, width, height, frames)
 
     # hand the render's cached memory back (the model stays loaded): the page plays these clips next, and a card the
     # worker leaves full - Vimoo bf16 + the decode's cache held 30.5 of 32 GB - gives the video decode and the desktop
@@ -519,7 +698,7 @@ def _tidy(out, gen):
     keep = {os.path.normcase(p) for k in ("nolora_out", "nolora_song") if S.get(k) for p in S[k][1].values() if p}
     try:
         for f in os.listdir(out):
-            m = re.match(r"(baseline|tweaked|nolora)_(\d+)\.(png|mp4|wav|json)$", f)
+            m = re.match(r"(baseline|tweaked|nolora)_(\d+)(?:_pp)?\.(png|mp4|wav|json)$", f)
             p = os.path.join(out, f)
             if m and int(m.group(2)) < gen - 1 and os.path.normcase(p) not in keep:
                 os.remove(p)

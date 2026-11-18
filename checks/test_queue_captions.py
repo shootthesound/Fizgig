@@ -37,6 +37,18 @@ def test_caption_job_then_run(q):
     assert started == ["captions", "run"]
 
 
+def test_caption_job_survives_a_restart(q, tmp_path, monkeypatch):
+    import json
+    f = tmp_path / "web_queue.json"
+    item = {"id": "a", "kind": "captions", "body": {"folder": q}, "family": "", "values": {}, "image_folder": q,
+            "lora": "Captions: set", "output_dir": "", "queued_at": ""}
+    f.write_text(json.dumps([item]), encoding="utf-8")
+    monkeypatch.setattr(queue, "QUEUE_FILE", str(f))
+    queue.load()
+    st = queue.status()
+    assert [i.get("kind") for i in st["items"]] == ["captions"] and st["held"]
+
+
 def test_stopped_caption_job_holds_the_queue(q):
     def starter(item):
         captions.when_done(lambda result: queue.on_run_ended(result, item["lora"], starter))

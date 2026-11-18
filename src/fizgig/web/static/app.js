@@ -8794,10 +8794,11 @@ async function pollCaptions() {
   let st;
   try { st = await api("/api/captions/status"); } catch (e) { return; }
   const busy = ["loading", "running", "translating"].includes(st.state);
+  if (busy) S.cap.queuedNote = "";           // the queued job (or another) has started: its own progress shows
   const pct = st.total ? (100 * st.done) / st.total : 0;
   $("capBar").style.width = (busy ? pct : 0).toFixed(1) + "%";
   $("capStatus").textContent = {
-    idle: "No model loaded.", loaded: `${st.model} is loaded, ready.`,
+    idle: S.cap.queuedNote || "No model loaded.", loaded: `${st.model} is loaded, ready.`,
     loading: st.phase === "downloading" ? `Downloading ${st.model}… (the first time only). Stop cancels it.`
       : `Loading ${st.model} into memory… Stop cancels it.`,
     running: `Captioning ${st.done} of ${st.total}` + (st.fail ? ` · ${st.fail} failed` : ""),
@@ -9157,8 +9158,9 @@ function wireCaptions() {
   $("capAll").addEventListener("click", () => capRun("/api/captions/ai", capJobBody()));
   $("capQueue").addEventListener("click", async () => {      // this caption job, in the queue (to-do #14)
     const r = await capRun("/api/queue/captions", capJobBody());
-    if (r && r.ok) {
-      $("capStatus").textContent = `Queued: ${r.item.lora}. It runs when the queue gets to it; queue the run after it.`;
+    if (r && r.ok) {      // kept as the idle line (the status check would wipe it) until the next caption job or check
+      S.cap.queuedNote = `Queued: ${r.item.lora}. It runs when the queue gets to it; queue the run after it.`;
+      $("capStatus").textContent = S.cap.queuedNote;
       pollRun();
     }
   });

@@ -42,7 +42,8 @@ def load():
             items = json.load(f)
     except (OSError, ValueError):
         items = []
-    items = [i for i in items if isinstance(i, dict) and i.get("family") and isinstance(i.get("values"), dict)]
+    items = [i for i in items if isinstance(i, dict) and isinstance(i.get("values"), dict)
+             and (i.get("family") or (i.get("kind") == "captions" and isinstance(i.get("body"), dict)))]
     with _lock:
         _q.update(items=items, held=bool(items), waiting="",
                   reason=("Your queued runs from Fizgig 7 are here: press Start queue when you want them to run."

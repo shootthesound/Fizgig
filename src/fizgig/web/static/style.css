@@ -1843,7 +1843,9 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .run-gallery { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 
 /* the queue: a row's order buttons on its right */
-.queue-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+/* the details column shares the width: an "auto" one took a long folder path's whole width and left the name a
+   letter wide */
+.queue-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) auto; }
 .queue-actions { display: flex; gap: 6px; }
 @media (max-width: 760px) { .queue-actions { justify-content: flex-start; } }
 

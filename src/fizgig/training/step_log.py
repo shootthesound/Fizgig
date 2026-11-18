@@ -39,12 +39,14 @@ class StepLog:
         except OSError:
             self.path = None                 # a read-only folder: the graph is simply not there
 
-    def add(self, step, epoch, loss, lr=None):
+    def add(self, step, epoch, loss, lr=None, braked=None):
         if self.path is None:
             return
         rec = {"s": int(step), "e": int(epoch), "l": round(float(loss), 6)}
         if lr is not None:
             rec["lr"] = float(f"{lr:.6g}")
+        if braked is not None:                     # Automagic v4: the share of weights braked (0-1)
+            rec["b"] = round(float(braked), 4)
         self.buf.append(json.dumps(rec) + "\n")
         if len(self.buf) >= FLUSH_EVERY:
             self.flush()

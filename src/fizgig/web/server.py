@@ -2074,7 +2074,8 @@ def _progress_dict(upd):
     return {"epoch": upd.get("epoch"), "total_epochs": upd.get("total_epochs"), "step": step, "total_steps": total,
             "speed": upd.get("speed_text") or "", "loss": upd.get("average_loss_text") or "",
             "eta": upd.get("eta_text") or "", "percent": 100.0 * min(step, total) / total if total else 0.0,
-            "note": "", "lr": upd.get("lr_text") or "", "grad_norm": upd.get("grad_norm_text") or ""}
+            "note": "", "lr": upd.get("lr_text") or "", "grad_norm": upd.get("grad_norm_text") or "",
+            "braked": upd.get("braked_text") or ""}
 
 
 def _run_stages(stages, out_dir):

@@ -2424,8 +2424,11 @@ function runSummary() {
   if (String(v.OPTIMIZER_TYPE || "").toLowerCase() === "automagic4") lrCell.title = "Automagic v4 sets its own " +
     "rate and slows each weight's step by how sensitive that weight is. This is its working rate: its rate times " +
     "that slowdown on average, so the weights' real movement. The epoch lines in the log give both parts.";
+  const brakedCell = p.braked ? cell("Weights braked", p.braked + "%") : null;   // Automagic v4 only
+  if (brakedCell) brakedCell.title = "The share of weights Automagic v4 is slowing right now because they are more " +
+    "sensitive than its reference. The epoch lines in the log give each group's reference.";
   const learning = sec("Learning", [
-    lrCell, cell("Grad norm", p.grad_norm), cell("Loss", p.loss),
+    lrCell, brakedCell, cell("Grad norm", p.grad_norm), cell("Loss", p.loss),
     lk ? cell("Likeness", `${Math.round(lk.now * 100)}% (epoch ${lk.epoch})` +
       (lk.bestEpoch !== lk.epoch ? ` · best ${Math.round(lk.best * 100)}% at ${lk.bestEpoch}` : "")) : null,
   ]);

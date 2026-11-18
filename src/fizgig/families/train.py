@@ -1949,7 +1949,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     if do_compile:                       # decided before the load (below the Auto plan), applied last
         driver.compile_blocks(dit, "outside" if do_compile == "outside" else "inside",
                               blocks_to_swap if swapped else 0)
-    from fizgig.training.optimizers import (automagic4_detail, create_optimizer, group_rates, owns_its_rate,
+    from fizgig.training.optimizers import (automagic4_braked, automagic4_detail, create_optimizer, group_rates, owns_its_rate,
                                             shown_lr)
     if ftr is not None:
         params, optimizer, opt_label = [], None, ftr.opt_label
@@ -3145,7 +3145,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                      _rate=(None if global_step % 20 else      # the rate now and then (Automagic's averages it)
                             _step_rate())):
                 recorder.add(epoch=_e, step=_i, loss=lv)
-                steplog.add(step_off + _g, _e + 1 + (ftr.epochs_done if ftr is not None else 0), lv, _rate)
+                steplog.add(step_off + _g, _e + 1 + (ftr.epochs_done if ftr is not None else 0), lv, _rate,
+                            automagic4_braked(optimizer) if _rate is not None else None)
                 if per is not None:            # a batch: one record per picture
                     watch.observe_each(_e + 1, _g, _keys, _ts, per, _kept)
                 else:
@@ -3165,7 +3166,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             # the run card's Learning: loss, the step's learning rate (Adaptive LR's, Automagic's) and grad norm
             progress.set_postfix(avr_loss=f"{recorder.moving_average:.4f}",
                                  lr=f"{_step_rate(raw=True):.2e}",
-                                 **({"gn": f"{last_gn[0]:.3f}"} if last_gn[0] is not None else {}), refresh=False)
+                                 **({"gn": f"{last_gn[0]:.3f}"} if last_gn[0] is not None else {}),
+                                 **({"brk": f"{100 * automagic4_braked(optimizer):.0f}"}      # Automagic v4's braked share
+                                    if automagic4_braked(optimizer) is not None else {}), refresh=False)
             progress.update(1)
 
         if pending:                        # a partial group: settle the optimizer before the epoch-end work

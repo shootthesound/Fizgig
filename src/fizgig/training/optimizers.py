@@ -235,7 +235,24 @@ def automagic4_brakes(optimizer):
         bsum = float(torch.stack(sums).sum()) if sums else 0.0
         braked = float(torch.stack(counts).sum()) if counts else 0.0
         out.append(((bsum + unbraked) / n, braked / n))
+    optimizer._fizgig_brakes = out             # the last reading, for the bar and the step log without another sync
     return out
+
+
+def automagic4_braked(optimizer):
+    """The share of weights Automagic v4 braked at the last reading (automagic4_brakes), averaged over its groups;
+    None for another optimizer or before the first reading. No GPU work."""
+    out = getattr(optimizer, "_fizgig_brakes", None) if optimizer is not None else None
+    return sum(s for _b, s in out) / len(out) if out else None
+
+
+def automagic4_refs(optimizer):
+    """Each param group's sensitivity reference (Automagic v4's _group_ref, measured on its first steps: a weight more
+    sensitive than this is braked), as floats; None for another optimizer."""
+    refs = getattr(optimizer, "_group_ref", None) if optimizer is not None else None
+    if optimizer is None or optimizer.__class__.__name__ != "Automagic4" or refs is None:
+        return None
+    return [float(r.float().mean()) if r is not None else None for r in refs]
 
 
 def shown_lr(optimizer) -> float:
@@ -261,8 +278,12 @@ def automagic4_detail(optimizer) -> str:
     except Exception:
         return ""
     k = max(1, len(rates))
+    refs = automagic4_refs(optimizer) or []
+    names = [g.get("family", str(i)) for i, g in enumerate(optimizer.param_groups)]
+    ref = "  ".join(f"{n} {r:.2e}" for n, r in zip(names, refs) if r is not None)
     return (f"rate {sum(rates) / k:.2e} x mean brake {sum(b for b, _s in brakes) / k:.2f}, "
-            f"{100 * sum(s for _b, s in brakes) / k:.0f}% of weights braked")
+            f"{100 * sum(s for _b, s in brakes) / k:.0f}% of weights braked"
+            + (f"; sensitivity references {ref}" if ref else ""))
 
 
 def owns_its_rate(optimizer) -> bool:

@@ -8849,9 +8849,12 @@ async function capRun(path, body) {
   } catch (e) { $("capStatus").textContent = e.message; }
 }
 
-// a caption file's line breaks as the caption boxes give them back (\n): a file written on Windows has \r\n, and a
-// card then never matched its own file, so the live fill-in took every multi-line caption for one you had edited
-const capNormalise = (items) => { for (const i of items) if (typeof i.caption === "string") i.caption = i.caption.replace(/\r\n?/g, "\n"); };
+// a caption file as the caption boxes give it back: \n line breaks (a file written on Windows has \r\n) and no empty
+// lines. Otherwise a card never matched its own file, and the live fill-in took the caption for one you had edited
+const capNormalise = (items) => {
+  for (const i of items) if (typeof i.caption === "string")
+    i.caption = i.caption.split(/\r?\n|\r/).filter((t) => t.trim()).join("\n");
+};
 
 // while captioning runs: the captions written so far fill in every few seconds - never over one you're editing
 async function captionsLive() {
@@ -8868,13 +8871,12 @@ async function captionsLive() {
     if (!untouched) continue;
     const pic = S.lb.list[S.lb.at], big = $("lightboxCapText");
     if (pic && pic.cap && pic.cap.ta === ta && $("lightbox").style.display !== "none" &&
-        document.activeElement !== big && big.value === (it.caption ?? "")) {
-      big.value = n.caption ?? "";
+        !big.contains(document.activeElement) && big.value === (it.caption ?? "")) {
+      big.value = n.caption ?? "";                 // the line editor fits its lines itself
       $("lightboxCapNote").textContent = "Re-captioned";
     }
     it.caption = n.caption;
     if (ta) { ta.value = n.caption ?? ""; if (ta.tagName === "TEXTAREA") fitText(ta); }
-    if (big.value === (n.caption ?? "")) fitText(big);
   }
 }
 
@@ -9046,14 +9048,24 @@ function renderCaptions() {
 // box): several captions per picture read at a glance. Enter starts a new line, Backspace at a line's start joins it to
 // the one above. .value is the whole file, so Save, Re-caption, the big view and the live refresh use it as they did
 // the plain box; a "change" on any line (or a new / joined line) reaches listeners on the editor itself.
+// Empty lines aren't shown or kept (training skips them). Join lines, shown with two or more, makes the caption one line,
+// its lines joined with spaces: for a caption that was only wrapped, not several captions.
 function captionLines(text, extra = "") {
   const list = el("div", {class: "prompt-lines caption-lines" + (extra ? " " + extra : "")});
   const boxes = () => [...list.querySelectorAll("textarea")];
+  const join = el("button", {type: "button", class: "cap-join", text: "Join lines",
+    title: "Make this one caption: its lines joined with spaces (for a caption that was only wrapped over several " +
+      "lines, not several captions). Save keeps it."});
   const renumber = () => {
     list.querySelectorAll(".prompt-num").forEach((n, i) => { n.textContent = i + 1; });
     list.classList.toggle("several", boxes().length > 1);
+    list.append(join);                         // always last, after the lines
   };
   const changed = () => list.dispatchEvent(new Event("change"));
+  join.addEventListener("click", () => {
+    list.value = boxes().map((b) => b.value.trim()).filter(Boolean).join(" ");
+    changed();
+  });
   function line(t, after) {
     const box = el("textarea", {rows: 1, class: "fit-text", spellcheck: "false", "aria-label": "Caption line"});
     box.value = t;
@@ -9061,7 +9073,8 @@ function captionLines(text, extra = "") {
     box.addEventListener("input", () => fitText(box));
     box.addEventListener("keydown", (e) => {
       const at = box.selectionStart, flat = at === box.selectionEnd;
-      if (e.key === "Enter" && !e.isComposing) {           // the rest of the line becomes the next line
+      if (e.key === "Enter" && !e.isComposing && !e.ctrlKey && !e.metaKey) {   // the rest of the line: the next line
+        // (Ctrl+Enter is the big view's Save)
         e.preventDefault();
         const rest = box.value.slice(box.selectionEnd);
         box.value = box.value.slice(0, at); fitText(box);
@@ -9078,10 +9091,11 @@ function captionLines(text, extra = "") {
     return box;
   }
   Object.defineProperty(list, "value", {
-    get: () => boxes().map((b) => b.value).join("\n"),
+    get: () => boxes().map((b) => b.value).filter((t) => t.trim()).join("\n"),     // empty lines dropped
     set: (v) => {
       list.replaceChildren();
-      for (const t of String(v ?? "").split(/\r?\n/)) line(t);
+      const lines = String(v ?? "").split(/\r?\n/).filter((t) => t.trim());
+      for (const t of lines.length ? lines : [""]) line(t);
       renumber();
       requestAnimationFrame(() => boxes().forEach((b) => fitText(b)));
     }});
@@ -11106,17 +11120,16 @@ let wired = false;
 const LB_SIDE = "(min-width: 1100px) and (min-aspect-ratio: 5/4)";
 function fitText(ta, grow) {
   if (!ta || !ta.isConnected || !ta.offsetParent) return;
-  if (ta.id === "lightboxCapText" && matchMedia(LB_SIDE).matches) { ta.style.height = ""; return; }
   if (grow && ta.scrollHeight <= ta.clientHeight) return;
-  // a caption line grows to all its text: the caption around it scrolls instead (.caption-lines)
-  const max = ta.closest(".caption-lines") ? Infinity : Math.round(innerHeight * (ta.id === "lightboxCapText" ? 0.5 : 0.4));
+  // a caption line grows to all its text: the caption around it scrolls instead (.caption-lines, the big view's too)
+  const max = ta.closest(".caption-lines") ? Infinity : Math.round(innerHeight * 0.4);
   const border = ta.offsetHeight - ta.clientHeight;
   ta.style.height = "";
   ta.style.height = Math.min(Math.max(ta.scrollHeight + border, ta.offsetHeight), max) + "px";
 }
 const fitTexts = (host) => requestAnimationFrame(() => host.querySelectorAll("textarea.fit-text").forEach((t) => fitText(t)));
 document.addEventListener("input", (e) => { if (e.target.matches && e.target.matches("textarea.fit-text")) fitText(e.target, true); });
-matchMedia(LB_SIDE).addEventListener("change", () => fitText($("lightboxCapText")));
+matchMedia(LB_SIDE).addEventListener("change", () => fitTexts($("lightboxCapText")));
 
 // ---- the picture viewer: any preview or Captions picture, big, with the others in its list a step away --------
 const LIGHTBOX_PICS = ".gallery-item > img, .caption-card > img";      // (Repair Studio's panes are gallery items)
@@ -11152,7 +11165,7 @@ function lightboxShow(i) {
   $("lightboxPrev").style.visibility = i > 0 ? "" : "hidden";
   $("lightboxNext").style.visibility = i < S.lb.list.length - 1 ? "" : "hidden";
   $("lightbox").style.display = "";
-  if (pic.cap) fitText($("lightboxCapText"));
+  if (pic.cap) fitTexts($("lightboxCapText"));     // its lines, now the view is on screen
 }
 async function lightboxClose() {
   if (!(await lightboxCapFlush())) return;
@@ -11192,6 +11205,10 @@ document.addEventListener("load", (e) => {
 }, true);
 
 function wireLightbox() {
+  // the big view's caption: the cards' line editor (a line at a time, empty lines dropped, Join lines)
+  const lines = captionLines("", "lightbox-lines");
+  lines.id = "lightboxCapText";
+  $("lightboxCapText").replaceWith(lines);
   document.addEventListener("click", (e) => {
     const img = e.target.closest && e.target.closest(LIGHTBOX_PICS);
     if (!img) return;
@@ -11228,7 +11245,7 @@ function wireLightbox() {
     const pic = S.lb.list[S.lb.at];
     if (!pic || !pic.cap || !pic.cap.speech || !(await lightboxCapFlush())) return;
     const text = await pic.cap.speech((t) => { $("lightboxCapNote").textContent = t; });
-    if (text && S.lb.list[S.lb.at] === pic) { $("lightboxCapText").value = text; fitText($("lightboxCapText")); }
+    if (text && S.lb.list[S.lb.at] === pic) $("lightboxCapText").value = text;     // the editor fits its lines
   });
   $("lightboxCapRemove").addEventListener("click", async () => {
     const pic = S.lb.list[S.lb.at];
@@ -11240,7 +11257,7 @@ function wireLightbox() {
   });
   document.addEventListener("keydown", (e) => {
     if ($("lightbox").style.display === "none") return;
-    const typing = e.target === $("lightboxCapText");
+    const typing = $("lightboxCapText").contains(e.target);
     if (typing && e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $("lightboxCapSave").click(); }
     else if (e.key === "Escape") lightboxClose();
     else if (typing) return;                     // the arrows move the cursor in the caption

@@ -1897,9 +1897,9 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 .lightbox.with-cap .lightbox-cap { flex: none; }
 .lightbox-cap { width: min(860px, calc(100vw - 160px)); margin-top: 14px; display: flex; flex-direction: column; gap: 10px;
   padding: 14px 16px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; box-sizing: border-box; }
-.lightbox-cap textarea { width: 100%; box-sizing: border-box; min-height: 74px; resize: vertical; font: inherit; font-size: 14px;
-  background: var(--bg-inset); color: var(--text-primary); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
-.lightbox-cap textarea:focus { outline: none; border-color: var(--accent); }
+/* its caption: the cards' line editor (captionLines), a little larger, scrolling past half the window */
+.lightbox-cap .caption-lines { margin: 0; max-height: 50vh; min-height: 40px; box-sizing: border-box; }
+.lightbox-cap .caption-lines .prompt-line textarea { font-size: 14px; }
 .lightbox-cap-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 /* a wide window: the caption beside the picture at the window's full height (app.js LB_SIDE: the same query) */
 @media (min-width: 1100px) and (min-aspect-ratio: 5/4) {
@@ -1911,7 +1911,7 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
     place-self: center; }
   .lightbox.with-cap .lightbox-figure figcaption { grid-column: 1; grid-row: 3; }
   .lightbox.with-cap .lightbox-cap { grid-column: 2; grid-row: 1 / -1; width: auto; height: 100%; margin-top: 0; min-height: 0; }
-  .lightbox.with-cap .lightbox-cap textarea { flex: 1 1 auto; min-height: 0; resize: none; }
+  .lightbox.with-cap .lightbox-cap .caption-lines { flex: 1 1 auto; max-height: none; min-height: 0; }
 }
 .lightbox-step { font-size: 22px; height: 44px; width: 44px; justify-content: center; flex: none; }
 @media (max-width: 760px) {
@@ -2665,14 +2665,14 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 /* a caption file a line at a time (Captions tab, captionLines): the prompt box's look; numbers once there are two */
 /* a long caption scrolls, lines and all; the scrollbar's room is kept, so a line's width (and its fitted height)
    doesn't change when the bar appears */
-/* the Samples gallery's list of every preview setting (previewMode) */
-.preview-settings-box { margin-top: 8px; }
-.preview-settings-box > summary { cursor: pointer; color: var(--text-secondary); font-weight: 600; }
-.preview-settings-box table.preview-settings { margin: 6px 0; width: auto; }
-.preview-settings-box table.preview-settings td:first-child { color: var(--text-secondary); padding-right: 18px;
-  white-space: nowrap; vertical-align: top; }
-.preview-settings-box table.preview-settings td:last-child { overflow-wrap: anywhere; }
 .caption-lines { margin: 4px 0 6px; max-height: 40vh; overflow-y: auto; scrollbar-gutter: stable; }
+/* Join lines: shown only with two lines or more, a small link-like control under them, out of the way */
+.caption-lines .cap-join { display: none; }
+.caption-lines.several .cap-join { display: block; align-self: flex-end; flex-shrink: 0; margin: 2px 6px 3px;
+  padding: 1px 4px; background: none; border: none; color: var(--text-muted); font: inherit; font-size: 8.5pt;
+  cursor: pointer; }
+.caption-lines.several .cap-join:hover, .caption-lines.several .cap-join:focus-visible { color: var(--accent);
+  text-decoration: underline; outline: none; }
 .caption-lines .prompt-line { flex-shrink: 0; }
 .caption-lines .prompt-num { flex-basis: 26px; }
 .caption-lines:not(.several) .prompt-num { display: none; }
@@ -2682,6 +2682,13 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 .caption-lines .prompt-line textarea:focus { background: color-mix(in srgb, var(--accent) 8%, transparent);
   box-shadow: none; outline: none; }
 .captions-table .caption-lines.cap-cell-text { min-width: 260px; margin: 0; }
+/* the Samples gallery's list of every preview setting (previewMode) */
+.preview-settings-box { margin-top: 8px; }
+.preview-settings-box > summary { cursor: pointer; color: var(--text-secondary); font-weight: 600; }
+.preview-settings-box table.preview-settings { margin: 6px 0; width: auto; }
+.preview-settings-box table.preview-settings td:first-child { color: var(--text-secondary); padding-right: 18px;
+  white-space: nowrap; vertical-align: top; }
+.preview-settings-box table.preview-settings td:last-child { overflow-wrap: anywhere; }
 /* the Captions tab's write choices: each switch on a line of its own with room around it, its note under its words */
 #tab-captions .checkbox-label:has(#capOverwrite), #tab-captions .checkbox-label:has(#capAddLine) { display: flex;
   margin: 8px 0 0; }

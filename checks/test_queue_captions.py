@@ -37,6 +37,15 @@ def test_caption_job_then_run(q):
     assert started == ["captions", "run"]
 
 
+def test_save_to_queue_keeps_its_place(q):
+    a = queue.add_captions({"folder": q, "model": "x"}, q, "Captions: set")
+    queue.add("klein", {}, q, "lora1", q)
+    assert queue.update_captions(a["id"], {"folder": q, "model": "y"}, q, "Captions: set (y)")
+    assert queue.get(a["id"])["body"]["model"] == "y"
+    assert [i["lora"] for i in queue.status()["items"]] == ["Captions: set (y)", "lora1"]
+    assert not queue.update_captions("gone", {}, q, "x")
+
+
 def test_caption_job_survives_a_restart(q, tmp_path, monkeypatch):
     import json
     f = tmp_path / "web_queue.json"

@@ -1989,7 +1989,7 @@ async function pollRun() {
   $("runCardBadge").dataset.state = r.state;
   showProgress(r.progress, r.state, r.lora, r.stage);
   const moveBusy = !!(r.move && ["moving", "back", "moved"].includes(r.move.state));
-  $("btnStart").disabled = live || moveBusy || !!S.starting || ctxKind() === "run";
+  $("btnStart").disabled = live || moveBusy || !!S.starting || ["run", "capjob"].includes(ctxKind());
   startResumeNote(live);
   $("btnPause").disabled = !r.running;
   // a model that can't pause (a RefMod is made in one go): no Pause button for its runs
@@ -2303,7 +2303,10 @@ function renderWebQueue(q) {
         onclick: () => api("/api/queue/move", {id: it.id, delta: -1}).then(pollRun)}),
       el("button", {class: "btn btn-sm", text: "↓", title: "Later", disabled: i === items.length - 1,
         onclick: () => api("/api/queue/move", {id: it.id, delta: 1}).then(pollRun)}),
-      it.kind === "captions" ? null : el("button", {class: "btn btn-sm", text: "Edit",
+      it.kind === "captions" ? el("button", {class: "btn btn-sm", text: "Edit",
+        title: "Show its settings on the Captions tab; Save to queue there keeps a change, in its place",
+        onclick: () => ctxSwitch({kind: "capjob", id: it.id}).then(() => showTab("captions"))}) :
+      el("button", {class: "btn btn-sm", text: "Edit",
         title: "Load its settings into the form on the Training tab; Save to queue puts them back in its place",
         onclick: async () => {
           try {
@@ -2718,11 +2721,15 @@ const ctxIsLiveRun = () => training() && ((ctxKind() === "run" && !(S.ctx || {})
 function ctxLock() {
   // paused: nothing is locked. What a Resume takes from the form (the previews, the size, block swap, the save
   // schedule, the learning rate) is changed here, on the paused run's own settings
-  const on = ctxKind() === "run" && training();
+  // a queued caption job on show: nothing to train (its folder is on the Start tab), so the same parts are looked at
+  const capjob = ctxKind() === "capjob";
+  const on = (ctxKind() === "run" && training()) || capjob;
   const parts = [$("trainingForm"), $("datasetsCard"), $("imageFolder").closest(".section-card"),
     ...document.querySelectorAll(".preset-row"), ...[...document.querySelectorAll(".family-pick")].map((x) => x.parentElement)];
   for (const p of parts) if (p) p.inert = on;
   for (const id of ["btnQueue", "btnCheck"]) $(id).disabled = on;
+  if (capjob) $("btnStart").disabled = true;
+  capJobButtons();
   document.body.classList.toggle("ctx-view", ctxKind() !== "draft");
 }
 
@@ -2744,10 +2751,26 @@ async function ctxSwitch(to) {
     const from = ctxKind();
     if (from === "draft" && to.kind !== "draft") {
       if (S.saveWaiting) { S.saveWaiting = false; saveState(); }        // your setup as it is now, kept
-      S.draft = {family: S.family, values: {...S.values}, image_folder: S.imageFolder, all: {...S.all}};
+      // ...and your Captions tab as it is now (a queued caption job puts its own settings there)
+      S.draft = {family: S.family, values: {...S.values}, image_folder: S.imageFolder, all: {...S.all},
+        cap: capSettings(), addLine: $("capAddLine").checked};
+      api("/api/state", {captions: S.draft.cap}).catch(() => {});
     }
+    const mine = S.draft ? {cap: S.draft.cap, addLine: S.draft.addLine} : null;
     if (from === "queue") queueEditing(null);                            // an edit not saved is left as it was
-    if (to.kind === "run" && jobAlive()) {
+    if (to.kind === "capjob") {                    // a queued caption job: its folder and Captions tab settings
+      const items = (S.run.web_queue && S.run.web_queue.items) || [], n = items.findIndex((i) => i.id === to.id) + 1;
+      const item = await api("/api/queue/item?id=" + encodeURIComponent(to.id));
+      if (from !== "draft" && from !== "capjob" && S.draft) {   // from a run on show: your own setup in the form again
+        S.ctx = {kind: "loading"};
+        S.all = S.draft.all;
+        await ctxLoad(S.draft, true);
+        S.all[S.family] = S.values;
+      }
+      S.ctx = {kind: "capjob", id: to.id, n, lora: (items[n - 1] || {}).lora || item.lora || ""};
+      await capJobShow(item);
+      S.viewJob = null;
+    } else if (to.kind === "run" && jobAlive()) {
       S.ctx = {kind: "run", key: runKey(S.run), lora: S.run.lora};
       await ctxLoad({family: S.run.family, values: S.run.values, image_folder: S.run.image_folder});
       S.values.__SAMPLE_LIVE = true;                 // a change on its Samples tab goes to its next previews
@@ -2774,10 +2797,12 @@ async function ctxSwitch(to) {
       }
       S.viewJob = null;
     }
+    if (from === "capjob" && ctxKind() !== "capjob") await capMineBack(mine);   // your own Captions tab settings back
     S.galleryRun = ""; S.gal = null;
   } catch (e) {
     $("runStatus").textContent = e.message;
     if (ctxKind() !== "draft" && !S.draft) S.ctx = {kind: "draft"};
+    if (S.capViewing && ctxKind() !== "capjob") await capMineBack(mine).catch(() => {});
   } finally {
     S.ctxBusy = false;
   }
@@ -2805,6 +2830,11 @@ function ctxTick() {
     const items = (S.run.web_queue && S.run.web_queue.items) || [], at = items.findIndex((i) => i.id === c.id);
     if (at >= 0) c.n = at + 1;
     else if (liveKey && S.run.lora === c.lora) ctxSwitch({kind: "run"});      // its turn came: it is the run now
+    else ctxSwitch({kind: "draft"});
+  } else if (c.kind === "capjob") {
+    // its turn came (or it was removed): your own setup again; the Captions tab shows its progress as it captions
+    const items = (S.run.web_queue && S.run.web_queue.items) || [], at = items.findIndex((i) => i.id === c.id);
+    if (at >= 0) c.n = at + 1;
     else ctxSwitch({kind: "draft"});
   } else if (c.kind === "draft") {
     // your setup was the run training: when that run ends, the pill says so, as for any job on show
@@ -2840,7 +2870,7 @@ function jobPillShow() {
   const same = ctxSetupIsRun(), doing = paused() ? "paused" : "training";
   const [name, state] = c.ended ? [c.lora, "finished"] :
     c.kind === "run" ? [c.lora, doing] :
-    c.kind === "queue" ? [c.lora, `queued ${c.n || ""}`.trim()] :
+    c.kind === "queue" || c.kind === "capjob" ? [c.lora, `queued ${c.n || ""}`.trim()] :
     same ? [S.run.lora, doing] :
     // not a job yet: beside it, what is going on - the run training (or paused), then how many wait behind it
     ["not yet queued", [live ? `${paused() ? "Paused" : "Training"}: ${S.run.lora}` : "",
@@ -2850,6 +2880,7 @@ function jobPillShow() {
     el("span", {class: "job-pill-state", text: " · " + state})), el("span", {class: "job-pill-caret", text: "▾"}));
   $("jobPillText").title = c.ended
     ? `${c.lora} is finished` + (c.next ? `, and ${c.next} is training. Press to switch.` : ".")
+    : c.kind === "capjob" ? "The queued caption job these tabs show: its settings are on the Captions tab. Press to switch."
     : (c.kind === "draft" && !same ? "These tabs show a run that is not yet queued or started. Press to look at a job instead."
     : "The job these tabs show. Press to switch to another, or back to the normal view.") +
       (window.innerWidth > 900 ? " Drag it to move it; double-click puts it back." : "");
@@ -2861,13 +2892,19 @@ function jobPillShow() {
       : `Showing the run training now: ${c.lora}. Its training settings can be looked at, not changed; a change on ` +
         "the Samples tab goes to its next previews.") :
     c.kind === "queue" ? `Showing queued run ${c.n}: ${c.lora}. Changes are kept with Save to queue.` : "";
+  // a queued caption job: its settings are on the Captions tab; the other tabs show its folder, nothing to change
+  const capSay = (t) => t === "captions"
+    ? `Showing queued caption job ${c.n}: ${c.lora}. Change its settings here; Save to queue keeps them, in its place.`
+    : `Showing queued caption job ${c.n}: its folder, ${baseName(S.imageFolder)}. A caption job has no training ` +
+      "settings: its own are on the Captions tab. The pill switches back.";
   for (const t of CTX_TABS) {
     const panel = $("tab-" + t);
     if (!panel) continue;
     let line = panel.querySelector(":scope > .ctx-line");
     if (!line) { line = el("div", {class: "ctx-line"}); panel.prepend(line); }
-    line.textContent = say;
-    line.style.display = say ? "" : "none";
+    const text = c.kind === "capjob" ? capSay(t) : say;
+    line.textContent = text;
+    line.style.display = text ? "" : "none";
   }
   if (!$("jobPillMenu").hidden) jobPillMenu(true);         // open: its rows follow what changed
 }
@@ -2888,8 +2925,10 @@ function jobPillMenu(open) {
   // the run training now: your own setup when that is what is training (it stays changeable for the next run)
   else if (live) rows.push(row(paused() ? "Paused" : "Training now", S.run.lora, c.kind === "run" || (c.kind === "draft" && same),
     () => ctxSwitch(same ? {kind: "draft"} : {kind: "run"})));
-  items.forEach((it, i) => rows.push(row(`Queued ${i + 1}`, it.lora, c.kind === "queue" && c.id === it.id,
-    it.kind === "captions" ? () => { jobPillMenu(false); showTab("captions"); } : () => ctxSwitch({kind: "queue", id: it.id}))));
+  // a caption job opens on the Captions tab, where its settings are
+  items.forEach((it, i) => rows.push(row(`Queued ${i + 1}`, it.lora, ["queue", "capjob"].includes(c.kind) && c.id === it.id,
+    it.kind === "captions" ? () => ctxSwitch({kind: "capjob", id: it.id}).then(() => showTab("captions"))
+      : () => ctxSwitch({kind: "queue", id: it.id}))));
   // a run is training: another like it, without going back to Start for the folder
   if (live && activeTab() === "training") rows.push(row("Set up a new run with these settings", "", false, ctxNewLike));
   // Back to the normal view: out of the job, to a clean start (the Start tab, no training folder, the model's
@@ -8533,7 +8572,52 @@ function capSettings() {
     threshold: $("capThreshold").value, leaveOut: $("capLeaveOut").value, underscores: $("capUnderscores").checked,
     extras: (S.capSaved || {}).extras || {}};
 }
-const saveCapSoon = debounce(() => { S.capSaved = capSettings(); api("/api/state", {captions: S.capSaved}).catch(() => {}); }, 600);
+// a queued caption job on show (the pill): its settings change here, in memory only, until Save to queue
+const saveCapSoon = debounce(() => { S.capSaved = capSettings(); if (!S.capViewing) api("/api/state", {captions: S.capSaved}).catch(() => {}); }, 600);
+// the Captions tab as it stands, for a queued caption job (shown again when the pill switches to it)
+const capUi = () => ({...capSettings(), addLine: $("capAddLine").checked});
+
+// the pill on a queued caption job: its folder and its Captions tab settings on show (your own are kept aside)
+async function capJobShow(item) {
+  const b = item.body || {};
+  const ui = b.ui || {model: b.model, task: b.task, tokens: b.max_tokens, threshold: b.threshold,
+    leaveOut: b.leave_out, underscores: b.underscores, overwrite: b.overwrite, addLine: b.add_line};
+  S.capViewing = true;
+  if ((item.image_folder || "") !== S.imageFolder) {
+    $("imageFolder").value = item.image_folder || ""; S.imageFolder = item.image_folder || "";
+    await loadTrigger(); lookForget();
+  }
+  S.capSaved = {...((S.draft || {}).cap || {}), ...ui};
+  await loadCaptionOptions();
+  $("capTrigger").value = b.trigger !== undefined ? b.trigger : (ui.trigger || "");
+  capAddLineSet(!!(ui.addLine !== undefined ? ui.addLine : b.add_line));
+  capSentShow();
+}
+
+// leaving a caption job: your own Captions tab settings back (the folder came back with your setup)
+async function capMineBack(mine) {
+  S.capViewing = false;
+  if (mine && mine.cap) S.capSaved = mine.cap;
+  await loadCaptionOptions();
+  if (mine && mine.addLine !== undefined) capAddLineSet(mine.addLine);
+}
+
+function capAddLineSet(on) {
+  if ($("capAddLine").checked === on) return;
+  $("capAddLine").checked = on;
+  $("capAddLine").dispatchEvent(new Event("change"));
+}
+
+// the Captions tab's buttons for the job on show: a queued caption job saves back to the queue, and captioning now
+// is for your own setup
+function capJobButtons() {
+  const c = S.ctx || {};
+  const job = c.kind === "capjob";
+  $("capQueue").textContent = job ? `Save to queue (job ${c.n || ""})`.replace(" )", ")") : "Add to queue";
+  $("capQueue").title = job ? "Keep these settings for the queued caption job; it keeps its place in the queue" :
+    "Caption this folder with these settings when the queue gets to it: before the run you queue after it, or after the run training now";
+  if (S._capJobShown !== (job ? c.id : "")) { S._capJobShown = job ? c.id : ""; pollCaptions(); }   // Caption All's state
+}
 // the chosen captioner's description (fizgig/captioners/registry.py), and whether it follows an instruction
 const capDesc = () => ((S.cap.opts && S.cap.opts.captioners) || []).find((c) => c.label === $("capModel").value);
 const qwenOn = () => !!(capDesc() || {}).instruction;
@@ -8804,7 +8888,8 @@ async function pollCaptions() {
     running: `Captioning ${st.done} of ${st.total}` + (st.fail ? ` · ${st.fail} failed` : ""),
     translating: st.total ? `Translating ${st.done} of ${st.total}` : "Loading the translator…",
   }[st.state] || st.state;
-  $("capAll").disabled = busy; $("capStatic").disabled = busy; $("capTranslate").disabled = busy;
+  const job = ctxKind() === "capjob";             // a queued caption job on show: Save to queue, not caption now
+  $("capAll").disabled = busy || job; $("capStatic").disabled = busy || job; $("capTranslate").disabled = busy;
   // Unload while it is still loading too: it ends the load and frees what it took (#366)
   $("capStop").disabled = !busy; $("capUnload").disabled = (busy && st.state !== "loading") || !st.loaded;
   const log = $("capLog");
@@ -9131,6 +9216,7 @@ function wireCaptions() {
     $(id).addEventListener("change", saveCapSoon);
   // a trigger word typed here fills auto-recaption's on the Training tab (an empty one leaves it alone)
   $("capTrigger").addEventListener("input", () => {
+    if (S.capViewing) return;            // a queued caption job's word: kept with it (Save to queue), not the folder's
     S.trigger = $("capTrigger").value.trim().replace(/,+$/, "").trim();
     S.values.CAPTION_TRIGGER_WORD = S.trigger;
     syncInputs(["CAPTION_TRIGGER_WORD"]);
@@ -9157,9 +9243,12 @@ function wireCaptions() {
   $("capInstrReset").addEventListener("click", () => saveInstr(""));
   $("capAll").addEventListener("click", () => capRun("/api/captions/ai", capJobBody()));
   $("capQueue").addEventListener("click", async () => {      // this caption job, in the queue (to-do #14)
-    const r = await capRun("/api/queue/captions", capJobBody());
+    const c = S.ctx || {}, job = c.kind === "capjob";       // a queued caption job on show: saved back in its place
+    const r = await capRun("/api/queue/captions", capJobBody({ui: capUi(), ...(job ? {id: c.id} : {})}));
     if (r && r.ok) {      // kept as the idle line (the status check would wipe it) until the next caption job or check
-      S.cap.queuedNote = `Queued: ${r.item.lora}. It runs when the queue gets to it; queue the run after it.`;
+      if (job) c.lora = r.item.lora;
+      S.cap.queuedNote = job ? `Saved to queue: ${r.item.lora}. It keeps its place.` :
+        `Queued: ${r.item.lora}. It runs when the queue gets to it; queue the run after it.`;
       $("capStatus").textContent = S.cap.queuedNote;
       pollRun();
     }

@@ -82,6 +82,18 @@ def add_captions(body, folder, label):
     return item
 
 
+def update_captions(item_id, body, folder, label):
+    """A queued caption job's settings replaced (Save to queue on the Captions tab): it keeps its place. False when it
+    has gone (started)."""
+    with _lock:
+        for i in _q["items"]:
+            if i["id"] == item_id and i.get("kind") == "captions":
+                i.update(body=dict(body), image_folder=folder, lora=label)
+                _save()
+                return True
+    return False
+
+
 def clashes(output_dir, lora, skip=""):
     """A queued run that would save into the same files (same output folder and LoRA name), or None. skip: the item
     being edited, which may of course keep its own name."""

@@ -3693,6 +3693,9 @@ class Handler(BaseHTTPRequestHandler):
             it = webqueue.get((qs.get("id") or [""])[0])
             if it is None:
                 return self.json({"error": "That run has left the queue."}, 404)
+            if it.get("kind") == "captions":         # a caption job: its Captions tab settings, for the pill
+                return self.json({**{k: it.get(k) for k in ("id", "kind", "image_folder", "lora")},
+                                  "body": it.get("body") or {}})
             return self.json({**{k: it.get(k) for k in ("id", "family", "image_folder", "lora")},
                               "values": {k: v for k, v in (it.get("values") or {}).items() if not str(k).startswith("__")},
                               "continues": bool((it.get("values") or {}).get("__continue"))})
@@ -4763,7 +4766,12 @@ class Handler(BaseHTTPRequestHandler):
                 n = len(captions.media_files(folder, clips, photos=photos))
                 label = (f"Captions: {os.path.basename(os.path.normpath(folder))} ({n} file{'s' if n != 1 else ''}, "
                          f"{b.get('model') or 'the main model'})")
-                item = webqueue.add_captions({k: v for k, v in b.items() if k != "only"}, folder, label)
+                body = {k: v for k, v in b.items() if k not in ("only", "id")}
+                if b.get("id"):                          # Save to queue: a queued caption job's settings, in its place
+                    if not webqueue.update_captions(str(b["id"]), body, folder, label):
+                        return self.json({"error": "That caption job has left the queue (it has started)."})
+                    return self.json({"ok": True, "item": {"id": b["id"], "lora": label}, "saved": True})
+                item = webqueue.add_captions(body, folder, label)
                 webqueue.start_next(_queue_starter)      # starts now if nothing else is using the GPU (and the queue isn't held)
                 return self.json({"ok": True, "item": item})
             if path == "/api/captions/ai":

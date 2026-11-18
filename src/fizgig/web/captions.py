@@ -432,6 +432,23 @@ def _mirror_crops(roots, ext):
     return n
 
 
+_on_end = [None]          # a queued caption job's callback: fn("finished" | "stopped" | "failed"), called once
+
+
+def when_done(fn):
+    """Call fn once with how the caption job just started ends (the queue moves on after it)."""
+    _on_end[0] = fn
+
+
+def _ended(result):
+    fn, _on_end[0] = _on_end[0], None
+    if fn is not None:
+        try:
+            fn(result)
+        except Exception:
+            pass
+
+
 def _reader(proc):
     for line in proc.stdout:
         line = line.rstrip()
@@ -464,11 +481,16 @@ def _reader(proc):
         _log(line)
         if roots:                                 # detail crops: the new captions over their other sizes
             _mirror_crops(roots, ext)
+        if line in ("DONE", "STOPPED"):
+            _ended("finished" if line == "DONE" else "stopped")
     with _lock:
+        died = _st["proc"] is proc and bool(_st["job"])
         if _st["proc"] is proc:
             _st.update(proc=None, key=None, state="idle", job="", model="")
             if _st["ready"] is not None:
                 _st["ready"].set()                # a worker that died loading wakes its waiter
+    if died:                                      # the worker died part way through a job
+        _ended("failed")
 
 
 def _env(prefs):

@@ -2295,14 +2295,15 @@ function renderWebQueue(q) {
   host.innerHTML = "";
   items.forEach((it, i) => host.append(el("div", {class: "checkpoint-row queue-row"},
     el("span", {class: "checkpoint-name", text: `${i + 1}. ${it.lora}`}),
-    el("span", {class: "field-hint", text: `${famName(it.family)} · ${it.image_folder} · queued ${it.queued_at}` +
+    el("span", {class: "field-hint", text: it.kind === "captions" ? `AI captions · ${it.image_folder} · queued ${it.queued_at}` :
+      `${famName(it.family)} · ${it.image_folder} · queued ${it.queued_at}` +
       (it.continues ? " · continues from its last save" : "")}),
     el("span", {class: "queue-actions"},
       el("button", {class: "btn btn-sm", text: "↑", title: "Earlier", disabled: i === 0,
         onclick: () => api("/api/queue/move", {id: it.id, delta: -1}).then(pollRun)}),
       el("button", {class: "btn btn-sm", text: "↓", title: "Later", disabled: i === items.length - 1,
         onclick: () => api("/api/queue/move", {id: it.id, delta: 1}).then(pollRun)}),
-      el("button", {class: "btn btn-sm", text: "Edit",
+      it.kind === "captions" ? null : el("button", {class: "btn btn-sm", text: "Edit",
         title: "Load its settings into the form on the Training tab; Save to queue puts them back in its place",
         onclick: async () => {
           try {
@@ -2888,7 +2889,7 @@ function jobPillMenu(open) {
   else if (live) rows.push(row(paused() ? "Paused" : "Training now", S.run.lora, c.kind === "run" || (c.kind === "draft" && same),
     () => ctxSwitch(same ? {kind: "draft"} : {kind: "run"})));
   items.forEach((it, i) => rows.push(row(`Queued ${i + 1}`, it.lora, c.kind === "queue" && c.id === it.id,
-    () => ctxSwitch({kind: "queue", id: it.id}))));
+    it.kind === "captions" ? () => { jobPillMenu(false); showTab("captions"); } : () => ctxSwitch({kind: "queue", id: it.id}))));
   // a run is training: another like it, without going back to Start for the folder
   if (live && activeTab() === "training") rows.push(row("Set up a new run with these settings", "", false, ctxNewLike));
   // Back to the normal view: out of the job, to a clean start (the Start tab, no training folder, the model's
@@ -9154,6 +9155,13 @@ function wireCaptions() {
   $("capInstrSave").addEventListener("click", () => saveInstr($("capInstr").value));
   $("capInstrReset").addEventListener("click", () => saveInstr(""));
   $("capAll").addEventListener("click", () => capRun("/api/captions/ai", capJobBody()));
+  $("capQueue").addEventListener("click", async () => {      // this caption job, in the queue (to-do #14)
+    const r = await capRun("/api/queue/captions", capJobBody());
+    if (r && r.ok) {
+      $("capStatus").textContent = `Queued: ${r.item.lora}. It runs when the queue gets to it; queue the run after it.`;
+      pollRun();
+    }
+  });
   $("capStatic").addEventListener("click", async () => {
     const r = await capRun("/api/captions/static", capJobBody());
     if (r && !r.error) { $("capStatus").textContent = `${r.written} written, ${r.skipped} kept.`; loadCaptions(); }

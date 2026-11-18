@@ -2000,6 +2000,23 @@ def _start_one(family_key, values, image_folder, resume, ft_continue, note, mode
     return {"ok": True, "stages": [s.name for s in plan.stages]}
 
 
+def _start_ai_captions(b):
+    """An AI caption job from the Captions tab's request (its body), as /api/captions/ai starts it; the queue too."""
+    prefs, folder, clips, photos, _ = _caption_args(b)
+    cap = captioner_for(prefs)
+    model = str(b.get("model") or "")
+    _caption_gpu_check(captions.need_gb(model))
+    inside = {os.path.abspath(f) for f in captions.with_crops(folder)}
+    only = [p for p in (b.get("only") or []) if os.path.dirname(os.path.abspath(p)) in inside]
+    return captions.ai_captions(
+        prefs, cap if cap and os.path.isfile(cap) else "", folder, model, str(b.get("task") or ""),
+        str(b.get("instruction") or ""), int(b.get("max_tokens") or 120), str(b.get("trigger") or ""),
+        bool(b.get("overwrite")), clips, only=only or None, photos=photos,
+        ext=captions.caption_ext(b.get("ext")), threshold=float(b.get("threshold") or 0.35),
+        leave_out=str(b.get("leave_out") or ""), underscores=bool(b.get("underscores")),
+        add_line=bool(b.get("add_line")), first_line=bool(b.get("first_line")) and bool(only))
+
+
 def _queue_starter(item):
     """For webqueue.start_next: (True, "") once the item's run has started; (False, "wait: ...") while the GPU is
     busy elsewhere (this run, a caption job); (False, why) when it can't start."""
@@ -2008,6 +2025,15 @@ def _queue_starter(item):
             return False, "wait: a run is training here"
     if captions.status()["state"] in ("loading", "running", "translating"):
         return False, "wait: captions are being made - the next run starts when they finish"
+    if item.get("kind") == "captions":            # a queued AI caption job (#14): the queue moves on when it ends
+        try:
+            r = _start_ai_captions(item.get("body") or {})
+        except Exception as e:
+            return False, str(e)
+        if r.get("error"):
+            return False, r["error"]
+        captions.when_done(lambda result, lab=item.get("lora"): webqueue.on_run_ended(result, lab, _queue_starter))
+        return True, ""
     try:
         cid = (item.get("values") or {}).get("__continue")
         r = (_continue_run(cid, item["values"].get("__more") or "", queue_ok=False, values=item["values"]) if cid else
@@ -4730,21 +4756,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"ok": True})
             if path == "/api/captioners/download":    # one captioner's files now, rather than on first use
                 return self.json(captions.download_captioner(str(b.get("key") or ""), load_prefs()))
-            if path == "/api/captions/ai":
+            if path == "/api/queue/captions":            # Captions tab: this AI caption job, in the queue (#14)
                 prefs, folder, clips, photos, _ = _caption_args(b)
-                cap = captioner_for(prefs)
-                model = str(b.get("model") or "")
-                _caption_gpu_check(captions.need_gb(model))
-                from fizgig.dataset import detail_crops     # the folder's files, or its largest detail crops
-                inside = {os.path.abspath(f) for f in captions.with_crops(folder)}
-                only = [p for p in (b.get("only") or []) if os.path.dirname(os.path.abspath(p)) in inside]
-                return self.json(captions.ai_captions(
-                    prefs, cap if cap and os.path.isfile(cap) else "", folder, model, str(b.get("task") or ""),
-                    str(b.get("instruction") or ""), int(b.get("max_tokens") or 120), str(b.get("trigger") or ""),
-                    bool(b.get("overwrite")), clips, only=only or None, photos=photos,
-                    ext=captions.caption_ext(b.get("ext")), threshold=float(b.get("threshold") or 0.35),
-                    leave_out=str(b.get("leave_out") or ""), underscores=bool(b.get("underscores")),
-                    add_line=bool(b.get("add_line")), first_line=bool(b.get("first_line")) and bool(only)))
+                if not os.path.isdir(folder):
+                    return self.json({"error": "Choose the training folder on the Start tab first."})
+                n = len(captions.media_files(folder, clips, photos=photos))
+                label = (f"Captions: {os.path.basename(os.path.normpath(folder))} ({n} file{'s' if n != 1 else ''}, "
+                         f"{b.get('model') or 'the main model'})")
+                item = webqueue.add_captions({k: v for k, v in b.items() if k != "only"}, folder, label)
+                webqueue.start_next(_queue_starter)      # starts now if nothing else is using the GPU (and the queue isn't held)
+                return self.json({"ok": True, "item": item})
+            if path == "/api/captions/ai":
+                return self.json(_start_ai_captions(b))
             if path.startswith("/api/studio/"):
                 try:
                     return self.json(_studio_post(path[len("/api/studio/"):], b))

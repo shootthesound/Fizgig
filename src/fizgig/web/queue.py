@@ -52,7 +52,8 @@ def load():
 
 def status():
     with _lock:
-        return {"items": [{**{k: i.get(k) for k in ("id", "family", "lora", "image_folder", "queued_at", "output_dir")},
+        return {"items": [{**{k: i.get(k) for k in ("id", "family", "lora", "image_folder", "queued_at", "output_dir",
+                                                    "kind")},
                            "continues": bool((i.get("values") or {}).get("__continue"))}     # Continue on Runs & outputs
                           for i in _q["items"]],
                 "held": _q["held"], "reason": _q["reason"], "waiting": _q["waiting"],
@@ -64,6 +65,16 @@ def status():
 def add(family, values, image_folder, lora, output_dir):
     item = {"id": uuid.uuid4().hex[:10], "family": family, "values": dict(values), "image_folder": image_folder,
             "lora": lora, "output_dir": output_dir, "queued_at": time.strftime("%Y-%m-%d %H:%M")}
+    with _lock:
+        _q["items"].append(item)
+        _save()
+    return item
+
+
+def add_captions(body, folder, label):
+    """An AI caption job for one folder (the Captions tab's request as it would send it), queued like a run."""
+    item = {"id": uuid.uuid4().hex[:10], "kind": "captions", "body": dict(body), "family": "", "values": {},
+            "image_folder": folder, "lora": label, "output_dir": "", "queued_at": time.strftime("%Y-%m-%d %H:%M")}
     with _lock:
         _q["items"].append(item)
         _save()

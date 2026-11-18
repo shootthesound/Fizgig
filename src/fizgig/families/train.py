@@ -2498,6 +2498,37 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         return None
 
     ckpt_previews = _make_ckpt_previews(preview_checkpoint) if (preview_checkpoint and encoded is not None) else None
+    def preview_settings(mode, look=False):
+        """Every setting a preview renders with, as [label, value] rows for the Samples tab (to-do #9, @Kaoru8 #330):
+        the model, the LoRAs and their strengths, the sampling recipe (sampler, scheduler, its options such as shift),
+        steps, CFG, the negative, size and seeds. Read from what this round really used (mode) and the family's recipe
+        for that path: the preview checkpoint's, the Turbo LoRA's, else the model's own."""
+        s = (desc.preview_checkpoint_sampling if mode.get("model") else
+             speed_desc.settings if mode.get("turbo") and speed_desc is not None else desc.default_sampling())
+        rows = [["Model", mode.get("model") or os.path.basename(str(dit_path))]]
+        rows.append(["This run's LoRA", "1.0" + (" (its EMA weights)" if ema is not None else "")])
+        if context_lora_path:
+            rows.append(["Context LoRA", f"{os.path.basename(context_lora_path)} at {context_lora_strength:g}"])
+        if mode.get("turbo"):
+            rows.append(["Turbo LoRA", f"{mode['turbo']} at {mode.get('strength')}"])
+        if look and preview_lora:
+            rows.append(["Look LoRA", f"{os.path.basename(str(preview_lora))} at {preview_lora_strength:g}"])
+        if s is not None:
+            rows += [["Sampler", s.sampler], ["Scheduler", s.scheduler]]
+            rows += [[str(k).replace("_", " ").capitalize(), str(v)] for k, v in (s.options or ())]
+        rows += [["Steps", str(mode.get("steps"))], ["CFG", f"{float(mode.get('cfg') or 1):g}"]]
+        fo = {k: v for k, v in (family_options or {}).items()
+              if k.startswith("preview_") or "sampler" in k or "slg" in k or k in ("noise", "shift")}
+        rows += [[k.replace("_", " ").capitalize(), str(v)] for k, v in sorted(fo.items())]
+        if float(mode.get("cfg") or 1) > 1:
+            rows.append(["Negative prompt", (sample_negative if sample_negative is not None
+                                             else desc.preview_negative) or "(empty)"])
+        else:
+            rows.append(["Negative prompt", "none (CFG 1 doesn't use one)"])
+        rows += [["Size", f"{sample_width} × {sample_height}"],
+                 ["Seed", f"{sample_seed} for the first prompt, then one more for each prompt after it"]]
+        return rows
+
     def write_mode(mode, epoch=None, look=False, helper=""):
         """What this run's previews render with now, for the gallery (<sample_dir>/.previews_<name>.json): written at
         the start and after each preview round, so a live change of steps, CFG or Turbo strength shows. After a round
@@ -2514,7 +2545,12 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             rounds[str(epoch)] = {"checkpoint": bool(mode.get("model")), "look": bool(look),
                                   **({"small": f"{sample_width} × {sample_height}"} if small_from else {}),
                                   "turbo": bool(mode.get("turbo")), **({"helper": helper} if helper else {})}
-        mode = {**mode, "family": desc.key, "rounds": rounds}
+        try:
+            settings = preview_settings(mode, look)
+        except Exception:                      # never let the list stop a preview round
+            logger.debug("[sample] preview settings list failed", exc_info=True)
+            settings = None
+        mode = {**mode, "family": desc.key, "rounds": rounds, **({"settings": settings} if settings else {})}
         try:
             os.makedirs(sample_dir, exist_ok=True)
             with open(path, "w", encoding="utf-8") as f:

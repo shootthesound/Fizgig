@@ -3388,6 +3388,19 @@ function previewMode(m) {
       "LoRA strength to 0 above (Steps and CFG go back with it); tick Change the previews of the run going now " +
       "for it to apply from this run's next preview."
     : `Previews render on ${m.model || "the model being trained"}: ${how}, no Turbo LoRA.`;
+  // every setting the previews use, a row each (to-do #9, #330): what to set elsewhere (ComfyUI) to match them
+  if (m.settings && m.settings.length) {
+    const rows = el("table", {class: "data-table preview-settings"},
+      ...m.settings.map(([k, v]) => el("tr", {}, el("td", {text: k}), el("td", {text: v}))));
+    const copy = el("button", {class: "btn btn-sm", text: "Copy", title: "Copy these settings as text",
+      onclick: () => navigator.clipboard.writeText(m.settings.map(([k, v]) => `${k}: ${v}`).join("\n"))
+        .then(() => { copy.textContent = "Copied"; setTimeout(() => { copy.textContent = "Copy"; }, 1500); })});
+    const det = el("details", {class: "preview-settings-box"},
+      el("summary", {text: "Every setting these previews use"}), rows, copy);
+    det.open = !!S._previewSettingsOpen;
+    det.addEventListener("toggle", () => { S._previewSettingsOpen = det.open; });
+    box.append(det);
+  }
   box.style.display = "";
 }
 

@@ -8849,12 +8849,17 @@ async function capRun(path, body) {
   } catch (e) { $("capStatus").textContent = e.message; }
 }
 
+// a caption file's line breaks as the caption boxes give them back (\n): a file written on Windows has \r\n, and a
+// card then never matched its own file, so the live fill-in took every multi-line caption for one you had edited
+const capNormalise = (items) => { for (const i of items) if (typeof i.caption === "string") i.caption = i.caption.replace(/\r\n?/g, "\n"); };
+
 // while captioning runs: the captions written so far fill in every few seconds - never over one you're editing
 async function captionsLive() {
   if (!S.imageFolder || !document.querySelector("#tab-captions.active")) return;
   const r = await api(`/api/captions?folder=${encodeURIComponent(capFolder())}&ext=${encodeURIComponent(capExt())}&family=${encodeURIComponent(S.family || "")}`)
     .catch(() => null);
   if (!r || !r.items) return;
+  capNormalise(r.items);
   const now = new Map(r.items.map((i) => [i.path, i]));
   for (const it of S.cap.items) {
     const n = now.get(it.path);
@@ -8927,6 +8932,7 @@ async function loadCaptions() {
   const ext = $("captionExt").value.trim() || ".txt";
   const r = await api(`/api/captions?folder=${encodeURIComponent(capFolder())}` +
     `&ext=${encodeURIComponent(ext)}&family=${encodeURIComponent(S.family || "")}`);
+  capNormalise(r.items);
   S.cap.items = r.items;                      // the pictures, then the largest detail crops (it.crop: their folder)
   renderCaptions();
 }

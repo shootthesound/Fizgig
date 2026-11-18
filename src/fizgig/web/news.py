@@ -5,6 +5,18 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 
 NEWS = [
     {
+        "date": "18 Nov 2026",
+        "title": "Download a dataset onto a pod, caption jobs in the queue, and every preview setting in one place",
+        "body": (
+            "On a pod, the Start tab downloads a training folder straight from a Hugging Face, Google Drive or zip "
+            "link, so a big dataset no longer goes up from your home connection.\n\n"
+            "The Captions tab's Add to queue captions a folder before the run you queue after it, and the Samples "
+            "gallery lists every setting the previews use, with Copy. Krea 2 previews fit 16 and 24 GB AMD cards."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#18-nov-2026-download-a-dataset-onto-a-pod-caption-jobs-in-the-queue-and-every-preview-setting-in-one-place"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.7.8"}],
+    },
+    {
         "date": "17 Nov 2026",
         "title": "Repeats from folder names, and several captions per picture",
         "body": (

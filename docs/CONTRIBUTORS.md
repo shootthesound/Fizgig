@@ -38,7 +38,7 @@ learning rate from the form ([#214](https://github.com/shootthesound/Fizgig/pull
 **loss graph views** ([#290](https://github.com/shootthesound/Fizgig/pull/290)); **Prodigy, Muon and Automagic v4** ([#292](https://github.com/shootthesound/Fizgig/pull/292)); and
 Stop asking for a second click ([#294](https://github.com/shootthesound/Fizgig/pull/294)). From their Fizgig Advanced fork, with credit: Adaptive LR judging plateaus on a 3-epoch average, the Samples gallery's
 **Style score**, the **Cosmic Pigeon** and **Deep Space** themes (v9.4.0, their own commits) and
-**out-of-memory recovery**, which tries a failed run again lighter (v9.6.0).
+**out-of-memory recovery**, which tries a failed run again lighter (v9.6.0), and **Choose…** opening your system's own file window on the computer running Fizgig (v9.7.8, their commit).
 
 ## rintic-13
 
@@ -163,7 +163,8 @@ Krea 2 on the RX 6800 ([#158](https://github.com/shootthesound/Fizgig/pull/158))
 Force SageAttention preference for Krea 2 ([#344](https://github.com/shootthesound/Fizgig/pull/344), v9.7.2, tested with [daxter93](https://github.com/daxter93)), a Training tab that
 lists optimizers without loading their libraries ([#346](https://github.com/shootthesound/Fizgig/pull/346), v9.7.5), and Krea 2's VAE decoding a still picture
 with about 2 GB less VRAM ([#369](https://github.com/shootthesound/Fizgig/pull/369), v9.7.6). They also found three helpers missing from the Linux AMD installer
-(v9.7.2) and where Arch-based systems keep libnuma ([#356](https://github.com/shootthesound/Fizgig/issues/356)).
+(v9.7.2) and where Arch-based systems keep libnuma ([#356](https://github.com/shootthesound/Fizgig/issues/356)). In v9.7.8, Krea 2 previews fit 16 and 24 GB AMD cards at high resolutions
+([#363](https://github.com/shootthesound/Fizgig/pull/363)), and their investigation found that expandable memory segments corrupt memory on Radeon cards with current ROCm, which is why Fizgig turns them off there.
 
 ## pastuh
 
@@ -203,7 +204,8 @@ Since November:
 - [mart-hill](https://github.com/mart-hill): JoyCaption ([#313](https://github.com/shootthesound/Fizgig/issues/313))
 - [axymeus](https://github.com/axymeus): the WD tagger ([#315](https://github.com/shootthesound/Fizgig/issues/315)), the regularisation dataset ([#332](https://github.com/shootthesound/Fizgig/issues/332)), LoRA Royale on a range of epochs ([#318](https://github.com/shootthesound/Fizgig/issues/318)) and Gizmo's crop box ([#367](https://github.com/shootthesound/Fizgig/issues/367))
 - [AlexWolfgangDRG](https://github.com/AlexWolfgangDRG): JoyCaption in 4-bit on ROCm ([#316](https://github.com/shootthesound/Fizgig/issues/316)) and a Continue training problem ([#333](https://github.com/shootthesound/Fizgig/issues/333))
-- [CognitiveDiffusion](https://github.com/CognitiveDiffusion): Resume Training's place on the page ([#317](https://github.com/shootthesound/Fizgig/issues/317)), long runs and the queue ([#348](https://github.com/shootthesound/Fizgig/issues/348)) and Gizmo's crop box ([#350](https://github.com/shootthesound/Fizgig/issues/350))
+- [CognitiveDiffusion](https://github.com/CognitiveDiffusion): Resume Training's place on the page ([#317](https://github.com/shootthesound/Fizgig/issues/317)), long runs and the queue ([#348](https://github.com/shootthesound/Fizgig/issues/348)), Gizmo's crop box ([#350](https://github.com/shootthesound/Fizgig/issues/350)) and Automagic v4's braked-weights readout ([#349](https://github.com/shootthesound/Fizgig/issues/349))
+- [Kaoru8](https://github.com/Kaoru8): every setting the previews use, on the Samples tab ([#330](https://github.com/shootthesound/Fizgig/issues/330))
 - [daxter93](https://github.com/daxter93): ROCm crashes on tight VRAM ([#321](https://github.com/shootthesound/Fizgig/issues/321)), high-resolution renders on AMD ([#343](https://github.com/shootthesound/Fizgig/issues/343)) and testing SageAttention-RDNA4
 - [Ferocit](https://github.com/Ferocit): download progress ([#327](https://github.com/shootthesound/Fizgig/issues/327))
 - [jordanjay29](https://github.com/jordanjay29): steps remaining in the epoch ([#328](https://github.com/shootthesound/Fizgig/issues/328))
@@ -216,7 +218,7 @@ Since November:
 - [prookyon](https://github.com/prookyon): Automagic v4's real rate ([#353](https://github.com/shootthesound/Fizgig/issues/353)) and several captions per picture, as OneTrainer writes them ([#300](https://github.com/shootthesound/Fizgig/issues/300))
 - [howDoILearnPython](https://github.com/howDoILearnPython): H3 Image on 12 GB cards ([#354](https://github.com/shootthesound/Fizgig/issues/354))
 - [Aymenbayoss](https://github.com/Aymenbayoss): H3 at int8 on pruned files ([#357](https://github.com/shootthesound/Fizgig/issues/357)) and stopping a captioning model while it loads ([#366](https://github.com/shootthesound/Fizgig/issues/366))
-- [girzai](https://github.com/girzai): big datasets on a pod ([#308](https://github.com/shootthesound/Fizgig/issues/308))
+- [girzai](https://github.com/girzai): big datasets on a pod, now downloaded onto it from the Start tab ([#308](https://github.com/shootthesound/Fizgig/issues/308))
 - [CrypticCherry](https://github.com/CrypticCherry): repeats from folder names and several captions per picture ([#300](https://github.com/shootthesound/Fizgig/issues/300))
 - [whitejt2](https://github.com/whitejt2): checks that failed on smaller cards ([#359](https://github.com/shootthesound/Fizgig/pull/359))
 - [ofung30-sketch](https://github.com/ofung30-sketch): LoRA Isolation with Automagic ([#364](https://github.com/shootthesound/Fizgig/issues/364))

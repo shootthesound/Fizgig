@@ -1,5 +1,15 @@
 # Fizgig news
 
+## 18 Nov 2026: Download a dataset onto a pod, caption jobs in the queue, and every preview setting in one place
+
+**Download a training folder onto a pod.** On a pod, the Start tab downloads a dataset straight from a Hugging Face, Google Drive or zip link, checks the disk first, unpacks it and carries on after a stop, so a big dataset no longer goes up from your home connection.
+
+**Caption jobs in the queue.** The Captions tab's Add to queue lines up an AI caption job before the run that trains on the captions, and the job pill shows its settings to change and save, like a queued run. The Samples gallery lists every setting the previews render with, ready to copy into ComfyUI.
+
+**AMD.** Krea 2 previews fit 16 and 24 GB AMD cards at high resolutions, and expandable memory segments, which corrupt memory on Radeon cards with current ROCm, now stay off there.
+
+[Fizgig v9.7.8 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.7.8)
+
 ## 17 Nov 2026: Repeats from folder names, and several captions per picture
 
 **Repeats from folder names.** With Also train on its sub-folders ticked, **Repeats from folder names** reads `10_Laffey_base` as ten times an epoch, the naming kohya's sd-scripts and OneTrainer use, with a table of each folder's share and the Max Epochs that keeps the run as long.

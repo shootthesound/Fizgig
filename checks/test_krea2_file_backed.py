@@ -90,8 +90,10 @@ def test_swaps_and_parking_preserve_frozen_weights_and_editable_state(tmp_path):
         blocks[0][0].base.bias.add_(.25)  # A Studio bias delta must survive parking.
         x = torch.randn(2, 8)
         expected = [b(x).clone() for b in blocks]
+        # a small ROCm card: the memory policy's reach (rocm_small_card), with no GPU on the machine running the check
         with patch.object(torch.version, 'hip', 'test'), patch.object(torch.cuda, 'synchronize'), \
-                patch.object(torch.cuda, 'is_available', return_value=False):
+                patch.object(torch.cuda, 'is_available', return_value=False), \
+                patch.object(W, 'rocm_small_card', return_value=True):
             engine._park_dit('cpu')
         for block, reference in zip(blocks, expected):
             torch.testing.assert_close(block(x), reference)
@@ -138,7 +140,10 @@ def test_file_backing_selection_leaves_training_and_nvidia_unchanged():
             ('test', 'cuda', 'bf16', True), (None, 'cuda', 'bf16', False),
             ('test', 'cpu', 'bf16', False), ('test', 'cuda', 'int8', False)):
         engine = get('krea2').make_workbench_engine()
+        # ROCm here means a small ROCm card (rocm_small_card): the check's machine has no GPU to ask
         with patch.object(torch.version, 'hip', hip), \
+                patch.object(W, 'rocm_small_card',
+                             side_effect=lambda device: bool(torch.version.hip) and torch.device(device).type == 'cuda'), \
                 patch.object(WorkbenchEngine, 'ensure_pipeline'):
             engine.ensure_pipeline('model', 'vae', 'te', device=device, precision=precision, blocks_to_swap=4)
         assert engine.driver._file_backed_inference == enabled

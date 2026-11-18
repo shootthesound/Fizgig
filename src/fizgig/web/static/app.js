@@ -12150,7 +12150,11 @@ function wire() {
       return;
     }
     stopConfirmReset();
-    start("/api/stop");
+    // its own request, never start()'s: start() ignores a press while another of its requests is still out, and a
+    // Start, Pause or Resume that hadn't answered left Stop doing nothing
+    $("btnStop").textContent = "Stopping…";
+    api("/api/stop", {}).then((r) => { if (!r.ok) showProblems(["Nothing was stopped: the server has no run going."]); })
+      .catch((e) => showProblems([`Stop didn't reach the server: ${e.message}`])).finally(pollRun);
   });
   $("btnResume").addEventListener("click", resumeClick);
   $("btnMove").addEventListener("click", () => { if (S.moveOpen) { S.moveOpen = false; pollRun(); } else moveOpen(); });

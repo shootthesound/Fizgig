@@ -2519,7 +2519,13 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         rows += [["Steps", str(mode.get("steps"))], ["CFG", f"{float(mode.get('cfg') or 1):g}"]]
         fo = {k: v for k, v in (family_options or {}).items()
               if k.startswith("preview_") or "sampler" in k or "slg" in k or k in ("noise", "shift")}
-        rows += [[k.replace("_", " ").capitalize(), str(v)] for k, v in sorted(fo.items())]
+        for k, v in sorted(fo.items()):        # a family option (H3 Image's sampler=lcm) replaces the recipe's row
+            label = k.replace("_", " ").capitalize()
+            hit = next((r for r in rows if r[0] == label), None)
+            if hit is not None:
+                hit[1] = str(v)
+            else:
+                rows.append([label, str(v)])
         if float(mode.get("cfg") or 1) > 1:
             rows.append(["Negative prompt", (sample_negative if sample_negative is not None
                                              else desc.preview_negative) or "(empty)"])

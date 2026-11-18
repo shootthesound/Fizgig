@@ -280,7 +280,8 @@ def automagic4_detail(optimizer) -> str:
     k = max(1, len(rates))
     refs = automagic4_refs(optimizer) or []
     names = [g.get("family", str(i)) for i, g in enumerate(optimizer.param_groups)]
-    ref = "  ".join(f"{n} {r:.2e}" for n, r in zip(names, refs) if r is not None)
+    ref = "  ".join((f"{n} {r:.2e}" if len(refs) > 1 else f"{r:.2e}")     # one group: no "0" label
+                    for n, r in zip(names, refs) if r is not None)
     return (f"rate {sum(rates) / k:.2e} x mean brake {sum(b for b, _s in brakes) / k:.2f}, "
             f"{100 * sum(s for _b, s in brakes) / k:.0f}% of weights braked"
             + (f"; sensitivity references {ref}" if ref else ""))

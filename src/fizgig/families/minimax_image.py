@@ -58,7 +58,8 @@ _LIKENESS_EXPLAIN = (
     "these numbers: a late epoch has usually gone past its best.")
 
 
-def _preset(rank, epochs=30, slider=False, mp="0.25", edit=False, likeness=False, optimizer="automagic3", lr=2.8e-4):
+def _preset(rank, epochs=30, slider=False, mp="0.25", edit=False, likeness=False, optimizer="automagic3", lr=2.8e-4,
+            ft=False, rotations="10"):
     """Krea 2's presets (families/krea2.py _preset; Peter, 10 Nov 2026: "mirror the Krea 2 presets exactly"), plus the
     two this model needs: Fizgig's training adapter on (without it people turn into caricatures) and an edit flag for
     the Edit preset. Every preset trains on Automagic v3 (Peter, 11 Nov 2026), which starts at 2.8e-4 and finds its own
@@ -82,6 +83,9 @@ def _preset(rank, epochs=30, slider=False, mp="0.25", edit=False, likeness=False
         # on in Standard only (Peter, 11 Nov 2026), on run six's schedule (12 Nov 2026, LIKENESS_DEFAULTS)
         "MINIMAX_IMAGE_LIKENESS_OPT": "1" if likeness else "",
         **{"MINIMAX_IMAGE_LIKENESS_" + k: v for k, v in LIKENESS_DEFAULTS.items()},
+        # a full fine-tune (Peter, 19 Nov 2026): MiniMax H3's rotation fine-tune, the training adapter on (frozen) as
+        # in every family that has one, Likeness optimization on its LoRA defaults. registry.py puts it on Adafactor
+        "FAMILY_FT": ft, **({"FAMILY_FT_ROTATIONS": rotations} if ft else {}),
     }
 
 
@@ -237,9 +241,10 @@ MINIMAX_IMAGE = FamilyDescription(
     # fullgraph, and the checkpoint outside the compiled region (a break can't sit inside a checkpoint in the graph)
     compile_fullgraph=False,
     compile_boundary="outside",
-    finetune=False,                   # not built for H3-Image yet (Peter, 11 Nov 2026): no Fine-tune kind until it is
-    not_offered={"finetune": "not done for H3-Image yet (Peter, 11 Nov 2026)"},
-    ft_learning_rate=3e-5,            # MiniMax H3's tested fine-tune rate (families/minimax.py); to confirm here
+    # a full fine-tune (Peter, 19 Nov 2026): MiniMax H3's rotation fine-tune as the driver borrows it (component
+    # windows on a 4-bit trunk, int8 ConvRot saves in the file's own layout), the training adapter on
+    finetune=True,
+    ft_learning_rate=3e-5,            # MiniMax H3's tested fine-tune rate (families/minimax.py)
 
     sampling=(
         SamplingSettings("MiniMax-H3-Image (distilled)", steps=6, cfg=1.0, sampler="euler", scheduler="simple",
@@ -321,6 +326,7 @@ MINIMAX_IMAGE = FamilyDescription(
         ("✨ MiniMax H3 Image Style (rank 16)", _preset(16, epochs=64)),
         ("✨ MiniMax H3 Image Edit (rank 8)", _preset(8, epochs=12, edit=True)),
         ("✨ MiniMax H3 Image Slider (rank 8)", _preset(8, epochs=20, slider=True)),
+        ("✨ MiniMax H3 Image Fine-tune (3e-5)", _preset(16, likeness=True, lr=3e-5, ft=True)),
     ),
     start_lr_bands=(("lora", 3e-5, 3e-4), ("slider", 7e-5, 6e-4)),     # Krea 2's, as the presets are its
 )

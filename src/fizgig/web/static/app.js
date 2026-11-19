@@ -87,7 +87,7 @@ async function boot() {
   S.pod = pr.pod;
   S.outputDefault = pr.output_default || "";
   S.outputPref = pr.lora_output_dir || "";
-  S.set = pr.settings || {}; S.setAbs = pr.abs || {}; S.sageAttentionOption = !!pr.sageattention_option;
+  S.set = pr.settings || {}; S.setAbs = pr.abs || {}; S.sageAttentionOption = !!pr.sageattention_option; S.rocm = !!pr.rocm;
   S.gpu = {chosen: pr.cuda_device || "", list: pr.gpus || [], envLocked: pr.gpu_env_locked};
   S.all = st.values || {};
   S.imageFolder = st.image_folder || "";
@@ -1176,7 +1176,7 @@ function renderPrefs() {
         if (e.target.dataset.sure !== "1") { e.target.dataset.sure = "1"; e.target.textContent = "Reset? Click again"; return; }
         await api("/api/prefs", {reset: true});
         const pr = await api("/api/prefs");
-        S.set = pr.settings || {}; S.setAbs = pr.abs || {}; S.sageAttentionOption = !!pr.sageattention_option;
+        S.set = pr.settings || {}; S.setAbs = pr.abs || {}; S.sageAttentionOption = !!pr.sageattention_option; S.rocm = !!pr.rocm;
         S.outputPref = pr.lora_output_dir || ""; S.outputDefault = pr.output_default;
         renderPrefs();
       }})),
@@ -1303,7 +1303,7 @@ function inferenceCard() {
   swap.addEventListener("change", () => api("/api/prefs", {changes: {inference_blocks_to_swap: swap.value}})
     .then(() => { S.set.inference_blocks_to_swap = swap.value; }));
   const int8 = el("input", {type: "checkbox"});
-  int8.checked = String(S.set.inference_int8 ?? "1") !== "0";
+  int8.checked = String(S.set.inference_int8 ?? (S.rocm ? "0" : "1")) !== "0";
   int8.addEventListener("change", () => api("/api/prefs", {changes: {inference_int8: int8.checked}})
     .then(() => { S.set.inference_int8 = int8.checked ? "1" : "0"; }));
   const sage = el("input", {type: "checkbox"});
@@ -1324,9 +1324,12 @@ function inferenceCard() {
       "between steps to save memory, at some speed. Training manages its own and ignores these."}),
     el("div", {class: "card-content"},
       el("div", {class: "field-row"}, el("span", {class: "field-label", text: "DiT block swap:"}), swap),
-      el("label", {class: "checkbox-label"}, int8, " INT8 fast inference (recommended)"),
-      el("div", {class: "field-hint", text: "On by default: same memory as fp8, near-identical pictures, previews only. " +
-        "Turn it off to use fp8."}), ...sageControls));
+      el("label", {class: "checkbox-label"}, int8, S.rocm ? " INT8 fast inference" : " INT8 fast inference (recommended)"),
+      el("div", {class: "field-hint", text: S.rocm
+        ? "Off by default on AMD cards: there the model's stored fp8 file renders faster and uses far less memory " +
+          "(Krea 2 at 2048 x 2048 on an RX 9070 XT: about twice as fast, a quarter of the RAM). Previews only."
+        : "On by default: same memory as fp8, near-identical pictures, previews only. Turn it off to use fp8."}),
+      ...sageControls));
 }
 
 // where the LoRA and reference pickers start (Preferences > Other folders, else what they used before)

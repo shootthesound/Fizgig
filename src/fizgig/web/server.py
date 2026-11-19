@@ -394,9 +394,13 @@ def _write_json(path, data):
 
 
 # the desktop's DEFAULT_PREFS that aren't empty: a web-only install starts where the desktop app would
+# An AMD launch (FIZGIG_GPU_BACKEND=rocm, set by both AMD launchers): INT8 fast inference off by default - the stored
+# fp8 file rendered Krea 2 previews about twice as fast with a quarter of the RAM on an RX 9070 XT (#380, @xGnome)
+ROCM_LAUNCH = os.environ.get("FIZGIG_GPU_BACKEND", "").lower() == "rocm"
 PREF_DEFAULTS = {"lora_output_dir": "output_loras", "profiles_dir": "user_data/profiles", "cache_dir": "user_data/cache",
                  "runpod_stop_when_done": "0", "inference_blocks_to_swap": "Auto (detect from GPU)",
-                 "inference_int8": "1", "inference_sageattention": "0", "lan_discovery": "1", "update_check": "1"}
+                 "inference_int8": "0" if ROCM_LAUNCH else "1", "inference_sageattention": "0", "lan_discovery": "1",
+                 "update_check": "1"}
 
 
 LAST_USED_FILE = user_data.LAST_USED_FILE           # the training folder, each folder's trigger word
@@ -3339,7 +3343,7 @@ class Handler(BaseHTTPRequestHandler):
                                          for k in form.model_keys(d)},
                               "cache_dir": str(p.get("cache_dir") or ""),
                               "settings": {k: str(p.get(k) or "") for k in SETTING_PREFS},
-                              "sageattention_option": sageattention_option(),
+                              "sageattention_option": sageattention_option(), "rocm": ROCM_LAUNCH,
                               "captioning": {"main": pref_path(p, "krea2_text_encoder"),
                                              "main_ok": bool(pref_path(p, "krea2_text_encoder")
                                                              and os.path.isfile(pref_path(p, "krea2_text_encoder"))),

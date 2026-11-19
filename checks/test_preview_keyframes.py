@@ -61,10 +61,41 @@ def test_no_frames_no_flags(tmp_path):
     assert "--sample_first_frame" not in cmd and "--sample_last_frame" not in cmd
 
 
-def test_reference_base_ignores_them(tmp_path):
-    desc, inp = _plan(tmp_path, "minimax", SAMPLE_FIRST_FRAME=_frame(tmp_path),
-                      H3_TRAIN_BASE="Reference (ref2va)")
-    assert launch.preview_keyframes(desc, inp) == {}
+def test_reference_base_takes_them_as_references(tmp_path):
+    first, last = _frame(tmp_path), _frame(tmp_path, "last.png")
+    cmd = _train_cmd(tmp_path, "minimax", SAMPLE_FIRST_FRAME=first, SAMPLE_LAST_FRAME=last,
+                     H3_TRAIN_BASE="Reference (ref2va)")
+    i = cmd.index("--sample_ref_images")
+    assert cmd[i + 1:i + 3] == [first, last]
+    assert "--sample_first_frame" not in cmd and "--sample_last_frame" not in cmd
+    a = setup_parser().parse_args(["--family", "minimax", "--dit", "d", "--output_dir", "o", "--output_name", "n",
+                                   "--sample_ref_images", first, last])
+    assert a.sample_ref_images == [first, last]
+
+
+def test_reference_base_relabels_the_rows():
+    desc = get_family("minimax")
+    st = form.state(desc, {"H3_TRAIN_BASE": "Reference (ref2va)"})
+    assert st["labels"]["SAMPLE_FIRST_FRAME"] == "Reference 1" and st["labels"]["SAMPLE_LAST_FRAME"] == "Reference 2"
+    assert "<Picture 1>" in st["notes"]["SAMPLE_FIRST_FRAME"]
+    assert "SAMPLE_FIRST_FRAME" not in form.state(desc, {}).get("labels", {})
+
+
+def test_reference_prompts_carry_their_tags():
+    drv = get_family("minimax").load_driver()
+
+    class TE:
+        def encode_with_reference(self, caption, images):
+            return torch.zeros(1, 7, 8), torch.arange(7)
+
+    out = drv.encode_text_with_ref_pictures(TE(), ["a", "b"], ["pic"])
+    assert [tuple(c["hidden_states"].shape) for c in out] == [(7, 8), (7, 8)]
+    assert all(c["token_tags"].tolist() == list(range(7)) for c in out)
+    drv.encode_images = lambda vae, imgs: [torch.zeros(24, 4, 6)]
+    drv.set_preview_references({"device": "cpu"}, [Image.new("RGB", (96, 64))])
+    kw = drv._preview_ref_kw(out[0])
+    assert kw["ref_latents"][0].shape == (1, 24, 1, 4, 6) and kw["text_token_tags"] is out[0]["token_tags"]
+    assert drv._preview_ref_kw({"hidden_states": torch.zeros(3, 8)}) == {}          # a text-only prompt: none
 
 
 def test_missing_picture_stops_start(tmp_path):

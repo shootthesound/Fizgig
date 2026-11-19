@@ -427,7 +427,7 @@ def _prompt_texts(prompts):
     return [str(x).strip() for x in prompts] if prompts else prompts
 
 
-def _encode_override(driver, te_path, prompts, dit, device, parkable=True, references=None):
+def _encode_override(driver, te_path, prompts, dit, device, parkable=True, references=None, ref_pictures=None):
     """Encode the override's prompts mid-run. The text encoder loads beside the training DiT when it fits; otherwise the
     DiT waits on CPU for the encode (a block-swapped DiT is small enough to stay, and the driver picks a smaller
     encoder when VRAM is short)."""
@@ -439,13 +439,15 @@ def _encode_override(driver, te_path, prompts, dit, device, parkable=True, refer
         quant.move(dit, "cpu")
         torch.cuda.empty_cache()
     try:
-        if references:
+        if references or ref_pictures:
             te = driver.load_reference_text_encoder(te_path, device)
         else:
             te = driver.load_text_encoder(te_path, device)
         try:
             if references:
                 return driver.encode_text_with_references(te, list(prompts), [references] * len(prompts))
+            if ref_pictures:            # the Reference base's pictures (#376): the prompt sees them as <Picture i>
+                return driver.encode_text_with_ref_pictures(te, list(prompts), ref_pictures)
             return driver.encode_text(te, list(prompts))
         finally:
             driver.unload_text_encoder(te)
@@ -1155,7 +1157,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  vae_path=None, te_path=None, sample_prompts=None, sample_every_n_epochs=0, sample_until_epoch=0,
                  sample_every_n_epochs_after=0, sample_width=None,
                  sample_height=None, sample_steps=None, sample_cfg_scale=None, sample_negative=None,
-                 sample_at_first=False, sample_seed=42, sample_reference=None, sample_image=None, sample_keyframes=None,
+                 sample_at_first=False, sample_seed=42, sample_reference=None, sample_image=None, sample_keyframes=None, sample_ref_images=None,
                  sample_strengths=(), slider_pairs=False, slider_diff_weight=1.0, slider_prompts=None, slider_guidance=3.0,
                  slider_anchors=(), slider_anchor_weight=1.0,
                  train_blocks=None,
@@ -1657,7 +1659,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     gradient_checkpointing = bool(gradient_checkpointing)
 
     # ---- previews: encode prompts once, keep the VAE ---------------------------------------------
-    encoded = neg = vae = ref_imgs = ref_latents = None
+    encoded = neg = vae = ref_imgs = ref_latents = ref_pictures = None
     slider_enc = slider_neg = None
     anchor_enc = []
     if slider_prompts:
@@ -1783,6 +1785,17 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             encoded = driver.encode_text_with_references(te, sample_prompts, [ref_imgs] * len(sample_prompts))
             if sample_cfg_scale > 1.0 or not desc.samples_cfg_free:
                 neg = driver.encode_text_with_references(te, [sample_negative or ""], [ref_imgs])[0]
+        elif sample_ref_images and desc.preview_keyframes:
+            # the Reference base (#376): every preview prompt sees the pictures as <Picture 1> / <Picture 2>, the same
+            # resized pictures the previews carry as condition rows
+            ref_pictures = driver.reference_pictures(sample_ref_images, sample_width, sample_height)
+            logger.info("[sample] previews see " + ", ".join(os.path.basename(p) for p in sample_ref_images) +
+                        " as their reference pictures (<Picture 1>" + (", <Picture 2>" if len(ref_pictures) > 1 else "")
+                        + " in the prompt)")
+            te = driver.load_reference_text_encoder(te_path, device)
+            encoded = driver.encode_text_with_ref_pictures(te, sample_prompts, ref_pictures)
+            if sample_cfg_scale > 1.0 or not desc.samples_cfg_free:
+                neg = driver.encode_text(te, [sample_negative or ""])[0]     # negatives stay text-only
         elif sample_image and desc.preview_image:
             from PIL import Image
             logger.info(f"[sample] previews see {os.path.basename(sample_image)} through the text encoder's vision "
@@ -1800,6 +1813,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         del te
         torch.cuda.empty_cache()
         vae = driver.load_vae(vae_path, device)
+        if ref_pictures:
+            driver.set_preview_references(vae, ref_pictures)
         if sample_keyframes and desc.preview_keyframes:
             # First / Last frame (#376): the driver encodes them at each preview's own size, through this VAE
             driver.set_preview_keyframes(vae, {k: v for k, v in sample_keyframes.items() if v})
@@ -2276,7 +2291,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             try:
                 if ov_cache[0] != ov["prompts"]:     # encoded again only when the prompts changed
                     ov_cache[:] = [list(ov["prompts"]), _encode_override(driver, te_path, ov["prompts"], dit, device,
-                                                                         parkable=not swapped, references=ref_imgs)]
+                                                                         parkable=not swapped, references=ref_imgs,
+                                                                         ref_pictures=ref_pictures)]
                 conds = ov_cache[1]
                 sd, prompts = ov["seed"], list(ov["prompts"])
                 if ov.get("steps"):
@@ -2448,6 +2464,11 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                         name = f"kf_{kf}{os.path.splitext(src)[1].lower() or '.png'}"
                         shutil.copyfile(src, os.path.join(rd, name))
                         job["keyframes"][kf] = name
+                if ref_pictures:            # the Reference base's pictures, as resized here (#376)
+                    job["references"] = []
+                    for i, pic in enumerate(ref_pictures, 1):
+                        pic.save(os.path.join(rd, f"ref_{i}.png"))
+                        job["references"].append(f"ref_{i}.png")
                 if hp.get("compare"):
                     compared[0] = hp["compare"]
                     compare = (rd, job)
@@ -3439,6 +3460,8 @@ def setup_parser():
     p.add_argument("--preview_int8", action="store_true", help="INT8 matmuls on the preview checkpoint")
     p.add_argument("--sample_reference", nargs="+", default=None,
                    help="Edit previews: the photo every preview prompt edits, then any extra pictures it brings in")
+    p.add_argument("--sample_ref_images", nargs="+", default=None,
+                   help="Reference pictures every preview sees (a family's Reference base, preview_keyframes, #376)")
     p.add_argument("--sample_first_frame", default=None,
                    help="A picture every clip preview starts on (families with preview_keyframes, #376)")
     p.add_argument("--sample_last_frame", default=None,
@@ -3605,6 +3628,7 @@ def main():
         sample_strengths=tuple(float(x) for x in a.sample_strengths.split(",") if x.strip()),
         sample_reference=list(a.sample_reference) if a.sample_reference else None, sample_image=a.sample_image,
         sample_keyframes={k: v for k, v in (("first", a.sample_first_frame), ("last", a.sample_last_frame)) if v},
+        sample_ref_images=list(a.sample_ref_images) if a.sample_ref_images else None,
         slider_pairs=a.slider_pairs, slider_diff_weight=a.slider_diff_weight, slider_prompts=a.slider_prompts,
         slider_guidance=a.slider_guidance, slider_anchors=a.slider_anchors or (),
         slider_anchor_weight=a.slider_anchor_weight, slider_bank=a.slider_bank, slider_bank_res=a.slider_bank_res,

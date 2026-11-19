@@ -176,6 +176,9 @@ class Worker:
         if self.desc.preview_keyframes:      # First / Last frame (#376): this round's, or none (a worker outlives runs)
             self.driver.set_preview_keyframes(self.vae, {k: p for k, p in (job.get("keyframes") or {}).items()
                                                          if p and os.path.isfile(p)})
+            from PIL import Image
+            self.driver.set_preview_references(self.vae, [Image.open(p).convert("RGB") for p in
+                                                          job.get("references") or [] if p and os.path.isfile(p)])
         if self.ck:
             return self._run_checkpoint(job)
         t0 = time.time()

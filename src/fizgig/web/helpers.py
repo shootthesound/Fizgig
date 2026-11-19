@@ -265,6 +265,10 @@ def submit(body):
         if kf not in ("first", "last") or not _SAFE.match(str(name)) or have(name)["size"] < 0:
             raise ValueError("A first / last frame picture didn't arrive: send it again.")
     job["keyframes"] = {kf: _dir("files", name) for kf, name in kfs.items()}
+    refs = body.get("references") if isinstance(body.get("references"), list) else []
+    if any(not _SAFE.match(str(n)) or have(n)["size"] < 0 for n in refs):
+        raise ValueError("A reference picture didn't arrive: send it again.")
+    job["references"] = [_dir("files", n) for n in refs]
     prefs = s.load_prefs()
     paths = {lab: p for lab, p, _f in _needs(desc, job, prefs)}
     roles = {f.role if f is not None else "": p for _lab, p, f in _needs(desc, job, prefs)}
@@ -1146,8 +1150,14 @@ def _send_round(h, lv, rd, out_dir, run):
         if os.path.isfile(src):
             kfs[kf] = f"{tag}-e{epoch:06d}-{os.path.basename(src)}"
             _send_file(c, src, kfs[kf], lambda frac: None)
-    r = c.call("/api/helper/submit", {"job": job, "lora": lora, "context": ctx, "conds": conds, "keyframes": kfs},
-               timeout=60)
+    refs = []
+    for name in job.get("references") or []:                         # the Reference base's pictures (#376)
+        src = os.path.join(rd, str(name))
+        if os.path.isfile(src):
+            refs.append(f"{tag}-e{epoch:06d}-{os.path.basename(src)}")
+            _send_file(c, src, refs[-1], lambda frac: None)
+    r = c.call("/api/helper/submit", {"job": job, "lora": lora, "context": ctx, "conds": conds, "keyframes": kfs,
+                                      "references": refs}, timeout=60)
     if r.get("models"):
         return
     jid, t0 = r["job"], time.time()

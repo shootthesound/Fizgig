@@ -1465,8 +1465,11 @@ def _preview_flags(desc, st, plan, cmd):
             out += ["--sample_image" if desc.reference_kind == "vision" else "--sample_reference",
                     _sample_image(desc, sm)]
         frames = preview_keyframes(desc, st)
-        for kf, p in frames.items():              # First / Last frame: clip previews start / end on them (#376)
-            out += [f"--sample_{kf}_frame", p]
+        if frames and _other_base(desc, st):      # the Reference base: the two pictures are its references (#376)
+            out += ["--sample_ref_images", *[frames[k] for k in desc.preview_keyframes if k in frames]]
+        else:
+            for kf, p in frames.items():          # First / Last frame: clip previews start / end on them (#376)
+                out += [f"--sample_{kf}_frame", p]
         if edit_on(desc, st):
             ref = _s(st.get("FAMILY_EDIT_REF"))
             if not ref:
@@ -1547,12 +1550,12 @@ def _other_base(desc, inputs) -> bool:
 
 
 def preview_keyframes(desc, inputs) -> dict:
-    """{"first": path, "last": path} the clip previews start / end on (the Samples tab's First / Last frame, #376):
-    set and on disk, on the model's own base (the first/last-frame checkpoint), and not for a slider or an edit run,
-    whose previews show their own pictures."""
+    """{"first": path, "last": path}: the Samples tab's two pictures (#376), set and on disk, not for a slider or an
+    edit run, whose previews show their own pictures. On the model's own base (the first/last-frame checkpoint) clip
+    previews start / end on them; on a base an option swaps in (H3's Reference) they are its reference pictures,
+    Reference 1 and 2."""
     sm = inputs.get("samples") or {}
-    if (not desc.preview_keyframes or edit_on(desc, inputs) or slider_on(desc, inputs)
-            or _other_base(desc, inputs)):
+    if not desc.preview_keyframes or edit_on(desc, inputs) or slider_on(desc, inputs):
         return {}
     have = sm.get("keyframes") or {}
     return {kf: _s(have[kf]) for kf in desc.preview_keyframes if _s(have.get(kf)) and os.path.isfile(_s(have[kf]))}

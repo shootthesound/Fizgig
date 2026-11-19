@@ -1578,6 +1578,13 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             notes["_edit_extras_found"] = _extras_found(desc, values, image_folder)
         else:
             hidden |= {"FAMILY_EDIT_EXTRAS_DIR", "_edit_extras_found"}
+    if desc.preview_keyframes and launch._other_base(desc, {"FAMILY_OPTIONS": _option_values(desc, values)}):
+        # the Reference base (H3's ref2va, #376): the two pictures are its reference pictures, not first / last frames
+        labels.update({f"SAMPLE_{kf.upper()}_FRAME": f"Reference {i}" for i, kf in enumerate(desc.preview_keyframes, 1)})
+        notes[f"SAMPLE_{desc.preview_keyframes[0].upper()}_FRAME"] = (
+            "On the Reference training base these are the previews' reference pictures: say <Picture 1> (and "
+            "<Picture 2>) in the preview prompt for them, e.g. \"the woman in <Picture 1> walks along the beach\". "
+            "Each is fitted to the clip's size. Either can be left empty.")
     for key, old, new, *when in desc.value_moves:     # a changed default, moved once in a saved form
         mark = f"_moved_{key}"
         if not values.get(mark):

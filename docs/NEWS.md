@@ -1,5 +1,11 @@
 # Fizgig news
 
+## 19 Nov 2026: MiniMax H3 Turbo previews keep their steps
+
+**A fix for MiniMax H3 previews.** Changing a Samples-tab setting while an H3 run trained sent the plain Steps box (20) to the run instead of the Turbo preview steps, so its Turbo previews came out with artefacts. They now keep your Turbo steps and strength, and Resume takes them too.
+
+[Fizgig v9.8.0 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.8.0)
+
 ## 18 Nov 2026: MiniMax H3 Studio twice as fast, long clips in pieces, Continue and Loop back
 
 **Faster H3 Studio.** On the int8 base, Studio renders through the int8 kernel ComfyUI uses, with each LoRA added in one pass: a 5-second 512 × 512 clip's six steps went from 24.9 s to 11.2 s on a 5090. The int8 video VAE now works and is the default download.

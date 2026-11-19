@@ -5,6 +5,17 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 
 NEWS = [
     {
+        "date": "19 Nov 2026",
+        "title": "MiniMax H3 Turbo previews keep their steps",
+        "body": (
+            "Changing a Samples-tab setting while a MiniMax H3 run trained sent the plain Steps box (20) to the run "
+            "instead of the Turbo preview steps, so its Turbo previews came out with artefacts.\n\n"
+            "They now keep your Turbo steps and strength, and Resume takes them too."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#19-nov-2026-minimax-h3-turbo-previews-keep-their-steps"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.8.0"}],
+    },
+    {
         "date": "18 Nov 2026",
         "title": "MiniMax H3 Studio twice as fast, long clips in pieces, Continue and Loop back",
         "body": (

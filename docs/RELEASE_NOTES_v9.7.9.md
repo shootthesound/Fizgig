@@ -13,6 +13,7 @@
 **Studio's downloads remember where you save.** On the computer running Fizgig, Download original and Download tweaked open your system's Save window in the folder you last saved to, remembered across restarts. On a pod, a phone or another computer they download as before.
 
 **Fixes.**
+- **Linux with an AMD card: captioning, caching and training start again.** In 9.7.8 every one of them stopped at once with "No module named 'fizgig.utils'" (#379, thanks @RobbieNeko).
 - **Studio on 12 GB cards with block swap:** the first render no longer runs out of memory. A block-swapped model stayed on the card while the text encoder ran; it now steps aside when the card is short of room (Klein, Krea 2, Qwen Image, MOSS-Image, Z-Image, Flux 3, Fibo 2 and Vimoo). Cards with room to spare are unchanged (#377, diagnosed and fixed by @UNfukashigi).
 - **MiniMax H3 prompt-pair sliders start, and practise at 768 x 768 at least.** They stopped at once with "max() iterable argument is empty"; at the presets' Target Megapixels their practice pictures would have been 496 x 496, below the side H3 needs.
 - **Prompt-pair sliders on Krea 2 with Compile Blocks, and on Vimoo,** plan their memory at their practice pictures' real size instead of 0.25 MP.

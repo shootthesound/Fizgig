@@ -1465,6 +1465,75 @@ def run_outputs(folder, name) -> dict:
     return {"checkpoints": ckpts, "states": states, "previews": previews, "bytes": total}
 
 
+KEEP_NEWEST = 5             # Delete run's "Keep the newest 5 epochs"
+
+
+def _epoch_of(path):
+    """A checkpoint's or saved state's epoch (<run>-000012[.safetensors|-state]), a Save now's step order after it,
+    or None for the finished LoRA / an unnumbered state."""
+    stem = os.path.basename(path)
+    stem = stem[:-len(".safetensors")] if stem.lower().endswith(".safetensors") else stem
+    stem = stem[:-len("-state")] if stem.endswith("-state") else stem
+    m = _CKPT.match(stem)
+    if not m:
+        return None
+    return (int(m.group(2)), 0) if m.group(2) else (-1, int(m.group(3)))
+
+
+def trim_plan(found, keep=KEEP_NEWEST) -> dict:
+    """What "keep the newest N epochs" deletes from a run's files: its epoch checkpoints past the newest N, and its
+    saved states but the newest one (Continue carries on from it). The finished LoRA, a Save now's checkpoints and
+    the previews stay."""
+    epoch = lambda p: (_epoch_of(p) or (-1, 0))[0]           # a Save now (-step...) is one you asked for: it stays
+    eps = sorted((p for p in found["checkpoints"] if epoch(p) >= 0), key=epoch)
+    numbered = sorted((p for p in found["states"] if epoch(p) >= 0), key=epoch)
+    ckpts = eps[:-keep] if len(eps) > keep else []
+    states = numbered[:-1] if len(numbered) > 1 else []
+    total = 0
+    for p in ckpts + states:
+        try:
+            total += (sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(p) for f in fs)
+                      if os.path.isdir(p) else os.path.getsize(p))
+        except OSError:
+            pass
+    return {"checkpoints": ckpts, "states": states, "bytes": total, "epochs": len(eps)}
+
+
+def trim_run(run_id, confirm=False, keep=KEEP_NEWEST) -> dict:
+    """Delete run's "Keep the newest N epochs": what it would delete (confirm False), or delete it. The run stays on
+    the list. Refused while that run is training."""
+    import shutil
+    rec = history.get(run_id)
+    if rec is None:
+        return {"error": "That run isn't in the list any more."}
+    folder, name = str(rec.get("output_dir") or ""), str(rec.get("lora") or "")
+    with _lock:
+        web_live = _run["proc"] is not None and _run["proc"].poll() is None or _run["state"] in ("starting", "running")
+        if web_live and os.path.normcase(os.path.abspath(_run["output_dir"] or ".")) == os.path.normcase(
+                os.path.abspath(folder or ".")) and (_run["lora"] or "").lower() == name.lower():
+            return {"error": "That run is training now. Stop it first."}
+    found = run_outputs(folder, name) if folder and name else {"checkpoints": [], "states": [], "previews": [],
+                                                              "bytes": 0}
+    plan = trim_plan(found, keep)
+    if not confirm:
+        return {"ok": True, "keep": keep, "epochs": plan["epochs"], "checkpoints": len(plan["checkpoints"]),
+                "states": len(plan["states"]), "bytes": plan["bytes"]}
+    failed = []
+    for p in plan["checkpoints"]:
+        try:
+            os.remove(p)
+        except OSError:
+            failed.append(p)
+    for p in plan["states"]:
+        try:
+            shutil.rmtree(p)
+        except OSError:
+            failed.append(p)
+    if failed:
+        return {"error": f"{len(failed)} file(s) couldn't be deleted (in use?), e.g. {failed[0]}. Try again."}
+    return {"ok": True}
+
+
 def delete_run(run_id, confirm=False) -> dict:
     """Delete run: what it would delete (confirm False), or delete it - its checkpoints, states and previews, and its
     line in the run history. The training folder is never touched. Refused while that run is training."""
@@ -4551,6 +4620,9 @@ class Handler(BaseHTTPRequestHandler):
                 webqueue.hold("Held by you. Press Start queue to carry on.")
                 return self.json({"ok": True})
             if path == "/api/runs/delete":              # Delete run: asks first (confirm false = what it'd delete)
+                if b.get("keep"):                         # Keep the newest 5 epochs: the older ones go, the run stays
+                    r = trim_run(str(b.get("id") or ""), confirm=bool(b.get("confirm")))
+                    return self.json(r, 400 if r.get("error") else 200)
                 r = delete_run(str(b.get("id") or ""), confirm=bool(b.get("confirm")))
                 return self.json(r, 400 if r.get("error") else 200)
             if path == "/api/runs/purge":               # Purge older than X days: preview first, then the purge

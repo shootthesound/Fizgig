@@ -3660,8 +3660,23 @@ async function loadRuns() {
       delBox.style.display = "";
       delBox.textContent = "Checking…";
       try {
-        const w = await api("/api/runs/delete", {id: run.id});
+        const [w, k] = await Promise.all([api("/api/runs/delete", {id: run.id}),
+          api("/api/runs/delete", {id: run.id, keep: true}).catch(() => null)]);
         const gb = (b) => b >= 2 ** 30 ? (b / 2 ** 30).toFixed(1) + " GB" : (b / 2 ** 20).toFixed(0) + " MB";
+        // Keep the newest 5 epochs: the older epochs' checkpoints and saved states go, the run stays
+        const trim = !k ? null : k.checkpoints || k.states ? el("div", {class: "run-trim"},
+          el("div", {class: "field-hint", text: `Or keep the newest ${k.keep} epochs: deletes ${[
+            k.checkpoints && `${k.checkpoints} older checkpoint${k.checkpoints > 1 ? "s" : ""}`,
+            k.states && `${k.states} older saved state${k.states > 1 ? "s" : ""}`].filter(Boolean).join(" and ")} ` +
+            `(${gb(k.bytes)}). The finished LoRA, the newest ${k.keep} epochs, the newest saved state (Continue ` +
+            "carries on from it) and the previews stay, and so does the run."}),
+          el("div", {class: "field-row"}, el("button", {class: "btn btn-sm", text: `Keep the newest ${k.keep} epochs`,
+            onclick: async () => {
+              try { await api("/api/runs/delete", {id: run.id, keep: true, confirm: true}); loadRuns(); loadOutputs(); }
+              catch (e) { delBox.replaceChildren(el("div", {class: "problems", text: e.message})); }
+            }}))) :
+          el("div", {class: "field-hint", text: k.epochs ? `It has ${k.epochs} epoch${k.epochs > 1 ? "s" : ""} saved, ` +
+            `so keeping the newest ${k.keep} leaves nothing to remove.` : ""});
         const parts = [w.checkpoints && `${w.checkpoints} checkpoint${w.checkpoints > 1 ? "s" : ""}`,
           w.states && `${w.states} saved state${w.states > 1 ? "s" : ""} (for resuming)`,
           w.previews && `${w.previews} preview${w.previews > 1 ? "s" : ""}`].filter(Boolean);
@@ -3675,7 +3690,8 @@ async function loadRuns() {
               try { await api("/api/runs/delete", {id: run.id, confirm: true}); loadRuns(); loadOutputs(); }
               catch (e) { delBox.replaceChildren(el("div", {class: "problems", text: e.message})); }
             }}),
-            el("button", {class: "btn btn-sm", text: "Cancel", onclick: () => { delBox.style.display = "none"; }})));
+            el("button", {class: "btn btn-sm", text: "Cancel", onclick: () => { delBox.style.display = "none"; }})),
+          ...(trim ? [trim] : []));
       } catch (e) { delBox.replaceChildren(el("div", {class: "problems", text: e.message})); }
     }});
     const alertRow = el("div", {class: "field-hint"});

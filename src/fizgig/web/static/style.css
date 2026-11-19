@@ -1839,6 +1839,13 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .run-row-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .run-row-head b { font-size: 14px; color: var(--text-primary); overflow-wrap: anywhere; }
 .run-row .field-row { margin: 4px 0 0; }
+/* Runs: Clear out runs ... - its own framed box over the list, its preview and asks inside it */
+.purge-box { border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; margin: 0 0 14px;
+  background: color-mix(in srgb, var(--bg-deep) 55%, transparent); }
+.purge-box > .field-row { margin: 0; }
+.purge-box #purgeSay { margin-top: 8px; }
+/* Delete run's "Keep the newest 5 epochs": set apart from the full delete above it */
+.run-trim { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border); }
 .run-files { margin-top: 6px; display: flex; flex-direction: column; gap: 10px; }
 .run-gallery { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 

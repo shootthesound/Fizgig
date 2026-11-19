@@ -1822,6 +1822,7 @@
           <div class="section-card">
             <div class="card-title"><span>Runs</span><button class="btn btn-sm" id="runsReload">Reload</button></div>
             <div class="card-content">
+              <div class="purge-box">
               <div class="field-row" id="purgeRow">
                 <span class="field-label">Clear out runs that ended more than</span>
                 <input type="number" id="purgeDays" class="w-num" min="1" max="365" step="1" value="14"
@@ -1834,6 +1835,7 @@
                 <button class="btn btn-sm btn-danger" id="purgeBtn">Purge…</button>
               </div>
               <div id="purgeSay" style="display:none"></div>
+              </div>
               <div id="runsList" class="runs-list"></div>
             </div>
           </div>

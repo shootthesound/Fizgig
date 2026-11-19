@@ -852,7 +852,8 @@ def _studio_post(what, b, from_queue=False):
         raise ValueError("A training run is waiting for the GPU: it starts as soon as the render going now is done. "
                          "Studio can render again after it.")
     if what == "render":
-        extra = {k: b.get(k) for k in ("video", "audio", "keyframes", "ref_mode", "mix") if b.get(k) is not None}
+        extra = {k: b.get(k) for k in ("video", "audio", "keyframes", "ref_mode", "mix", "panes")
+                 if b.get(k) is not None}
         if isinstance(b.get("setup"), dict):     # Save every render: the setup a saved tweaked still carries
             extra["_setup"] = b["setup"]
         return studio.render(b.get("state") or {}, extra=extra)

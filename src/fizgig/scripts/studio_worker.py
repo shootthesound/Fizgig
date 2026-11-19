@@ -173,15 +173,21 @@ def _render(c):
             elif getattr(desc, "audio_workbench", False):
                 paths, nolora = _render_songs(eng, st, c, out, gen)
             else:
-                base = eng.generate_baseline(st)
-                paths = {"baseline": os.path.join(out, f"baseline_{gen}.png")}
-                base.save(paths["baseline"])
+                # only the panes on screen render (the page's arrows hide one: "tweaked" / "baseline" / "both")
+                panes = c.get("panes") or "both"
                 same = eng.same_as_baseline(st)                 # nothing moved: one render for both panes
-                if not same:                                    # the Baseline shows while the Tweaked one renders
-                    emit(ev="baseline_ready", gen=gen, baseline=paths["baseline"])
-                tweak = base if same else eng.generate_preview(st)
-                paths["tweaked"] = os.path.join(out, f"tweaked_{gen}.png")
-                tweak.save(paths["tweaked"])
+                paths = {"baseline": "", "tweaked": ""}
+                base = None
+                if panes != "tweaked" or same:
+                    base = eng.generate_baseline(st)
+                    paths["baseline"] = os.path.join(out, f"baseline_{gen}.png")
+                    base.save(paths["baseline"])
+                    if not same and panes != "baseline":        # the Baseline shows while the Tweaked one renders
+                        emit(ev="baseline_ready", gen=gen, baseline=paths["baseline"])
+                if panes != "baseline":
+                    tweak = base if same else eng.generate_preview(st)
+                    paths["tweaked"] = os.path.join(out, f"tweaked_{gen}.png")
+                    tweak.save(paths["tweaked"])
             emit(ev="rendered", gen=gen, nolora_pending=nolora is not None, notes=S.get("notes"), same=bool(same), **paths)
             _tidy(out, gen)
             if nolora is not None:               # as the desktop: the pair first, then the base model's own
@@ -360,10 +366,10 @@ def _render_clips(eng, desc, st, c, out, gen):
         with nothing moved the two are one clip, upscaled once."""
         which = str(up.get("which") or "tweaked")
         if which == "baseline" and low_b is None:
-            raise ValueError("There is no Baseline clip to upscale: it was not rendered (Tweaked only is on, or the "
-                             "clip came from Continue or Loop back). Upscale the Tweaked clip, or untick Tweaked only "
+            raise ValueError("There is no Baseline clip to upscale: it was not rendered (its pane was hidden, or the "
+                             "clip came from Continue or Loop back). Upscale the Tweaked clip, or show the Baseline "
                              "and render again.")
-        big_t = upscaled(st, low_t, w0, h0) if which in ("tweaked", "both") else None
+        big_t = upscaled(st, low_t, w0, h0) if which in ("tweaked", "both") and low_t is not None else None
         big_b = None
         if which in ("baseline", "both") and low_b is not None:
             big_b = big_t if (low_b is low_t and big_t is not None) else upscaled(eng._base_like(st, n, True), low_b,
@@ -480,8 +486,9 @@ def _render_clips(eng, desc, st, c, out, gen):
         torch.cuda.empty_cache()
         return paths, None
     same = _clip_same_as_baseline(eng, st)
-    # Tweaked only (the page's tick): with something moved, the Baseline clip is not rendered at all
-    base = None if (v.get("tweaked_only") and not same) else eng.baseline_clip(st, cache=None, **opts)
+    # only the panes on screen render (the page's arrows): Baseline hidden, with something moved, no Baseline clip
+    panes = c.get("panes") or "both"
+    base = None if (panes == "tweaked" and not same) else eng.baseline_clip(st, cache=None, **opts)
     # nothing moved: the tweaked clip IS the baseline - one render for both panes, as the picture path does
     tweak = base if same else None
     early = {}
@@ -500,6 +507,13 @@ def _render_clips(eng, desc, st, c, out, gen):
         png = os.path.join(out, f"baseline_{gen}.png")
         paths["baseline"], paths["baseline_media"] = png, _write_clip(base, png,
                                                                       os.path.join(out, f"baseline_{gen}.mp4"), fps, rate)
+    if tweak is None and panes == "baseline":           # Tweaked hidden: the Baseline clip only
+        paths.update(tweaked="", tweaked_media="")
+        S["last_clip"] = None                           # Continue / Upscale work on a Tweaked clip: none on screen
+        if up and up.get("auto") and base is not None and str(up.get("which") or "tweaked") != "tweaked":
+            paths = up_panes(None, base, width, height, frames)
+        torch.cuda.empty_cache()
+        return paths, None
     if tweak is None:                                   # the Baseline plays while the Tweaked clip renders
         if base is not None:
             emit(ev="baseline_ready", gen=gen, baseline=paths["baseline"], baseline_media=paths["baseline_media"])
@@ -660,11 +674,17 @@ def _render_songs(eng, st, c, out, gen):
     except Exception:
         pass
     S["notes"].update(_audio_inputs(eng, a, seconds))
-    base = eng.generate_baseline(st)
-    tweak = base if eng.same_as_baseline(st) else eng.generate_preview(st)     # nothing moved: one render
+    panes = c.get("panes") or "both"                    # only the panes on screen render
+    same = eng.same_as_baseline(st)
+    base = eng.generate_baseline(st) if panes != "tweaked" or same else None
+    tweak = None
+    if panes != "baseline":
+        tweak = base if same and base is not None else eng.generate_preview(st)     # nothing moved: one render
     from fizgig.minimax.common import write_wav
-    paths = {}
+    paths = {"baseline": "", "baseline_media": "", "tweaked": "", "tweaked_media": ""}
     for name, song in (("baseline", base), ("tweaked", tweak)):
+        if song is None:
+            continue
         png = os.path.join(out, f"{name}_{gen}.png")
         wav = os.path.join(out, f"{name}_{gen}.wav")
         song.picture().save(png)

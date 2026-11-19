@@ -324,7 +324,9 @@ def autosave(gen):
     if not fam or not (job or autosave_on(fam)):    # a Studio queue job is always saved
         return []
     got, paths = [], []
-    for which in (["baseline"] if has_base else []) + ([] if same and has_base else ["tweaked"]):
+    with _lock:
+        has_tweak = bool(_S.get("tweaked"))
+    for which in (["baseline"] if has_base else []) + ([] if (same and has_base) or not has_tweak else ["tweaked"]):
         r = save_output(which)
         paths.append(r["path"])
         if not r.get("already"):
@@ -974,8 +976,9 @@ def status():
         d["same"] = bool(_S.get("same"))           # the Tweaked render on screen is the Baseline
         d["eq"] = _S.get("eq") or {}
         d["media"] = {k: bool(_S.get(k + "_media")) for k in ("baseline", "tweaked", "nolora")}
-        # a clip rendered with Tweaked only ticked: there is no Baseline to show beside it
+        # a pane hidden when it rendered (the page's arrows): nothing of it to show
         d["baseline_skipped"] = bool(_S.get("shown")) and bool(_S.get("tweaked")) and not _S.get("baseline")
+        d["tweaked_skipped"] = bool(_S.get("shown")) and bool(_S.get("baseline")) and not _S.get("tweaked")
         d["act"] = {k: bool(_S.get(k + "_act")) for k in ("baseline", "tweaked")}
         d["nolora_gen"], d["nolora_busy"] = _S.get("nolora_gen", 0), bool(_S.get("nolora_busy"))
         d["pending"] = _S["pending"] is not None

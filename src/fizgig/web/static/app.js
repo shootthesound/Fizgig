@@ -6695,7 +6695,6 @@ function studioKind(L, sv) {
   $("stH3Boost").checked = h3.boost !== false;           // on unless turned off
   $("stH3Boost").parentElement.style.display = V.speed_boost ? "" : "none";   // a family ability (H3 has it)
   $("stH3Early").checked = h3.early !== false;
-  $("stH3Only").checked = h3.only === true;
   $("stLoopRow").style.display = $("stLoopHint").style.display = V.pieces ? "" : "none";   // with the In pieces ability (H3)
   $("stLoopPrompt").value = h3.loopPrompt || "";
   $("stLoopS").value = h3.loopS || "";
@@ -6878,14 +6877,19 @@ function studioH3Remember() {
     d.video[(S.st.layout || {}).key || "minimax"] = {model: $("stH3Model").value, base: $("stH3Base").value, len: $("stH3Len").value,
       lenS: $("stH3LenS").value, w: $("stH3W").value,
       h: $("stH3H").value, steps: $("stH3Steps").value, turbo: $("stH3Turbo").value,
-      sound: $("stH3Sound").checked, boost: $("stH3Boost").checked, early: $("stH3Early").checked, pieces: $("stH3Pieces").checked, pieceS: $("stH3PieceS").value, only: $("stH3Only").checked, loopPrompt: $("stLoopPrompt").value, loopS: $("stLoopS").value,
+      sound: $("stH3Sound").checked, boost: $("stH3Boost").checked, early: $("stH3Early").checked, pieces: $("stH3Pieces").checked, pieceS: $("stH3PieceS").value, loopPrompt: $("stLoopPrompt").value, loopS: $("stLoopS").value,
       up: {w: $("stUpW").value, h: $("stUpH").value, den: $("stUpDen").value, steps: $("stUpSteps").value, sec: $("stUpSec").value, auto: $("stUpAuto").checked, first: $("stUpFirst").checked, last: $("stUpLast").checked, guide: $("stUpGuide").value, guideL: $("stUpGuideL").value, bias: $("stUpBias").value, adv: $("stUpAdv").checked, low: S.st.upLow || 0, ownPrompt: $("stUpOwnPrompt").checked, prompt: $("stUpPrompt").value, which: $("stUpWhich").value, open: $("stUpBox").open, video: S.st.upVideo ? {path: S.st.upVideo.path, rect: S.st.upVideo.rect, a: S.st.upVideo.a, b: S.st.upVideo.b} : null}, kf: S.st.kf,
       kfRect: S.st.kfRect};
     localStorage.setItem(ST_KEY, JSON.stringify(d));
   } catch (e) { /* private window */ }
 }
 
-function studioExtra() {
+// which panes render: the ones on screen (the arrows between them hide one)
+function studioPanes() { return S.st.split === "tweak" ? "tweaked" : S.st.split === "base" ? "baseline" : "both"; }
+
+function studioExtra() { return {...studioExtraKind(), panes: studioPanes()}; }
+
+function studioExtraKind() {
   // what a clip or a song needs beyond the sliders
   const L = S.st.layout;
   if (L.kind === "audio") return {audio: studioAceExtra()};
@@ -6899,7 +6903,7 @@ function studioExtra() {
     turbo: Math.max(0, Math.min(1.5, Number($("stH3Turbo").value) || 0)), sound: $("stH3Sound").checked,
     speed_boost: !!V.speed_boost && $("stH3Boost").checked, early: $("stH3Early").checked,
     pieces: !!V.pieces && $("stH3Pieces").checked, piece: studioPieceFrames(V),
-    tweaked_only: $("stH3Only").checked, loop_back: S.st.loopBack || null,
+    loop_back: S.st.loopBack || null,
     upscale: V.upscale && (S.st.upNow || S.st.upPrev || $("stUpAuto").checked) ? Object.assign(studioUpscale(V), {now: !!S.st.upNow, preview: S.st.upPrev || 0}) : null,
     negative: $("stNeg").value.trim()},
     keyframes: slots.filter((s) => S.st.kf[s]).map((s) => ({slot: s, path: S.st.kf[s], rect: S.st.kfRect[s] || null})),
@@ -7023,6 +7027,15 @@ function songLoad(side, url, gen, actUrl) {
     }, {once: true});
   }
   songMark();
+}
+function songDrop(side) {                           // a side not rendered this time: nothing of it left to play
+  const p = songPlayer(side);
+  try { p.pause(); } catch (e) { /* not playing */ }
+  if (S.song.side === side) S.song.side = null;
+  delete S.song.src[side]; delete S.song.peaks[side]; delete S.song.act[side];
+  p.removeAttribute("src");
+  try { p.load(); } catch (e) { /* nothing loaded */ }
+  songMark(); songDraw();
 }
 function songPlay(side, at) {
   if (!songHas(side)) { $("stStatus").textContent = side === "nolora" ? "The No LoRA song renders after the first preview." :
@@ -7487,7 +7500,7 @@ function studioMixNotes(n) {
 
 // ---- the metrics strip (the desktop's pop-out strip): paired numbers for the renders on screen ----
 function studioMetricsShow() {
-  const L = S.st.layout, on = !!L && L.kind !== "audio";
+  const L = S.st.layout, on = !!L && L.kind !== "audio" && studioPanes() === "both" && !S.st.noBase && !S.st.noTweak;
   $("stMetrics").style.display = on ? "" : "none";
   const ref = (stSaved().metricsRef) || "";
   $("stMetRefName").textContent = ref ? ref.split(/[\\/]/).pop() : "(none)";
@@ -7604,6 +7617,7 @@ function studioMapsAfterRender(same) {
   if (!m) return;
   m.data = null;
   $("stMapCanvas").style.display = "none";
+  if (S.st.noTweak) { if (m.kind) stMapNote("Maps are drawn over the Tweaked picture: show it and press Render."); return; }
   // nothing moved (Reset All): What your tweaks change has nothing to show - the overlay goes, nothing is calculated
   if (m.kind === "tweak" && same) {
     stMapNote("Nothing to show yet: move a slider, and when the Tweaked picture has rendered, the map appears here.");
@@ -7686,7 +7700,8 @@ function stMapDrawNow() {
 
 async function studioMetrics() {
   const L = S.st.layout;
-  if (!L || L.kind === "audio" || !S.st.shown) return;
+  studioMetricsShow();
+  if (!L || L.kind === "audio" || !S.st.shown || $("stMetrics").style.display === "none") return;
   const gen = (S.st.metGen = (S.st.metGen || 0) + 1), ref = stSaved().metricsRef || "";
   const chips = {like: "stMetLike", grid: "stMetGrid", tex: "stMetTex", clip: "stMetClip", sat: "stMetSat"};
   const put = (k, text, cls) => { const c = $(chips[k]); c.textContent = text; c.className = "st-chip" + (cls ? " " + cls : ""); };
@@ -8565,6 +8580,10 @@ function studioPending() {
 
 function studioSchedule(live) {
   if (!S.st.ready) return;
+  if (S.st.split === "base") {                        // sliders change Tweaked only, and it's hidden
+    $("stStatus").textContent = "Tweaked is hidden: slider changes render when you show it again and press Render.";
+    return;
+  }
   clearTimeout(S.st.timer);
   S.st.timer = setTimeout(studioRender, live ? ($("stTurbo").checked ? 150 : 400) : 100);
 }
@@ -8668,8 +8687,8 @@ async function studioPollOnce() {
   $("stStart").disabled = going;                      // one at a time: Add to queue lines the next one up
   // Continue, Loop back and Upscale work on the clip in the Tweaked pane: they wait for the render going now (a
   // queued copy could find another clip there by its turn); a queued job upscales only by its Auto tick
-  for (const id of ["stContinue", "stLoopBack", "stUpGo", "stUpPrev"]) {
-    $(id).disabled = going;
+  for (const id of ["stContinue", "stLoopBack", "stUpGo", "stUpPrev", "stKeepBtn"]) {
+    $(id).disabled = going || S.st.split === "base" || !!S.st.noTweak;
   }
   $("stStart").title = going ? "A model is loading or a render is going: Add to queue lines this one up behind it " +
     "(or Cancel the one going)." : "";
@@ -8726,9 +8745,11 @@ async function studioPollOnce() {
     S.st.shown = st.shown;
     const q = (w) => `/api/studio/image?which=${w}&gen=${st.shown}&t=${encodeURIComponent(TOKEN)}`;
     const keepBase = S.st.baseEarlyShown === st.shown;      // the Baseline already showed (and plays): left alone
-    const noBase = !!st.baseline_skipped;                   // Tweaked only: no Baseline clip was rendered
+    const noBase = !!st.baseline_skipped;                   // its pane was hidden: no Baseline was rendered
+    const noTweak = !!st.tweaked_skipped;                   // its pane was hidden: no Tweaked render
+    S.st.noBase = noBase; S.st.noTweak = noTweak;
     if (!keepBase && !noBase) $("stBase").src = q("baseline");
-    $("stTweak").src = q("tweaked");
+    if (!noTweak) $("stTweak").src = q("tweaked");
     // a clip plays in its pane (the picture its poster); a song gets its player under the waveform
     const kind = S.st.layout && S.st.layout.kind;
     for (const [w, img, vid, aud] of [["baseline", "stBase", "stBaseVid", "stBaseAud"], ["tweaked", "stTweak", "stTweakVid", "stTweakAud"]]) {
@@ -8740,19 +8761,22 @@ async function studioPollOnce() {
       if (kind === "video" && has) { $(vid).poster = q(w); $(vid).src = clipLoopSrc(q(w + "_media")); }
       if (kind === "audio" && has) songLoad(w, q(w + "_media"), st.shown, st.act && st.act[w] ? q(w + "_act") : "");
     }
-    if (noBase) {
-      $("stBase").style.display = $("stBaseVid").style.display = "none";
-      $("stBaseVid").removeAttribute("src"); $("stBaseVid").load();
-    }
+    for (const [gone, side, img, vid] of [[noBase, "baseline", "stBase", "stBaseVid"], [noTweak, "tweaked", "stTweak", "stTweakVid"]])
+      if (gone) {
+        $(img).style.display = $(vid).style.display = "none";
+        $(img).removeAttribute("src"); $(vid).removeAttribute("src"); $(vid).load();
+        if (kind === "audio") songDrop(side);        // the player never plays the song before this one there
+      }
     studioMetrics();
     S.st.same = !!st.same;
     studioMapsAfterRender(S.st.same);
     studioDownloads(st, q);
     const ps = Number($("stPScale").value) || 1;
-    $("stBaseCap").textContent = noBase ? "Baseline (not rendered for this clip)" :
+    $("stBaseCap").textContent = noBase ? "Baseline (not rendered: it was hidden - press Render to fill it)" :
       (ps === 1 ? "Baseline (LoRA at default 1.0)" : `Baseline (LoRA at ${ps})`) +
       (st.donor ? " - the donor is not in the baseline" : "");
-    $("stTweakCap").textContent = "Tweaked (current sliders)" + (st.donor ? " - includes the donor" : "");
+    $("stTweakCap").textContent = noTweak ? "Tweaked (not rendered: it was hidden - press Render to fill it)" :
+      "Tweaked (current sliders)" + (st.donor ? " - includes the donor" : "");
   }
   studioNoLoraPane(st);
   studioAceNotes(st.notes);
@@ -8795,7 +8819,7 @@ function studioDownloads(st, q) {
   for (const [w, id, word] of [["baseline", "stDlBase", "original"], ["tweaked", "stDlTweak", "tweaked"]]) {
     const video = kind === "video" && st.media && st.media[w];
     const name = `${lora}_${word}${seed ? "_seed" + seed : ""}${video ? ".mp4" : ".png"}`;
-    $(id).style.display = w === "baseline" && st.baseline_skipped ? "none" : "";
+    $(id).style.display = (w === "baseline" ? st.baseline_skipped : st.tweaked_skipped) ? "none" : "";
     $(id).href = q(video ? w + "_media" : w) + "&dl=" + encodeURIComponent(name);     // another device's copy
   }
 }
@@ -8978,7 +9002,6 @@ function wireStudio() {
   $("stH3Early").addEventListener("change", studioH3Remember);
   // the swap buttons between a width and a height (pictures and clips): the two values change places, and each
   // picker reports its change as if picked by hand
-  $("stH3Only").addEventListener("change", () => { studioH3Remember(); studioPending(); });
   // Continue and Loop back: a new clip after the one in the Tweaked pane, on its own prompt, starting on its last
   // frame (Loop back: and ending on its first). Its length is the seconds box on the frame grid (empty: the rendered clip's own length,
   // sent as 0), sent with an ordinary render request
@@ -9226,6 +9249,9 @@ function wireStudio() {
     $("stSplitL").title = mode === "base" ? "Show Tweaked again, beside the Baseline" : "Hide the Baseline: Tweaked takes the whole width";
     $("stSplitR").title = mode === "tweak" ? "Show the Baseline again, beside Tweaked" : "Hide Tweaked: the Baseline takes the whole width";
     try { localStorage.setItem("fizgig_st_split", mode); } catch (e) { /* this browser keeps nothing */ }
+    if (S.st.layout) studioMetrics();
+    if (mode !== "tweak" && S.st.noBase || mode !== "base" && S.st.noTweak)
+      $("stStatus").textContent = "Press Render to fill the pane that was hidden.";
   };
   let splitWas = "both";
   try { splitWas = localStorage.getItem("fizgig_st_split") || "both"; } catch (e) { /* both */ }

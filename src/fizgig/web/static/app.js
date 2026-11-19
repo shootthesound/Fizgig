@@ -6520,10 +6520,21 @@ async function studioQueueAdd() {
 
 function studioQueueDraw(q) {
   S.stq = q;
-  const card = $("stQueueCard");
-  card.style.display = q.items.length ? "" : "none";
-  if (!q.items.length) return false;
-  $("stQBadge").textContent = q.left ? `${q.left} waiting` : "";
+  const card = $("stQueueCard");                      // always there: one slim line, opened from its head
+  if (!q.items.length) {
+    $("stQBadge").textContent = "Empty";
+    card.classList.remove("busy");
+    $("stQPause").textContent = "⏸ Pause"; $("stQPause").disabled = true; $("stQClear").disabled = true;
+    $("stQSay").textContent = "";
+    $("stQList").replaceChildren(el("div", {class: "field-hint", text: "Nothing queued. While a render is going, " +
+      "Add to queue (beside Render) lines the next one up; finished jobs stay listed here with their files."}));
+    return false;
+  }
+  $("stQClear").disabled = !q.items.some((i) => ["done", "failed"].includes(i.status));
+  const done = q.items.filter((i) => i.status === "done").length, bad = q.items.filter((i) => i.status === "failed").length;
+  $("stQBadge").textContent = [q.job ? "Rendering a job" : q.paused && q.left ? "Paused" : q.left ? "Waiting" : "",
+    q.left ? `${q.left} waiting` : "", done ? `${done} saved` : "", bad ? `${bad} failed` : ""].filter(Boolean).join(" · ");
+  card.classList.toggle("busy", !!q.job);
   $("stQPause").textContent = q.paused ? "▶ Resume" : "⏸ Pause";
   $("stQPause").disabled = !q.paused && !q.left;
   $("stQSay").textContent = q.paused ? `Paused. ${q.reason || ""}` : q.waiting || (q.job ? "Rendering…" : q.left ? "" : "Done.");
@@ -6541,7 +6552,9 @@ function studioQueueDraw(q) {
     ["loading", "rendering"].includes(it.status) ? null : el("button", {class: "btn btn-sm", text: "✕",
       title: it.status === "waiting" ? "Remove this job" : "Take this line off the list (its saved files stay)",
       onclick: act("/api/studio/queue/remove", {id: it.id})}),
-    it.paths && it.paths.length ? el("div", {class: "stq-files", text: it.paths.join("  ·  ")}) :
+    it.paths && it.paths.length ? el("div", {class: "stq-files"}, ...it.paths.flatMap((p, k) => [k ? "  ·  " : null,
+      el("a", {href: `/api/studio/output?path=${encodeURIComponent(p)}&t=${encodeURIComponent(TOKEN)}`, target: "_blank",
+        rel: "noopener", title: p, text: p.split(/[\\/]/).pop()})])) :
       it.error ? el("div", {class: "stq-files", text: it.error}) : null)));
   return !!q.job || (!q.paused && q.left > 0);
 }
@@ -8614,6 +8627,11 @@ async function studioStart() {
       studioRender();
       return;
     }
+    if (st.state === "loading" || st.rendering || st.worker_busy) {   // never a new model under a render going
+      $("stStatus").textContent = "A model is loading or a render is going: Add to queue lines this one up behind " +
+        "it (or Cancel the one going, then Render).";
+      return;
+    }
     S.st.ready = false;
     const lr = await api("/api/studio/load", studioLoadBody());
     S.st.myLoad = lr.load_id || 0;                  // a later load the page didn't ask for (a queue job's) is seen
@@ -8645,7 +8663,16 @@ async function studioPollOnce() {
   let qActive = false;
   try { qActive = studioQueueDraw(await api("/api/studio/queue")); } catch (e) { /* an older server */ }
   // Add to queue lines a render up behind something: with nothing rendering and no jobs waiting, Render is the button
-  $("stQAdd").disabled = !(st.rendering || st.state === "loading" || (S.stq && (S.stq.left || S.stq.job)));
+  const going = st.rendering || st.state === "loading" || st.worker_busy || !!(S.stq && S.stq.job);
+  $("stQAdd").disabled = !(going || (S.stq && S.stq.left));
+  $("stStart").disabled = going;                      // one at a time: Add to queue lines the next one up
+  // Continue, Loop back and Upscale work on the clip in the Tweaked pane: they wait for the render going now (a
+  // queued copy could find another clip there by its turn); a queued job upscales only by its Auto tick
+  for (const id of ["stContinue", "stLoopBack", "stUpGo", "stUpPrev"]) {
+    $(id).disabled = going;
+  }
+  $("stStart").title = going ? "A model is loading or a render is going: Add to queue lines this one up behind it " +
+    "(or Cancel the one going)." : "";
   const wasReady = S.st.ready;
   S.st.ready = st.state === "ready";
   S.st.donor = !!st.donor;
@@ -9180,8 +9207,24 @@ function wireStudio() {
     if ($("stNolPane").style.display !== "none") ids.unshift(v ? "stNolVid" : "stNolAud");
     return ids;
   });
-  $("stStart").addEventListener("click", () => { S.st.upHold = S.st.upNow = S.st.upPrev = 0; studioStart(); });
+  $("stStart").addEventListener("click", () => {
+    $("stStart").disabled = true;                     // one press is one render (the poll gives it back when it's done)
+    S.st.upHold = S.st.upNow = S.st.upPrev = 0; studioStart();
+  });
   $("stQAdd").addEventListener("click", studioQueueAdd);
+  const stqOpen = (open) => {                         // the queue bar's list: open or closed, remembered here
+    $("stQBody").style.display = open ? "" : "none";
+    $("stQArrow").textContent = open ? "▾" : "▸";
+    $("stQHead").setAttribute("aria-expanded", open ? "true" : "false");
+    try { localStorage.setItem("fizgig_stq_open", open ? "1" : ""); } catch (e) { /* this browser keeps nothing */ }
+  };
+  let stqWas = false;
+  try { stqWas = localStorage.getItem("fizgig_stq_open") === "1"; } catch (e) { /* closed */ }
+  stqOpen(stqWas);
+  $("stQHead").addEventListener("click", () => stqOpen($("stQBody").style.display === "none"));
+  $("stQHead").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); stqOpen($("stQBody").style.display === "none"); }
+  });
   $("stQPause").addEventListener("click", async () => {
     const q = S.stq || {};
     try { studioQueueDraw(await api(q.paused ? "/api/studio/queue/resume" : "/api/studio/queue/pause", {reason: "You paused it."})); studioPoll(); }
@@ -9216,6 +9259,7 @@ function wireStudio() {
   // ↻ New seed renders at once, as Render would (with any other change still waiting); typing a seed still waits
   $("stSeedNew").addEventListener("click", () => {
     $("stSeed").value = 1 + Math.floor(Math.random() * 99999); stRemember();
+    if (!$("stQAdd").disabled && $("stStart").disabled) return studioQueueAdd();   // a render going: queued behind it
     if (S.st.ready) studioStart();
   });
   for (const id of ["stSeed", "stRes", "stW", "stH", "stRefMp", "stRefStr", "stPScale", "stDScale"])

@@ -237,6 +237,15 @@ def outputs_dir():
     return pref_path(load_prefs(), "studio_outputs_dir") or os.path.join(BASE_DIR, "Studio_Outputs")
 
 
+def output_file(path):
+    """A file saved into the Studio outputs folder (a queue job's link), or "" for anything outside it."""
+    root = os.path.normcase(os.path.realpath(outputs_dir()))
+    p = os.path.realpath(str(path or ""))
+    if not os.path.isfile(p) or not os.path.normcase(p).startswith(root + os.sep):
+        return ""
+    return p
+
+
 def autosave_on(family):
     from fizgig.web.server import load_prefs
     return str(load_prefs().get(f"studio_autosave_{family}") or "") == "1"
@@ -975,6 +984,9 @@ def status():
         d["log"] = _S["log"][-12:]                 # the worker's own lines (the engine's log), for when it goes wrong
         d["out_said"] = _S.get("out_said")         # Save every render's latest files (or why it couldn't)
         d["load_id"] = _S.get("load_id", 0)        # a load the page didn't ask for (the Studio queue's) changes it
+        # LoRA Royale, a Travel or RefMod rendering on the worker: Studio's Render waits for it too
+        d["worker_busy"] = (_R["state"] == "rendering" or _M["state"] == "rendering"
+                            or any(t["state"] == "rendering" for t in _T.values()))
         t = _S.get("page_waiting") or 0.0          # your render waits for your LoRA to load again
         d["page_waiting"] = bool(t) and time.time() - t < PAGE_WAIT_S
     return d

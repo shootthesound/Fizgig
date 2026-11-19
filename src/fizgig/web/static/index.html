@@ -909,7 +909,7 @@
                 </div>
               </div>
               <div class="field-row"><span class="field-label">Seed:</span><input type="text" id="stSeed" class="w-num" value="42" title="0 = random: Render picks a new seed; moving sliders keeps it (Baseline and Tweaked share it)">
-                <button class="btn btn-sm" id="stSeedNew" title="A random seed, rendered at once">↻</button>
+                <button class="btn btn-sm" id="stSeedNew" title="A random seed, rendered at once - or, while a render is going, added to the Studio queue behind it">↻</button>
                 <span class="field-label" id="stResLabel">Length (s):</span><select id="stRes" class="w-combo st-small-select"></select>
                 <span class="st-inline" id="stSizeRow"><span class="st-pair"><span class="field-hint">Width</span><select id="stW" class="w-combo st-small-select"></select>
                   <button class="btn" id="stSwap" type="button" title="Swap the width and the height (landscape to portrait and back)">⇄</button>
@@ -1038,16 +1038,6 @@
                 <span class="field-hint" id="stSetupMsg"></span></div>
             </div>
           </div>
-          <div class="section-card" id="stQueueCard" style="display:none">
-            <div class="card-title"><span>Studio queue</span><span class="run-badge" id="stQBadge"></span></div>
-            <div class="card-content">
-              <div class="field-row"><button class="btn btn-sm" id="stQPause">Pause</button>
-                <button class="btn btn-sm" id="stQClear" title="Takes the finished and failed jobs off this list (their saved files stay)">Clear finished</button>
-                <span class="field-hint" id="stQSay"></span></div>
-              <div id="stQList" class="stq-list"></div>
-              <div class="field-hint">Each job is saved into the Studio outputs folder (Preferences) as it finishes. Leaving Studio or starting a training run pauses the queue after the job rendering now; it never carries on by itself.</div>
-            </div>
-          </div>
           <div class="section-card" id="stFrames" style="display:none">
             <div class="card-title" id="stFramesTitle">First / Last Frame</div>
             <div class="card-desc" id="stFramesDesc">Optional: photos the clip starts and ends on. Each is cropped to the
@@ -1058,6 +1048,19 @@
             <div class="card-title">Profile found for this LoRA</div>
             <div class="card-content"><div class="field-hint" id="stProfileLine"></div><div class="st-pills" id="stPills"></div>
               <a class="btn btn-sm" id="stReport" target="_blank" rel="noopener">📊 Open full report</a></div>
+          </div>
+          <div class="section-card st-qbar" id="stQueueCard">
+            <div class="card-title st-qbar-head" id="stQHead" role="button" tabindex="0" aria-expanded="false"
+              title="Studio's own queue: click to show or hide its jobs">
+              <span class="st-qbar-name"><span class="st-qbar-arrow" id="stQArrow">▸</span> Studio queue</span>
+              <span class="st-qbar-sum" id="stQBadge"></span></div>
+            <div class="card-content" id="stQBody" style="display:none">
+              <div class="field-row"><button class="btn btn-sm" id="stQPause">Pause</button>
+                <button class="btn btn-sm" id="stQClear" title="Takes the finished and failed jobs off this list (their saved files stay)">Clear finished</button>
+                <span class="field-hint" id="stQSay"></span></div>
+              <div id="stQList" class="stq-list"></div>
+              <div class="field-hint">Each job is saved into the Studio outputs folder (Preferences) as it finishes. Leaving Studio or starting a training run pauses the queue after the job rendering now; it never carries on by itself.</div>
+            </div>
           </div>
           <div class="section-card">
             <div class="card-title">Preview <button class="btn btn-sm" id="stDockOpen"

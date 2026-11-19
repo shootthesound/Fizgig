@@ -3690,6 +3690,11 @@ class Handler(BaseHTTPRequestHandler):
             if (qs.get("pp") or [""])[0]:              # the page's Ping-pong loop
                 p = studio.pingpong(p)
             return self._stream(p, attachment=False)
+        if path == "/api/studio/output":            # a Studio queue job's saved file (the Studio outputs folder only)
+            p = studio.output_file((qs.get("path") or [""])[0])
+            if not p:
+                return self.json({"error": "That file isn't in the Studio outputs folder (moved or deleted?)."}, 404)
+            return self._stream(p, attachment=False)
         if path == "/api/studio/image":
             p = studio.image((qs.get("which") or [""])[0], (qs.get("gen") or [""])[0])
             if not p:

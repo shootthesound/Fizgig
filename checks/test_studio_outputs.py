@@ -70,3 +70,13 @@ def test_folders_ship_and_renders_are_ignored():
     if r.returncode == 128:
         pytest.skip("not a git checkout")
     assert r.returncode == 0 and keep.returncode == 1
+
+
+def test_queue_links_open_only_files_in_the_outputs_folder(tmp_path, monkeypatch):
+    monkeypatch.setattr(studio, "outputs_dir", lambda: str(tmp_path / "out"))
+    good = studio.output_path(str(tmp_path / "out"), "image", "M", "l", "tweaked", 1, ".png")
+    open(good, "w").close()
+    outside = tmp_path / "secret.txt"
+    outside.write_text("x")
+    assert studio.output_file(good) and not studio.output_file(str(outside))
+    assert not studio.output_file(str(tmp_path / "out" / "images" / ".." / ".." / "secret.txt"))

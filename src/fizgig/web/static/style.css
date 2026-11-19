@@ -2410,6 +2410,17 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 .job-pill-shade[hidden] { display: none; }
 /* the start-up question after a run was cut off: carry it on, the next in the queue, or a fresh start */
 .startup-window { max-width: 560px; }
+/* Studio queue: a slim bar between Setup and Preview while it holds jobs; its head opens the list */
+.st-qbar .st-qbar-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer;
+  user-select: none; }
+.st-qbar .st-qbar-head:hover { background: var(--bg-hover); }
+.st-qbar-name { display: inline-flex; align-items: center; gap: 8px; }
+.st-qbar-arrow { color: var(--text-secondary); font-size: 10pt; width: 12px; }
+.st-qbar-sum { font-size: 9pt; font-weight: 600; color: var(--text-secondary); text-align: right; }
+.st-qbar .st-qbar-head { padding-top: 8px; padding-bottom: 8px; }          /* one slim line when closed */
+.stq-files a { color: var(--accent); text-decoration: none; }
+.stq-files a:hover { text-decoration: underline; }
+.st-qbar.busy .st-qbar-sum { color: var(--accent); }
 /* Studio queue: one line a job */
 .stq-list { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
 .stq-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: 1px solid var(--border);

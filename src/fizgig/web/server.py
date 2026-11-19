@@ -4066,7 +4066,9 @@ class Handler(BaseHTTPRequestHandler):
             if now - st.st_mtime > 5:            # not one still being written
                 stats.append((e, st))
         stats.sort(key=lambda x: x[1].st_mtime, reverse=True)
-        base = lambda n: (lambda m: m.group(1) if m else n)(_CKPT.match(n[:-len(".safetensors")]))
+        # an epoch's file -> its run's name; the run's final file (<run>.safetensors) is its run too (it was its own
+        # name with the extension, so a run's list left out its finished LoRA)
+        base = lambda n: (lambda s: (lambda m: m.group(1) if m else s)(_CKPT.match(s)))(n[:-len(".safetensors")])
         others = 0
         if run:
             mine = [(e, st) for e, st in stats if base(e.name) == run]

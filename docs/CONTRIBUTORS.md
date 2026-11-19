@@ -129,7 +129,8 @@ carries each card's UUID, which is the same across NVML, nvidia-smi and torch.
 stills** ([#295](https://github.com/shootthesound/Fizgig/pull/295), v9.0.3), with prior preservation outside the mask, and fixed the clip
 size row for clips kept in sub-folders ([#278](https://github.com/shootthesound/Fizgig/pull/278)). Their careful memory measurements on a
 96 GB card ([#282](https://github.com/shootthesound/Fizgig/pull/282)) found that H3 clip runs with TREAD off could go without gradient
-checkpointing and run out of memory; those runs now keep it on.
+checkpointing and run out of memory; those runs now keep it on. They also gave the mask editor **three kept brush
+settings**, recalled with 1, 2 and 3 ([#381](https://github.com/shootthesound/Fizgig/pull/381)).
 
 Since then: **Fibo 2.0** as a trainable family, with measured planner figures ([#250](https://github.com/shootthesound/Fizgig/pull/250), v9.0.4); **Purge run history** on Runs & outputs ([#345](https://github.com/shootthesound/Fizgig/pull/345), v9.7.2); and LoRA Royale treating a run's Save now snapshots and last checkpoint as its own epochs ([#355](https://github.com/shootthesound/Fizgig/pull/355), v9.7.6). Their exact reports found the H3 Context LoRA crash at step 0 ([#298](https://github.com/shootthesound/Fizgig/issues/298)) and MOSS-Image block swap leaving weights on the CPU at a batch size above 1 ([#335](https://github.com/shootthesound/Fizgig/issues/335)). In v9.7.7, a resume at a new size caches again whatever Enable Cache says, and its record waits until training starts ([#370](https://github.com/shootthesound/Fizgig/pull/370)).
 

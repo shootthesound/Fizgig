@@ -244,7 +244,9 @@ MINIMAX_IMAGE = FamilyDescription(
     # a full fine-tune (Peter, 19 Nov 2026): MiniMax H3's rotation fine-tune as the driver borrows it (component
     # windows on a 4-bit trunk, int8 ConvRot saves in the file's own layout), the training adapter on
     finetune=True,
-    ft_learning_rate=3e-5,            # MiniMax H3's tested fine-tune rate (families/minimax.py)
+    # Peter, 19 Nov 2026 (pod test, 53-photo person set, 0.25 MP): 3e-5 kept quality but the face barely moved by
+    # epoch 6; 5e-5 had the face by epoch 4 and a strong, clean likeness at epoch 30
+    ft_learning_rate=5e-5,
 
     sampling=(
         SamplingSettings("MiniMax-H3-Image (distilled)", steps=6, cfg=1.0, sampler="euler", scheduler="simple",
@@ -326,7 +328,7 @@ MINIMAX_IMAGE = FamilyDescription(
         ("✨ MiniMax H3 Image Style (rank 16)", _preset(16, epochs=64)),
         ("✨ MiniMax H3 Image Edit (rank 8)", _preset(8, epochs=12, edit=True)),
         ("✨ MiniMax H3 Image Slider (rank 8)", _preset(8, epochs=20, slider=True)),
-        ("✨ MiniMax H3 Image Fine-tune (3e-5)", _preset(16, likeness=True, lr=3e-5, ft=True)),
+        ("✨ MiniMax H3 Image Fine-tune (5e-5)", _preset(16, likeness=True, lr=5e-5, ft=True)),
     ),
     start_lr_bands=(("lora", 3e-5, 3e-4), ("slider", 7e-5, 6e-4)),     # Krea 2's, as the presets are its
 )

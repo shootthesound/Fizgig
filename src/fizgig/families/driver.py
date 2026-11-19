@@ -296,6 +296,13 @@ class FamilyDriver:
         return out
 
     # ---- prompt-pair sliders (optional) ------------------------------------------------------------
+    def set_preview_keyframes(self, vae, paths: dict) -> None:
+        """The Samples tab's First / Last frame ({"first": path, "last": path}) for a family that declares
+        preview_keyframes: its clip previews start / end on them, encoded through `vae` at each preview's size."""
+        import logging
+        logging.getLogger(__name__).warning("[sample] %s previews take no first / last frame - ignored",
+                                            self.description.display_name)
+
     def slider_setup(self, group) -> None:
         """A slider run's data is known (an image-pair group, or a prompt slider's practice bank)."""
 

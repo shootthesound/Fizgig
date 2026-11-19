@@ -645,6 +645,36 @@ class MiniMaxDriver(FamilyDriver):
         txt = (txt[None] if txt.dim() == 2 else txt).to(state["x"].device, DTYPE)
         return dit(state["x"], state["tt"], txt)
 
+    def set_preview_keyframes(self, vae, paths):
+        """First / Last frame for the clip previews (#376): kept as paths and encoded per preview size, at the
+        first preview that asks (an out-of-memory step down to a smaller size encodes again at that size)."""
+        self._kf_vae, self._kf_paths, self._kf_cache = vae, dict(paths or {}), {}
+
+    def _preview_keyframes(self, width, height, frames):
+        """[(pixel frame, latent [1, 24, 1, h, w]), ...] for a clip preview at width x height, or None (no pictures
+        set, or a still). Each picture is cropped to the preview's shape from its centre, as Studio's frames are
+        sized to the clip's own canvas (the DiT refuses any other grid)."""
+        paths = getattr(self, "_kf_paths", None)
+        if not paths or int(frames) <= 1:
+            return None
+        import numpy as np
+        from PIL import Image, ImageOps
+        from fizgig.utils.image import flatten
+        from fizgig.utils.upright import open_upright
+        w, h = (int(width) // 32) * 32, (int(height) // 32) * 32
+        out = []
+        for kf, path in paths.items():
+            key = (kf, path, w, h)
+            z = self._kf_cache.get(key)
+            if z is None:
+                img = ImageOps.fit(flatten(open_upright(path)).convert("RGB"), (w, h), Image.LANCZOS)
+                z = self.encode_images(self._kf_vae, [np.asarray(img)])[0][None, :, None]     # [1, 24, 1, h, w]
+                self._kf_cache = {k: v for k, v in self._kf_cache.items() if k[0] != kf}   # one size per picture
+                self._kf_cache[key] = z
+                logger.info(f"[preview] {kf} frame {path} encoded at {w}x{h}")
+            out.append((0 if kf == "first" else int(frames) - 1, z))
+        return out
+
     def encode_images(self, vae, images):
         """uint8 (H, W, 3) arrays -> (24, h, w) latents through the H3 VAE encoder, loaded on first use (the
         previews' VAE is the decoder only) - a prompt slider's practice renders are re-encoded here."""
@@ -877,9 +907,11 @@ class MiniMaxDriver(FamilyDriver):
         while True:
             state["wh"], state["frames"] = (width, height), frames
             try:
+                kfs = self._preview_keyframes(width, height, frames)        # First / Last frame (#376), or None
                 lat, arows = sampling.sample_image(dit, txt, width=width, height=height, steps=steps, cfg_scale=cfg,
                                                    uncond_embeds=unc, seed=seed, device=device, dtype=DTYPE,
                                                    num_frames=frames, return_audio=True, on_slow_step=slow,
+                                                   keyframes=kfs,
                                                    **({"slow_step_s": 0.0} if on_step is not None else {}))
                 return lat, arows, width, height, frames
             except oom:

@@ -1464,6 +1464,9 @@ def _preview_flags(desc, st, plan, cmd):
             # the Samples tab's picture: seen through the vision path, or edited by every preview prompt
             out += ["--sample_image" if desc.reference_kind == "vision" else "--sample_reference",
                     _sample_image(desc, sm)]
+        frames = preview_keyframes(desc, st)
+        for kf, p in frames.items():              # First / Last frame: clip previews start / end on them (#376)
+            out += [f"--sample_{kf}_frame", p]
         if edit_on(desc, st):
             ref = _s(st.get("FAMILY_EDIT_REF"))
             if not ref:
@@ -1528,6 +1531,31 @@ def _sample_image(desc, sm):
     """The Samples tab's reference image, for families whose previews take one (reference_kind), when it exists."""
     ref = _s(sm.get("reference")) if desc.reference_kind else ""
     return ref if ref and os.path.isfile(ref) else ""
+
+
+def _other_base(desc, inputs) -> bool:
+    """A model option swaps in another base for training (H3's Reference (ref2va) Training Base: --dit=pref:...)."""
+    vals = inputs.get("FAMILY_OPTIONS") or {}
+    for o in desc.options:
+        try:
+            toks = o.resolve(vals.get(o.key, o.default))
+        except Exception:
+            continue
+        if any(str(t).startswith("--dit=") for t in toks):
+            return True
+    return False
+
+
+def preview_keyframes(desc, inputs) -> dict:
+    """{"first": path, "last": path} the clip previews start / end on (the Samples tab's First / Last frame, #376):
+    set and on disk, on the model's own base (the first/last-frame checkpoint), and not for a slider or an edit run,
+    whose previews show their own pictures."""
+    sm = inputs.get("samples") or {}
+    if (not desc.preview_keyframes or edit_on(desc, inputs) or slider_on(desc, inputs)
+            or _other_base(desc, inputs)):
+        return {}
+    have = sm.get("keyframes") or {}
+    return {kf: _s(have[kf]) for kf in desc.preview_keyframes if _s(have.get(kf)) and os.path.isfile(_s(have[kf]))}
 
 
 # ---------------------------------------------------------------------------------------------------- dataset
@@ -2011,6 +2039,10 @@ def start_problems(desc, inputs):
                                         ("Samples: Seed", "seed", int, None)):
             if str(sm.get(key) or "").strip():                  # empty = the model's own
                 out += checks.number(label, sm[key], cast, least)
+        for kf, p in (sm.get("keyframes") or {}).items():       # First / Last frame set but not there (#376)
+            if _s(p) and not os.path.isfile(_s(p)):
+                out.append(f"Samples: {kf.capitalize()} frame - {_s(p)} isn't there. Choose the picture again, or "
+                           "clear the box for normal previews.")
     out += checks.dataset_config(v.get("DATASET_CONFIG"), must_exist=False)
     out += problems(desc, inputs)
     out += precision_problems(desc, inputs)

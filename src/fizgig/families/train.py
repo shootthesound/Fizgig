@@ -1155,7 +1155,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  vae_path=None, te_path=None, sample_prompts=None, sample_every_n_epochs=0, sample_until_epoch=0,
                  sample_every_n_epochs_after=0, sample_width=None,
                  sample_height=None, sample_steps=None, sample_cfg_scale=None, sample_negative=None,
-                 sample_at_first=False, sample_seed=42, sample_reference=None, sample_image=None,
+                 sample_at_first=False, sample_seed=42, sample_reference=None, sample_image=None, sample_keyframes=None,
                  sample_strengths=(), slider_pairs=False, slider_diff_weight=1.0, slider_prompts=None, slider_guidance=3.0,
                  slider_anchors=(), slider_anchor_weight=1.0,
                  train_blocks=None,
@@ -1800,6 +1800,12 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         del te
         torch.cuda.empty_cache()
         vae = driver.load_vae(vae_path, device)
+        if sample_keyframes and desc.preview_keyframes:
+            # First / Last frame (#376): the driver encodes them at each preview's own size, through this VAE
+            driver.set_preview_keyframes(vae, {k: v for k, v in sample_keyframes.items() if v})
+            logger.info("[sample] clip previews " + " and ".join(
+                f"{'start' if k == 'first' else 'end'} on {os.path.basename(v)}" for k, v in sample_keyframes.items()
+                if v))
         if ref_imgs:
             # one at a time: extra pictures have their own shapes, and a driver may stack its batch (Klein)
             ref_latents = [driver.encode_images(vae, [im])[0][None].cpu() for im in ref_imgs]
@@ -2333,7 +2339,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 ck_cfg = 1.0
             # a helper renders this round on the same checkpoint, from the epoch's LoRA (#339: MOSS-Image's SFT
             # previews stayed on the training GPU with a helper standing by); Check picture stays on this GPU
-            hp_ck = _helper_previews(output_dir) if not (ref_latents or finetune) else None
+            hp_ck = _helper_previews(output_dir) if not (ref_latents or finetune or sample_keyframes) else None
             pcf = desc.preview_checkpoint()
             if hp_ck and not hp_ck.get("compare") and pcf is not None:
                 rd = os.path.join(output_dir, HELPER_ROUNDS, f"{epoch:06d}")
@@ -2396,7 +2402,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             last_prompt[0] = prompts[-1] if prompts else None
             _record_prompts(sample_dir, output_name, epoch, prompts)
             return
-        hp = _helper_previews(output_dir) if not (slider or ref_latents or finetune) else None
+        hp = _helper_previews(output_dir) if not (slider or ref_latents or finetune or sample_keyframes) else None   # a First / Last frame (#376) stays here: a helper has neither picture
         compare = None  # Check picture: this round renders here too, and the helper's is compared with it
         if hp and hp.get("compare") and hp["compare"] == compared[0]:
             hp = {**hp, "compare": 0}                   # that request was this run's already
@@ -3426,6 +3432,10 @@ def setup_parser():
     p.add_argument("--preview_int8", action="store_true", help="INT8 matmuls on the preview checkpoint")
     p.add_argument("--sample_reference", nargs="+", default=None,
                    help="Edit previews: the photo every preview prompt edits, then any extra pictures it brings in")
+    p.add_argument("--sample_first_frame", default=None,
+                   help="A picture every clip preview starts on (families with preview_keyframes, #376)")
+    p.add_argument("--sample_last_frame", default=None,
+                   help="A picture every clip preview ends on (families with preview_keyframes, #376)")
     p.add_argument("--sample_image", default=None,
                    help="A picture previews see through the text encoder's vision path (families with preview_image)")
     p.add_argument("--slider_pairs", action="store_true",
@@ -3587,6 +3597,7 @@ def main():
         sample_negative=a.sample_negative, sample_at_first=a.sample_at_first, sample_seed=a.sample_seed,
         sample_strengths=tuple(float(x) for x in a.sample_strengths.split(",") if x.strip()),
         sample_reference=list(a.sample_reference) if a.sample_reference else None, sample_image=a.sample_image,
+        sample_keyframes={k: v for k, v in (("first", a.sample_first_frame), ("last", a.sample_last_frame)) if v},
         slider_pairs=a.slider_pairs, slider_diff_weight=a.slider_diff_weight, slider_prompts=a.slider_prompts,
         slider_guidance=a.slider_guidance, slider_anchors=a.slider_anchors or (),
         slider_anchor_weight=a.slider_anchor_weight, slider_bank=a.slider_bank, slider_bank_res=a.slider_bank_res,

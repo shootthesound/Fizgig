@@ -321,6 +321,7 @@ MINIMAX = FamilyDescription(
         "resolution_stages": "clips train at their own size: not measured with stages",
     },
     slider_training=True,             # prompt pairs, photo pairs and clip pairs (driver: _slider_loss / predict)
+    preview_keyframes=("first", "last"),   # clip previews can start / end on a picture (an i2v dataset, #376)
     slider_min_side=768,              # H3 wants a side at 768 or more: the presets' 0.25 MP would practise at 496
     #                                   (Peter, 19 Nov 2026)
     multi_caption=False,              # H3 caches its text its own way (minimax/caching.py): one caption a clip

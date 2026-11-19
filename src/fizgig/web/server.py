@@ -1132,6 +1132,7 @@ _SIZE_KEYS = ("DATASET_MEGAPIXELS", "CLIP_MEGAPIXELS")
 _RESUME_SAMPLE_KEYS = ("SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS",
                        "SAMPLE_CFG_SCALE", "FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_ON", "SAMPLE_CHECKPOINT",
                        "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE",                          # H3's Turbo row
+                       "SAMPLE_FIRST_FRAME", "SAMPLE_LAST_FRAME",                          # H3's First / Last frame
                        "FAMILY_PREVIEW_LOOK",                                              # + the SFT look tick
                        "SAMPLE_EVERY_N_EPOCHS", "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH", "SAMPLE_EVERY_AFTER",
                        "BLOCKS_SWAP", "SAVE_EVERY_N_EPOCHS", "SAVE_LATER", "SAVE_UNTIL_EPOCH", "SAVE_EVERY_AFTER",

@@ -834,6 +834,13 @@ def form(desc):
              "Optional - every preview edits this photo with its prompt, at the photo's shape. Leave empty for normal "
              "previews. An Edit LoRA run previews on the photo set on its own card instead.",
              upload=True, start="data") if desc.reference_kind else None,
+        *[_row(f"SAMPLE_{kf.upper()}_FRAME", f"{kf.capitalize()} frame", "path",
+               f"Optional - every clip preview {'starts' if kf == 'first' else 'ends'} on this picture, cropped to the "
+               "preview's shape from its centre. For a LoRA captioned for what happens next in a clip (an "
+               "image-to-video dataset), whose previews mean little without the picture they start from. Leave "
+               "empty for normal previews. A still preview uses neither; the Reference training base ignores both. "
+               "A change reaches a run at its next Start or Resume.",
+               upload=True, start="data") for kf in desc.preview_keyframes],
         # a picture size only for a model that makes pictures (ACE-Step's previews are songs: the launcher then
         # uses the description's own preview size)
         _row("SAMPLE_WIDTH", "Width", "choice", choices=sizes, default=str(desc.preview_width)) if pictures else None,
@@ -1845,6 +1852,8 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
                  "height": s("SAMPLE_HEIGHT"), "steps": s("SAMPLE_STEPS"), "cfg": s("SAMPLE_CFG_SCALE") or
                  str(desc.preview_cfg), "negative": s("SAMPLE_NEGATIVE"), "seed": s("SAMPLE_SEED"),
                  "at_first": b("SAMPLE_AT_FIRST"), "prompts": s("SAMPLE_PROMPT").splitlines(), "reference": s("SAMPLE_REFERENCE"),
+                 "keyframes": {kf: s(f"SAMPLE_{kf.upper()}_FRAME") for kf in desc.preview_keyframes
+                               if s(f"SAMPLE_{kf.upper()}_FRAME")},
                  "strengths": list(desc.preview_strengths) if desc.preview_strengths and
                  v.get("SAMPLE_STRENGTHS", True) else [],
                  **({"checkpoint": b("SAMPLE_CHECKPOINT"), "checkpoint_cache": s("CACHE_SAMPLE_MODEL") or "auto",

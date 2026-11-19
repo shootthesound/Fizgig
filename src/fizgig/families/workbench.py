@@ -108,6 +108,9 @@ def _blend(a, b, t, mode):
     return (d * target).to(a.dtype)
 
 
+SWAP_PARK_FREE_GB = 8.0    # a block-swapped DiT parks for the text encoder / decode under this much free VRAM (#377)
+
+
 def _free_vram_gb():
     try:
         from fizgig.families.quant import free_vram_gb
@@ -221,6 +224,7 @@ class WorkbenchEngine:
             precision = "bf16"
         self.dit, self.swapped = quant.load_base(self.driver, dit_path, device, precision, blocks_to_swap,
                                                  supports_backward=False)
+        self._swap_parked = False                       # loaded in its streaming layout (_park_dit)
         if self.swapped:
             self.driver.block_swap_mode(self.dit, inference=True)
         self.precision = precision
@@ -523,12 +527,34 @@ class WorkbenchEngine:
         return sample()
 
     def _park_dit(self, where):
-        if self.dit is not None and not getattr(self, "swapped", 0):   # a swapped DiT keeps its streaming layout
-            from fizgig.families import quant
-            quant.move(self.dit, where)
-            if where == "cpu":
-                gc.collect()
-                torch.cuda.empty_cache()
+        if self.dit is None:
+            return
+        from fizgig.families import quant
+        if getattr(self, "swapped", 0):
+            # A swapped DiT's resident part parks too: a 12 GB card can't hold it beside the text encoder or the VAE
+            # (#377, diagnosed and fixed by @UNfukashigi). It comes back in its streaming layout - the swapped blocks
+            # on the CPU, the rest on the card - and only when it was parked (this also runs after every decode).
+            if not hasattr(self.dit, "move_to_device_except_swap_blocks"):
+                return                                  # a model without that layout keeps it as it is
+            if torch.device(where).type == "cpu":
+                # only on a card with too little room beside it: moving ~6 GB out and back costs a render 8-16 s
+                # (Krea 2, 1024 x 1024, 5090), and a 16 GB card held the encoder (+5.3 GB) and decode (+2.3 GB) anyway
+                if not getattr(self, "_swap_parked", False) and _free_vram_gb() < SWAP_PARK_FREE_GB:
+                    if torch.cuda.is_available():
+                        torch.cuda.synchronize()        # block transfers in flight finish before their weights move
+                    quant.move(self.dit, "cpu")
+                    self._swap_parked = True
+                    gc.collect()
+                    torch.cuda.empty_cache()
+            elif getattr(self, "_swap_parked", False):
+                self.dit.move_to_device_except_swap_blocks(torch.device(where))
+                self.driver.block_swap_mode(self.dit, inference=True)
+                self._swap_parked = False
+            return
+        quant.move(self.dit, where)
+        if where == "cpu":
+            gc.collect()
+            torch.cuda.empty_cache()
 
     def _finish_decode(self):
         self._park_dit(self.device)

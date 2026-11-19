@@ -132,6 +132,7 @@ class Krea2WorkbenchEngine(WorkbenchEngine):
             self.driver.block_swap_mode(self.dit, inference=True)
         else:
             self._park_dit(self.device)
+        self._swap_parked = False                       # either way the model is back on the card
 
     def render(self, cond, width, height, seed, **kwargs):
         device = torch.device(self.device)

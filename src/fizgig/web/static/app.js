@@ -1946,7 +1946,10 @@ async function resumeClick() {
   const say = diff.map((k) => `${SIZE_KEYS[k]} ${was[k] || "?"} → ${S.values[k]}`).join(", ");
   const go = (body) => async () => {
     box.style.display = "none";
-    try { const x = await api("/api/resume", {...body, samples}); showProblems(x.problems || (x.error ? [x.error] : [])); }
+    try {
+      const x = await api("/api/resume", {...body, samples}); showProblems(x.problems || (x.error ? [x.error] : []));
+      if (x.queued && x.note) $("runStatus").textContent = x.note;     // waits for a Studio render, then resumes
+    }
     catch (e) { showProblems([e.message]); }
     pollRun();
   };
@@ -3620,8 +3623,9 @@ async function loadRuns() {
         if (x.problems) { alertRow.textContent = x.problems.join(" "); return; }
         contBox.style.display = "none";
         if (x.form) await loadIntoForm(x.form);   // the tab shows the run going on, not the settings before it
-        alertRow.textContent = x.queued ? "A run is training now: this one is on the queue, and continues when its " +
-          "turn comes." : `Continuing ${run.lora || "the run"}: it's on the Training tab.`;
+        alertRow.textContent = x.queued ? (x.note ? x.note + " It continues then, by itself." :
+          "A run is training now: this one is on the queue, and continues when its turn comes.") :
+          `Continuing ${run.lora || "the run"}: it's on the Training tab.`;
         pollRun();
         if (!x.queued) {                    // to the run card itself, as the sidebar's run opens it
           showTab("training");
@@ -6498,6 +6502,10 @@ async function studioQueueAdd() {
   const state = studioState();
   if (state.seed === 0) state.seed = 1 + Math.floor(Math.random() * (2 ** 31 - 2));    // each job its own
   const extra = {...studioExtra(), ...studioMixExtra()};
+  if (extra.video) {                                  // a job is a new clip: not a Continue of the one on screen,
+    extra.video = {...extra.video, loop_back: null};  // and Upscale only as its Auto tick says, after the job's render
+    if (extra.video.upscale) extra.video.upscale = $("stUpAuto").checked ? {...extra.video.upscale, now: false, preview: 0} : null;
+  }
   if (L.kind === "stills") extra._setup = studioSetupData();      // the saved picture carries the setup
   const lora = $("stPrimary").value.trim().split(/[\\/]/).pop().replace(/\.safetensors$/i, "");
   const model =($("stFamily").selectedOptions[0] || {}).textContent || L.key;
@@ -8551,7 +8559,7 @@ function studioSchedule(live) {
 
 async function studioRender() {
   if (!$("stPrompt").value.trim()) { $("stStatus").textContent = "Enter a prompt (include the LoRA's trigger word) to see previews."; return; }
-  if (S.st.foreign) {                                 // a Studio queue job loaded another model or LoRA: yours again
+  if (S.st.foreign && !(S.stq && S.stq.job)) {       // a Studio queue job loaded another model or LoRA: yours again
     S.st.foreign = false; S.st.loadedKey = "";
     return studioStart();
   }
@@ -8567,6 +8575,7 @@ async function studioRender() {
   try {
     const r = await api("/api/studio/render", {state, ...studioExtra(), ...studioMixExtra(), ...setup});
     if (r.after_job) $("stStatus").textContent = "Renders when the Studio queue's job finishes…";
+    if (r.reload) { S.st.foreign = false; S.st.loadedKey = ""; return studioStart(); }   // a job's LoRA is loaded
     studioPoll();
   }
   catch (e) { $("stStatus").textContent = e.message; }
@@ -8629,6 +8638,11 @@ async function studioPoll() {
 async function studioPollOnce() {
   const st = await api("/api/studio/status");
   if (st.load_id && S.st.myLoad && st.load_id !== S.st.myLoad) S.st.foreign = true;
+  // your render waited for a queue job that had another LoRA loaded: load yours again and render it (once)
+  if (st.page_waiting && !S.st.reloading && st.state === "ready" && !st.rendering) {
+    S.st.reloading = true; S.st.foreign = false; S.st.loadedKey = "";
+    studioStart().finally(() => { S.st.reloading = false; });
+  }
   let qActive = false;
   try { qActive = studioQueueDraw(await api("/api/studio/queue")); } catch (e) { /* an older server */ }
   const wasReady = S.st.ready;

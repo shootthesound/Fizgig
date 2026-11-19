@@ -23,7 +23,9 @@ _lock = threading.Lock()
 _S = {"proc": None, "sock": None, "port": 0, "state": "idle", "family": "", "primary": "", "donor": "", "primary_blocks": [],
       "donor_blocks": [], "hash": "", "status": "", "progress": None, "gen": 0, "shown": 0, "baseline": "",
       "tweaked": "", "pending": None, "rendering": False, "error": "", "saved": None, "profile": None,
-      "used": 0.0, "log": [], "gens": {}, "out_saved": {}, "out_said": None, "load_key": None, "load_id": 0}
+      "used": 0.0, "log": [], "gens": {}, "out_saved": {}, "out_said": None, "load_key": None, "load_id": 0,
+      "page_key": None, "page_waiting": 0.0}
+PAGE_WAIT_S = 20           # how long the Studio queue holds back for the page to load its LoRA again
 on_job_end = None          # studio_queue.job_ended: a queued job's render finished (its files), failed or was cancelled
 
 
@@ -200,6 +202,17 @@ def _event(ev):
             _S.update(state="idle", primary="", donor="", primary_blocks=[], donor_blocks=[], hash="", profile=None,
                       rendering=False, pending=None, progress=None, status="Models unloaded.")
     job = _gen_job(ev.get("gen")) if kind in ("rendered", "error", "aborted") else ""
+    # a render you asked for while a queue job rendered goes next - before the queue hears the job ended, so the next
+    # job can't take the worker first - and only on your own LoRA: with the job's loaded, the page loads yours again
+    if nxt is not None and job:
+        with _lock:
+            mine = _S["load_key"] is not None and _S["load_key"] == _S["page_key"]
+            if not mine:
+                _S["page_waiting"] = time.time()   # the queue waits for that reload (server: _studio_queue_busy)
+        if not mine:
+            nxt = None
+    if nxt is not None:
+        render(*nxt)
     if kind == "rendered":
         try:
             paths = autosave(ev.get("gen", 0))
@@ -212,8 +225,6 @@ def _event(ev):
                 on_job_end(job, False, error=f"Rendered, but couldn't save it: {e}")
     elif job and on_job_end and (kind == "aborted" or ev.get("where") == "render"):
         on_job_end(job, False, error="Cancelled." if kind == "aborted" else ev.get("msg") or "The render failed.")
-    if nxt is not None:
-        render(*nxt)
 
 
 # ---- Studio outputs: Save and Save every render write into one folder (Preferences), by what was made ----
@@ -512,7 +523,7 @@ def generating():
     """Something has Studio's worker busy: a model loading, a render (Studio's, a queued job's, Royale's, a
     Travel, RefMod's) or one waiting to start."""
     with _lock:
-        return (_S["state"] == "loading" or _S["rendering"] or _S["pending"] is not None
+        return (_S["state"] == "loading" or _S["rendering"]
                 or _R["state"] == "rendering" or _M["state"] == "rendering"
                 or any(t["state"] == "rendering" for t in _T.values()))
 
@@ -528,10 +539,21 @@ def load_key():
         return _S.get("load_key")
 
 
-def set_load_key(key):
-    """The Studio queue's own load: a job with the same load renders on it without loading again."""
+def set_load_key(key, page=False):
+    """What is loaded (the load's settings as JSON): a queue job with the same load renders on it without loading
+    again. page: the Studio page's own load - its renders run only on that."""
     with _lock:
         _S["load_key"] = key
+        if page:
+            _S.update(page_key=key, page_waiting=0.0)
+
+
+def page_waiting():
+    """A render you asked for waits for Studio to load your LoRA again (a queue job had another loaded). It lapses
+    after PAGE_WAIT_S: a page that left the tab (or closed) doesn't hold the queue up."""
+    with _lock:
+        t = _S.get("page_waiting") or 0.0
+    return bool(t) and time.time() - t < PAGE_WAIT_S
 
 
 def _gen_job(gen):
@@ -541,10 +563,15 @@ def _gen_job(gen):
 
 def render(state, extra=None):
     """Render this slider state: now if nothing renders, else it waits (replacing any older wait) and the render
-    going is cancelled - the newest state is what renders next."""
+    going is cancelled - the newest state is what renders next. Never on a model the page didn't load (a Studio
+    queue job's): {"reload": True} - the page loads its own first."""
     with _lock:
         if _S["state"] != "ready":
             return {"error": "Load a LoRA first."}
+        if _S["load_key"] != _S["page_key"] and not ((_S["gens"].get(_S["gen"]) or {}).get("job")
+                                                       and _S["rendering"]):
+            _S["page_waiting"] = time.time()
+            return {"ok": True, "reload": True}
         _S["used"] = time.time()
         job_on = False
         if _S["rendering"]:
@@ -948,6 +975,8 @@ def status():
         d["log"] = _S["log"][-12:]                 # the worker's own lines (the engine's log), for when it goes wrong
         d["out_said"] = _S.get("out_said")         # Save every render's latest files (or why it couldn't)
         d["load_id"] = _S.get("load_id", 0)        # a load the page didn't ask for (the Studio queue's) changes it
+        t = _S.get("page_waiting") or 0.0          # your render waits for your LoRA to load again
+        d["page_waiting"] = bool(t) and time.time() - t < PAGE_WAIT_S
     return d
 
 

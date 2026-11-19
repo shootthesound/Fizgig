@@ -118,3 +118,75 @@ def test_waiting_on_studio_looks_again_soon(monkeypatch):
     webqueue.start_next(lambda item: (False, "wait-soon: Studio is finishing a render."))
     assert calls == [3] and webqueue._q["waiting"] == "Studio is finishing a render."
     webqueue._q.update(items=[], waiting="")
+
+
+def _after_job(monkeypatch, load_key, page_key):
+    """A queue job's render ends while a page render waits: what happens to the waiting one."""
+    sent = []
+    monkeypatch.setattr(studio, "_send", lambda m: sent.append(m))
+    monkeypatch.setattr(studio, "autosave", lambda gen: [])
+    monkeypatch.setattr(studio, "on_job_end", lambda *a, **k: None)
+    studio._S.update(state="ready", rendering=True, gen=9, gens={9: {"job": "j"}}, pending=None, nolora_busy=False,
+                     load_key=load_key, page_key=page_key, page_waiting=0.0, proc=object())
+    assert studio.render({"seed": 3}).get("after_job")
+    studio._event({"ev": "rendered", "gen": 9})
+    return sent
+
+
+def test_your_waiting_render_never_runs_on_a_jobs_lora(monkeypatch):
+    sent = _after_job(monkeypatch, load_key='{"primary": "B"}', page_key='{"primary": "A"}')
+    assert not [m for m in sent if m.get("cmd") == "render"] and studio.page_waiting()
+    studio._S.update(rendering=False, page_waiting=0.0)
+
+
+def test_your_waiting_render_runs_on_your_own_load(monkeypatch):
+    sent = _after_job(monkeypatch, load_key='{"primary": "A"}', page_key='{"primary": "A"}')
+    assert [m for m in sent if m.get("cmd") == "render"] and not studio.page_waiting()
+    studio._S.update(rendering=False, pending=None)
+
+
+def test_a_page_render_on_a_jobs_lora_reloads_yours(monkeypatch):
+    monkeypatch.setattr(studio, "_send", lambda m: None)
+    studio._S.update(state="ready", rendering=False, gens={}, load_key='{"primary": "B"}', page_key='{"primary": "A"}',
+                     page_waiting=0.0)
+    assert studio.render({"seed": 1}).get("reload")
+    studio._S.update(load_key=None, page_key=None, page_waiting=0.0)
+
+
+def test_a_page_that_went_away_doesnt_hold_the_queue(monkeypatch):
+    import time
+    studio._S["page_waiting"] = time.time() - studio.PAGE_WAIT_S - 1
+    assert not studio.page_waiting()
+    studio._S["page_waiting"] = 0.0
+
+
+def test_a_dead_workers_waiting_render_holds_nothing():
+    studio._S.update(state="idle", rendering=False, pending=({"seed": 1}, None))
+    assert not studio.generating()
+    studio._S["pending"] = None
+
+
+def test_resume_and_continue_wait_then_start_by_themselves(monkeypatch):
+    import time
+    calls = []
+
+    def one(*a):
+        calls.append(a)
+        return {"wait": "Studio is finishing a render.", "error": "x"} if len(calls) < 3 else {"ok": True}
+    monkeypatch.setattr(server, "_start_one", one)
+    monkeypatch.setattr(server, "GPU_WAIT_S", 0.01)
+    r = server._start("klein", {}, "", resume="state")
+    assert r.get("ok") and r.get("queued") and server._training_waits()
+    for _ in range(200):
+        if len(calls) >= 3 and not server._gpu_wait["n"]:
+            break
+        time.sleep(0.01)
+    assert len(calls) == 3 and not server._gpu_wait["n"]
+    assert server._start("klein", {}, "", raw_wait=True).get("ok")     # Start Training takes the wait as it is
+
+
+def test_studio_starts_nothing_while_a_run_waits(monkeypatch):
+    monkeypatch.setattr(server, "_training_waits", lambda: True)
+    with pytest.raises(ValueError):
+        server._studio_post("render", {"state": {}})
+    assert "training run" in server._studio_queue_busy()

@@ -92,7 +92,7 @@ Red means most, then yellow, then blue; no colour, barely. Each map is scaled fr
 - **Add to queue** (beside Start): lines up the render exactly as Studio is set now (model, LoRAs, sliders, prompt, seed, size, a clip's settings) in **Studio's own queue**, separate from the training queue. Jobs render one after another, each loading its model or LoRA first when it differs, and each is saved into the Studio outputs folder as it finishes. A seed of 0 gives each job its own random seed. The **Studio queue** card lists the jobs (move them up or down, remove them, Clear finished) with each one's saved files; a failed job is marked and the next runs.
   - **It pauses, and only you resume it.** Leaving the Studio tab, starting a training run, or restarting Fizgig pauses it; the job rendering at that moment finishes first. Coming back to Studio asks whether to resume. Closing the browser doesn't pause it, so a queue can run overnight.
   - **It waits** while a training run, a caption job or the Profiler has the GPU.
-  - Moving a slider while a job renders doesn't cut the job short: your render follows it. A job that loaded another LoRA makes Studio load yours again at your next render.
+  - Moving a slider while a job renders doesn't cut the job short: your render follows it, and always on your own LoRA. When the job had another model or LoRA loaded, Studio loads yours again first (the next job waits for that), so nothing of yours is ever rendered or saved on a job's LoRA.
 - **Save setup**: everything on the tab (the LoRAs, every slider and tick, the prompt, seed, size, photos and source) in one named file. **Load a setup…** restores it exactly, switching model if it needs to, loading its LoRAs and rendering.
 
 ## Video (MiniMax H3)

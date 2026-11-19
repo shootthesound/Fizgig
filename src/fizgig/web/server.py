@@ -688,6 +688,10 @@ def _studio_queue_busy():
     with webqueue._lock:
         if webqueue._q["waiting"]:               # a training run waiting for the GPU goes first
             return "A training run is waiting for the GPU: it goes first."
+    if _training_waits():
+        return "A training run is waiting for the GPU: it goes first."
+    if studio.page_waiting():                    # your render (on your own LoRA) goes before the next job
+        return "Your render goes first: Studio is loading your LoRA again."
     return ""
 
 
@@ -819,6 +823,8 @@ def _studio_post(what, b, from_queue=False):
         captions.unload()                       # the caption model leaves the GPU too
         studio.load(desc, str(b.get("primary") or "").strip(), str(b.get("donor") or "").strip(), kw, settings,
                     status, b.get("turbo", True), canvas=b.get("canvas") if desc.video_workbench else None)
+        if not from_queue:                       # the page's own load: its renders run on this and nothing else
+            studio.set_load_key(json.dumps(b, sort_keys=True), page=True)
         return {"ok": True, "load_id": studio.status()["load_id"]}   # the page sees a later load it didn't ask for
     if what == "keep":
         return {"path": studio.keep_tweaked()}
@@ -842,6 +848,9 @@ def _studio_post(what, b, from_queue=False):
         return studio_queue.status()
     if what == "map":                        # maps over the Tweaked render (where the LoRA acts, the tweaks, the trigger)
         return studio.map_request(b.get("state") or {}, b.get("trigger") or "", bool(b.get("blocks")))
+    if what in ("render", "load") and _training_waits():
+        raise ValueError("A training run is waiting for the GPU: it starts as soon as the render going now is done. "
+                         "Studio can render again after it.")
     if what == "render":
         extra = {k: b.get(k) for k in ("video", "audio", "keyframes", "ref_mode", "mix") if b.get(k) is not None}
         if isinstance(b.get("setup"), dict):     # Save every render: the setup a saved tweaked still carries
@@ -1861,7 +1870,8 @@ def _oom_go(rid, do, values, tries):
         r = _continue_run(rid, queue_ok=False, values=values)
     else:
         r = _start(rec.get("family") or "", values, rec.get("image_folder") or "")
-        if isinstance(r, dict) and not r.get("error") and not r.get("problems") and _run.get("history_id"):
+        if isinstance(r, dict) and not r.get("error") and not r.get("problems") and not r.get("queued") \
+                and _run.get("history_id"):
             history.set_field(_run["history_id"], "oom", tries)       # the new record carries the count on
     if not isinstance(r, dict) or r.get("error") or r.get("problems"):
         why = (r or {}).get("error") or "; ".join((r or {}).get("problems") or []) if isinstance(r, dict) else str(r)
@@ -1886,7 +1896,7 @@ def _run_form(rec, values=None):
     return {"family": desc.key, "values": vals, "image_folder": rec.get("image_folder") or ""}
 
 
-def _continue_run(run_id, more="", queue_ok=True, values=None):
+def _continue_run(run_id, more="", queue_ok=True, values=None, raw_wait=False):
     """Continue on Runs & outputs: the run trains on from its newest save, with its own settings and into its own
     record. more: the epochs (a fine-tune: rotations) to train to, for a run that already trained all it was set to.
     values: the settings to carry on with in place of the run's (a queued Continue edited on the queue). A run
@@ -1923,10 +1933,10 @@ def _continue_run(run_id, more="", queue_ok=True, values=None):
     note = f"=== Continuing {rec.get('lora')} from {os.path.basename(pt['path'])}: to {target} {unit} ==="
     if pt["kind"] == "ft":
         r = _resumed(_start(rec["family"], values, rec.get("image_folder") or "", ft_continue={
-            "continue": cont, "rotations": left}, note=note, carry=run_id))
+            "continue": cont, "rotations": left}, note=note, carry=run_id, raw_wait=raw_wait))
     else:
         r = _resumed(_start(rec["family"], values, rec.get("image_folder") or "", resume=pt["path"], note=note,
-                            carry=run_id))
+                            carry=run_id, raw_wait=raw_wait))
     if isinstance(r, dict) and not r.get("error") and not r.get("problems"):
         f = _run_form(rec, values)            # the Training tab then shows this run's settings (it kept the last ones)
         if not f.get("error"):
@@ -2066,11 +2076,57 @@ def _resumed(result):
 _claim = threading.Lock()                   # one Start at a time: checking and planning a run takes a few seconds
 
 
-def _start(family_key, values, image_folder, resume="", ft_continue=None, note="", models=None, carry=""):
-    # a second Start while the first is still being checked (a double click, two tabs, the queue) waits here and then
-    # finds the first one going - before, each passed the check and three copies of one run trained at once
-    with _claim:
-        return _start_one(family_key, values, image_folder, resume, ft_continue, note, models, carry)
+_gpu_wait = {"n": 0}                          # starts waiting for a Studio render / the Profiler to finish
+_gpu_wait_lock = threading.Lock()
+GPU_WAIT_S = 2                                # how often a waiting start looks again
+
+
+def _start(family_key, values, image_folder, resume="", ft_continue=None, note="", models=None, carry="",
+           raw_wait=False):
+    """raw_wait: a render going in Studio (or the Profiler) comes back as {"wait": why} - Start Training and the queue
+    put the run first in the queue. Otherwise (Resume, Continue, the restart offer, recovery, after a download) the
+    run waits here and starts by itself as soon as the render is done: {"ok": True, "queued": True, "note"}."""
+    def once():
+        # a second Start while the first is still being checked (a double click, two tabs, the queue) waits here
+        # and then finds the first one going - before, each passed the check and three copies of one run trained
+        with _claim:
+            return _start_one(family_key, values, image_folder, resume, ft_continue, note, models, carry)
+    r = once()
+    if raw_wait or not (isinstance(r, dict) and r.get("wait")):
+        return r
+
+    def go():
+        try:
+            while True:
+                time.sleep(GPU_WAIT_S)
+                r2 = once()
+                if isinstance(r2, dict) and r2.get("wait"):
+                    continue
+                if not isinstance(r2, dict) or r2.get("error") or r2.get("problems"):
+                    why = (r2 or {}).get("error") or "; ".join((r2 or {}).get("problems") or []) \
+                        if isinstance(r2, dict) else str(r2)
+                    append_log(f"\nThe run waiting for the GPU couldn't start: {why}\n")
+                elif resume:                     # a Resume that started: the queue held for it follows it now
+                    webqueue.resumed()
+                return
+        finally:
+            with _gpu_wait_lock:
+                _gpu_wait["n"] -= 1
+    with _gpu_wait_lock:
+        _gpu_wait["n"] += 1
+    threading.Thread(target=go, daemon=True).start()
+    append_log(f"\n{r['wait']}\n")
+    return {"ok": True, "queued": True, "note": r["wait"], "error": ""}
+
+
+def _training_waits():
+    """A training run is waiting for a Studio render (or the Profiler) to finish: Studio starts nothing new."""
+    with _gpu_wait_lock:
+        if _gpu_wait["n"]:
+            return True
+    with webqueue._lock:
+        w = webqueue._q["waiting"]
+    return w.startswith(("Studio is finishing", "The Profiler is rendering"))
 
 
 def _start_one(family_key, values, image_folder, resume, ft_continue, note, models, carry):
@@ -2086,7 +2142,7 @@ def _start_one(family_key, values, image_folder, resume, ft_continue, note, mode
         studio_queue.pause("A training run is waiting for the GPU.")
         why = ("The Profiler is rendering: the run starts when it finishes." if tools.holding_gpu() else
                "Studio is finishing a render: the run starts when it's done.")
-        return {"wait": why, "error": why + " (Press it again then.)"}
+        return {"wait": why, "error": why}
     if studio_queue.pause("A training run started."):
         append_log("The Studio queue is paused for this run: resume it on Studio when you want.\n")
     if studio.holding_gpu():                    # Repair Studio's model leaves the GPU for the run
@@ -2188,8 +2244,12 @@ def _queue_starter(item):
         return True, ""
     try:
         cid = (item.get("values") or {}).get("__continue")
-        r = (_continue_run(cid, item["values"].get("__more") or "", queue_ok=False, values=item["values"]) if cid else
-             _start(item["family"], item["values"], item.get("image_folder") or ""))
+        with _gpu_wait_lock:
+            if _gpu_wait["n"]:                   # a Resume / Continue waiting for Studio starts first
+                return False, "wait-soon: a run waiting for the GPU starts first"
+        r = (_continue_run(cid, item["values"].get("__more") or "", queue_ok=False, values=item["values"],
+                           raw_wait=True) if cid else
+             _start(item["family"], item["values"], item.get("image_folder") or "", raw_wait=True))
     except Exception as e:
         return False, str(e)
     if r.get("ok"):
@@ -4730,7 +4790,7 @@ class Handler(BaseHTTPRequestHandler):
                         return self.json({"warnings": warn})
                     if fetch:
                         return self.json(_fetch_then_start(desc, fam, vals, folder, plan.problems))
-                r = _start(fam, vals, folder)
+                r = _start(fam, vals, folder, raw_wait=True)
                 if r.get("wait"):                # Studio (or the Profiler) is finishing: first in the queue, waiting
                     lora, out_dir = (_in0 or {}).get("LORA_NAME", ""), (_in0 or {}).get("LORA_OUTPUT_DIR", "")
                     webqueue.add(fam, vals, folder, lora, out_dir, first=True)

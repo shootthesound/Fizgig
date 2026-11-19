@@ -7881,7 +7881,6 @@ function wireStudioSetups() {
         const r = await api("/api/studio/save_output", {which: tweak ? "tweaked" : "baseline"});
         const line = r.error || (r.already ? "Already saved: " : "Saved: ") + r.path;
         $("stDlMsg").textContent = line;
-        if (id === "stSongSave") $("stStatus").textContent = line;     // a song's row has no message line
         if (!r.error && pageIsElsewhere()) {          // a copy on this device too
           b.setAttribute("download", r.name);
           b.dataset.go = "1"; b.click(); delete b.dataset.go;
@@ -8747,7 +8746,6 @@ async function studioPollOnce() {
   if (said && said !== S.st.outSaid) {
     S.st.outSaid = said;
     $("stDlMsg").textContent = st.out_said.error || `Saved: ${st.out_said.paths.join(" and ")}`;
-    if (S.st.layout && S.st.layout.kind === "audio") $("stStatus").textContent = $("stDlMsg").textContent;
   }
   return st.state === "loading" || st.rendering || !!st.pending || qActive;
 }

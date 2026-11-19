@@ -827,7 +827,6 @@
             <div class="card-title"><span>Setup</span><span class="run-badge" id="stBadge"></span></div>
             <div class="card-content">
               <div class="field-row"><span class="field-label">Model:</span><select id="stFamily" class="w-combo"></select>
-                <label class="checkbox-label" title="Every finished render goes into the Studio outputs folder (Preferences) by itself: the Tweaked one each time, the Baseline when it rendered again (not when only the Tweaked one changed). Kept for each model on its own."><input type="checkbox" id="stAutoSave"> Save every render</label>
                 <span class="field-hint" id="stDitNote"></span></div>
               <div class="field-row" id="stRender" style="display:none"></div>
               <div id="stOpts" style="display:none"></div>
@@ -1077,10 +1076,20 @@
                   style="display:none"></video><audio id="stTweakAud" controls style="display:none"></audio>
                   <figcaption id="stTweakCap">Tweaked (current sliders)</figcaption></figure>
               </div>
-              <div class="field-hint" id="stPreviewHint">Click either picture to see both full size (← → switches between them).</div>
+              <div class="st-tools">
+                <div class="st-tool-group" id="stDownloads" style="display:none">
+                  <a class="btn btn-sm" id="stDlBase" title="Saves the Baseline as rendered (the LoRA at its load strength, before your slider changes) into the Studio outputs folder set in Preferences, with the time in its name">💾 Save original</a>
+                  <a class="btn btn-sm" id="stDlTweak" title="Saves the Tweaked render as it is now, with your slider changes, into the Studio outputs folder set in Preferences, with the time in its name. A picture keeps Studio's settings inside it (the LoRAs, every slider, the prompt and seed): drop it on this tab to get them all back.">💾 Save tweaked</a></div>
+                <div class="st-tool-group"><label class="checkbox-label" title="Every finished render goes into the Studio outputs folder (Preferences) by itself: the Tweaked one each time, the Baseline when it rendered again (not when only the Tweaked one changed). Kept for each model on its own."><input type="checkbox" id="stAutoSave"> Save every render</label></div>
+                <div class="st-tool-group" id="stPlayBoth" style="display:none"><button class="btn btn-sm" id="stPlayBothBtn">▶ Play together</button>
+                  <span class="field-hint">Loop</span><select id="stLoopMode" class="w-combo st-small-select clip-loop-mode" title="Repeat plays the clip again from its start. Ping-pong plays it forward then backward (its sound on the way out only)."><option value="repeat">Repeat</option><option value="pingpong">Ping-pong</option></select></div>
+                <span class="field-hint st-tool-hint" id="stPreviewHint">Click either picture to see both full size (← → switches between them).</span>
+              </div>
+              <div class="field-hint st-saved-line" id="stDlMsg"></div>
               <div class="st-metrics" id="stMetrics" style="display:none" title="Paired numbers for the two renders on screen (same seed and prompt, only the blocks differ - where such measures are honest). Likeness: face similarity to your reference photo (a person LoRA). Grid: the model's patch lattice showing through (rising = overbake). Detail: texture energy in the face, or the whole picture when there is none (down = plastic, up = fried). Clipped: blown pixels. Sat: saturation.">
-                <button class="btn btn-sm" id="stMetRefPick">📷 Reference…</button><span class="field-hint" id="stMetRefName">(none)</span>
-                <button class="btn btn-sm" id="stMetRefClear" title="No reference photo">✕</button>
+                <span class="st-tool-group"><span class="st-tools-label">Measures</span>
+                  <button class="btn btn-sm" id="stMetRefPick">📷 Reference…</button><span class="field-hint" id="stMetRefName">(none)</span>
+                  <button class="btn btn-sm" id="stMetRefClear" title="No reference photo">✕</button></span>
                 <span class="st-chip" id="stMetLike"></span><span class="st-chip" id="stMetGrid"></span>
                 <span class="st-chip" id="stMetTex"></span><span class="st-chip" id="stMetClip"></span><span class="st-chip" id="stMetSat"></span>
               </div>
@@ -1100,23 +1109,20 @@
                 </div>
                 <div class="st-map-note" id="stMapSay" style="display:none"></div>
               </div>
-              <div class="field-row" id="stPlayBoth" style="display:none"><button class="btn btn-sm" id="stPlayBothBtn">▶ Play together</button>
-                <span class="field-hint">Loop</span><select id="stLoopMode" class="w-combo st-small-select clip-loop-mode" title="Repeat plays the clip again from its start. Ping-pong plays it forward then backward (its sound on the way out only)."><option value="repeat">Repeat</option><option value="pingpong">Ping-pong</option></select></div>
-              <div class="field-row" id="stDownloads" style="display:none">
-                <a class="btn btn-sm" id="stDlBase" title="Saves the Baseline as rendered (the LoRA at its load strength, before your slider changes) into the Studio outputs folder set in Preferences, with the time in its name">💾 Save original</a>
-                <a class="btn btn-sm" id="stDlTweak" title="Saves the Tweaked render as it is now, with your slider changes, into the Studio outputs folder set in Preferences, with the time in its name. A picture keeps Studio's settings inside it (the LoRAs, every slider, the prompt and seed): drop it on this tab to get them all back.">💾 Save tweaked</a>
-                <span class="field-hint" id="stDlMsg"></span></div>
               <div class="st-song" id="stSong" style="display:none">
-                <div class="field-row st-song-btns">
-                  <button class="btn btn-sm" id="stSongBaseline" data-side="baseline">▶ Baseline</button>
-                  <button class="btn btn-sm" id="stSongTweaked" data-side="tweaked">▶ Tweaked</button>
-                  <label class="checkbox-label" title="The song repeats - the section when one is set, else the whole song"><input type="checkbox" id="stSongLoop"> 🔁 Loop</label>
-                  <label class="checkbox-label" title="Each new Tweaked render plays from the top (off: the song carries on at the same moment in its new version)"><input type="checkbox" id="stSongRestart"> ⏮ Restart on tweak</label>
-                  <button class="btn btn-sm" id="stSongNolora" data-side="nolora">▶ No LoRA</button>
-                  <button class="btn btn-sm" id="stSongPause">⏸ Pause</button>
-                  <a class="btn btn-sm" id="stSongSave" title="Saves the whole Tweaked song as rendered (48 kHz WAV) into the songs folder of the Studio outputs folder set in Preferences">💾 Save Tweaked WAV</a>
-                  <span id="stSongTools">
-                    <button class="btn btn-sm" id="stKeepBtn" title="The Tweaked song becomes the song to start from, set to Repaint: drag across the waveform to choose a section to make new (the rest stays exactly as it is), or switch Use to Extend.">⤵ Use as source</button></span>
+                <div class="st-tools st-song-btns">
+                  <div class="st-tool-group">
+                    <button class="btn btn-sm" id="stSongBaseline" data-side="baseline">▶ Baseline</button>
+                    <button class="btn btn-sm" id="stSongTweaked" data-side="tweaked">▶ Tweaked</button>
+                    <button class="btn btn-sm" id="stSongNolora" data-side="nolora">▶ No LoRA</button>
+                    <button class="btn btn-sm" id="stSongPause">⏸ Pause</button></div>
+                  <div class="st-tool-group">
+                    <label class="checkbox-label" title="The song repeats - the section when one is set, else the whole song"><input type="checkbox" id="stSongLoop"> 🔁 Loop</label>
+                    <label class="checkbox-label" title="Each new Tweaked render plays from the top (off: the song carries on at the same moment in its new version)"><input type="checkbox" id="stSongRestart"> ⏮ Restart on tweak</label></div>
+                  <div class="st-tool-group">
+                    <a class="btn btn-sm" id="stSongSave" title="Saves the whole Tweaked song as rendered (48 kHz WAV) into the songs folder of the Studio outputs folder set in Preferences">💾 Save Tweaked WAV</a>
+                    <span id="stSongTools">
+                      <button class="btn btn-sm" id="stKeepBtn" title="The Tweaked song becomes the song to start from, set to Repaint: drag across the waveform to choose a section to make new (the rest stays exactly as it is), or switch Use to Extend.">⤵ Use as source</button></span></div>
                   <span class="st-song-time" id="stSongTime">0:00 / 0:00</span>
                 </div>
                 <canvas id="stSongBar" class="st-song-bar" height="72"></canvas>

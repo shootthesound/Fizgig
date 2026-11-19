@@ -65,6 +65,8 @@ beach-masklabel.png
 
 Paint white over what you want learned and black over the rest; grey for in between and soft edges. A mask smaller than its picture is fine (it's stretched to fit), as is one painted white on a transparent layer (transparent counts as black). Other trainers that use this naming make masks that work as they are.
 
+Fizgig paints them too, on the Image Prep tab's masks card: **Edit masks**, whose **Keep these settings…** stores the tool and its Size, Softness and Strength in slot 1, 2 or 3 — press the number, or hit 1, 2 or 3, to take them back. They start as Brush, Eraser and SAM click at the values the sliders ship with, and are kept in this browser.
+
 ### …check a mask?
 
 Captions tab: a picture with a mask has a **Show mask** button.

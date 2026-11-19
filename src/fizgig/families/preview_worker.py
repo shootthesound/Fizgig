@@ -173,6 +173,9 @@ class Worker:
         return self.enc, neg
 
     def run(self, job):
+        if self.desc.preview_keyframes:      # First / Last frame (#376): this round's, or none (a worker outlives runs)
+            self.driver.set_preview_keyframes(self.vae, {k: p for k, p in (job.get("keyframes") or {}).items()
+                                                         if p and os.path.isfile(p)})
         if self.ck:
             return self._run_checkpoint(job)
         t0 = time.time()

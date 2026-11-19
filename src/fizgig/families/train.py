@@ -2339,7 +2339,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 ck_cfg = 1.0
             # a helper renders this round on the same checkpoint, from the epoch's LoRA (#339: MOSS-Image's SFT
             # previews stayed on the training GPU with a helper standing by); Check picture stays on this GPU
-            hp_ck = _helper_previews(output_dir) if not (ref_latents or finetune or sample_keyframes) else None
+            hp_ck = _helper_previews(output_dir) if not (ref_latents or finetune) else None
             pcf = desc.preview_checkpoint()
             if hp_ck and not hp_ck.get("compare") and pcf is not None:
                 rd = os.path.join(output_dir, HELPER_ROUNDS, f"{epoch:06d}")
@@ -2402,7 +2402,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             last_prompt[0] = prompts[-1] if prompts else None
             _record_prompts(sample_dir, output_name, epoch, prompts)
             return
-        hp = _helper_previews(output_dir) if not (slider or ref_latents or finetune or sample_keyframes) else None   # a First / Last frame (#376) stays here: a helper has neither picture
+        hp = _helper_previews(output_dir) if not (slider or ref_latents or finetune) else None
         compare = None  # Check picture: this round renders here too, and the helper's is compared with it
         if hp and hp.get("compare") and hp["compare"] == compared[0]:
             hp = {**hp, "compare": 0}                   # that request was this run's already
@@ -2441,6 +2441,13 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                        "options": dict(family_options or {}),
                        "precision": precision, "context": [context_lora_path, context_lora_strength]
                        if context_lora_path else None, "lowmem": bool(lowmem)}
+                if sample_keyframes and desc.preview_keyframes:
+                    # First / Last frame (#376): the pictures go with the round, the helper encodes them as here
+                    job["keyframes"] = {}
+                    for kf, src in sample_keyframes.items():
+                        name = f"kf_{kf}{os.path.splitext(src)[1].lower() or '.png'}"
+                        shutil.copyfile(src, os.path.join(rd, name))
+                        job["keyframes"][kf] = name
                 if hp.get("compare"):
                     compared[0] = hp["compare"]
                     compare = (rd, job)

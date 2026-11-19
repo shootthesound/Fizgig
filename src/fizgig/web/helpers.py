@@ -260,6 +260,11 @@ def submit(body):
     for k in ("lora", "context", "conds"):
         if body.get(k) and have(body[k])["size"] < 0:
             raise ValueError(f"The {k} file didn't arrive: send it again.")
+    kfs = body.get("keyframes") if isinstance(body.get("keyframes"), dict) else {}
+    for kf, name in kfs.items():                                   # First / Last frame (#376)
+        if kf not in ("first", "last") or not _SAFE.match(str(name)) or have(name)["size"] < 0:
+            raise ValueError("A first / last frame picture didn't arrive: send it again.")
+    job["keyframes"] = {kf: _dir("files", name) for kf, name in kfs.items()}
     prefs = s.load_prefs()
     paths = {lab: p for lab, p, _f in _needs(desc, job, prefs)}
     roles = {f.role if f is not None else "": p for _lab, p, f in _needs(desc, job, prefs)}
@@ -1135,7 +1140,14 @@ def _send_round(h, lv, rd, out_dir, run):
     if os.path.isfile(os.path.join(rd, "conds.pt")):
         conds = f"{tag}-e{epoch:06d}-conds.pt"
         _send_file(c, os.path.join(rd, "conds.pt"), conds, lambda frac: None)
-    r = c.call("/api/helper/submit", {"job": job, "lora": lora, "context": ctx, "conds": conds}, timeout=60)
+    kfs = {}
+    for kf, name in (job.get("keyframes") or {}).items():         # First / Last frame (#376): the round's pictures
+        src = os.path.join(rd, str(name))
+        if os.path.isfile(src):
+            kfs[kf] = f"{tag}-e{epoch:06d}-{os.path.basename(src)}"
+            _send_file(c, src, kfs[kf], lambda frac: None)
+    r = c.call("/api/helper/submit", {"job": job, "lora": lora, "context": ctx, "conds": conds, "keyframes": kfs},
+               timeout=60)
     if r.get("models"):
         return
     jid, t0 = r["job"], time.time()

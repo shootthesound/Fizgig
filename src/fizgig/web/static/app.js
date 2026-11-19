@@ -12044,7 +12044,35 @@ matchMedia(LB_SIDE).addEventListener("change", () => fitTexts($("lightboxCapText
 
 // ---- the picture viewer: any preview or Captions picture, big, with the others in its list a step away --------
 const LIGHTBOX_PICS = ".gallery-item > img, .caption-card > img";      // (Repair Studio's panes are gallery items)
-S.lb = {list: [], at: 0};
+S.lb = {list: [], at: 0, z: {s: 1, x: 0, y: 0}};
+// zoom: scroll zooms about the cursor (fit .. 4x the picture's own pixels), drag pans, double-click goes fit <-> 1:1.
+// The zoom stays as ← → steps, so Studio's Baseline and Tweaked compare on the same spot; a new open starts at fit
+function lbFit() {                                    // screen px per picture px at fit (object-fit: contain)
+  const img = $("lightboxImg");
+  if (!img.naturalWidth || !img.clientWidth) return 1;
+  return Math.min(img.clientWidth / img.naturalWidth, img.clientHeight / img.naturalHeight);
+}
+function lbApply() {
+  const img = $("lightboxImg"), z = S.lb.z;
+  const w = img.clientWidth, h = img.clientHeight;   // the picture's area stays covered: no drifting off into black
+  z.x = Math.min(0, Math.max(w - w * z.s, z.x));
+  z.y = Math.min(0, Math.max(h - h * z.s, z.y));
+  img.style.transform = z.s === 1 ? "" : `translate(${z.x}px, ${z.y}px) scale(${z.s})`;
+  $("lightbox").classList.toggle("zoomed", z.s > 1);
+  const pct = Math.round(z.s * lbFit() * 100);
+  $("lightboxZoom").style.display = z.s > 1 ? "" : "none";
+  $("lightboxZoom").textContent = `${pct}% of the picture's pixels`;
+}
+function lbZoomTo(s, cx, cy) {                        // cx, cy: the screen point that stays put
+  const img = $("lightboxImg"), z = S.lb.z, r = img.getBoundingClientRect();
+  const fit = lbFit(), max = Math.max(4 / fit, 2);
+  s = Math.min(max, Math.max(1, s));
+  const bx = r.left - z.x, by = r.top - z.y;          // the untransformed corner
+  const ux = (cx - bx - z.x) / z.s, uy = (cy - by - z.y) / z.s;
+  z.x = cx - bx - ux * s; z.y = cy - by - uy * s; z.s = s;
+  lbApply();
+}
+function lbReset() { S.lb.z = {s: 1, x: 0, y: 0}; lbApply(); }
 // the caption shown under a Captions picture: an edit goes back to its card and is saved before the view moves on
 async function lightboxCapFlush() {
   const pic = S.lb.list[S.lb.at], cap = pic && pic.cap;
@@ -12060,6 +12088,7 @@ async function lightboxStep(i) {
 function lightboxShow(i) {
   const pic = S.lb.list[i];
   if (!pic) return;
+  if ($("lightbox").style.display === "none") lbReset();   // a fresh open starts at fit; a step keeps the zoom
   S.lb.at = i;
   $("lightboxCap").style.display = pic.cap ? "" : "none";
   $("lightbox").classList.toggle("with-cap", !!pic.cap);
@@ -12080,6 +12109,7 @@ function lightboxShow(i) {
 }
 async function lightboxClose() {
   if (!(await lightboxCapFlush())) return;
+  lbReset();
   $("lightbox").style.display = "none"; $("lightboxImg").src = "";
 }
 // a tile's thumbnail (/api/thumb, small and squashed) opens big as the picture itself (/api/media), as the Start tab's
@@ -12136,7 +12166,39 @@ function wireLightbox() {
     });
     lightboxShow(imgs.indexOf(img));
   });
-  $("lightbox").addEventListener("click", (e) => { if (e.target.id === "lightbox" || e.target.id === "lightboxImg") lightboxClose(); });
+  // a click on the picture closes it at fit; zoomed, the picture is for moving around (a drag never closes it)
+  $("lightbox").addEventListener("click", (e) => {
+    if (e.target.id === "lightboxImg" && (S.lb.z.s > 1 || S.lb.dragged)) { S.lb.dragged = false; return; }
+    if (e.target.id === "lightbox" || e.target.id === "lightboxImg") lightboxClose();
+  });
+  const lbImg = $("lightboxImg");
+  lbImg.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    lbZoomTo(S.lb.z.s * Math.pow(1.0015, -e.deltaY), e.clientX, e.clientY);
+  }, {passive: false});
+  lbImg.addEventListener("dblclick", (e) => {
+    e.preventDefault();
+    const one = 1 / lbFit();                         // 1:1 pixels (or 2x when the picture is smaller than the screen)
+    lbZoomTo(S.lb.z.s > 1.01 ? 1 : Math.max(one, 2), e.clientX, e.clientY);
+  });
+  lbImg.addEventListener("pointerdown", (e) => {
+    if (S.lb.z.s <= 1 || e.button !== 0) return;
+    e.preventDefault();
+    const z = S.lb.z, x0 = e.clientX, y0 = e.clientY, sx = z.x, sy = z.y;
+    S.lb.dragged = false;
+    lbImg.setPointerCapture(e.pointerId);
+    $("lightbox").classList.add("panning");
+    const move = (m) => {
+      if (Math.abs(m.clientX - x0) + Math.abs(m.clientY - y0) > 3) S.lb.dragged = true;
+      z.x = sx + m.clientX - x0; z.y = sy + m.clientY - y0; lbApply();
+    };
+    const up = () => {
+      lbImg.removeEventListener("pointermove", move); lbImg.removeEventListener("pointerup", up);
+      lbImg.removeEventListener("pointercancel", up); $("lightbox").classList.remove("panning");
+    };
+    lbImg.addEventListener("pointermove", move); lbImg.addEventListener("pointerup", up); lbImg.addEventListener("pointercancel", up);
+  });
+  lbImg.addEventListener("load", () => { if ($("lightbox").style.display !== "none") lbApply(); });  // a step: re-clamp
   $("lightboxClose").addEventListener("click", lightboxClose);
   $("lightboxPrev").addEventListener("click", () => lightboxStep(S.lb.at - 1));
   $("lightboxNext").addEventListener("click", () => lightboxStep(S.lb.at + 1));

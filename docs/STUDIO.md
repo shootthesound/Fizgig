@@ -19,7 +19,7 @@ Every image and video model has Studio; ACE-Step (songs) has it too, with a song
 4. **Prompt**, **Seed** (↻ for a random one) and **Width / Height** (clips: length, size and steps; songs: length).
 5. **Start**. The model loads on the Fizgig machine (the first time takes a minute) and renders the pair. After that every slider change re-renders Tweaked by itself. **Unload model** frees the GPU; leaving the tab does too.
 
-Click either picture to see both full size (← → switches between them). **⧉ Keep in view** puts the pair in a panel that stays on screen while you scroll down to the sliders.
+Click either picture to see both full size (← → switches between them). There, scroll to zoom in where the cursor is, up to 4× the picture's own pixels, drag to move around, and double-click to jump between fit and 1:1 pixels; ← → keeps the zoom and place, so Baseline and Tweaked compare on the same detail. The same view opens from the Samples gallery and the Captions tab. **⧉ Keep in view** puts the pair in a panel that stays on screen while you scroll down to the sliders.
 
 **Reuse unchanged blocks** (on by default where the model has it) keeps the unchanged blocks' results in VRAM and replays them, so a change to a late block renders almost at once. It is the same picture as a full render. Turn it off if VRAM is tight.
 

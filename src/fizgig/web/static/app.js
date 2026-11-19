@@ -6399,8 +6399,19 @@ S.st = {layout: null, blocks: {}, locks: new Set(), primaryBlocks: new Set(), do
   shown: 0, hist: [], redo: [], loadedKey: "", timer: null, poll: null, ready: false};
 const ST_KEY = "fizgig_studio";
 const stSaved = () => { try { return JSON.parse(localStorage.getItem(ST_KEY) || "{}"); } catch (e) { return {}; } };
+// the folder each picture picker last chose from (the Reference, each First / Last frame or reference slot, the
+// metrics reference): its Choose… opens there again, across restarts, even with the box cleared
+const stDir = (slot) => (stSaved().dirs || {})[slot] || "";
+function stDirKeep(slot, path) {
+  const folder = String(path || "").replace(/[\\/][^\\/]*$/, "");
+  if (!folder) return;
+  try { const d = stSaved(); d.dirs = {...(d.dirs || {}), [slot]: folder}; localStorage.setItem(ST_KEY, JSON.stringify(d)); }
+  catch (e) { /* private window */ }
+}
 const stRemember = debounce(() => {
-  const d = {family: $("stFamily").value, primary: $("stPrimary").value, donor: $("stDonor").value,
+  // on top of what's saved: H3's clip settings and photos (studioH3Remember's video), the folders and the metrics
+  // reference live in the same record, and a rebuild from scratch dropped them on every prompt change
+  const d = {...stSaved(), family: $("stFamily").value, primary: $("stPrimary").value, donor: $("stDonor").value,
     prompt: $("stPrompt").value, seed: $("stSeed").value, res: $("stRes").value,
     w: $("stW").value, h: $("stH").value, turbo: $("stTurbo").checked,
     ref: $("stRef").value, refMp: $("stRefMp").value, refStr: $("stRefStr").value, luckyLo: $("stLuckyLo").value,
@@ -6642,7 +6653,8 @@ function studioSlots() {
     const up = uploadButton({kind: "path", key: "STUDIO_" + slot}, input, set);
     host.append(el("div", {class: "st-slot"}, el("span", {class: "field-label", text: label + ":"}), thumb,
       el("div", {}, el("div", {class: "field-row"}, input,
-        el("button", {class: "btn", text: "Choose…", onclick: () => pick(input.value || S.imageFolder, false, set)}), up.btn,
+        el("button", {class: "btn", text: "Choose…", onclick: () => pick(input.value || stDir(slot) || S.imageFolder, false,
+          (p) => { stDirKeep(slot, p); set(p); })}), up.btn,
         el("button", {class: "btn", text: "Re-crop", onclick: () => S.st.kf[slot] && set(S.st.kf[slot])}),
         el("button", {class: "btn", text: "Clear", onclick: () => set("")}), info), up.status)));
     show();
@@ -7590,7 +7602,8 @@ function wireStudioMetrics() {
     try { const d = stSaved(); d.metricsRef = p || ""; localStorage.setItem(ST_KEY, JSON.stringify(d)); } catch (e) { /* private window */ }
     studioMetricsShow(); studioMetrics(); studioMapsShow();
   };
-  $("stMetRefPick").addEventListener("click", () => pick(stSaved().metricsRef || refStart(), false, setRef));
+  $("stMetRefPick").addEventListener("click", () => pick(stSaved().metricsRef || stDir("metrics") || refStart(), false,
+    (p) => { stDirKeep("metrics", p); setRef(p); }));
   $("stMetRefClear").addEventListener("click", () => setRef(""));
 }
 
@@ -9042,7 +9055,8 @@ function wireStudio() {
     if (S.st.ready) api("/api/studio/donor", {path: p}).then(studioPoll).catch((e) => { $("stStatus").textContent = e.message; }); }));
   $("stDonorUnload").addEventListener("click", () => { $("stDonor").value = ""; stRemember(); studioDmixOff();
     if (S.st.ready) api("/api/studio/donor", {path: ""}).then(() => { studioPoll(); studioPending(); }); });
-  $("stRefPick").addEventListener("click", () => pick($("stRef").value || refStart(), false, (p) => { $("stRef").value = p; stRemember(); studioPending(); }));
+  $("stRefPick").addEventListener("click", () => pick($("stRef").value || stDir("ref") || refStart(), false,
+    (p) => { stDirKeep("ref", p); $("stRef").value = p; stRemember(); studioPending(); }));
   $("stRefClear").addEventListener("click", () => { $("stRef").value = ""; stRemember(); studioPending(); });
   // ↻ New seed renders at once, as Update would (with any other change still waiting); typing a seed still waits
   $("stSeedNew").addEventListener("click", () => {

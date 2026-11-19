@@ -2110,14 +2110,17 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 .st-film-sel .st-range-h { cursor: ew-resize; }
 .st-film-sel .st-range-h[data-end="a"] { left: -7px; }
 .st-film-sel .st-range-h[data-end="b"] { right: -7px; }
-.st-slot { display: grid; grid-template-columns: 110px 72px 1fr; gap: 10px; align-items: center; margin: 6px 0; }
+.st-slot { display: grid; grid-template-columns: 110px 160px 1fr; gap: 10px; align-items: center; margin: 6px 0; }
+/* the thumbnail column holds the widest crop the thumbnail draws (160 x 96, studioSlotThumb): a landscape photo
+   ran under the box beside it in a 72 px column */
 .st-slot img { width: 72px; height: 72px; object-fit: cover; border-radius: 6px; background: var(--bg-deep); }
 .st-slot .field-row { margin: 0; }
+@media (max-width: 760px) { .st-slot { grid-template-columns: 1fr; } .st-slot canvas { justify-self: start; } }
 
 /* Studio: the crop window for H3's first / last frame and reference photos */
 .crop-window { width: auto !important; max-width: 96vw; }
 #cropCanvas { display: block; margin: 8px 0; touch-action: none; cursor: move; max-width: 100%; }
-.st-slot canvas { display: block; background: var(--bg-deep); }
+.st-slot canvas { display: block; background: var(--bg-deep); justify-self: center; max-width: 160px; max-height: 96px; }
 
 /* Studio: the preview kept in view - floating (moved by its bar, resized from its corner) or pinned to the top of the
    tab (its bottom edge sets the height); the panes keep their side-by-side row and scale to the panel */

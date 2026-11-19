@@ -135,11 +135,18 @@ class Krea2Driver(FamilyDriver):
         return load_krea2_text_encoder(path, dtype=DTYPE, device=device)
 
     def unload_text_encoder(self, te):
+        # Its weights go to the meta device: the VRAM is freed even while a caller still holds the module, and nothing
+        # is copied out first. The old move to CPU copied the whole encoder into RAM just before it was dropped -
+        # 5.4 GB more peak RAM and 2.4 s per prompt in Studio (#380, measured by @xGnome on an RX 9070 XT). Every
+        # caller discards it after this.
         if not getattr(self, "_file_backed_inference", False):
             try:
-                te.to("cpu")
+                te.to("meta")
             except Exception:
-                pass
+                try:
+                    te.to("cpu")
+                except Exception:
+                    pass
         del te
         import gc
         gc.collect()

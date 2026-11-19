@@ -7062,7 +7062,7 @@ function songRegion(r) {
   S.st.region = r;
   if (r) $("stSongLoop").checked = true;
   studioAceRemember();
-  if ($("stSrcOn").checked && $("stSrcMode").value === "repaint") studioPending();    // Repaint remakes it at Update
+  if ($("stSrcOn").checked && $("stSrcMode").value === "repaint") studioPending();    // Repaint remakes it at Render
   if (songPlaying()) songPlay(S.song.side, r ? r[0] : undefined);
   else if (r) S.song.pos = r[0];
   for (const s of Object.keys(SONG_SIDES)) songPlayer(s).loop = $("stSongLoop").checked && !r;
@@ -7246,8 +7246,8 @@ function wireStudioAce() {
   for (const id of ["stPbOn", "stSrcOn", "stSndOn", "stSrcMode", "stPbKeep", "stPbBlend", "stSrcFollow", "stSrcDenoise", "stSrcStrength"])
     $(id).addEventListener("change", change);
   for (const id of ["stPbBlend"]) $(id).addEventListener("input", studioAceLayout);
-  // typed text and new files render on Update, as the prompt does
-  const typed = () => { studioAceRemember(); if (S.st.ready) $("stStart").textContent = "Update"; };
+  // typed text and new files render on Render, as the prompt does
+  const typed = () => { studioAceRemember(); if (S.st.ready) $("stStart").textContent = "Render"; };
   for (const id of ["stPromptB", "stSrcPath", "stSndPath"]) $(id).addEventListener("input", typed);
   for (const [id, host] of [["stSrcPath", "stSrcBtns"], ["stSndPath", "stSndBtns"]]) {
     const input = $(id), set = (p) => { input.value = p; studioAceRemember(); studioPending(); };
@@ -7303,8 +7303,8 @@ function studioEq(role, on, restore = true) {
   for (const id of [pathId, pickId, scaleId]) $(id).disabled = on;
   $(btnId).classList.toggle("btn-primary", on);
   if (on) {
-    if (role === "primary") { $("stStatus").textContent = "Model EQ as the primary: press Start / Update to load it (1.0 = the stock model).";
-      if (S.st.ready) $("stStart").textContent = "Update"; }
+    if (role === "primary") { $("stStatus").textContent = "Model EQ as the primary: press Start / Render to load it (1.0 = the stock model).";
+      if (S.st.ready) $("stStart").textContent = "Render"; }
     else if (S.st.ready) api("/api/studio/donor", {path: L.model_eq}).then(studioPoll).catch((e) => { $("stStatus").textContent = e.message; });
     stRemember();
     return;
@@ -7315,8 +7315,8 @@ function studioEq(role, on, restore = true) {
   $(scaleId).value = prevScale || "1";
   if (role === "primary") {
     $(pathId).value = prev;
-    $("stStatus").textContent = "Model EQ Mode off: the primary is your own LoRA again - press Update to load it.";
-    if (S.st.ready) $("stStart").textContent = "Update";
+    $("stStatus").textContent = "Model EQ Mode off: the primary is your own LoRA again - press Render to load it.";
+    if (S.st.ready) $("stStart").textContent = "Render";
   } else {
     $(pathId).value = prev;
     if (S.st.ready) api("/api/studio/donor", {path: prev}).then(() => { studioPoll(); studioPending(); });
@@ -8515,7 +8515,7 @@ function studioState() {
 }
 
 // a setting changed (size, length, steps, seed, a LoRA's strength, the negative, a reference...): nothing renders until
-// Update, so several can change first - only the block sliders render as they move
+// Render, so several can change first - only the block sliders render as they move
 // Studio's own pick of the Samples-tab choices a model also offers here (FamilyOption.studio, e.g. H3 Image's
 // sampler): independent of the Samples tab, kept in prefs studio_opt_<KEY>, and used from the next render
 function studioOptionsDraw(L) {
@@ -8546,8 +8546,8 @@ function studioOptionsDraw(L) {
 
 function studioPending() {
   if (!S.st.ready) return;
-  $("stStart").textContent = "Update";
-  $("stStatus").textContent = "Changed - press Update to render.";
+  $("stStart").textContent = "Render";
+  $("stStatus").textContent = "Changed - press Render.";
 }
 
 function studioSchedule(live) {
@@ -8562,7 +8562,7 @@ async function studioRender() {
     S.st.foreign = false; S.st.loadedKey = "";
     return studioStart();
   }
-  // seed 0: random, rolled by Update / Start (studioStart) and kept while sliders and the other controls render, so
+  // seed 0: random, rolled by Render / Start (studioStart) and kept while sliders and the other controls render, so
   // a tweak is judged on the same picture; Baseline and Tweaked share it
   const state = studioState();
   if (state.seed === 0) {
@@ -8595,7 +8595,7 @@ function studioLoadBody() {
 
 async function studioStart() {
   stRemember();
-  // Update with seed 0: a new random picture (not for an Upscale: it works on the clip already rendered)
+  // Render with seed 0: a new random picture (not for an Upscale: it works on the clip already rendered)
   if (seedOf("stSeed") === 0 && !S.st.upHold) studioRollSeed();
   const L = S.st.layout;
   try {
@@ -8644,6 +8644,8 @@ async function studioPollOnce() {
   }
   let qActive = false;
   try { qActive = studioQueueDraw(await api("/api/studio/queue")); } catch (e) { /* an older server */ }
+  // Add to queue lines a render up behind something: with nothing rendering and no jobs waiting, Render is the button
+  $("stQAdd").disabled = !(st.rendering || st.state === "loading" || (S.stq && (S.stq.left || S.stq.job)));
   const wasReady = S.st.ready;
   S.st.ready = st.state === "ready";
   S.st.donor = !!st.donor;
@@ -8655,7 +8657,7 @@ async function studioPollOnce() {
   if (String(st.up_room) !== String(S.st.upRoom)) { S.st.upRoom = st.up_room; studioUpSummary(); }
   // loaded with nothing to render yet: say what it waits for (a prompt), not that a preview is coming
   const waiting = st.state === "ready" && !st.rendering && !st.shown && !$("stPrompt").value.trim();
-  $("stStatus").textContent = (waiting ? "Loaded. Enter a prompt (include the LoRA's trigger word), then press Update." :
+  $("stStatus").textContent = (waiting ? "Loaded. Enter a prompt (include the LoRA's trigger word), then press Render." :
     st.status || $("stStatus").textContent) +
     (st.status && /^(Loaded|Ready|Donor loaded)/.test(st.status) && studioEqNote(st) ? " " + studioEqNote(st) : "");
   $("stBadge").textContent = {loading: "Loading", ready: st.rendering ? "Rendering" : "Loaded", idle: ""}[st.state] || "";
@@ -8663,7 +8665,7 @@ async function studioPollOnce() {
   const p = st.progress;
   $("stBar").style.width = p && p[1] ? `${Math.round(100 * p[0] / p[1])}%` : st.rendering || st.state === "loading" ? "100%" : "0";
   $("stBar").parentElement.classList.toggle("indeterminate", !(p && p[1]) && (st.rendering || st.state === "loading"));
-  $("stStart").textContent = S.st.ready ? "Update" : "Start";
+  $("stStart").textContent = S.st.ready ? "Render" : "Start";
   $("stCancel").disabled = !(st.rendering || st.pending);
   if (S.st.ready && !wasReady) {
     studioActivity();
@@ -8943,7 +8945,7 @@ function wireStudio() {
   new MutationObserver(studioDockPlay).observe($("stPlayBoth"), {attributes: true, attributeFilter: ["style"]});
   window.addEventListener("resize", debounce(() => { const d = $("stDock"); if (d && d.classList.contains("floating")) studioDockClamp(d); }, 150));
   $("stFamily").addEventListener("change", () => { studioFamily(); stRemember(); });
-  // the clip row: length / size / steps / speed LoRA / sound wait for Update, as Model and Base do
+  // the clip row: length / size / steps / speed LoRA / sound wait for Render, as Model and Base do
   for (const id of ["stH3Len", "stH3LenS", "stH3W", "stH3H", "stH3Steps", "stH3Turbo", "stH3Sound", "stH3Boost", "stH3Pieces", "stH3PieceS"])
     $(id).addEventListener("change", () => { if (id.startsWith("stH3Len") || id === "stH3PieceS") studioLenOther(true); if (id === "stH3Pieces") studioLenOther(); studioH3Remember(); studioPending(); });
   $("stH3Early").addEventListener("change", studioH3Remember);
@@ -8954,7 +8956,7 @@ function wireStudio() {
   // frame (Loop back: and ending on its first). Its length is the seconds box on the frame grid (empty: the rendered clip's own length,
   // sent as 0), sent with an ordinary render request
   for (const id of ["stLoopPrompt", "stLoopS"]) $(id).addEventListener("change", studioH3Remember);
-  // Upscale: the fold's boxes are remembered and its heading follows them; they wait for Update only while After
+  // Upscale: the fold's boxes are remembered and its heading follows them; they wait for Render only while After
   // every render is on. Upscale this clip sends them with an ordinary render request, for the clip in the Tweaked pane
   for (const id of ["stUpW", "stUpH", "stUpDen", "stUpSteps", "stUpSec", "stUpAuto", "stUpWhich", "stUpFirst", "stUpLast", "stUpGuide", "stUpGuideL", "stUpBias"])
     $(id).addEventListener("change", () => {
@@ -9133,7 +9135,7 @@ function wireStudio() {
   $("stUpPrompt").addEventListener("change", upPrompt);
   $("stUpPromptCopy").addEventListener("click", () => { $("stUpPrompt").value = $("stPrompt").value; upPrompt(); });
   // Preview: the middle of the clip (1 frame, or the shortest clip) with the fold's settings, sent like Upscale now
-  // Both go by way of Update's check (studioStart): a primary or donor LoRA changed since the clip was rendered is
+  // Both go by way of Render's check (studioStart): a primary or donor LoRA changed since the clip was rendered is
   // loaded first, then the clip already rendered is upscaled on it. The request is held until it has been sent
   $("stUpPrev").addEventListener("click", () => {
     S.st.upPrev = Number($("stUpPrevN").value) || 22; S.st.upNow = 0; S.st.upHold = 1;   // 22 or 39 frames
@@ -9171,8 +9173,8 @@ function wireStudio() {
   // the note beside the length follows the two seconds boxes as they are typed in (the box itself moves to the
   // nearest length when it is left)
   for (const id of ["stH3LenS", "stH3PieceS"]) $(id).addEventListener("input", () => studioLenOther());
-  $("stH3Model").addEventListener("change", () => { studioH3Remember(); studioSlots(); $("stStart").textContent = "Update"; });
-  $("stH3Base").addEventListener("change", () => { studioH3Remember(); $("stStart").textContent = "Update"; });
+  $("stH3Model").addEventListener("change", () => { studioH3Remember(); studioSlots(); $("stStart").textContent = "Render"; });
+  $("stH3Base").addEventListener("change", () => { studioH3Remember(); $("stStart").textContent = "Render"; });
   playTogether($("stPlayBothBtn"), () => {
     const v = S.st.layout?.kind === "video", ids = v ? ["stBaseVid", "stTweakVid"] : ["stBaseAud", "stTweakAud"];
     if ($("stNolPane").style.display !== "none") ids.unshift(v ? "stNolVid" : "stNolAud");
@@ -9211,7 +9213,7 @@ function wireStudio() {
   $("stRefPick").addEventListener("click", () => pick($("stRef").value || stDir("ref") || refStart(), false,
     (p) => { stDirKeep("ref", p); $("stRef").value = p; stRemember(); studioPending(); }));
   $("stRefClear").addEventListener("click", () => { $("stRef").value = ""; stRemember(); studioPending(); });
-  // ↻ New seed renders at once, as Update would (with any other change still waiting); typing a seed still waits
+  // ↻ New seed renders at once, as Render would (with any other change still waiting); typing a seed still waits
   $("stSeedNew").addEventListener("click", () => {
     $("stSeed").value = 1 + Math.floor(Math.random() * 99999); stRemember();
     if (S.st.ready) studioStart();

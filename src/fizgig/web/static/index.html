@@ -908,7 +908,7 @@
                     <input type="text" id="stSndPath" class="w-path" placeholder="a recording"><span id="stSndBtns"></span></div>
                 </div>
               </div>
-              <div class="field-row"><span class="field-label">Seed:</span><input type="text" id="stSeed" class="w-num" value="42" title="0 = random: Update picks a new seed; moving sliders keeps it (Baseline and Tweaked share it)">
+              <div class="field-row"><span class="field-label">Seed:</span><input type="text" id="stSeed" class="w-num" value="42" title="0 = random: Render picks a new seed; moving sliders keeps it (Baseline and Tweaked share it)">
                 <button class="btn btn-sm" id="stSeedNew" title="A random seed, rendered at once">↻</button>
                 <span class="field-label" id="stResLabel">Length (s):</span><select id="stRes" class="w-combo st-small-select"></select>
                 <span class="st-inline" id="stSizeRow"><span class="st-pair"><span class="field-hint">Width</span><select id="stW" class="w-combo st-small-select"></select>
@@ -918,7 +918,7 @@
                 <label class="checkbox-label" id="stTurboRow" title="Keeps the results of the blocks before the one you moved, so the next render only reruns from there. The same picture as a full render. Uses extra memory (in system RAM when the card is tight): untick it if memory is short."><input type="checkbox" id="stTurbo" checked> Reuse unchanged blocks
                   (a late-block change renders almost at once; the same picture as a full render)</label></div>
               <div id="stVideoRows" style="display:none">
-                <div class="field-row" id="stH3ModelRow"><span class="field-label">Model:</span><select id="stH3Model" class="w-combo st-small-select" title="The Reference model takes up to two photos (Frames below): say &lt;Picture 1&gt; / &lt;Picture 2&gt; in the prompt for them. Switching reloads the model at the next Start / Update (about 25 s)."></select>
+                <div class="field-row" id="stH3ModelRow"><span class="field-label">Model:</span><select id="stH3Model" class="w-combo st-small-select" title="The Reference model takes up to two photos (Frames below): say &lt;Picture 1&gt; / &lt;Picture 2&gt; in the prompt for them. Switching reloads the model at the next Start / Render (about 25 s)."></select>
                   <span class="field-label">Base:</span><select id="stH3Base" class="w-combo st-small-select"></select></div>
                 <div class="field-row"><span class="field-label">Clip:</span>
                   <span class="st-inline"><select id="stH3Len" class="w-combo st-small-select"></select>
@@ -939,7 +939,7 @@
                     <label class="checkbox-label" id="stH3EarlyBox" title="Put up the pass-2 estimate in the Tweaked pane while the remaining passes run"><input type="checkbox" id="stH3Early" checked> Show early</label></span></div>
                 <div class="field-row"><span class="field-label"></span><span class="field-hint" id="stH3Note"></span></div>
                 <div class="field-row" id="stLoopRow"><span class="field-label">Then:</span>
-                  <input type="text" id="stLoopPrompt" class="w-path" placeholder="after a render: what happens next, then Continue or Loop back (empty: the prompt above)" title="Used only by Continue and Loop back, after a clip is rendered: the prompt for the clip they add after the one in the Tweaked pane. Render and Update never read it.">
+                  <input type="text" id="stLoopPrompt" class="w-path" placeholder="after a render: what happens next, then Continue or Loop back (empty: the prompt above)" title="Used only by Continue and Loop back, after a clip is rendered: the prompt for the clip they add after the one in the Tweaked pane. Render never reads it.">
                   <span class="st-inline"><input type="text" id="stLoopS" placeholder="seconds" title="How long the added clip is, in seconds. Leave it empty and it is the same length as the clip you rendered."><span class="field-hint">s</span>
                     <button class="btn" id="stContinue" type="button" title="Adds a new clip after the one in the Tweaked pane, made on this prompt and starting on its last frame. Your clip is not rendered again. Press it again to carry on further.">Continue</button>
                     <button class="btn" id="stLoopBack" type="button" title="Adds a return after the clip in the Tweaked pane: a new clip made on this prompt that starts on its last frame and ends on its first, so the whole thing ends where it began and loops. Like ping-pong, but the way back is made new. Pressing it again with another prompt makes another return for the same clip.">Loop back</button></span></div>
@@ -1024,7 +1024,7 @@
                   <option selected>1.0</option><option>2.0</option></select>
                   <span class="field-hint" id="stRefStrLabel">Strength</span><input type="text" id="stRefStr" value="1"></span></div>
               <div class="field-row"><button class="btn btn-primary" id="stStart">Start</button>
-                <button class="btn" id="stQAdd" title="Lines this render up in Studio's own queue, exactly as it is set now (the model, LoRAs, sliders, prompt, seed and size): the jobs render one after another and each is saved into the Studio outputs folder. A seed of 0 gets its own random seed for each job.">Add to queue</button>
+                <button class="btn" id="stQAdd" disabled title="Lines this render up in Studio's own queue, exactly as it is set now (the model, LoRAs, sliders, prompt, seed and size), behind the render going now: the jobs render one after another and each is saved into the Studio outputs folder. A seed of 0 gets its own random seed for each job. Greyed while nothing is rendering and no jobs wait: press Render.">Add to queue</button>
                 <button class="btn" id="stCancel" disabled title="Stop the render that's going. The model stays loaded.">Cancel</button>
                 <button class="btn" id="stUnload">Unload model</button>
                 <span class="field-hint" id="stStatus">Choose a LoRA and press Start: the model loads on the Fizgig machine

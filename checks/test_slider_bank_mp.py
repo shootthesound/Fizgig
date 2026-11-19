@@ -16,3 +16,14 @@ def test_no_size_known_is_none():
 def test_compile_plan_reads_it():
     src = open(train.__file__, encoding="utf-8").read()
     assert "mp_max = _largest_bucket_mp(group) or 0.25" in src
+
+
+def test_vimoo_plan_reads_it(monkeypatch):
+    from fizgig.families import quant
+    from fizgig.families.registry import get
+    seen = {}
+    monkeypatch.setattr(quant, "plan", lambda desc, drv, p, s, megapixels, pictures, **k: seen.setdefault("mp", megapixels))
+    bank = train._SliderBank([None] * 4)
+    bank.megapixels = 1.0
+    get("vimoo").load_driver().plan_run("auto", -1, group=bank, run={})
+    assert seen["mp"] == 1.0

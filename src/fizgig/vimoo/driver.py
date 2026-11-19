@@ -551,7 +551,7 @@ class VimooDriver(FamilyDriver):
         """The shared Auto plan (description train_memory), asked at the heaviest item's token load: a 49-frame clip at
         0.4 MP is 13 latent frames x 0.4 = 5.2 MP of tokens, which is what its activations scale with."""
         from fizgig.families import quant
-        mp = 0.25
+        mp = getattr(group, "megapixels", 0) or 0.25     # a prompt-pair slider: no dataset, its practice pictures' size
         try:
             mp = max(k[-2] * k[-1] / 1e6 for ds in group.datasets for k in ds.batch_manager.bucket_resos)
         except Exception:

@@ -272,8 +272,10 @@ MINIMAX_IMAGE = FamilyDescription(
     preview_more_sizes=(3072, 4096),  # 9 and 16 MP for those with the memory (#348); 2048 stays the default
     repair_size=1280,                 # Studio's starting size (Peter, 15 Nov 2026: higher than 1024)
     # Studio up to the model's own range (Peter, 19 Nov 2026: "supports some enormous sizes"): 4-20 MP, best ~16 MP
-    # (the model card's 3552 x 4736); every side a multiple of 32, 5120 x 3840 ~19.7 MP at the top
-    studio_more_sizes=(2560, 3072, 3552, 3584, 4096, 4480, 4736, 5120),
+    # (the model card's 3552 x 4736); every side a multiple of 32. Up to 12288 for a very long side against a short
+    # one (Peter, 19 Nov 2026: "all the way to circa 12k ... worst that can happen is an oom")
+    studio_more_sizes=(2560, 3072, 3552, 3584, 4096, 4480, 4736, 5120, 5632, 6144, 6656, 7168, 8192, 9216, 10240,
+                       11264, 12288),
     # Likeness optimization (H3 Image's own, in place of the Clean-end share box, Peter 11 Nov 2026): the share of
     # steps at the noise level below sigma 0.5 (0.232, the last of the 6) follows LIKENESS_DEFAULTS' schedule; the
     # rest spread evenly over the 5 above. Off = the model's own even draw, 1 in 6 (~17%).

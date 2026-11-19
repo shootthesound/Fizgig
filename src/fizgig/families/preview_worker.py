@@ -31,6 +31,20 @@ from fizgig.families.train import (CONTEXT, LOOK, SPEED, TRAINABLE_PREVIEW, _enc
 logger = logging.getLogger("fizgig.preview_worker")
 
 
+# a clip family's preview is a still with its clip and sound beside it (same name): all go back to the
+# lead, not the still alone (H3 / Vimoo previews from a helper came back as their middle frame only)
+PREVIEW_COMPANIONS = (".mp4", ".wav")
+
+
+def _with_companions(paths):
+    out = []
+    for p in paths:
+        out.append(os.path.basename(p))
+        stem = os.path.splitext(p)[0]
+        out += [os.path.basename(stem + e) for e in PREVIEW_COMPANIONS if os.path.isfile(stem + e)]
+    return out
+
+
 def _write(path, data):
     with open(path + ".tmp", "w", encoding="utf-8") as f:
         json.dump(data, f)
@@ -148,7 +162,7 @@ class Worker:
                                      output_name=job["output_name"], steps=int(job["steps"]), cfg=float(job["cfg"]),
                                      neg=neg, width=int(job["width"]), height=int(job["height"]),
                                      seed=int(job["seed"]), speed=settings, swapped=bool(self.swapped))
-        return {"ok": True, "files": [os.path.basename(p) for p in files], "seconds": round(time.time() - t0, 1),
+        return {"ok": True, "files": _with_companions(files), "seconds": round(time.time() - t0, 1),
                 "precision": self.precision}
 
     def say(self, state, text, **extra):
@@ -200,7 +214,7 @@ class Worker:
                                      seed=int(job["seed"]), speed=speed, lowmem=self.lowmem,
                                      swapped=bool(self.swapped), strengths=tuple(job.get("strengths") or ()),
                                      look=look)
-        return {"ok": True, "files": [os.path.basename(p) for p in files], "seconds": round(time.time() - t0, 1),
+        return {"ok": True, "files": _with_companions(files), "seconds": round(time.time() - t0, 1),
                 "precision": self.precision}
 
     def loop(self, idle):

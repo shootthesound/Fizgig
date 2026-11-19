@@ -1194,14 +1194,15 @@ def _send_round(h, lv, rd, out_dir, run):
     os.makedirs(sample_dir, exist_ok=True)
     got = []
     for name in st.get("files") or []:
-        if not _SAFE.match(str(name)) or not name.endswith(".png"):
-            continue                         # only a plain picture name, never a path
+        if not _SAFE.match(str(name)) or not name.endswith((".png", ".mp4", ".wav")):
+            continue                         # a plain preview file name (a clip's still, clip, sound), never a path
         data = c.call(f"/api/helper/file?job={jid}&name={urllib.parse.quote(name)}", timeout=120)
         tmp = os.path.join(sample_dir, name + ".part")
         with open(tmp, "wb") as f:
             f.write(data)
         os.replace(tmp, os.path.join(sample_dir, name))
-        got.append(os.path.join(sample_dir, name))
+        if name.endswith(".png"):
+            got.append(os.path.join(sample_dir, name))
     c.call("/api/helper/drop", {"job": jid, "lora": lora})
     if conds:
         c.call("/api/helper/drop", {"job": "", "lora": conds})

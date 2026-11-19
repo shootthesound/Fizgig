@@ -130,3 +130,19 @@ def test_a_moved_run_takes_its_frames(tmp_path):
     first, last = _frame(tmp_path), _frame(tmp_path, "last.png")
     files = helpers._move_extras({"SAMPLE_FIRST_FRAME": first, "SAMPLE_LAST_FRAME": last})[1]
     assert files == {"SAMPLE_FIRST_FRAME": first, "SAMPLE_LAST_FRAME": last}
+
+
+def test_a_helper_sends_a_clip_preview_whole(tmp_path):
+    """A clip family's preview from a helper: its clip and sound go back with the still (they came back as the
+    middle frame only)."""
+    import importlib.util, os
+    spec = importlib.util.spec_from_file_location(
+        "pw_src", os.path.join(os.path.dirname(__file__), "..", "src", "fizgig", "families", "preview_worker.py"))
+    src = open(spec.origin, encoding="utf-8").read()
+    ns = {"os": os}
+    exec(src[src.index("PREVIEW_COMPANIONS"):src.index("def _write")], ns)
+    for ext in (".png", ".mp4", ".wav"):
+        (tmp_path / f"run_e1{ext}").write_bytes(b"0")
+    (tmp_path / "still_e1.png").write_bytes(b"0")
+    assert ns["_with_companions"]([str(tmp_path / "run_e1.png"), str(tmp_path / "still_e1.png")]) == \
+        ["run_e1.png", "run_e1.mp4", "run_e1.wav", "still_e1.png"]

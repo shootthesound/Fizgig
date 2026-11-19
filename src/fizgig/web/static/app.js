@@ -3660,8 +3660,9 @@ async function loadRuns() {
       delBox.style.display = "";
       delBox.textContent = "Checking…";
       try {
-        const [w, k] = await Promise.all([api("/api/runs/delete", {id: run.id}),
-          api("/api/runs/delete", {id: run.id, keep: true}).catch(() => null)]);
+        const [w, k, ka] = await Promise.all([api("/api/runs/delete", {id: run.id}),
+          api("/api/runs/delete", {id: run.id, keep: true}).catch(() => null),
+          api("/api/runs/delete", {id: run.id, keep: "all"}).catch(() => null)]);
         const gb = (b) => b >= 2 ** 30 ? (b / 2 ** 30).toFixed(1) + " GB" : (b / 2 ** 20).toFixed(0) + " MB";
         // the middle button: Delete, keep the newest 5 epochs - Delete, except the newest 5 epochs (all of them when
         // fewer are left) stay on disk: the run goes off the list, its kept LoRA files and their previews don't
@@ -3678,6 +3679,15 @@ async function loadRuns() {
             try { await api("/api/runs/delete", {id: run.id, keep: true, confirm: true}); loadRuns(); loadOutputs(); }
             catch (e) { delBox.replaceChildren(el("div", {class: "problems", text: e.message})); }
           }});
+        // Delete, keep all epochs: the run goes off the list, every epoch's LoRA file (and its previews) stays
+        const allBtn = el("button", {class: "btn btn-sm", text: "Delete, keep all epochs", disabled: !ka,
+          title: !ka ? "" : "Deletes the run from this list" + (ka.states ? `, and ${plural(ka.states, "saved state")} ` +
+            `(${gb(ka.bytes)})` : "") + ". Keeps on disk every epoch's LoRA file" + (ka.epochs ? ` (${ka.epochs})` : "") +
+            ", the finished LoRA, any Save now checkpoints and the previews. Your training folder isn't touched.",
+          onclick: async () => {
+            try { await api("/api/runs/delete", {id: run.id, keep: "all", confirm: true}); loadRuns(); loadOutputs(); }
+            catch (e) { delBox.replaceChildren(el("div", {class: "problems", text: e.message})); }
+          }});
         const parts = [w.checkpoints && `${w.checkpoints} checkpoint${w.checkpoints > 1 ? "s" : ""}`,
           w.states && `${w.states} saved state${w.states > 1 ? "s" : ""} (for resuming)`,
           w.previews && `${w.previews} preview${w.previews > 1 ? "s" : ""}`].filter(Boolean);
@@ -3691,7 +3701,7 @@ async function loadRuns() {
               try { await api("/api/runs/delete", {id: run.id, confirm: true}); loadRuns(); loadOutputs(); }
               catch (e) { delBox.replaceChildren(el("div", {class: "problems", text: e.message})); }
             }}),
-            keepBtn,
+            keepBtn, allBtn,
             el("button", {class: "btn btn-sm", text: "Cancel", onclick: () => { delBox.style.display = "none"; }})));
       } catch (e) { delBox.replaceChildren(el("div", {class: "problems", text: e.message})); }
     }});

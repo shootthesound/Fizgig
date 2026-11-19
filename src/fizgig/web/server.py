@@ -1523,7 +1523,7 @@ def trim_run(run_id, confirm=False, keep=KEEP_NEWEST) -> dict:
                                                               "bytes": 0}
     plan = trim_plan(found, keep)
     if not confirm:
-        return {"ok": True, "keep": keep, "epochs": plan["epochs"], "kept": plan["kept"],
+        return {"ok": True, "keep": keep if keep < 10 ** 9 else "all", "epochs": plan["epochs"], "kept": plan["kept"],
                 "checkpoints": len(plan["checkpoints"]), "states": len(plan["states"]),
                 "previews": len(plan["previews"]), "bytes": plan["bytes"]}
     failed = []
@@ -4630,8 +4630,9 @@ class Handler(BaseHTTPRequestHandler):
                 webqueue.hold("Held by you. Press Start queue to carry on.")
                 return self.json({"ok": True})
             if path == "/api/runs/delete":              # Delete run: asks first (confirm false = what it'd delete)
-                if b.get("keep"):                         # Keep the newest 5 epochs: the older ones go, the run stays
-                    r = trim_run(str(b.get("id") or ""), confirm=bool(b.get("confirm")))
+                if b.get("keep"):           # Delete, keep the newest 5 epochs ("all": every epoch) - their files stay
+                    r = trim_run(str(b.get("id") or ""), confirm=bool(b.get("confirm")),
+                                 keep=10 ** 9 if b.get("keep") == "all" else KEEP_NEWEST)
                     return self.json(r, 400 if r.get("error") else 200)
                 r = delete_run(str(b.get("id") or ""), confirm=bool(b.get("confirm")))
                 return self.json(r, 400 if r.get("error") else 200)

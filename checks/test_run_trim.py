@@ -40,6 +40,12 @@ def test_fewer_than_five_keeps_them_all_and_still_tidies(tmp_path):
     assert names(plan["states"]) == ["r-000003-state"]
 
 
+def test_keep_all_epochs_deletes_only_the_states(tmp_path):
+    plan = server.trim_plan(_run(tmp_path, 8, [6, 7, 8]), keep=10 ** 9)
+    assert plan["checkpoints"] == [] and plan["previews"] == [] and plan["kept"] == 8
+    assert names(plan["states"]) == ["r-000006-state", "r-000007-state", "r-000008-state"]
+
+
 def test_one_epoch_left_deletes_the_run_and_keeps_its_lora(tmp_path, monkeypatch):
     _run(tmp_path, 1, [])
     removed = []

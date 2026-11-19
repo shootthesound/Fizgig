@@ -1,5 +1,13 @@
 # Fizgig news
 
+## 19 Nov 2026: MiniMax H3 Image fine-tuning, and Studio as a generator
+
+**MiniMax H3 Image fine-tunes.** Fine-tune is now a kind of training for MiniMax H3 Image, with a built-in 5e-5 preset: the whole model trains, with Fizgig's training adapter on, and saves a full H3 Image file that Studio and ComfyUI load as the base. It trains on cards down to 24 GB.
+
+**Studio without a LoRA.** Leave the primary empty and Studio renders the base model on its own, any model, with the queue and Save as usual; Unload primary takes a LoRA out without reloading. On H3 Image, Studio's sizes now go up to 12288, ultrawide 7680-wide renders included.
+
+[Fizgig v9.8.2 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.8.2)
+
 ## 19 Nov 2026: Studio's own queue and outputs folder
 
 **Studio has its own queue.** While a render is going, **Add to queue** lines up the next exactly as Studio is set (another model or LoRA too), and each job is saved when it finishes; the queue bar above the preview keeps the finished ones with links to their files. Leaving Studio or starting a training run pauses it, and a training run never cuts a Studio render short: it waits and starts when the render is done.

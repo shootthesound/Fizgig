@@ -6,6 +6,18 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 NEWS = [
     {
         "date": "19 Nov 2026",
+        "title": "MiniMax H3 Image fine-tuning, and Studio as a generator",
+        "body": (
+            "Fine-tune is now a kind of training for MiniMax H3 Image, with a built-in 5e-5 preset and the training "
+            "adapter on: it saves a full H3 Image file that Studio and ComfyUI load as the base, on cards down to 24 GB.\n\n"
+            "Leave Studio's primary empty and it renders the base model on its own, any model; Unload primary takes "
+            "a LoRA out without reloading. On H3 Image, Studio's sizes go up to 12288."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#19-nov-2026-minimax-h3-image-fine-tuning-and-studio-as-a-generator"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.8.2"}],
+    },
+    {
+        "date": "19 Nov 2026",
         "title": "Studio's own queue and outputs folder",
         "body": (
             "Studio has its own queue: while a render is going, Add to queue lines up the next (another model or LoRA "

@@ -23,7 +23,8 @@ _lock = threading.Lock()
 _S = {"proc": None, "sock": None, "port": 0, "state": "idle", "family": "", "primary": "", "donor": "", "primary_blocks": [],
       "donor_blocks": [], "hash": "", "status": "", "progress": None, "gen": 0, "shown": 0, "baseline": "",
       "tweaked": "", "pending": None, "rendering": False, "error": "", "saved": None, "profile": None,
-      "used": 0.0, "log": [], "gens": {}, "out_saved": {}, "out_said": None}
+      "used": 0.0, "log": [], "gens": {}, "out_saved": {}, "out_said": None, "load_key": None, "load_id": 0}
+on_job_end = None          # studio_queue.job_ended: a queued job's render finished (its files), failed or was cancelled
 
 
 _send_lock = threading.Lock()
@@ -198,12 +199,19 @@ def _event(ev):
         elif kind == "reset":
             _S.update(state="idle", primary="", donor="", primary_blocks=[], donor_blocks=[], hash="", profile=None,
                       rendering=False, pending=None, progress=None, status="Models unloaded.")
+    job = _gen_job(ev.get("gen")) if kind in ("rendered", "error", "aborted") else ""
     if kind == "rendered":
         try:
-            autosave(ev.get("gen", 0))
+            paths = autosave(ev.get("gen", 0))
+            if job and on_job_end:
+                on_job_end(job, True, paths)
         except Exception as e:                   # a full disk or a folder gone: said, the render still shows
             with _lock:
                 _S["out_said"] = {"error": f"Couldn't save the render: {e}"}
+            if job and on_job_end:
+                on_job_end(job, False, error=f"Rendered, but couldn't save it: {e}")
+    elif job and on_job_end and (kind == "aborted" or ev.get("where") == "render"):
+        on_job_end(job, False, error="Cancelled." if kind == "aborted" else ev.get("msg") or "The render failed.")
     if nxt is not None:
         render(*nxt)
 
@@ -286,21 +294,25 @@ def save_output(which, setup=None):
 def autosave(gen):
     """Save every render (Studio's tick, per model): a finished render's Tweaked pane, and its Baseline when that
     rendered again - an unchanged Baseline (only the Tweaked one changed) is already saved, so it isn't saved twice.
-    Nothing moved: the two panes are one render, saved once (as the original)."""
+    Nothing moved: the two panes are one render, saved once (as the original). A Studio queue job is always saved.
+    Returns the render's saved files (those saved before included)."""
     with _lock:
         fam, same, has_base = _S.get("family", ""), bool(_S.get("same")), bool(_S.get("baseline"))
+        job = (_S["gens"].get(gen) or {}).get("job")
         if _S.get("shown") != gen:
-            return
-    if not fam or not autosave_on(fam):
-        return
-    got = []
+            return []
+    if not fam or not (job or autosave_on(fam)):    # a Studio queue job is always saved
+        return []
+    got, paths = [], []
     for which in (["baseline"] if has_base else []) + ([] if same and has_base else ["tweaked"]):
         r = save_output(which)
+        paths.append(r["path"])
         if not r.get("already"):
             got.append(r["path"])
     if got:
         with _lock:
             _S["out_said"] = {"auto": True, "paths": got, "gen": gen}
+    return paths
 
 
 def _profile(h):
@@ -445,7 +457,8 @@ def load(desc, primary, donor, kw, settings, status, turbo, canvas=None):
     with _lock:
         other = _S["family"] and _S["family"] != desc.key
         _S.update(state="loading", status="Starting the Studio worker…", error="", progress=None, pending=None,
-                  family=desc.key, used=time.time(), out_saved={}, out_said=None)
+                  family=desc.key, used=time.time(), out_saved={}, out_said=None, load_key=None)
+        _S["load_id"] += 1                       # the page knows a load it didn't ask for (the Studio queue's)
 
     def go():                                    # the worker's first start imports torch: not in the request
         try:
@@ -479,6 +492,53 @@ def settings(turbo=None, preview_settings=None, render_options=None):
     _send(c)
 
 
+def render_job(state, extra, job):
+    """The Studio queue's render of a job: starts only when the model is ready and nothing renders (False otherwise)."""
+    with _lock:
+        if _S["state"] != "ready" or _S["rendering"] or _S["proc"] is None:
+            return False
+        _S["used"] = time.time()
+        _S["gen"] += 1
+        gen = _S["gen"]
+        _S.update(rendering=True, progress=None, status="Studio queue: rendering a job…", cancel_asked=False)
+        _S["gens"] = {g: v for g, v in _S["gens"].items() if g > gen - 8}
+        _S["gens"][gen] = {"seed": (state or {}).get("seed"), "setup": (extra or {}).get("_setup"), "job": job}
+    _send({"cmd": "render", "gen": gen, "state": state, "out_dir": OUT_DIR,
+           **{k: v for k, v in (extra or {}).items() if k != "_setup"}})
+    return True
+
+
+def generating():
+    """Something has Studio's worker busy: a model loading, a render (Studio's, a queued job's, Royale's, a
+    Travel, RefMod's) or one waiting to start."""
+    with _lock:
+        return (_S["state"] == "loading" or _S["rendering"] or _S["pending"] is not None
+                or _R["state"] == "rendering" or _M["state"] == "rendering"
+                or any(t["state"] == "rendering" for t in _T.values()))
+
+
+def current_job():
+    """The Studio queue's job rendering now ("" for none)."""
+    with _lock:
+        return ((_S["gens"].get(_S["gen"]) or {}).get("job") or "") if _S["rendering"] else ""
+
+
+def load_key():
+    with _lock:
+        return _S.get("load_key")
+
+
+def set_load_key(key):
+    """The Studio queue's own load: a job with the same load renders on it without loading again."""
+    with _lock:
+        _S["load_key"] = key
+
+
+def _gen_job(gen):
+    with _lock:
+        return (_S["gens"].get(gen) or {}).get("job") or ""
+
+
 def render(state, extra=None):
     """Render this slider state: now if nothing renders, else it waits (replacing any older wait) and the render
     going is cancelled - the newest state is what renders next."""
@@ -486,9 +546,11 @@ def render(state, extra=None):
         if _S["state"] != "ready":
             return {"error": "Load a LoRA first."}
         _S["used"] = time.time()
+        job_on = False
         if _S["rendering"]:
             _S["pending"] = (state, extra)
             busy, cut = True, False
+            job_on = bool((_S["gens"].get(_S["gen"]) or {}).get("job"))
         else:
             _S["gen"] += 1
             gen = _S["gen"]
@@ -498,6 +560,8 @@ def render(state, extra=None):
             _S["gens"][gen] = {"seed": (state or {}).get("seed"), "setup": (extra or {}).get("_setup")}
             busy = False
             cut = _S.get("nolora_busy")
+    if busy and job_on:                          # the Studio queue's job finishes first; this edit renders after it
+        return {"ok": True, "queued": True, "after_job": True}
     if busy or cut:                              # the newest edit takes the engine (from a No-LoRA render too)
         _send({"cmd": "cancel"})
     if busy:
@@ -883,6 +947,7 @@ def status():
         d["baseline_early"] = _S.get("baseline_gen", 0) if _S.get("rendering") else 0
         d["log"] = _S["log"][-12:]                 # the worker's own lines (the engine's log), for when it goes wrong
         d["out_said"] = _S.get("out_said")         # Save every render's latest files (or why it couldn't)
+        d["load_id"] = _S.get("load_id", 0)        # a load the page didn't ask for (the Studio queue's) changes it
     return d
 
 

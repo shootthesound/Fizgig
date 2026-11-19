@@ -63,11 +63,15 @@ def status():
                            if _q["failed"] else "")}
 
 
-def add(family, values, image_folder, lora, output_dir):
+def add(family, values, image_folder, lora, output_dir, first=False):
+    """first: at the head (Start Training while Studio finishes a render: it waits there, then starts)."""
     item = {"id": uuid.uuid4().hex[:10], "family": family, "values": dict(values), "image_folder": image_folder,
             "lora": lora, "output_dir": output_dir, "queued_at": time.strftime("%Y-%m-%d %H:%M")}
     with _lock:
-        _q["items"].append(item)
+        if first:
+            _q["items"].insert(0, item)
+        else:
+            _q["items"].append(item)
         _save()
     return item
 
@@ -224,9 +228,10 @@ def start_next(starter):
             _q["waiting"] = ""
             _save()
         return
-    if why.startswith("wait:"):                  # the GPU is busy elsewhere: look again soon
+    if why.startswith(("wait:", "wait-soon:")):  # the GPU is busy elsewhere: look again soon (a Studio render: in a
+        soon = why.startswith("wait-soon:")       # few seconds)
         with _lock:
-            _q["waiting"] = why[5:].strip()
-        schedule(WAIT_S, starter)
+            _q["waiting"] = why.split(":", 1)[1].strip()
+        schedule(3 if soon else WAIT_S, starter)
         return
     hold(f"The next run ({item.get('lora')}) couldn't start: {why}")

@@ -2400,6 +2400,15 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 .job-pill-shade[hidden] { display: none; }
 /* the start-up question after a run was cut off: carry it on, the next in the queue, or a fresh start */
 .startup-window { max-width: 560px; }
+/* Studio queue: one line a job */
+.stq-list { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+.stq-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: 1px solid var(--border);
+  border-radius: 8px; flex-wrap: wrap; }
+.stq-row.rendering, .stq-row.loading { border-color: var(--accent); }
+.stq-row.failed .stq-state { color: var(--danger, var(--text-secondary)); }
+.stq-state { min-width: 80px; font-size: 12px; color: var(--text-secondary); }
+.stq-label { flex: 1; min-width: 160px; overflow-wrap: anywhere; }
+.stq-files { flex-basis: 100%; font-size: 12px; color: var(--text-secondary); overflow-wrap: anywhere; }
 .startup-choices { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 6px; }
 .startup-choice { display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 12px 14px; border-radius: 10px;
   border: 1px solid var(--border); background: var(--bg-raised); color: var(--text-primary); text-align: left; cursor: pointer; }

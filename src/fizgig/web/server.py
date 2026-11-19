@@ -39,6 +39,7 @@ from fizgig.web import queue as webqueue
 from fizgig.web import prep_jobs
 from fizgig.families import refmod
 from fizgig.web import studio
+from fizgig.web import studio_queue
 from fizgig.web.port import PORT_DEFAULT, PORT_WALK, listening, on_pod, on_runpod, on_vast, saved_port
 from fizgig.web.schema import get_schema
 from fizgig.krea2.generation_attention import preference_available as sageattention_option
@@ -674,6 +675,22 @@ def _studio_samples(desc):
             "look": look, "render": "samples" if render == "samples" else "checkpoint"}
 
 
+def _studio_queue_busy():
+    """Why the Studio queue waits ("" when the GPU is free for it): a training run, a caption job, the Profiler."""
+    with _lock:
+        if _run["proc"] is not None and _run["proc"].poll() is None or _run["state"] in ("starting", "running"):
+            return "Waiting for the training run to finish."
+    if captions.status()["state"] in ("loading", "running", "translating"):
+        return "Waiting for the caption job to finish."
+    from fizgig.web import tools
+    if tools.holding_gpu():
+        return "Waiting for the Profiler to finish."
+    with webqueue._lock:
+        if webqueue._q["waiting"]:               # a training run waiting for the GPU goes first
+            return "A training run is waiting for the GPU: it goes first."
+    return ""
+
+
 def _gpu_training():
     """A training run is using the GPU: Repair Studio waits for it."""
     with _lock:
@@ -758,7 +775,7 @@ def _pods_post(what, b):
 _STUDIO_DL_SETUP = []      # the setup Download tweaked writes into the picture (the page sends it first)
 
 
-def _studio_post(what, b):
+def _studio_post(what, b, from_queue=False):
     """Repair Studio's actions (fizgig/web/studio.py runs them in its worker)."""
     if what == "download_setup":
         data = b.get("data") or {}
@@ -780,6 +797,9 @@ def _studio_post(what, b):
         os.replace(tmp, p)
         return {"ok": True, "name": os.path.basename(p)[:-5]}
     if what == "load":
+        if not from_queue and studio_queue.running():
+            raise ValueError("The Studio queue is rendering a job. Pause the queue and let the job finish (or "
+                             "Cancel it), then press Start.")
         if _gpu_training():
             raise ValueError("A training run is using the GPU. Repair Studio can load when it finishes.")
         from fizgig.web import tools
@@ -799,9 +819,27 @@ def _studio_post(what, b):
         captions.unload()                       # the caption model leaves the GPU too
         studio.load(desc, str(b.get("primary") or "").strip(), str(b.get("donor") or "").strip(), kw, settings,
                     status, b.get("turbo", True), canvas=b.get("canvas") if desc.video_workbench else None)
-        return {"ok": True}
+        return {"ok": True, "load_id": studio.status()["load_id"]}   # the page sees a later load it didn't ask for
     if what == "keep":
         return {"path": studio.keep_tweaked()}
+    if what.startswith("queue/"):            # Studio's own queue (studio_queue.py)
+        act = what[len("queue/"):]
+        if act == "add":
+            item = studio_queue.add(b.get("load"), b.get("render"), b.get("label"), b.get("lora"), b.get("model"))
+            return {"ok": True, "id": item["id"], "queue": studio_queue.status()}
+        if act == "remove":
+            studio_queue.remove(str(b.get("id") or ""))
+        elif act == "move":
+            studio_queue.move(str(b.get("id") or ""), int(b.get("delta") or 0))
+        elif act == "pause":
+            studio_queue.pause(b.get("reason") or "Paused.")
+        elif act == "resume":
+            studio_queue.resume()
+        elif act == "clear":
+            studio_queue.clear_done()
+        else:
+            raise ValueError("Unknown request.")
+        return studio_queue.status()
     if what == "map":                        # maps over the Tweaked render (where the LoRA acts, the tweaks, the trigger)
         return studio.map_request(b.get("state") or {}, b.get("trigger") or "", bool(b.get("blocks")))
     if what == "render":
@@ -2039,14 +2077,21 @@ def _start_one(family_key, values, image_folder, resume, ft_continue, note, mode
     with _lock:
         if _run["proc"] is not None and _run["proc"].poll() is None or _run["state"] in ("starting", "running"):
             return {"error": "A run is already going. Stop or pause it first."}
-    if studio.holding_gpu():                    # Repair Studio's model leaves the GPU for the run
-        append_log("Unloading Repair Studio's model to free the GPU for this run.\n")
-        studio.stop_worker()
     if captions.status()["state"] in ("loading", "running", "translating"):
         return {"error": "Captions are being made (Captions tab). Stop that first, then start the run."}
     from fizgig.web import tools
-    if tools.holding_gpu():                     # a profile part-way: refused like captions, not thrown away
-        return {"error": "The Profiler is rendering on the GPU. Wait for it, or Stop it, then start the run."}
+    # a render going in Studio (yours, a Studio queue job, LoRA Royale's) or the Profiler finishes first: the run
+    # waits for it (Start puts it at the head of the queue), and the Studio queue pauses so nothing follows it
+    if studio.generating() or tools.holding_gpu():
+        studio_queue.pause("A training run is waiting for the GPU.")
+        why = ("The Profiler is rendering: the run starts when it finishes." if tools.holding_gpu() else
+               "Studio is finishing a render: the run starts when it's done.")
+        return {"wait": why, "error": why + " (Press it again then.)"}
+    if studio_queue.pause("A training run started."):
+        append_log("The Studio queue is paused for this run: resume it on Studio when you want.\n")
+    if studio.holding_gpu():                    # Repair Studio's model leaves the GPU for the run
+        append_log("Unloading Repair Studio's model to free the GPU for this run.\n")
+        studio.stop_worker()
     captions.unload()                                     # the run gets the GPU memory the caption model held
     from fizgig.web import helpers
     helpers.share_stop_all()       # this computer's own run comes first: a share it trains for another stops there
@@ -2149,6 +2194,8 @@ def _queue_starter(item):
         return False, str(e)
     if r.get("ok"):
         return True, ""
+    if r.get("wait"):                             # a Studio render or the Profiler finishing: soon
+        return False, "wait-soon: " + r["wait"]
     if r.get("error") and "Captions are" in r["error"]:
         return False, "wait: " + r["error"]
     return False, r.get("error") or "; ".join(r.get("problems") or ["it couldn't start"])
@@ -3559,6 +3606,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(studio.layout(desc, load_prefs(), pref_path, samples=_studio_samples(desc)))
         if path == "/api/studio/status":
             return self.json(studio.status())
+        if path == "/api/studio/queue":             # Studio's own queue
+            return self.json(studio_queue.status())
         if path == "/api/refmod/info":              # RefMod Toolkit: its choices, the desktop's last setup, presets
             from fizgig.web import refmod_studio as rms
             fams = rms.families()
@@ -4682,6 +4731,13 @@ class Handler(BaseHTTPRequestHandler):
                     if fetch:
                         return self.json(_fetch_then_start(desc, fam, vals, folder, plan.problems))
                 r = _start(fam, vals, folder)
+                if r.get("wait"):                # Studio (or the Profiler) is finishing: first in the queue, waiting
+                    lora, out_dir = (_in0 or {}).get("LORA_NAME", ""), (_in0 or {}).get("LORA_OUTPUT_DIR", "")
+                    webqueue.add(fam, vals, folder, lora, out_dir, first=True)
+                    webqueue.unhold()            # the queue follows it as any run started now
+                    webqueue.start_next(_queue_starter)
+                    return self.json({"ok": True, "queued": True,
+                                      "note": r["wait"] + " It's first in the queue until then."})
                 desc = get_family(fam) if r.get("problems") and fam != refmod.KEY else None
                 if desc is not None and _only_downloads(desc, r["problems"]):
                     r = _fetch_then_start(desc, fam, vals, folder, r["problems"])
@@ -5634,6 +5690,7 @@ def run_server(host, port=None, password=None, password_arg=False, open_browser=
         if history.last_orphan[0]:
             save_state({"interrupted": history.last_orphan[0]})
     webqueue.load()                                    # held if it holds anything: a restart never launches a run
+    studio_queue.configure(lambda body: _studio_post("load", body, from_queue=True), _studio_queue_busy)
     _startup["offer"] = _startup_offer()               # the run that was cut off: the page asks what to do
     _restore_pause()                                   # a run paused before the restart can still be resumed
     __import__("fizgig.web.helpers", fromlist=["x"]).ensure_home()   # pods' checkpoints still coming home

@@ -1025,6 +1025,7 @@
                   <option selected>1.0</option><option>2.0</option></select>
                   <span class="field-hint" id="stRefStrLabel">Strength</span><input type="text" id="stRefStr" value="1"></span></div>
               <div class="field-row"><button class="btn btn-primary" id="stStart">Start</button>
+                <button class="btn" id="stQAdd" title="Lines this render up in Studio's own queue, exactly as it is set now (the model, LoRAs, sliders, prompt, seed and size): the jobs render one after another and each is saved into the Studio outputs folder. A seed of 0 gets its own random seed for each job.">Add to queue</button>
                 <button class="btn" id="stCancel" disabled title="Stop the render that's going. The model stays loaded.">Cancel</button>
                 <button class="btn" id="stUnload">Unload model</button>
                 <span class="field-hint" id="stStatus">Choose a LoRA and press Start: the model loads on the Fizgig machine
@@ -1036,6 +1037,16 @@
                 <input type="text" id="stSetupName" class="w-num st-setup-name" placeholder="name">
                 <button class="btn" id="stSetupSave" title="Saves everything on this tab - the LoRAs, every slider and tick, the prompt, seed, length, photos and source - to one file you can load back later or share.">Save setup</button>
                 <span class="field-hint" id="stSetupMsg"></span></div>
+            </div>
+          </div>
+          <div class="section-card" id="stQueueCard" style="display:none">
+            <div class="card-title"><span>Studio queue</span><span class="run-badge" id="stQBadge"></span></div>
+            <div class="card-content">
+              <div class="field-row"><button class="btn btn-sm" id="stQPause">Pause</button>
+                <button class="btn btn-sm" id="stQClear" title="Takes the finished and failed jobs off this list (their saved files stay)">Clear finished</button>
+                <span class="field-hint" id="stQSay"></span></div>
+              <div id="stQList" class="stq-list"></div>
+              <div class="field-hint">Each job is saved into the Studio outputs folder (Preferences) as it finishes. Leaving Studio or starting a training run pauses the queue after the job rendering now; it never carries on by itself.</div>
             </div>
           </div>
           <div class="section-card" id="stFrames" style="display:none">
@@ -2123,6 +2134,19 @@
         <div id="startupText"></div>
         <div class="startup-choices" id="startupChoices"></div>
         <div class="field-hint" id="startupNote"></div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-backdrop" id="stqModal">
+    <div class="modal-window startup-window">
+      <div class="modal-header"><span>The Studio queue is paused</span>
+        <button class="btn" id="stqLater" title="Keep it paused">✕</button></div>
+      <div class="modal-body">
+        <div id="stqText"></div>
+        <div class="startup-choices">
+          <button class="startup-choice main" type="button" id="stqResume"><b>Resume the queue</b><span>The next job starts now (or as soon as the GPU is free).</span></button>
+          <button class="startup-choice" type="button" id="stqKeep"><b>Keep it paused</b><span>Nothing renders until you press Resume on the Studio queue card.</span></button>
+        </div>
       </div>
     </div>
   </div>

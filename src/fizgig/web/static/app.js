@@ -1899,6 +1899,7 @@ async function start(path, body) {
     if (r.warnings && r.warnings.length) { showWarnings(r.warnings, body || {}); return; }
     if (r.fetching) { S.fetchStart = true; watchFetch(); return; }    // the model isn't here yet: it downloads first
     showProblems(r.problems || (r.error ? [r.error] : []));    // stays up: the run line below refreshes itself
+    if (r.queued && r.note) $("runStatus").textContent = r.note;   // waits for Studio's render, first in the queue
     // the form went to a run that started: it isn't the queued run being edited any more (Save to queue would have
     // put this run's settings in its place)
     if (r.ok && S.viewJob && !S.editQueue) viewJob(null);   // a run started: the gallery follows it
@@ -6477,6 +6478,64 @@ async function studioOpen() {
   }
   if (S.st.openWith) await studioTake();
   studioPoll();
+  try {                                               // a paused Studio queue with jobs left: asks, never resumes
+    const q = await api("/api/studio/queue");
+    studioQueueDraw(q);
+    if (q.paused && q.left) {
+      $("stqText").replaceChildren(el("p", {text: `${q.left} job${q.left === 1 ? " is" : "s are"} waiting.` +
+        (q.reason ? ` ${q.reason}` : "")}));
+      $("stqModal").classList.add("active");
+    }
+  } catch (e) { /* an older server */ }
+}
+
+// ---- Studio's own queue (studio_queue.py): Add to queue, the card, pause / resume ----
+async function studioQueueAdd() {
+  const L = S.st.layout;
+  if (!L) return;
+  if (!$("stPrimary").value.trim()) { $("stStatus").textContent = "Choose a LoRA first."; return; }
+  if (!$("stPrompt").value.trim()) { $("stStatus").textContent = "Enter a prompt first."; return; }
+  const state = studioState();
+  if (state.seed === 0) state.seed = 1 + Math.floor(Math.random() * (2 ** 31 - 2));    // each job its own
+  const extra = {...studioExtra(), ...studioMixExtra()};
+  if (L.kind === "stills") extra._setup = studioSetupData();      // the saved picture carries the setup
+  const lora = $("stPrimary").value.trim().split(/[\\/]/).pop().replace(/\.safetensors$/i, "");
+  const model =($("stFamily").selectedOptions[0] || {}).textContent || L.key;
+  const label = `${state.prompt.slice(0, 70)}${state.prompt.length > 70 ? "…" : ""} · seed ${state.seed}`;
+  try {
+    const r = await api("/api/studio/queue/add", {load: studioLoadBody(), render: {state, extra}, label, lora, model});
+    studioQueueDraw(r.queue);
+    $("stStatus").textContent = `Added to the Studio queue (${r.queue.left} waiting).`;
+    studioPoll();
+  } catch (e) { $("stStatus").textContent = e.message; }
+}
+
+function studioQueueDraw(q) {
+  S.stq = q;
+  const card = $("stQueueCard");
+  card.style.display = q.items.length ? "" : "none";
+  if (!q.items.length) return false;
+  $("stQBadge").textContent = q.left ? `${q.left} waiting` : "";
+  $("stQPause").textContent = q.paused ? "▶ Resume" : "⏸ Pause";
+  $("stQPause").disabled = !q.paused && !q.left;
+  $("stQSay").textContent = q.paused ? `Paused. ${q.reason || ""}` : q.waiting || (q.job ? "Rendering…" : q.left ? "" : "Done.");
+  const word = {waiting: "Waiting", loading: "Loading model", rendering: "Rendering", done: "Saved", failed: "Failed"};
+  const act = (path, body) => async () => {
+    try { studioQueueDraw(await api(path, body)); } catch (e) { $("stQSay").textContent = e.message; }
+  };
+  $("stQList").replaceChildren(...q.items.map((it) => el("div", {class: "stq-row " + it.status},
+    el("span", {class: "stq-state", text: word[it.status] || it.status}),
+    el("span", {class: "stq-label", text: `${it.model ? it.model + " · " : ""}${it.lora ? it.lora + " · " : ""}${it.label}`}),
+    it.status === "waiting" ? el("button", {class: "btn btn-sm", text: "↑", title: "Earlier",
+      onclick: act("/api/studio/queue/move", {id: it.id, delta: -1})}) : null,
+    it.status === "waiting" ? el("button", {class: "btn btn-sm", text: "↓", title: "Later",
+      onclick: act("/api/studio/queue/move", {id: it.id, delta: 1})}) : null,
+    ["loading", "rendering"].includes(it.status) ? null : el("button", {class: "btn btn-sm", text: "✕",
+      title: it.status === "waiting" ? "Remove this job" : "Take this line off the list (its saved files stay)",
+      onclick: act("/api/studio/queue/remove", {id: it.id})}),
+    it.paths && it.paths.length ? el("div", {class: "stq-files", text: it.paths.join("  ·  ")}) :
+      it.error ? el("div", {class: "stq-files", text: it.error}) : null)));
+  return !!q.job || (!q.paused && q.left > 0);
 }
 
 // a LoRA row's Studio button: the LoRA as the primary, on the model its file is for (from its key names; the run's
@@ -8492,6 +8551,10 @@ function studioSchedule(live) {
 
 async function studioRender() {
   if (!$("stPrompt").value.trim()) { $("stStatus").textContent = "Enter a prompt (include the LoRA's trigger word) to see previews."; return; }
+  if (S.st.foreign) {                                 // a Studio queue job loaded another model or LoRA: yours again
+    S.st.foreign = false; S.st.loadedKey = "";
+    return studioStart();
+  }
   // seed 0: random, rolled by Update / Start (studioStart) and kept while sliders and the other controls render, so
   // a tweak is judged on the same picture; Baseline and Tweaked share it
   const state = studioState();
@@ -8501,12 +8564,26 @@ async function studioRender() {
   }
   // Save every render saves a tweaked still with the setup inside, as Save does
   const setup = $("stAutoSave").checked && S.st.layout && S.st.layout.kind === "stills" ? {setup: studioSetupData()} : {};
-  try { await api("/api/studio/render", {state, ...studioExtra(), ...studioMixExtra(), ...setup}); studioPoll(); }
+  try {
+    const r = await api("/api/studio/render", {state, ...studioExtra(), ...studioMixExtra(), ...setup});
+    if (r.after_job) $("stStatus").textContent = "Renders when the Studio queue's job finishes…";
+    studioPoll();
+  }
   catch (e) { $("stStatus").textContent = e.message; }
   finally { if (S.st.upHold) S.st.upHold = S.st.upNow = S.st.upPrev = 0; }     // the held Upscale request has gone
 }
 
 function studioRollSeed() { S.st.seedUsed = 1 + Math.floor(Math.random() * (2 ** 31 - 2)); }
+
+// what Start loads: the model, the LoRAs and the preview settings (Start, and each Studio queue job)
+function studioLoadBody() {
+  const L = S.st.layout;
+  const fast = (document.querySelector('input[name="stDit"]:checked') || {}).value !== "full";
+  return {family: L.key, primary: $("stPrimary").value.trim(), donor: $("stDonor").value.trim(),
+    fast, turbo: $("stTurbo").checked, negative: $("stNeg").value.trim(),
+    h3_model: L.kind === "video" ? $("stH3Model").value : "", base: L.kind === "video" ? $("stH3Base").value : "",
+    canvas: studioCanvas()};
+}
 
 async function studioStart() {
   stRemember();
@@ -8530,10 +8607,9 @@ async function studioStart() {
       return;
     }
     S.st.ready = false;
-    await api("/api/studio/load", {family: L.key, primary: $("stPrimary").value.trim(), donor: $("stDonor").value.trim(),
-      fast, turbo: $("stTurbo").checked, negative: $("stNeg").value.trim(),
-      h3_model: L.kind === "video" ? $("stH3Model").value : "", base: L.kind === "video" ? $("stH3Base").value : "",
-      canvas: studioCanvas()});
+    const lr = await api("/api/studio/load", studioLoadBody());
+    S.st.myLoad = lr.load_id || 0;                  // a later load the page didn't ask for (a queue job's) is seen
+    S.st.foreign = false;
     if (S.st.mix && S.st.mix.mode !== "off" || (S.st.dmix && S.st.dmix.on)) studioMixReset();
     S.st.loadedKey = key;
     S.st.pendingFirst = true;
@@ -8552,6 +8628,9 @@ async function studioPoll() {
 }
 async function studioPollOnce() {
   const st = await api("/api/studio/status");
+  if (st.load_id && S.st.myLoad && st.load_id !== S.st.myLoad) S.st.foreign = true;
+  let qActive = false;
+  try { qActive = studioQueueDraw(await api("/api/studio/queue")); } catch (e) { /* an older server */ }
   const wasReady = S.st.ready;
   S.st.ready = st.state === "ready";
   S.st.donor = !!st.donor;
@@ -8656,7 +8735,7 @@ async function studioPollOnce() {
     $("stDlMsg").textContent = st.out_said.error || `Saved: ${st.out_said.paths.join(" and ")}`;
     if (S.st.layout && S.st.layout.kind === "audio") $("stStatus").textContent = $("stDlMsg").textContent;
   }
-  return st.state === "loading" || st.rendering || !!st.pending;
+  return st.state === "loading" || st.rendering || !!st.pending || qActive;
 }
 
 // Save original / Save tweaked: the pair as rendered (a still's picture, a clip's mp4); songs have their
@@ -9088,6 +9167,20 @@ function wireStudio() {
     return ids;
   });
   $("stStart").addEventListener("click", () => { S.st.upHold = S.st.upNow = S.st.upPrev = 0; studioStart(); });
+  $("stQAdd").addEventListener("click", studioQueueAdd);
+  $("stQPause").addEventListener("click", async () => {
+    const q = S.stq || {};
+    try { studioQueueDraw(await api(q.paused ? "/api/studio/queue/resume" : "/api/studio/queue/pause", {reason: "You paused it."})); studioPoll(); }
+    catch (e) { $("stQSay").textContent = e.message; }
+  });
+  $("stQClear").addEventListener("click", async () => { try { studioQueueDraw(await api("/api/studio/queue/clear", {})); } catch (e) { /* */ } });
+  const stqClose = () => $("stqModal").classList.remove("active");
+  $("stqResume").addEventListener("click", async () => {
+    stqClose();
+    try { studioQueueDraw(await api("/api/studio/queue/resume", {})); studioPoll(); } catch (e) { $("stQSay").textContent = e.message; }
+  });
+  $("stqKeep").addEventListener("click", stqClose);
+  $("stqLater").addEventListener("click", stqClose);
   wireStudioAce();
   S.st.eq = {primary: false, donor: false}; S.st.eqSaved = {};
   $("stEqP").addEventListener("click", () => studioEq("primary", !S.st.eq.primary));
@@ -11324,6 +11417,8 @@ function showTab(name) {
   const pane = document.querySelector(".notebook-pane"), was = document.querySelector(".tab-panel.active");
   S.tabScroll = S.tabScroll || {};
   if (was && was.id !== "tab-" + name) S.tabScroll[was.id] = [pane ? pane.scrollTop : 0, window.scrollY];
+  if (was && was.id === "tab-studio" && name !== "studio" && S.stq && S.stq.left && !S.stq.paused)
+    api("/api/studio/queue/pause", {reason: "You left Studio."}).catch(() => {});   // the job rendering now finishes
   const tb = document.querySelector(`.tab-item[data-tab="${name}"] span`);
   if (tb) $("tabsToggleName").textContent = tb.textContent;
   tabsMenu(false);

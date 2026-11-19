@@ -1025,6 +1025,19 @@ def _rm_bundle(job):
     return latents, describe, entries, sched
 
 
+def cmd_primary(c):
+    """Unload primary (or another primary in its place) without reloading the model: the old one comes off, the new
+    one goes on - "" is the zero adapter, the base model on its own. The donor stays."""
+    with _engine_lock:
+        eng = S["engine"]
+        if eng is None or eng.primary_network is None:
+            raise ValueError("Press Start first: the model isn't loaded.")
+        S.setdefault("mix_files", {}).pop("primary", None)    # its epoch blend / LoRA mix belonged to the old one
+        eng.unload_primary()
+        eng.load_primary(c.get("path") or "")
+        emit(ev="primary", primary=c.get("path") or "", **_blocks(eng))
+
+
 def _rm_sync_lora(eng, path):
     """The engine's LoRA is the page's (swapped in place when the structure matches, else the old one off and the
     new one wired), or none - the desktop's _rms_sync_lora."""
@@ -1162,7 +1175,7 @@ def cmd_map(c):
         emit(ev="status", text="Ready.")
 
 
-HANDLERS = {"load": cmd_load, "donor": cmd_donor, "settings": cmd_settings, "render": cmd_render, "map": cmd_map,
+HANDLERS = {"load": cmd_load, "donor": cmd_donor, "primary": cmd_primary, "settings": cmd_settings, "render": cmd_render, "map": cmd_map,
             "cancel": cmd_cancel, "save": cmd_save, "reset": cmd_reset, "royale": cmd_royale,
             "royale_travel": cmd_royale_travel, "refmod": cmd_refmod}
 

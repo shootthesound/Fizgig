@@ -863,6 +863,11 @@ def _studio_post(what, b, from_queue=False):
     if what == "donor":
         studio.donor(str(b.get("path") or "").strip())
         return {"ok": True}
+    if what == "primary":                    # Unload primary: the zero adapter in its place, no model reload
+        if studio_queue.running():
+            raise ValueError("The Studio queue is rendering a job. Pause the queue and let the job finish first.")
+        studio.primary(str(b.get("path") or "").strip())
+        return {"ok": True}
     if what == "settings":
         desc = _studio_desc(b.get("family", ""))
         ps = None

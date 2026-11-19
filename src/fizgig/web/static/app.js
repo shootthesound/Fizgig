@@ -8683,6 +8683,12 @@ function studioLoadBody() {
     canvas: studioCanvas()};
 }
 
+// what a loaded model is: the model, the primary and the preview settings - a change of any is a reload at Render
+function studioLoadKey(L, fast) {
+  return [L.key, $("stPrimary").value.trim(), fast, L.kind === "video" ? $("stH3Model").value + $("stH3Base").value : "",
+    (L.render_choice || {}).value || "", L.follow_ck || "", L.follow_look || "", L.follow_turbo || ""].join("|");
+}
+
 async function studioStart() {
   stRemember();
   // Render with seed 0: a new random picture (not for an Upscale: it works on the clip already rendered)
@@ -8695,8 +8701,7 @@ async function studioStart() {
     const rc = await api("/api/studio/render_choice?family=" + encodeURIComponent(L.key)).catch(() => null);
     if (rc && rc.key === L.key) Object.assign(L, rc);
     const fast = (document.querySelector('input[name="stDit"]:checked') || {}).value !== "full";
-    const key = [L.key, $("stPrimary").value.trim(), fast, L.kind === "video" ? $("stH3Model").value + $("stH3Base").value : "",
-      (L.render_choice || {}).value || "", L.follow_ck || "", L.follow_look || "", L.follow_turbo || ""].join("|");
+    const key = studioLoadKey(L, fast);
     if (st.state === "ready" && S.st.loadedKey === key) {     // the same LoRA: the donor may change, then a render
       if ($("stDonor").value.trim() !== (st.donor || "")) await api("/api/studio/donor", {path: $("stDonor").value.trim()});
       // the Samples tab's steps and CFG (a model that follows it) apply without a reload: sent before each render
@@ -9362,6 +9367,22 @@ function wireStudio() {
   $("stDonorPick").addEventListener("click", () => pick($("stDonor").value || $("stPrimary").value, false, (p) => { $("stDonor").value = p; stRemember();
     studioDmixOff();
     if (S.st.ready) api("/api/studio/donor", {path: p}).then(studioPoll).catch((e) => { $("stStatus").textContent = e.message; }); }));
+  // Unload primary: the zero adapter in its place, live (no model reload), as Unload donor does for the donor
+  $("stPrimaryUnload").addEventListener("click", async () => {
+    if (S.st.eq && S.st.eq.primary) studioEq("primary", false);
+    $("stPrimary").value = ""; stRemember();
+    // the primary's epochs / LoRA mix went with it; the donor's epoch blend stays
+    S.st.mix = {mode: "off", epochs: [], rows: []};
+    document.querySelector('input[name="stMixMode"][value="off"]').checked = true;
+    $("stMixInfo").textContent = ""; studioMixLayout();
+    if (!S.st.ready) return;
+    try {
+      await api("/api/studio/primary", {path: ""});
+      const fast = (document.querySelector('input[name="stDit"]:checked') || {}).value !== "full";
+      S.st.loadedKey = studioLoadKey(S.st.layout, fast);       // what's loaded now: Render needn't reload it
+      studioPoll(); studioPending();
+    } catch (e) { $("stStatus").textContent = e.message; }
+  });
   $("stDonorUnload").addEventListener("click", () => { $("stDonor").value = ""; stRemember(); studioDmixOff();
     if (S.st.ready) api("/api/studio/donor", {path: ""}).then(() => { studioPoll(); studioPending(); }); });
   $("stRefPick").addEventListener("click", () => pick($("stRef").value || stDir("ref") || refStart(), false,

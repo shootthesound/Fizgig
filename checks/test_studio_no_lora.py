@@ -53,3 +53,13 @@ def test_server_takes_an_empty_primary_and_refuses_the_save(monkeypatch):
     with pytest.raises(ValueError, match="No LoRA is loaded"):
         studio.save("out.safetensors", {}, False)
     studio._S.update(state="idle")
+
+
+def test_unload_primary_goes_to_the_worker_and_queue_jobs_load_again(monkeypatch):
+    sent = []
+    monkeypatch.setattr(studio, "_send", lambda m: sent.append(m))
+    studio.primary("")
+    assert sent == [{"cmd": "primary", "path": ""}]
+    studio._S.update(load_key='{"primary": "A"}', page_key='{"primary": "A"}', primary="A")
+    studio._event({"ev": "primary", "primary": "", "primary_blocks": [], "donor_blocks": [], "hash": "", "eq": {}})
+    assert studio._S["primary"] == "" and studio._S["load_key"] is None and studio._S["page_key"] is None

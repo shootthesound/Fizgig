@@ -282,7 +282,8 @@ class WorkbenchEngine:
         else:
             n = self._attach(path, PRIMARY)
         self.primary_network = self.net
-        self._clear_blend_state()
+        # a primary swapped in with a donor still loaded (Unload primary) keeps the donor's blend
+        self._clear_blend_state(PRIMARY if self.donor_network is not None else None)
         self.primary_path = path or ""
         self.primary_block_ids = self.net.adapter_blocks(PRIMARY) if path else []
         self.primary_hash = self._hash(path) if path else ""
@@ -334,6 +335,21 @@ class WorkbenchEngine:
         self.donor_path = path
         self.donor_block_ids = self.net.adapter_blocks(DONOR)
         self._invalidate_activation_cache()
+
+    def unload_primary(self):
+        """Take the primary out without a full reset (Studio's Unload primary, which puts the zero adapter in its
+        place; RefMod changing its LoRA), as unload_donor does for the donor."""
+        if self.primary_network is not None:
+            self.unload_epochs(PRIMARY)
+            self.net.remove(PRIMARY)
+            self.__dict__.setdefault("_eq", {}).pop(PRIMARY, None)
+            self.primary_network = None
+            self.primary_path = None
+            self.primary_hash = None
+            self.primary_block_ids = set()
+            self._clear_blend_state(PRIMARY)
+            self._invalidate_baseline_cache()
+            self._invalidate_activation_cache()
 
     def unload_donor(self):
         if self.donor_network is not None:

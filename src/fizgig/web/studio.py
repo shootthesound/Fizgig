@@ -146,15 +146,20 @@ def _event(ev):
                       error=ev.get("error") or ("" if ok else "No renders produced."),
                       status=("Stopped." if ev.get("cancelled") else
                               f"Rendered {len(ok)} of {_R['total']}." if ok else "No renders produced."))
-        elif kind in ("loaded", "donor"):
+        elif kind in ("loaded", "donor", "primary"):
             _S.update({k: ev.get(k) for k in ("primary_blocks", "donor_blocks", "hash", "eq")})
+            if kind == "primary":                # swapped in place: what's loaded is no longer any load's settings,
+                _S.update(primary=ev.get("primary", ""), load_key=None, page_key=None, page_waiting=0.0,  # so a queue
+                          status="Primary unloaded: the base model on its own." if not ev.get("primary")  # job loads
+                          else "Primary loaded.")                                                          # again
+                _S["profile"] = _profile(ev.get("hash", ""))
             if kind == "loaded":
                 _S.update(nolora="", nolora_media="", nolora_gen=0, nolora_busy=False)
                 _S.update(state="ready", family=ev.get("family", ""), primary=ev.get("primary", ""),
                           donor=ev.get("donor", ""), status="Loaded.", error="")
                 _S["profile"] = _profile(ev.get("hash", ""))
                 _S["up_room"] = ev.get("up_room")      # H3 Upscale: the memory its section hint is worked out from
-            else:
+            elif kind == "donor":
                 _S.update(donor=ev.get("donor", ""), status="Donor loaded, fully on in its blocks: turn a block down or off to use less of it."
                           if ev.get("donor") else "Donor unloaded.")
         elif kind == "early" and _S.get("rendering"):     # H3's Show early: the tweaked pane's unfinished look
@@ -498,6 +503,13 @@ def load(desc, primary, donor, kw, settings, status, turbo, canvas=None):
             with _lock:
                 _S.update(state="idle", error=str(e), status=f"Couldn't start: {e}")
     threading.Thread(target=go, daemon=True).start()
+
+
+def primary(path):
+    """Unload primary (path ""), or another primary in its place, without reloading the model."""
+    if path and not os.path.isfile(path):
+        raise ValueError("That primary LoRA isn't there.")
+    _send({"cmd": "primary", "path": path or ""})
 
 
 def donor(path):

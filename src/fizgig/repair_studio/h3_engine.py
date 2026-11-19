@@ -350,7 +350,7 @@ class H3RepairEngine(ClipContract):
             self._load_dit_and_turbo()
         finally:
             self._keep_int8 = False
-        if self.primary_path:
+        if self.primary_path is not None:             # "": no LoRA, the zero module wired again
             self._wire_primary(self.primary_path)
         if self.donor_path:
             self._wire_donor(self.donor_path)
@@ -768,25 +768,31 @@ class H3RepairEngine(ClipContract):
         from safetensors.torch import load_file
         from fizgig.networks.lora import ensure_kohya_lora_state_dict
         from fizgig.minimax.reflora import lora_tensors
-        sd = ensure_kohya_lora_state_dict(lora_tensors(load_file(path)))     # a ReFLoRA: its weights
+        if path:
+            sd = ensure_kohya_lora_state_dict(lora_tensors(load_file(path)))     # a ReFLoRA: its weights
+        else:                       # no LoRA: the base model, through one zero module (changes nothing)
+            lin = self.dit.blocks[0].attn.qkv_proj
+            k = "lora_unet_blocks_0_attn_qkv_proj"
+            sd = {f"{k}.lora_down.weight": torch.zeros(1, lin.in_features),
+                  f"{k}.lora_up.weight": torch.zeros(lin.out_features, 1), f"{k}.alpha": torch.tensor(1.0)}
         self.primary_network = _apply_lora(self.dit, sd, 1.0, self.device, self.dtype)
-        self.primary_path = path
-        self.primary_block_ids = extract_block_ids_h3(self.primary_network)
+        self.primary_path = path or ""
+        self.primary_block_ids = extract_block_ids_h3(self.primary_network) if path else []
         # A Turbo LoRA's AdaLN rows (full-model space) can't be modules on the pruned base —
         # they are injected at render time like the built-in Turbo's, scaled by the load
         # strength and each block's slider (missing until 4 Sep: a Turbo LoRA edited as the
         # primary lost its modulation and rendered badly at few steps).
-        self._primary_adaln = _collect_adaln_pairs(self.dit, sd)
+        self._primary_adaln = _collect_adaln_pairs(self.dit, sd) if path else {}
         if self._primary_adaln:
             logger.info("H3 primary carries %d AdaLN rows — injected at render time",
                         len(self._primary_adaln))
         self._invalidate_baseline_cache()
         try:
             from fizgig.utils.lora_files import compute_lora_hash
-            self.primary_hash = compute_lora_hash(path)
+            self.primary_hash = compute_lora_hash(path) if path else None
         except Exception:
             self.primary_hash = None
-        logger.info("H3 primary loaded: %s (%d blocks)", path, len(self.primary_block_ids))
+        logger.info("H3 primary loaded: %s (%d blocks)", path or "none (the base model)", len(self.primary_block_ids))
 
     def swap_primary_weights(self, path: str) -> bool:
         """LoRA Royale fast path: same-structure weight swap in place (epochs of one run).
@@ -1136,7 +1142,7 @@ class H3RepairEngine(ClipContract):
         elif token == "unload":
             self._status("Reloading the base…")
             self._load_dit_and_turbo()
-            if self.primary_path:
+            if self.primary_path is not None:
                 self._wire_primary(self.primary_path)
             if self.donor_path:
                 self._wire_donor(self.donor_path)

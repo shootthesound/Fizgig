@@ -275,12 +275,17 @@ class WorkbenchEngine:
             raise RuntimeError("Pipeline not loaded; call ensure_pipeline() first.")
         if self.primary_network is not None:
             raise RuntimeError("Primary already loaded — call reset() to swap.")
-        n = self._attach(path, PRIMARY)
+        if not path:                                   # no LoRA: the base model, through a zero adapter
+            n = self.net.add_zero(PRIMARY)
+            self.net.move_adapter(PRIMARY, self.device)
+            self.__dict__.setdefault("_eq", {}).pop(PRIMARY, None)
+        else:
+            n = self._attach(path, PRIMARY)
         self.primary_network = self.net
         self._clear_blend_state()
-        self.primary_path = path
-        self.primary_block_ids = self.net.adapter_blocks(PRIMARY)
-        self.primary_hash = self._hash(path)
+        self.primary_path = path or ""
+        self.primary_block_ids = self.net.adapter_blocks(PRIMARY) if path else []
+        self.primary_hash = self._hash(path) if path else ""
         self._invalidate_baseline_cache()
         self._invalidate_activation_cache()
         logger.info("%s primary: %s (%d Linears, %d blocks)", self.desc.display_name, path, n,

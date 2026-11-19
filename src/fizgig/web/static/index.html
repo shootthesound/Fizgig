@@ -839,7 +839,7 @@
                 <label class="radio-label"><input type="radio" name="stDit" value="fast" checked> <span id="stDitFast"></span></label>
                 <label class="radio-label"><input type="radio" name="stDit" value="full"> <span id="stDitFull"></span></label></div>
               <div class="field-row"><span class="field-label">Primary LoRA:</span>
-                <input type="text" id="stPrimary" class="w-path" placeholder="the LoRA to repair (.safetensors)">
+                <input type="text" id="stPrimary" class="w-path" title="Leave it empty to render the base model on its own (Studio as a generator)" placeholder="the LoRA to tweak (.safetensors) - empty: the base model on its own">
                 <button class="btn" id="stPrimaryPick">Choose…</button>
                 <span class="field-label" title="The strength this LoRA is meant to be used at (not always 1.0). The block sliders are relative to it: a block at 1.0 is that block at this strength, 0.5 is half of it. The saved file keeps the LoRA's own scale, so use it at this strength and it looks exactly like the preview.">at strength</span><input type="text" id="stPScale" class="w-num" value="1" title="The strength this LoRA is meant to be used at (not always 1.0). The block sliders are relative to it: a block at 1.0 is that block at this strength, 0.5 is half of it. The saved file keeps the LoRA's own scale, so use it at this strength and it looks exactly like the preview.">
                 <button class="btn" id="stEqP" style="display:none" title="Model EQ Mode: this row becomes the model's own weights (the Model EQ LoRA set in Preferences) at strength 1 - every block slider then reads 1.0 = the stock model, below 1 turns that block's main directions down, above 1 up. Press it again for your own LoRA back.">Model EQ Mode</button></div>
@@ -1141,7 +1141,7 @@
               </div>
             </div>
           </div>
-          <div class="section-card" id="stMasters" style="display:none">
+          <div class="section-card st-needs-lora" id="stMasters" style="display:none">
             <div class="card-title">Master controls</div>
             <div class="card-content">
               <div class="field-row"><span class="field-label">Masters affect:</span>
@@ -1150,7 +1150,8 @@
               <div id="stMasterRows"></div>
             </div>
           </div>
-          <div class="section-card">
+          <div class="section-card st-needs-lora">
+            <div class="st-needs-lora-note">Needs a LoRA: choose one in Setup and press Render to tweak and save it.</div>
             <div class="st-blocks-head">
               <div class="st-blocks-main">
                 <div class="card-title"><span>Blocks</span>
@@ -1193,9 +1194,10 @@
               <div id="stBlocks"></div>
             </div>
           </div>
-          <div class="section-card">
+          <div class="section-card st-needs-primary">
             <div class="card-title">Save</div>
             <div class="card-content">
+              <div class="st-needs-lora-note">Needs a LoRA: this saves the LoRA you've tweaked. With no LoRA, Save tweaked (under the preview) keeps the picture.</div>
               <div class="field-row"><span class="field-label">Save as:</span>
                 <input type="text" id="stOut" class="w-path" placeholder="the repaired LoRA's file (.safetensors)">
                 <button class="btn btn-primary" id="stSave">Save repaired LoRA</button></div>

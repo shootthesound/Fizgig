@@ -468,6 +468,18 @@ class FamilyLoRA:
         self._apply(name)
         return n
 
+    def add_zero(self, name):
+        """A frozen adapter that changes nothing at any strength: rank 1 with an all-zero up matrix, on one of the
+        model's own LoRA targets at its real size. Studio with no LoRA loaded attaches it as the primary, so the base
+        model renders through the same path as with a LoRA. Returns 1."""
+        full = next(k for k in sorted(self.wrapped) if isinstance(self.wrapped[k], LoRALinear))
+        w = self.wrapped[full]
+        w.add(name, 1, 1, False, torch.zeros(1, w.base.in_features), torch.zeros(w.base.out_features, 1))
+        self._frozen[name] = {"alpha_rank": {full: 1.0}, "load": 1.0, "on": True, "block_mult": {}, "block_on": {},
+                              "outside_on": True, "path": "", "biases": [], "bias_saved": []}
+        self._apply(name)
+        return 1
+
     def _read_biases(self, path):
         """A file's bias deltas (`<module>.diff_b`, e.g. Krea 2's turbo LoRA on its input, timestep and output
         layers - a low-rank pair cannot carry them): [(module name, delta on CPU)] for Linears with a matching bias."""

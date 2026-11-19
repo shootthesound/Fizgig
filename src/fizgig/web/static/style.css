@@ -2428,6 +2428,16 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 .job-pill-shade[hidden] { display: none; }
 /* the start-up question after a run was cut off: carry it on, the next in the queue, or a fresh start */
 .startup-window { max-width: 560px; }
+/* Studio with no LoRA loaded (the base model on its own, through a zero adapter): one pane, and what needs a LoRA
+   greyed with a line saying so. no-primary: no primary LoRA (a donor alone still compares) */
+.st-needs-lora-note { display: none; margin: 0 0 8px; font-size: 9pt; color: var(--text-secondary); }
+#tab-studio.no-lora .st-needs-lora > :not(.st-needs-lora-note),
+#tab-studio.no-primary .st-needs-primary .card-content > :not(.st-needs-lora-note) { opacity: 0.45; pointer-events: none; }
+#tab-studio.no-lora .st-needs-lora > .st-needs-lora-note,
+#tab-studio.no-primary .st-needs-primary .st-needs-lora-note { display: block; }
+#tab-studio.no-lora #stBasePane, #tab-studio.no-lora #stSplit, #tab-studio.no-lora #stMetrics,
+#tab-studio.no-lora #stMaps, #tab-studio.no-lora #stDlBase { display: none !important; }
+#tab-studio.no-lora .st-preview { grid-template-columns: 1fr; }
 /* Studio queue: a slim bar between Setup and Preview while it holds jobs; its head opens the list */
 .st-qbar .st-qbar-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer;
   user-select: none; }

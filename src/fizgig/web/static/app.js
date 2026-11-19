@@ -6553,7 +6553,6 @@ async function studioOpen() {
 async function studioQueueAdd() {
   const L = S.st.layout;
   if (!L) return;
-  if (!$("stPrimary").value.trim()) { $("stStatus").textContent = "Choose a LoRA first."; return; }
   if (!$("stPrompt").value.trim()) { $("stStatus").textContent = "Enter a prompt first."; return; }
   const state = studioState();
   if (state.seed === 0) state.seed = 1 + Math.floor(Math.random() * (2 ** 31 - 2));    // each job its own
@@ -6941,7 +6940,10 @@ function studioH3Remember() {
 }
 
 // which panes render: the ones on screen (the arrows between them hide one)
-function studioPanes() { return S.st.split === "tweak" ? "tweaked" : S.st.split === "base" ? "baseline" : "both"; }
+function studioPanes() {
+  if (S.st.noLora) return "both";                     // no LoRA: one render serves both (nothing moved)
+  return S.st.split === "tweak" ? "tweaked" : S.st.split === "base" ? "baseline" : "both";
+}
 
 function studioExtra() { return {...studioExtraKind(), panes: studioPanes()}; }
 
@@ -7133,7 +7135,7 @@ function songMark() {
   $("stSongSave").style.pointerEvents = t ? "" : "none";
   $("stSongSave").style.opacity = t ? "" : "0.5";
   if (t) {
-    const lora = ($("stPrimary").value.trim().split(/[\\/]/).pop() || "song").replace(/\.safetensors$/i, "");
+    const lora = ($("stPrimary").value.trim().split(/[\\/]/).pop() || "base").replace(/\.safetensors$/i, "");
     const seed = ($("stSeed") && $("stSeed").value.trim()) || "";
     const name = `${lora}_tweaked${seed ? "_seed" + seed : ""}.wav`;
     $("stSongSave").href = t + "&dl=" + encodeURIComponent(name);     // another device's copy
@@ -8752,6 +8754,11 @@ async function studioPollOnce() {
   S.st.ready = st.state === "ready";
   S.st.donor = !!st.donor;
   S.st.primaryBlocks = new Set(st.primary_blocks || []); S.st.donorBlocks = new Set(st.donor_blocks || []);
+  // no LoRA loaded: Studio renders the base model on its own (a zero adapter stands in for the primary)
+  S.st.noPrimary = S.st.ready && !st.primary;
+  S.st.noLora = S.st.noPrimary && !st.donor;
+  $("tab-studio").classList.toggle("no-primary", S.st.noPrimary);
+  $("tab-studio").classList.toggle("no-lora", S.st.noLora);
   // a donor loaded (or unloaded) after the model: its rows and buttons show (or go) now, not at the next load
   const actKey = [S.st.ready, st.donor || "", (st.primary_blocks || []).length, (st.donor_blocks || []).length].join("|");
   if (wasReady && S.st.ready && actKey !== S.st.actKey) studioActivity();
@@ -8832,7 +8839,9 @@ async function studioPollOnce() {
       (ps === 1 ? "Baseline (LoRA at default 1.0)" : `Baseline (LoRA at ${ps})`) +
       (st.donor ? " - the donor is not in the baseline" : "");
     $("stTweakCap").textContent = noTweak ? "Tweaked (not rendered: it was hidden - press Render to fill it)" :
+      !st.primary && !st.donor ? "The base model (no LoRA)" :
       "Tweaked (current sliders)" + (st.donor ? " - includes the donor" : "");
+    if (!st.primary && st.donor) $("stBaseCap").textContent = "Baseline: the base model (no primary LoRA)";
   }
   studioNoLoraPane(st);
   studioAceNotes(st.notes);
@@ -8870,7 +8879,7 @@ function studioDownloads(st, q) {
   const on = kind !== "audio" && !!st.shown;
   row.style.display = on ? "" : "none";
   if (!on) return;
-  const lora = ($("stPrimary").value.trim().split(/[\\/]/).pop() || "render").replace(/\.safetensors$/i, "");
+  const lora = ($("stPrimary").value.trim().split(/[\\/]/).pop() || "base").replace(/\.safetensors$/i, "");
   const seed = String(seedOf("stSeed") === 0 && S.st.seedUsed ? S.st.seedUsed : ($("stSeed").value || "").trim());
   for (const [w, id, word] of [["baseline", "stDlBase", "original"], ["tweaked", "stDlTweak", "tweaked"]]) {
     const video = kind === "video" && st.media && st.media[w];

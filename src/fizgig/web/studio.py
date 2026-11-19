@@ -279,7 +279,8 @@ def save_output(which, setup=None):
         raise ValueError("Not a render.")
     with _lock:
         png, media, gen = _S.get(which) or "", _S.get(which + "_media") or "", _S.get("shown", 0)
-        fam, lora = _S.get("family", ""), os.path.splitext(os.path.basename(_S.get("primary") or ""))[0]
+        fam = _S.get("family", "")
+        lora = os.path.splitext(os.path.basename(_S.get("primary") or ""))[0] or "base"     # no LoRA: the base
         info = _S["gens"].get(gen) or {}
     if not png or not os.path.isfile(png):
         raise ValueError("Nothing rendered in that pane yet.")
@@ -339,6 +340,8 @@ def autosave(gen):
 
 def _profile(h):
     """The Profiler's sidecar for this LoRA (same file hash), for the pills panel; None without one."""
+    if not h:                                    # no LoRA loaded (the base model on its own): no profile
+        return None
     try:
         from fizgig.utils.lora_files import find_profile_for_hash
         from fizgig.web.server import load_prefs, pref_path
@@ -472,8 +475,8 @@ def studio_tokens(desc, prefs):
 
 
 def load(desc, primary, donor, kw, settings, status, turbo, canvas=None):
-    if not primary or not os.path.isfile(primary):
-        raise ValueError("Choose a primary LoRA first (that file isn't there).")
+    if primary and not os.path.isfile(primary):        # empty: the base model on its own (Studio as a generator)
+        raise ValueError("That primary LoRA isn't there.")
     if donor and not os.path.isfile(donor):
         raise ValueError("That donor LoRA isn't there.")
     with _lock:
@@ -705,6 +708,8 @@ def keep_tweaked():
 
 def save(out, state, include_donor):
     with _lock:
+        if _S["state"] == "ready" and not _S.get("primary"):
+            raise ValueError("No LoRA is loaded: Save repaired LoRA saves a LoRA you've tweaked. Load one in Setup.")
         _S["saved"] = None
     _send({"cmd": "save", "out": out, "state": state, "include_donor": bool(include_donor)})
 

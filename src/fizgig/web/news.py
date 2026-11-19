@@ -5,6 +5,18 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 
 NEWS = [
     {
+        "date": "20 Nov 2026",
+        "title": "MiniMax H3 previews that start from your picture",
+        "body": (
+            "The Samples tab takes a First and Last frame for MiniMax H3's clip previews (on the Reference base, its "
+            "reference pictures), and a previews helper sends back whole clips with sound.\n\n"
+            "On AMD cards INT8 fast inference is off by default, and Krea 2's text encoder frees its memory without "
+            "a copy into RAM."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#20-nov-2026-minimax-h3-previews-that-start-from-your-picture"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.8.1"}],
+    },
+    {
         "date": "19 Nov 2026",
         "title": "MiniMax H3 Turbo previews keep their steps",
         "body": (

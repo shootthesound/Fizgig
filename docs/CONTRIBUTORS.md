@@ -164,7 +164,7 @@ Force SageAttention preference for Krea 2 ([#344](https://github.com/shootthesou
 lists optimizers without loading their libraries ([#346](https://github.com/shootthesound/Fizgig/pull/346), v9.7.5), and Krea 2's VAE decoding a still picture
 with about 2 GB less VRAM ([#369](https://github.com/shootthesound/Fizgig/pull/369), v9.7.6). They also found three helpers missing from the Linux AMD installer
 (v9.7.2) and where Arch-based systems keep libnuma ([#356](https://github.com/shootthesound/Fizgig/issues/356)). In v9.7.8, Krea 2 previews fit 16 and 24 GB AMD cards at high resolutions
-([#363](https://github.com/shootthesound/Fizgig/pull/363)), and their investigation found that expandable memory segments corrupt memory on Radeon cards with current ROCm, which is why Fizgig turns them off there.
+([#363](https://github.com/shootthesound/Fizgig/pull/363)), and their investigation found that expandable memory segments corrupt memory on Radeon cards with current ROCm, which is why Fizgig turns them off there. In v9.8.1 their measurements turned INT8 fast inference off by default on AMD cards and stopped Krea 2's text encoder being copied into RAM before it was freed ([#380](https://github.com/shootthesound/Fizgig/issues/380)).
 
 ## pastuh
 
@@ -202,7 +202,7 @@ Since November:
 - [josm2026](https://github.com/josm2026): the installer's "from was unexpected" error, with the fix ([#310](https://github.com/shootthesound/Fizgig/issues/310))
 - [RitschRatsch666](https://github.com/RitschRatsch666): fine-tunes training with the optimizer you pick ([#312](https://github.com/shootthesound/Fizgig/issues/312))
 - [mart-hill](https://github.com/mart-hill): JoyCaption ([#313](https://github.com/shootthesound/Fizgig/issues/313)) and the big caption view a line at a time
-- [axymeus](https://github.com/axymeus): the WD tagger ([#315](https://github.com/shootthesound/Fizgig/issues/315)), the regularisation dataset ([#332](https://github.com/shootthesound/Fizgig/issues/332)), LoRA Royale on a range of epochs ([#318](https://github.com/shootthesound/Fizgig/issues/318)) and Gizmo's crop box ([#367](https://github.com/shootthesound/Fizgig/issues/367))
+- [axymeus](https://github.com/axymeus): the WD tagger ([#315](https://github.com/shootthesound/Fizgig/issues/315)), the regularisation dataset ([#332](https://github.com/shootthesound/Fizgig/issues/332)), LoRA Royale on a range of epochs ([#318](https://github.com/shootthesound/Fizgig/issues/318)) Gizmo's crop box ([#367](https://github.com/shootthesound/Fizgig/issues/367)) and a first and last frame for MiniMax H3 previews ([#376](https://github.com/shootthesound/Fizgig/issues/376))
 - [AlexWolfgangDRG](https://github.com/AlexWolfgangDRG): JoyCaption in 4-bit on ROCm ([#316](https://github.com/shootthesound/Fizgig/issues/316)) and a Continue training problem ([#333](https://github.com/shootthesound/Fizgig/issues/333))
 - [CognitiveDiffusion](https://github.com/CognitiveDiffusion): Resume Training's place on the page ([#317](https://github.com/shootthesound/Fizgig/issues/317)), long runs and the queue ([#348](https://github.com/shootthesound/Fizgig/issues/348)), Gizmo's crop box ([#350](https://github.com/shootthesound/Fizgig/issues/350)) and Automagic v4's braked-weights readout ([#349](https://github.com/shootthesound/Fizgig/issues/349))
 - [Kaoru8](https://github.com/Kaoru8): every setting the previews use, on the Samples tab ([#330](https://github.com/shootthesound/Fizgig/issues/330))

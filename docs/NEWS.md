@@ -1,5 +1,13 @@
 # Fizgig news
 
+## 20 Nov 2026: MiniMax H3 previews that start from your picture
+
+**First and Last frame for H3 previews.** The Samples tab takes a picture for each clip preview to start and end on, so an image-to-video LoRA's previews show what it does. On the Reference base the same rows are the previews' reference pictures, `<Picture 1>` and `<Picture 2>`. A previews helper now sends back whole clips with sound, not their middle frame.
+
+**Leaner Krea 2 on AMD.** INT8 fast inference is off by default on AMD cards, where the stored fp8 file is about twice as fast, and Krea 2's text encoder frees its memory without a 5 GB copy into RAM on every card.
+
+[Fizgig v9.8.1 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.8.1)
+
 ## 19 Nov 2026: MiniMax H3 Turbo previews keep their steps
 
 **A fix for MiniMax H3 previews.** Changing a Samples-tab setting while an H3 run trained sent the plain Steps box (20) to the run instead of the Turbo preview steps, so its Turbo previews came out with artefacts. They now keep your Turbo steps and strength, and Resume takes them too.

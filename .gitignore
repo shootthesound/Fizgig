@@ -36,6 +36,10 @@ cache/*
 !cache/.gitkeep
 profiles/*
 !profiles/.gitkeep
+# Studio's saved renders (Preferences > Studio outputs): only the folders ship
+Studio_Outputs/**
+!Studio_Outputs/**/
+!Studio_Outputs/**/.gitkeep
 
 # Pause state
 .fizgig_paused.json

@@ -10,6 +10,8 @@
 
 **Studio remembers where you pick pictures from.** The Reference picker, every First / Last frame and Reference slot, and the metrics reference each open in the folder you last chose from, across restarts, even after clearing the box.
 
+**Studio saves into its own folder.** **Save original** and **Save tweaked** (and a song's Save) now write straight into a **Studio outputs** folder, `Studio_Outputs` inside Fizgig by default (change it in Preferences > Other folders), with `images`, `videos` and `songs` inside: no Save window, and the date and time in every name so nothing is overwritten. On a pod or a phone the file is also downloaded to your device. A new **Save every render** tick beside Model, off by default and kept for each model, saves every finished render: the Tweaked one each time and the Baseline when it rendered again.
+
 **Delete run can keep your LoRAs.** On a run's card, **Delete run…** now also offers **Delete, keep the newest 5 epochs**, beside Delete and Cancel: it deletes the run as Delete does, but its newest five epochs (all of them when there are fewer) stay on disk with the finished LoRA, ready to use. **Delete, keep all epochs** keeps every epoch's LoRA file and deletes only the saved states. The **Clear out runs** row has its own box at the top of the list.
 
 **Fixes.**

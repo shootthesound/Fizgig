@@ -87,7 +87,8 @@ Red means most, then yellow, then blue; no colour, barely. Each map is scaled fr
 ## Saving
 
 - **Save repaired LoRA**: name the new file under **Save as** and press it. It's a normal LoRA for ComfyUI and anything else, with the slider settings recorded in its metadata.
-- **💾 Download original / Download tweaked**: the two renders as files. On the computer running Fizgig they open your system's Save window in the folder you last saved to (remembered across restarts); on a pod, a phone or another computer they download as a browser does. A downloaded Tweaked picture keeps Studio's settings inside it (the LoRAs, every slider, the prompt and seed): **drop it on the Studio tab to get them all back**.
+- **💾 Save original / Save tweaked**: the two renders straight into the **Studio outputs** folder (Preferences > Other folders; `Studio_Outputs` inside Fizgig unless you change it): pictures in `images`, clips in `videos`, songs in `songs`. No Save window. Each file is named `<model>_<LoRA>_<original|tweaked>_seed<seed>_<date-time>`, so nothing is overwritten; a render already saved says so instead of saving again. On a pod, a phone or another computer the file is saved there and also downloaded to the device you're using. A saved Tweaked picture keeps Studio's settings inside it (the LoRAs, every slider, the prompt and seed): **drop it on the Studio tab to get them all back**.
+- **Save every render** (beside Model, off unless ticked, kept for each model): every finished render is saved there by itself: the Tweaked one each time, and the Baseline when it rendered again (not when only the Tweaked one changed). With nothing moved the two are one render, saved once.
 - **Save setup**: everything on the tab (the LoRAs, every slider and tick, the prompt, seed, size, photos and source) in one named file. **Load a setup…** restores it exactly, switching model if it needs to, loading its LoRAs and rendering.
 
 ## Video (MiniMax H3)

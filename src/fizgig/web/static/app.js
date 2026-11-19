@@ -88,6 +88,7 @@ async function boot() {
   S.outputDefault = pr.output_default || "";
   S.outputPref = pr.lora_output_dir || "";
   S.set = pr.settings || {}; S.setAbs = pr.abs || {}; S.sageAttentionOption = !!pr.sageattention_option; S.rocm = !!pr.rocm;
+  S.studioAutosave = pr.studio_autosave || {};
   S.gpu = {chosen: pr.cuda_device || "", list: pr.gpus || [], envLocked: pr.gpu_env_locked};
   S.all = st.values || {};
   S.imageFolder = st.image_folder || "";
@@ -1177,6 +1178,7 @@ function renderPrefs() {
         await api("/api/prefs", {reset: true});
         const pr = await api("/api/prefs");
         S.set = pr.settings || {}; S.setAbs = pr.abs || {}; S.sageAttentionOption = !!pr.sageattention_option; S.rocm = !!pr.rocm;
+        S.studioAutosave = pr.studio_autosave || {};
         S.outputPref = pr.lora_output_dir || ""; S.outputDefault = pr.output_default;
         renderPrefs();
       }})),
@@ -1287,6 +1289,7 @@ function foldersCard() {
     el("div", {class: "card-content"},
       settingRow("profiles_dir", "Profiles:", "Where the Profiler's reports go (Studio finds a LoRA's profile there).", "profiles inside Fizgig"),
       settingRow("cache_dir", "Cache:", "Cached latents and text encodings: each training folder gets its own folder in here.", "cache inside Fizgig"),
+      settingRow("studio_outputs_dir", "Studio outputs:", "Where Studio's Save buttons (and Save every render) put renders: pictures in images, clips in videos, songs in songs.", "Studio_Outputs inside Fizgig"),
       settingRow("input_lora_dir", "LoRA loading:", "Where the pickers for LoRAs start: Studio, Royale, Profiler, Extract, Context LoRA."),
       settingRow("input_ref_dir", "Reference images:", "Where the pickers for reference pictures start: Studio and Royale.")));
 }
@@ -6506,6 +6509,7 @@ async function studioTake() {
 
 async function studioFamily(res, w, h) {
   const key = $("stFamily").value;
+  studioAutosaveShow();                               // Save every render: this model's own tick
   const L = S.st.layout = await api("/api/studio/layout?family=" + encodeURIComponent(key));
   const sv = stSaved();
   studioKind(L, sv);
@@ -6983,8 +6987,7 @@ function songMark() {
     const lora = ($("stPrimary").value.trim().split(/[\\/]/).pop() || "song").replace(/\.safetensors$/i, "");
     const seed = ($("stSeed") && $("stSeed").value.trim()) || "";
     const name = `${lora}_tweaked${seed ? "_seed" + seed : ""}.wav`;
-    $("stSongSave").href = t + "&dl=" + encodeURIComponent(name);
-    $("stSongSave").setAttribute("download", name);
+    $("stSongSave").href = t + "&dl=" + encodeURIComponent(name);     // another device's copy
   }
 }
 function songRegion(r) {
@@ -7710,7 +7713,7 @@ async function studioSetupLoad(name) {
   await studioSetupApply(d, name);
 }
 
-async function studioSetupApply(d, name) {        // a saved setup, or one read from a picture Download tweaked saved
+async function studioSetupApply(d, name) {        // a saved setup, or one read from a picture Save tweaked saved
   const fam = d.family && [...$("stFamily").options].some((o) => o.value === d.family) ? d.family : $("stFamily").value;
   if (fam !== $("stFamily").value) { $("stFamily").value = fam; await studioFamily(); stRemember(); }
   const v = d.values || {};
@@ -7771,7 +7774,7 @@ async function studioSetupMix() {
   studioSchedule();
 }
 
-// a PNG's fizgig_studio_setup text (Download tweaked writes it), or null
+// a PNG's fizgig_studio_setup text (Save tweaked writes it), or null
 function studioSetupFromPng(buf) {
   const u = new Uint8Array(buf), dv = new DataView(buf);
   if (u.length < 8 || u[0] !== 0x89 || u[1] !== 0x50) return null;
@@ -7795,33 +7798,38 @@ function wireStudioSetups() {
   $("stSetupSave").addEventListener("click", () => studioSetupSave(false));
   $("stSetupList").addEventListener("change", () => { const n = $("stSetupList").value; $("stSetupList").value = ""; if (n) studioSetupLoad(n); });
   studioSetupList();
-  // Download original / tweaked. On the machine running Fizgig: the computer's own Save window, opening in the folder
-  // the last one saved to (the server remembers it). Elsewhere, or with no such window: the browser's download. A
-  // tweaked still sends the setup first, so the server writes it into the PNG either way.
-  for (const id of ["stDlBase", "stDlTweak"]) {
+  // Save original / tweaked (and the song's Save): straight into Preferences' Studio outputs folder (images,
+  // videos or songs), no Save window. A tweaked still sends the setup first, so the picture carries it. Viewed from
+  // another device (a pod, a phone), the file is also downloaded to that device.
+  for (const id of ["stDlBase", "stDlTweak", "stSongSave"]) {
     $(id).addEventListener("click", async (e) => {
       const b = $(id);
-      if (b.dataset.go) return;                       // the browser's download
+      if (b.dataset.go) return;                       // the browser's download (another device)
       e.preventDefault();
-      const tweak = id === "stDlTweak";
+      const tweak = id !== "stDlBase";
       if (tweak && S.st.layout && S.st.layout.kind === "stills") {
         try { await api("/api/studio/download_setup", {data: studioSetupData()}); } catch (err) { /* the picture alone */ }
       }
-      $("stDlMsg").textContent = "";
-      if (S.st.saveNative !== false && !pageIsElsewhere()) {
-        try {
-          const r = await api("/api/studio/save_as", {which: tweak ? "tweaked" : "baseline", media: !!b.dataset.media,
-                                                       name: b.getAttribute("download") || ""});
-          if (r.ok) { $("stDlMsg").textContent = `Saved: ${r.path}`; return; }
-          if (r.cancelled) return;
-          if (r.error) { $("stDlMsg").textContent = r.error; return; }
-          S.st.saveNative = false;                    // no Save window here: the browser's download from now on
-        } catch (err) { /* the browser's download */ }
-      }
-      b.dataset.go = "1"; b.click(); delete b.dataset.go;
+      try {
+        const r = await api("/api/studio/save_output", {which: tweak ? "tweaked" : "baseline"});
+        const line = r.error || (r.already ? "Already saved: " : "Saved: ") + r.path;
+        $("stDlMsg").textContent = line;
+        if (id === "stSongSave") $("stStatus").textContent = line;     // a song's row has no message line
+        if (!r.error && pageIsElsewhere()) {          // a copy on this device too
+          b.setAttribute("download", r.name);
+          b.dataset.go = "1"; b.click(); delete b.dataset.go;
+        }
+      } catch (err) { $("stDlMsg").textContent = err.message; }
     });
   }
-  // a picture Download tweaked saved, dropped anywhere on Studio: its LoRAs, sliders and settings back
+  // Save every render: per model, off unless ticked (Preferences keeps it)
+  $("stAutoSave").addEventListener("change", async () => {
+    const fam = $("stFamily").value, on = $("stAutoSave").checked;
+    S.studioAutosave = {...(S.studioAutosave || {}), [fam]: on};
+    try { await api("/api/prefs", {changes: {[`studio_autosave_${fam}`]: on ? "1" : "0"}}); }
+    catch (err) { $("stDlMsg").textContent = err.message; }
+  });
+  // a picture Save tweaked saved, dropped anywhere on Studio: its LoRAs, sliders and settings back
   const tab = $("tab-studio");
   tab.addEventListener("dragover", (e) => { if ([...e.dataTransfer.types].includes("Files")) e.preventDefault(); });
   tab.addEventListener("drop", async (e) => {
@@ -7829,7 +7837,7 @@ function wireStudioSetups() {
     if (!f || e.defaultPrevented) return;
     e.preventDefault();
     const d = studioSetupFromPng(await f.arrayBuffer());
-    if (!d || !d.fizgig_repair_setup) { $("stSetupMsg").textContent = `${f.name} has no Studio settings in it (Download tweaked saves them).`; return; }
+    if (!d || !d.fizgig_repair_setup) { $("stSetupMsg").textContent = `${f.name} has no Studio settings in it (Save tweaked saves them).`; return; }
     await studioSetupApply(d, f.name.replace(/\.png$/i, ""));
   });
 }
@@ -8491,7 +8499,9 @@ async function studioRender() {
     if (!S.st.seedUsed) studioRollSeed();
     state.seed = S.st.seedUsed;
   }
-  try { await api("/api/studio/render", {state, ...studioExtra(), ...studioMixExtra()}); studioPoll(); }
+  // Save every render saves a tweaked still with the setup inside, as Save does
+  const setup = $("stAutoSave").checked && S.st.layout && S.st.layout.kind === "stills" ? {setup: studioSetupData()} : {};
+  try { await api("/api/studio/render", {state, ...studioExtra(), ...studioMixExtra(), ...setup}); studioPoll(); }
   catch (e) { $("stStatus").textContent = e.message; }
   finally { if (S.st.upHold) S.st.upHold = S.st.upNow = S.st.upPrev = 0; }     // the held Upscale request has gone
 }
@@ -8640,11 +8650,21 @@ async function studioPollOnce() {
     $("stReport").href = `/api/studio/report?t=${encodeURIComponent(TOKEN)}`;
   }
   if (st.saved && st.saved.out !== S.st.savedShown) { S.st.savedShown = st.saved.out; studioSavedSay(st.saved); }
+  const said = st.out_said ? JSON.stringify(st.out_said) : "";      // Save every render's latest files
+  if (said && said !== S.st.outSaid) {
+    S.st.outSaid = said;
+    $("stDlMsg").textContent = st.out_said.error || `Saved: ${st.out_said.paths.join(" and ")}`;
+    if (S.st.layout && S.st.layout.kind === "audio") $("stStatus").textContent = $("stDlMsg").textContent;
+  }
   return st.state === "loading" || st.rendering || !!st.pending;
 }
 
-// Download original / Download tweaked: the pair as rendered (a still's picture, a clip's mp4); songs have their
+// Save original / Save tweaked: the pair as rendered (a still's picture, a clip's mp4); songs have their
 // own Save in the song player
+function studioAutosaveShow() {          // Save every render: this model's own tick
+  $("stAutoSave").checked = !!(S.studioAutosave || {})[$("stFamily").value];
+}
+
 function studioDownloads(st, q) {
   const kind = S.st.layout && S.st.layout.kind, row = $("stDownloads");
   const on = kind !== "audio" && !!st.shown;
@@ -8656,9 +8676,7 @@ function studioDownloads(st, q) {
     const video = kind === "video" && st.media && st.media[w];
     const name = `${lora}_${word}${seed ? "_seed" + seed : ""}${video ? ".mp4" : ".png"}`;
     $(id).style.display = w === "baseline" && st.baseline_skipped ? "none" : "";
-    $(id).href = q(video ? w + "_media" : w) + "&dl=" + encodeURIComponent(name);
-    $(id).setAttribute("download", name);
-    $(id).dataset.media = video ? "1" : "";           // the clip, not its still (the Save window's file)
+    $(id).href = q(video ? w + "_media" : w) + "&dl=" + encodeURIComponent(name);     // another device's copy
   }
 }
 

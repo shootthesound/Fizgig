@@ -23,7 +23,7 @@ _lock = threading.Lock()
 _S = {"proc": None, "sock": None, "port": 0, "state": "idle", "family": "", "primary": "", "donor": "", "primary_blocks": [],
       "donor_blocks": [], "hash": "", "status": "", "progress": None, "gen": 0, "shown": 0, "baseline": "",
       "tweaked": "", "pending": None, "rendering": False, "error": "", "saved": None, "profile": None,
-      "used": 0.0, "log": []}
+      "used": 0.0, "log": [], "gens": {}, "out_saved": {}, "out_said": None}
 
 
 _send_lock = threading.Lock()
@@ -198,8 +198,109 @@ def _event(ev):
         elif kind == "reset":
             _S.update(state="idle", primary="", donor="", primary_blocks=[], donor_blocks=[], hash="", profile=None,
                       rendering=False, pending=None, progress=None, status="Models unloaded.")
+    if kind == "rendered":
+        try:
+            autosave(ev.get("gen", 0))
+        except Exception as e:                   # a full disk or a folder gone: said, the render still shows
+            with _lock:
+                _S["out_said"] = {"error": f"Couldn't save the render: {e}"}
     if nxt is not None:
         render(*nxt)
+
+
+# ---- Studio outputs: Save and Save every render write into one folder (Preferences), by what was made ----
+OUT_KINDS = {"image": "images", "video": "videos", "song": "songs"}
+
+
+def outputs_dir():
+    """Preferences' Studio outputs folder (Studio_Outputs inside Fizgig unless changed)."""
+    from fizgig.web.server import BASE_DIR, load_prefs, pref_path
+    return pref_path(load_prefs(), "studio_outputs_dir") or os.path.join(BASE_DIR, "Studio_Outputs")
+
+
+def autosave_on(family):
+    from fizgig.web.server import load_prefs
+    return str(load_prefs().get(f"studio_autosave_{family}") or "") == "1"
+
+
+def _clean(part):
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", str(part or "")).strip("-.") or "render"
+
+
+def output_path(root, kind, model, lora, word, seed, ext, when=None):
+    """<root>/<images|videos|songs>/<model>_<lora>_<original|tweaked>_seed<seed>_<YYYYMMDD-HHMMSS>.<ext>; -2, -3...
+    after it when that name is taken (two saves in one second). The folder is made when missing."""
+    folder = os.path.join(root, OUT_KINDS[kind])
+    os.makedirs(folder, exist_ok=True)
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(when if when is not None else time.time()))
+    stem = "_".join([_clean(model), _clean(lora), word] + ([f"seed{seed}"] if seed not in (None, "") else []) + [stamp])
+    out, n = os.path.join(folder, stem + ext), 1
+    while os.path.exists(out):
+        n += 1
+        out = os.path.join(folder, f"{stem}-{n}{ext}")
+    return out
+
+
+def save_output(which, setup=None):
+    """Save (Studio's Save original / Save tweaked, the song's Save): the render in that pane into the Studio outputs
+    folder - a clip as its mp4, a song as its WAV, a still as its PNG (a tweaked still with Studio's setup inside).
+    A render already saved (by Save every render too) isn't saved again: {"already": True, "path"}."""
+    import hashlib
+    import shutil
+    if which not in ("baseline", "tweaked"):
+        raise ValueError("Not a render.")
+    with _lock:
+        png, media, gen = _S.get(which) or "", _S.get(which + "_media") or "", _S.get("shown", 0)
+        fam, lora = _S.get("family", ""), os.path.splitext(os.path.basename(_S.get("primary") or ""))[0]
+        info = _S["gens"].get(gen) or {}
+    if not png or not os.path.isfile(png):
+        raise ValueError("Nothing rendered in that pane yet.")
+    with open(png, "rb") as f:                   # the pane's picture says which render it is (an unchanged Baseline
+        key = hashlib.sha1(f.read()).hexdigest()  # rendered again writes the same bytes)
+    with _lock:
+        done = _S["out_saved"].get(key)
+    if done and os.path.isfile(done):
+        return {"ok": True, "already": True, "path": done}
+    src = media if media and os.path.isfile(media) else png
+    ext = os.path.splitext(src)[1].lower()
+    kind = "video" if ext == ".mp4" else "song" if ext == ".wav" else "image"
+    try:
+        from fizgig.families.registry import get as get_family
+        model = getattr(get_family(fam), "label", "") or fam
+    except Exception:
+        model = fam
+    out = output_path(outputs_dir(), kind, model, lora, "original" if which == "baseline" else "tweaked",
+                      info.get("seed"), ext)
+    setup = setup if setup is not None else info.get("setup")
+    data = png_with_setup(src, setup) if which == "tweaked" and kind == "image" and setup else None
+    if data is not None:
+        with open(out, "wb") as f:
+            f.write(data)
+    else:
+        shutil.copyfile(src, out)
+    with _lock:
+        _S["out_saved"][key] = out
+    return {"ok": True, "path": out}
+
+
+def autosave(gen):
+    """Save every render (Studio's tick, per model): a finished render's Tweaked pane, and its Baseline when that
+    rendered again - an unchanged Baseline (only the Tweaked one changed) is already saved, so it isn't saved twice.
+    Nothing moved: the two panes are one render, saved once (as the original)."""
+    with _lock:
+        fam, same, has_base = _S.get("family", ""), bool(_S.get("same")), bool(_S.get("baseline"))
+        if _S.get("shown") != gen:
+            return
+    if not fam or not autosave_on(fam):
+        return
+    got = []
+    for which in (["baseline"] if has_base else []) + ([] if same and has_base else ["tweaked"]):
+        r = save_output(which)
+        if not r.get("already"):
+            got.append(r["path"])
+    if got:
+        with _lock:
+            _S["out_said"] = {"auto": True, "paths": got, "gen": gen}
 
 
 def _profile(h):
@@ -344,7 +445,7 @@ def load(desc, primary, donor, kw, settings, status, turbo, canvas=None):
     with _lock:
         other = _S["family"] and _S["family"] != desc.key
         _S.update(state="loading", status="Starting the Studio worker…", error="", progress=None, pending=None,
-                  family=desc.key, used=time.time())
+                  family=desc.key, used=time.time(), out_saved={}, out_said=None)
 
     def go():                                    # the worker's first start imports torch: not in the request
         try:
@@ -392,13 +493,17 @@ def render(state, extra=None):
             _S["gen"] += 1
             gen = _S["gen"]
             _S.update(rendering=True, progress=None, status="Generating preview…", cancel_asked=False)
+            # what Save and Save every render name the files by: this render's seed (and a picture's setup)
+            _S["gens"] = {g: v for g, v in _S["gens"].items() if g > gen - 8}
+            _S["gens"][gen] = {"seed": (state or {}).get("seed"), "setup": (extra or {}).get("_setup")}
             busy = False
             cut = _S.get("nolora_busy")
     if busy or cut:                              # the newest edit takes the engine (from a No-LoRA render too)
         _send({"cmd": "cancel"})
     if busy:
         return {"ok": True, "queued": True}
-    _send({"cmd": "render", "gen": gen, "state": state, "out_dir": OUT_DIR, **(extra or {})})
+    _send({"cmd": "render", "gen": gen, "state": state, "out_dir": OUT_DIR,
+           **{k: v for k, v in (extra or {}).items() if k != "_setup"}})
     return {"ok": True, "gen": gen}
 
 
@@ -777,6 +882,7 @@ def status():
         d["early"] = _S.get("early_gen", 0) if _S.get("early") and _S.get("rendering") else 0
         d["baseline_early"] = _S.get("baseline_gen", 0) if _S.get("rendering") else 0
         d["log"] = _S["log"][-12:]                 # the worker's own lines (the engine's log), for when it goes wrong
+        d["out_said"] = _S.get("out_said")         # Save every render's latest files (or why it couldn't)
     return d
 
 

@@ -398,6 +398,7 @@ def _write_json(path, data):
 # fp8 file rendered Krea 2 previews about twice as fast with a quarter of the RAM on an RX 9070 XT (#380, @xGnome)
 ROCM_LAUNCH = os.environ.get("FIZGIG_GPU_BACKEND", "").lower() == "rocm"
 PREF_DEFAULTS = {"lora_output_dir": "output_loras", "profiles_dir": "user_data/profiles", "cache_dir": "user_data/cache",
+                 "studio_outputs_dir": "Studio_Outputs",
                  "runpod_stop_when_done": "0", "inference_blocks_to_swap": "Auto (detect from GPU)",
                  "inference_int8": "0" if ROCM_LAUNCH else "1", "inference_sageattention": "0", "lan_discovery": "1",
                  "update_check": "1"}
@@ -461,7 +462,7 @@ def set_folder_trigger(folder, word):
 
 
 # the Preferences settings Reset to defaults puts back (the model files are never reset)
-SETTING_PREFS = ("lora_output_dir", "profiles_dir", "cache_dir", "input_lora_dir", "input_ref_dir",
+SETTING_PREFS = ("lora_output_dir", "profiles_dir", "cache_dir", "studio_outputs_dir", "input_lora_dir", "input_ref_dir",
                  "inference_blocks_to_swap", "inference_int8", "inference_sageattention", "lan_discovery", "update_check")
 
 
@@ -804,8 +805,10 @@ def _studio_post(what, b):
     if what == "map":                        # maps over the Tweaked render (where the LoRA acts, the tweaks, the trigger)
         return studio.map_request(b.get("state") or {}, b.get("trigger") or "", bool(b.get("blocks")))
     if what == "render":
-        return studio.render(b.get("state") or {}, extra={k: b.get(k) for k in ("video", "audio", "keyframes", "ref_mode", "mix")
-                                                          if b.get(k) is not None})
+        extra = {k: b.get(k) for k in ("video", "audio", "keyframes", "ref_mode", "mix") if b.get(k) is not None}
+        if isinstance(b.get("setup"), dict):     # Save every render: the setup a saved tweaked still carries
+            extra["_setup"] = b["setup"]
+        return studio.render(b.get("state") or {}, extra=extra)
     if what == "cancel":
         studio._send({"cmd": "cancel"})
         return {"ok": True}
@@ -3445,7 +3448,10 @@ class Handler(BaseHTTPRequestHandler):
                                             "note": secondary_captioner_note(p),
                                             "links": [{"label": lab, "href": f"https://huggingface.co/{r}/blob/main/{f}"}
                                                       for lab, r, f in captions.SECONDARY_LINKS]},
-                              "abs": {k: pref_path(p, k) for k in ("profiles_dir", "cache_dir")},
+                              "abs": {k: pref_path(p, k) for k in ("profiles_dir", "cache_dir", "studio_outputs_dir")},
+                              # Studio's Save every render, per model (off unless ticked)
+                              "studio_autosave": {d.key: str(p.get(f"studio_autosave_{d.key}") or "") == "1"
+                                                  for d in training_families()},
                               "lora_output_dir": str(p.get("lora_output_dir") or ""), "output_default": default_output_dir(),
                               "web_port": saved_port(p), "port_now": self.server.server_address[1], "on_pod": on_pod(), "file_manager": pod_stop.file_manager(), "host_name": socket.gethostname(), "port_fixed": getattr(self, "port_fixed", False),
                               "password_on": bool(self.password),
@@ -4842,9 +4848,10 @@ class Handler(BaseHTTPRequestHandler):
                 # Studio's own pick of a Samples-tab choice it also offers (FamilyOption.studio): one of its labels
                 studio_keys = {f"studio_opt_{o.key}": set(o.choice_labels()) for d in training_families()
                                for o in d.options if getattr(o, "studio", False)}
+                autosave_keys = {f"studio_autosave_{d.key}" for d in training_families()}   # Save every render
                 allowed = {k for d in training_families() for k in form.model_keys(d)} | set(SETTING_PREFS) | {
                     "input_dataset_dir", "welcome_v8_hidden", "sysmem_tip_hidden", "qt_disable_gpu",
-                    captions.SECONDARY_PREF} | render_keys | set(studio_keys)
+                    captions.SECONDARY_PREF} | render_keys | set(studio_keys) | autosave_keys
                 ch = b.get("changes") or {}
                 ch = {k: v for k, v in ch.items() if (k not in render_keys or v in ("checkpoint", "samples"))
                       and (k not in studio_keys or v in studio_keys[k])}
@@ -4853,7 +4860,8 @@ class Handler(BaseHTTPRequestHandler):
                                                                   if k in SETTING_PREFS}}
                 if "inference_int8" in ch:
                     ch["inference_int8"] = "1" if ch["inference_int8"] in (True, "1", 1) else "0"
-                for k in ("lan_discovery", "update_check", "qt_disable_gpu", "inference_sageattention"):
+                for k in ("lan_discovery", "update_check", "qt_disable_gpu", "inference_sageattention",
+                          *(k for k in ch if k in autosave_keys)):
                     if k in ch:
                         ch[k] = "1" if ch[k] in (True, "1", 1) else "0"
                 upd = {k: str(v) for k, v in ch.items() if k in allowed}
@@ -4915,39 +4923,17 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"ok": True, "item": item})
             if path == "/api/captions/ai":
                 return self.json(_start_ai_captions(b))
-            if path == "/api/studio/save_as":
-                # Download original / tweaked on the machine running Fizgig: its own Save window, opening in the folder
-                # the last one saved to (kept in prefs). Elsewhere the page downloads as a browser does.
-                from fizgig.web import native_pick
-                if not self._local_viewer():
-                    return self.json({"unavailable": True})
+            if path == "/api/studio/save_output":
+                # Save original / tweaked (and the song's Save): straight into Preferences' Studio outputs folder,
+                # no Save window; a tweaked still keeps the setup the page sent just before (download_setup)
                 which = str(b.get("which") or "")
-                if which not in ("baseline", "tweaked"):
-                    return self.json({"error": "Not a render."}, 400)
-                media = bool(b.get("media"))
-                p = studio.image(which + ("_media" if media else ""), "")
-                if not p:
-                    return self.json({"error": "Nothing rendered yet."})
-                name = re.sub(r'[\\/:*?"<>|]+', "_", str(b.get("name") or "render"))
-                name = os.path.splitext(name)[0] + os.path.splitext(p)[1]
-                r = native_pick.save_as(load_prefs().get("studio_save_dir") or "", name,
-                                        f"Save the {'original' if which == 'baseline' else 'tweaked'} render")
-                if not r.get("path"):
-                    return self.json(r)
-                out = r["path"]
-                # a tweaked picture keeps Studio's setup inside it, as the download does
-                png = (studio.png_with_setup(p, _STUDIO_DL_SETUP[0])
-                       if which == "tweaked" and not media and _STUDIO_DL_SETUP else None)
                 try:
-                    if png is not None:
-                        with open(out, "wb") as f:
-                            f.write(png)
-                    else:
-                        shutil.copyfile(p, out)
-                except OSError as e:
-                    return self.json({"error": f"Couldn't save there: {e}"})
-                update_prefs({"studio_save_dir": os.path.dirname(out)})
-                return self.json({"ok": True, "path": out})
+                    r = studio.save_output(which, _STUDIO_DL_SETUP[0] if which == "tweaked" and _STUDIO_DL_SETUP
+                                           else None)
+                except (ValueError, OSError) as e:
+                    return self.json({"error": f"Couldn't save: {e}"})
+                r["name"] = os.path.basename(r["path"])
+                return self.json(r)
             if path.startswith("/api/studio/"):
                 try:
                     return self.json(_studio_post(path[len("/api/studio/"):], b))

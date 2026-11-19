@@ -5,15 +5,16 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 
 NEWS = [
     {
-        "date": "20 Nov 2026",
-        "title": "MiniMax H3 previews that start from your picture",
+        "date": "19 Nov 2026",
+        "title": "Studio's own queue and outputs folder",
         "body": (
-            "The Samples tab takes a First and Last frame for MiniMax H3's clip previews (on the Reference base, its "
-            "reference pictures), and a previews helper sends back whole clips with sound.\n\n"
-            "On AMD cards INT8 fast inference is off by default, and Krea 2's text encoder frees its memory without "
-            "a copy into RAM."
+            "Studio has its own queue: while a render is going, Add to queue lines up the next (another model or LoRA "
+            "too), each job is saved, and a training run waits for a Studio render instead of cutting it short.\n\n"
+            "Save writes straight into Studio_Outputs, Save every render saves each one, and the arrows between "
+            "Baseline and Tweaked hide a pane, which then isn't rendered. MiniMax H3 previews can start and end on "
+            "a picture."
         ),
-        "links": [{"text": "Read more", "href": _ARTICLE + "#20-nov-2026-minimax-h3-previews-that-start-from-your-picture"},
+        "links": [{"text": "Read more", "href": _ARTICLE + "#19-nov-2026-studios-own-queue-and-outputs-folder"},
                   {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.8.1"}],
     },
     {

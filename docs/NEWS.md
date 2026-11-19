@@ -1,6 +1,10 @@
 # Fizgig news
 
-## 20 Nov 2026: MiniMax H3 previews that start from your picture
+## 19 Nov 2026: Studio's own queue and outputs folder
+
+**Studio has its own queue.** While a render is going, **Add to queue** lines up the next exactly as Studio is set (another model or LoRA too), and each job is saved when it finishes; the queue bar above the preview keeps the finished ones with links to their files. Leaving Studio or starting a training run pauses it, and a training run never cuts a Studio render short: it waits and starts when the render is done.
+
+**Studio saves into a folder, and renders only what you look at.** Save original / Save tweaked write straight into `Studio_Outputs` (images, videos, songs) with no Save window, and **Save every render** saves each one by itself. The arrows between Baseline and Tweaked hide either pane, and a hidden pane isn't rendered, which halves an H3 clip's render.
 
 **First and Last frame for H3 previews.** The Samples tab takes a picture for each clip preview to start and end on, so an image-to-video LoRA's previews show what it does. On the Reference base the same rows are the previews' reference pictures, `<Picture 1>` and `<Picture 2>`. A previews helper now sends back whole clips with sound, not their middle frame.
 

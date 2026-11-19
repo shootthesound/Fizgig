@@ -1232,7 +1232,9 @@ def layout(desc, prefs, pref_path, samples=None):
             "presets": presets, "lucky_zones": [list(z) for z in (desc.lucky_zones or ())],
             "detail_blocks": list(desc.detail_blocks or ()),
             "reference_kind": desc.reference_kind or "", "reference_strength": bool(desc.reference_strength),
-            "size": str(desc.repair_size or 768), "sizes": SONG_LENGTHS if kind == "audio" else STILLS_SIZES,
+            "size": str(desc.repair_size or 768),
+            "sizes": SONG_LENGTHS if kind == "audio" else
+            [str(s) for s in sorted({int(x) for x in STILLS_SIZES} | {int(x) for x in desc.studio_more_sizes})],
             "default_strength": float(desc.repair_default_strength or 1.0),
             "negative_default": desc.preview_negative, "turbo_preview": bool(desc.activation_cache),
             "follows_samples": bool(desc.workbench_follows_samples),

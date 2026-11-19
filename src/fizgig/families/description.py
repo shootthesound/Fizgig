@@ -713,6 +713,8 @@ class FamilyDescription:
     # works at 4-20 MP (#348). The default stays preview_width / preview_height
     preview_more_sizes: tuple = ()
     repair_size: int = 768            # Repair Studio's starting preview size (its Res dropdown) for the family
+    # Studio's Width / Height go past the shared list to these (a model made for very large pictures); () = the list
+    studio_more_sizes: tuple = ()
     block_activity: bool = False      # Repair Studio lights each block's slider as the song plays (BlockMeter)
     repair_default_strength: float = 1.0   # Repair Studio's primary / donor "at strength" on a family switch (ACE-Step 0.5)
     preview_speed_lora: str = ""      # name of the SpeedLoRA previews use when its file is set in Preferences

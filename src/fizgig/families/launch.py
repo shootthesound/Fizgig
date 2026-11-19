@@ -1339,10 +1339,11 @@ def train_command(desc, inputs, plan):
                         "--slider_anchor_weight", _s(st.get("FAMILY_SLIDER_ANCHOR_WEIGHT")) or "1"]
             try:        # the practice pictures (and so the training) at Target Megapixels, a square on the 16 px grid
                 side = int((float(st.get("megapixels")) * 1_000_000) ** 0.5) // 16 * 16
-                if side >= 256:
-                    cmd += ["--slider_bank_res", str(side)]
             except (TypeError, ValueError):
-                pass
+                side = 0
+            side = max(side, desc.slider_min_side)           # a model's own floor (MiniMax H3: 768)
+            if side >= 256:
+                cmd += ["--slider_bank_res", str(side)]
             for flag, role in (("--text_encoder", "text_encoder"), ("--vae", "vae")):
                 if flag not in cmd:          # the practice images and the three prompts need both
                     cmd += [flag, _model(st, desc, role)]

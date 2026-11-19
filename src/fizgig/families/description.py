@@ -657,6 +657,8 @@ class FamilyDescription:
     #                                   training_loss(diff_ref=, diff_weight=) and noise_latents / predict
     slider_guidance: float = 2.0      # a prompt slider's default push strength (the Training tab box when empty)
     slider_sources: tuple = ("pairs", "prompts")   # where a slider's two ends come from (one = no chooser shown)
+    slider_min_side: int = 0          # a prompt slider's practice pictures are at least this square side, whatever
+    #                                   Target Megapixels says (0 = no floor)
     # the Kind of training row in the family's own words: ((kind, radio label, hint), ...) for "standard" / "edit" /
     # "slider" / "finetune"; "" keeps the shared text (which speaks of photos and looks). () = all shared
     kind_notes: tuple = ()

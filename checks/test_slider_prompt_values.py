@@ -43,3 +43,14 @@ def test_any_other_prompt_goes_as_it_did(tmp_path):
     assert cmd[i + 1:i + 4] == ["a photo of a man,", "a photo of a man, smiling", "a photo of a man, frowning"]
     assert cmd[j + 1] == "a photo of a dog"
     assert _prompt_texts(None) is None
+
+
+def test_minimax_video_practises_at_768_at_least(tmp_path):
+    """MiniMax H3 video wants a side at 768 or more: its slider's practice pictures don't follow 0.25 MP down to 496
+    (19 Nov 2026); other models keep Target Megapixels."""
+    def res(fam, mp):
+        cmd = _train_cmd(tmp_path, fam, DATASET_MEGAPIXELS=mp)
+        return int(cmd[cmd.index("--slider_bank_res") + 1])
+    assert res("minimax", "0.25") == 768
+    assert res("minimax", "1.0") == 992
+    assert res("krea2", "0.25") == 496

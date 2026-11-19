@@ -223,6 +223,8 @@ Since November:
 - [whitejt2](https://github.com/whitejt2): checks that failed on smaller cards ([#359](https://github.com/shootthesound/Fizgig/pull/359))
 - [ofung30-sketch](https://github.com/ofung30-sketch): LoRA Isolation with Automagic ([#364](https://github.com/shootthesound/Fizgig/issues/364))
 - [Marhalt](https://github.com/Marhalt): saying what your subject is ([#365](https://github.com/shootthesound/Fizgig/issues/365))
+- [UNfukashigi](https://github.com/UNfukashigi): the diagnosis and fix for Studio on 12 GB cards with block swap ([#377](https://github.com/shootthesound/Fizgig/issues/377))
+- [RobbieNeko](https://github.com/RobbieNeko): workers that wouldn't start on Linux ROCm ([#379](https://github.com/shootthesound/Fizgig/issues/379))
 - WiseDuck (by email): Gizmo's **Prepare a folder** and clips at any audio sample rate
 - u/Obvious-Bad7548 on r/StableDiffusion: the LCM sampler recipe for H3 Image
 

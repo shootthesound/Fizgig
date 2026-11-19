@@ -2030,6 +2030,21 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 .tab-item[data-tab="studio"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6'/%3E%3C/svg%3E"); }
 .st-preview { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .st-preview.three { grid-template-columns: 1fr 1fr 1fr; }
+/* the arrows on the line between Baseline and Tweaked: one pane steps aside and the other takes the width; with one
+   hidden, a single arrow at that edge brings it back */
+.st-preview { position: relative; }
+.st-split { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 3;
+  display: flex; flex-direction: column; gap: 4px; }
+.st-split-btn { width: 22px; height: 32px; padding: 0; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--bg-surface); color: var(--text-secondary); font-size: 10pt; line-height: 1; cursor: pointer;
+  opacity: 0.85; box-shadow: 0 1px 4px color-mix(in srgb, var(--bg-deep) 60%, transparent); }
+.st-split-btn:hover { opacity: 1; color: var(--text-primary); border-color: var(--accent); }
+.st-preview.only-tweak, .st-preview.only-base { grid-template-columns: 1fr; }
+.st-preview.only-tweak #stBasePane, .st-preview.only-base .st-tweak-pane { display: none; }
+.st-preview.only-tweak .st-split { left: 0; transform: translate(0, -50%); }
+.st-preview.only-base .st-split { left: auto; right: 0; transform: translate(0, -50%); }
+.st-preview.only-tweak #stSplitL, .st-preview.only-base #stSplitR { display: none; }
+.st-preview.three .st-split { display: none; }
 .st-pane img { width: 100%; aspect-ratio: 1; object-fit: contain; background: var(--bg-deep); }
 .st-pills { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
 .st-pill { padding: 3px 10px; border-radius: 999px; font-size: 9pt; font-weight: 600; color: var(--text-on-light); }
@@ -2090,6 +2105,9 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 @media (max-width: 1280px) { .st-cols { grid-template-columns: 1fr; } }    /* one column before the rows get cramped */
 @media (max-width: 760px) {
   .st-preview, .st-preview.three, .st-cols { grid-template-columns: 1fr; }
+  /* stacked on a phone: both panes, no arrows (a pane hidden on a wide window comes back here) */
+  .st-split { display: none; }
+  .st-preview.only-tweak #stBasePane, .st-preview.only-base .st-tweak-pane { display: block; }
   .st-row { grid-template-columns: 20px 34px minmax(70px, 110px) 1fr 42px; }
   .st-btns { grid-column: 3 / -1; }
 }

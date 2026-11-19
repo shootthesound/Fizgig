@@ -9203,7 +9203,9 @@ function wireStudio() {
   $("stH3Model").addEventListener("change", () => { studioH3Remember(); studioSlots(); $("stStart").textContent = "Render"; });
   $("stH3Base").addEventListener("change", () => { studioH3Remember(); $("stStart").textContent = "Render"; });
   playTogether($("stPlayBothBtn"), () => {
-    const v = S.st.layout?.kind === "video", ids = v ? ["stBaseVid", "stTweakVid"] : ["stBaseAud", "stTweakAud"];
+    const v = S.st.layout?.kind === "video";
+    const ids = (v ? ["stBaseVid", "stTweakVid"] : ["stBaseAud", "stTweakAud"])     // only the panes on screen
+      .filter((id) => !(S.st.split === "tweak" && id.startsWith("stBase")) && !(S.st.split === "base" && id.startsWith("stTweak")));
     if ($("stNolPane").style.display !== "none") ids.unshift(v ? "stNolVid" : "stNolAud");
     return ids;
   });
@@ -9212,6 +9214,24 @@ function wireStudio() {
     S.st.upHold = S.st.upNow = S.st.upPrev = 0; studioStart();
   });
   $("stQAdd").addEventListener("click", studioQueueAdd);
+  // the arrows between Baseline and Tweaked: ◀ hides the Baseline (Tweaked takes the width), ▶ hides Tweaked; the
+  // arrow left at the edge brings the other back. Remembered in this browser
+  const split = (mode) => {
+    S.st.split = mode;
+    // a pane stepping aside stops playing (an unmuted clip would go on being heard unseen)
+    for (const id of mode === "tweak" ? ["stBaseVid", "stBaseAud"] : mode === "base" ? ["stTweakVid", "stTweakAud"] : [])
+      try { $(id).pause(); } catch (e) { /* nothing playing */ }
+    $("stPreview").classList.toggle("only-tweak", mode === "tweak");
+    $("stPreview").classList.toggle("only-base", mode === "base");
+    $("stSplitL").title = mode === "base" ? "Show Tweaked again, beside the Baseline" : "Hide the Baseline: Tweaked takes the whole width";
+    $("stSplitR").title = mode === "tweak" ? "Show the Baseline again, beside Tweaked" : "Hide Tweaked: the Baseline takes the whole width";
+    try { localStorage.setItem("fizgig_st_split", mode); } catch (e) { /* this browser keeps nothing */ }
+  };
+  let splitWas = "both";
+  try { splitWas = localStorage.getItem("fizgig_st_split") || "both"; } catch (e) { /* both */ }
+  split(["tweak", "base"].includes(splitWas) ? splitWas : "both");
+  $("stSplitL").addEventListener("click", () => split(S.st.split === "base" ? "both" : "tweak"));
+  $("stSplitR").addEventListener("click", () => split(S.st.split === "tweak" ? "both" : "base"));
   const stqOpen = (open) => {                         // the queue bar's list: open or closed, remembered here
     $("stQBody").style.display = open ? "" : "none";
     $("stQArrow").textContent = open ? "▾" : "▸";

@@ -14,6 +14,8 @@
 
 **Studio has its own queue.** **Add to queue** beside Render (the button that was called Update) lines up a render exactly as Studio is set now, behind the one rendering: jobs render one after another (loading another model or LoRA when one needs it) and each is saved into the Studio outputs folder; the Studio queue bar above the preview keeps the finished ones with links to their files. While something renders, Render waits and Add to queue (or ↻ for a new seed) lines up the next. Leaving the Studio tab or starting a training run pauses it after the job rendering now, and coming back to Studio asks before it carries on. Starting, resuming or continuing a training run while Studio is rendering no longer cuts the render short: the run waits and starts by itself when the render is done.
 
+**Studio: one pane at full width.** The arrows on the line between Baseline and Tweaked hide either one, and the other takes the whole width; the arrow left at the edge brings it back.
+
 **Delete run can keep your LoRAs.** On a run's card, **Delete run…** now also offers **Delete, keep the newest 5 epochs**, beside Delete and Cancel: it deletes the run as Delete does, but its newest five epochs (all of them when there are fewer) stay on disk with the finished LoRA, ready to use. **Delete, keep all epochs** keeps every epoch's LoRA file and deletes only the saved states. The **Clear out runs** row has its own box at the top of the list.
 
 **Fixes.**

@@ -1072,12 +1072,15 @@
                 <figure class="gallery-item st-pane" id="stNolPane" style="display:none"><img id="stNol" alt=""><video id="stNolVid" controls loop muted playsinline preload="auto"
                   style="display:none"></video><audio id="stNolAud" controls style="display:none"></audio>
                   <figcaption id="stNolCap">No LoRA (base model, same seed)</figcaption></figure>
-                <figure class="gallery-item st-pane"><img id="stBase" alt=""><video id="stBaseVid" controls loop muted playsinline preload="auto"
+                <figure class="gallery-item st-pane" id="stBasePane"><img id="stBase" alt=""><video id="stBaseVid" controls loop muted playsinline preload="auto"
                   style="display:none"></video><audio id="stBaseAud" controls style="display:none"></audio>
                   <figcaption id="stBaseCap">Baseline (LoRA at default 1.0)</figcaption></figure>
                 <figure class="gallery-item st-pane st-tweak-pane"><div class="st-region" id="stRegion"></div><img id="stTweak" alt=""><canvas id="stMapCanvas" class="st-map-canvas" style="display:none"></canvas><div class="st-map-badge" id="stMapBadge" style="display:none"><span class="st-map-spin"></span>Making the map…</div><video id="stTweakVid" controls loop muted playsinline preload="auto"
                   style="display:none"></video><audio id="stTweakAud" controls style="display:none"></audio>
                   <figcaption id="stTweakCap">Tweaked (current sliders)</figcaption></figure>
+                <div class="st-split" id="stSplit">
+                  <button type="button" class="st-split-btn" id="stSplitL" title="Hide the Baseline: Tweaked takes the whole width">◀</button>
+                  <button type="button" class="st-split-btn" id="stSplitR" title="Hide Tweaked: the Baseline takes the whole width">▶</button></div>
               </div>
               <div class="st-tools">
                 <div class="st-tool-group" id="stDownloads" style="display:none">

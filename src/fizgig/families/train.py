@@ -960,11 +960,12 @@ class _CheckpointPreviews:
 
 
 def _largest_bucket_mp(group):
-    """Megapixels of the run's largest actual bucket (what sets activation memory), or None."""
+    """Megapixels of the run's largest actual bucket (what sets activation memory), or None. A prompt-pair slider has
+    no dataset: its practice pictures' size (_SliderBank.megapixels)."""
     try:
         return max(k[-2] * k[-1] / 1e6 for ds in group.datasets for k in ds.batch_manager.bucket_resos)
     except Exception:
-        return None
+        return getattr(group, "megapixels", None) or None
 
 
 class _FineTune:
@@ -1612,10 +1613,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     do_compile = False
     cb = str(compile_blocks or "off").lower()
     if desc.compiles and cb != "off":
-        try:
-            mp_max = max(k[-2] * k[-1] / 1e6 for ds in group.datasets for k in ds.batch_manager.bucket_resos)
-        except Exception:
-            mp_max = 0.25
+        mp_max = _largest_bucket_mp(group) or 0.25    # a prompt-pair slider: its practice pictures' size
         do_compile, why = driver.compile_plan(cb, group.num_train_items * max_train_epochs, precision,
                                               max(0, blocks_to_swap) if precision != "nf4" else 0,
                                               mp=mp_max * bsz if bsz > 1 else mp_max)

@@ -10,7 +10,12 @@
 
 **The big caption view, a line at a time.** Opening a picture big now edits its caption a line at a time, like the cards, so a caption with several lines is easy to read and change. Empty lines are dropped, and **Join lines** turns a caption that was wrapped onto several lines back into one (thanks @mart-hill).
 
+**Studio's downloads remember where you save.** On the computer running Fizgig, Download original and Download tweaked open your system's Save window in the folder you last saved to, remembered across restarts. On a pod, a phone or another computer they download as before.
+
 **Fixes.**
+- **Studio on 12 GB cards with block swap:** the first render no longer runs out of memory. A block-swapped model stayed on the card while the text encoder ran; it now steps aside when the card is short of room (Klein, Krea 2, Qwen Image, MOSS-Image, Z-Image, Flux 3, Fibo 2 and Vimoo). Cards with room to spare are unchanged (#377, diagnosed and fixed by @UNfukashigi).
+- **MiniMax H3 prompt-pair sliders start, and practise at 768 x 768 at least.** They stopped at once with "max() iterable argument is empty"; at the presets' Target Megapixels their practice pictures would have been 496 x 496, below the side H3 needs.
+- **Prompt-pair sliders on Krea 2 with Compile Blocks, and on Vimoo,** plan their memory at their practice pictures' real size instead of 0.25 MP.
 - **Training: Stop always stops.** After a request to the server that never answered, Stop could do nothing at all, however often it was pressed. It now always reaches the server, shows "Stopping…", and says so if the run can't be stopped.
 - **Studio: some LoRAs failed with "expected mat1 and mat2 to have the same dtype".** A LoRA that also covers layers the base keeps at full precision (MiniMax H3's AdaLN layers) now renders.
 - **Studio: a finished render always shows.** One failed status check stopped the page asking, so a render could finish and never appear.

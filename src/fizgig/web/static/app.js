@@ -6668,7 +6668,7 @@ async function studioFamily(res, w, h) {
   // which model previews: the follows-the-Samples-tab families say so; others pick fast or full
   $("stDitRow").style.display = L.follows_samples || !L.dit_fast ? "none" : "";
   $("stDitFast").textContent = L.dit_fast; $("stDitFull").textContent = L.dit_full;
-  $("stDitNote").textContent = L.follows_samples && L.follow_ck ? L.follow_ck : L.follows_samples ? `Previews ${L.follow_turbo ? "on the " + L.follow_turbo + ", " : ""}` +
+  $("stDitNote").textContent = L.follows_samples && L.follow_ck ? L.follow_ck : L.follows_samples ? `Renders ${L.follow_turbo ? "on the " + L.follow_turbo + ", " : ""}` +
     `${L.follow_steps} steps, CFG ${L.follow_cfg}${L.follow_look ? ", " + L.follow_look : ""} - from this model's Samples tab.` :
     !L.dit_fast ? L.dit_full.replace(", slow", "") : "";
   renderChoiceDraw("stRender", L);
@@ -6738,7 +6738,7 @@ function studioKind(L, sv) {
       V.speed_strength : 1, full = V.base_steps ? `about ${V.base_steps}` : "many more";
     $("stH3Steps").title = `Sampling steps for the clip. With ${sp} at ${at}, ${fast} steps is the fast loop; with ` +
       `${sp} at 0 (the base model alone) it needs ${full}.`;
-    $("stH3Turbo").title = `Strength of the built-in ${sp} LoRA: ${at} for the fast previews. 0 switches it off - the ` +
+    $("stH3Turbo").title = `Strength of the built-in ${sp} LoRA: ${at} for fast renders. 0 switches it off - the ` +
       `render is the base model plus your LoRAs at the steps set (raise Steps to ${full}). That is also how you edit a ` +
       `${sp} LoRA: load it as the primary and set this to 0.`;
   }
@@ -7096,7 +7096,7 @@ function songDrop(side) {                           // a side not rendered this 
   songMark(); songDraw();
 }
 function songPlay(side, at) {
-  if (!songHas(side)) { $("stStatus").textContent = side === "nolora" ? "The No LoRA song renders after the first preview." :
+  if (!songHas(side)) { $("stStatus").textContent = side === "nolora" ? "The No LoRA song renders after the first render." :
     "That song is not rendered yet."; return; }
   let pos = at ?? songNow();
   const [a, b] = songSpan(), d = songDur(side) || Infinity;
@@ -8647,7 +8647,7 @@ function studioSchedule(live) {
 }
 
 async function studioRender() {
-  if (!$("stPrompt").value.trim()) { $("stStatus").textContent = "Enter a prompt (include the LoRA's trigger word) to see previews."; return; }
+  if (!$("stPrompt").value.trim()) { $("stStatus").textContent = "Enter a prompt (include the LoRA's trigger word), then press Render."; return; }
   if (S.st.foreign && !(S.stq && S.stq.job)) {       // a Studio queue job loaded another model or LoRA: yours again
     S.st.foreign = false; S.st.loadedKey = "";
     return studioStart();
@@ -8993,10 +8993,10 @@ function studioDock(open, remember = true) {
   if (!dock) {
     const btn = (id, text, title) => el("button", {class: "btn btn-sm", id, text, title});
     dock = el("div", {class: "st-dock", id: "stDock"},
-      el("div", {class: "st-dock-bar", id: "stDockBar"}, el("span", {class: "st-dock-title", text: "Preview"}),
+      el("div", {class: "st-dock-bar", id: "stDockBar"}, el("span", {class: "st-dock-title", text: "Output"}),
         btn("stDockPlay", "▶ Play together", "Play the clips or songs together"),
         btn("stDockPin", "", ""), btn("stDockFold", "▁", "Collapse to the title bar / open it again"),
-        btn("stDockClose", "✕", "Close - the preview goes back to its card")),
+        btn("stDockClose", "✕", "Close - the output goes back to its card")),
       el("div", {class: "st-dock-body", id: "stDockBody"}),
       el("div", {class: "st-dock-grip", id: "stDockGrip", title: "Drag to set how much room the panel takes"}));
     $("tab-studio").append(dock);                  // in the page first: its buttons are found by id below

@@ -274,8 +274,10 @@ MINIMAX_IMAGE = FamilyDescription(
     # Studio up to the model's own range (Peter, 19 Nov 2026: "supports some enormous sizes"): 4-20 MP, best ~16 MP
     # (the model card's 3552 x 4736); every side a multiple of 32. Up to 12288 for a very long side against a short
     # one (Peter, 19 Nov 2026: "all the way to circa 12k ... worst that can happen is an oom")
-    studio_more_sizes=(2560, 3072, 3552, 3584, 4096, 4480, 4736, 5120, 5632, 6144, 6656, 7168, 8192, 9216, 10240,
-                       11264, 12288),
+    # 2144 / 2176 and 7680 (Peter, 19 Nov 2026): as near as 32-multiples get to 7680 x 2160, a 32:9 ultrawide -
+    # 7680 x 2176 cropped 8 px top and bottom is exactly it
+    studio_more_sizes=(2144, 2176, 2560, 3072, 3552, 3584, 4096, 4480, 4736, 5120, 5632, 6144, 6656, 7168, 7680, 8192,
+                       9216, 10240, 11264, 12288),
     # Likeness optimization (H3 Image's own, in place of the Clean-end share box, Peter 11 Nov 2026): the share of
     # steps at the noise level below sigma 0.5 (0.232, the last of the 6) follows LIKENESS_DEFAULTS' schedule; the
     # rest spread evenly over the 5 above. Off = the model's own even draw, 1 in 6 (~17%).

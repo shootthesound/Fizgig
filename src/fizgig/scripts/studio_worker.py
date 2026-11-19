@@ -162,7 +162,7 @@ def _render(c):
             S["notes"] = {}
             if not getattr(S["desc"], "video_workbench", False):
                 S["notes"].update(_apply_mix(eng, c.get("mix")))
-            emit(ev="status", text=c.get("status") or "Generating preview…")
+            emit(ev="status", text=c.get("status") or "Rendering…")
             out = c["out_dir"]
             os.makedirs(out, exist_ok=True)
             desc = S["desc"]
@@ -207,7 +207,7 @@ def _render(c):
             emit(ev="error", where="render", gen=gen,
                  msg=(("Out of VRAM for this clip: fewer frames, a smaller canvas, or Base: Stream blocks (the exact "
                        "base with room for the biggest clips)." if getattr(S["desc"], "video_workbench", False) else
-                       "Out of VRAM for this preview: a smaller Width / Height, or more inference block swap in Preferences.")
+                       "Out of VRAM for this render: a smaller Width / Height, or more inference block swap in Preferences.")
                       if "out of memory" in msg.lower() else msg), trace=traceback.format_exc()[-2000:])
 
 

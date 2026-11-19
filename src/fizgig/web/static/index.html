@@ -835,14 +835,14 @@
                 <span class="field-hint" id="stDitNote"></span></div>
               <div class="field-row" id="stRender" style="display:none"></div>
               <div id="stOpts" style="display:none"></div>
-              <div class="field-row" id="stDitRow"><span class="field-label">Preview with:</span>
+              <div class="field-row" id="stDitRow"><span class="field-label">Render with:</span>
                 <label class="radio-label"><input type="radio" name="stDit" value="fast" checked> <span id="stDitFast"></span></label>
                 <label class="radio-label"><input type="radio" name="stDit" value="full"> <span id="stDitFull"></span></label></div>
               <div class="field-row"><span class="field-label">Primary LoRA:</span>
                 <input type="text" id="stPrimary" class="w-path" title="Leave it empty to render the base model on its own (Studio as a generator)" placeholder="the LoRA to tweak (.safetensors) - empty: the base model on its own">
                 <button class="btn" id="stPrimaryPick">Choose…</button>
                 <button class="btn" id="stPrimaryUnload" title="Takes the primary LoRA out without reloading the model: Studio renders the base model on its own (and against the donor, if one is loaded)">Unload primary</button>
-                <span class="field-label" title="The strength this LoRA is meant to be used at (not always 1.0). The block sliders are relative to it: a block at 1.0 is that block at this strength, 0.5 is half of it. The saved file keeps the LoRA's own scale, so use it at this strength and it looks exactly like the preview.">at strength</span><input type="text" id="stPScale" class="w-num" value="1" title="The strength this LoRA is meant to be used at (not always 1.0). The block sliders are relative to it: a block at 1.0 is that block at this strength, 0.5 is half of it. The saved file keeps the LoRA's own scale, so use it at this strength and it looks exactly like the preview.">
+                <span class="field-label" title="The strength this LoRA is meant to be used at (not always 1.0). The block sliders are relative to it: a block at 1.0 is that block at this strength, 0.5 is half of it. The saved file keeps the LoRA's own scale, so use it at this strength and it looks exactly like the render here.">at strength</span><input type="text" id="stPScale" class="w-num" value="1" title="The strength this LoRA is meant to be used at (not always 1.0). The block sliders are relative to it: a block at 1.0 is that block at this strength, 0.5 is half of it. The saved file keeps the LoRA's own scale, so use it at this strength and it looks exactly like the render here.">
                 <button class="btn" id="stEqP" style="display:none" title="Model EQ Mode: this row becomes the model's own weights (the Model EQ LoRA set in Preferences) at strength 1 - every block slider then reads 1.0 = the stock model, below 1 turns that block's main directions down, above 1 up. Press it again for your own LoRA back.">Model EQ Mode</button></div>
               <div id="stMixRows" style="display:none">
                 <div class="field-row"><span class="field-label">Mix:</span>
@@ -863,7 +863,7 @@
                 <input type="text" id="stDonor" class="w-path" placeholder="optional: a second LoRA to mix in, block by block">
                 <button class="btn" id="stDonorPick">Choose…</button>
                 <button class="btn" id="stDonorUnload">Unload donor</button>
-                <span class="field-label" title="The strength this LoRA is meant to be used at (not always 1.0). The block sliders are relative to it: a block at 1.0 is that block at this strength, 0.5 is half of it. The saved file keeps the LoRA's own scale, so use it at this strength and it looks exactly like the preview.">at strength</span><input type="text" id="stDScale" class="w-num" value="1" title="The strength this LoRA is meant to be used at (not always 1.0). The block sliders are relative to it: a block at 1.0 is that block at this strength, 0.5 is half of it. The saved file keeps the LoRA's own scale, so use it at this strength and it looks exactly like the preview.">
+                <span class="field-label" title="The strength this LoRA is meant to be used at (not always 1.0). The block sliders are relative to it: a block at 1.0 is that block at this strength, 0.5 is half of it. The saved file keeps the LoRA's own scale, so use it at this strength and it looks exactly like the render here.">at strength</span><input type="text" id="stDScale" class="w-num" value="1" title="The strength this LoRA is meant to be used at (not always 1.0). The block sliders are relative to it: a block at 1.0 is that block at this strength, 0.5 is half of it. The saved file keeps the LoRA's own scale, so use it at this strength and it looks exactly like the render here.">
                 <button class="btn" id="stEqD" style="display:none" title="Model EQ Mode: this row becomes the model's own weights (the Model EQ LoRA set in Preferences) at strength 1 - every block slider then reads 1.0 = the stock model, below 1 turns that block's main directions down, above 1 up. Press it again for your own LoRA back.">Model EQ Mode</button></div>
               <div id="stDmixRows" style="display:none">
                 <div class="field-row"><span class="field-label">Donor epoch blend:</span>
@@ -1068,10 +1068,10 @@
             </div>
           </div>
           <div class="section-card">
-            <div class="card-title">Preview <button class="btn btn-sm" id="stDockOpen"
+            <div class="card-title">Output <button class="btn btn-sm" id="stDockOpen"
               title="Keeps Baseline and Tweaked in view while you scroll to the sliders: a panel you can move and resize, or pin to the top">⧉ Keep in view</button></div>
             <div class="card-content">
-              <div class="st-dock-home" id="stDockHome" style="display:none">The preview is in the panel kept in view.
+              <div class="st-dock-home" id="stDockHome" style="display:none">The output is in the panel kept in view.
                 <button class="btn btn-sm" id="stDockBack">Put it back here</button></div>
               <div class="st-preview" id="stPreview">
                 <figure class="gallery-item st-pane" id="stNolPane" style="display:none"><img id="stNol" alt=""><video id="stNolVid" controls loop muted playsinline preload="auto"
@@ -1198,7 +1198,7 @@
           <div class="section-card st-needs-primary">
             <div class="card-title">Save</div>
             <div class="card-content">
-              <div class="st-needs-lora-note">Needs a LoRA: this saves the LoRA you've tweaked. With no LoRA, Save tweaked (under the preview) keeps the picture.</div>
+              <div class="st-needs-lora-note">Needs a LoRA: this saves the LoRA you've tweaked. With no LoRA, Save tweaked (under the output) keeps the picture.</div>
               <div class="field-row"><span class="field-label">Save as:</span>
                 <input type="text" id="stOut" class="w-path" placeholder="the repaired LoRA's file (.safetensors)">
                 <button class="btn btn-primary" id="stSave">Save repaired LoRA</button></div>

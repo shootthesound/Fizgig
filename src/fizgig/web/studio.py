@@ -193,7 +193,7 @@ def _event(ev):
         elif kind == "error":
             where = ev.get("where")
             _S.update(error=ev.get("msg", ""), progress=None,
-                      status=("Preview error: " if where == "render" else "Couldn't load: " if where == "load" else "")
+                      status=("Render error: " if where == "render" else "Couldn't load: " if where == "load" else "")
                       + ev.get("msg", ""))
             if where == "render":
                 _S["rendering"] = False
@@ -452,7 +452,7 @@ def plan(desc, prefs, pref_path, fast=True, samples=None, negative=None):
     ro = studio_tokens(desc, prefs)          # Studio's own picks of the Samples-tab choices it offers (the sampler)
     if ro:
         kw["render_options"] = ro
-    status = f"Loading {desc.display_name} ({ck.name + ', ' if ck else ''}{steps}-step previews)…"
+    status = f"Loading {desc.display_name} ({ck.name + ', ' if ck else ''}{steps}-step renders)…"
     return kw, settings, status, problems
 
 
@@ -607,7 +607,7 @@ def render(state, extra=None):
         else:
             _S["gen"] += 1
             gen = _S["gen"]
-            _S.update(rendering=True, progress=None, status="Generating preview…", cancel_asked=False)
+            _S.update(rendering=True, progress=None, status="Rendering…", cancel_asked=False)
             # what Save and Save every render name the files by: this render's seed (and a picture's setup)
             _S["gens"] = {g: v for g, v in _S["gens"].items() if g > gen - 8}
             _S["gens"][gen] = {"seed": (state or {}).get("seed"), "setup": (extra or {}).get("_setup")}
@@ -657,7 +657,7 @@ def map_request(state, trigger="", blocks=False):
             return {"error": "Load a LoRA first."}
         pic, shown = _S.get("tweaked") or "", _S.get("shown", 0)
         if not (pic and os.path.isfile(pic)):
-            return {"error": "Render a preview first."}
+            return {"error": "Render something first."}
         trig = str(trigger or "").strip() or lora_trigger(_S.get("primary") or "")
         # each request its own number, echoed by the worker: a result is only ever the answer to its own request
         # (a map asked for while another was being made used to take the earlier one's result)
@@ -710,7 +710,7 @@ def keep_tweaked():
     with _lock:
         src = _S.get("tweaked_media") or ""
     if not src or not os.path.isfile(src) or not src.lower().endswith(".wav"):
-        raise ValueError("Nothing to use yet: the Tweaked song renders after the first preview.")
+        raise ValueError("Nothing to use yet: the Tweaked song renders after the first render.")
     folder = os.path.join(OUT_DIR, "sources")
     os.makedirs(folder, exist_ok=True)
     out = os.path.join(folder, f"take_{int(time.time() * 1000)}.wav")

@@ -5976,6 +5976,58 @@ async function meSave() {
     return true;
   } catch (e) { $("meState").textContent = e.message; return false; }
 }
+
+// ---- the mask editor's kept settings: three numbered slots for the brush's own values, kept in this browser ----
+// A slot holds the tool and its Size, Softness and Strength together, so taking one back puts the editor in
+// exactly the mode you kept it in: slot 1 a wide soft brush, slot 2 a fine eraser, slot 3 SAM click. A number only
+// ever reads a slot; writing one means choosing it in the row that says what each holds first.
+const ME_KEY = "fizgig_maskedit";
+const ME_TOOLS = {brush: "Brush", erase: "Eraser", sam: "SAM click"};
+// The starting configuration, before anything is kept: the three slots are the three modes, each at the values the
+// sliders ship with - read off the markup's own value attributes (defaultValue, not what the slider currently
+// says), so nothing here can drift from the page and nothing is written to this browser until you keep something.
+const ME_MODES = ["brush", "erase", "sam"];
+const meStart = (n) => ({tool: ME_MODES[n - 1], size: Number($("meSize").defaultValue), soft: Number($("meSoft").defaultValue), strength: Number($("meStrength").defaultValue)});
+const meKept = () => { try { return JSON.parse(localStorage.getItem(ME_KEY) || "{}"); } catch (e) { return {}; } };
+// The one place a slot's tool is settled. localStorage is outside this code's control, and a slot whose tool this
+// page doesn't have must still leave the editor painting in some mode rather than in none.
+const meSlot = (n) => {
+  const v = (meKept().slots || {})["slot" + n];
+  return !v ? meStart(n) : (ME_TOOLS[v.tool] ? v : {...v, tool: "brush"});
+};
+const meGrab = () => ({tool: meState().tool, size: Number($("meSize").value), soft: Number($("meSoft").value), strength: Number($("meStrength").value)});
+const meSay = (v) => `${ME_TOOLS[v.tool]}, Size ${v.size}, Softness ${v.soft}, Strength ${v.strength}`;
+const meShort = (v) => `${ME_TOOLS[v.tool]} ${v.size}/${v.soft}/${v.strength}`;
+function meKeepTips() {
+  for (const b of $("meKeeps").querySelectorAll("button"))
+    b.title = `Slot ${b.dataset.keep}: ${meSay(meSlot(b.dataset.keep))} (${b.dataset.keep})`;
+}
+function meKeepFold() { $("meKeepRow").innerHTML = ""; }
+function meRecall(n) {
+  meKeepFold();          // a row left open would list targets against values that no longer match them
+  const v = meSlot(n);
+  meTool(v.tool);        // the mode first: it owns the cursor and its own button's highlight
+  $("meSize").value = v.size; $("meSoft").value = v.soft; $("meStrength").value = v.strength;
+  meDraw();              // the ring drawn under the cursor follows the new size
+  $("meState").textContent = `Slot ${n}: ${meSay(v)}.`;
+}
+function meKeepOpen() {
+  const host = $("meKeepRow");
+  if (host.childNodes.length) { meKeepFold(); return; }
+  const at = meGrab();
+  // Prompt and slots on separate lines: a field-label is fixed at 175 px and will not wrap, so a whole sentence
+  // of a prompt runs out from under the buttons beside it. Two me-bars break where they need to.
+  const picks = [1, 2, 3].map((n) => el("button", {class: "btn btn-sm", text: `Slot ${n} · ${meShort(meSlot(n))}`, onclick: () => {
+    const v = meGrab(), d = meKept();                 // what the sliders say now, not when the row opened
+    d.slots = {...(d.slots || {}), ["slot" + n]: v};
+    try { localStorage.setItem(ME_KEY, JSON.stringify(d)); } catch (e) { /* private window: not kept */ }
+    meKeepFold(); meKeepTips();
+    $("meState").textContent = `Kept as slot ${n}: ${meSay(v)}.`;
+  }}));
+  host.append(el("div", {class: "me-bar"}, el("span", {class: "field-hint", text: `Keep ${meSay(at)} as slot:`})),
+    el("div", {class: "me-bar"}, ...picks, el("button", {class: "btn btn-sm", text: "Cancel", onclick: () => meKeepFold()})));
+}
+
 function meWire() {
   const m = meState(), cv = $("meCanvas");
   let last = null, pan = null, space = false;
@@ -5994,6 +6046,9 @@ function meWire() {
     $("meView").querySelectorAll("button").forEach((x) => x.classList.toggle("active", x === b));
     meDraw();
   }));
+  $("meKeeps").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => meRecall(b.dataset.keep)));
+  $("meKeep").addEventListener("click", meKeepOpen);
+  meKeepTips();                     // the tooltips say what each slot holds, as soon as the page can tell
   $("meShow").addEventListener("input", meDraw);
   $("meFit").addEventListener("click", meFit);
   $("meUndo").addEventListener("click", () => meRestore(m.undo, m.redo));
@@ -6059,6 +6114,7 @@ function meWire() {
     else if (k === "b" || k === "B") meTool("brush");
     else if (k === "e" || k === "E") meTool("erase");
     else if (k === "s" || k === "S") meTool("sam");
+    else if (k === "1" || k === "2" || k === "3") meRecall(k);
     else if (k === "0") meFit();
   });
   document.addEventListener("keyup", (e) => { if (e.key === " ") space = false; });

@@ -453,7 +453,12 @@
                     <label class="me-slider" title="Brush size ([ and ])">Size <input type="range" id="meSize" min="2" max="400" value="40"></label>
                     <label class="me-slider" title="Soft edges: 0 is a hard edge">Softness <input type="range" id="meSoft" min="0" max="100" value="30"></label>
                     <label class="me-slider" title="How white each stroke paints: below 100 paints grey (learned partly)">Strength <input type="range" id="meStrength" min="5" max="100" value="100"></label>
+                    <span class="seg" id="meKeeps"><button class="btn btn-sm" data-keep="1">1</button><button
+                      class="btn btn-sm" data-keep="2">2</button><button
+                      class="btn btn-sm" data-keep="3">3</button></span>
+                    <button class="btn btn-sm" id="meKeep" title="Keep the tool and the Size, Softness and Strength as they are, in one of the three slots">Keep these settings…</button>
                   </div>
+                  <div id="meKeepRow"></div>
                   <div class="me-bar">
                     <span class="seg" id="meView"><button class="btn btn-sm active" data-view="over">Picture + mask</button><button
                       class="btn btn-sm" data-view="mask">Mask only</button><button class="btn btn-sm" data-view="pic">Picture only</button></span>
@@ -474,7 +479,7 @@
                     <span class="field-hint" id="meState"></span>
                   </div>
                   <div class="field-hint">Scroll to zoom, hold Space and drag (or drag with the middle button) to move
-                    around. Keys: B brush, E eraser, S SAM click, [ ] size, Ctrl+Z / Ctrl+Y, 0 fit, ← → pictures. Right-click with the Brush erases, with the Eraser paints. SAM click: click
+                    around. Keys: B brush, E eraser, S SAM click, [ ] size, 1 2 3 kept settings (they start as Brush, Eraser, SAM), Ctrl+Z / Ctrl+Y, 0 fit, ← → pictures. Right-click with the Brush erases, with the Eraser paints. SAM click: click
                     something to add it to the mask, right-click or Alt+click to take it away.</div>
                 </details>
               </div>

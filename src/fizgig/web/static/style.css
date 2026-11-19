@@ -1844,8 +1844,6 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
   background: color-mix(in srgb, var(--bg-deep) 55%, transparent); }
 .purge-box > .field-row { margin: 0; }
 .purge-box #purgeSay { margin-top: 8px; }
-/* Delete run's "Keep the newest 5 epochs": set apart from the full delete above it */
-.run-trim { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border); }
 .run-files { margin-top: 6px; display: flex; flex-direction: column; gap: 10px; }
 .run-gallery { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 

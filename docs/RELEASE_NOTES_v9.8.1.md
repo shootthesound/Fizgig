@@ -10,6 +10,8 @@
 
 **Studio remembers where you pick pictures from.** The Reference picker, every First / Last frame and Reference slot, and the metrics reference each open in the folder you last chose from, across restarts, even after clearing the box.
 
+**Delete run can keep the newest 5 epochs.** On a run's card, **Delete run…** now also offers **Keep the newest 5 epochs**: the older epochs' checkpoints and saved states go, and the finished LoRA, the newest five epochs, the newest saved state (so Continue still works), any Save now checkpoints and the previews stay, with the run still on the list. The **Clear out runs** row has its own box at the top of the list.
+
 **Fixes.**
 - **Runs & outputs: Previews & checkpoints opens at once.** With runs saving into a big LoRA folder (a ComfyUI loras folder of thousands of files), it sat on "Loading…" for minutes while every file in the folder was read; now only that run's files are. A run's finished LoRA now shows in its list too.
 - **MiniMax H3 Studio keeps its clip settings.** Changing the prompt or another Studio setting could drop H3's saved clip settings and frame photos, so they were gone after a restart.

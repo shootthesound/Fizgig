@@ -18,8 +18,14 @@ if sys.platform != "win32" and os.environ.get("FIZGIG_NO_EXPANDABLE") != "1":
     if os.environ.get("FIZGIG_GPU_BACKEND") != "rocm":
         os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     else:
-        from fizgig.utils.rocm_alloc import expandable_ok
-        if expandable_ok():
+        # loaded by its file, not as fizgig.utils: a worker started in this folder (python -m fizgig.scripts.…) finds
+        # this file as "fizgig" before the package, and fizgig.utils then isn't there (#379). rocm_alloc is stdlib-only
+        import importlib.util
+        _spec = importlib.util.spec_from_file_location(
+            "_fizgig_rocm_alloc", os.path.join(HERE, "src", "fizgig", "utils", "rocm_alloc.py"))
+        _rocm_alloc = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_rocm_alloc)
+        if _rocm_alloc.expandable_ok():
             os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
             os.environ.setdefault("PYTORCH_HIP_ALLOC_CONF", "expandable_segments:True")
 os.environ.setdefault("KMP_BLOCKTIME", "0")

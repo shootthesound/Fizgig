@@ -1506,8 +1506,9 @@ def trim_plan(found, keep=KEEP_NEWEST) -> dict:
 
 
 def trim_run(run_id, confirm=False, keep=KEEP_NEWEST) -> dict:
-    """Delete run's "Delete, keep the newest N epochs": what it would delete (confirm False), or delete it. The run
-    stays on the list (its kept LoRAs are still there). Refused while that run is training."""
+    """Delete run's "Delete, keep the newest N epochs": what it would delete (confirm False), or delete it - the run
+    goes off the list as with Delete, its newest N epochs' LoRA files (all of them when fewer) stay on disk. Refused
+    while that run is training."""
     import shutil
     rec = history.get(run_id)
     if rec is None:
@@ -1537,7 +1538,9 @@ def trim_run(run_id, confirm=False, keep=KEEP_NEWEST) -> dict:
         except OSError:
             failed.append(p)
     if failed:
-        return {"error": f"{len(failed)} file(s) couldn't be deleted (in use?), e.g. {failed[0]}. Try again."}
+        return {"error": f"{len(failed)} file(s) couldn't be deleted (in use?), e.g. {failed[0]}. The run stays in "
+                         "the list; try again."}
+    history.remove(run_id)                     # the run goes, as with Delete; its kept LoRA files stay on disk
     return {"ok": True}
 
 

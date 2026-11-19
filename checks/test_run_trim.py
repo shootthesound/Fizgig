@@ -37,4 +37,13 @@ def test_keeps_the_newest_five(tmp_path):
 def test_fewer_than_five_keeps_them_all_and_still_tidies(tmp_path):
     plan = server.trim_plan(_run(tmp_path, 3, [3]))
     assert plan["checkpoints"] == [] and plan["previews"] == [] and plan["kept"] == 3
-    assert names(plan["states"]) == ["r-000003-state"]               # still something to delete: not greyed
+    assert names(plan["states"]) == ["r-000003-state"]
+
+
+def test_one_epoch_left_deletes_the_run_and_keeps_its_lora(tmp_path, monkeypatch):
+    _run(tmp_path, 1, [])
+    removed = []
+    monkeypatch.setattr(server.history, "get", lambda rid: {"output_dir": str(tmp_path), "lora": "r"})
+    monkeypatch.setattr(server.history, "remove", lambda rid: removed.append(rid))
+    assert server.trim_run("x", confirm=True) == {"ok": True}
+    assert removed == ["x"] and (tmp_path / "r-000001.safetensors").exists() and (tmp_path / "r.safetensors").exists()

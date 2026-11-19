@@ -3663,17 +3663,17 @@ async function loadRuns() {
         const [w, k] = await Promise.all([api("/api/runs/delete", {id: run.id}),
           api("/api/runs/delete", {id: run.id, keep: true}).catch(() => null)]);
         const gb = (b) => b >= 2 ** 30 ? (b / 2 ** 30).toFixed(1) + " GB" : (b / 2 ** 20).toFixed(0) + " MB";
-        // the middle button: Delete, keep the newest 5 epochs - everything Delete takes except the newest 5 epochs (all
-        // of them when fewer are left), and the run stays; greyed only when there is nothing at all to delete
-        const n = (k && k.keep) || 5, some = !!(k && (k.checkpoints || k.states || k.previews));
+        // the middle button: Delete, keep the newest 5 epochs - Delete, except the newest 5 epochs (all of them when
+        // fewer are left) stay on disk: the run goes off the list, its kept LoRA files and their previews don't
+        const n = (k && k.keep) || 5;
         const plural = (x, w) => `${x} ${w}${x > 1 ? "s" : ""}`;
-        const keepBtn = el("button", {class: "btn btn-sm", text: `Delete, keep the newest ${n} epochs`, disabled: !some,
-          title: !k ? "" : some ? `Deletes ${[k.checkpoints && plural(k.checkpoints, "older checkpoint"),
-            k.states && plural(k.states, "saved state"), k.previews && plural(k.previews, "older preview")]
-            .filter(Boolean).join(", ")} (${gb(k.bytes)}). Keeps ` + (k.kept ? `the newest ${plural(k.kept, "epoch")}` +
-            (k.epochs < n ? " (all it has)" : "") + ", " : "") + "the finished LoRA, any Save now checkpoints and " +
-            "their previews, and the run stays on the list. Without its saved states, it can't Continue." :
-            "Nothing to delete: it has only what this keeps.",
+        const goes = !k ? [] : [k.checkpoints && plural(k.checkpoints, "older checkpoint"),
+          k.states && plural(k.states, "saved state"), k.previews && plural(k.previews, "older preview")].filter(Boolean);
+        const keepBtn = el("button", {class: "btn btn-sm", text: `Delete, keep the newest ${n} epochs`, disabled: !k,
+          title: !k ? "" : "Deletes the run from this list" + (goes.length ? `, and ${goes.join(", ")} ` +
+            `(${gb(k.bytes)})` : "") + ". Keeps on disk " + (k.kept ? `its newest ${plural(k.kept, "epoch")}` +
+            (k.epochs < n ? " (all it has)" : "") + "' LoRA files, " : "") + "the finished LoRA, any Save now " +
+            "checkpoints and their previews. Your training folder isn't touched.",
           onclick: async () => {
             try { await api("/api/runs/delete", {id: run.id, keep: true, confirm: true}); loadRuns(); loadOutputs(); }
             catch (e) { delBox.replaceChildren(el("div", {class: "problems", text: e.message})); }

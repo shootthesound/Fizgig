@@ -10,7 +10,7 @@
 
 **Studio remembers where you pick pictures from.** The Reference picker, every First / Last frame and Reference slot, and the metrics reference each open in the folder you last chose from, across restarts, even after clearing the box.
 
-**Delete run can keep the newest 5 epochs.** On a run's card, **Delete run…** now also offers **Delete, keep the newest 5 epochs**, beside Delete and Cancel: it deletes what Delete would except the newest five epochs (all of them when there are fewer), whose checkpoints and previews stay with the finished LoRA, and the run stays on the list. The **Clear out runs** row has its own box at the top of the list.
+**Delete run can keep the newest 5 epochs.** On a run's card, **Delete run…** now also offers **Delete, keep the newest 5 epochs**, beside Delete and Cancel: it deletes the run as Delete does, but its newest five epochs (all of them when there are fewer) stay on disk with the finished LoRA, ready to use. The **Clear out runs** row has its own box at the top of the list.
 
 **Fixes.**
 - **Runs & outputs: Previews & checkpoints opens at once.** With runs saving into a big LoRA folder (a ComfyUI loras folder of thousands of files), it sat on "Loading…" for minutes while every file in the folder was read; now only that run's files are. A run's finished LoRA now shows in its list too.

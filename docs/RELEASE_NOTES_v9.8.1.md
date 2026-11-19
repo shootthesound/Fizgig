@@ -11,6 +11,7 @@
 **Studio remembers where you pick pictures from.** The Reference picker, every First / Last frame and Reference slot, and the metrics reference each open in the folder you last chose from, across restarts, even after clearing the box.
 
 **Fixes.**
+- **Runs & outputs: Previews & checkpoints opens at once.** With runs saving into a big LoRA folder (a ComfyUI loras folder of thousands of files), it sat on "Loading…" for minutes while every file in the folder was read; now only that run's files are. A run's finished LoRA now shows in its list too.
 - **MiniMax H3 Studio keeps its clip settings.** Changing the prompt or another Studio setting could drop H3's saved clip settings and frame photos, so they were gone after a restart.
 - **Studio: a landscape First / Last frame or reference photo** no longer runs under the box beside it; a narrow window stacks the slot.
 

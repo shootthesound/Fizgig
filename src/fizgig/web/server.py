@@ -4804,6 +4804,39 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"ok": True, "item": item})
             if path == "/api/captions/ai":
                 return self.json(_start_ai_captions(b))
+            if path == "/api/studio/save_as":
+                # Download original / tweaked on the machine running Fizgig: its own Save window, opening in the folder
+                # the last one saved to (kept in prefs). Elsewhere the page downloads as a browser does.
+                from fizgig.web import native_pick
+                if not self._local_viewer():
+                    return self.json({"unavailable": True})
+                which = str(b.get("which") or "")
+                if which not in ("baseline", "tweaked"):
+                    return self.json({"error": "Not a render."}, 400)
+                media = bool(b.get("media"))
+                p = studio.image(which + ("_media" if media else ""), "")
+                if not p:
+                    return self.json({"error": "Nothing rendered yet."})
+                name = re.sub(r'[\\/:*?"<>|]+', "_", str(b.get("name") or "render"))
+                name = os.path.splitext(name)[0] + os.path.splitext(p)[1]
+                r = native_pick.save_as(load_prefs().get("studio_save_dir") or "", name,
+                                        f"Save the {'original' if which == 'baseline' else 'tweaked'} render")
+                if not r.get("path"):
+                    return self.json(r)
+                out = r["path"]
+                # a tweaked picture keeps Studio's setup inside it, as the download does
+                png = (studio.png_with_setup(p, _STUDIO_DL_SETUP[0])
+                       if which == "tweaked" and not media and _STUDIO_DL_SETUP else None)
+                try:
+                    if png is not None:
+                        with open(out, "wb") as f:
+                            f.write(png)
+                    else:
+                        shutil.copyfile(p, out)
+                except OSError as e:
+                    return self.json({"error": f"Couldn't save there: {e}"})
+                update_prefs({"studio_save_dir": os.path.dirname(out)})
+                return self.json({"ok": True, "path": out})
             if path.startswith("/api/studio/"):
                 try:
                     return self.json(_studio_post(path[len("/api/studio/"):], b))

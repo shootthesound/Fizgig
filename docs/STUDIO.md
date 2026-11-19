@@ -87,7 +87,7 @@ Red means most, then yellow, then blue; no colour, barely. Each map is scaled fr
 ## Saving
 
 - **Save repaired LoRA**: name the new file under **Save as** and press it. It's a normal LoRA for ComfyUI and anything else, with the slider settings recorded in its metadata.
-- **💾 Download original / Download tweaked**: the two renders as files. A downloaded Tweaked picture keeps Studio's settings inside it (the LoRAs, every slider, the prompt and seed): **drop it on the Studio tab to get them all back**.
+- **💾 Download original / Download tweaked**: the two renders as files. On the computer running Fizgig they open your system's Save window in the folder you last saved to (remembered across restarts); on a pod, a phone or another computer they download as a browser does. A downloaded Tweaked picture keeps Studio's settings inside it (the LoRAs, every slider, the prompt and seed): **drop it on the Studio tab to get them all back**.
 - **Save setup**: everything on the tab (the LoRAs, every slider and tick, the prompt, seed, size, photos and source) in one named file. **Load a setup…** restores it exactly, switching model if it needs to, loading its LoRAs and rendering.
 
 ## Video (MiniMax H3)

@@ -7736,13 +7736,32 @@ function wireStudioSetups() {
   $("stSetupSave").addEventListener("click", () => studioSetupSave(false));
   $("stSetupList").addEventListener("change", () => { const n = $("stSetupList").value; $("stSetupList").value = ""; if (n) studioSetupLoad(n); });
   studioSetupList();
-  // Download tweaked (a still): the setup goes up first, so the server writes it into the PNG
-  $("stDlTweak").addEventListener("click", async (e) => {
-    if ($("stDlTweak").dataset.go || (S.st.layout && S.st.layout.kind !== "stills")) return;
-    e.preventDefault();
-    try { await api("/api/studio/download_setup", {data: studioSetupData()}); } catch (err) { /* the picture alone */ }
-    $("stDlTweak").dataset.go = "1"; $("stDlTweak").click(); delete $("stDlTweak").dataset.go;
-  });
+  // Download original / tweaked. On the machine running Fizgig: the computer's own Save window, opening in the folder
+  // the last one saved to (the server remembers it). Elsewhere, or with no such window: the browser's download. A
+  // tweaked still sends the setup first, so the server writes it into the PNG either way.
+  for (const id of ["stDlBase", "stDlTweak"]) {
+    $(id).addEventListener("click", async (e) => {
+      const b = $(id);
+      if (b.dataset.go) return;                       // the browser's download
+      e.preventDefault();
+      const tweak = id === "stDlTweak";
+      if (tweak && S.st.layout && S.st.layout.kind === "stills") {
+        try { await api("/api/studio/download_setup", {data: studioSetupData()}); } catch (err) { /* the picture alone */ }
+      }
+      $("stDlMsg").textContent = "";
+      if (S.st.saveNative !== false && !pageIsElsewhere()) {
+        try {
+          const r = await api("/api/studio/save_as", {which: tweak ? "tweaked" : "baseline", media: !!b.dataset.media,
+                                                       name: b.getAttribute("download") || ""});
+          if (r.ok) { $("stDlMsg").textContent = `Saved: ${r.path}`; return; }
+          if (r.cancelled) return;
+          if (r.error) { $("stDlMsg").textContent = r.error; return; }
+          S.st.saveNative = false;                    // no Save window here: the browser's download from now on
+        } catch (err) { /* the browser's download */ }
+      }
+      b.dataset.go = "1"; b.click(); delete b.dataset.go;
+    });
+  }
   // a picture Download tweaked saved, dropped anywhere on Studio: its LoRAs, sliders and settings back
   const tab = $("tab-studio");
   tab.addEventListener("dragover", (e) => { if ([...e.dataTransfer.types].includes("Files")) e.preventDefault(); });
@@ -8580,6 +8599,7 @@ function studioDownloads(st, q) {
     $(id).style.display = w === "baseline" && st.baseline_skipped ? "none" : "";
     $(id).href = q(video ? w + "_media" : w) + "&dl=" + encodeURIComponent(name);
     $(id).setAttribute("download", name);
+    $(id).dataset.media = video ? "1" : "";           // the clip, not its still (the Save window's file)
   }
 }
 

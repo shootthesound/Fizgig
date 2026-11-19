@@ -38,3 +38,18 @@ def test_local_viewer_only():
         assert Handler._local_viewer(H) is ok
     H.client_address = ("127.0.0.1", 0); H.headers = {"X-Forwarded-For": "1.2.3.4"}
     assert not Handler._local_viewer(H)
+
+
+def test_save_as_window(monkeypatch, tmp_path):
+    """Studio's Download buttons: a Save window opening in the folder saved to last, the file name filled in."""
+    import json
+    monkeypatch.setattr(native_pick, "_avail", True)
+    seen = {}
+    class R: stdout = '{"path": "%s"}' % str(tmp_path / "x.png").replace("\\", "/")
+    def run(cmd, **k):
+        seen.update(json.loads(cmd[-1]))
+        return R
+    monkeypatch.setattr(native_pick.subprocess, "run", run)
+    assert native_pick.save_as(str(tmp_path), "lora_tweaked_seed42.png") == {"path": os.path.normpath(str(tmp_path / "x.png"))}
+    assert seen["save"] == "lora_tweaked_seed42.png" and seen["ext"] == ".png" and seen["start"] == str(tmp_path)
+    compile(native_pick._SCRIPT, "<native_pick>", "exec")

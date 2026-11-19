@@ -18,8 +18,14 @@ try: root.attributes("-topmost", True)
 except Exception: pass
 root.update()
 kw = {"parent": root, "initialdir": a["start"] or None, "title": a["title"]}
-p = filedialog.askdirectory(mustexist=True, **kw) if a["dir"] else filedialog.askopenfilename(
-    filetypes=[("All files", "*.*")], **kw)
+if a.get("save"):
+    ext = a.get("ext") or ""
+    p = filedialog.asksaveasfilename(initialfile=a["save"], defaultextension=ext,
+                                     filetypes=([(ext[1:].upper() + " file", "*" + ext)] if ext else []) +
+                                     [("All files", "*.*")], **kw)
+else:
+    p = filedialog.askdirectory(mustexist=True, **kw) if a["dir"] else filedialog.askopenfilename(
+        filetypes=[("All files", "*.*")], **kw)
 root.destroy()
 print(json.dumps({"path": p or ""}))
 """
@@ -52,11 +58,19 @@ def start_dir(start):
     return ""
 
 
-def pick(start="", dir_only=True, title=""):
-    """{"path": chosen} / {"cancelled": True} / {"unavailable": True} (the page falls back to its own picker)."""
+def save_as(start, name, title="Save as"):
+    """The computer's own Save window, opening in `start` with `name` filled in: {"path"} / {"cancelled"} /
+    {"unavailable"}."""
+    return pick(start, False, title, save=name)
+
+
+def pick(start="", dir_only=True, title="", save=""):
+    """{"path": chosen} / {"cancelled": True} / {"unavailable": True} (the page falls back to its own picker).
+    save: a file name to save as (a Save window instead of Open)."""
     if not available():
         return {"unavailable": True}
-    args = json.dumps({"start": start_dir(start), "dir": bool(dir_only),
+    args = json.dumps({"start": start_dir(start), "dir": bool(dir_only), "save": save or "",
+                       "ext": os.path.splitext(save or "")[1].lower(),
                        "title": title or ("Choose a folder" if dir_only else "Choose a file")})
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     try:

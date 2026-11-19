@@ -1481,27 +1481,33 @@ def _epoch_of(path):
 
 
 def trim_plan(found, keep=KEEP_NEWEST) -> dict:
-    """What "keep the newest N epochs" deletes from a run's files: its epoch checkpoints past the newest N, and its
-    saved states but the newest one (Continue carries on from it). The finished LoRA, a Save now's checkpoints and
-    the previews stay."""
+    """Delete run's "Delete, keep the newest N epochs": everything Delete takes except the newest N epochs (all of them
+    when there are fewer): their checkpoints and previews stay, with the finished LoRA, a Save now's checkpoints and
+    the previews from before training. Older epochs' checkpoints and previews and every saved state go."""
     epoch = lambda p: (_epoch_of(p) or (-1, 0))[0]           # a Save now (-step...) is one you asked for: it stays
     eps = sorted((p for p in found["checkpoints"] if epoch(p) >= 0), key=epoch)
-    numbered = sorted((p for p in found["states"] if epoch(p) >= 0), key=epoch)
+    kept = {epoch(p) for p in eps[-keep:]} if keep > 0 else set()
     ckpts = eps[:-keep] if len(eps) > keep else []
-    states = numbered[:-1] if len(numbered) > 1 else []
+    states = list(found["states"])
+
+    def preview_epoch(p):
+        info = sample_info(os.path.basename(p)) or {}
+        return info.get("epoch")
+    previews = [p for p in found["previews"] if preview_epoch(p) not in (None, 0) and preview_epoch(p) not in kept]
     total = 0
-    for p in ckpts + states:
+    for p in ckpts + states + previews:
         try:
             total += (sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(p) for f in fs)
                       if os.path.isdir(p) else os.path.getsize(p))
         except OSError:
             pass
-    return {"checkpoints": ckpts, "states": states, "bytes": total, "epochs": len(eps)}
+    return {"checkpoints": ckpts, "states": states, "previews": previews, "bytes": total, "epochs": len(eps),
+            "kept": len(kept)}
 
 
 def trim_run(run_id, confirm=False, keep=KEEP_NEWEST) -> dict:
-    """Delete run's "Keep the newest N epochs": what it would delete (confirm False), or delete it. The run stays on
-    the list. Refused while that run is training."""
+    """Delete run's "Delete, keep the newest N epochs": what it would delete (confirm False), or delete it. The run
+    stays on the list (its kept LoRAs are still there). Refused while that run is training."""
     import shutil
     rec = history.get(run_id)
     if rec is None:
@@ -1516,10 +1522,11 @@ def trim_run(run_id, confirm=False, keep=KEEP_NEWEST) -> dict:
                                                               "bytes": 0}
     plan = trim_plan(found, keep)
     if not confirm:
-        return {"ok": True, "keep": keep, "epochs": plan["epochs"], "checkpoints": len(plan["checkpoints"]),
-                "states": len(plan["states"]), "bytes": plan["bytes"]}
+        return {"ok": True, "keep": keep, "epochs": plan["epochs"], "kept": plan["kept"],
+                "checkpoints": len(plan["checkpoints"]), "states": len(plan["states"]),
+                "previews": len(plan["previews"]), "bytes": plan["bytes"]}
     failed = []
-    for p in plan["checkpoints"]:
+    for p in plan["checkpoints"] + plan["previews"]:
         try:
             os.remove(p)
         except OSError:

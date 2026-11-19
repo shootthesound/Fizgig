@@ -3663,16 +3663,17 @@ async function loadRuns() {
         const [w, k] = await Promise.all([api("/api/runs/delete", {id: run.id}),
           api("/api/runs/delete", {id: run.id, keep: true}).catch(() => null)]);
         const gb = (b) => b >= 2 ** 30 ? (b / 2 ** 30).toFixed(1) + " GB" : (b / 2 ** 20).toFixed(0) + " MB";
-        // the middle button: Delete, keep the newest 5 epochs - the older epochs' checkpoints and saved states go, the
-        // run stays; greyed when there's nothing older to remove (5 epochs or fewer)
-        const n = (k && k.keep) || 5, some = !!(k && (k.checkpoints || k.states));
+        // the middle button: Delete, keep the newest 5 epochs - everything Delete takes except the newest 5 epochs (all
+        // of them when fewer are left), and the run stays; greyed only when there is nothing at all to delete
+        const n = (k && k.keep) || 5, some = !!(k && (k.checkpoints || k.states || k.previews));
+        const plural = (x, w) => `${x} ${w}${x > 1 ? "s" : ""}`;
         const keepBtn = el("button", {class: "btn btn-sm", text: `Delete, keep the newest ${n} epochs`, disabled: !some,
-          title: !k ? "" : some ? `Deletes ${[
-            k.checkpoints && `${k.checkpoints} older checkpoint${k.checkpoints > 1 ? "s" : ""}`,
-            k.states && `${k.states} older saved state${k.states > 1 ? "s" : ""}`].filter(Boolean).join(" and ")} ` +
-            `(${gb(k.bytes)}). The finished LoRA, the newest ${n} epochs, the newest saved state (Continue carries on ` +
-            "from it) and the previews stay, and so does the run." :
-            `It has ${k.epochs} epoch${k.epochs === 1 ? "" : "s"} saved: nothing older than the newest ${n} to remove.`,
+          title: !k ? "" : some ? `Deletes ${[k.checkpoints && plural(k.checkpoints, "older checkpoint"),
+            k.states && plural(k.states, "saved state"), k.previews && plural(k.previews, "older preview")]
+            .filter(Boolean).join(", ")} (${gb(k.bytes)}). Keeps ` + (k.kept ? `the newest ${plural(k.kept, "epoch")}` +
+            (k.epochs < n ? " (all it has)" : "") + ", " : "") + "the finished LoRA, any Save now checkpoints and " +
+            "their previews, and the run stays on the list. Without its saved states, it can't Continue." :
+            "Nothing to delete: it has only what this keeps.",
           onclick: async () => {
             try { await api("/api/runs/delete", {id: run.id, keep: true, confirm: true}); loadRuns(); loadOutputs(); }
             catch (e) { delBox.replaceChildren(el("div", {class: "problems", text: e.message})); }

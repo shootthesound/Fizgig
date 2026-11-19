@@ -5374,6 +5374,9 @@ async function runLossTick(training) {
 // a form value as the tab shows it: the row's default while it's never been set
 function valueOrDefault(key) {
   if (S.values[key] !== undefined) return S.values[key];
+  return rowDefault(key);
+}
+function rowDefault(key) {
   for (const s of S.fam.form.sections) for (const r of s.rows) if (r && r.key === key) return r.default;
   return undefined;
 }
@@ -5387,12 +5390,22 @@ const sampleLiveSoon = debounce(async () => {
     if (!ctxIsLiveRun()) return;
     // form: the Samples values as they now are, kept with the run so every page (and a later look at it) shows them
     const keep = ["SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS", "SAMPLE_CFG_SCALE",
-      "FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_ON", "SAMPLE_EVERY_N_EPOCHS", "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH",
-      "SAMPLE_EVERY_AFTER", "FAMILY_PREVIEW_LOOK", "SAMPLE_CHECKPOINT", "__SAMPLE_LIVE"];
+      "FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_ON", "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE", "SAMPLE_EVERY_N_EPOCHS",
+      "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH", "SAMPLE_EVERY_AFTER", "FAMILY_PREVIEW_LOOK", "SAMPLE_CHECKPOINT",
+      "__SAMPLE_LIVE"];
+    let steps = v.SAMPLE_STEPS, turbo = v.FAMILY_TURBO_ON === false ? "0" : v.FAMILY_TURBO_STRENGTH;
+    const pace = valueOrDefault("FAMILY_TURBO_PACE");
+    if (pace !== undefined) {
+      // H3's row: Turbo preview steps at Turbo strength (%), as Start launches it; the Steps box is the count without
+      // the Turbo. Sending the Steps box ran the Turbo previews at 20 steps (artefacts) whatever the Turbo box said
+      const p = String(pace).trim() === "" ? Number(rowDefault("FAMILY_TURBO_PACE")) : Number(pace);
+      turbo = String((Number.isFinite(p) ? p : 0) / 100);
+      if (p > 0) steps = String(valueOrDefault("FAMILY_TURBO_STEPS") ?? "").trim() || rowDefault("FAMILY_TURBO_STEPS");
+    }
     const r = await api("/api/run/sample_override", {form: Object.fromEntries(keep.filter((k) => k in v).map((k) => [k, v[k]])),
       on: !!v.__SAMPLE_LIVE, prompts: v.SAMPLE_PROMPT || "",
-      seed: v.SAMPLE_SEED, width: v.SAMPLE_WIDTH, height: v.SAMPLE_HEIGHT, steps: v.SAMPLE_STEPS,
-      cfg: v.SAMPLE_CFG_SCALE, turbo: v.FAMILY_TURBO_ON === false ? "0" : v.FAMILY_TURBO_STRENGTH,
+      seed: v.SAMPLE_SEED, width: v.SAMPLE_WIDTH, height: v.SAMPLE_HEIGHT, steps,
+      cfg: v.SAMPLE_CFG_SCALE, turbo,
       every: v.SAMPLE_EVERY_N_EPOCHS,
       until: v.SAMPLE_LATER ? v.SAMPLE_UNTIL_EPOCH : 0, after: v.SAMPLE_LATER ? v.SAMPLE_EVERY_AFTER : 0,
       look: !!v.FAMILY_PREVIEW_LOOK, checkpoint: !!valueOrDefault("SAMPLE_CHECKPOINT")});

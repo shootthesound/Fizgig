@@ -1127,6 +1127,7 @@ _SIZE_KEYS = ("DATASET_MEGAPIXELS", "CLIP_MEGAPIXELS")
 # new one, logged); the rest trains on as it was
 _RESUME_SAMPLE_KEYS = ("SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS",
                        "SAMPLE_CFG_SCALE", "FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_ON", "SAMPLE_CHECKPOINT",
+                       "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE",                          # H3's Turbo row
                        "FAMILY_PREVIEW_LOOK",                                              # + the SFT look tick
                        "SAMPLE_EVERY_N_EPOCHS", "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH", "SAMPLE_EVERY_AFTER",
                        "BLOCKS_SWAP", "SAVE_EVERY_N_EPOCHS", "SAVE_LATER", "SAVE_UNTIL_EPOCH", "SAVE_EVERY_AFTER",
@@ -4640,6 +4641,7 @@ class Handler(BaseHTTPRequestHandler):
                 if form_now:                     # the run's Samples values as changed: what a look at the run shows
                     ok_keys = {k: v for k, v in form_now.items()
                                if str(k).startswith("SAMPLE_") or k in ("FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_ON",
+                                                                         "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE",
                                                                          "FAMILY_PREVIEW_LOOK", "__SAMPLE_LIVE")}
                     with _lock:
                         _run["values"] = {**(_run.get("values") or {}), **ok_keys}

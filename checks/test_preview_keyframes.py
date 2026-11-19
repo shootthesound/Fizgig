@@ -92,3 +92,10 @@ def test_driver_anchors_first_and_last(tmp_path):
     drv._preview_keyframes(512, 512, 22)
     assert len(seen) == 4                                                # a smaller rung: encoded again
     assert drv._preview_keyframes(768, 640, 1) is None                   # a still uses neither
+
+
+def test_a_moved_run_takes_its_frames(tmp_path):
+    from fizgig.web import helpers
+    first, last = _frame(tmp_path), _frame(tmp_path, "last.png")
+    files = helpers._move_extras({"SAMPLE_FIRST_FRAME": first, "SAMPLE_LAST_FRAME": last})[1]
+    assert files == {"SAMPLE_FIRST_FRAME": first, "SAMPLE_LAST_FRAME": last}

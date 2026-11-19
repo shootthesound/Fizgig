@@ -3676,7 +3676,8 @@ def _move_names(values, k):
     if k == "FAMILY_REG_DIR" and not (values or {}).get("FAMILY_REG_ON"):
         return False
     return str((values or {}).get(k) or "").strip().lower() not in ("", "off")
-_MOVE_FILES = ("FAMILY_EDIT_REF", "SAMPLE_REFERENCE", "METADATA_THUMBNAIL")
+_MOVE_FILES = ("FAMILY_EDIT_REF", "SAMPLE_REFERENCE", "METADATA_THUMBNAIL",
+               "SAMPLE_FIRST_FRAME", "SAMPLE_LAST_FRAME")            # H3 previews' First / Last frame (#376)
 
 
 def _media_exts():

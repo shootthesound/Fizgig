@@ -3398,10 +3398,12 @@ async function loadCheckpoints() {
   const out = S.run.output_dir || S.values.LORA_OUTPUT_DIR;
   const host = $("checkpoints");
   if (!out) { host.innerHTML = ""; return; }
-  const r = await api("/api/checkpoints?dir=" + encodeURIComponent(out)).catch(() => ({items: []}));
+  const run = currentRunName();
+  // only this run's files unless all are asked for: a folder of thousands of LoRAs took minutes to list
+  const r = await api(`/api/checkpoints?dir=${encodeURIComponent(out)}` + (S.ckptAll || !run ? "" :
+    `&run=${encodeURIComponent(run)}`)).catch(() => ({items: []}));
   host.innerHTML = "";
   const size = (b) => b >= 2 ** 30 ? (b / 2 ** 30).toFixed(1) + " GB" : (b / 2 ** 20).toFixed(0) + " MB";
-  const run = currentRunName();
   const mine = r.items.filter((it) => it.run === run);
   const shown = S.ckptAll ? r.items : mine;
   for (const it of shown) {
@@ -3413,7 +3415,7 @@ async function loadCheckpoints() {
       it.kind === "finetune" ? null : studioButton(it.path, S.fam && S.fam.key),
       el("a", {class: "btn btn-sm btn-primary", href, download: it.name, text: "Download"})));
   }
-  const others = r.items.length - mine.length;
+  const others = S.ckptAll ? r.items.length - mine.length : (r.others || 0);   // filtered by run: the server counts the rest
   $("checkpointsInfo").replaceChildren(
     document.createTextNode(S.ckptAll ? `All ${r.items.length} saved in ${out}, newest first. ` :
       mine.length ? `${mine.length} saved by ${run} in ${out}, newest first. ` :
@@ -5474,7 +5476,8 @@ async function runFiles(run) {
   const [g, c] = await Promise.all([
     api(`/api/samples?dir=${encodeURIComponent(run.output_dir + sep + "sample")}&run=${encodeURIComponent(run.lora)}`)
       .catch(() => ({items: [], prompts: []})),
-    api("/api/checkpoints?dir=" + encodeURIComponent(run.output_dir)).catch(() => ({items: []}))]);
+    api(`/api/checkpoints?dir=${encodeURIComponent(run.output_dir)}&run=${encodeURIComponent(run.lora || "")}`)
+      .catch(() => ({items: []}))]);
   const shots = g.items.slice(0, 12);
   if (shots.length) out.push(el("div", {class: "gallery run-gallery"}, shots.map((it) => previewFigure(withLora(it, g.loras, run.family), g.prompts, null, g.epoch_prompts))));
   const size = (b) => b >= 2 ** 30 ? (b / 2 ** 30).toFixed(1) + " GB" : (b / 2 ** 20).toFixed(0) + " MB";

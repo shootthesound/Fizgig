@@ -1406,9 +1406,22 @@ def samples_zip(folder, name) -> str:
     return out
 
 
-def _checkpoint_kind(path) -> str:
+_KIND_CACHE = {}       # (path, size, mtime) -> kind: a folder of thousands of LoRAs is read once a session, not per look
+
+
+def _checkpoint_kind(path, st=None) -> str:
     """'finetune' (a whole model, the source file with the trained tensors replaced) or 'lora', from the file's
-    metadata header - a few KB read, never the tensors."""
+    metadata header - its header read, never the tensors - and kept for the session by size and modified time."""
+    key = (path, st.st_size, st.st_mtime) if st is not None else None
+    if key is not None and key in _KIND_CACHE:
+        return _KIND_CACHE[key]
+    kind = _read_checkpoint_kind(path)
+    if key is not None:
+        _KIND_CACHE[key] = kind
+    return kind
+
+
+def _read_checkpoint_kind(path) -> str:
     try:
         with open(path, "rb") as f:
             n = int.from_bytes(f.read(8), "little")
@@ -3874,7 +3887,7 @@ class Handler(BaseHTTPRequestHandler):
             # in pieces, with byte ranges: songs and clips seek; kept by the browser when the page names its time
             return self._stream(p, attachment=False, keep=bool((qs.get("v") or [""])[0]))
         if path == "/api/checkpoints":
-            return self._checkpoints((qs.get("dir") or [""])[0])
+            return self._checkpoints((qs.get("dir") or [""])[0], (qs.get("run") or [""])[0])
         if path == "/api/outputs":
             return self.json(list_outputs(fizgig_only=(qs.get("all") or ["0"])[0] != "1"))
         if path == "/api/outputs/previews":
@@ -4036,8 +4049,10 @@ class Handler(BaseHTTPRequestHandler):
             found[max(epochs)] = final
         return {str(k): p for k, p in found.items() if _checkpoint_kind(p) != "finetune"}
 
-    def _checkpoints(self, folder):
-        """The run's saved LoRAs / checkpoints in its output folder, newest first."""
+    def _checkpoints(self, folder, run=""):
+        """The run's saved LoRAs / checkpoints in its output folder, newest first. With run: only that run's (and
+        how many belong to other runs, "others") - a run's card in a folder of thousands of LoRAs (a ComfyUI loras
+        folder) read every file's header and took minutes."""
         try:
             items = [e for e in os.scandir(folder) if e.is_file() and e.name.lower().endswith(".safetensors")]
         except OSError:
@@ -4052,13 +4067,17 @@ class Handler(BaseHTTPRequestHandler):
                 stats.append((e, st))
         stats.sort(key=lambda x: x[1].st_mtime, reverse=True)
         base = lambda n: (lambda m: m.group(1) if m else n)(_CKPT.match(n[:-len(".safetensors")]))
+        others = 0
+        if run:
+            mine = [(e, st) for e, st in stats if base(e.name) == run]
+            others, stats = len(stats) - len(mine), mine
         out = [{"name": e.name, "path": e.path, "size": st.st_size, "time": st.st_mtime,
-                "kind": _checkpoint_kind(e.path), "run": base(e.name)} for e, st in stats]
+                "kind": _checkpoint_kind(e.path, st), "run": base(e.name)} for e, st in stats]
         from fizgig.web import stars                  # a star on the epoch's own preview (stars.starred_checkpoints)
         starred = stars.starred_checkpoints(folder, out, sample_info)
         for it in out:
             it["starred"] = it["name"] in starred
-        return self.json({"items": out})
+        return self.json({"items": out, "others": others})
 
     def _captions(self, folder, ext, family=""):
         from fizgig.dataset import detail_crops

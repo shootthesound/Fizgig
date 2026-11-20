@@ -27,11 +27,14 @@ def test_a_12gb_card_swaps_the_4bit_base(monkeypatch):
     desc = get("minimax_image")
     drv = desc.load_driver()
     peak, per_block = quant._peak(desc.train_memory["nf4"], 0.25), desc.train_memory["nf4"][1]
-    for free in (10.0, 10.5, 11.0, 11.5):
+    # (below ~10.8 GB free: above it int8 with 38-40 of its 40 blocks streamed fits these big-card figures and Auto
+    # takes it, as it always has from the point int8 fits at the most swap - 12.6 GB before 20 Nov 2026, when the
+    # per-block figures were averaged over the ring's slots too; a card under 20 GB plans 4-bit only, below)
+    for free in (9.5, 10.0, 10.5):
         for mp in (0.25, 1.0):
             p, n, why = quant.plan(desc, drv, "auto", -1, free_gb=free, megapixels=mp)
             assert p == "nf4" and n > 0, (free, mp, n, why)
-            assert peak - n * per_block <= free - 1.5, (free, n)      # fits with the usual margin
+            assert peak - quant.swap_saved_gb(desc, per_block, n) <= free - 1.5, (free, n)   # fits with the margin
             assert f"{n} swapped blocks" in why
             p, n2, why = quant.plan(desc, drv, "nf4", -1, free_gb=free, megapixels=mp)   # 4-bit + Auto swap
             assert (p, n2) == ("nf4", n) and f"{n} swapped blocks" in why
@@ -45,14 +48,15 @@ def test_a_12gb_card_swaps_the_4bit_base(monkeypatch):
 
 def test_small_card_figures_plan_fewer_blocks(monkeypatch):
     """Under 20 GB H3 Image plans from its small-card figures (training's peak; the 2048 preview parks tail blocks to
-    decode), so the Standard preset (1.4 GB over the figures) on a 12 GB card swaps ~15 blocks, not 30, and Auto keeps
-    the 4-bit base even where int8 with most blocks streamed would fit."""
+    decode), so the Standard preset (1.4 GB over the figures) on a 12 GB card swaps ~16 blocks (#354's tested run), not
+    28, and Auto keeps the 4-bit base even where int8 with most blocks streamed would fit. (One block more than before
+    20 Nov 2026: the ring's 2 slots free nothing - test_ring_swap_plan.py.)"""
     desc = get("minimax_image")
     drv = desc.load_driver()
     monkeypatch.setenv("FIZGIG_PREVIEW_LOWMEM", "0")
-    assert quant.plan(desc, drv, "auto", -1, free_gb=11.2, megapixels=0.25, adapter_gb=1.4)[:2] == ("nf4", 31)
+    assert quant.plan(desc, drv, "auto", -1, free_gb=11.2, megapixels=0.25, adapter_gb=1.4)[:2] == ("nf4", 28)
     monkeypatch.setenv("FIZGIG_PREVIEW_LOWMEM", "1")
-    for free, mp, n in ((11.2, 0.25, 15), (11.2, 1.0, 16), (10.7, 0.25, 18), (15.2, 1.0, 0), (14.7, 0.25, 0)):
+    for free, mp, n in ((11.2, 0.25, 16), (11.2, 1.0, 17), (10.7, 0.25, 19), (15.2, 1.0, 0), (14.7, 0.25, 0)):
         assert quant.plan(desc, drv, "auto", -1, free_gb=free, megapixels=mp, adapter_gb=1.4)[:2] == ("nf4", n)
     for free in (4.0, 8.0, 10.0, 12.0, 16.0, 18.0):
         assert quant.plan(desc, drv, "auto", -1, free_gb=free, megapixels=1.0)[0] == "nf4"

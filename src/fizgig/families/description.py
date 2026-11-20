@@ -543,6 +543,10 @@ class FamilyDescription:
     # {} = Auto just takes the first precision
     train_memory: dict = field(default_factory=dict)
     own_plan: bool = False            # no train_memory: the driver plans precision + swap itself (plan_run, plan_pictures)
+    # Block swap through an H2D ring (MiniMax H3 Image): the ring's card slots, each holding a streamed block, so the
+    # first this-many swapped blocks free no card memory; train_memory's GB per swapped block is then per block past
+    # them (quant.swap_saved_gb). 0: every swapped block frees its share (the exchange offloaders)
+    swap_ring_slots: int = 0
     # the same figures for a card under 20 GB, where the trainer parks the model for each preview's decode and caps the
     # preview at 768 px (train._small_card_previews) - so train_memory's big-card preview peak doesn't apply there.
     # Measured on a small card, or training's own peak without the preview. {} = train_memory everywhere.

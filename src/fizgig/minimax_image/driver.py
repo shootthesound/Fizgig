@@ -87,7 +87,7 @@ class MiniMaxH3ImageDriver(FamilyDriver):
         dit = M.load_dit(path, device, base_quant=mode, blocks_to_swap=n, compute_dtype=DTYPE)
         if n > 0:
             ring = mode == "int8" or os.environ.get("FIZGIG_NO_NF4_H2D") != "1"
-            n = dit.enable_block_swap(n, h2d_only=ring, ring_size=2)
+            n = dit.enable_block_swap(n, h2d_only=ring, ring_size=self.description.swap_ring_slots)
             logger.info(f"[vram] block swap: the last {n} blocks stream host->device ({mode})")
         self._n_swap, self._grid = n, dit.final_layer.pdd_sigmas
         logger.info(f"[precision] {os.path.basename(path)}: {mode}, {n} blocks streamed; noise levels "

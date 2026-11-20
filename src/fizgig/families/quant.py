@@ -205,6 +205,19 @@ def _peak(entry, megapixels):
     return y0 + (y1 - y0) * (megapixels - x0) / (x1 - x0)
 
 
+def swap_saved_gb(desc, per_block, blocks_to_swap):
+    """Card GB `blocks_to_swap` swapped blocks free, at `per_block` GB each - past an H2D ring's card slots
+    (desc.swap_ring_slots), which hold streamed blocks and so free nothing: a ring of 2 frees nothing at 1 or 2."""
+    return max(0, int(blocks_to_swap) - int(getattr(desc, "swap_ring_slots", 0) or 0)) * float(per_block)
+
+
+def swap_blocks_for(desc, per_block, short_gb):
+    """The fewest swapped blocks that free `short_gb` (0 when nothing is short): a ring's slots first, then the rest."""
+    if short_gb <= 0:
+        return 0
+    return int(getattr(desc, "swap_ring_slots", 0) or 0) + math.ceil(short_gb / per_block)
+
+
 TIGHT_MARGIN_GB = 0.5      # nf4 with no swap beats a swapped int8 base down to this much headroom
 
 # Optimizer state per trainable parameter, in bytes (fp32 adapter weights): 8-bit moments are a byte each, fp32 ones
@@ -323,7 +336,7 @@ def plan(desc, driver, precision="auto", blocks_to_swap=-1, free_gb=None, margin
         need, per_block = mem[p]
         if need <= budget or per_block <= 0 or cap <= 0:
             return 0
-        return min(cap, math.ceil((need - budget) / per_block))
+        return min(cap, swap_blocks_for(desc, per_block, need - budget))
 
     if precision == "auto":
         if not mem:
@@ -338,13 +351,13 @@ def plan(desc, driver, precision="auto", blocks_to_swap=-1, free_gb=None, margin
         if swappable and cap > 0:
             p = swappable[0]
             n = swap_for(p)
-            if mem[p][0] - n * mem[p][1] <= budget:
+            if mem[p][0] - swap_saved_gb(desc, mem[p][1], n) <= budget:
                 return p, n if blocks_to_swap < 0 else blocks_to_swap, f"{p} + {n} swapped blocks fit {free_gb:.1f} GB"
         p = "nf4" if "nf4" in offered else offered[-1]
         # a 4-bit base that streams (MiniMax H3 Image's NF4 ring) takes the blocks it needs: with none, a 12 GB card
         # planned 12.8 GB, spilled into system memory on Windows and trained at 40 s/step; 16 swapped ran 4.1 (#354)
         n = swap_for(p)
-        if n and mem[p][0] - n * mem[p][1] <= budget:
+        if n and mem[p][0] - swap_saved_gb(desc, mem[p][1], n) <= budget:
             return p, n if blocks_to_swap < 0 else blocks_to_swap, f"{p} + {n} swapped blocks fit {free_gb:.1f} GB"
         return (p, n if blocks_to_swap < 0 else (blocks_to_swap if n else 0),
                 f"nothing fits {free_gb:.1f} GB comfortably: {p}, the smallest base"
@@ -371,7 +384,7 @@ def fits(desc, precision, blocks_to_swap, free_gb, megapixels=1.0, pictures=1, m
         return True
     v = desc.train_memory[precision]
     extra = batch_extra(desc, megapixels, pictures)
-    return _peak(v, megapixels) + extra - max(0, blocks_to_swap) * v[1] <= free_gb - margin_gb
+    return _peak(v, megapixels) + extra - swap_saved_gb(desc, v[1], max(0, blocks_to_swap)) <= free_gb - margin_gb
 
 
 def share_shortfall(desc, driver, precision, blocks_to_swap, megapixels, free_gb=None, margin_gb=0.5):
@@ -382,7 +395,7 @@ def share_shortfall(desc, driver, precision, blocks_to_swap, megapixels, free_gb
     need, per_block = _peak(desc.train_memory[precision], megapixels), desc.train_memory[precision][1]
     if free_gb is None:
         free_gb = free_vram_gb()
-    left = need - max(0, blocks_to_swap) * per_block
+    left = need - swap_saved_gb(desc, per_block, max(0, blocks_to_swap))
     if left <= free_gb - margin_gb:
         return ""
     return (f"needs ~{left:.1f} GB with {max(0, blocks_to_swap)} blocks swapped at {megapixels:.2f} MP, "

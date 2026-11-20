@@ -41,11 +41,13 @@ python -m fizgig.scripts.fetch_models --family minimax_image
 
 Base precision **Auto** picks int8 (the checkpoint's own storage) when it fits, else 4-bit, and swaps blocks as needed. The 2048×2048 preview sets the peak, so training size barely changes it. Measured on an RTX 5090 (rank 8, the training adapter on):
 
-| Base | Training, 0.25 MP / 1 MP | Peak with the preview | Each swapped block saves |
+| Base | Training, 0.25 MP / 1 MP | Peak with the preview | Each swapped block past the first 2 saves |
 |---|---|---|---|
-| int8 | 21.0 / 21.7 GB | 22.7 GB | 0.29 GB |
-| 4-bit (NF4) | 11.3 / 11.9 GB | 12.8 GB | 0.15 GB |
-| 4-bit HQQ (pick it yourself) | 17.0 GB at 1 MP | 17.3 GB | 0.22 GB |
+| int8 | 21.0 / 21.7 GB | 22.7 GB | 0.36 GB |
+| 4-bit (NF4) | 11.3 / 11.9 GB | 12.8 GB | 0.18 GB |
+| 4-bit HQQ (pick it yourself) | 17.0 GB at 1 MP | 17.3 GB | 0.26 GB |
+
+Swapped blocks stream to the card through two slots, so the first 2 swapped blocks save nothing; Auto counts that.
 
 On a card of 40 GB or more, a compiled int8 run trains without gradient checkpointing, about 1.5× faster (23.4 GB at 0.25 MP, 30.6 GB at 1 MP). Compile Blocks on its own adds about 10% at 1 MP and little at 0.25 MP, so Auto compiles only long runs.
 

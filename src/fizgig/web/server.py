@@ -450,19 +450,30 @@ def subject_trigger(folder, ext=".txt") -> str:
     return folder_trigger(folder).rstrip(",").strip() or (mp.caption_trigger(folder, ext) if folder else "")
 
 
-def set_folder_trigger(folder, word):
+def set_folder_trigger(folder, word, field="folder_triggers"):
     k = _trigger_key(folder)
     if not k:
         return
     with _lock:
         d = _read_json(LAST_USED_FILE)
-        m = d.get("folder_triggers") if isinstance(d.get("folder_triggers"), dict) else {}
+        m = d.get(field) if isinstance(d.get(field), dict) else {}
         m[k] = str(word or "").strip()
-        d["folder_triggers"] = m
+        d[field] = m
         try:
             _write_json(LAST_USED_FILE, d)
         except OSError:
             pass
+
+
+def folder_lora_name(folder) -> str:
+    """The LoRA name last used with this training folder (#386): picking the folder again brings it back."""
+    m = load_last_used().get("folder_lora_names")
+    return str((m if isinstance(m, dict) else {}).get(_trigger_key(folder), "") or "")
+
+
+def set_folder_lora_name(folder, name):
+    if str(name or "").strip():
+        set_folder_trigger(folder, name, "folder_lora_names")
 
 
 # the Preferences settings Reset to defaults puts back (the model files are never reset)
@@ -2204,6 +2215,7 @@ def _start_one(family_key, values, image_folder, resume, ft_continue, note, mode
     save_state({"last_run": {"family": family_key, "values": values, "image_folder": image_folder}})
     if _startup["offer"] or load_state().get("interrupted"):
         _startup_done()                              # a run is starting: the start-up question is answered
+    set_folder_lora_name(image_folder, inputs["LORA_NAME"])   # picking this folder again brings the name back (#386)
     hid = history.start("web", family_key, inputs["LORA_NAME"], out_dir, image_folder,
                         None if recaching else dict(values), resume=resuming, carry=carry)
     with _lock:
@@ -3601,6 +3613,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(st)
         if path == "/api/trigger":                   # the training folder's trigger word
             return self.json({"word": folder_trigger((qs.get("folder") or [""])[0])})
+        if path == "/api/folder_name":               # the LoRA name last used with this training folder (#386)
+            return self.json({"name": folder_lora_name((qs.get("folder") or [""])[0])})
         if path == "/api/fetch":
             return self.json(_fetch_status())
         if path == "/api/pod/dataset":                # Start tab, on a pod: the training-folder download (#308)
@@ -4702,6 +4716,7 @@ class Handler(BaseHTTPRequestHandler):
                                       "one another LoRA name, or they'd overwrite each other's files." if n else
                                       f"The run going now saves as {lora} in that folder - give this one another LoRA "
                                       "name."}, 400)
+                set_folder_lora_name(folder, lora)       # picking this folder again brings the name back (#386)
                 if editing:
                     was = (webqueue.get(editing) or {}).get("values") or {}
                     if was.get("__continue"):            # a queued Continue stays one: on from the same run's save
@@ -5039,6 +5054,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"ok": True})
             if path == "/api/trigger":
                 set_folder_trigger(str(b.get("folder") or ""), str(b.get("word") or ""))
+                return self.json({"ok": True})
+            if path == "/api/folder_name":
+                set_folder_lora_name(str(b.get("folder") or ""), str(b.get("name") or ""))
                 return self.json({"ok": True})
             if path == "/api/captioners/download":    # one captioner's files now, rather than on first use
                 return self.json(captions.download_captioner(str(b.get("key") or ""), load_prefs()))

@@ -179,6 +179,27 @@ function showTrigger(word) {
 }
 const saveTriggerSoon = debounce((word) => api("/api/trigger", {folder: S.imageFolder || "", word}).catch(() => {}), 500);
 
+// the LoRA name follows the training folder (#386): picking a folder brings back the name last used with it (typed,
+// started or queued), or a folder never named gets its own folder's name. A name you typed for no folder in
+// particular is left alone: only the model's default name, none, or one that came with the folder before is replaced
+const saveFolderNameSoon = debounce((folder, name) => name && api("/api/folder_name", {folder, name}).catch(() => {}), 500);
+const folderBase = (p) => String(p || "").replace(/[\\/]+$/, "").split(/[\\/]/).pop()
+  .replace(/[<>:"|?*]/g, "_").replace(/^[.\s]+|[.\s]+$/g, "");
+async function folderNameFollow(was) {
+  const now = S.imageFolder;
+  if (!now || !["draft", "queue"].includes(ctxKind())) return;
+  const get = (f) => api("/api/folder_name?folder=" + encodeURIComponent(f)).then((r) => r.name || "").catch(() => "");
+  const [mine, before] = await Promise.all([get(now), was ? get(was) : ""]);
+  if (S.imageFolder !== now) return;                        // another folder picked meanwhile
+  const cur = String(S.values.LORA_NAME || "").trim();
+  if (cur && cur !== before && cur !== folderBase(was) && cur !== String(defaults().LORA_NAME || "")) return;
+  const name = mine || folderBase(now);
+  if (!name || name === cur) return;
+  S.values.LORA_NAME = name;
+  syncInputs(["LORA_NAME"]);
+  refreshStateSoon(); saveStateSoon();
+}
+
 function defaults() {
   const v = {};
   for (const s of S.fam.form.sections) for (const r of s.rows) if (r.kind !== "note" && r.kind !== "shown") {
@@ -888,6 +909,8 @@ function onValue(r, val) {
        "FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_ON", "SAMPLE_EVERY_N_EPOCHS", "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH",
        "SAMPLE_EVERY_AFTER", "FAMILY_PREVIEW_LOOK", "SAMPLE_CHECKPOINT"].includes(r.key))) sampleLiveSoon();
   if (r.key === "CAPTION_TRIGGER_WORD") { S.trigger = String(val).trim(); $("capTrigger").value = S.trigger; saveTriggerSoon(S.trigger); }
+  if (r.key === "LORA_NAME" && S.imageFolder && ["draft", "queue"].includes(ctxKind()))
+    saveFolderNameSoon(S.imageFolder, String(val || "").trim());
   const extra = r.sets && r.sets[val];            // a kind of training that also sets others (Fine-tune's LR)
   // Fine-tune sets Adafactor (#312): the LoRA optimizer is kept, and comes back when another kind is picked
   const ftOpt = (k) => !!(r.sets && r.sets[k] && "OPTIMIZER_TYPE" in r.sets[k]);
@@ -12337,7 +12360,7 @@ function wire() {
   const setFolder = () => {
     const was = S.imageFolder;
     S.imageFolder = folder.value.trim(); loadTrigger(); refreshStateSoon(); saveStateSoon();
-    if (S.imageFolder !== was) lookForget();
+    if (S.imageFolder !== was) { lookForget(); folderNameFollow(was); }
   };
   folder.addEventListener("change", setFolder);
   $("uploadFiles").addEventListener("change", (e) => { uploadFiles([...e.target.files]); e.target.value = ""; });
@@ -12563,17 +12586,21 @@ function wire() {
         const q = (S.run && S.run.web_queue && S.run.web_queue.items) || [], live = S.run.running || S.run.state === "starting";
         const before = r.position > 1 ? (q[r.position - 2] || {}).lora : live ? S.run.lora : "";
         const eta = r.position === 1 && live && S.run.progress && S.run.progress.eta;
+        // added: the form stays your own setup, Add to queue with it, so the next run is a folder and a name away
+        // (#386: it used to become the queued run, and only the pill led back to queue another)
+        // position 0: nothing was training, so the server started it straight away
         showProblems([], ed ? `Saved: queued run ${r.position} has these settings now.` :
-          `Added to the queue as number ${r.position}` + (before ? `: it starts after ${before}` + (eta ? ` (about ${eta})` : "") :
-          ": it starts as soon as nothing else is training") + ".");
+          (r.position ? `Added to the queue as number ${r.position}` + (before ? `: it starts after ${before}` +
+            (eta ? ` (about ${eta})` : "") : ": it starts as soon as nothing else is training") + ". " +
+            "To change this one, use the pill or Edit in the queue. " : "Nothing else was training, so it has started. ") +
+          "To queue another, pick its training folder and name, then Add to queue again.");
         await pollRun();
         const queued = ((S.run.web_queue || {}).items || []).some((i) => i.id === r.id);
         if (ed && queued) {                                   // saved: still that queued run, as it now is
           queueEditing({...ed, n: r.position || ed.n});
           $("queueEditText").replaceChildren(el("b", {text: `Saved: queued run ${r.position || ed.n}`}),
             el("span", {text: (ed.lora ? `: ${ed.lora}. ` : ". ") + "Change more and Save to queue again, or leave with the pill."}));
-        } else if (!ed && queued) await ctxSwitch({kind: "queue", id: r.id});   // added: the tabs show that job now
-        else if (ed) queueEditing(null);                      // it started meanwhile: it is the run now
+        } else if (ed) queueEditing(null);                    // it started meanwhile: it is the run now
       } else {
         showProblems(r.problems || (r.error ? [r.error] : []));
         if (ed) $("queueEditText").replaceChildren(el("b", {text: `Not saved: `}),   // the bar is where you pressed it
@@ -12587,10 +12614,12 @@ function wire() {
   });
   $("queueEditSave").addEventListener("click", () => $("btnQueue").click());
   $("btnQueueCancel").addEventListener("click", async () => {
+    // the queued run stays as it was, and the form goes back to your own setup (#386: Cancel edit used to stay on
+    // the queued run, its bar still up)
     const c = S.ctx || {};
-    if (c.kind === "queue") await ctxSwitch({kind: "queue", id: c.id});    // its settings as queued, back in the form
+    if (c.kind === "queue") await ctxSwitch({kind: "draft"});
     else queueEditing(null);
-    $("runStatus").textContent = "Edit cancelled: the queued run is as it was.";
+    $("runStatus").textContent = "Edit cancelled: the queued run is as it was, and the form is your own setup again.";
   });
   $("webQueueStart").addEventListener("click", () => api("/api/queue/start", {}).then(pollRun)
     .catch((e) => { $("runStatus").textContent = e.message; }));

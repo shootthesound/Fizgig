@@ -207,6 +207,7 @@ def _train(key, build, monkeypatch, swap, batch, steps=3, precision="bf16"):
     torch.manual_seed(0)
     built = build(monkeypatch)
     dit, item = built[0], built[1]
+    dit.requires_grad_(False)                              # frozen, as every driver's loader returns the base
     own_swap = built[2] if len(built) > 2 else None        # a family whose model sets its swap up itself (H3)
     g = torch.Generator().manual_seed(1)
     data = [[item(g) for _ in range(batch)] for _ in range(steps)]
@@ -323,3 +324,83 @@ def test_h3_ring_trains_as_with_no_swap(kind, swap, batch, monkeypatch):
             assert (a is None) == (b is None), (step, i)
             if a is not None:
                 assert torch.allclose(a, b, atol=1e-5, rtol=1e-4), (step, i, (a - b).abs().max())
+
+
+def _card_weight_bytes(dit):
+    """Frozen bytes on the card: every unique storage the model reaches (parameters, buffers, packed codes, bnb's
+    quantisation state) plus an H2D ring's own slots - what block swap is there to save."""
+    found = []
+    ring = getattr(dit, "_h2d_offloader", None)
+    found += [t for t in (getattr(ring, "gpu_data", None) or []) if torch.is_tensor(t)]
+    for m in dit.modules():
+        for v in list(m._parameters.values()) + list(m._buffers.values()):
+            if v is None:
+                continue
+            found.append(v)
+            qs = getattr(v, "quant_state", None)
+            if qs is not None:
+                found += [qs.absmax, qs.code]
+        found += [v for k, v in m.__dict__.items() if torch.is_tensor(v)]
+    st = {}
+    for t in found:
+        if on_card(t) and not t.requires_grad:
+            us = t.untyped_storage()
+            st[us.data_ptr()] = us.nbytes()
+    return sum(st.values())
+
+
+def _peak_card_bytes(key, build, monkeypatch, swap):
+    """The most frozen bytes on the card at any block's forward (recomputes included) over one training step."""
+    drv = get_family(key).load_driver()
+    torch.manual_seed(0)
+    built = build(monkeypatch)
+    dit, item, own_swap = built[0], built[1], (built[2] if len(built) > 2 else None)
+    dit.requires_grad_(False)
+    blocks = max((m for m in dit.modules() if isinstance(m, torch.nn.ModuleList)), key=len)
+    lat, cond = item(torch.Generator().manual_seed(1))
+    with simulated_gpu():
+        if swap and own_swap:
+            own_swap(dit, swap)
+        elif swap:
+            drv.enable_block_swap(dit, swap, "cuda")
+        else:
+            dit.to("cuda")
+        drv.enable_gradient_checkpointing(dit, True)
+        net = FamilyLoRA(dit, drv, device="cuda")
+        net.add_trainable(4, 4)
+        for p in net.parameters():
+            p.data = p.data.to("cuda")
+        seen = []
+        hooks = [b.register_forward_pre_hook(lambda m, a: seen.append(_card_weight_bytes(dit))) for b in blocks]
+        dit.train()
+        loss = drv.training_loss(dit, lat.to("cuda"), {k: v.to("cuda") if torch.is_tensor(v) else v
+                                                        for k, v in cond.items()}, torch.Generator().manual_seed(2))
+        (loss[0] if isinstance(loss, tuple) else loss).backward()
+        for h in hooks:
+            h.remove()
+    return max(seen)
+
+
+@pytest.mark.parametrize("mech", ["exchange", "krea2", "parking", "ring-int8", "ring-nf4", "ring-hqq"])
+def test_card_memory_saved_per_swapped_block(mech, monkeypatch):
+    """What Auto's planner relies on (peak minus GB per swapped block), at the mechanism level: the exchange offloaders
+    (the shared one, Krea 2's) free a whole block per swapped block; H3's parking frees one fewer (a block is always
+    in flight); an H2D ring frees nothing for its first ring_size (2) swapped blocks - their card slots cost a block
+    each - then the same for each one after. (H3 Image's planner figures are a straight line through 10 / 20 swapped
+    blocks, so 1-9 swapped plan on memory a ring doesn't give back: noted for the planner, not changed here.)"""
+    key, build = {"exchange": ("moss_image", _moss), "krea2": ("krea2", _krea2), "parking": ("minimax", _h3),
+                  "ring-int8": ("minimax", _h3_ring("int8")), "ring-nf4": ("minimax", _h3_ring("nf4")),
+                  "ring-hqq": ("minimax", _h3_ring("hqq"))}[mech]
+    base = _peak_card_bytes(key, build, monkeypatch, 0)
+    saved = {k: base - _peak_card_bytes(key, build, monkeypatch, k) for k in (1, 2, 3, 4)}
+    if mech in ("exchange", "krea2", "parking"):
+        lost = 1 if mech == "parking" else 0
+        unit = saved[4] / (4 - lost)
+        assert unit > 0
+        for k, v in saved.items():
+            assert v == pytest.approx((k - lost) * unit, rel=0.05, abs=unit * 0.05), (mech, saved)
+    else:
+        unit = saved[4] - saved[3]                         # a slot can cost a little more than its block (padding)
+        assert unit > 0
+        assert saved[1] <= 0.05 * unit and saved[2] <= 0.05 * unit, (mech, saved)
+        assert saved[3] - saved[2] == pytest.approx(unit, rel=0.05), (mech, saved)

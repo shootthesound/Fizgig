@@ -411,17 +411,20 @@ class ModelOffloader(Offloader):
         return True
 
     def _relayout(self, to_end: bool) -> int:
-        """Every swapped pair put where a forward starts (the first blocks on the card, the last ones off it) or
-        where it ends (to_end: the reverse, where a backward starts). A pair already there is left alone. -> pairs
-        moved."""
+        """The blocks put where a forward starts (the first n-k on the card, the last k off it) or where it ends
+        (to_end: the last n-k on the card, where a backward starts). Each block on the card that shouldn't be swaps
+        with one off it that should be - the card always holds n-k, so they pair up exactly. Pairing by position
+        (early block i with late block n-k+i) left blocks out of place once more than half were swapped: the pairs
+        overlap there, and a batch above 1 then met "mat2 is on cpu" (found by the simulated-GPU checks). -> swaps."""
         for idx in list(self.futures.keys()):
             self._wait_blocks_move(idx)
         n, k, moved = self.num_blocks, int(self.blocks_to_swap or 0), 0
-        for i in range(k):
-            early, late = self._blocks[i], self._blocks[n - k + i]
-            to_cpu, to_card = (early, late) if to_end else (late, early)
-            if self._on_card(to_card):
-                continue
+        want = set(range(k, n)) if to_end else set(range(n - k))
+        on = [self._on_card(b) for b in self._blocks]
+        leave = [i for i in range(n) if on[i] and i not in want]
+        come = [i for i in range(n) if not on[i] and i in want]
+        for i_cpu, i_card in zip(leave, come):
+            to_cpu, to_card = self._blocks[i_cpu], self._blocks[i_card]
             event = self.swap_weight_devices(to_cpu, to_card)
             if self.cuda_available and event is not None:
                 torch.cuda.current_stream().wait_event(event)

@@ -402,7 +402,10 @@ PREF_DEFAULTS = {"lora_output_dir": "output_loras", "profiles_dir": "user_data/p
                  "studio_outputs_dir": "Studio_Outputs",
                  "runpod_stop_when_done": "0", "inference_blocks_to_swap": "Auto (detect from GPU)",
                  "inference_int8": "0" if ROCM_LAUNCH else "1", "inference_sageattention": "0", "lan_discovery": "1",
-                 "update_check": "1"}
+                 "update_check": "1",
+                 # Choose…: the computer's own Open / folder window, or Fizgig's chooser (its buttons jump to the
+                 # training and output folders). Off on Windows by default (#387), on elsewhere
+                 "native_file_window": "0" if sys.platform == "win32" else "1"}
 
 
 LAST_USED_FILE = user_data.LAST_USED_FILE           # the training folder, each folder's trigger word
@@ -464,7 +467,8 @@ def set_folder_trigger(folder, word):
 
 # the Preferences settings Reset to defaults puts back (the model files are never reset)
 SETTING_PREFS = ("lora_output_dir", "profiles_dir", "cache_dir", "studio_outputs_dir", "input_lora_dir", "input_ref_dir",
-                 "inference_blocks_to_swap", "inference_int8", "inference_sageattention", "lan_discovery", "update_check")
+                 "inference_blocks_to_swap", "inference_int8", "inference_sageattention", "lan_discovery", "update_check",
+                 "native_file_window")
 
 
 def load_prefs() -> dict:
@@ -4062,10 +4066,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/browse":
             return self._browse((qs.get("path") or [""])[0])
         if path == "/api/native_pick":              # the computer's own Open / folder window (this machine only)
-            from fizgig.web import native_pick
-            if not self._local_viewer():
-                return self.json({"unavailable": True})
-            return self.json(native_pick.pick((qs.get("path") or [""])[0], (qs.get("dir") or ["1"])[0] == "1"))
+            return self._native_pick(qs)
         if path == "/api/samples":
             return self._samples((qs.get("dir") or [""])[0], (qs.get("run") or [""])[0])
         if path == "/api/style":                    # the gallery's Style score (resumes the scorer when on)
@@ -4194,6 +4195,14 @@ class Handler(BaseHTTPRequestHandler):
         parent = os.path.dirname(target)
         return self.json({"path": target, "parent": parent if parent != target else drives.DRIVES,   # a root: Up = the drives
                           "dirs": dirs, "files": files[:2000], "places": self._places()})
+
+    def _native_pick(self, qs):
+        """Choose…'s window: the computer's own, on this machine with Preferences' option on (off by default on
+        Windows, #387); unavailable = the page shows Fizgig's chooser."""
+        from fizgig.web import native_pick
+        if not self._local_viewer() or str(load_prefs().get("native_file_window")) != "1":
+            return self.json({"unavailable": True})
+        return self.json(native_pick.pick((qs.get("path") or [""])[0], (qs.get("dir") or ["1"])[0] == "1"))
 
     def _places(self):
         from fizgig.web import drives
@@ -4987,7 +4996,7 @@ class Handler(BaseHTTPRequestHandler):
                                                                   if k in SETTING_PREFS}}
                 if "inference_int8" in ch:
                     ch["inference_int8"] = "1" if ch["inference_int8"] in (True, "1", 1) else "0"
-                for k in ("lan_discovery", "update_check", "qt_disable_gpu", "inference_sageattention",
+                for k in ("lan_discovery", "update_check", "qt_disable_gpu", "inference_sageattention", "native_file_window",
                           *(k for k in ch if k in autosave_keys)):
                     if k in ch:
                         ch[k] = "1" if ch[k] in (True, "1", 1) else "0"

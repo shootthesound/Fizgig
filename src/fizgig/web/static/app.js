@@ -1117,6 +1117,7 @@ function renderPrefs() {
   if (qt) host.append(qt);                 // between Theme (above) and Web UI
   host.append(webPortCard());
   if (!S.pod) host.append(networkCard());
+  if (!S.onPod && !pageIsElsewhere()) host.append(fileWindowCard());
   host.append(dataFolderCard());
   host.append(outputFolderCard());
   host.append(foldersCard());
@@ -1768,6 +1769,24 @@ function firewallRow() {
   };
   api("/api/lan/firewall").then(show).catch(() => {});
   return box;
+}
+
+// Choose…: Fizgig's own chooser or this computer's Open window (prefs native_file_window; off by default on Windows,
+// #387). Shown only on the machine running Fizgig: a pod or another device always gets Fizgig's chooser
+function fileWindowCard() {
+  const on = el("input", {type: "checkbox"});
+  on.checked = String(S.set.native_file_window) === "1";
+  on.addEventListener("change", () => api("/api/prefs", {changes: {native_file_window: on.checked}})
+    .then(() => { S.set.native_file_window = on.checked ? "1" : "0"; nativePickOff = false; })
+    .catch((e) => { on.checked = !on.checked; showProblems([e.message]); }));
+  return el("div", {class: "section-card"}, el("div", {class: "card-title"}, el("span", {text: "Choose… buttons"})),
+    el("div", {class: "card-desc", text: "Which window opens when you press Choose… to pick a file or folder."}),
+    el("div", {class: "card-content"},
+      el("label", {class: "checkbox-label"}, on, " Use this computer's own Open window"),
+      el("div", {class: "field-hint", text: "Off: Fizgig's chooser, with buttons that go straight to your training " +
+        "data, your trained LoRAs and the Fizgig folder. On: the Open and folder windows of Windows (or " +
+        "your desktop), with its own shortcuts. Off by default on Windows. A pod, or this page opened from another " +
+        "device, always uses Fizgig's chooser."})));
 }
 
 // what Fizgig does on the network by itself (issue #236): finding your other computers and being found by them (a
@@ -10736,10 +10755,11 @@ function playTogether(btn, ids) {
 
 // ---- file picker -------------------------------------------------------------------------------------------
 let pickDone = null, pickDir = false, nativePickOff = false;
-// On the machine running Fizgig: the computer's own Open / folder window. Cancel there = nothing; no window to be
-// had (no tkinter, no screen, another computer, an error) = Fizgig's own picker below.
+// On the machine running Fizgig, with Preferences' "Use this computer's own Open window" on (off by default on
+// Windows, #387): the computer's own Open / folder window. Cancel there = nothing; no window to be had (no tkinter,
+// no screen, another computer, an error) = Fizgig's own picker below.
 async function pick(start, dirOnly, done) {
-  if (!nativePickOff && !pageIsElsewhere()) {
+  if (!nativePickOff && !pageIsElsewhere() && String((S.set || {}).native_file_window) === "1") {
     try {
       const r = await api(`/api/native_pick?dir=${dirOnly ? 1 : 0}&path=${encodeURIComponent(start || "")}`);
       if (r && r.path) { done(r.path); return; }

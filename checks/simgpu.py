@@ -172,7 +172,24 @@ class _Ops(TorchDispatchMode):
             raise SimDeviceMismatch(f"Expected all tensors to be on the same device, but {name} got one on cpu "
                                     f"({tuple(cpu.shape) if cpu is not None else '?'}, "
                                     f"{cpu.dtype if cpu is not None else '?'}) and others on cuda:0")
-        out = func(*args, **kwargs)
+        if name.split(".")[0] in ("aten", "prim", "prims") or not ins:
+            out = func(*args, **kwargs)
+        else:
+            # a library's own op (bitsandbytes' dequantize): its Python body runs here with the simulation's modes off,
+            # so a torch.empty(..., device=A.device) inside it would ask for the card - the REAL card on a machine that
+            # has one, handing a CPU kernel a GPU address. So it runs with both layers back on (every factory and op
+            # inside it simulated like any other code), its kernel reached by redispatching below the Python key -
+            # with its inputs' own keys, as torch would - so the op itself isn't caught here again.
+            keys = torch._C._dispatch_keys(ins[0])
+            for t in ins[1:]:
+                keys = keys | torch._C._dispatch_keys(t)
+            below = keys & torch._C._dispatch_keyset_full_after(torch._C.DispatchKey.Python)
+            with _Fn(), self:
+                out = func.redispatch(below, *args, **kwargs)
+        for t in _tensors(out):
+            if _REAL_DEVICE(t).type != "cpu":
+                raise RuntimeError(f"the simulated card made a real {_REAL_DEVICE(t)} tensor in {name}: the simulation "
+                                   "must stay on the CPU")
         if name.startswith(("aten.copy_", "aten.set_")):
             return out                             # the destination keeps its place
         card = (True in where) if big else any(on_card(t) for t in ins)
@@ -289,7 +306,6 @@ def simulated_gpu(card_gb=24.0):
         mock.patch.object(torch.cuda, "empty_cache", lambda: None),
         mock.patch.object(torch.cuda, "memory_allocated", lambda *a: 0),
         mock.patch.object(torch.cuda, "mem_get_info", lambda *a: (total, total)),
-        mock.patch("fizgig.modules.offloading.ThreadPoolExecutor", _Inline),
         # where a tensor is, and moving it: on the tensor class, so the backward pass sees it too
         mock.patch.object(torch.Tensor, "device", property(_device)),
         mock.patch.object(torch.Tensor, "is_cuda", property(_is_cuda)),
@@ -309,9 +325,15 @@ def simulated_gpu(card_gb=24.0):
     from torch.nn import attention as _att
     real_kernel = _att.sdpa_kernel
     any_kernel = lambda *a, **k: contextlib.nullcontext()
+    import fizgig.modules.offloading  # noqa: F401 - the shared offloader, loaded so its mover is caught below
     for mod in list(sys.modules.values()):
-        if getattr(mod, "__name__", "").startswith("fizgig.") and getattr(mod, "sdpa_kernel", None) is real_kernel:
+        if not getattr(mod, "__name__", "").startswith("fizgig."):
+            continue
+        if getattr(mod, "sdpa_kernel", None) is real_kernel:
             patches.append(mock.patch.object(mod, "sdpa_kernel", any_kernel))
+        # every offloader's mover thread (the shared one, Krea 2's ...) runs inline, in program order
+        if getattr(mod, "ThreadPoolExecutor", None) is concurrent.futures.ThreadPoolExecutor:
+            patches.append(mock.patch.object(mod, "ThreadPoolExecutor", _Inline))
     with contextlib.ExitStack() as stack:
         for p in patches:
             stack.enter_context(p)

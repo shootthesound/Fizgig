@@ -7,6 +7,10 @@ import os as _os
 # The Windows builds' own switch is utils.ort_telemetry.off(), called where onnxruntime loads.
 _os.environ.setdefault("ORT_DISABLE_TELEMETRY", "1")
 _os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+# CPU face work (detection, embedding) stays off every core: ORT's OpenMP kernels ignore intra_op_num_threads, so
+# the cap goes here, before numpy / torch / onnxruntime first import OpenMP (matches face_utils.FACE_CPU_THREADS,
+# the per-session cap). An existing value wins.
+_os.environ.setdefault("OMP_NUM_THREADS", str(min(8, _os.cpu_count() or 8)))
 # torch.compile's on-disk cache (compiled kernels, keyed by GPU, torch version and code) on a pod's persistent volume:
 # its default is /tmp on the container disk, which a restart, Pause / Resume or Move wipes, so every resume compiled
 # from nothing. On a PC the default (%TEMP% / /tmp) already survives between runs. An existing value wins.

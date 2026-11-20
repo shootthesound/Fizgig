@@ -3134,6 +3134,7 @@ async function likenessShow(dir, items, run, view) {
   $("likBtn").style.display = d.available ? "" : "none";
   const on = d.baselines.length === 3;
   $("likStatus").textContent = on ? "🎯 " + (d.status || "") : "";
+  $("likResume").style.display = on && d.resumable ? "" : "none";
   const pics = items.filter((it) => LIK_PICS.test(it.name));
   // the trend: the shown run's epochs, each the mean of its previews' scores
   const by = {};
@@ -3164,7 +3165,9 @@ async function likenessShow(dir, items, run, view) {
   $("likPeak").textContent = real ?
     `Your ${real.n} training photos score ${pc(real.median)} against the 3 reference photos (most between ` +
     `${pc(real.p25)} and ${pc(real.p75)}). A preview there looks as much like the person as a real photo does - ` +
-    `nothing reaches 100%, real photos don't either.` : adaPeak(d.embedder);
+    `nothing reaches 100%, real photos don't either.` : d.resumable ?
+    `Scoring stopped early - "Resume" finishes it; your photos' top is not measured yet.` :
+    adaPeak(d.embedder);
   // the best epoch, and the mean over every trained epoch so far (epoch 0 - the model before training - left out)
   const trained = avgs.filter((v, i) => epochs[i] > 0);
   const mean = trained.length ? trained.reduce((a, b) => a + b, 0) / trained.length : null;
@@ -12422,6 +12425,13 @@ function wire() {
   $("btnStart").addEventListener("click", () => start("/api/start"));
   $("galleryRun").addEventListener("change", () => { S.galleryRun = $("galleryRun").value; loadGallery(); });
   $("likBtn").addEventListener("click", likenessPicker);
+  $("likResume").addEventListener("click", async () => {
+    const d = S.lik.data || {};
+    $("likResume").style.display = "none";
+    $("likStatus").textContent = "🎯 Starting…";
+    try { await likenessSet(d.baselines || []); }
+    catch (e) { $("likStatus").textContent = "🎯 " + (e.message || "couldn't start"); }
+  });
   // the pill can be dragged anywhere on a wide window (kept in this browser; a double-click puts it back). A press
   // that didn't move it opens its list. A narrow window or a phone keeps it where it is
   {

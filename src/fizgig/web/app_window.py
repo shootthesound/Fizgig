@@ -468,9 +468,10 @@ def _start_server(port, key):
     con = os.path.join(os.path.dirname(exe), "python.exe")
     if os.name == "nt" and os.path.basename(exe).lower() == "pythonw.exe" and os.path.isfile(con):
         exe = con
-    return subprocess.Popen([exe, os.path.join(BASE_DIR, "fizgig.py"), "--web", "--port",
-                             str(port)], cwd=BASE_DIR, env=env, stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL, **kw)
+    with open(user_file("web_stdout.log"), "ab") as out:  # the server's prints (likeness/faces/runs) land here
+        return subprocess.Popen([exe, os.path.join(BASE_DIR, "fizgig.py"), "--web", "--port",
+                                 str(port)], cwd=BASE_DIR, env=env, stdout=out,
+                                stderr=subprocess.STDOUT, **kw)
 
 
 def quit_text(busy) -> str:

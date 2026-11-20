@@ -75,6 +75,34 @@ def _write(samples_dir, run, names, status, scores, meta=None):
         pass
 
 
+def _write_live(samples_dir, run, gen, names, status, scores, meta=None):
+    """A run-file write made only while this generation is still the current scorer; the check and the atomic
+    replace share _lock, so a start()/clear racing the write cannot leave a stale file behind."""
+    with _lock:
+        r = _runs.get((samples_dir, run))
+        if r is None or r["gen"] != gen:
+            return False
+        _write(samples_dir, run, names, status, scores, meta)
+    return True
+
+
+def _previews_unscored(samples_dir, run, scored):
+    """Whether the folder holds preview pictures beyond the file's scores (a cheap poll-time look)."""
+    try:
+        files = [f for f in os.listdir(samples_dir) if f.lower().endswith(PICS) and _run_of(f) == run]
+    except OSError:
+        return False
+    return len(files) > len(scored)
+
+
+def _keep_partial(samples_dir, run, gen, meta, p):
+    """The measure thread's partial-result note into the worker's meta (the loop writes the file with its next
+    status); a dead generation drops it, since its meta goes nowhere."""
+    with _lock:
+        r = _runs.get((samples_dir, run))
+        if r is not None and r["gen"] == gen:
+            meta["real_partial"] = p
+
 def _owner(samples_dir, run):
     return os.path.join(samples_dir, f"gallery_{run}.owner")
 
@@ -113,19 +141,27 @@ def state(samples_dir, run, dataset_dir):
         d["status"] = ""
     if not names and run and dataset_dir:
         names = dataset_pick(dataset_dir)             # the training folder's photos, picked for another run of it
+    ok_status = not str(d.get("status", "")).startswith(("error", "cleared"))
+    previews_todo = _previews_unscored(samples_dir, run, d.get("scores") or {}) if len(names) == 3 else False
+    real_done = bool(isinstance(d.get("real"), dict) and d["real"].get("n"))
     if len(names) == 3 and run and not running and dataset_dir and os.path.isdir(samples_dir) \
-            and not str(d.get("status", "")).startswith("error"):     # a failed pick waits for a new one
+            and ok_status and ((not d) or                                # a brand-new run: the gallery opening asks for it
+            (d.get("embedder") and                                       # a file this scorer wrote keeps its work
+            (previews_todo or str(d.get("status", "")).startswith("loading the face model")))):
         try:
-            start(samples_dir, run, dataset_dir, names, remember=False)   # opening the gallery claims it
+            print(f"[likeness] AUTO-RESUME {run}: status={d.get('status', '')!r} "
+                  f"scores_in_file={len(d.get('scores') or {})} baselines={names}", flush=True)
+            start(samples_dir, run, dataset_dir, names, remember=False)   # a new run, or a consistent unfinished file
+            running = True
         except ValueError as e:
             d["status"] = f"error: {e}"
+    resumable = len(names) == 3 and not running and ok_status and (previews_todo or not real_done)
     thr = d.get("thresholds") if isinstance(d.get("thresholds"), dict) else None
     real = d.get("real") if isinstance(d.get("real"), dict) and d["real"].get("n") else None
     return {"baselines": names, "status": d.get("status", ""), "scores": d.get("scores") or {}, "run": run,
             "dataset": dataset_dir or "", "available": prep_jobs.faces_available(),
             "embedder": d.get("embedder_label") or "",
-            "thresholds": thr or {"match": 0.42, "borderline": 0.36}, "real": real}
-
+            "thresholds": thr or {"match": 0.42, "borderline": 0.36}, "real": real, "resumable": resumable}
 
 def _summary(vals):
     """{n, median, p25, p75, best} of the training photos' scores (what a real photo of the person scores)."""
@@ -150,11 +186,13 @@ def _dataset_sig(dataset_dir, names):
     return "|".join(out)
 
 
-def real_photos(dataset_dir, names, base, emb, log=None):
+def real_photos(dataset_dir, names, base, emb, log=None, cancel=None, resume=None, save=None):
     """How much the person's own training photos look like the 3 reference photos (each photo's mean similarity to
     them, the same measure as a sample's): the realistic top a preview can reach, since even real photos of the person
     never score 100%. The 3 themselves and photos with no face found are left out. Reuses a Look Filter scan made with
-    the same 3 photos and the same model (fizgig_look_scores.json); otherwise embeds each photo once (CPU)."""
+    the same 3 photos and the same model (fizgig_look_scores.json); otherwise embeds each photo once (CPU), keeping a
+    partial result through `save` and skipping the photos a previous pass already did (`resume`), so a kill continues
+    where it stopped; `cancel` (checked per photo) stands down a scorer that is no longer current."""
     import numpy as np
     from fizgig.dataset import prep
     from fizgig.face_utils import same_embedder
@@ -169,15 +207,33 @@ def real_photos(dataset_dir, names, base, emb, log=None):
                 return _summary(vals)
     except (OSError, ValueError, AttributeError):
         pass
-    vals = []
-    for i, p in enumerate(files, 1):
+    sigs = {}
+    for p in files:
+        try:
+            st = os.stat(p)
+            sigs[os.path.basename(p)] = f"{os.path.basename(p)}:{st.st_size}:{int(st.st_mtime)}"
+        except OSError:
+            pass
+    done, vals = [], []                    # processed photo sigs and their values (None = no face), aligned
+    if isinstance(resume, dict):
+        for s, v in zip(resume.get("sigs") or [], resume.get("vals") or []):
+            if s in sigs.values():
+                done.append(s)
+                vals.append(v)
+    have = set(done)
+    todo = [p for p in files if sigs[os.path.basename(p)] not in have]
+    for i, p in enumerate(todo, 1):
+        if cancel and cancel():
+            return None
         e = prep_jobs._embed(p, emb)
-        if e is not None:
-            vals.append(float(np.mean([float(np.dot(b, e)) for b in base])))
-        if log and (i % 5 == 0 or i == len(files)):
-            log(i, len(files))
-    return _summary(vals) if len(vals) >= 4 else None
-
+        done.append(sigs[os.path.basename(p)])
+        vals.append(None if e is None else float(np.mean([float(np.dot(b, e)) for b in base])))
+        if save and (len(done) % 25 == 0 or i == len(todo)):
+            save({"partial": True, "sigs": list(done), "vals": list(vals)})
+        if log and (i % 5 == 0 or i == len(todo)):
+            log(i, len(todo))
+    face_vals = [v for v in vals if v is not None]
+    return _summary(face_vals) if len(face_vals) >= 4 else None
 
 def start(samples_dir, run, dataset_dir, names, remember=True):
     """Score a run's previews against three photos from its training folder (names in that folder), and remember
@@ -230,24 +286,39 @@ def _worker(samples_dir, run, gen, baselines):
     import numpy as np
     from fizgig.face_utils import same_embedder
     names = [os.path.basename(b) for b in baselines]
+    print(f"[likeness] worker start: run={run} gen={gen} baselines={[os.path.basename(b) for b in baselines]}",
+          flush=True)
+    _t0 = time.time()
     key = (samples_dir, run)
-    _write(samples_dir, run, names, "loading the face model…", read(samples_dir, run).get("scores") or {})
+    measure_state = {}
+    old = read(samples_dir, run)
+    # the pre-load write carries the file's own result along: a kill in this phase leaves the file richer, not bare
+    carried = {k: old[k] for k in ("embedder", "embedder_label", "thresholds", "real", "real_sig", "real_partial")
+               if k in old}
+    _write_live(samples_dir, run, gen, names, "loading the face model…", old.get("scores") or {}, carried)
     emb, msg = prep_jobs.session_embedder(baselines, log=lambda m: print(m.replace("[faces]", "[likeness]"), flush=True))
     meta = {"embedder": emb.cache_id, "embedder_label": emb.label, "thresholds": dict(emb.thresholds)}
-    old = read(samples_dir, run)
+    print(f"[likeness] embedder ready: name={emb.name} cache_id={emb.cache_id!r} label={emb.label} "
+          f"in {time.time() - _t0:.1f}s", flush=True)
     # the same three photos AND the same embedder keep their scores (a file without one was ArcFace)
     same = sorted(old.get("baselines") or []) == sorted(names) and same_embedder(old.get("embedder"), emb.cache_id)
     scores = old["scores"] if same and isinstance(old.get("scores"), dict) else {}
     # the training photos' own range (real_photos), kept while the photos, the 3 and the model are the same
     dataset_dir = os.path.dirname(baselines[0])
     sig = _dataset_sig(dataset_dir, names)
+    print(f"[likeness] resume check: same={same} | file embedder={old.get('embedder')!r} vs now={emb.cache_id!r} | "
+          f"file baselines={old.get('baselines')} vs now={names} | kept scores={len(scores)} | "
+          f"file real={bool(old.get('real'))} sig_match={old.get('real_sig') == sig}", flush=True)
     if same and isinstance(old.get("real"), dict) and old.get("real_sig") == sig:
         meta.update(real=old["real"], real_sig=sig)
-    _write(samples_dir, run, names, "loading the face model…", scores, meta)
+    partial = old.get("real_partial") if same and "real" not in meta and isinstance(old.get("real_partial"), dict) \
+        else None
+    if not _write_live(samples_dir, run, gen, names, "loading the face model…", scores, meta):
+        return                       # a clear raced the model load: the file stays as the user left it
     base = [prep_jobs._embed(b, emb) for b in baselines]
     missing = [n for n, e in zip(names, base) if e is None]
     if missing:
-        _write(samples_dir, run, names, "error: no face found in " + ", ".join(missing), scores, meta)
+        _write_live(samples_dir, run, gen, names, "error: no face found in " + ", ".join(missing), scores, meta)
         with _lock:
             if _runs.get(key, {}).get("gen") == gen:
                 _runs.pop(key, None)
@@ -289,27 +360,39 @@ def _worker(samples_dir, run, gen, baselines):
             e = prep_jobs._embed(os.path.join(samples_dir, f), emb)
             scores[f] = None if e is None else round(float(np.mean([float(np.dot(b, e)) for b in base])), 4)
             if i % 2 == 0 or i == len(todo):
-                _write(samples_dir, run, names, f"scoring… {len(scores)}/{len(files)}", scores, meta)
+                _write_live(samples_dir, run, gen, names, f"scoring… {len(scores)}/{len(files)}", scores, meta)
         if not todo and "real_sig" not in meta and not measuring:
             # once the previews are scored: the training photos' own range, on a thread of its own, so a new preview
             # never waits for it (the two share the face model, its lock interleaving them a picture at a time)
             measuring.append(True)
+            print("[likeness] measure START: every photo in the training folder, on the CPU "
+                  "(this is the silent heavy phase)", flush=True)
 
             def measure():
                 try:
-                    real = real_photos(dataset_dir, names, base, emb)
+                    real = real_photos(dataset_dir, names, base, emb,
+                                       log=lambda i, n: (measure_state.update(i=i, n=n),
+                                                         print(f"[likeness] measure… {i}/{n}", flush=True)),
+                                       cancel=lambda: not _live(samples_dir, run, gen),
+                                       resume=partial,
+                                       save=lambda p: _keep_partial(samples_dir, run, gen, meta, p))
                 except Exception as e:                     # never stops the samples' scoring
                     print(f"[likeness] couldn't measure the training photos: {type(e).__name__}: {e}", flush=True)
                     real = None
-                meta.update(real=real, real_sig=sig)       # the loop writes it with its next status
+                with _lock:
+                    if isinstance(real, dict):
+                        meta.pop("real_partial", None)
+                    meta.update(real=real, real_sig=sig)   # the loop writes it with its next status
             threading.Thread(target=measure, daemon=True).start()
         if "real_sig" in meta and not wrote_real:
             wrote_real, last = True, None                  # written below, with the measure
         status = f"live - {len(scores)} sample(s) scored" + ("" if emb.name == "adaface" else f" ({emb.label})")
+        if measure_state.get("n") and "real" not in meta:
+            status += f"; measuring… {measure_state['i']}/{measure_state['n']}"
         if more:
             continue                                       # straight on with the next batch, the folder looked at again
         if todo or status != last:
-            _write(samples_dir, run, names, status, scores, meta)
+            _write_live(samples_dir, run, gen, names, status, scores, meta)
             last = status
         for _ in range(16):
             if not _live(samples_dir, run, gen):

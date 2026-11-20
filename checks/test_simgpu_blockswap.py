@@ -110,9 +110,7 @@ def _run(offloader_cls, k, batch, gc, steps=3, seed=0):
         swap.move_to_device_except_swap_blocks("cuda")
         swap.train()
         got, peak = [], 0
-        for xs in data:
-            if k:
-                swap.offloader.prepare_block_devices_before_forward(list(swap.layers))
+        for xs in data:                            # step after step, as the trainer runs them: no re-prepare
             got.append(_step(swap, xs, "cuda"))
             peak = max(peak, sum(1 for b in blocks_on_card([lay.fc1.base for lay in swap.layers]) if b))
     return want, got, peak

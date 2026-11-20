@@ -14,6 +14,8 @@ used, which is what residency bugs are about.
 """
 import concurrent.futures
 import contextlib
+import sys
+import weakref
 from unittest import mock
 
 import torch
@@ -37,13 +39,24 @@ def _ptr(t):
             return None
 
 
+_empty_on = {}                                 # id(tensor) -> on the card, for tensors with no memory (empty ones)
+
+
 def on_card(t):
-    return _ptr(t) in _on
+    p = _ptr(t)
+    if not p:                                  # an empty tensor has no storage address: tracked by the tensor itself
+        return _empty_on.get(id(t), False)
+    return p in _on
 
 
 def _mark(t, card):
     p = _ptr(t)
-    if p is None or p == 0:
+    if p is None:
+        return
+    if p == 0:
+        if id(t) not in _empty_on:
+            weakref.finalize(t, _empty_on.pop, id(t), None)
+        _empty_on[id(t)] = card
         return
     if card:
         _on.add(p)
@@ -117,7 +130,7 @@ class _Fn(TorchFunctionMode):
             if "pin_memory" in kw:
                 kw["pin_memory"] = False
             out = func(*args, **kw)
-            for t in _tensors(out):
+            for t in _tensors(out):              # Python asked for this device: it's there (the CPU too)
                 _mark(t, want)
             return out
         out = func(*args, **kwargs)
@@ -136,6 +149,19 @@ class _Ops(TorchDispatchMode):
     def __torch_dispatch__(self, func, types, args=(), kwargs=None):
         kwargs = kwargs or {}
         name = str(func)
+        dev = kwargs.get("device")
+        if isinstance(dev, torch.device) and dev.type == "cuda":
+            # made on the card (torch.zeros(..., device=q.device)): made on the CPU, marked as on the card - here, not
+            # in the function layer, so a checkpointed block's recompute in the backward is caught too. An explicit
+            # "cpu" here is torch's own (the backward restoring the real device of a tensor, which is always the CPU
+            # in the simulation): that follows the inputs, as below. Python code asking for the CPU is marked in _Fn.
+            kwargs = dict(kwargs, device=torch.device("cpu"))
+            if kwargs.get("pin_memory"):
+                kwargs["pin_memory"] = False
+            out = func(*args, **kwargs)
+            for t in _tensors(out):
+                _mark(t, True)
+            return out
         ins = _tensors((args, kwargs))
         big = [t for t in ins if t.dim() > 0]
         where = {on_card(t) for t in big}
@@ -147,9 +173,8 @@ class _Ops(TorchDispatchMode):
         if name.startswith(("aten.copy_", "aten.set_")):
             return out                             # the destination keeps its place
         card = (True in where) if big else any(on_card(t) for t in ins)
-        if ins:
-            for t in _tensors(out):
-                _mark(t, card)
+        for t in _tensors(out):                    # (made from nothing, with no device asked: on the CPU)
+            _mark(t, card if ins else False)
         return out
 
 
@@ -226,11 +251,22 @@ def blocks_on_card(blocks):
     return out
 
 
+_REAL_AUTOCAST = torch.autocast
+
+
+class _Autocast(_REAL_AUTOCAST):
+    """The card's autocast: the simulated card computes on the CPU, so it is the CPU's, at the dtype asked for."""
+
+    def __init__(self, device_type, *a, **k):
+        super().__init__("cpu" if device_type == "cuda" else device_type, *a, **k)
+
+
 @contextlib.contextmanager
 def simulated_gpu(card_gb=24.0):
     """The simulated card (see the module docstring). card_gb: what torch.cuda reports as the card's size."""
     total = int(card_gb * 2**30)
     _on.clear()
+    _empty_on.clear()
     patches = [
         mock.patch.object(torch.cuda, "is_available", lambda: True),
         mock.patch.object(torch.cuda, "device_count", lambda: 1),
@@ -253,11 +289,20 @@ def simulated_gpu(card_gb=24.0):
         mock.patch.object(torch.Tensor, "cpu", _cpu),
         mock.patch.object(torch.Tensor, "pin_memory", lambda self, *a, **k: self),
         mock.patch.object(torch.Tensor, "is_pinned", lambda self, *a, **k: False),
+        mock.patch.object(torch, "autocast", _Autocast),
         # checkpointing keeps the card's random-number state for its recompute: the simulated card has none (the
         # CPU's is kept as usual)
         mock.patch("torch.utils.checkpoint.get_device_states", lambda *a: ([], [])),
         mock.patch("torch.utils.checkpoint.set_device_states", lambda *a, **k: None),
     ]
+    # attention kernels: a card-only choice (cuDNN, flash) has no CPU kernel - the simulated card lets torch pick.
+    # Fizgig's modules only (torch's own sdpa_kernel is left alone: its compiler reads it at import)
+    from torch.nn import attention as _att
+    real_kernel = _att.sdpa_kernel
+    any_kernel = lambda *a, **k: contextlib.nullcontext()
+    for mod in list(sys.modules.values()):
+        if getattr(mod, "__name__", "").startswith("fizgig.") and getattr(mod, "sdpa_kernel", None) is real_kernel:
+            patches.append(mock.patch.object(mod, "sdpa_kernel", any_kernel))
     with contextlib.ExitStack() as stack:
         for p in patches:
             stack.enter_context(p)

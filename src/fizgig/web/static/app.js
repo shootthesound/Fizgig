@@ -9687,9 +9687,17 @@ function openInstr() {
   if (!t) return;
   $("capInstrBox").style.display = "";
   $("capInstr").value = t.instruction;
-  $("capInstrHint").textContent = `What Qwen3-VL is told for "${t.label}"` + (t.edited ? " (edited)" : " (as shipped)") +
-    ". Saved here. Auto-recaption uses it too when the Training tab's First try / Second try picks this task " +
-    "(by default Training caption first, then Exhaustive detail).";
+  // every captioner that follows instructions (Qwen3-VL, JoyCaption) is told the same text for a task: name the one
+  // picked. With extra options (JoyCaption) this is only the first part of what it's told - say so, and where the rest is
+  const d = capDesc() || {}, who = d.label || "The captioner";
+  const parts = (d.prompt_extras || []).length ?
+    `The main instruction for "${t.label}"` + (t.edited ? " (edited)" : " (as shipped)") + `: the start of what ${who} ` +
+    "is told. Your own sentences and the ticked options below are added after it; the \"It's told\" line under them " +
+    "shows the whole text." :
+    `What ${who} is told for "${t.label}"` + (t.edited ? " (edited)" : " (as shipped)") + ".";
+  $("capInstrHint").textContent = parts + " Saved here, for every captioner that follows instructions. Auto-recaption " +
+    "(always Qwen3-VL) uses it too when the Training tab's First try / Second try picks this task (by default " +
+    "Training caption first, then Exhaustive detail).";
   $("capInstrStatus").textContent = "";
 }
 
@@ -9700,6 +9708,7 @@ async function saveInstr(text) {
   await loadCaptionOptions();
   $("capTask").value = keep;
   openInstr();
+  capSentShow();                                   // the "It's told" line follows the saved text
   $("capInstrStatus").textContent = "Saved.";
 }
 

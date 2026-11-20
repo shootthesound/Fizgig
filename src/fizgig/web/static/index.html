@@ -543,6 +543,13 @@
               <div class="field-row"><span class="field-label">Task:</span>
                 <select id="capTask" class="w-combo-lg"></select>
                 <button class="btn" id="capEditInstr">Edit instructions…</button></div>
+              <div id="capInstrBox" style="display:none">
+                <div class="field-hint" id="capInstrHint"></div>
+                <textarea id="capInstr" rows="8"></textarea>
+                <div class="field-row"><button class="btn btn-primary" id="capInstrSave">Save instructions</button>
+                  <button class="btn" id="capInstrReset">Back to the shipped text</button>
+                  <span class="field-hint" id="capInstrStatus"></span></div>
+              </div>
               <div class="field-row" id="capLengthRow" style="display:none"><span class="field-label">Length:</span>
                 <select id="capLength" class="w-combo"></select>
                 <span class="field-hint">A length word, or at most this many words.</span></div>
@@ -564,13 +571,6 @@
                 (viewpoint, face, pose, clothing), and for an object or product (shape, colours, materials). For a pose,
                 an action or an effect, pick the concept task and say what it is; for a style, pick Style - it leaves the look unnamed so the trigger word carries it; for anything else,
                 Edit instructions.</div>
-              <div id="capInstrBox" style="display:none">
-                <div class="field-hint" id="capInstrHint"></div>
-                <textarea id="capInstr" rows="8"></textarea>
-                <div class="field-row"><button class="btn btn-primary" id="capInstrSave">Save instructions</button>
-                  <button class="btn" id="capInstrReset">Back to the shipped text</button>
-                  <span class="field-hint" id="capInstrStatus"></span></div>
-              </div>
               <div class="field-row"><span class="field-label">Max tokens:</span>
                 <input type="number" id="capTokens" class="w-num" value="120">
                 <span class="field-hint">How long a caption may be.</span></div>

@@ -128,8 +128,14 @@ def download_captioner(key, prefs=None):
 
 def captioner_problem(path) -> str:
     """Why a file can't be the captioner, from its safetensors header alone ("" = it can): a Qwen3-VL 4B or 8B in a
-    build the loader reads (bf16 or fp8 scaled). ComfyUI's int8 ConvRot / w4a8 builds (int8 / uint8 weights) don't load."""
+    build the loader reads (bf16 or fp8 scaled). ComfyUI's int8 ConvRot / w4a8 builds (int8 / uint8 weights) don't load.
+    Only a .safetensors file is opened at all: a Q4_K_M GGUF quant set as the secondary captioner made /api/prefs take
+    15 s at every page load, because its first eight bytes are its magic and version and read as a header length of
+    14,064,895,815 - the read then slurped 14.06 GB of weights (6.76 s) before the parse died on them (6.61 s more),
+    on a 19.8 GB file. Naming is the rule: a .safetensors file that isn't one is met by the header check below."""
     import struct
+    if not str(path).lower().endswith(".safetensors"):
+        return "it isn't a safetensors file"
     try:
         with open(path, "rb") as f:
             n = struct.unpack("<Q", f.read(8))[0]

@@ -13,12 +13,18 @@ repos, cache first (fizgig.utils.hf_cache).
 """
 from __future__ import annotations
 
+import os
 import re
 
 import torch
 
 QWEN_REPO = "Qwen/Qwen2.5-VL-7B-Instruct"
 VIMOO_REPO = "Vimoo-AI/Vimoo-1.0-Lite"
+# Glyph-ByT5's own home, pinned as Vimoo's glyph_source.json pins it: Vimoo stopped carrying the encoder and its
+# tokenizer on 12 Nov 2026 (the Lite repo's tokenizer_2/, the ComfyUI repo's vimoo_v1_glyph_byt5_fp32.safetensors)
+GLYPH_REPO = "nlpcvcode/Glyph-SDXL-v2"
+GLYPH_REVISION = "a5aac7f492e85819208e7ed14aa4402d9c0b1b65"
+GLYPH_ASSETS = ("assets/color_idx.json", "assets/multilingual_10-lang_idx.json")
 SIGLIP_REPO = "google/siglip-so400m-patch14-384"
 QWEN_MAX = 1400
 QWEN_SKIP = 2
@@ -42,6 +48,8 @@ def _cached(cls, repo, **kw):
 
 
 def _load_file(path):
+    if str(path).lower().endswith((".pt", ".pth")):          # Glyph-SDXL-v2's own byt5_model.pt, downloaded by hand
+        return glyph_state_dict(path)
     from safetensors.torch import load_file
     return load_file(str(path), device="cpu")
 
@@ -99,19 +107,53 @@ def glyph_texts(prompt):
     return list(dict.fromkeys(a or b for a, b in found))
 
 
-def byt5_tokenizer():
-    """ByT5's byte tokenizer plus Glyph-SDXL-v2's 1251 added tokens (125 extra ids, colours, fonts) at ids 259 on,
-    as Vimoo's tokenizer_2 lists them. Built here: its tokenizer_config is in transformers 5's form, which the pinned
-    transformers can't read."""
-    import json
+def glyph_state_dict(pt_path):
+    """Glyph-SDXL-v2's checkpoints/byt5_model.pt (a T5 stack's fp32 state dict) in the layout of the file Vimoo used
+    to ship: the keys under encoder., the embedding also as shared.weight, values unchanged (Vimoo's
+    tools/convert_byt5.py)."""
+    import torch
+    sd = torch.load(str(pt_path), map_location="cpu", weights_only=True)
+    if not isinstance(sd, dict) or "embed_tokens.weight" not in sd:
+        raise ValueError(f"{pt_path} isn't Glyph-SDXL-v2's byt5_model.pt")
+    out = {f"encoder.{k}": v for k, v in sd.items()}
+    out["shared.weight"] = sd["embed_tokens.weight"]
+    return out
+
+
+def convert_glyph(src, dest):
+    """The downloader's convert step (ModelFile.convert): byt5_model.pt -> vimoo_v1_glyph_byt5_fp32.safetensors."""
+    from safetensors.torch import save_file
+    sd = glyph_state_dict(src)
+    if tuple(sd["shared.weight"].shape) != (1510, 1472):
+        raise ValueError(f"expected the 1510-token Glyph-ByT5 embedding, got {tuple(sd['shared.weight'].shape)}")
+    part = str(dest) + ".part"
+    save_file({k: v.contiguous().clone() for k, v in sd.items()}, part, metadata={"format": "pt"})
+    os.replace(part, str(dest))
+
+
+def _glyph_asset(name):
     from huggingface_hub import hf_hub_download
-    from transformers import ByT5Tokenizer
     try:
-        f = hf_hub_download(VIMOO_REPO, "tokenizer_2/added_tokens.json", local_files_only=True)
+        return hf_hub_download(GLYPH_REPO, name, revision=GLYPH_REVISION, local_files_only=True)
     except Exception:
-        f = hf_hub_download(VIMOO_REPO, "tokenizer_2/added_tokens.json")
-    with open(f, encoding="utf-8") as fh:
-        added = sorted(json.load(fh).items(), key=lambda kv: kv[1])
+        return hf_hub_download(GLYPH_REPO, name, revision=GLYPH_REVISION)
+
+
+def glyph_added_tokens(colors, fonts):
+    """{token: id}: ByT5's 125 extra ids, then Glyph-SDXL-v2's colours, then its fonts in file order (<en-font-0>...),
+    from id 259 - the list Vimoo's tokenizer_2/added_tokens.json held."""
+    names = [f"<extra_id_{i}>" for i in range(125)] + [f"<color-{i}>" for i in range(len(colors))]
+    names += [f"<{code[:2]}-font-{index}>" for code, index in fonts.items()]
+    return {n: 259 + i for i, n in enumerate(names)}
+
+
+def byt5_tokenizer():
+    """ByT5's byte tokenizer plus Glyph-SDXL-v2's 1251 added tokens (125 extra ids, colours, fonts) at ids 259 on.
+    Built from Glyph-SDXL-v2's own colour and font lists: Vimoo's repo carried them as tokenizer_2 until 12 Nov 2026."""
+    import json
+    from transformers import ByT5Tokenizer
+    colors, fonts = (json.load(open(_glyph_asset(n), encoding="utf-8")) for n in GLYPH_ASSETS)
+    added = sorted(glyph_added_tokens(colors, fonts).items(), key=lambda kv: kv[1])
     tok = ByT5Tokenizer(extra_ids=0)
     tok.add_tokens([k for k, _ in added], special_tokens=True)
     bad = [(k, i) for k, i in added if tok.convert_tokens_to_ids(k) != i]

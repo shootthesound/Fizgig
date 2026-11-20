@@ -77,9 +77,16 @@ VIMOO = FamilyDescription(
                   "text_encoders/vimoo_v1_qwen2_5_vl_7b_bf16.safetensors", 14.1,
                   "Qwen2.5-VL-7B Instruct's text tower (as Qwen Image uses it): loaded for caching and preview "
                   "prompts, then unloaded.", role="text_encoder"),
-        ModelFile("vimoo_glyph", "Glyph-ByT5", True, _REPO, "text_encoders/vimoo_v1_glyph_byt5_fp32.safetensors", 0.89,
+        # Vimoo stopped shipping this file on 12 Nov 2026 and points to Glyph-SDXL-v2 (glyph_source.json): fetched
+        # from there at Vimoo's pinned commit and converted to the file it used to ship (identical tensors)
+        ModelFile("vimoo_glyph", "Glyph-ByT5", True, "nlpcvcode/Glyph-SDXL-v2", "checkpoints/byt5_model.pt", 0.82,
                   "Glyph-SDXL-v2's ByT5 encoder: reads text in \"double quotes\" in a prompt (signs, titles). Runs on "
-                  "the CPU; a prompt without quotes doesn't use it.", role="text_encoder_2", fetch_optional=False),
+                  "the CPU; a prompt without quotes doesn't use it.", role="text_encoder_2", fetch_optional=False,
+                  local_name="vimoo_v1_glyph_byt5_fp32.safetensors",
+                  revision="a5aac7f492e85819208e7ed14aa4402d9c0b1b65", convert="fizgig.vimoo.text:convert_glyph",
+                  download_note="~0.88 GB - nlpcvcode/Glyph-SDXL-v2 -> checkpoints/byt5_model.pt (Download models "
+                                "for me saves it as vimoo_v1_glyph_byt5_fp32.safetensors; the .pt works as it is "
+                                "too)"),
         ModelFile("vimoo_siglip", "SigLIP so400m", False, _REPO, "clip_vision/vimoo_v1_siglip_so400m_fp16.safetensors",
                   0.86, "SigLIP's vision tower: the reference picture of an image-to-video render.", role="clip_vision",
                   fetch_optional=False),
@@ -90,6 +97,8 @@ VIMOO = FamilyDescription(
     ),
     text_encoder_label="Qwen2.5-VL-7B",
     vae_label="Wan 2.2 TI2V VAE",
+    # Glyph-ByT5's colour and font lists (vimoo/text.py builds its tokenizer from them), so the first run is offline
+    helper_files=(("nlpcvcode/Glyph-SDXL-v2", ("assets/color_idx.json", "assets/multilingual_10-lang_idx.json")),),
     options=OPTIONS,
 
     media=("photo", "clip"),

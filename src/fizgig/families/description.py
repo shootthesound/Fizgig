@@ -73,6 +73,11 @@ class ModelFile:
     # another model's (Klein's FLUX.2 VAE and Z-Image's FLUX.1 VAE, both once saved as models/ae.safetensors) is
     # moved to the right one when Fizgig starts and before a download (fetch_models.repair_links)
     signature: tuple = ()
+    # the repo's commit to download from ("" = main), for a file taken from a repo Fizgig doesn't follow
+    revision: str = ""
+    # "module:function" turning the downloaded file into the one saved as local_name, called (source path, dest
+    # path); the source is removed afterwards. For a file only published in another form (Vimoo's Glyph-ByT5: a .pt)
+    convert: str = ""
 
     @property
     def fetch_is_optional(self) -> bool:

@@ -10,7 +10,7 @@ import pytest
 import torch
 
 pytest.importorskip("fizgig.families.lora")
-from simgpu import simulated_gpu  # noqa: E402
+from simgpu import on_card, simulated_gpu  # noqa: E402
 
 from fizgig.families.lora import FamilyLoRA  # noqa: E402
 from fizgig.families.registry import get as get_family  # noqa: E402
@@ -53,7 +53,42 @@ def _flux3(monkeypatch):
     return dit.float(), item
 
 
-FAMILIES = {"moss_image": _moss, "fibo2": _fibo, "flux3": _flux3}
+def _qwen(monkeypatch):
+    from fizgig.qwen_image21.model import QwenImage21DiT
+    dit = QwenImage21DiT(num_layers=N, attention_head_dim=16, num_attention_heads=2, context_in_dim=24,
+                         axes_dims_rope=(4, 6, 6))
+
+    def item(g):
+        return torch.randn(1, 64, 4, 4, generator=g), {"hidden_states": torch.randn(1, 5, 24, generator=g)}
+    return dit.to(torch.bfloat16), item                  # the driver feeds it bf16, as the real base is
+
+
+def _zimage(monkeypatch):
+    from fizgig.zimage.model import ZImageTransformer2DModel
+    dit = ZImageTransformer2DModel(in_channels=16, dim=64, n_layers=N, n_refiner_layers=1, n_heads=4, n_kv_heads=4,
+                                   cap_feat_dim=24, axes_dims=(8, 4, 4), axes_lens=(64, 32, 32))
+    for prm in dit.parameters():                         # its pad tokens are torch.empty until a checkpoint loads
+        torch.nn.init.normal_(prm, std=0.05)
+
+    def item(g):
+        return torch.randn(1, 16, 8, 8, generator=g), {"cap": torch.randn(1, 5, 24, generator=g)}
+    return dit.to(torch.bfloat16), item                  # the driver runs it in bf16
+
+
+def _klein(monkeypatch):
+    from fizgig.klein.model import Flux2Params, KleinDiT
+    # Klein 9B's 1:3 double / single ratio (8 / 24), so a swap splits as it does there - a swap of 1 is double 0,
+    # single 1, the case that once left every double block on the CPU
+    dit = KleinDiT(Flux2Params(in_channels=16, context_in_dim=24, hidden_size=64, num_heads=4, depth=4,
+                               depth_single_blocks=12, axes_dim=[4, 4, 4, 4]), attn_mode="torch")
+
+    def item(g):
+        return torch.randn(1, 16, 4, 4, generator=g), {"ctx_vec": torch.randn(1, 5, 24, generator=g)}
+    return dit.float(), item
+
+
+FAMILIES = {"moss_image": _moss, "fibo2": _fibo, "flux3": _flux3, "qwen_image21": _qwen, "zimage": _zimage,
+            "klein": _klein}
 
 
 def _train(key, build, monkeypatch, swap, batch, steps=3):
@@ -106,3 +141,16 @@ def test_family_block_swap_trains_as_with_no_swap(key, swap, batch, monkeypatch)
             assert (a is None) == (b is None), (key, step, i)       # an adapter with no gradient has none either way
             if a is not None:
                 assert torch.allclose(a, b, atol=1e-5, rtol=1e-4), (key, step, i, (a - b).abs().max())
+
+
+def test_klein_swap_of_one_puts_every_double_block_on_the_card(monkeypatch):
+    """Found by these checks (20 Nov 2026), confirmed on a 5090: a swap of 1 splits as double 0 / single 1 on Klein 9B,
+    and moving the model left both block lists off the card for their offloaders - but an offloader with 0 blocks does
+    nothing, so every double block stayed on the CPU and the first step met "mat2 is on cpu"."""
+    drv = get_family("klein").load_driver()
+    torch.manual_seed(0)
+    dit, _ = _klein(monkeypatch)
+    with simulated_gpu():
+        drv.enable_block_swap(dit, 1, "cuda")
+        assert dit.offloader_double.blocks_to_swap == 0 and dit.offloader_single.blocks_to_swap == 1
+        assert all(on_card(b.img_attn.qkv.weight) for b in dit.double_blocks)

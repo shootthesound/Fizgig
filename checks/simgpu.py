@@ -163,18 +163,27 @@ class _Ops(TorchDispatchMode):
                 _mark(t, True)
             return out
         ins = _tensors((args, kwargs))
-        big = [t for t in ins if t.dim() > 0]
+        # a card accepts CPU index tensors in indexing (x[:, mask] = v with a CPU bool mask): those don't count
+        index_op = "index" in name or name.startswith(("aten.take", "aten.gather", "aten.scatter"))
+        big = [t for t in ins if t.dim() > 0 and not (index_op and not t.is_floating_point() and not t.is_complex())]
         where = {on_card(t) for t in big}
         if len(where) > 1 and not name.startswith(_MOVES):
             cpu = next((t for t in big if not on_card(t)), None)
             raise SimDeviceMismatch(f"Expected all tensors to be on the same device, but {name} got one on cpu "
-                                    f"(shape {tuple(cpu.shape) if cpu is not None else '?'}) and others on cuda:0")
+                                    f"({tuple(cpu.shape) if cpu is not None else '?'}, "
+                                    f"{cpu.dtype if cpu is not None else '?'}) and others on cuda:0")
         out = func(*args, **kwargs)
         if name.startswith(("aten.copy_", "aten.set_")):
             return out                             # the destination keeps its place
         card = (True in where) if big else any(on_card(t) for t in ins)
-        for t in _tensors(out):                    # (made from nothing, with no device asked: on the CPU)
-            _mark(t, card if ins else False)
+        if not ins:
+            # made from nothing with no device asked (torch.zeros(3)): on the CPU. With a device asked at this level,
+            # it's torch's own building from another tensor's options (pad_sequence's output, a gradient built from
+            # scratch in the backward) - and every tensor's real device is the CPU here, so that "cpu" means "where
+            # the computation is": the card. Python code that asks for the CPU is put right in _Fn after.
+            card = isinstance(dev, torch.device)
+        for t in _tensors(out):
+            _mark(t, card)
         return out
 
 

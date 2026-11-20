@@ -650,18 +650,23 @@ class KleinDiT(nn.Module):
         # try/finally: an OOM inside .to() must not leave the model holding the empty
         # placeholder ModuleLists permanently (a silent lobotomy — every later forward
         # would run with zero transformer blocks).
-        if self.blocks_to_swap:
-            save_double_blocks = self.double_blocks
-            save_single_blocks = self.single_blocks
+        # Only a block type with blocks to swap is held back: its offloader puts them in place. A type whose share is 0
+        # (a swap of 1 gives double 0, single 1 on Klein 9B) has an offloader that does nothing, so its blocks go with
+        # the rest - held back, they stayed on the CPU and the first step met "mat2 is on cpu" (found by the
+        # simulated-GPU checks, confirmed on a 5090)
+        hold_double = bool(self.blocks_to_swap) and bool(getattr(self.offloader_double, "blocks_to_swap", 0))
+        hold_single = bool(self.blocks_to_swap) and bool(getattr(self.offloader_single, "blocks_to_swap", 0))
+        save_double_blocks, save_single_blocks = self.double_blocks, self.single_blocks
+        if hold_double:
             self.double_blocks = nn.ModuleList()
+        if hold_single:
             self.single_blocks = nn.ModuleList()
 
         try:
             self.to(device)
         finally:
-            if self.blocks_to_swap:
-                self.double_blocks = save_double_blocks
-                self.single_blocks = save_single_blocks
+            self.double_blocks = save_double_blocks
+            self.single_blocks = save_single_blocks
 
     def prepare_block_swap_before_forward(self):
         if self.blocks_to_swap is None or self.blocks_to_swap == 0:

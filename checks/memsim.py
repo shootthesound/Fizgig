@@ -631,6 +631,32 @@ def _norm(p):
     return os.path.normcase(os.path.abspath(os.fspath(p)))
 
 
+_SIZES = {}
+_real_stat = os.stat
+
+
+class _Stat:
+    """A fake model file's stat: the real file's, with the size the real model file has."""
+
+    def __init__(self, st, size):
+        self._st, self.st_size = st, size
+
+    def __getattr__(self, n):
+        return getattr(self._st, n)
+
+    def __getitem__(self, i):
+        return self.st_size if i == 6 else self._st[i]
+
+
+def _stat(p, *a, **k):
+    st = _real_stat(p, *a, **k)
+    if isinstance(p, (str, os.PathLike)):
+        size = _SIZES.get(_norm(p))
+        if size is not None and is_fake(p):
+            return _Stat(st, size)
+    return st
+
+
 def is_fake(p):
     try:
         return _norm(p) in _FAKE
@@ -669,6 +695,11 @@ def write_model_file(header, path):
     with open(path, "wb") as f:
         f.write(struct.pack("<Q", len(raw)) + raw)
     _FAKE.add(_norm(path))
+    # the size the real file has (header + every tensor's bytes): Fizgig sizes models from their files (a preview
+    # checkpoint's bf16-or-int8 choice) - a header-only file read as a few KB picked bf16 with nothing streamed
+    _SIZES[_norm(path)] = 8 + len(raw) + max((v["data_offsets"][1] for k, v in header.items()
+                                              if k != "__metadata__" and isinstance(v, dict) and "data_offsets" in v),
+                                             default=0)
     import base64
     _VALUES[_norm(path)] = {k: base64.b64decode(v) for k, v in data.items()}
     return str(path)
@@ -940,6 +971,7 @@ def simulated_card(card_gb=32.0, others_gb=0.0, capped=True, expandable=False, c
         (torch.Tensor, "pin_memory", lambda self, *a, **k: self),
         (torch.Tensor, "is_pinned", lambda self, *a, **k: False),
         *_bnb_params_patch(),
+        (os, "stat", _stat),                   # os.path.getsize / Path.stat of a fake model file: the real size
     ]
     import safetensors
     import safetensors.torch as st
@@ -1215,8 +1247,12 @@ def run_launch(family, tmp, values=None, *, megapixels=1.0, card_gb=32.0, others
             if real_models.get(mf.pref_key):
                 models[mf.pref_key] = real_models[mf.pref_key]
         elif os.path.exists(os.path.join(HEADERS, f"{family}_{mf.pref_key}.json.gz")):
+            # the real file's name, in a folder of its own: Fizgig reads names (an int8 ConvRot file is twice its size
+            # once decoded - named for its setting, MOSS's SFT preview read as half its size and loaded bf16)
+            name = mf.local_name or os.path.basename(mf.path) or f"{mf.pref_key}.safetensors"
+            os.makedirs(os.path.join(tmp, mf.pref_key), exist_ok=True)
             models[mf.pref_key] = write_model_file(load_header(f"{family}_{mf.pref_key}"),
-                                                   os.path.join(tmp, f"{mf.pref_key}.safetensors"))
+                                                   os.path.join(tmp, mf.pref_key, name))
     img = os.path.join(tmp, "pictures")
     if "photo" in desc.media:
         pictures(img, side=max(512, int(round((megapixels * 1024 * 1024) ** 0.5 / 64)) * 64))

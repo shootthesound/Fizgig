@@ -103,6 +103,20 @@ def test_conv_workspace_matches_measured(x, w, out, size, measured_mb):
     assert M.conv_workspace((_t(x, size, "cpu"), _t(w, size), None), _t(out, size)) == 0     # only on the card
 
 
+def test_fake_model_file_has_its_real_size(tmp_path):
+    """Fizgig sizes models from their files (a preview checkpoint's bf16-or-int8 choice): a header-only fake file
+    reads as the real file's size - read as a few KB, Z-Image Base's 16 GB preview loaded bf16 with nothing streamed."""
+    import os
+    from unittest import mock
+    p = M.write_model_file(M.load_header("zimage_base_zimage_base_vae"), str(tmp_path / "vae.safetensors"))
+    real = tmp_path / "real.bin"
+    real.write_bytes(b"x" * 1234)
+    with mock.patch.object(os, "stat", M._stat):
+        assert os.path.getsize(p) > 100 * MB and os.path.isfile(p)          # the FLUX.1 VAE: ~0.33 GB
+        assert os.path.getsize(str(real)) == 1234
+    assert os.path.getsize(p) < MB                                       # outside the simulation: the file on disk
+
+
 @pytest.mark.skipif(not M.CAN_RUN, reason="the simulated card needs a torch built with CUDA and an NVIDIA card")
 def test_mover_threads_run_inline_for_modules_loaded_later():
     """Krea 2's offloader is imported when its DiT loads, inside the simulation: its mover thread must run inline too

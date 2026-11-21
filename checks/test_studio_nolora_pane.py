@@ -12,6 +12,13 @@ def test_tweaked_pane_shows_without_a_lora():
     assert re.search(r"#tab-studio\.no-lora \.st-preview\.only-base \.st-tweak-pane\s*\{\s*display:\s*block", css)
 
 
+def test_panes_open_both_each_time():
+    """A pane hidden last time isn't remembered: Studio opens with both (Peter, 21 Nov 2026)."""
+    js = open(os.path.join(STATIC, "app.js"), encoding="utf-8").read()
+    assert 'localStorage.setItem("fizgig_st_split"' not in js and 'getItem("fizgig_st_split")' not in js
+    assert 'split("both");' in js
+
+
 def test_hidden_tweaked_rules_skip_no_lora():
     js = open(os.path.join(STATIC, "app.js"), encoding="utf-8").read()
     for line in js.splitlines():

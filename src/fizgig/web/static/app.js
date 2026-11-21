@@ -9351,7 +9351,7 @@ function wireStudio() {
   });
   $("stQAdd").addEventListener("click", studioQueueAdd);
   // the arrows between Baseline and Tweaked: ◀ hides the Baseline (Tweaked takes the width), ▶ hides Tweaked; the
-  // arrow left at the edge brings the other back. Remembered in this browser
+  // arrow left at the edge brings the other back
   const split = (mode) => {
     S.st.split = mode;
     // a pane stepping aside stops playing (an unmuted clip would go on being heard unseen)
@@ -9361,14 +9361,13 @@ function wireStudio() {
     $("stPreview").classList.toggle("only-base", mode === "base");
     $("stSplitL").title = mode === "base" ? "Show Tweaked again, beside the Baseline" : "Hide the Baseline: Tweaked takes the whole width";
     $("stSplitR").title = mode === "tweak" ? "Show the Baseline again, beside Tweaked" : "Hide Tweaked: the Baseline takes the whole width";
-    try { localStorage.setItem("fizgig_st_split", mode); } catch (e) { /* this browser keeps nothing */ }
     if (S.st.layout) studioMetrics();
     if (mode !== "tweak" && S.st.noBase || mode !== "base" && S.st.noTweak)
       $("stStatus").textContent = "Press Render to fill the pane that was hidden.";
   };
-  let splitWas = "both";
-  try { splitWas = localStorage.getItem("fizgig_st_split") || "both"; } catch (e) { /* both */ }
-  split(["tweak", "base"].includes(splitWas) ? splitWas : "both");
+  // both panes each time the page opens: a pane hidden last time isn't remembered (it hid renders without a word)
+  try { localStorage.removeItem("fizgig_st_split"); } catch (e) { /* this browser keeps nothing */ }
+  split("both");
   $("stSplitL").addEventListener("click", () => split(S.st.split === "base" ? "both" : "tweak"));
   $("stSplitR").addEventListener("click", () => split(S.st.split === "tweak" ? "both" : "base"));
   const stqOpen = (open) => {                         // the queue bar's list: open or closed, remembered here

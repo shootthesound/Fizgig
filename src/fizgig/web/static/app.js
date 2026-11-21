@@ -9497,6 +9497,7 @@ function wireStudio() {
   $("stCancel").addEventListener("click", () => api("/api/studio/cancel", {}).then(studioPoll).catch(() => {}));
   $("stFrankExport").addEventListener("click", async () => {
     // Frankenstein mode: the blend at the sliders as a new base model; a file already there needs a second press
+    if (!S.st.frankLoaded) { $("stStatus").textContent = "Press Render to load Frankenstein mode first: then the blend can be saved."; return; }
     const out = $("stFrankOut").value.trim();
     const again = S.st.frankOverwrite === out;
     try {

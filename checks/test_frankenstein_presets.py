@@ -78,7 +78,7 @@ def test_block_values_stay_within_a_blend_share():
     assert "if (S.st.frank) for (const b of Object.values(S.st.blocks)) b.ps = stClampP(b.ps);" in ssync[:200]
     assert 'side === "p" ? stClampP(r)' in js
     assert '$("stLuckyLo").value = "0"; $("stLuckyHi").value = "0.6";' in js     # lucky rolls 0 to 0.6 in the mode
-    assert "#tab-studio.frankenstein .st-flip, #tab-studio.frankenstein .st-bal { display: none; }" in css
+    assert "#tab-studio.frank-asked .st-flip, #tab-studio.frank-asked .st-bal { display: none; }" in css
 
 
 def test_the_mode_follows_the_tick_not_the_load():
@@ -147,7 +147,8 @@ def test_the_mode_is_a_switch_and_saves_where_saving_lives():
     assert 'class="seg" id="stModeSeg"' in html and 'data-frank="1"' in html
     save = html.index('class="section-card st-frank-save"')
     assert html.index("st-lora-save") < save and html.index('id="stFrankExport"') > save   # in its own save card
-    assert "#tab-studio.frankenstein .st-frank-save { display: block; }" in css
+    assert "#tab-studio.frank-asked .st-frank-save { display: block; }" in css     # with the switch, not the load
+    assert "#tab-studio.frankenstein" not in css          # nothing waits for the load any more
     assert '$("stModeSeg").addEventListener("click"' in js
 
 

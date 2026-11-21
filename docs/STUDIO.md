@@ -116,7 +116,18 @@ What we found, sweeping every block at 2560 × 2560 across five motion scenes (a
 - **What breaks the picture is blending a lot at once**, worst when it reaches the last blocks (38-49). Blocks 20-49 or 30-49 dissolve into grain and smear at 0.75 and are destroyed at 1.0; 20-40 turns grainy at 0.75 and breaks at 1.0; 30-40 is fine at 0.75 but messy at 1.0; every block at once holds up to 0.75 and degrades at 1.0.
 - **No small group of blocks broke it on its own**: every run of 3 blocks, anywhere from 0 to 49, stayed a clean picture even at 1.0 (sometimes grainier than at 0.75), and a few late blocks together with others (20-22 and 38-40 at 0.75) were fine. Keep blends to a few blocks at 0.5-0.75.
 
-The whole model must fit on the card (no block swap): each block is rewritten in place on the GPU. Reuse unchanged blocks is off in this mode.
+**What it needs: a 32 GB card (RTX 5090 class) and 48 GB or more of system RAM.** The blend is rewritten on the card itself, so the whole of H3 Image has to stay there, with no block swap. Measured on an RTX 5090 with ✨Motion:
+
+| | Card memory (PyTorch's own, plus about 0.5-1 GB the driver keeps) | System RAM (Fizgig's Studio process) |
+|---|---|---|
+| H3 Image loaded | 19.9 GB | 3 GB |
+| First render (the prompt's text encoder loads) | 22.3 GB | 31 GB peak, for a moment |
+| Frankenstein mode on, a slider change | 23.8 GB | 10 GB |
+| Render at 1024 / 2048 / 2560 / 3072 | 23.8 / 22.4 / 23.6 / 24.9 GB | 9 GB |
+| Every block to 1.0 at once (the biggest change) | 23.1 GB | 9 GB |
+| Save blend as a new base (18 s, a 21 GB file) | 23.1 GB | 9 GB |
+
+**A 24 GB card can't run it:** capped at the 22.5 GB a 24 GB card leaves free under Windows, plain H3 Image still rendered at 2048, but the first blend ran out of memory. A card that needs block swap for H3 Image gets a message at Start instead. A 32 GB-RAM machine is too tight for the first render's 31 GB. Saving a new base needs 21 GB of free disk. Reuse unchanged blocks is off in this mode.
 
 ## Video (MiniMax H3)
 

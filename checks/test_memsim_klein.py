@@ -3,12 +3,13 @@ simulated card, in seconds on the CPU. A change that raises Klein's card memory 
 out: the training step's peak against the figure measured on a 5090, and Auto's plan on 16 and 12 GB cards (what a
 Windows desktop leaves of them) completing with its previews.
 
-Needs a torch built with CUDA (no card): skipped on the CPU-only build."""
+Needs a torch built with CUDA and an NVIDIA card present (nothing runs on it): skipped elsewhere."""
 import pytest
 
-from memsim import CUDA_BUILT, run_launch
+from memsim import CAN_RUN, run_launch
 
-pytestmark = pytest.mark.skipif(not CUDA_BUILT, reason="the simulated card needs a torch built with CUDA (no card)")
+pytestmark = pytest.mark.skipif(not CAN_RUN, reason="the simulated card needs a torch built with CUDA and an NVIDIA "
+                                                     "card present (nothing runs on it)")
 
 DESKTOP_GB = 1.3            # what Windows' desktop holds of a card (a 16 GB card leaves 14.7)
 

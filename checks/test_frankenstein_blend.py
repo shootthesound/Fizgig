@@ -87,6 +87,58 @@ def test_dit_blend_live_model(tmp_path):
     assert torch.allclose(blk.norm.weight, torch.ones(64))
 
 
+def _one_block_dit(qa, sa):
+    lin = ConvRotInt8Linear(512, 64)
+    lin.qdata.copy_(qa)
+    lin.wscale.copy_(sa)
+    blk = torch.nn.Module()
+    blk.lin = lin
+    blk.norm = torch.nn.LayerNorm(64)
+    dit = torch.nn.Module()
+    dit.blocks = torch.nn.ModuleList([blk])
+    groups = [types.SimpleNamespace(blocks=[types.SimpleNamespace(id="b0", modules=["blocks.0.lin"])])]
+    return dit, lin, groups
+
+
+def _conf(d):
+    import json
+    return torch.frombuffer(bytearray(json.dumps(d).encode()), dtype=torch.uint8)
+
+
+def test_other_file_in_plain_int8_is_turned_into_the_convrot_basis(tmp_path):
+    # an H3 video file quantised per row WITHOUT the rotation (s3_int8-style): its layers were skipped, so a block
+    # blended only its norms / AdaLN and Studio rendered noise
+    from safetensors.torch import save_file
+    _, b, (qa, sa), _ = _pair()
+    sp = b.abs().amax(dim=1, keepdim=True) / 127.0
+    qp = torch.round(b / sp).clamp(-127, 127).to(torch.int8)
+    other = str(tmp_path / "plain.safetensors")
+    save_file({"blocks.0.lin.weight": qp, "blocks.0.lin.weight_scale": sp,
+               "blocks.0.lin.comfy_quant": _conf({"format": "int8_tensorwise", "per_row": True}),
+               "blocks.0.norm.weight": torch.randn(64), "blocks.0.norm.bias": torch.zeros(64)}, other)
+    dit, lin, groups = _one_block_dit(qa, sa)
+    bl = DiTBlend(dit, groups, other)
+    assert not bl.skipped_names
+    bl.set({"b0": 1.0})
+    got = dequantize_int8_convrot(lin.qdata, lin.wscale, CONF, torch.float32)
+    # the other model's own weights, in this model's basis: two int8 roundings (its file's, then the rotated grid's)
+    # ~1%; read in the wrong basis it would be ~100% off
+    assert ((got - b).norm() / b.norm()) < 0.02
+
+
+def test_a_layer_it_cant_read_refuses_instead_of_half_blending(tmp_path):
+    from safetensors.torch import save_file
+    _, _, (qa, sa), (qb, sb) = _pair()
+    other = str(tmp_path / "rot128.safetensors")
+    save_file({"blocks.0.lin.weight": qb, "blocks.0.lin.weight_scale": sb,
+               "blocks.0.lin.comfy_quant": _conf({"format": "int8_tensorwise", "convrot": True,
+                                                   "convrot_groupsize": 128}),
+               "blocks.0.norm.weight": torch.randn(64), "blocks.0.norm.bias": torch.zeros(64)}, other)
+    dit, _, groups = _one_block_dit(qa, sa)
+    with pytest.raises(ValueError, match="can't be blended"):
+        DiTBlend(dit, groups, other)
+
+
 def test_export_writes_the_blend_and_copies_the_rest(tmp_path):
     """Export: the loaded model's file with the blended blocks' current values in place, everything else byte for
     byte, the mix in its metadata."""

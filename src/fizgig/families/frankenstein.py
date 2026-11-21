@@ -105,7 +105,9 @@ class DiTBlend:
         self.dit, self.other_path = dit, other_path
         self.items, self.w = {}, {}
         self.skipped_names = []
-        lora = _lora_pairs(*other_lora) if other_lora else {}
+        self.plain = set()                     # the other file's int8 layers stored without the ConvRot rotation
+        skipped_int8 = []
+        lora =_lora_pairs(*other_lora) if other_lora else {}
         self.lora_used = 0
         dev = next(iter([*dit.parameters(), *dit.buffers()])).device
         self.dev = dev
@@ -145,9 +147,16 @@ class DiTBlend:
                                 and hdr[wk]["dtype"] == "I8"
                             if ok and ck in hdr:
                                 conf = parse_comfy_quant(f.get_tensor(ck))
-                                ok = int(conf.get("convrot_groupsize", 256)) == int(mod.rot) and bool(conf.get("convrot"))
+                                if conf.get("convrot"):
+                                    ok = int(conf.get("convrot_groupsize", 256)) == int(mod.rot)
+                                else:              # plain per-row int8: turned into this model's basis as it's read
+                                    ok = conf.get("format") == "int8_tensorwise" \
+                                        and list(hdr[sk]["shape"]) == [mod.qdata.shape[0], 1]
+                                    if ok:
+                                        self.plain.add(name)
                             if not ok:
                                 self.skipped_names.append(name)
+                                skipped_int8.append(name)
                                 continue
                             if not own_checked and self.own_f is not None:
                                 # the loaded codes are the file's own (H3's loader keeps them): else keep copies
@@ -181,6 +190,13 @@ class DiTBlend:
                     if items:
                         self.items[b.id] = items
                         self.w[b.id] = 0.0
+        if skipped_int8:
+            # a block blended without its int8 layers (only its norms and AdaLN) renders noise: refuse instead
+            self.other_f.file.close()
+            if self.own_f is not None:
+                self.own_f.file.close()
+            raise ValueError(f"{os.path.basename(other_path)} can't be blended with this model: {len(skipped_int8)} of "
+                             f"its int8 layers are stored in a format the blend can't read (e.g. {skipped_int8[0]}).")
         if self.other_table is not None and any(it[0] == "a" and it[4] is not None for v in self.items.values()
                                                 for it in v):
             from fizgig.minimax.common import _load_h3_egrid
@@ -277,9 +293,14 @@ class DiTBlend:
         f = self.other_f
         qb = f.get_tensor(name + ".weight").to(dev)
         sb = f.get_tensor(name + ".weight_scale").to(dev, torch.float32).reshape(-1, 1)
-        if ld is None:
+        plain = name in self.plain
+        if ld is None and not plain:
             return qb, sb
-        m = qb.to(torch.float32) * sb + rotate((ld[1].to(dev) @ ld[0].to(dev)).float(), int(mod.rot))
+        m = qb.to(torch.float32) * sb
+        if plain:                              # stored unrotated: into this model's ConvRot basis (self-inverse)
+            m = rotate(m, int(mod.rot))
+        if ld is not None:
+            m = m + rotate((ld[1].to(dev) @ ld[0].to(dev)).float(), int(mod.rot))
         return _requant(m)
 
     @torch.no_grad()

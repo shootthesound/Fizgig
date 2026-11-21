@@ -833,18 +833,15 @@
             <div class="card-content">
               <div class="field-row"><span class="field-label">Model:</span><select id="stFamily" class="w-combo"></select>
                 <span class="field-hint" id="stDitNote"></span></div>
+              <div class="field-row" id="stFrankRow" style="display:none"><span class="field-label">Studio mode:</span>
+                <span class="seg" id="stModeSeg"><button class="btn btn-sm active" data-frank="0" title="Tweak a LoRA block by block (or render the model with no LoRA)">LoRA</button><button class="btn btn-sm" data-frank="1" id="stModeFrank" title="Blend another base model into this one, block by block: each block slider is how much of that block comes from the other model (0 = this model as loaded, 1 = the other's block). No LoRA. Baseline is this model on its own; Tweaked is the blend.">Frankenstein</button></span>
+                <input type="checkbox" id="stFrank" hidden>
+                <span class="field-hint" id="stFrankNote"></span></div>
               <div class="field-row" id="stRender" style="display:none"></div>
               <div id="stOpts" style="display:none"></div>
               <div class="field-row" id="stDitRow"><span class="field-label">Render with:</span>
                 <label class="radio-label"><input type="radio" name="stDit" value="fast" checked> <span id="stDitFast"></span></label>
                 <label class="radio-label"><input type="radio" name="stDit" value="full"> <span id="stDitFull"></span></label></div>
-              <div class="field-row" id="stFrankRow" style="display:none">
-                <label class="checkbox-label" title="Blends another base model into this one, block by block: each block slider is how much of that block comes from the other model (0 = this model as loaded, 1 = the other's block). No LoRA in this mode. Baseline is this model on its own; Tweaked is the blend. Press Start (or Render) after ticking it.">
-                  <input type="checkbox" id="stFrank"> Frankenstein mode: blend in <span id="stFrankName"></span></label>
-                <span class="field-hint" id="stFrankNote"></span></div>
-              <div class="field-row" id="stFrankExportRow"><span class="field-label">New base model:</span>
-                <input type="text" id="stFrankOut" class="w-path" title="Where the blend is written as a new base model (.safetensors), in the loaded model's own format: ComfyUI and Fizgig load it like the original">
-                <button class="btn" id="stFrankExport" title="Writes the blend at the sliders as a whole new base model (about the size of the loaded one; a minute or two)">Save blend as a new base</button></div>
               <div class="field-row st-lora-row"><span class="field-label">Primary LoRA:</span>
                 <input type="text" id="stPrimary" class="w-path" title="Leave it empty to render the base model on its own (Studio as a generator)" placeholder="the LoRA to tweak (.safetensors) - empty: the base model on its own">
                 <button class="btn" id="stPrimaryPick">Choose…</button>
@@ -1210,6 +1207,15 @@
                 <input type="text" id="stOut" class="w-path" placeholder="the repaired LoRA's file (.safetensors)">
                 <button class="btn btn-primary" id="stSave">Save repaired LoRA</button></div>
               <div id="stSaveMsg"></div>
+            </div>
+          </div>
+          <div class="section-card st-frank-save">
+            <div class="card-title">Save blend as a new base model</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Save as:</span>
+                <input type="text" id="stFrankOut" class="w-path" title="Where the blend is written as a new base model (.safetensors), in the loaded model's own format: ComfyUI and Fizgig load it like the original">
+                <button class="btn btn-primary" id="stFrankExport" title="Writes the blend at the sliders as a whole new base model (about the size of the loaded one; a minute or two)">Save blend as a new base</button></div>
+              <div class="field-hint">The blend at the sliders, as a whole new base model (about 21 GB for H3 Image), in the loaded model's own format: ComfyUI and Fizgig load it like the original. The mix is recorded in its metadata.</div>
             </div>
           </div>
         </section>

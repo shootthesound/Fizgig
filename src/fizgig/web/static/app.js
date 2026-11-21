@@ -6690,7 +6690,9 @@ async function studioFamily(res, w, h) {
   const L = S.st.layout = await api("/api/studio/layout?family=" + encodeURIComponent(key));
   const frankWith = L.frankenstein || [];             // Frankenstein mode: the models this one's blocks blend with
   $("stFrankRow").style.display = frankWith.length ? "" : "none";
-  $("stFrankName").textContent = frankWith[0] || "";
+  $("stModeFrank").title = `Blend ${frankWith[0] || "another base model"} into this one, block by block: each block ` +
+    "slider is how much of that block comes from it (0 = this model as loaded, 1 = all of it). No LoRA. Baseline is " +
+    "this model on its own; Tweaked is the blend.";
   if (!frankWith.length) $("stFrank").checked = false;
   const sv = stSaved();
   studioKind(L, sv);
@@ -8321,8 +8323,9 @@ function studioFrankUi() {
   // rolls from 0 to 0.6 (Peter): past about 0.75, and with many blocks rolled at once, the sweep's blends broke up
   if (on) { $("stLuckyLo").value = "0"; $("stLuckyHi").value = "0.6"; }
   else if ($("stLuckyHi").value === "0.6" && $("stLuckyLo").value === "0") $("stLuckyHi").value = "1.5";   // the LoRA default
-  $("stFrankNote").textContent = on ? `Each block slider: how much of that block comes from ${S.st.frankName} (0 = as ` +
-    "loaded, 1 = all of it). Baseline: the model as loaded; Tweaked: the blend." : "";
+  // the switch shows the mode; one short line says what's blended in (the detail is on the button's tooltip)
+  document.querySelectorAll("#stModeSeg .btn").forEach((b) => b.classList.toggle("active", (b.dataset.frank === "1") === on));
+  $("stFrankNote").textContent = on ? `Blending in ${S.st.frankName}: each slider is how much of that block comes from it.` : "";
 }
 function studioFrankRanges() {
   // in the mode each block slider is a share of the other model's block, 0 to 1; else the LoRA's -3 to 3
@@ -9189,6 +9192,13 @@ function wireStudio() {
   window.addEventListener("resize", debounce(() => { const d = $("stDock"); if (d && d.classList.contains("floating")) studioDockClamp(d); }, 150));
   $("stFamily").addEventListener("change", () => { studioFamily(); stRemember(); });
   $("stFrank").addEventListener("change", studioFrankTick);
+  // Studio mode: LoRA | Frankenstein - the switch sets the (hidden) tick the mode follows
+  $("stModeSeg").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-frank]");
+    if (!b) return;
+    $("stFrank").checked = b.dataset.frank === "1";
+    studioFrankTick();
+  });
   // the clip row: length / size / steps / speed LoRA / sound wait for Render, as Model and Base do
   for (const id of ["stH3Len", "stH3LenS", "stH3W", "stH3H", "stH3Steps", "stH3Turbo", "stH3Sound", "stH3Boost", "stH3Pieces", "stH3PieceS"])
     $(id).addEventListener("change", () => { if (id.startsWith("stH3Len") || id === "stH3PieceS") studioLenOther(true); if (id === "stH3Pieces") studioLenOther(); studioH3Remember(); studioPending(); });

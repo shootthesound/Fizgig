@@ -137,6 +137,20 @@ def test_plain_h3_image_streams_only_when_it_cant_fit(monkeypatch):
     assert 'getattr(desc, "swap_ring_slots", 0)' in load and "only_if_short_gb=1.0" in load
 
 
+def test_the_mode_is_a_switch_and_saves_where_saving_lives():
+    # a bare tick wedged between Render with and Primary LoRA, and the blend's save up in Setup, far from the sliders
+    html = open(os.path.join(os.path.dirname(APP), "index.html"), encoding="utf-8").read()
+    css = open(os.path.join(os.path.dirname(APP), "style.css"), encoding="utf-8").read()
+    js = open(APP, encoding="utf-8").read()
+    model = html.index('id="stFamily"')
+    assert model < html.index('id="stModeSeg"') < html.index('id="stRender"')      # under the model picker
+    assert 'class="seg" id="stModeSeg"' in html and 'data-frank="1"' in html
+    save = html.index('class="section-card st-frank-save"')
+    assert html.index("st-lora-save") < save and html.index('id="stFrankExport"') > save   # in its own save card
+    assert "#tab-studio.frankenstein .st-frank-save { display: block; }" in css
+    assert '$("stModeSeg").addEventListener("click"' in js
+
+
 def test_page_applies_them_over_zero_and_keeps_your_presets_apart():
     js = open(APP, encoding="utf-8").read()
     apply = js[js.index("async function studioPresetApply"):js.index("// Royale's reference strength")]

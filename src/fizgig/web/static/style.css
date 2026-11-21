@@ -2453,8 +2453,11 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 /* a blend share has no sign, and Balance needs a donor */
 #tab-studio.frankenstein .st-flip, #tab-studio.frankenstein .st-bal { display: none; }
 #tab-studio.frankenstein .st-block .st-label { color: var(--text-primary); }
-#stFrankExportRow { display: none; }
-#tab-studio.frankenstein #stFrankExportRow { display: flex; }
+/* the blend's save card, beside the LoRA's (which steps aside in the mode) */
+#tab-studio .st-frank-save { display: none; }
+#tab-studio.frankenstein .st-frank-save { display: block; }
+/* the mode loaded: the Tweaked caption (the blend) in the accent colour, as the switch's active button */
+#tab-studio.frankenstein #stTweakCap { color: var(--accent); font-weight: 600; }
 /* no LoRA: the one render is the Tweaked pane, shown whatever the arrows were left on (hiding Tweaked left nothing) */
 #tab-studio.no-lora .st-preview.only-base .st-tweak-pane { display: block; }
 #tab-studio.no-lora .st-dock .st-preview.only-base .st-tweak-pane { display: flex; }   /* Keep in view: scales to the panel */

@@ -2447,8 +2447,9 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 #tab-studio.no-lora #stMaps, #tab-studio.no-lora #stDlBase { display: none !important; }
 #tab-studio.no-lora .st-preview { grid-template-columns: 1fr; }
 /* Frankenstein mode: no LoRA rows, no LoRA save; the donor half of each block row stays out */
-#tab-studio.frankenstein .st-lora-row, #tab-studio.frankenstein .st-lora-save,
-#tab-studio.frankenstein .st-row.donor { display: none !important; }
+/* the LoRA rows go with the tick (untick it and they're back for the next Start); the rest while the mode is loaded */
+#tab-studio.frank-asked .st-lora-row, #tab-studio.frank-asked #stMixRows, #tab-studio.frank-asked #stDmixRows,
+#tab-studio.frankenstein .st-lora-save, #tab-studio.frankenstein .st-row.donor { display: none !important; }
 #tab-studio.frankenstein .st-block .st-label { color: var(--text-primary); }
 #stFrankExportRow { display: none; }
 #tab-studio.frankenstein #stFrankExportRow { display: flex; }

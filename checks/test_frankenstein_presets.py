@@ -51,6 +51,21 @@ def test_start_needs_the_other_side_lora_too(tmp_path):
     assert not problems and frank["path"] == str(dit) and frank["lora"] == str(lora) and frank["strength"] == 0.75
 
 
+def test_the_tick_hides_the_lora_rows():
+    # the mode loads no LoRA: the Primary / Donor rows and their mixes showed until the mode had loaded (and could be
+    # filled in for a load that ignores them)
+    js = open(APP, encoding="utf-8").read()
+    css = open(os.path.join(os.path.dirname(APP), "style.css"), encoding="utf-8").read()
+    assert 'classList.toggle("frank-asked", studioFrankAsked())' in js
+    assert '$("stFrank").addEventListener("change", studioFrankTick)' in js
+    rule = css[css.index("#tab-studio.frank-asked .st-lora-row"):]
+    rule = rule[:rule.index("}")]
+    for sel in ("#tab-studio.frank-asked .st-lora-row", "#tab-studio.frank-asked #stMixRows",
+                "#tab-studio.frank-asked #stDmixRows"):
+        assert sel in rule, sel
+    assert "display: none" in css[css.index(rule):css.index(rule) + len(rule) + 40]
+
+
 def test_page_applies_them_over_zero_and_keeps_your_presets_apart():
     js = open(APP, encoding="utf-8").read()
     apply = js[js.index("async function studioPresetApply"):js.index("// Royale's reference strength")]

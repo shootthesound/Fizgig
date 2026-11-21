@@ -6692,6 +6692,7 @@ async function studioFamily(res, w, h) {
   $("stFrankRow").style.display = frankWith.length ? "" : "none";
   $("stFrankName").textContent = frankWith[0] || "";
   if (!frankWith.length) $("stFrank").checked = false;
+  studioFrankTick();
   const sv = stSaved();
   studioKind(L, sv);
   $("stRes").innerHTML = "";
@@ -8299,6 +8300,8 @@ function studioRows() {
 function studioFrankAsked() {
   return !!((S.st.layout || {}).frankenstein || []).length && $("stFrank").checked;
 }
+// the tick alone hides the LoRA rows (primary, donor, their mixes): the mode loads no LoRA, so nothing typed there counts
+function studioFrankTick() { $("tab-studio").classList.toggle("frank-asked", studioFrankAsked()); }
 function studioFrankRanges() {
   // in the mode each block slider is a share of the other model's block, 0 to 1; else the LoRA's -3 to 3
   for (const r of document.querySelectorAll("#stBlocks .st-row:not(.donor) input[type=range]")) {
@@ -8310,6 +8313,7 @@ function studioFrankEnter(on, name) {
   S.st.frank = on;
   S.st.frankName = name || "";
   $("tab-studio").classList.toggle("frankenstein", on);
+  if (on) { $("stFrank").checked = true; studioFrankTick(); }   // found loaded (a page reload): the tick says so too
   for (const b of Object.values(S.st.blocks)) { b.ps = on ? 0 : 1; b.pe = true; }
   studioFrankRanges();
   studioSync(Object.keys(S.st.blocks));
@@ -9150,6 +9154,7 @@ function wireStudio() {
   new MutationObserver(studioDockPlay).observe($("stPlayBoth"), {attributes: true, attributeFilter: ["style"]});
   window.addEventListener("resize", debounce(() => { const d = $("stDock"); if (d && d.classList.contains("floating")) studioDockClamp(d); }, 150));
   $("stFamily").addEventListener("change", () => { studioFamily(); stRemember(); });
+  $("stFrank").addEventListener("change", studioFrankTick);
   // the clip row: length / size / steps / speed LoRA / sound wait for Render, as Model and Base do
   for (const id of ["stH3Len", "stH3LenS", "stH3W", "stH3H", "stH3Steps", "stH3Turbo", "stH3Sound", "stH3Boost", "stH3Pieces", "stH3PieceS"])
     $(id).addEventListener("change", () => { if (id.startsWith("stH3Len") || id === "stH3PieceS") studioLenOther(true); if (id === "stH3Pieces") studioLenOther(); studioH3Remember(); studioPending(); });

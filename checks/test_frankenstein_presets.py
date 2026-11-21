@@ -56,7 +56,7 @@ def test_the_tick_hides_the_lora_rows():
     # filled in for a load that ignores them)
     js = open(APP, encoding="utf-8").read()
     css = open(os.path.join(os.path.dirname(APP), "style.css"), encoding="utf-8").read()
-    assert 'classList.toggle("frank-asked", studioFrankAsked())' in js
+    assert '$("tab-studio").classList.toggle("frank-asked", on);' in js
     assert '$("stFrank").addEventListener("change", studioFrankTick)' in js
     rule = css[css.index("#tab-studio.frank-asked .st-lora-row"):]
     rule = rule[:rule.index("}")]
@@ -79,6 +79,23 @@ def test_block_values_stay_within_a_blend_share():
     assert 'side === "p" ? stClampP(r)' in js
     assert '$("stLuckyLo").value = "0"; $("stLuckyHi").value = "0.6";' in js     # lucky rolls 0 to 0.6 in the mode
     assert "#tab-studio.frankenstein .st-flip, #tab-studio.frankenstein .st-bal { display: none; }" in css
+
+
+def test_the_mode_follows_the_tick_not_the_load():
+    # the mode's presets, 0-1 sliders and start-at-0 came only once the mode had LOADED: ticking it after a regular
+    # load, or after a restart before the first render, still showed the LoRA presets; and a preset picked before
+    # Start was reset to 0 when the mode loaded
+    js = open(APP, encoding="utf-8").read()
+    tick = js[js.index("function studioFrankTick()"):]
+    assert "if (on !== !!S.st.frank) studioFrankEnter(on," in tick[:300]
+    fam = js[js.index("async function studioFamily("):]
+    fam = fam[:fam.index("\n}\n")]
+    i = fam.index("S.st.frank = studioFrankAsked();")
+    assert fam.index("S.st.blocks = {};") < i < fam.index("studioPresets();")    # on the new blocks, before the menu
+    poll = js[js.index("S.st.frankLoaded = frank;"):][:400]
+    assert "studioFrankEnter(frank" not in poll                  # the load no longer resets the sliders
+    sched = js[js.index("function studioSchedule(live)"):][:400]
+    assert "if (!!S.st.frank !== !!S.st.frankLoaded)" in sched   # no render on the model the tick no longer matches
 
 
 def test_page_applies_them_over_zero_and_keeps_your_presets_apart():

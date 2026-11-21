@@ -6692,7 +6692,6 @@ async function studioFamily(res, w, h) {
   $("stFrankRow").style.display = frankWith.length ? "" : "none";
   $("stFrankName").textContent = frankWith[0] || "";
   if (!frankWith.length) $("stFrank").checked = false;
-  studioFrankTick();
   const sv = stSaved();
   studioKind(L, sv);
   $("stRes").innerHTML = "";
@@ -6725,6 +6724,11 @@ async function studioFamily(res, w, h) {
   for (const g of L.groups) for (const b of g.blocks) S.st.blocks[b.id] = {pe: true, ps: 1, de: true, ds: 1};
   S.st.locks = new Set(); S.st.dlocks = new Set(); S.st.frozen = new Set(); S.st.dfrozen = new Set();
   S.st.hist = []; S.st.redo = [];
+  // Frankenstein mode follows the tick, loaded or not: its sliders start at 0 and its presets show at once
+  S.st.frank = studioFrankAsked();
+  S.st.frankName = frankWith[0] || "";
+  if (S.st.frank) for (const b of Object.values(S.st.blocks)) b.ps = 0;
+  studioFrankUi();
   studioLuckyCounts();
   studioMasters();
   studioPresets();
@@ -8304,7 +8308,22 @@ function studioFrankAsked() {
   return !!((S.st.layout || {}).frankenstein || []).length && $("stFrank").checked;
 }
 // the tick alone hides the LoRA rows (primary, donor, their mixes): the mode loads no LoRA, so nothing typed there counts
-function studioFrankTick() { $("tab-studio").classList.toggle("frank-asked", studioFrankAsked()); }
+function studioFrankTick() {
+  const on = studioFrankAsked();
+  if (on !== !!S.st.frank) studioFrankEnter(on, ((S.st.layout || {}).frankenstein || [])[0] || "");
+  else studioFrankUi();
+}
+// the page's side of the mode (from the tick): LoRA rows, lucky limits, the note. What needs the mode LOADED - the Save
+// blend row, Save repaired LoRA out of the way - goes by the "frankenstein" class the status poll sets.
+function studioFrankUi() {
+  const on = !!S.st.frank;
+  $("tab-studio").classList.toggle("frank-asked", on);
+  // rolls from 0 to 0.6 (Peter): past about 0.75, and with many blocks rolled at once, the sweep's blends broke up
+  if (on) { $("stLuckyLo").value = "0"; $("stLuckyHi").value = "0.6"; }
+  else if ($("stLuckyHi").value === "0.6" && $("stLuckyLo").value === "0") $("stLuckyHi").value = "1.5";   // the LoRA default
+  $("stFrankNote").textContent = on ? `Each block slider: how much of that block comes from ${S.st.frankName} (0 = as ` +
+    "loaded, 1 = all of it). Baseline: the model as loaded; Tweaked: the blend." : "";
+}
 function studioFrankRanges() {
   // in the mode each block slider is a share of the other model's block, 0 to 1; else the LoRA's -3 to 3
   for (const r of document.querySelectorAll("#stBlocks .st-row:not(.donor) input[type=range]")) {
@@ -8315,18 +8334,11 @@ function studioFrankEnter(on, name) {
   // the sliders start at 0 (the model as loaded) on entering the mode, and back at 1 (the LoRA as is) on leaving it
   S.st.frank = on;
   S.st.frankName = name || "";
-  $("tab-studio").classList.toggle("frankenstein", on);
-  if (on) { $("stFrank").checked = true; studioFrankTick(); }   // found loaded (a page reload): the tick says so too
-  // rolls from 0 to 0.6 (Peter): past about 0.75, and with many blocks rolled at once, the sweep's blends broke up
-  if (on) { $("stLuckyLo").value = "0"; $("stLuckyHi").value = "0.6"; }
-  else if ($("stLuckyHi").value === "0.6" && $("stLuckyLo").value === "0") $("stLuckyHi").value = "1.5";   // the LoRA default
+  studioFrankUi();
   for (const b of Object.values(S.st.blocks)) { b.ps = on ? 0 : 1; b.pe = true; }
   studioFrankRanges();
   studioSync(Object.keys(S.st.blocks));
   studioPresets();                              // the mode's own presets (and your presets for it)
-  if (on && !$("stFrankOut").value) $("stFrankOut").value = S.st.frankOut || "";
-  $("stFrankNote").textContent = on ? `Each block slider: how much of that block comes from ${name} (0 = as loaded, ` +
-    "1 = all of it). Baseline: the model as loaded; Tweaked: the blend." : "";
 }
 
 function studioRow(b) {
@@ -8734,6 +8746,11 @@ function studioPending() {
 
 function studioSchedule(live) {
   if (!S.st.ready) return;
+  if (!!S.st.frank !== !!S.st.frankLoaded) {          // ticked (or unticked) since the load: Render loads it that way
+    $("stStatus").textContent = S.st.frank ? "Press Render to load Frankenstein mode: the sliders are blend shares now." :
+      "Press Render to leave Frankenstein mode: the sliders are LoRA strengths again.";
+    return;
+  }
   if (S.st.split === "base" && !S.st.noLora) {        // sliders change Tweaked only, and it's hidden
     $("stStatus").textContent = "Tweaked is hidden: slider changes render when you show it again and press Render.";
     return;
@@ -8859,7 +8876,10 @@ async function studioPollOnce() {
   // no LoRA loaded: Studio renders the base model on its own (a zero adapter stands in for the primary)
   const frank = S.st.ready && !!st.frankenstein;
   S.st.frankOut = st.frank_out || "";
-  if (frank !== !!S.st.frank) studioFrankEnter(frank, st.frankenstein);
+  S.st.frankLoaded = frank;
+  $("tab-studio").classList.toggle("frankenstein", frank);
+  if (frank && !$("stFrankOut").value) $("stFrankOut").value = S.st.frankOut || "";
+  if (frank && !S.st.frank) { $("stFrank").checked = true; studioFrankTick(); }   // found loaded (a page reload)
   S.st.noPrimary = S.st.ready && !st.primary && !frank;
   S.st.noLora = S.st.noPrimary && !st.donor;
   $("tab-studio").classList.toggle("no-primary", S.st.noPrimary);
@@ -8944,11 +8964,11 @@ async function studioPollOnce() {
       (ps === 1 ? "Baseline (LoRA at default 1.0)" : `Baseline (LoRA at ${ps})`) +
       (st.donor ? " - the donor is not in the baseline" : "");
     $("stTweakCap").textContent = noTweak ? "Tweaked (not rendered: it was hidden - press Render to fill it)" :
-      S.st.frank ? `The blend (${S.st.frankName}'s blocks at the sliders)` :
+      S.st.frankLoaded ? `The blend (${S.st.frankName}'s blocks at the sliders)` :
       !st.primary && !st.donor ? "The base model (no LoRA)" :
       "Tweaked (current sliders)" + (st.donor ? " - includes the donor" : "");
     if (!st.primary && st.donor) $("stBaseCap").textContent = "Baseline: the base model (no primary LoRA)";
-    if (S.st.frank) $("stBaseCap").textContent = `Baseline: ${S.st.layout.name} as loaded`;
+    if (S.st.frankLoaded) $("stBaseCap").textContent = `Baseline: ${S.st.layout.name} as loaded`;
   }
   studioNoLoraPane(st);
   studioAceNotes(st.notes);

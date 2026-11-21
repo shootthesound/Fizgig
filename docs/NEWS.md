@@ -1,5 +1,13 @@
 # Fizgig news
 
+## 21 Nov 2026: Frankenstein mode: blend MiniMax H3 Image with H3 video
+
+**Frankenstein mode, an experiment.** Studio's new Studio mode blends MiniMax H3 Image with H3 video block by block, to explore what H3 video's sense of motion does for H3 Image's stills. ✨Motion is a good starting point; there's a lot more to find, and it's here for now, not for good. A blend you like saves as a new H3 Image base file.
+
+**H3 Image in Studio on 16 GB, and Flux 3 at bf16 on 16 GB.** Studio streams H3 Image from system RAM when it can't fit, and a text encoder's memory is now freed as soon as it's unloaded. Also block swap fixes, AMD previews for five models (#383), and queueing several runs in a row (#386).
+
+[Fizgig v9.8.3 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.8.3)
+
 ## 19 Nov 2026: MiniMax H3 Image fine-tuning, and Studio as a generator
 
 **MiniMax H3 Image fine-tunes.** Fine-tune is now a kind of training for MiniMax H3 Image, with a built-in 5e-5 preset: the whole model trains, with Fizgig's training adapter on, and saves a full H3 Image file that Studio and ComfyUI load as the base. It trains on cards down to 24 GB.

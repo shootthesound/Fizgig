@@ -226,6 +226,9 @@ Since November:
 - [Marhalt](https://github.com/Marhalt): saying what your subject is ([#365](https://github.com/shootthesound/Fizgig/issues/365))
 - [UNfukashigi](https://github.com/UNfukashigi): the diagnosis and fix for Studio on 12 GB cards with block swap ([#377](https://github.com/shootthesound/Fizgig/issues/377))
 - [RobbieNeko](https://github.com/RobbieNeko): workers that wouldn't start on Linux ROCm ([#379](https://github.com/shootthesound/Fizgig/issues/379))
+- [ongziheng](https://github.com/ongziheng): AMD previews that wouldn't decode on MOSS-Image, Flux 3, Fibo 2, Z-Image and Vimoo ([#383](https://github.com/shootthesound/Fizgig/issues/383))
+- [kvsh88](https://github.com/kvsh88): queueing several runs in a row ([#386](https://github.com/shootthesound/Fizgig/issues/386))
+- [axymeus](https://github.com/axymeus): Choose… opening the Windows file window ([#387](https://github.com/shootthesound/Fizgig/issues/387))
 - WiseDuck (by email): Gizmo's **Prepare a folder** and clips at any audio sample rate
 - u/Obvious-Bad7548 on r/StableDiffusion: the LCM sampler recipe for H3 Image
 

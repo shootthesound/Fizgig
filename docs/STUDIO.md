@@ -101,7 +101,7 @@ Red means most, then yellow, then blue; no colour, barely. Each map is scaled fr
 
 ## Frankenstein mode (MiniMax H3 Image)
 
-Frankenstein mode blends two base models block by block: H3 Image with MiniMax H3 video. Many people prefer H3 video for stills because it understands motion and time; H3 Image is cleaner but renders action frozen and pin-sharp. Blending some of H3 video's blocks into H3 Image brings the motion back (motion blur on fast things, spray, smoke, a curtain whipping in) while keeping H3 Image's look. No LoRA is involved: it works on the two models themselves.
+Frankenstein mode blends two base models block by block: H3 Image with MiniMax H3 video. Many people prefer H3 video for stills because it understands motion and time; H3 Image is cleaner but renders action frozen and pin-sharp. Blending some of H3 video's blocks into H3 Image brings the motion back (motion blur on fast things, spray, smoke, a curtain whipping in) while keeping H3 Image's look. No LoRA is involved: it works on the two models themselves. **It's an experimentation tool**, here for now to explore what mixes of the two models can do; it may not stay in Fizgig for good. ✨Motion is a good start; there's plenty more to find, and finds are welcome.
 
 ![Studio mode: LoRA or Frankenstein, under the model picker](assets/frankenstein/studio_mode.png)
 

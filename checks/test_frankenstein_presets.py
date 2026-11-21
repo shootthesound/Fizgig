@@ -98,6 +98,26 @@ def test_the_mode_follows_the_tick_not_the_load():
     assert "if (!!S.st.frank !== !!S.st.frankLoaded)" in sched   # no render on the model the tick no longer matches
 
 
+def test_the_mode_plans_its_own_block_swap(monkeypatch):
+    # Studio's Auto streams nothing from 16 GB up, so H3 Image's 21 GB int8 model ran out of memory loading on a
+    # 16 GB card, and on a 24 GB card a 2560 render did: the mode sizes its own swap (and always loads int8)
+    import fizgig.scripts.studio_worker as W
+    from fizgig.families import quant
+    desc = get("minimax_image")
+    drv = type(desc.load_driver())
+    monkeypatch.setattr(drv, "dit_gb", lambda self, path: 20.98)
+    monkeypatch.setenv("FIZGIG_SIM_VRAM_GB", "1")                  # free memory as given, nothing added
+    got = {}
+    for free in (31.5, 22.5, 14.7):
+        monkeypatch.setattr(quant, "free_vram_gb", lambda free=free: free)
+        got[free] = W._frank_swap(desc, "h3image.safetensors")
+    assert got[31.5] == 0                                          # a 32 GB card: the whole model on it
+    assert 8 <= got[22.5] <= 14 and 28 <= got[14.7] <= 40, got     # 24 / 16 GB: just enough streamed
+    src = open(W.__file__, encoding="utf-8").read()
+    load = src[src.index("def cmd_load"):src.index("def cmd_donor")]
+    assert 'plan["precision"] = "int8"' in load and "_frank_swap(desc" in load
+
+
 def test_page_applies_them_over_zero_and_keeps_your_presets_apart():
     js = open(APP, encoding="utf-8").read()
     apply = js[js.index("async function studioPresetApply"):js.index("// Royale's reference strength")]

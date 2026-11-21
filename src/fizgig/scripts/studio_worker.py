@@ -43,6 +43,26 @@ def _auto_swap():
     return 0
 
 
+FRANK_ROOM_GB = 4.5   # on top of the loaded model: a 2560 x 2560 render (3.7 GB measured on H3 Image) + the blend's own
+
+
+def _frank_swap(desc, dit_path):
+    """Frankenstein mode's Auto block swap: the fewest streamed blocks that leave room for the int8 model and a render
+    up to 2560 on this card. Free memory counts what this process already holds (a model loaded before)."""
+    from fizgig.families.quant import free_vram_gb, swap_blocks_for
+    try:
+        drv = desc.load_driver()
+        gb = drv.dit_gb(dit_path)
+        cap = drv.max_blocks_to_swap()
+        free = free_vram_gb()
+        if not os.environ.get("FIZGIG_SIM_VRAM_GB", "").strip():   # the simulated figure already counts it
+            free += torch.cuda.memory_reserved() / 1024 ** 3
+    except Exception:                            # noqa: BLE001 - no file, no card: Studio's own Auto stands
+        return _auto_swap()
+    per = ((getattr(desc, "train_memory", None) or {}).get("int8") or (0, 0))[1] or gb / max(1, cap + 2)
+    return min(cap, swap_blocks_for(desc, per, gb + FRANK_ROOM_GB - free))
+
+
 def _blocks(eng):
     eq = {}
     try:                                         # a Model EQ row: its gain (the sliders' 0 / 2 = -g / +g)
@@ -68,7 +88,8 @@ def cmd_load(c):
         plan["preview_sampling"] = ck[1] if ck else None
     else:
         plan["preview_sampling"] = None
-    if str(plan.get("blocks_to_swap", "")).lower().startswith("auto") and not (torch.version.hip and desc.key == "krea2"):
+    auto_swap = str(plan.get("blocks_to_swap", "")).lower().startswith("auto")
+    if auto_swap and not (torch.version.hip and desc.key == "krea2"):
         plan["blocks_to_swap"] = _auto_swap()
     with _engine_lock:
         eng = S["engine"]
@@ -95,6 +116,13 @@ def cmd_load(c):
         eng.on_step = lambda done, total: emit(ev="step", done=done, total=total)
         emit(ev="status", text=c.get("status") or f"Loading {desc.display_name}…")
         eng.plan_canvas = tuple(c["canvas"]) if c.get("canvas") else None   # H3 Auto: room for this clip
+        if frank:
+            # Frankenstein mode plans its own load: int8 always (the blend works on int8 codes: Auto could pick 4-bit
+            # on a small card), and on Auto just enough block swap for the model and a render up to 2560 - Studio's
+            # Auto (none from 16 GB up) can't hold H3 Image's 21 GB on a 16 or 24 GB card
+            plan["precision"] = "int8"
+            if auto_swap:
+                plan["blocks_to_swap"] = _frank_swap(desc, plan.get("dit_path", ""))
         eng.ensure_pipeline(**plan)
         emit(ev="status", text="Loading the LoRA…")
         eng.load_primary("" if frank else c["primary"])

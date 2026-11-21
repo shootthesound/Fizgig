@@ -139,6 +139,33 @@ def test_a_layer_it_cant_read_refuses_instead_of_half_blending(tmp_path):
         DiTBlend(dit, groups, other)
 
 
+def test_other_files_int8_adaln_is_read_with_its_scale(tmp_path):
+    # an H3 file that also stores its pruned AdaLN projections as int8 + weight_scale: the raw codes were read as the
+    # weights (~135x off), so every blended block's modulation was garbage and Studio rendered noise
+    from safetensors.torch import save_file
+    from fizgig.minimax.model import AdalnProj
+    _, _, (qa, sa), (qb, sb) = _pair()
+    dit, _, groups = _one_block_dit(qa, sa)
+    dit.blocks[0].adaln_proj = AdalnProj(8, 16, 2, 1, apply_silu=False)
+    groups[0].blocks[0].modules.append("blocks.0.adaln_proj.linear")
+    dit.pruned_adaln = True
+    dit.register_buffer("adaln_t_table", torch.randn(33, 8))
+    dit._time_embedding = lambda t: t
+    W = 0.05 * torch.randn(32, 8)
+    s = W.abs().amax(dim=1, keepdim=True) / 127.0
+    other = str(tmp_path / "int8_adaln.safetensors")
+    save_file({"blocks.0.lin.weight": qb, "blocks.0.lin.weight_scale": sb, "blocks.0.lin.comfy_quant": _conf(CONF),
+               "blocks.0.norm.weight": torch.randn(64), "blocks.0.norm.bias": torch.zeros(64),
+               "adaln_t_table": torch.randn(33, 8),
+               "blocks.0.adaln_proj.linear.weight": torch.round(W / s).to(torch.int8),
+               "blocks.0.adaln_proj.linear.weight_scale": s,
+               "blocks.0.adaln_proj.linear.comfy_quant": _conf({"format": "int8_tensorwise"}),
+               "blocks.0.adaln_proj.linear.bias": torch.zeros(32)}, other)
+    bl = DiTBlend(dit, groups, other)
+    Wv = next(it[2] for it in bl.items["b0"] if it[0] == "a")
+    assert ((Wv - W).norm() / W.norm()) < 0.01                # the weight itself, to its int8 grid
+
+
 def test_export_writes_the_blend_and_copies_the_rest(tmp_path):
     """Export: the loaded model's file with the blended blocks' current values in place, everything else byte for
     byte, the mix in its metadata."""

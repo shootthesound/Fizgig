@@ -36,6 +36,24 @@ def blend_int8_rows(qa: torch.Tensor, sa: torch.Tensor, qb: torch.Tensor, sb: to
     return _requant(m)
 
 
+def _float_weight(f, name):
+    """A Linear's weight from a file as fp32, whatever way it's stored: a float tensor, or int8 codes with their scale
+    (some H3 files quantise the AdaLN projections too; their raw codes read as weights were ~135x off)."""
+    w = f.get_tensor(name + ".weight")
+    if w.dtype != torch.int8:
+        return w.float()
+    if name + ".weight_scale" not in f.header:
+        raise ValueError(f"{name}.weight is int8 with no weight_scale: can't read it.")
+    s = f.get_tensor(name + ".weight_scale").float()
+    w = w.float() * (s.reshape(()) if s.numel() == 1 else s.reshape(-1, 1))     # one scale, or one per row
+    if name + ".comfy_quant" in f.header:
+        from fizgig.minimax.convrot import parse_comfy_quant, rotate
+        conf = parse_comfy_quant(f.get_tensor(name + ".comfy_quant"))
+        if conf.get("convrot"):                 # stored rotated: back to the plain weight (self-inverse)
+            w = rotate(w, int(conf.get("convrot_groupsize", 256)))
+    return w
+
+
 def _requant(m):
     s = m.abs().amax(dim=1, keepdim=True).clamp_min(1e-12) / 127.0
     return torch.round(m / s).clamp(-127, 127).to(torch.int8), s
@@ -132,7 +150,7 @@ class DiTBlend:
                         if self.other_table is not None and isinstance(mod, AdalnProj) \
                                 and f"{name}.linear.weight" in hdr:
                             ld = lora.get(f"{name}.linear")
-                            items.append(("a", mod, f.get_tensor(f"{name}.linear.weight").float().to(dev),
+                            items.append(("a", mod, _float_weight(f, f"{name}.linear").to(dev),
                                           f.get_tensor(f"{name}.linear.bias").float().to(dev)
                                           if f"{name}.linear.bias" in hdr else None, ld, f"{name}.linear"))
                             adaln_lin.add(f"{name}.linear")

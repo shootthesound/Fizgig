@@ -931,8 +931,17 @@ class _Inline:
             f.set_exception(e)
         return f
 
+    def map(self, fn, *iterables, timeout=None, chunksize=1):
+        return [self.submit(fn, *a).result() for a in zip(*iterables)]
+
     def shutdown(self, wait=True, **k):
         pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
 
 
 @contextlib.contextmanager
@@ -1116,6 +1125,7 @@ def simulated_card(card_gb=32.0, others_gb=0.0, capped=True, expandable=False, c
         stack.enter_context(mock.patch.object(torch, "load", tload))
         # a module imported after this point takes the inline one by name too (Krea 2's offloader loads with the DiT:
         # its mover ran on a real thread, on the same fake mode - "in kernel" from the other thread, half-moved weights)
+        real_pool = concurrent.futures.ThreadPoolExecutor     # before the patch: modules already imported hold this
         stack.enter_context(mock.patch.object(concurrent.futures, "ThreadPoolExecutor", _Inline))
         for mod_name, mod in list(sys.modules.items()):
             if mod is None or not mod_name.startswith(("fizgig", "safetensors", "diffusers", "accelerate",
@@ -1128,7 +1138,7 @@ def simulated_card(card_gb=32.0, others_gb=0.0, capped=True, expandable=False, c
                     hit = False
                 if hit:
                     stack.enter_context(mock.patch.object(mod, attr, reals[val]))
-            if getattr(mod, "ThreadPoolExecutor", None) is concurrent.futures.ThreadPoolExecutor:
+            if getattr(mod, "ThreadPoolExecutor", None) is real_pool:
                 stack.enter_context(mock.patch.object(mod, "ThreadPoolExecutor", _Inline))
         meter.fake_mode = stack.enter_context(FakeTensorMode(allow_non_fake_inputs=True))
         stack.enter_context(meter)

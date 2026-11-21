@@ -234,10 +234,10 @@ MINIMAX_IMAGE = FamilyDescription(
     # so its blocks are few-step like H3 Image's (Peter, 21 Nov 2026)
     frankenstein_with=(("minimax_dit", "MiniMax H3 video", "minimax_turbo_lora", 0.75),),
     # motion in stills, from the 21 Nov block sweep (5 scenes, 2560 px): H3 video's motion lives in about blocks 26-36;
-    # 26-28 + 32-34 at 75% added it in every scene and stayed clean to 90%; 28-34 at 60% is the gentler one. Runs into
-    # the late 30s-40s, or many blocks at once, turned grainy.
+    # 26-28 + 32-34 at 75% added it in every scene and stayed clean to 90% (the preset: 0.65, Peter); 28-34 at 60% is
+    # the gentler one. Runs into the late 30s-40s, or many blocks at once, turned grainy.
     frankenstein_presets=(
-        ("✨Motion", tuple((f"h3blk_{i}", 0.75) for i in (26, 27, 28, 32, 33, 34))),
+        ("✨Motion", tuple((f"h3blk_{i}", 0.65) for i in (26, 27, 28, 32, 33, 34))),
         ("✨Motion, gentle", tuple((f"h3blk_{i}", 0.6) for i in range(28, 35))),
     ),
     activation_cache=True,            # Reuse unchanged blocks: step-1 replay, identical to a full render

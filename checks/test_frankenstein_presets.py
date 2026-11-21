@@ -28,7 +28,7 @@ def test_h3_image_serves_its_frankenstein_presets():
         assert p["blocks"] and set(p["blocks"]) <= ids, p["name"]
         assert all(0.0 < w <= 1.0 for w in p["blocks"].values()), p["name"]
     motion = dict(get("minimax_image").frankenstein_presets)["✨Motion"]
-    assert dict(motion) == {f"h3blk_{i}": 0.75 for i in (26, 27, 28, 32, 33, 34)}
+    assert dict(motion) == {f"h3blk_{i}": 0.65 for i in (26, 27, 28, 32, 33, 34)}
 
 
 def test_a_family_without_the_mode_serves_none():

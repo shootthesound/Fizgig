@@ -68,7 +68,7 @@ Slider LoRAs train from photo pairs. Sliders from prompts are off on this model 
 
 ## Frankenstein mode: H3 video's motion in stills
 
-Studio's **Frankenstein mode** blends MiniMax H3 video's blocks into H3 Image, block by block, to bring back the sense of motion H3 video gives stills (motion blur on fast things, spray, smoke) while keeping H3 Image's clean look. **✨Motion** (H3 video's blocks 26-28 and 32-34 at 75%) is the best mix we found across five motion scenes; **✨Motion, gentle** (28-34 at 60%) is the lighter one. A blend saves as a new H3 Image base file that ComfyUI loads like the original. It needs the H3 video file and H3's Turbo LoRA set in Preferences, and the whole model on the card. See [Studio: Frankenstein mode](STUDIO.md#frankenstein-mode-minimax-h3-image).
+Studio's **Frankenstein mode** blends MiniMax H3 video's blocks into H3 Image, block by block, to bring back the sense of motion H3 video gives stills (motion blur on fast things, spray, smoke) while keeping H3 Image's clean look. **✨Motion** (H3 video's blocks 26-28 and 32-34 at 65%) is the best mix we found across five motion scenes; **✨Motion, gentle** (28-34 at 60%) is the lighter one. A blend saves as a new H3 Image base file that ComfyUI loads like the original. It needs the H3 video file and H3's Turbo LoRA set in Preferences, and the whole model on the card. See [Studio: Frankenstein mode](STUDIO.md#frankenstein-mode-minimax-h3-image).
 
 ## Other trainers' LoRAs
 

@@ -748,6 +748,9 @@ class FamilyDescription:
     # Frankenstein mode in Studio (families/frankenstein.py): base DiTs this one's blocks blend with, each (pref key of
     # the other DiT, its name, pref key of a LoRA baked into its side or "", that LoRA's strength). () = no such mode
     frankenstein_with: tuple = ()
+    # Frankenstein mode's built-in presets: (name, ((block id, blend weight 0..1), ...)) - every other block at 0 (the
+    # loaded model's own). Shown in Studio's preset menu in the mode, in place of repair_presets
+    frankenstein_presets: tuple = ()
     # a video family's clip render regimes in the workbench: ((name, steps, speed LoRA strength), ...) - H3's "dial"
     # (the fast loop) and "confirm" (the render that matches training previews). () = one regime, the speed LoRA's
     # own steps and strength (or the default sampling without one)

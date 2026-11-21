@@ -8313,6 +8313,7 @@ function studioFrankEnter(on, name) {
   for (const b of Object.values(S.st.blocks)) { b.ps = on ? 0 : 1; b.pe = true; }
   studioFrankRanges();
   studioSync(Object.keys(S.st.blocks));
+  studioPresets();                              // the mode's own presets (and your presets for it)
   if (on && !$("stFrankOut").value) $("stFrankOut").value = S.st.frankOut || "";
   $("stFrankNote").textContent = on ? `Each block slider: how much of that block comes from ${name} (0 = as loaded, ` +
     "1 = all of it). Baseline: the model as loaded; Tweaked: the blend." : "";
@@ -8527,15 +8528,20 @@ function studioMastersFollow() {
 }
 
 // ---- presets and bulk ----
+// your presets are kept apart in Frankenstein mode: there a slider is a blend weight, not a LoRA strength
+function studioPresetKey() { return S.st.layout.key + (S.st.frank ? "__frankenstein" : ""); }
+function studioBuiltins() { const L = S.st.layout; return S.st.frank ? (L.frank_presets || []) : L.presets; }
+
 async function studioPresets() {
   const L = S.st.layout, sel = $("stPreset");
-  const user = (await api("/api/studio/presets?family=" + encodeURIComponent(L.key)).catch(() => ({user: []}))).user;
+  if (!L) return;
+  const user = (await api("/api/studio/presets?family=" + encodeURIComponent(studioPresetKey())).catch(() => ({user: []}))).user;
   sel.innerHTML = "";
   sel.append(el("option", {value: "", text: "Presets…"}));
-  // every model's: the primary and the donor evenly, block by block (needs a donor loaded)
-  sel.append(el("option", {value: "x:even", text: "Primary + donor, 50/50", title: "Every block both LoRAs touch: " +
-    "each at 0.5. A block only one of them touches: that one at full strength. Needs a donor LoRA loaded."}));
-  for (const p of L.presets) sel.append(el("option", {value: "b:" + p.name, text: p.name}));
+  // every model's: the primary and the donor evenly, block by block (needs a donor loaded; none in Frankenstein mode)
+  if (!S.st.frank) sel.append(el("option", {value: "x:even", text: "Primary + donor, 50/50", title: "Every block both " +
+    "LoRAs touch: each at 0.5. A block only one of them touches: that one at full strength. Needs a donor LoRA loaded."}));
+  for (const p of studioBuiltins()) sel.append(el("option", {value: "b:" + p.name, text: p.name}));
   if (user.length) sel.append(el("optgroup", {label: "Your presets"}, ...user.map((n) => el("option", {value: "u:" + n, text: n}))));
 }
 
@@ -8559,16 +8565,18 @@ async function studioPresetApply(v) {
     $("stStatus").textContent = `Primary + donor, 50/50: ${both} block(s) at 0.5 each, ${one} touched by one LoRA ` +
       "at full strength" + (S.st.locks.size + S.st.dlocks.size ? "; locked sliders left alone." : ".");
   } else if (v.startsWith("b:")) {
-    const p = L.presets.find((x) => x.name === v.slice(2));
+    const p = studioBuiltins().find((x) => x.name === v.slice(2));
+    if (!p) { $("stPreset").value = ""; return; }
+    const rest = S.st.frank ? 0 : 1;              // a block the preset doesn't name: the LoRA as is / the model as loaded
     for (const [id, b] of Object.entries(S.st.blocks)) {
       if (!S.st.dlocks.has(id)) Object.assign(b, {de: true, ds: 1});
       if (S.st.locks.has(id)) continue;
-      Object.assign(b, {pe: true, ps: 1});
+      Object.assign(b, {pe: true, ps: rest});
       if (p.keep) b.pe = p.keep.includes(L.category_of[id]);
       if (p.blocks && id in p.blocks) { b.pe = true; b.ps = Number(p.blocks[id]); }
     }
   } else {
-    const r = await api("/api/studio/preset_load", {family: L.key, name: v.slice(2)});
+    const r = await api("/api/studio/preset_load", {family: studioPresetKey(), name: v.slice(2)});
     for (const [id, bs] of Object.entries(r.blocks || {})) {
       const b = S.st.blocks[id];
       if (!b) continue;
@@ -8649,7 +8657,7 @@ function studioPresetSaveOpen() {
     const blocks = {};
     for (const [id, b] of Object.entries(S.st.blocks)) blocks[id] = {primary_enabled: b.pe, primary_strength: b.ps, donor_enabled: b.de, donor_strength: b.ds};
     try {
-      const r = await api("/api/studio/preset_save", {family: S.st.layout.key, name: name.value, blocks, overwrite: !!overwrite});
+      const r = await api("/api/studio/preset_save", {family: studioPresetKey(), name: name.value, blocks, overwrite: !!overwrite});
       if (r.exists) { msg.replaceChildren(document.createTextNode("That name is taken. "), el("button", {class: "btn btn-sm btn-danger", text: "Replace it", onclick: () => save(true)})); return; }
       host.innerHTML = ""; studioPresets(); $("stStatus").textContent = "Preset saved.";
     } catch (e) { msg.textContent = e.message; }

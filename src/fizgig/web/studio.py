@@ -1214,6 +1214,10 @@ def layout(desc, prefs, pref_path, samples=None):
     return {"key": desc.key, "name": desc.display_name, "groups": groups, "kind": kind,
             # Frankenstein mode: the models this one's blocks blend with (their names), [] = no such mode
             "frankenstein": [w[1] for w in getattr(desc, "frankenstein_with", ())],
+            # its presets: Reset All (every block back to the loaded model) and the family's, every other block at 0
+            "frank_presets": ([{"name": "✨Reset All", "keep": None}] + [{"name": n, "blocks": dict(b)} for n, b in
+                                                                       (desc.frankenstein_presets or ())]
+                              if getattr(desc, "frankenstein_with", ()) else []),
             "video": {"lengths": [n for n, _ in vc.lengths], "length_frames": dict(vc.lengths),
                       # the model's frame grid, for a length typed in seconds (the Clip row's Other…)
                       "clip": {"fps": desc.clip_spec.fps, "step": desc.clip_spec.frame_step,

@@ -35,6 +35,22 @@ def test_a_family_without_the_mode_serves_none():
     assert _layout("zimage")["frank_presets"] == []
 
 
+def test_start_needs_the_other_side_lora_too(tmp_path):
+    # without H3's Turbo LoRA baked into H3 video's side its blocks aren't few-step blocks and every blend is noise:
+    # Start said nothing and loaded without it
+    from fizgig.web import server
+    desc = get("minimax_image")
+    key, _name, lora_key, _s = desc.frankenstein_with[0]
+    dit = tmp_path / "h3video.safetensors"
+    dit.write_bytes(b"x")
+    frank, problems = server._frank_plan(desc, {key: str(dit), lora_key: str(tmp_path / "missing.safetensors")})
+    assert len(problems) == 1 and "Turbo LoRA" in problems[0], problems
+    lora = tmp_path / "turbo.safetensors"
+    lora.write_bytes(b"x")
+    frank, problems = server._frank_plan(desc, {key: str(dit), lora_key: str(lora)})
+    assert not problems and frank["path"] == str(dit) and frank["lora"] == str(lora) and frank["strength"] == 0.75
+
+
 def test_page_applies_them_over_zero_and_keeps_your_presets_apart():
     js = open(APP, encoding="utf-8").read()
     apply = js[js.index("async function studioPresetApply"):js.index("// Royale's reference strength")]

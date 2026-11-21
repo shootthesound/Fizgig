@@ -639,6 +639,24 @@ def save_state(changes: dict):
 STUDIO_PRESETS = os.path.join(user_data.PRESETS_DIR, "repair_studio")
 
 
+def _frank_plan(desc, prefs):
+    """Frankenstein mode's load settings from Preferences: the other base DiT and the LoRA baked into its side ->
+    (settings, problems). Both files must be there: without that LoRA its blocks aren't few-step blocks, and every
+    blend renders noise."""
+    key, name, lora_key, lora_strength = desc.frankenstein_with[0]
+    problems = []
+    other = pref_path(prefs, key)
+    if not other or not os.path.isfile(other):
+        problems.append(f"Frankenstein mode blends in {name}: set its model file on the Preferences tab first.")
+    lora = pref_path(prefs, lora_key) if lora_key else ""
+    if lora_key and not (lora and os.path.isfile(lora)):
+        from fizgig.families.registry import FAMILIES
+        label = next((f.label for d in FAMILIES.values() for f in d.model_files if f.pref_key == lora_key), "LoRA")
+        problems.append(f"Frankenstein mode blends in {name} with its {label} in it: set {name}'s {label} on the "
+                        "Preferences tab first.")
+    return {"path": other, "name": name, "lora": lora if lora_key else "", "strength": float(lora_strength)}, problems
+
+
 def _studio_desc(key):
     d = get_family(key)
     if d is None or d not in studio.families():
@@ -834,16 +852,9 @@ def _studio_post(what, b, from_queue=False):
             kw, settings, status, problems = studio.plan(desc, prefs, pref_path, fast=b.get("fast", True) is not False,
                                                          samples=_studio_samples(desc), negative=b.get("negative"))
         if b.get("frankenstein") and getattr(desc, "frankenstein_with", ()):
-            # Frankenstein mode: the other base DiT (and the LoRA baked into its side) from Preferences; no LoRA here
-            key, name, lora_key, lora_strength = desc.frankenstein_with[0]
-            other = pref_path(prefs, key)
-            if not other or not os.path.isfile(other):
-                problems = list(problems) + [f"Frankenstein mode blends in {name}: set its model file on the "
-                                             "Preferences tab first."]
-            lora = pref_path(prefs, lora_key) if lora_key else ""
-            kw = dict(kw, frankenstein={"path": other, "name": name,
-                                        "lora": lora if lora and os.path.isfile(lora) else "",
-                                        "strength": float(lora_strength)})
+            frank, more = _frank_plan(desc, prefs)
+            problems = list(problems) + more
+            kw = dict(kw, frankenstein=frank)
             b = dict(b, primary="", donor="")
         if problems:
             raise ValueError(" ".join(problems))

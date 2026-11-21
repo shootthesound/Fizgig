@@ -8282,6 +8282,9 @@ function studioNegRow() {
 }
 
 // ---- the sliders ----
+// a primary slider's bounds: in Frankenstein mode a share of the other model's block, 0 to 1; else a LoRA's -3 to 3
+const stLo = () => (S.st.frank ? 0 : -3), stHi = () => (S.st.frank ? 1 : 3);
+const stClampP = (v) => Math.max(stLo(), Math.min(stHi(), v));
 const stFmt = (v) => Math.abs(v - 1) < 1e-9 ? "1.00" : (v >= 0 ? "+" : "") + v.toFixed(2);
 function studioRows() {
   const host = $("stBlocks");
@@ -8314,6 +8317,8 @@ function studioFrankEnter(on, name) {
   S.st.frankName = name || "";
   $("tab-studio").classList.toggle("frankenstein", on);
   if (on) { $("stFrank").checked = true; studioFrankTick(); }   // found loaded (a page reload): the tick says so too
+  if (on) { $("stLuckyLo").value = "0"; $("stLuckyHi").value = "1"; }   // rolls within what a block can blend
+  else if ($("stLuckyHi").value === "1" && $("stLuckyLo").value === "0") $("stLuckyHi").value = "1.5";   // the LoRA default
   for (const b of Object.values(S.st.blocks)) { b.ps = on ? 0 : 1; b.pe = true; }
   studioFrankRanges();
   studioSync(Object.keys(S.st.blocks));
@@ -8338,9 +8343,12 @@ function studioRow(b) {
       onchange: (e) => {
         const v = Number(String(e.target.value).replace(",", ".").replace(/^\+/, ""));
         if (!Number.isFinite(v)) { row._sync(); return; }
-        studioSet(b.id, sv, Math.max(-3, Math.min(3, Math.round(v * 100) / 100))); studioCommit();
+        const r = Math.round(v * 100) / 100;
+        studioSet(b.id, sv, side === "p" ? stClampP(r) : Math.max(-3, Math.min(3, r))); studioCommit();
       }});
     const btn = (t, title, f) => el("button", {class: "btn btn-sm", text: t, title, onclick: () => { f(); studioCommit(); }});
+    const flip = btn("±", "Flip the sign", () => studioSet(b.id, sv, -st()[sv]));
+    flip.classList.add("st-flip");
     const label = side === "p" ? el("span", {class: "st-label", style: b.color ? `color:${b.color}` : ""},
       b.label, b.cat ? el("small", {text: `[${b.cat}]`}) : null) : el("span", {class: "st-label", text: "donor"});
     const locks = () => side === "p" ? S.st.locks : S.st.dlocks, frozen = () => side === "p" ? S.st.frozen : S.st.dfrozen;
@@ -8353,14 +8361,17 @@ function studioRow(b) {
     const row = el("div", {class: "st-row" + (side === "d" ? " donor" : "")}, lock, tick, label, range, val,
       el("span", {class: "st-btns"},
         btn("0", "Set to 0", () => studioSet(b.id, sv, 0)), btn("1", "Set to 1", () => studioSet(b.id, sv, 1)),
-        btn("±", "Flip the sign", () => studioSet(b.id, sv, -st()[sv])),
+        flip, // ± (a sign means nothing for a blend share: hidden in Frankenstein mode)
         btn("−", "−0.1", () => studioSet(b.id, sv, Math.max(-3, Math.round((st()[sv] - 0.1) * 100) / 100))),
         btn("+", "+0.1", () => studioSet(b.id, sv, Math.min(3, Math.round((st()[sv] + 0.1) * 100) / 100))),
         btn("⇄", "Balance: the other side gets 1 − this (with a donor)", () => {
           const o = side === "p" ? "ds" : "ps", v = st()[sv];
           if (S.st.donor && v >= 0 && v <= 1) { studioSet(b.id, o, Math.round((1 - v) * 100) / 100); studioSet(b.id, "de", true); }
         })));
+    const bal = [...row.querySelectorAll(".st-btns button")].find((x) => x.textContent === "⇄");
+    if (bal) bal.classList.add("st-bal");
     row._sync = () => { tick.checked = st()[en]; range.value = st()[sv];
+      val.title = side === "p" && S.st.frank ? "Type a share from 0 to 1, then Enter" : "Type a value from -3 to 3, then Enter";
       if (document.activeElement !== val) val.value = stFmt(st()[sv]);
       const on = locks().has(b.id); lock.textContent = on ? "🔒" : "🔓"; lock.classList.toggle("on", on); };
     row._sync();
@@ -8374,6 +8385,7 @@ function studioRow(b) {
 }
 
 function studioSync(ids) {
+  if (S.st.frank) for (const b of Object.values(S.st.blocks)) b.ps = stClampP(b.ps);
   document.querySelectorAll("#stBlocks .st-block").forEach((box) => {
     if (!ids || ids.includes(box.dataset.id)) box._rows.forEach((r) => r._sync());
   });
@@ -8461,6 +8473,7 @@ function studioActivity() {
 
 function studioSet(id, k, v, live) {
   if ((k === "ds" || k === "de" ? S.st.dlocks : S.st.locks).has(id)) { studioSync([id]); return; }
+  if (k === "ps") v = stClampP(v);
   S.st.blocks[id][k] = v;
   studioSync([id]);
   studioSchedule(live);

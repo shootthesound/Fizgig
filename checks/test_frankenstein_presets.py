@@ -66,6 +66,21 @@ def test_the_tick_hides_the_lora_rows():
     assert "display: none" in css[css.index(rule):css.index(rule) + len(rule) + 40]
 
 
+def test_block_values_stay_within_a_blend_share():
+    # in the mode a block is a share of the other model, 0..1: the value box, ± and − / + went to -3..3, lucky rolls
+    # to 1.5, and the server quietly clamped - the screen said one thing, the render did another
+    js = open(APP, encoding="utf-8").read()
+    css = open(os.path.join(os.path.dirname(APP), "style.css"), encoding="utf-8").read()
+    assert "const stLo = () => (S.st.frank ? 0 : -3), stHi = () => (S.st.frank ? 1 : 3);" in js
+    sset = js[js.index("function studioSet(id, k, v, live)"):]
+    assert 'if (k === "ps") v = stClampP(v);' in sset[:400]
+    ssync = js[js.index("function studioSync(ids)"):]
+    assert "if (S.st.frank) for (const b of Object.values(S.st.blocks)) b.ps = stClampP(b.ps);" in ssync[:200]
+    assert 'side === "p" ? stClampP(r)' in js
+    assert '$("stLuckyLo").value = "0"; $("stLuckyHi").value = "1";' in js
+    assert "#tab-studio.frankenstein .st-flip, #tab-studio.frankenstein .st-bal { display: none; }" in css
+
+
 def test_page_applies_them_over_zero_and_keeps_your_presets_apart():
     js = open(APP, encoding="utf-8").read()
     apply = js[js.index("async function studioPresetApply"):js.index("// Royale's reference strength")]

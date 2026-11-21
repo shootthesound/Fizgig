@@ -2450,6 +2450,8 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 /* the LoRA rows go with the tick (untick it and they're back for the next Start); the rest while the mode is loaded */
 #tab-studio.frank-asked .st-lora-row, #tab-studio.frank-asked #stMixRows, #tab-studio.frank-asked #stDmixRows,
 #tab-studio.frankenstein .st-lora-save, #tab-studio.frankenstein .st-row.donor { display: none !important; }
+/* a blend share has no sign, and Balance needs a donor */
+#tab-studio.frankenstein .st-flip, #tab-studio.frankenstein .st-bal { display: none; }
 #tab-studio.frankenstein .st-block .st-label { color: var(--text-primary); }
 #stFrankExportRow { display: none; }
 #tab-studio.frankenstein #stFrankExportRow { display: flex; }

@@ -115,6 +115,26 @@ def _cpu(self, *a, **k):
     return _move(self, False)
 
 
+_FACTORIES = ("zeros", "ones", "empty", "full", "arange", "tensor", "randn", "rand", "randint", "linspace", "eye")
+
+
+def _factory(real):
+    """A tensor factory asked for the card: made on the CPU and marked as on the card. On torch itself, so it holds in
+    the backward pass too - a checkpointed block's recompute runs inside backward(), and the function mode below is
+    off while it handles that call: torch.zeros(..., device=q.device) in Flux 3's and Qwen's attention reached the
+    real CUDA (an allocation on the real card, or "Torch not compiled with CUDA" on a CPU-only PyTorch)."""
+    def make(*args, **kwargs):
+        dev = kwargs.get("device")
+        if dev is None or torch.device(dev).type != "cuda":
+            return real(*args, **kwargs)
+        kw = dict(kwargs, device="cpu")
+        kw.pop("pin_memory", None)
+        out = real(*args, **kw)
+        _mark(out, True)
+        return out
+    return make
+
+
 class _Fn(TorchFunctionMode):
     """Factories asked for the card (torch.zeros(..., device="cuda")), and what is made from nothing (on the CPU).
     Device queries and moves are patched on the tensor class itself (simulated_gpu), so they hold in the backward
@@ -287,6 +307,14 @@ class _Autocast(_REAL_AUTOCAST):
         super().__init__("cpu" if device_type == "cuda" else device_type, *a, **k)
 
 
+class _Props:
+    """torch.cuda.get_device_properties for the simulated card."""
+
+    def __init__(self, total):
+        self.total_memory, self.name, self.major, self.minor = total, "Simulated GPU", 8, 9
+        self.multi_processor_count = 128
+
+
 @contextlib.contextmanager
 def simulated_gpu(card_gb=24.0):
     """The simulated card (see the module docstring). card_gb: what torch.cuda reports as the card's size."""
@@ -306,6 +334,15 @@ def simulated_gpu(card_gb=24.0):
         mock.patch.object(torch.cuda, "empty_cache", lambda: None),
         mock.patch.object(torch.cuda, "memory_allocated", lambda *a: 0),
         mock.patch.object(torch.cuda, "mem_get_info", lambda *a: (total, total)),
+        # calls that reach the CUDA library itself: a CPU-only PyTorch (the GitHub checks') has none of it, and on a CUDA
+        # build they'd ask the real card - the offloader's mover sets its thread's device, Flux 3 asks the capability
+        mock.patch.object(torch.cuda, "set_device", lambda *a: None),
+        *[mock.patch.object(torch, n, _factory(getattr(torch, n))) for n in _FACTORIES],
+        mock.patch.object(torch.cuda, "get_device_capability", lambda *a: (8, 9)),
+        mock.patch.object(torch.cuda, "get_device_properties", lambda *a: _Props(total)),
+        mock.patch.object(torch.cuda, "max_memory_allocated", lambda *a: 0),
+        mock.patch.object(torch.cuda, "memory_reserved", lambda *a: 0),
+        mock.patch.object(torch.cuda, "reset_peak_memory_stats", lambda *a: None),
         # where a tensor is, and moving it: on the tensor class, so the backward pass sees it too
         mock.patch.object(torch.Tensor, "device", property(_device)),
         mock.patch.object(torch.Tensor, "is_cuda", property(_is_cuda)),

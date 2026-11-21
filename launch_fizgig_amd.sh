@@ -97,12 +97,17 @@ else
     export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1
 fi
 
-# MIOpen / rocBLAS tensile DBs under _rocm_sdk_devel; skip on gfx1100
+# Locate the packaged MIOpen and rocBLAS databases. Skip gfx1100
 # where those trees are often missing.
 if [[ "${GPU_ARCH}" != "gfx1100" ]]; then
+    for _db in venv/lib/python*/site-packages/_rocm_sdk_{libraries,devel}/share/miopen/db; do
+        if [[ -d "$_db" ]]; then
+            export MIOPEN_SYSTEM_DB_PATH="$(cd "$_db" && pwd)"
+            break
+        fi
+    done
     for _devel in venv/lib/python*/site-packages/_rocm_sdk_devel/bin; do
         if [[ -d "$_devel" ]]; then
-            export MIOPEN_SYSTEM_DB_PATH="$(cd "$_devel" && pwd)"
             if [[ -d "$_devel/rocblas" ]]; then
                 export ROCBLAS_TENSILE_DB_PATH="$(cd "$_devel/rocblas" && pwd)"
             fi

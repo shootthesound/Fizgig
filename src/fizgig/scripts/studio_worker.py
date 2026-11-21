@@ -62,6 +62,7 @@ def cmd_load(c):
         raise ValueError(f"Unknown model: {c['family']}")
     plan = dict(c["plan"])
     ro = plan.pop("render_options", None) or {}
+    frank = plan.pop("frankenstein", None)      # Frankenstein mode: another base DiT blended in (no LoRA)
     if plan.pop("use_checkpoint_sampling", False):
         ck = desc.preview_checkpoint()
         plan["preview_sampling"] = ck[1] if ck else None
@@ -96,11 +97,17 @@ def cmd_load(c):
         eng.plan_canvas = tuple(c["canvas"]) if c.get("canvas") else None   # H3 Auto: room for this clip
         eng.ensure_pipeline(**plan)
         emit(ev="status", text="Loading the LoRA…")
-        eng.load_primary(c["primary"])
-        if c.get("donor"):
+        eng.load_primary("" if frank else c["primary"])
+        if frank:
+            emit(ev="status", text=f"Frankenstein mode: reading {frank.get('name') or 'the other model'}'s blocks…")
+            eng.frankenstein(frank["path"], (frank["lora"], frank["strength"]) if frank.get("lora") else None)
+        elif c.get("donor"):
             eng.load_donor(c["donor"])
-        emit(ev="loaded", family=desc.key, primary=c["primary"], donor=c.get("donor") or "",
-             up_room=eng.upscale_room() if hasattr(eng, "upscale_room") else None, **_blocks(eng))
+        emit(ev="loaded", family=desc.key, primary="" if frank else c["primary"], donor="" if frank else
+             (c.get("donor") or ""), up_room=eng.upscale_room() if hasattr(eng, "upscale_room") else None,
+             frankenstein=(frank or {}).get("name") or "",
+             frank_out=(os.path.splitext(getattr(eng, "dit_path", "") or "")[0] + "_frankenstein.safetensors")
+             if frank else "", **_blocks(eng))
 
 
 def cmd_donor(c):
@@ -1136,6 +1143,17 @@ def cmd_save(c):
     emit(ev="saved", out=c["out"], summary=summary)
 
 
+def cmd_frank_export(c):
+    """Frankenstein mode: the blend at the page's sliders as a new base file."""
+    with _engine_lock:
+        eng = S["engine"]
+        if eng is None or getattr(eng, "frank", None) is None:
+            raise ValueError("Frankenstein mode isn't on: tick it in Setup and press Start.")
+        emit(ev="status", text="Writing the new base model… (a minute or two: it's the whole model)")
+        path = eng.frank_export(c["out"], _state(c["state"]) if c.get("state") else None)
+    emit(ev="frank_exported", out=path)
+
+
 def cmd_reset(_c):
     with _engine_lock:
         if S["engine"] is not None:
@@ -1176,7 +1194,7 @@ def cmd_map(c):
 
 
 HANDLERS = {"load": cmd_load, "donor": cmd_donor, "primary": cmd_primary, "settings": cmd_settings, "render": cmd_render, "map": cmd_map,
-            "cancel": cmd_cancel, "save": cmd_save, "reset": cmd_reset, "royale": cmd_royale,
+            "cancel": cmd_cancel, "save": cmd_save, "frank_export": cmd_frank_export, "reset": cmd_reset, "royale": cmd_royale,
             "royale_travel": cmd_royale_travel, "refmod": cmd_refmod}
 
 

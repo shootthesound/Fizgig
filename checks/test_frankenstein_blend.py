@@ -85,3 +85,38 @@ def test_dit_blend_live_model(tmp_path):
     bl.set({"b0": 0.0})
     assert torch.equal(lin.qdata, qa) and torch.equal(lin.wscale, sa.reshape(-1, 1))   # the loaded model's own again
     assert torch.allclose(blk.norm.weight, torch.ones(64))
+
+
+def test_export_writes_the_blend_and_copies_the_rest(tmp_path):
+    """Export: the loaded model's file with the blended blocks' current values in place, everything else byte for
+    byte, the mix in its metadata."""
+    import json
+
+    from safetensors import safe_open
+    from safetensors.torch import save_file
+    _, _, (qa, sa), (qb, sb) = _pair()
+    lin = ConvRotInt8Linear(512, 64)
+    lin.qdata.copy_(qa)
+    lin.wscale.copy_(sa)
+    blk = torch.nn.Module()
+    blk.lin = lin
+    dit = torch.nn.Module()
+    dit.blocks = torch.nn.ModuleList([blk])
+    marker = torch.frombuffer(bytearray(b'{"format": "int8_tensorwise", "convrot": true, "convrot_groupsize": 256}'),
+                              dtype=torch.uint8)
+    own = str(tmp_path / "own.safetensors")
+    save_file({"blocks.0.lin.weight": qa, "blocks.0.lin.weight_scale": sa, "blocks.0.lin.comfy_quant": marker,
+               "head.weight": torch.arange(6.0)}, own, metadata={"source": "own"})
+    other = str(tmp_path / "other.safetensors")
+    save_file({"blocks.0.lin.weight": qb, "blocks.0.lin.weight_scale": sb, "blocks.0.lin.comfy_quant": marker}, other)
+    groups = [types.SimpleNamespace(blocks=[types.SimpleNamespace(id="b0", modules=["blocks.0.lin"])])]
+    bl = DiTBlend(dit, groups, other)
+    bl.set({"b0": 0.5})
+    out = bl.export(own, str(tmp_path / "mix.safetensors"))
+    with safe_open(out, "pt") as f:
+        assert torch.equal(f.get_tensor("blocks.0.lin.weight"), lin.qdata)
+        assert torch.equal(f.get_tensor("blocks.0.lin.weight_scale").reshape(-1, 1), lin.wscale)
+        assert torch.equal(f.get_tensor("head.weight"), torch.arange(6.0))         # outside the blocks: as it was
+        assert torch.equal(f.get_tensor("blocks.0.lin.comfy_quant"), marker)
+        meta = f.metadata()
+    assert meta["source"] == "own" and json.loads(meta["fizgig_frankenstein"])["weights"] == {"b0": 0.5}

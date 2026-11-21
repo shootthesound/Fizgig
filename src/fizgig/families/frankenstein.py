@@ -103,7 +103,7 @@ class DiTBlend:
         self.skipped_names = []
         lora = _lora_pairs(*other_lora) if other_lora else {}
         self.lora_used = 0
-        dev = next(dit.parameters()).device
+        dev = next(iter([*dit.parameters(), *dit.buffers()])).device
         with MemoryEfficientSafeOpen(other_path) as f:
             hdr = f.header
             # the other model's own AdaLN table (a pruned H3), for its blocks' AdaLN outputs
@@ -124,7 +124,7 @@ class DiTBlend:
                             ld = lora.get(f"{name}.linear")
                             items.append(("a", mod, f.get_tensor(f"{name}.linear.weight").float().to(dev),
                                           f.get_tensor(f"{name}.linear.bias").float().to(dev)
-                                          if f"{name}.linear.bias" in hdr else None, ld))
+                                          if f"{name}.linear.bias" in hdr else None, ld, f"{name}.linear"))
                             adaln_lin.add(f"{name}.linear")
                             self.lora_used += ld is not None
                     for name, _raw, mod in mods:
@@ -148,11 +148,11 @@ class DiTBlend:
                                 qb, sb = (t.cpu() for t in _requant(m))
                                 self.lora_used += 1
                             items.append(("q", mod, (mod.qdata.detach().cpu().clone(), mod.wscale.detach().cpu().clone()),
-                                          (qb, sb)))
+                                          (qb, sb), name))
                             if getattr(mod, "bias", None) is not None and name + ".bias" in hdr \
                                     and list(hdr[name + ".bias"]["shape"]) == list(mod.bias.shape):
                                 items.append(("d", mod, "bias", mod.bias.detach().cpu().clone(),
-                                              f.get_tensor(name + ".bias").to(mod.bias.dtype)))
+                                              f.get_tensor(name + ".bias").to(mod.bias.dtype), name + ".bias"))
                             continue
                         own = list(mod.named_parameters(recurse=False)) + list(mod.named_buffers(recurse=False))
                         for pname, t in own:
@@ -166,7 +166,7 @@ class DiTBlend:
                             if pname == "weight" and ld is not None and tuple((ld[1] @ ld[0]).shape) == tuple(bt.shape):
                                 bt = bt + (ld[1] @ ld[0])
                                 self.lora_used += 1
-                            items.append(("d", mod, pname, t.detach().cpu().clone(), bt.to(t.dtype)))
+                            items.append(("d", mod, pname, t.detach().cpu().clone(), bt.to(t.dtype), key))
                     if items:
                         self.items[b.id] = items
                         self.w[b.id] = 0.0
@@ -228,17 +228,17 @@ class DiTBlend:
                 continue
             for it in items:
                 if it[0] == "q":
-                    _, mod, (qa, sa), (qb, sb) = it
+                    _, mod, (qa, sa), (qb, sb), _k = it
                     dev = mod.qdata.device
                     q, s = blend_int8_rows(qa.to(dev), sa.to(dev), qb.to(dev), sb.to(dev), w)
                     mod.qdata.copy_(q)
                     mod.wscale.copy_(s.reshape(mod.wscale.shape))
                 elif it[0] == "d":
-                    _, mod, pname, a, b = it
+                    _, mod, pname, a, b, _k = it
                     t = getattr(mod, pname)
                     t.data.copy_(blend_dense(a.to(t.device), b.to(t.device), w))
                 else:
-                    _, mod, Wv, bv, ld = it
+                    _, mod, Wv, bv, ld, _k = it
                     if "forward" in mod.__dict__:
                         del mod.forward
                     if w > 0.0:
@@ -249,3 +249,85 @@ class DiTBlend:
 
     def weights(self):
         return dict(self.w)
+
+    @torch.no_grad()
+    def _adaln_refit(self, it, w):
+        """A blended pruned AdaLN as ONE Linear over the loaded model's own table (an exported file has one table):
+        the blend's output at every table row, refitted by least squares onto [table, 1]. Measured on H3 Image /
+        H3 video with the Turbo LoRA: 0.07-0.08% relative error at weight 1 (the two tables span nearly the same
+        space) - the exported model renders the blend. -> (weight, bias) on the CPU, fp32."""
+        _, mod, Wv, bv, ld, _k = it
+        dev = Wv.device
+        Ti = self.dit.adaln_t_table.float().to(dev)
+        rows = torch.linspace(0.0, 1.0, Ti.shape[0], device=dev)
+        own = F.linear(Ti, mod.linear.weight.float().to(dev),
+                       mod.linear.bias.float().to(dev) if mod.linear.bias is not None else None)
+        tv, pos = self._other_t_emb(rows)
+        other = F.linear(tv, Wv, bv)
+        if ld is not None and self.egrid is not None:
+            st = self.egrid[pos.round().long().clamp(0, self.egrid.shape[0] - 1)].float()
+            other = other + (ld[1].to(dev) @ (ld[0].to(dev) @ st.T)).T
+        target = own * (1.0 - w) + other * w
+        X = torch.cat([Ti, torch.ones(Ti.shape[0], 1, device=dev)], 1)
+        sol = torch.linalg.lstsq(X, target).solution            # [9, out]
+        return sol[:-1].T.contiguous().cpu(), sol[-1].contiguous().cpu()
+
+    def export(self, src_path, out_path, metadata=None, log=None):
+        """The blend as a new base file, in the loaded model's own format (ComfyUI loads it as it loads src_path):
+        every tensor of src_path, with the blended blocks' current values in place - int8 codes and scales as they
+        are on the card, blended norms, each blended AdaLN refitted onto the file's own table. Untouched tensors are
+        copied byte for byte. Written to out_path + ".tmp", then moved into place."""
+        import json
+
+        from fizgig.krea2.safetensors_utils import stream_save_file
+        from fizgig.utils.safetensors import MemoryEfficientSafeOpen
+        repl = {}                              # file key -> producer of its blended value
+        for bid, items in self.items.items():
+            w = self.w[bid]
+            if w <= 0.0:
+                continue
+            for it in items:
+                if it[0] == "q":
+                    mod, name = it[1], it[4]
+                    repl[name + ".weight"] = (lambda m=mod: m.qdata.detach().cpu())
+                    repl[name + ".weight_scale"] = (lambda m=mod: m.wscale.detach().cpu())
+                elif it[0] == "d":
+                    mod, pname, key = it[1], it[2], it[5]
+                    repl[key] = (lambda m=mod, p=pname: getattr(m, p).detach().cpu())
+                else:
+                    key = it[5]
+                    fit = {}
+
+                    def get(part, it=it, w=w, fit=fit):
+                        if not fit:
+                            fit["w"], fit["b"] = self._adaln_refit(it, w)
+                        return fit[part]
+                    repl[key + ".weight"] = (lambda g=get: g("w"))
+                    repl[key + ".bias"] = (lambda g=get: g("b"))
+        src = MemoryEfficientSafeOpen(src_path)
+        specs = {}
+        for key in src.keys():
+            info = src.header[key]
+            dt = src._get_torch_dtype(info["dtype"])
+            shape = tuple(info["shape"])
+            if key in repl:
+                specs[key] = (dt, shape, (lambda f=repl[key], dt=dt, shape=shape: f().to(dt).reshape(shape)))
+            else:
+                specs[key] = (dt, shape, (lambda k=key: src.get_tensor(k)))
+        meta = dict(src.metadata() or {})
+        meta["fizgig_frankenstein"] = json.dumps({"base": os.path.basename(src_path),
+                                                   "blended_with": os.path.basename(self.other_path),
+                                                   "weights": {b: round(v, 4) for b, v in self.w.items() if v > 0},
+                                                   **(metadata or {})})
+        tmp = out_path + ".tmp"
+        try:
+            stream_save_file(specs, tmp, meta)
+            os.replace(tmp, out_path)
+        finally:
+            src.file.close()
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        if log:
+            log(f"[frankenstein] exported {os.path.basename(out_path)}: {len(repl)} tensors blended, "
+                f"{len(specs) - len(repl)} copied")
+        return out_path

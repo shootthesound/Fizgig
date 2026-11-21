@@ -745,6 +745,9 @@ class FamilyDescription:
     # generic video engine, families/video_workbench.py). H3 brings its own for keyframes, references and RefMod on
     # top of the shared clip contract. Built as Class(description).
     workbench_engine: str = ""
+    # Frankenstein mode in Studio (families/frankenstein.py): base DiTs this one's blocks blend with, each (pref key of
+    # the other DiT, its name, pref key of a LoRA baked into its side or "", that LoRA's strength). () = no such mode
+    frankenstein_with: tuple = ()
     # a video family's clip render regimes in the workbench: ((name, steps, speed LoRA strength), ...) - H3's "dial"
     # (the fast loop) and "confirm" (the render that matches training previews). () = one regime, the speed LoRA's
     # own steps and strength (or the default sampling without one)

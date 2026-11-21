@@ -156,7 +156,9 @@ def _event(ev):
             if kind == "loaded":
                 _S.update(nolora="", nolora_media="", nolora_gen=0, nolora_busy=False)
                 _S.update(state="ready", family=ev.get("family", ""), primary=ev.get("primary", ""),
-                          donor=ev.get("donor", ""), status="Loaded.", error="")
+                          donor=ev.get("donor", ""), status="Loaded.", error="",
+                          frankenstein=ev.get("frankenstein") or "",     # the model blended in (Frankenstein mode)
+                          frank_out=ev.get("frank_out") or "", frank_exported=None)
                 _S["profile"] = _profile(ev.get("hash", ""))
                 _S["up_room"] = ev.get("up_room")      # H3 Upscale: the memory its section hint is worked out from
             elif kind == "donor":
@@ -202,6 +204,9 @@ def _event(ev):
                 _S["state"] = "idle"
         elif kind == "saved":
             _S["saved"] = {"out": ev.get("out"), "summary": ev.get("summary")}
+        elif kind == "frank_exported":           # Frankenstein mode: the new base model, written
+            _S["frank_exported"] = ev.get("out")
+            _S["status"] = f"New base model written: {ev.get('out')}"
             _S["status"] = "Saved."
         elif kind == "reset":
             _S.update(state="idle", primary="", donor="", primary_blocks=[], donor_blocks=[], hash="", profile=None,
@@ -726,6 +731,15 @@ def save(out, state, include_donor):
     _send({"cmd": "save", "out": out, "state": state, "include_donor": bool(include_donor)})
 
 
+def frank_export(out, state):
+    """Frankenstein mode: the blend at these sliders as a new base file (the worker writes it; frank_exported)."""
+    with _lock:
+        if not (_S["state"] == "ready" and _S.get("frankenstein")):
+            raise ValueError("Frankenstein mode isn't on: tick it in Setup and press Start.")
+        _S["frank_exported"] = None
+    _send({"cmd": "frank_export", "out": out, "state": state})
+
+
 def reset():
     """Unload: the worker quits, so the card and the RAM it held come back whole (the request waits for it - a
     Start pressed straight after finds no half-stopped worker)."""
@@ -990,6 +1004,9 @@ def status():
                                 "progress", "shown", "rendering", "error", "saved", "profile")}
         d["notes"] = _S.get("notes")
         d["up_room"] = _S.get("up_room")
+        d["frankenstein"] = _S.get("frankenstein") or "" if d.get("state") == "ready" else ""
+        d["frank_exported"] = _S.get("frank_exported")
+        d["frank_out"] = _S.get("frank_out") or ""
         d["same"] = bool(_S.get("same"))           # the Tweaked render on screen is the Baseline
         d["eq"] = _S.get("eq") or {}
         d["media"] = {k: bool(_S.get(k + "_media")) for k in ("baseline", "tweaked", "nolora")}
@@ -1195,6 +1212,8 @@ def layout(desc, prefs, pref_path, samples=None):
     audio_vae = desc.model_path("audio_vae", look) if kind == "video" else ""
     vc = desc.video_controls
     return {"key": desc.key, "name": desc.display_name, "groups": groups, "kind": kind,
+            # Frankenstein mode: the models this one's blocks blend with (their names), [] = no such mode
+            "frankenstein": [w[1] for w in getattr(desc, "frankenstein_with", ())],
             "video": {"lengths": [n for n, _ in vc.lengths], "length_frames": dict(vc.lengths),
                       # the model's frame grid, for a length typed in seconds (the Clip row's Other…)
                       "clip": {"fps": desc.clip_spec.fps, "step": desc.clip_spec.frame_step,

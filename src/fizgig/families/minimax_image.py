@@ -230,6 +230,9 @@ MINIMAX_IMAGE = FamilyDescription(
     int8_attention=True,
     # Studio's Auto precision from train_memory (the file is int8 already; the shared rule sizes it as bf16)
     workbench_engine="fizgig.minimax_image.workbench:MiniMaxH3ImageWorkbenchEngine",
+    # Frankenstein mode: H3 video's blocks blended into H3 Image's, with H3's Turbo LoRA (its 0.75) on H3 video's side
+    # so its blocks are few-step like H3 Image's (Peter, 21 Nov 2026)
+    frankenstein_with=(("minimax_dit", "MiniMax H3 video", "minimax_turbo_lora", 0.75),),
     activation_cache=True,            # Reuse unchanged blocks: step-1 replay, identical to a full render
     # Compile Blocks (measured 11 Nov 2026, RTX PRO 6000, 8 epochs, previews off, steady-state s/step off -> on):
     # int8 0.25 MP 0.297 -> 0.286 (1.04x, the warm-up pays back after ~1,500 steps), int8 1 MP 0.614 -> 0.556 (1.10x,

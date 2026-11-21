@@ -6688,6 +6688,10 @@ async function studioFamily(res, w, h) {
   const key = $("stFamily").value;
   studioAutosaveShow();                               // Save every render: this model's own tick
   const L = S.st.layout = await api("/api/studio/layout?family=" + encodeURIComponent(key));
+  const frankWith = L.frankenstein || [];             // Frankenstein mode: the models this one's blocks blend with
+  $("stFrankRow").style.display = frankWith.length ? "" : "none";
+  $("stFrankName").textContent = frankWith[0] || "";
+  if (!frankWith.length) $("stFrank").checked = false;
   const sv = stSaved();
   studioKind(L, sv);
   $("stRes").innerHTML = "";
@@ -8287,7 +8291,31 @@ function studioRows() {
       el("div", {}, ...g.blocks.slice(half).map(studioRow)));
     host.append(el("div", {class: "st-group"}, el("h3", {text: g.label}), cols));
   }
+  studioFrankRanges();
   studioActivity();
+}
+
+// Frankenstein mode (a family's frankenstein_with): another base model blended in block by block
+function studioFrankAsked() {
+  return !!((S.st.layout || {}).frankenstein || []).length && $("stFrank").checked;
+}
+function studioFrankRanges() {
+  // in the mode each block slider is a share of the other model's block, 0 to 1; else the LoRA's -3 to 3
+  for (const r of document.querySelectorAll("#stBlocks .st-row:not(.donor) input[type=range]")) {
+    r.min = S.st.frank ? "0" : "-3"; r.max = S.st.frank ? "1" : "3";
+  }
+}
+function studioFrankEnter(on, name) {
+  // the sliders start at 0 (the model as loaded) on entering the mode, and back at 1 (the LoRA as is) on leaving it
+  S.st.frank = on;
+  S.st.frankName = name || "";
+  $("tab-studio").classList.toggle("frankenstein", on);
+  for (const b of Object.values(S.st.blocks)) { b.ps = on ? 0 : 1; b.pe = true; }
+  studioFrankRanges();
+  studioSync(Object.keys(S.st.blocks));
+  if (on && !$("stFrankOut").value) $("stFrankOut").value = S.st.frankOut || "";
+  $("stFrankNote").textContent = on ? `Each block slider: how much of that block comes from ${name} (0 = as loaded, ` +
+    "1 = all of it). Baseline: the model as loaded; Tweaked: the blend." : "";
 }
 
 function studioRow(b) {
@@ -8722,13 +8750,14 @@ function studioLoadBody() {
   return {family: L.key, primary: $("stPrimary").value.trim(), donor: $("stDonor").value.trim(),
     fast, turbo: $("stTurbo").checked, negative: $("stNeg").value.trim(),
     h3_model: L.kind === "video" ? $("stH3Model").value : "", base: L.kind === "video" ? $("stH3Base").value : "",
-    canvas: studioCanvas()};
+    canvas: studioCanvas(), frankenstein: studioFrankAsked()};
 }
 
 // what a loaded model is: the model, the primary and the preview settings - a change of any is a reload at Render
 function studioLoadKey(L, fast) {
   return [L.key, $("stPrimary").value.trim(), fast, L.kind === "video" ? $("stH3Model").value + $("stH3Base").value : "",
-    (L.render_choice || {}).value || "", L.follow_ck || "", L.follow_look || "", L.follow_turbo || ""].join("|");
+    (L.render_choice || {}).value || "", L.follow_ck || "", L.follow_look || "", L.follow_turbo || "",
+    studioFrankAsked() ? "frank" : ""].join("|");
 }
 
 async function studioStart() {
@@ -8802,7 +8831,10 @@ async function studioPollOnce() {
   S.st.donor = !!st.donor;
   S.st.primaryBlocks = new Set(st.primary_blocks || []); S.st.donorBlocks = new Set(st.donor_blocks || []);
   // no LoRA loaded: Studio renders the base model on its own (a zero adapter stands in for the primary)
-  S.st.noPrimary = S.st.ready && !st.primary;
+  const frank = S.st.ready && !!st.frankenstein;
+  S.st.frankOut = st.frank_out || "";
+  if (frank !== !!S.st.frank) studioFrankEnter(frank, st.frankenstein);
+  S.st.noPrimary = S.st.ready && !st.primary && !frank;
   S.st.noLora = S.st.noPrimary && !st.donor;
   $("tab-studio").classList.toggle("no-primary", S.st.noPrimary);
   $("tab-studio").classList.toggle("no-lora", S.st.noLora);
@@ -8886,9 +8918,11 @@ async function studioPollOnce() {
       (ps === 1 ? "Baseline (LoRA at default 1.0)" : `Baseline (LoRA at ${ps})`) +
       (st.donor ? " - the donor is not in the baseline" : "");
     $("stTweakCap").textContent = noTweak ? "Tweaked (not rendered: it was hidden - press Render to fill it)" :
+      S.st.frank ? `The blend (${S.st.frankName}'s blocks at the sliders)` :
       !st.primary && !st.donor ? "The base model (no LoRA)" :
       "Tweaked (current sliders)" + (st.donor ? " - includes the donor" : "");
     if (!st.primary && st.donor) $("stBaseCap").textContent = "Baseline: the base model (no primary LoRA)";
+    if (S.st.frank) $("stBaseCap").textContent = `Baseline: ${S.st.layout.name} as loaded`;
   }
   studioNoLoraPane(st);
   studioAceNotes(st.notes);
@@ -9404,6 +9438,18 @@ function wireStudio() {
   wireStudioSetups();
   $("stEqD").addEventListener("click", () => studioEq("donor", !S.st.eq.donor));
   $("stCancel").addEventListener("click", () => api("/api/studio/cancel", {}).then(studioPoll).catch(() => {}));
+  $("stFrankExport").addEventListener("click", async () => {
+    // Frankenstein mode: the blend at the sliders as a new base model; a file already there needs a second press
+    const out = $("stFrankOut").value.trim();
+    const again = S.st.frankOverwrite === out;
+    try {
+      const r = await api("/api/studio/frank_export", {out, state: studioState(), overwrite: again});
+      if (r.exists) { S.st.frankOverwrite = out; $("stStatus").textContent = "That file is there already: press Save blend as a new base again to replace it."; return; }
+      S.st.frankOverwrite = null;
+      $("stStatus").textContent = "Writing the new base model…";
+      studioPoll();
+    } catch (e) { $("stStatus").textContent = e.message; }
+  });
   $("stUnload").addEventListener("click", async () => { await api("/api/studio/reset", {}); S.st.ready = false; S.st.loadedKey = ""; studioPoll(); });
   $("stPrimaryPick").addEventListener("click", () => pick($("stPrimary").value || loraStart(), false, (p) => { $("stPrimary").value = p; stRemember(); }));
   $("stDonorPick").addEventListener("click", () => pick($("stDonor").value || $("stPrimary").value, false, (p) => { $("stDonor").value = p; stRemember();

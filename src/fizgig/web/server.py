@@ -833,6 +833,18 @@ def _studio_post(what, b, from_queue=False):
         else:
             kw, settings, status, problems = studio.plan(desc, prefs, pref_path, fast=b.get("fast", True) is not False,
                                                          samples=_studio_samples(desc), negative=b.get("negative"))
+        if b.get("frankenstein") and getattr(desc, "frankenstein_with", ()):
+            # Frankenstein mode: the other base DiT (and the LoRA baked into its side) from Preferences; no LoRA here
+            key, name, lora_key, lora_strength = desc.frankenstein_with[0]
+            other = pref_path(prefs, key)
+            if not other or not os.path.isfile(other):
+                problems = list(problems) + [f"Frankenstein mode blends in {name}: set its model file on the "
+                                             "Preferences tab first."]
+            lora = pref_path(prefs, lora_key) if lora_key else ""
+            kw = dict(kw, frankenstein={"path": other, "name": name,
+                                        "lora": lora if lora and os.path.isfile(lora) else "",
+                                        "strength": float(lora_strength)})
+            b = dict(b, primary="", donor="")
         if problems:
             raise ValueError(" ".join(problems))
         captions.unload()                       # the caption model leaves the GPU too
@@ -900,6 +912,16 @@ def _studio_post(what, b, from_queue=False):
         if os.path.exists(out) and not b.get("overwrite"):
             return {"exists": True}
         studio.save(out, b.get("state") or {}, b.get("include_donor"))
+        return {"ok": True}
+    if what == "frank_export":                 # Frankenstein mode: the blend as a new base model
+        out = str(b.get("out") or "").strip()
+        if not out.lower().endswith(".safetensors"):
+            raise ValueError("Give the file a name ending in .safetensors.")
+        if not os.path.isdir(os.path.dirname(os.path.abspath(out))):
+            raise ValueError("That folder isn't there.")
+        if os.path.exists(out) and not b.get("overwrite"):
+            return {"exists": True}
+        studio.frank_export(out, b.get("state") or {})
         return {"ok": True}
     if what == "reset":
         studio.reset()

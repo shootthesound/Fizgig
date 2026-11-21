@@ -838,7 +838,14 @@
               <div class="field-row" id="stDitRow"><span class="field-label">Render with:</span>
                 <label class="radio-label"><input type="radio" name="stDit" value="fast" checked> <span id="stDitFast"></span></label>
                 <label class="radio-label"><input type="radio" name="stDit" value="full"> <span id="stDitFull"></span></label></div>
-              <div class="field-row"><span class="field-label">Primary LoRA:</span>
+              <div class="field-row" id="stFrankRow" style="display:none">
+                <label class="checkbox-label" title="Blends another base model into this one, block by block: each block slider is how much of that block comes from the other model (0 = this model as loaded, 1 = the other's block). No LoRA in this mode. Baseline is this model on its own; Tweaked is the blend. Press Start (or Render) after ticking it.">
+                  <input type="checkbox" id="stFrank"> Frankenstein mode: blend in <span id="stFrankName"></span></label>
+                <span class="field-hint" id="stFrankNote"></span></div>
+              <div class="field-row" id="stFrankExportRow"><span class="field-label">New base model:</span>
+                <input type="text" id="stFrankOut" class="w-path" title="Where the blend is written as a new base model (.safetensors), in the loaded model's own format: ComfyUI and Fizgig load it like the original">
+                <button class="btn" id="stFrankExport" title="Writes the blend at the sliders as a whole new base model (about the size of the loaded one; a minute or two)">Save blend as a new base</button></div>
+              <div class="field-row st-lora-row"><span class="field-label">Primary LoRA:</span>
                 <input type="text" id="stPrimary" class="w-path" title="Leave it empty to render the base model on its own (Studio as a generator)" placeholder="the LoRA to tweak (.safetensors) - empty: the base model on its own">
                 <button class="btn" id="stPrimaryPick">Choose…</button>
                 <button class="btn" id="stPrimaryUnload" title="Takes the primary LoRA out without reloading the model: Studio renders the base model on its own (and against the donor, if one is loaded)">Unload primary</button>
@@ -859,7 +866,7 @@
                   <div class="field-row"><span class="field-label"></span><button class="btn btn-sm" id="stMixAdd">+ Add LoRA…</button></div></div>
                 <div class="field-row"><span class="field-label"></span><span class="field-hint" id="stMixInfo"></span></div>
               </div>
-              <div class="field-row"><span class="field-label">Donor LoRA:</span>
+              <div class="field-row st-lora-row"><span class="field-label">Donor LoRA:</span>
                 <input type="text" id="stDonor" class="w-path" placeholder="optional: a second LoRA to mix in, block by block">
                 <button class="btn" id="stDonorPick">Choose…</button>
                 <button class="btn" id="stDonorUnload">Unload donor</button>
@@ -1195,7 +1202,7 @@
               <div id="stBlocks"></div>
             </div>
           </div>
-          <div class="section-card st-needs-primary">
+          <div class="section-card st-needs-primary st-lora-save">
             <div class="card-title">Save</div>
             <div class="card-content">
               <div class="st-needs-lora-note">Needs a LoRA: this saves the LoRA you've tweaked. With no LoRA, Save tweaked (under the output) keeps the picture.</div>

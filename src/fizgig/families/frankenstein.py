@@ -130,7 +130,10 @@ class DiTBlend:
         self.lora_used = 0
         dev = next(iter([*dit.parameters(), *dit.buffers()])).device
         self.dev = dev
-        self.cdev = torch.device("cuda") if torch.cuda.is_available() else dev
+        # where the blend's maths runs: the card the model's resident part is on (a swapped block's codes are in RAM,
+        # its maths isn't), else where the model is - never a card the model isn't on (the CPU checks ran blends on the
+        # real card, and the memory simulator after them found it in use)
+        self.cdev = next((t.device for t in [*dit.parameters(), *dit.buffers()] if t.is_cuda), dev)
         self.other_f = f = MemoryEfficientSafeOpen(other_path)
         self.own_f = MemoryEfficientSafeOpen(own_path) if own_path and os.path.isfile(own_path) else None
         own_checked = False

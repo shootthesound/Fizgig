@@ -185,7 +185,8 @@ class WorkbenchEngine:
         if getattr(self, "swapped", 0):
             raise ValueError("Frankenstein mode needs the whole model on the card (no block swap): it rewrites blocks "
                              "in place. Set Preferences' inference block swap to 0 on a card that holds it.")
-        self.frank = DiTBlend(self.dit, self.block_groups(), other_path, other_lora=other_lora, log=logger.info)
+        self.frank = DiTBlend(self.dit, self.block_groups(), other_path, other_lora=other_lora, log=logger.info,
+                              own_path=getattr(self, "dit_path", None))   # read back, not held: ~42 GB less RAM
         self.primary_block_ids = sorted(self.frank.items)
         self._invalidate_baseline_cache()
         self._invalidate_activation_cache()

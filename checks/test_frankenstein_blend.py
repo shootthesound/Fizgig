@@ -120,3 +120,29 @@ def test_export_writes_the_blend_and_copies_the_rest(tmp_path):
         assert torch.equal(f.get_tensor("blocks.0.lin.comfy_quant"), marker)
         meta = f.metadata()
     assert meta["source"] == "own" and json.loads(meta["fizgig_frankenstein"])["weights"] == {"b0": 0.5}
+
+
+def test_reads_codes_from_the_files_instead_of_holding_them(tmp_path):
+    """With the loaded model's own file given, nothing of the int8 layers is held in RAM: the loaded codes come back
+    from that file at 0, the other file's are read when the block changes."""
+    from safetensors.torch import save_file
+    _, _, (qa, sa), (qb, sb) = _pair()
+    lin = ConvRotInt8Linear(512, 64)
+    lin.qdata.copy_(qa)
+    lin.wscale.copy_(sa)
+    blk = torch.nn.Module()
+    blk.lin = lin
+    dit = torch.nn.Module()
+    dit.blocks = torch.nn.ModuleList([blk])
+    marker = torch.frombuffer(bytearray(b'{"format": "int8_tensorwise", "convrot": true, "convrot_groupsize": 256}'),
+                              dtype=torch.uint8)
+    own, other = str(tmp_path / "own.safetensors"), str(tmp_path / "other.safetensors")
+    save_file({"blocks.0.lin.weight": qa, "blocks.0.lin.weight_scale": sa, "blocks.0.lin.comfy_quant": marker}, own)
+    save_file({"blocks.0.lin.weight": qb, "blocks.0.lin.weight_scale": sb, "blocks.0.lin.comfy_quant": marker}, other)
+    groups = [types.SimpleNamespace(blocks=[types.SimpleNamespace(id="b0", modules=["blocks.0.lin"])])]
+    bl = DiTBlend(dit, groups, other, own_path=own)
+    assert bl.own_f is not None and bl.items["b0"][0][2] is None          # no copy of the codes kept
+    bl.set({"b0": 1.0})
+    assert torch.equal(lin.qdata, qb)
+    bl.set({"b0": 0.0})
+    assert torch.equal(lin.qdata, qa) and torch.equal(lin.wscale, sa.reshape(-1, 1))

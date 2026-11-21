@@ -89,10 +89,14 @@ class DiTBlend:
     Linears' shared prefix that both have with the same shape: int8 ConvRot Linears (qdata / wscale, with the same
     rotation group) blend in their stored basis; the rest (norms) linearly; a pruned AdaLN by its output (see the
     module docstring). Whatever only one side has, or lives outside the blocks (embedders, H3 Image's head bank), stays
-    the loaded DiT's. other_lora: (path, strength) baked into the other side."""
+    the loaded DiT's. other_lora: (path, strength) baked into the other side. own_path: the loaded DiT's file - its
+    int8 layers' own codes are then read back from it when a block returns to 0 instead of kept in RAM (checked equal
+    to the loaded ones first), and the other file's int8 layers are read only when their block changes: about one
+    block's worth of RAM instead of both models' (~42 GB for H3 - with H3's text encoder loading, a 128 GB machine ran
+    short)."""
 
-    def __init__(self, dit, groups, other_path, other_lora=None, log=None):
-        from fizgig.minimax.convrot import ConvRotInt8Linear, parse_comfy_quant, rotate
+    def __init__(self, dit, groups, other_path, other_lora=None, log=None, own_path=None):
+        from fizgig.minimax.convrot import ConvRotInt8Linear, parse_comfy_quant
         from fizgig.utils.safetensors import MemoryEfficientSafeOpen
         try:
             from fizgig.minimax.model import AdalnProj
@@ -104,7 +108,11 @@ class DiTBlend:
         lora = _lora_pairs(*other_lora) if other_lora else {}
         self.lora_used = 0
         dev = next(iter([*dit.parameters(), *dit.buffers()])).device
-        with MemoryEfficientSafeOpen(other_path) as f:
+        self.dev = dev
+        self.other_f = f = MemoryEfficientSafeOpen(other_path)
+        self.own_f = MemoryEfficientSafeOpen(own_path) if own_path and os.path.isfile(own_path) else None
+        own_checked = False
+        if f is not None:                      # (the other file, kept open for reads on demand)
             hdr = f.header
             # the other model's own AdaLN table (a pruned H3), for its blocks' AdaLN outputs
             self.other_table = f.get_tensor("adaln_t_table").float().to(dev) \
@@ -141,14 +149,17 @@ class DiTBlend:
                             if not ok:
                                 self.skipped_names.append(name)
                                 continue
-                            qb, sb = f.get_tensor(wk), f.get_tensor(sk).to(torch.float32).reshape(-1, 1)
-                            if ld is not None:          # the other side's LoRA, into its stored (rotated) basis
-                                A, B = ld[0].to(dev), ld[1].to(dev)
-                                m = qb.to(dev, torch.float32) * sb.to(dev) + rotate((B @ A).float(), int(mod.rot))
-                                qb, sb = (t.cpu() for t in _requant(m))
-                                self.lora_used += 1
-                            items.append(("q", mod, (mod.qdata.detach().cpu().clone(), mod.wscale.detach().cpu().clone()),
-                                          (qb, sb), name))
+                            if not own_checked and self.own_f is not None:
+                                # the loaded codes are the file's own (H3's loader keeps them): else keep copies
+                                ok_own = wk in self.own_f.header and torch.equal(
+                                    self.own_f.get_tensor(wk).to(mod.qdata.device), mod.qdata)
+                                if not ok_own:
+                                    self.own_f.file.close()
+                                    self.own_f = None
+                                own_checked = True
+                            own = None if self.own_f is not None else                                 (mod.qdata.detach().cpu().clone(), mod.wscale.detach().cpu().clone())
+                            self.lora_used += ld is not None
+                            items.append(("q", mod, own, ld, name))
                             if getattr(mod, "bias", None) is not None and name + ".bias" in hdr \
                                     and list(hdr[name + ".bias"]["shape"]) == list(mod.bias.shape):
                                 items.append(("d", mod, "bias", mod.bias.detach().cpu().clone(),
@@ -228,9 +239,11 @@ class DiTBlend:
                 continue
             for it in items:
                 if it[0] == "q":
-                    _, mod, (qa, sa), (qb, sb), _k = it
+                    _, mod, own, ld, name = it
                     dev = mod.qdata.device
-                    q, s = blend_int8_rows(qa.to(dev), sa.to(dev), qb.to(dev), sb.to(dev), w)
+                    qa, sa = self._own_codes(own, name, dev) if w < 1.0 else (None, None)
+                    qb, sb = self._other_codes(mod, ld, name, dev) if w > 0.0 else (None, None)
+                    q, s = (qa, sa) if w <= 0.0 else (qb, sb) if w >= 1.0 else blend_int8_rows(qa, sa, qb, sb, w)
                     mod.qdata.copy_(q)
                     mod.wscale.copy_(s.reshape(mod.wscale.shape))
                 elif it[0] == "d":
@@ -249,6 +262,25 @@ class DiTBlend:
 
     def weights(self):
         return dict(self.w)
+
+    def _own_codes(self, own, name, dev):
+        """The loaded model's own int8 codes and scales for a layer: kept copies, or read back from its file."""
+        if own is not None:
+            return own[0].to(dev), own[1].to(dev, torch.float32).reshape(-1, 1)
+        f = self.own_f
+        return (f.get_tensor(name + ".weight").to(dev),
+                f.get_tensor(name + ".weight_scale").to(dev, torch.float32).reshape(-1, 1))
+
+    def _other_codes(self, mod, ld, name, dev):
+        """The other file's codes and scales for a layer, read now, with the baked LoRA in its stored basis."""
+        from fizgig.minimax.convrot import rotate
+        f = self.other_f
+        qb = f.get_tensor(name + ".weight").to(dev)
+        sb = f.get_tensor(name + ".weight_scale").to(dev, torch.float32).reshape(-1, 1)
+        if ld is None:
+            return qb, sb
+        m = qb.to(torch.float32) * sb + rotate((ld[1].to(dev) @ ld[0].to(dev)).float(), int(mod.rot))
+        return _requant(m)
 
     @torch.no_grad()
     def _adaln_refit(self, it, w):

@@ -46,9 +46,10 @@ def _auto_swap():
 FRANK_ROOM_GB = 4.5   # on top of the loaded model: a 2560 x 2560 render (3.7 GB measured on H3 Image) + the blend's own
 
 
-def _frank_swap(desc, dit_path):
-    """Frankenstein mode's Auto block swap: the fewest streamed blocks that leave room for the int8 model and a render
-    up to 2560 on this card. Free memory counts what this process already holds (a model loaded before)."""
+def _fit_swap(desc, dit_path, only_if_short_gb=None):
+    """Block swap sized to this card: the fewest streamed blocks that leave room for the int8 model and a render up to
+    2560. only_if_short_gb: only when the model plus that much doesn't fit (else Studio's own Auto). Free memory counts
+    what this process already holds (a model loaded before)."""
     from fizgig.families.quant import free_vram_gb, swap_blocks_for
     try:
         drv = desc.load_driver()
@@ -59,8 +60,15 @@ def _frank_swap(desc, dit_path):
             free += torch.cuda.memory_reserved() / 1024 ** 3
     except Exception:                            # noqa: BLE001 - no file, no card: Studio's own Auto stands
         return _auto_swap()
+    if only_if_short_gb is not None and free >= gb + only_if_short_gb:
+        return _auto_swap()
     per = ((getattr(desc, "train_memory", None) or {}).get("int8") or (0, 0))[1] or gb / max(1, cap + 2)
     return min(cap, swap_blocks_for(desc, per, gb + FRANK_ROOM_GB - free))
+
+
+def _frank_swap(desc, dit_path):
+    """Frankenstein mode's Auto block swap (_fit_swap, always)."""
+    return _fit_swap(desc, dit_path)
 
 
 def _blocks(eng):
@@ -123,6 +131,11 @@ def cmd_load(c):
             plan["precision"] = "int8"
             if auto_swap:
                 plan["blocks_to_swap"] = _frank_swap(desc, plan.get("dit_path", ""))
+        elif auto_swap and getattr(desc, "swap_ring_slots", 0) and not getattr(desc, "video_workbench", False):
+            # a model that streams its int8 blocks through a ring (H3 Image): Studio's Auto streams nothing from 16 GB
+            # up, and its 21 GB model can't load on a 16 GB card - stream enough when it doesn't fit at all; a card
+            # that holds it (24 GB and up) keeps Studio's own Auto
+            plan["blocks_to_swap"] = _fit_swap(desc, plan.get("dit_path", ""), only_if_short_gb=1.0)
         eng.ensure_pipeline(**plan)
         emit(ev="status", text="Loading the LoRA…")
         eng.load_primary("" if frank else c["primary"])

@@ -118,6 +118,25 @@ def test_the_mode_plans_its_own_block_swap(monkeypatch):
     assert 'plan["precision"] = "int8"' in load and "_frank_swap(desc" in load
 
 
+def test_plain_h3_image_streams_only_when_it_cant_fit(monkeypatch):
+    # Studio's Auto streams nothing from 16 GB up: H3 Image's 21 GB int8 model ran out of memory loading on a 16 GB
+    # card. It streams when the model can't fit; a card that holds it keeps Studio's own Auto (none)
+    import fizgig.scripts.studio_worker as W
+    from fizgig.families import quant
+    desc = get("minimax_image")
+    monkeypatch.setattr(type(desc.load_driver()), "dit_gb", lambda self, path: 20.98)
+    monkeypatch.setenv("FIZGIG_SIM_VRAM_GB", "1")
+    monkeypatch.setattr(W, "_auto_swap", lambda: 0)
+    got = {}
+    for free in (31.5, 22.5, 14.7):
+        monkeypatch.setattr(quant, "free_vram_gb", lambda free=free: free)
+        got[free] = W._fit_swap(desc, "h3image.safetensors", only_if_short_gb=1.0)
+    assert got[31.5] == 0 and got[22.5] == 0 and got[14.7] >= 28, got
+    src = open(W.__file__, encoding="utf-8").read()
+    load = src[src.index("def cmd_load"):src.index("def cmd_donor")]
+    assert 'getattr(desc, "swap_ring_slots", 0)' in load and "only_if_short_gb=1.0" in load
+
+
 def test_page_applies_them_over_zero_and_keeps_your_presets_apart():
     js = open(APP, encoding="utf-8").read()
     apply = js[js.index("async function studioPresetApply"):js.index("// Royale's reference strength")]

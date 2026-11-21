@@ -194,7 +194,7 @@ class WorkbenchEngine:
         self._invalidate_baseline_cache()
         self._invalidate_activation_cache()
 
-    def frank_export(self, out_path, state=None):
+    def frank_export(self, out_path, state=None, progress=None):
         """The blend (at the state's sliders, or as it is now) as a new base file in the loaded model's format."""
         if self.frank is None:
             raise ValueError("Frankenstein mode isn't on.")
@@ -202,7 +202,7 @@ class WorkbenchEngine:
             self.frank.set(self.frank_weights(state))
         if not any(w > 0 for w in self.frank.weights().values()):
             raise ValueError("Nothing is blended: move a block slider above 0 first.")
-        return self.frank.export(self.dit_path, out_path, log=logger.info)
+        return self.frank.export(self.dit_path, out_path, log=logger.info, progress=progress)
 
     def frank_weights(self, state):
         """The blend weights a slider state asks for: each block's primary slider, 0..1 (off = 0)."""

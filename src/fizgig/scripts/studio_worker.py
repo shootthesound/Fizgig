@@ -1191,8 +1191,15 @@ def cmd_frank_export(c):
         if eng is None or getattr(eng, "frank", None) is None:
             raise ValueError("Frankenstein mode isn't on: tick it in Setup and press Start.")
         emit(ev="status", text="Writing the new base model… (a minute or two: it's the whole model)")
-        path = eng.frank_export(c["out"], _state(c["state"]) if c.get("state") else None)
-    emit(ev="frank_exported", out=path)
+        last = [0.0]
+
+        def progress(done, total):               # to the page about twice a second, and at the end
+            import time
+            if done >= total or time.time() - last[0] > 0.5:
+                last[0] = time.time()
+                emit(ev="frank_progress", done=done, total=total)
+        path = eng.frank_export(c["out"], _state(c["state"]) if c.get("state") else None, progress=progress)
+    emit(ev="frank_exported", out=path, gb=round(os.path.getsize(path) / 1e9, 1) if os.path.exists(path) else None)
 
 
 def cmd_reset(_c):

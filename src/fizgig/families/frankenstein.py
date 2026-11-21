@@ -16,6 +16,7 @@ Linears' updates added to the other file's weights at load, its AdaLN rows added
 """
 from __future__ import annotations
 
+import math
 import os
 import re
 
@@ -372,7 +373,7 @@ class DiTBlend:
         sol = torch.linalg.lstsq(X, target).solution            # [9, out]
         return sol[:-1].T.contiguous().cpu(), sol[-1].contiguous().cpu()
 
-    def export(self, src_path, out_path, metadata=None, log=None):
+    def export(self, src_path, out_path, metadata=None, log=None, progress=None):
         """The blend as a new base file, in the loaded model's own format (ComfyUI loads it as it loads src_path):
         every tensor of src_path, with the blended blocks' current values in place - int8 codes and scales as they
         are on the card, blended norms, each blended AdaLN refitted onto the file's own table. Untouched tensors are
@@ -414,6 +415,18 @@ class DiTBlend:
                 specs[key] = (dt, shape, (lambda f=repl[key], dt=dt, shape=shape: f().to(dt).reshape(shape)))
             else:
                 specs[key] = (dt, shape, (lambda k=key: src.get_tensor(k)))
+        if progress is not None:               # progress(bytes written, of bytes): the page's progress bar
+            total = sum(dt.itemsize * math.prod(shape) for dt, shape, _ in specs.values())
+            done = [0]
+
+            def counted(f, n):
+                def make():
+                    t = f()
+                    done[0] += n
+                    progress(done[0], total)
+                    return t
+                return make
+            specs = {k: (dt, shape, counted(f, dt.itemsize * math.prod(shape))) for k, (dt, shape, f) in specs.items()}
         meta = dict(src.metadata() or {})
         meta["fizgig_frankenstein"] = json.dumps({"base": os.path.basename(src_path),
                                                    "blended_with": os.path.basename(self.other_path),

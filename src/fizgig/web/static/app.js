@@ -8305,6 +8305,23 @@ function studioRows() {
   studioActivity();
 }
 
+// the blend's save card: a progress bar while the new base is written, then where it went (or why it couldn't)
+function studioFrankMsg(st) {
+  const box = $("stFrankMsg"), gb = (b) => (b / 1e9).toFixed(1);
+  const s = st.frank_saving;
+  $("stFrankExport").disabled = !!s;
+  if (s) {
+    const bar = el("progress", {max: s.total || 1, value: s.done || 0, class: "st-frank-bar"});
+    box.replaceChildren(el("div", {class: "field-row"}, bar, el("span", {class: "field-hint", text: s.total ?
+      `Writing the new base model… ${gb(s.done)} of ${gb(s.total)} GB` : "Getting the blend ready to write…"})));
+    return;
+  }
+  S.st.frankSaving = false;
+  if (st.frank_error) box.replaceChildren(el("div", {class: "problems", text: st.frank_error}));
+  else if (st.frank_exported) box.replaceChildren(el("div", {class: "field-hint st-saved",
+    text: `Saved: ${st.frank_exported}${st.frank_saved_gb ? ` (${st.frank_saved_gb} GB)` : ""}`}));
+}
+
 // Frankenstein mode (a family's frankenstein_with): another base model blended in block by block
 function studioFrankAsked() {
   return !!((S.st.layout || {}).frankenstein || []).length && $("stFrank").checked;
@@ -8880,6 +8897,7 @@ async function studioPollOnce() {
   const frank = S.st.ready && !!st.frankenstein;
   S.st.frankOut = st.frank_out || "";
   S.st.frankLoaded = frank;
+  if (S.st.frankSaving || st.frank_saving || st.frank_error) studioFrankMsg(st);
   $("tab-studio").classList.toggle("frankenstein", frank);
   if (frank && !$("stFrankOut").value) $("stFrankOut").value = S.st.frankOut || "";
   if (frank && !S.st.frank) { $("stFrank").checked = true; studioFrankTick(); }   // found loaded (a page reload)
@@ -9518,11 +9536,12 @@ function wireStudio() {
     const again = S.st.frankOverwrite === out;
     try {
       const r = await api("/api/studio/frank_export", {out, state: studioState(), overwrite: again});
-      if (r.exists) { S.st.frankOverwrite = out; $("stStatus").textContent = "That file is there already: press Save blend as a new base again to replace it."; return; }
+      if (r.exists) { S.st.frankOverwrite = out; studioFrankMsg({frank_error: "That file is there already: press Save blend as a new base again to replace it."}); return; }
       S.st.frankOverwrite = null;
-      $("stStatus").textContent = "Writing the new base model…";
+      S.st.frankSaving = true;                   // the card shows it at once; the poll takes over
+      studioFrankMsg({frank_saving: {done: 0, total: 0}});
       studioPoll();
-    } catch (e) { $("stStatus").textContent = e.message; }
+    } catch (e) { studioFrankMsg({frank_error: e.message}); }
   });
   $("stUnload").addEventListener("click", async () => { await api("/api/studio/reset", {}); S.st.ready = false; S.st.loadedKey = ""; studioPoll(); });
   $("stPrimaryPick").addEventListener("click", () => pick($("stPrimary").value || loraStart(), false, (p) => { $("stPrimary").value = p; stRemember(); }));

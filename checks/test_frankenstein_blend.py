@@ -246,7 +246,11 @@ def test_export_writes_the_blend_and_copies_the_rest(tmp_path):
     groups = [types.SimpleNamespace(blocks=[types.SimpleNamespace(id="b0", modules=["blocks.0.lin"])])]
     bl = DiTBlend(dit, groups, other)
     bl.set({"b0": 0.5})
-    out = bl.export(own, str(tmp_path / "mix.safetensors"))
+    seen = []                                  # the save card's progress bar: bytes written, of the file's tensors
+    out = bl.export(own, str(tmp_path / "mix.safetensors"), progress=lambda done, total: seen.append((done, total)))
+    payload = qa.numel() * qa.element_size() + sa.numel() * 4 + marker.numel() + 6 * 4
+    assert seen and all(t == payload for _, t in seen) and seen[-1][0] == payload
+    assert [d for d, _ in seen] == sorted(d for d, _ in seen)               # only ever forward
     with safe_open(out, "pt") as f:
         assert torch.equal(f.get_tensor("blocks.0.lin.weight"), lin.qdata)
         assert torch.equal(f.get_tensor("blocks.0.lin.weight_scale").reshape(-1, 1), lin.wscale)

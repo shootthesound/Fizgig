@@ -194,6 +194,8 @@ def _event(ev):
             nxt, _S["pending"] = _S["pending"], None
         elif kind == "error":
             where = ev.get("where")
+            if where == "frank_export":          # the blend's save card says so, where the button was pressed
+                _S.update(frank_saving=None, frank_error=ev.get("msg", ""))
             _S.update(error=ev.get("msg", ""), progress=None,
                       status=("Render error: " if where == "render" else "Couldn't load: " if where == "load" else "")
                       + ev.get("msg", ""))
@@ -204,8 +206,12 @@ def _event(ev):
                 _S["state"] = "idle"
         elif kind == "saved":
             _S["saved"] = {"out": ev.get("out"), "summary": ev.get("summary")}
+        elif kind == "frank_progress":           # Frankenstein mode: the new base model being written
+            _S["frank_saving"] = {"done": ev.get("done", 0), "total": ev.get("total", 0)}
         elif kind == "frank_exported":           # Frankenstein mode: the new base model, written
             _S["frank_exported"] = ev.get("out")
+            _S["frank_saved_gb"] = ev.get("gb")
+            _S["frank_saving"] = None
             _S["status"] = f"New base model written: {ev.get('out')}"
             _S["status"] = "Saved."
         elif kind == "reset":
@@ -736,7 +742,7 @@ def frank_export(out, state):
     with _lock:
         if not (_S["state"] == "ready" and _S.get("frankenstein")):
             raise ValueError("Frankenstein mode isn't on: tick it in Setup and press Start.")
-        _S["frank_exported"] = None
+        _S.update(frank_exported=None, frank_error=None, frank_saving={"done": 0, "total": 0})
     _send({"cmd": "frank_export", "out": out, "state": state})
 
 
@@ -1006,6 +1012,9 @@ def status():
         d["up_room"] = _S.get("up_room")
         d["frankenstein"] = _S.get("frankenstein") or "" if d.get("state") == "ready" else ""
         d["frank_exported"] = _S.get("frank_exported")
+        d["frank_saved_gb"] = _S.get("frank_saved_gb")
+        d["frank_saving"] = _S.get("frank_saving")   # {"done", "total"} bytes while the new base is written
+        d["frank_error"] = _S.get("frank_error") or ""
         d["frank_out"] = _S.get("frank_out") or ""
         d["same"] = bool(_S.get("same"))           # the Tweaked render on screen is the Baseline
         d["eq"] = _S.get("eq") or {}

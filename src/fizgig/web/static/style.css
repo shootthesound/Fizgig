@@ -2455,6 +2455,7 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 #tab-studio.frank-asked .st-block .st-label { color: var(--text-primary); }
 #tab-studio .st-frank-save { display: none; }
 #tab-studio.frank-asked .st-frank-save { display: block; }
+#tab-studio .st-frank-bar { flex: 1; min-width: 160px; height: 12px; accent-color: var(--accent); }
 #tab-studio.frank-asked #stTweakCap { color: var(--accent); font-weight: 600; }
 /* no LoRA: the one render is the Tweaked pane, shown whatever the arrows were left on (hiding Tweaked left nothing) */
 #tab-studio.no-lora .st-preview.only-base .st-tweak-pane { display: block; }

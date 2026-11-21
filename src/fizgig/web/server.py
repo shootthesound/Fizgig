@@ -4941,7 +4941,10 @@ class Handler(BaseHTTPRequestHandler):
                     ok_keys = {k: v for k, v in form_now.items()
                                if str(k).startswith("SAMPLE_") or k in ("FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_ON",
                                                                          "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE",
-                                                                         "FAMILY_PREVIEW_LOOK", "__SAMPLE_LIVE")}
+                                                                         "FAMILY_PREVIEW_LOOK",
+                                                                         "KREA2_TEXT_ENHANCE", "KREA2_TEXT_BOOST",
+                                                                         "KREA2_TEXT_SCALE",
+                                                                         "__SAMPLE_LIVE")}
                     with _lock:
                         _run["values"] = {**(_run.get("values") or {}), **ok_keys}
                 side = os.path.join(out, ".sample_override.json")
@@ -4961,6 +4964,18 @@ class Handler(BaseHTTPRequestHandler):
                             live[k] = float(b[k]) if k in ("cfg", "turbo") else int(float(b[k]))
                     except (TypeError, ValueError):
                         pass
+                # Krea 2's ✨Prompt Enhancer: the tick is the on/off and the two boxes are its strengths, blank
+                # meaning each control's own neutral (1.0 for both, as the donor ships them). The keys are the
+                # option names, so the override file is the launch tokens - a family without the controls never
+                # sends them, which keeps this invisible to every other model.
+                if "krea2_text_enhance" in b:
+                    live["krea2_text_enhance"] = 1 if b.get("krea2_text_enhance") else 0
+                for k in ("krea2_text_boost", "krea2_text_scale"):
+                    if k in b:
+                        try:
+                            live[k] = float(str(b[k]).strip() or 1.0)
+                        except (TypeError, ValueError):
+                            pass
                 desc = get_family(fam or "")
                 lk = desc.preview_look() if desc is not None and "look" in b else None
                 if lk is not None:      # the SFT look tick: its file's path when ticked ("" = off), at its strength

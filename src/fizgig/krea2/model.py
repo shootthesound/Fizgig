@@ -439,6 +439,8 @@ class SingleStreamDiT(nn.Module):
         t: Tensor,
         pos: Tensor,
         mask: Tensor | None = None,
+        enhanced_txtfusion: Tensor | None = None,
+        text_scale: float = 1.0,
     ) -> Tensor:
         img = self.first(img)
         t = self.tmlp(temb(t, self.config.tdim, device=img.device, dtype=img.dtype))
@@ -459,10 +461,15 @@ class SingleStreamDiT(nn.Module):
         # (to cut the distinct-shape count) measurably changed the output for short captions,
         # ~2% relative, while the equivalent padding of the COMBINED sequence is bit-exact. That
         # is unexplained and the change was reverted — see docs/PERF_ROADMAP.md.
-        txt_attn_params_nomask = AttentionParams.create_attention_params_from_mask(self.attn_mode, self.split_attn, 0, None)
-        txt_attn_params = AttentionParams.create_attention_params_from_mask(self.attn_mode, self.split_attn, 0, txtmask)
-        context = self.txtfusion(context, txt_attn_params_nomask, txt_attn_params)
+        if enhanced_txtfusion is None:
+            txt_attn_params_nomask = AttentionParams.create_attention_params_from_mask(self.attn_mode, self.split_attn, 0, None)
+            txt_attn_params = AttentionParams.create_attention_params_from_mask(self.attn_mode, self.split_attn, 0, txtmask)
+            context = self.txtfusion(context, txt_attn_params_nomask, txt_attn_params)
+        else:
+            context = enhanced_txtfusion    # the driver ran the enhancement once for the whole render
         context = self.txtmlp(context)
+        if text_scale != 1.0:
+            context = context * text_scale   # the Advanced sibling: a flat lift on the whole prompt
 
         combined = torch.cat((img, context), dim=1)  # image first, then text
 
@@ -505,6 +512,23 @@ class SingleStreamDiT(nn.Module):
         output = final[:, :imglen, :]  # image tokens are the leading slice now
 
         return output
+
+    def enhanced_text(self, context: Tensor, mask: Tensor, imglen: int, strength) -> Tensor:
+        """The Samples tab's Prompt Enhancer, derived once for a whole render instead of once per step.
+
+        This has to stay the numerical twin of `forward`'s own text fusion - same post-`prepare` text
+        mask, same two attention params, same `txtfusion` - because the enhancement is the DIFFERENCE
+        between two runs of it, and any drift here shows up as a wrong picture rather than an error.
+        The conditioning is loop-invariant (the timestep reaches only the image modulation), so one
+        pass here is the same tensor the donor node recomputes inside every model call.
+        See krea2/text_boost.py for the maths and the donor attribution, and
+        scripts/check_text_boost.py for the measurement of exactly that claim.
+        """
+        from fizgig.krea2 import text_boost
+        txtmask = mask[:, imglen:]  # (B, txt_len) bool, exactly as forward slices it
+        nomask = AttentionParams.create_attention_params_from_mask(self.attn_mode, self.split_attn, 0, None)
+        params = AttentionParams.create_attention_params_from_mask(self.attn_mode, self.split_attn, 0, txtmask)
+        return text_boost.enhance(lambda c: self.txtfusion(c, nomask, params), context, strength)
 
     def forward_cached(
         self,

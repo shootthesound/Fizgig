@@ -161,7 +161,8 @@ class Worker:
             files = _render_previews(self.driver, self.dit, self.net, self.vae, conds, job["out"], int(job["epoch"]),
                                      output_name=job["output_name"], steps=int(job["steps"]), cfg=float(job["cfg"]),
                                      neg=neg, width=int(job["width"]), height=int(job["height"]),
-                                     seed=int(job["seed"]), speed=settings, swapped=bool(self.swapped))
+                                     seed=int(job["seed"]), speed=settings, swapped=bool(self.swapped),
+                                     boost=job.get("boost"), text_scale=job.get("text_scale"))
         return {"ok": True, "files": _with_companions(files), "seconds": round(time.time() - t0, 1),
                 "precision": self.precision}
 
@@ -213,7 +214,7 @@ class Worker:
                                      neg=neg, width=int(job["width"]), height=int(job["height"]),
                                      seed=int(job["seed"]), speed=speed, lowmem=self.lowmem,
                                      swapped=bool(self.swapped), strengths=tuple(job.get("strengths") or ()),
-                                     look=look)
+                                     look=look, boost=job.get("boost"), text_scale=job.get("text_scale"))
         return {"ok": True, "files": _with_companions(files), "seconds": round(time.time() - t0, 1),
                 "precision": self.precision}
 

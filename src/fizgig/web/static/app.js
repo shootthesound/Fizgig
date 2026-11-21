@@ -5474,7 +5474,7 @@ const sampleLiveSoon = debounce(async () => {
     const keep = ["SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS", "SAMPLE_CFG_SCALE",
       "FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_ON", "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE", "SAMPLE_EVERY_N_EPOCHS",
       "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH", "SAMPLE_EVERY_AFTER", "FAMILY_PREVIEW_LOOK", "SAMPLE_CHECKPOINT",
-      "__SAMPLE_LIVE"];
+      "KREA2_TEXT_ENHANCE", "KREA2_TEXT_BOOST", "KREA2_TEXT_SCALE", "__SAMPLE_LIVE"];
     let steps = v.SAMPLE_STEPS, turbo = v.FAMILY_TURBO_ON === false ? "0" : v.FAMILY_TURBO_STRENGTH;
     const pace = valueOrDefault("FAMILY_TURBO_PACE");
     if (pace !== undefined) {
@@ -5488,6 +5488,11 @@ const sampleLiveSoon = debounce(async () => {
       on: !!v.__SAMPLE_LIVE, prompts: v.SAMPLE_PROMPT || "",
       seed: v.SAMPLE_SEED, width: v.SAMPLE_WIDTH, height: v.SAMPLE_HEIGHT, steps,
       cfg: v.SAMPLE_CFG_SCALE, turbo,
+      // Krea 2's ✨Prompt Enhancer: the tick decides whether it runs, the boxes how strong. The keys are the
+      // option names, so the override file says exactly what the driver reads. Undefined values drop out of
+      // the JSON, which is how "the tab never said" differs from an explicit untick.
+      krea2_text_enhance: v.KREA2_TEXT_ENHANCE === undefined ? undefined : (v.KREA2_TEXT_ENHANCE ? 1 : 0),
+      krea2_text_boost: v.KREA2_TEXT_BOOST, krea2_text_scale: v.KREA2_TEXT_SCALE,
       every: v.SAMPLE_EVERY_N_EPOCHS,
       until: v.SAMPLE_LATER ? v.SAMPLE_UNTIL_EPOCH : 0, after: v.SAMPLE_LATER ? v.SAMPLE_EVERY_AFTER : 0,
       look: !!v.FAMILY_PREVIEW_LOOK, checkpoint: !!valueOrDefault("SAMPLE_CHECKPOINT")});

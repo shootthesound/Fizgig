@@ -272,11 +272,63 @@ def _record_prompts(sample_dir, output_name, epoch, prompts):
         logger.warning(f"[sample] could not record the preview prompts ({e})")
 
 
+def _enh_options(boost, text_scale):
+    """The family's per-render conditioning controls (Krea 2's ✨Prompt Enhancer) as the options tuple its driver
+    reads - drivers ignore what they don't use, so this is how a shared preview path carries a family-specific
+    setting. None means the value was never said, and the driver's own neutral (no enhancement) stands."""
+    out = ()
+    if boost is not None:
+        out += (("krea2_text_boost", boost),)
+    if text_scale is not None:
+        out += (("krea2_text_scale", text_scale),)
+    return out
+
+
+def _enh_summary(mode):
+    """The ✨Prompt Enhancer row for a round's record: strength alone, text scale alone, or both. Empty when
+    neither is set, so a plain render claims nothing - and text scale counts on its own, since a render made
+    with strength 0 and scale 2.0 is not a plain render."""
+    parts = [f"{float(mode['boost']):g}" if mode.get("boost") else "",
+             f"×{float(mode.get('text_scale') or 1):g}" if float(mode.get("text_scale") or 1) != 1 else ""]
+    return " ".join(p for p in parts if p)
+
+
+def _enh_settings(ov, family_options):
+    """The ✨Prompt Enhancer's effective settings for one preview round, as the (boost, text_scale) the render
+    should use - or (None, None), which means nothing is said and the family's plain path stands.
+
+    The tick decides whether it runs at all; the box decides how strong, with blank meaning the donor's 1.0.
+    Live Samples-tab values win over the ones the run launched with, and an explicit untick is not the same as
+    a value that was never said - that is why the tick travels as its own field rather than as a zero boost."""
+    launch = family_options or {}
+    if ov is not None and ov.get("krea2_text_enhance") is not None:
+        on = bool(ov["krea2_text_enhance"])
+    else:
+        on = str(launch.get("krea2_text_enhance") or "").strip() not in ("", "0")
+    if not on:
+        return None, None
+
+    def pick(key, neutral):
+        """Live change, launch value and driver token all under one name, so there is nothing to map between
+        them and nothing to get out of sync."""
+        v = (ov or {}).get(key)
+        if v is None:
+            v = launch.get(key)
+        try:
+            return float(v) if v not in (None, "") else neutral
+        except (TypeError, ValueError):
+            return neutral
+
+    return pick("krea2_text_boost", 1.0), pick("krea2_text_scale", 1.0)
+
+
 def _read_sample_override(output_dir):
     """The live sample override (<output_dir>/.sample_override.json, written by the desktop's status-bar panel or the
     web UI's Samples tab): {prompts, prompt (the first), seed, width, height, steps, cfg, turbo, every, until, after}
     while a prompt is set, else None (every / until / after: the preview cadence, see preview_due). A "prompts" list (the web's, every line of its box) or a single "prompt"; the reference image field
-    is ignored. steps / cfg / turbo (the Turbo LoRA's strength) are None when the override doesn't set them."""
+    is ignored. steps / cfg / turbo (the Turbo LoRA's strength) are None when the override doesn't set them,
+    and so are krea2_text_enhance / krea2_text_boost / krea2_text_scale (Krea 2's ✨Prompt Enhancer, which the
+    Samples tab can change mid-run - see _enh_settings for how live and launch values combine)."""
     path = os.path.join(output_dir, ".sample_override.json")
     try:
         with open(path, encoding="utf-8") as f:
@@ -290,6 +342,8 @@ def _read_sample_override(output_dir):
                 except (TypeError, ValueError):
                     return None
             steps, cfg, turbo = num("steps", int), num("cfg", float), num("turbo", float)
+            boost, tscale = num("krea2_text_boost", float), num("krea2_text_scale", float)
+            enh = d.get("krea2_text_enhance")   # the tick: 1 / 0, or absent when the tab never said
             look = d.get("look") if isinstance(d.get("look"), str) else None   # the look LoRA's path, "" = off
             # the preview-model tick (Qwen's Turbo, Klein's Distilled): its file's path when ticked, "" = the training
             # model, None = not sent (the run keeps what it started with)
@@ -298,6 +352,8 @@ def _read_sample_override(output_dir):
                     "width": int(d.get("width", 1024)), "height": int(d.get("height", 1024)),
                     "steps": steps if steps and steps > 0 else None, "cfg": cfg if cfg and cfg > 0 else None,
                     "turbo": turbo if turbo is not None and turbo >= 0 else None,
+                    "krea2_text_enhance": None if enh is None else (1 if enh else 0),
+                    "krea2_text_boost": boost, "krea2_text_scale": tscale,
                     "look": look, "look_strength": num("look_strength", float),
                     **{k: (lambda v: v if v is not None and v >= 0 else None)(num(k, int))
                        for k in ("every", "until", "after")}}
@@ -756,13 +812,15 @@ def _dop_ft_loss(driver, dit, rows, cond, device):
 
 def _render_previews(driver, dit, net, vae, encoded, out_dir, epoch, *, output_name, steps, cfg, neg, width,
                      height, seed, ema=None, speed=None, lowmem=False, swapped=False, refs=None, slider=False,
-                     strengths=(), look=False):
+                     strengths=(), look=False, boost=None, text_scale=None):
     """Previews on the RESIDENT training model: training adapter OFF (the deployment setup), the family's speed
     LoRA ON if one is loaded (it lives on CPU between previews). On small cards the DiT parks on CPU for the
     decode. File names match the other trainers so the GUI gallery reads them:
     <name>_e<epoch>_<idx>_<timestamp>_<seed>.png. `speed` is the speed LoRA's SamplingSettings or None; `refs` the edit previews' reference latents; `slider`
     renders each prompt at -1 / 0 / +1 on one seed and saves them as one strip. `strengths`: each prompt again at
-    these LoRA strengths, same seed, saved beside it as <...>_s<strength x100>.png (_s050 = 0.5)."""
+    these LoRA strengths, same seed, saved beside it as <...>_s<strength x100>.png (_s050 = 0.5).
+    `boost` / `text_scale`: the family's own per-render conditioning controls (Krea 2's ✨Prompt Enhancer) -
+    None means "not said", so the family's own default stands."""
     os.makedirs(out_dir, exist_ok=True)
     ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
     device = next(iter(dit.parameters())).device
@@ -793,6 +851,8 @@ def _render_previews(driver, dit, net, vae, encoded, out_dir, epoch, *, output_n
             done.add("swap")
             driver.block_swap_mode(dit, inference=True)
         ref_kw = {"refs": [r.to(device) for r in refs]} if refs else {}
+        enh_kw = _enh_options(boost, text_scale)   # merged into the options the driver reads, so a mid-run
+        # change from the Samples tab applies to the very next preview
         lats = []
         extra = () if slider else tuple(strengths or ())
         mults = SLIDER_PREVIEW_MULTIPLIERS if slider else (None,) + extra
@@ -816,10 +876,11 @@ def _render_previews(driver, dit, net, vae, encoded, out_dir, epoch, *, output_n
                     _cfg = cfg if cfg and cfg > 1.0 else speed.cfg
                     lats.append(driver.generate(dit, cond, width, height, steps=steps, seed=seed + i, cfg=_cfg,
                                                 neg_cond=neg if _cfg > 1.0 else None,
-                                                sigmas=speed.sigmas, options=speed.options, **ref_kw))
+                                                sigmas=speed.sigmas, options=tuple(speed.options) + enh_kw,
+                                                **ref_kw))
                 else:
                     lats.append(driver.generate(dit, cond, width, height, steps=steps, seed=seed + i, cfg=cfg,
-                                                neg_cond=neg, **ref_kw))
+                                                neg_cond=neg, options=enh_kw, **ref_kw))
         tok = driver.park_for(dit, device, None, "decode")   # None = the shared rule below
         if tok is not None:
             done.add("decode_park")
@@ -2313,6 +2374,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             except Exception:
                 logger.exception("[sample override] could not encode the override prompt - using the configured ones")
                 conds = encoded
+        boost_now, tscale_now = _enh_settings(ov, family_options)   # both reach the driver as per-render
+        # options, never as launch arguments, so a mid-run change applies to the very next preview
         if not sd:          # seed 0 = a fresh random seed every preview round, as on the other trainers
             sd = random.randint(1, 2 ** 31 - 1)
         if cfg_now and cfg_now > 1.0 and neg is None:
@@ -2382,6 +2445,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                            "network": {"dim": network_dim, "alpha": network_alpha, "type": network_type,
                                        "factor": lokr_factor, "blocks": None},
                            "options": dict(family_options or {}), "precision": precision,
+                           "boost": boost_now, "text_scale": tscale_now,
                            "context": [context_lora_path, context_lora_strength] if context_lora_path else None,
                            "lowmem": False}
                     with open(os.path.join(rd, "round.json.tmp"), "w", encoding="utf-8") as f:
@@ -2411,7 +2475,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     neg=neg, width=w, height=h, seed=sd,
                     # the asked CFG, not the checkpoint's own: _render_previews reads CFG 1 as "the recipe's"
                     speed=speed_desc.settings if turbo_ck else dataclasses.replace(ck, cfg=ck_cfg),
-                    swapped=bool(swp), refs=ref_latents)
+                    swapped=bool(swp), refs=ref_latents, boost=boost_now, text_scale=tscale_now)
             ckpt_previews.render(dit, net, ema, _ck_render)
             write_mode({"model": os.path.basename(ckpt_previews.path), "steps": ck_steps, "cfg": ck_cfg,
                         "turbo": speed_desc.name if turbo_ck else "", "strength": strength_now if turbo_ck else 0},
@@ -2456,6 +2520,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                        "network": {"dim": network_dim, "alpha": network_alpha, "type": network_type,
                                    "factor": lokr_factor, "blocks": sorted(train_blocks) if train_blocks else None},
                        "options": dict(family_options or {}),
+                       "boost": boost_now, "text_scale": tscale_now,
                        "precision": precision, "context": [context_lora_path, context_lora_strength]
                        if context_lora_path else None, "lowmem": bool(lowmem)}
                 if sample_keyframes and desc.preview_keyframes:
@@ -2497,6 +2562,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                          seed=sd, ema=ema,
                          speed=speed_now, lowmem=lowmem,
                          swapped=bool(swapped), refs=ref_latents, slider=slider,
+                         boost=boost_now, text_scale=tscale_now,
                          strengths=sample_strengths if epoch > 0 else (),   # before training the LoRA is all zero
                          look=(look_now := (_look_ready() if not ov or ov.get("look") is None   # as launched
                                             else ov["look"] != "" and _look_ready(ov["look"], ov.get("look_strength")))))
@@ -2509,7 +2575,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         last_prompt[0] = prompts[-1] if prompts else None
         _record_prompts(sample_dir, output_name, epoch, prompts)
         write_mode({"model": "", "steps": steps_now, "cfg": cfg_now, "turbo": speed_desc.name if speed_now else "",
-                    "strength": strength_now if speed_now else 0}, epoch, look_now)
+                    "strength": strength_now if speed_now else 0,
+                    "boost": float(boost_now or 0), "text_scale": float(tscale_now or 1)}, epoch, look_now)
 
     def _make_ckpt_previews(path):
         """Previews on this preview checkpoint, or None (with the reason logged): at the start, or when the Samples
@@ -2562,6 +2629,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 hit[1] = str(v)
             else:
                 rows.append([label, str(v)])
+        enh = _enh_summary(mode)
+        if enh:
+            rows.append(["✨Prompt Enhancer", enh])
         if float(mode.get("cfg") or 1) > 1:
             rows.append(["Negative prompt", (sample_negative if sample_negative is not None
                                              else desc.preview_negative) or "(empty)"])

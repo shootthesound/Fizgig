@@ -84,6 +84,87 @@ render. Check whether image completion and progress continue, or whether the job
 An unexpected Studio worker exit now includes its process exit code in the error and log. Native crashes
 also print a Python fault traceback to the worker log where the runtime can provide one.
 
+## ✨Prompt Enhancer (training previews)
+
+A Samples-tab box that makes Krea 2's training previews follow the prompt harder. Krea 2's text
+conditioning is 12 stacked encoder taps rather than one vector, and the tail of them carries the
+words while the head carries very little — so a prompt can be present in the context and still
+followed loosely. The Enhancer runs the text-fusion stack a second time on a gain-shaped
+conditioning (the tail of it lifted in places, the rest left alone, plus a ×15 global lift at full
+strength) and adds the difference back,
+capped so no single token can change by more than 75% of its own magnitude. Without the cap, a
+strong setting takes the renders to mush.
+
+Ported from [ComfyUI-Krea2T-Enhancer](https://github.com/K3nt3L/ComfyUI-Krea2-Enhancer) by
+Capitan01R (MIT), which is itself a licensed re-host after the original node was taken down. The
+maths live in `src/fizgig/krea2/text_boost.py`.
+
+**How to use it.** Tick ✨Prompt Enhancer to turn it on — until you do, previews render exactly as
+they did before. The `strength` box then says how much to blend in: 0 is neutral, 1 is the default
+(and the fifteenfold lift of the whole conditioning comes with it), 2 is its ceiling, and blank
+means 1. Start around 0.3 and raise it until the previews track the prompt.
+`Text scale` is the other control: a flat multiplier on the finished text tokens right after
+`txtmlp` (0.25 to 4, blank is 1), lifting every word the same amount where `strength` lifts
+different parts of the prompt by different amounts. **The two are not alternatives to each other.** They act at
+opposite ends of the same text path — `strength` on what goes into the fusion, `text scale` on
+what comes out of it — and they stack, so most people set both. Either can sit at its neutral
+value to use only the other: 0 for strength, 1 (or blank) for text scale. **1.5 to 2.0** is a good
+place to start with text scale.
+
+**It is live.** Tick it, or change either box, while the run trains and the next epoch's previews
+use it, exactly like Steps, CFG and seed. Unticking means off rather than "keep the launch value" —
+the tick travels as its own setting, which is why turning it off is not the same as never having
+ticked it. The whole thing follows the Samples tab's previews switch: with previews turned off
+there is nothing to override. Every epoch records the strength its previews were rendered with, so the gallery and
+the Run summary say what produced each picture — worth checking before comparing two epochs.
+
+**It only touches the previews.** The LoRA trains on the plain conditioning either way, so this
+is a lens on the run, not a change to it. It is also not the same thing as Repair Studio's
+✨Text fusion ×2/×3 presets: those change the text-fusion *weights* (and stack with this), while
+this changes the *activations* at render time.
+
+**What it costs.** The enhancement is derived once per preview rather than once per step, because
+the Krea 2 text path is loop-invariant — the same tensor the original node recomputes inside every
+model call, computed once. `python -m fizgig.scripts.check_text_boost --fusion --device cuda`
+measures that claim and the cost; the figures below are one machine's, and the ratio is what
+generalises.
+
+Measured 2026-11-21 on an NVIDIA RTX PRO 6000 Blackwell (Workstation Edition), against a text
+fusion built at the shipped config's shape (12 taps × 2560, 20 heads, multiplier 4) — the family's
+real shape with random weights, because what is being priced is the passes, not the pixels:
+
+| | |
+|---|---|
+| one text-fusion pass | 0.0182 s |
+| the enhancement (both passes, the gain scaling and the cap) | 0.0369 s |
+| **added per preview** (computed once) | **+0.0187 s** |
+| a per-step derivation, per 20-step preview | +0.375 s *(derived: the same increment × 20, not a separate run)* |
+| peak allocated with the fusion resident | 2.06 GiB |
+
+Best of 15, card synchronised after every call, worst within 3% of the mean; the run is logged in
+`krea2-enhancer-measurements.log`.
+
+The shape of the cost is worth spelling out, because it is the whole argument for computing this
+once per preview: two fusion passes would be 0.0364 s, and the enhancement is 0.0369 s. The gain
+scaling and the capped residual together cost about half a millisecond — **the feature is one extra
+text-fusion pass and nothing else.** Eighteen milliseconds on a preview that already takes seconds,
+where re-deriving it on every step would be 0.375 s.
+
+The same measurement on this machine's CPU (16-core Ryzen 7 5800XT, no GPU, at 128 tokens rather
+than 512 — a CPU pass at 512 would take minutes): one pass 1.42 s, the enhancement 2.74 s, so
++1.32 s per preview where a per-step derivation would cost +26.4 s (derived). The
+enhancement is close to exactly twice a single pass here too, and the ratio is what matters rather
+than the absolute seconds, so the feature stays affordable on a box without a discrete card.
+
+Numerical parity held exactly. Twenty recomputations were bit-identical to computing once — on a
+deterministic stub and on the real fusion — and the admitted residual never exceeded 0.75 of the
+reference token's own rms across seven scales of input. Reproduce with
+`python -m fizgig.scripts.check_text_boost --fusion --device cuda`.
+
+If a render with the Enhancer on looks wrong, first set it back to blank and confirm the preview
+matches the previous behaviour, then bisect the strength. A `Krea 2` run that has never had the
+box filled in needs no cleanup: there is nothing stored to remove.
+
 ## The trainer curates your dataset while it trains (experimental)
 
 Four Training-tab toggles no other trainer has. They work on Krea 2 and [Qwen Image 2.1](QWEN_IMAGE.md).

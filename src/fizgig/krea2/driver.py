@@ -344,14 +344,24 @@ class Krea2Driver(FamilyDriver):
         x1, x2 = (256 // 16) ** 2, (1280 // 16) ** 2
         ts = list(sigmas) + [0.0] if sigmas is not None and len(sigmas) == steps else \
             timesteps(img.shape[1], steps, x1, x2, mu=opts.get("mu"))
+        from fizgig.krea2 import text_boost
+        boost = text_boost.clamped(opts.get("krea2_text_boost"))    # the Samples tab's Prompt Enhancer
+        tscale = text_boost.text_scale(opts.get("krea2_text_scale"))
         with torch.autocast(device_type=device.type, dtype=DTYPE):
+            # once for the render, under the same autocast the steps run under, so the plain pass here is
+            # bit-identical to the plain pass inside forward. A guided render enhances the negative too:
+            # the donor enhances whatever conditioning it is handed.
+            enh = dit.enhanced_text(txt, mask, img.shape[1], boost) if boost else None
+            enh_neg = dit.enhanced_text(untxt, unmask, img.shape[1], boost) if boost and guided else None
             for i, (tc, tp) in enumerate(zip(ts[:-1], ts[1:])):
                 if on_step is not None:
                     on_step(i, len(ts) - 1)
                 t = torch.full((1,), tc, dtype=img.dtype, device=device)
-                v = dit(img=img, context=txt, t=t, pos=pos, mask=mask)
+                v = dit(img=img, context=txt, t=t, pos=pos, mask=mask,
+                        enhanced_txtfusion=enh, text_scale=tscale)
                 if guided:
-                    u = dit(img=img, context=untxt, t=t, pos=unpos, mask=unmask)
+                    u = dit(img=img, context=untxt, t=t, pos=unpos, mask=unmask,
+                            enhanced_txtfusion=enh_neg, text_scale=tscale)
                     v = u + cfg * (v - u)
                 img = img + (tp - tc) * v
         from einops import rearrange

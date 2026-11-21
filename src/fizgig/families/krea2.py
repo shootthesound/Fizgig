@@ -6,7 +6,7 @@ Facts are the original trainer's (src/fizgig/krea2/trainer.py - removed with the
 from fizgig.training.optimizers import MUON_DEFAULT_ARGS
 from fizgig.families.description import (
     GENERAL_NEGATIVE,
-    FamilyDescription, LoRAFormat, ModelFile, SamplingSettings, SpeedLoRA, TextEncoderBuild,
+    FamilyDescription, FamilyOption, LoRAFormat, ModelFile, SamplingSettings, SpeedLoRA, TextEncoderBuild,
 )
 
 _COMFY = "Comfy-Org/Krea-2"
@@ -201,6 +201,43 @@ KREA2 = FamilyDescription(
     text_cache_trim=True,
     preview_width=1024,
     preview_height=1024,
+
+    options=(
+        # The donor is ComfyUI-Krea2T-Enhancer by Capitan01R (MIT); krea2/text_boost.py carries the maths,
+        # the attribution and the reason the enhancement is computed once per preview rather than per step.
+        # The donor's four controls minus `debug` (the per-epoch record and scripts/check_text_boost.py cover
+        # that): the tick is `enabled`, the first box `strength`, the second the Advanced node's `text_scale`.
+        FamilyOption("KREA2_TEXT_ENHANCE", "✨Prompt Enhancer", tab="samples", kind="check",
+                     tokens="krea2_text_enhance=1",
+                     hint="Makes the previews follow the prompt more closely. Off until you tick it. Previews "
+                          "only - your LoRA trains on the plain prompt either way - and changeable mid-run.",
+                     explain="Krea 2's prompt arrives as twelve text layers per token, and the last few carry "
+                          "the words while the first carry almost nothing. This re-balances them and adds the "
+                          "difference back, never more than a 75% change to any one token.\n"
+                          "\nThe two boxes on the row work independently under this tick and stack: strength is "
+                          "how much of the re-balancing to apply, text scale is how loudly the finished prompt "
+                          "reads. Most people set both.",
+                     summary="Prompt Enhancer"),
+        FamilyOption("KREA2_TEXT_BOOST", "strength", tab="samples", kind="entry", inline=True,
+                     always_shown=True, tokens="krea2_text_boost={}", width=6, default="",
+                     suffix="0 to 2 (blank = 1)",
+                     hint="How much of the boost to apply. 0 is none, 2 is the maximum, blank means 1. Works "
+                          "with text scale, not instead of it.",
+                     explain="The prompt's layers get lifted by different amounts - most on the ones that carry "
+                          "the words, less everywhere else - and the result is blended back into the render.\n"
+                          "\nStart around 0.3 and raise it until the previews track the prompt. Leave it at 0 to "
+                          "use only text scale.",
+                     summary="strength {}"),
+        FamilyOption("KREA2_TEXT_SCALE", "text scale", tab="samples", kind="entry", inline=True,
+                     always_shown=True, tokens="krea2_text_scale={}", width=6, default="",
+                     suffix="0.25 to 4 (blank = 1)",
+                     hint="How loudly the whole prompt reads. 1 changes nothing, 4 is the maximum, blank means "
+                          "1. Works with strength, not instead of it.",
+                     explain="A flat multiplier on the finished prompt: every word lifted the same amount, "
+                          "where strength lifts different parts by different amounts.\n"
+                          "\nTry 1.5 to 2 to start. Leave it at 1 to use only the boost.",
+                     summary="text scale {}"),
+    ),
 
     presets=(
         ("✨ Krea 2 Ultra Fast (rank 8, adaptive LR)", _preset(8, adaptive=("2e-4", "4e-4"))),

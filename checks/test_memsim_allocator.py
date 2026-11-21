@@ -103,6 +103,17 @@ def test_conv_workspace_matches_measured(x, w, out, size, measured_mb):
     assert M.conv_workspace((_t(x, size, "cpu"), _t(w, size), None), _t(out, size)) == 0     # only on the card
 
 
+@pytest.mark.skipif(not M.CAN_RUN, reason="the simulated card needs a torch built with CUDA and an NVIDIA card")
+def test_mover_threads_run_inline_for_modules_loaded_later():
+    """Krea 2's offloader is imported when its DiT loads, inside the simulation: its mover thread must run inline too
+    (a real thread shared the fake mode - an 'in kernel' assertion and half-moved weights in its swapped preview)."""
+    import concurrent.futures
+    with M.simulated_card(16, 1.3):
+        from concurrent.futures import ThreadPoolExecutor
+        assert ThreadPoolExecutor is M._Inline
+    assert concurrent.futures.ThreadPoolExecutor is not M._Inline
+
+
 def test_conv_workspace_follows_the_input_layout():
     """The Qwen-Image VAE's encode (Anima / Krea 2), measured: its first convolutions take a picture permuted into
     channels-last order - only the weight's size; a 1x1 kernel over attention's non-contiguous output copies its input."""

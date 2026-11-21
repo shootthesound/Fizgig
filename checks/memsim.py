@@ -1082,6 +1082,9 @@ def simulated_card(card_gb=32.0, others_gb=0.0, capped=True, expandable=False, c
             stack.enter_context(mock.patch.object(cls, "get_tensor", reader_patch(cls)))
         stack.enter_context(mock.patch.object(torch, "save", tsave))
         stack.enter_context(mock.patch.object(torch, "load", tload))
+        # a module imported after this point takes the inline one by name too (Krea 2's offloader loads with the DiT:
+        # its mover ran on a real thread, on the same fake mode - "in kernel" from the other thread, half-moved weights)
+        stack.enter_context(mock.patch.object(concurrent.futures, "ThreadPoolExecutor", _Inline))
         for mod_name, mod in list(sys.modules.items()):
             if mod is None or not mod_name.startswith(("fizgig", "safetensors", "diffusers", "accelerate",
                                                         "transformers")):

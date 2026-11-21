@@ -116,18 +116,28 @@ What we found, sweeping every block at 2560 × 2560 across five motion scenes (a
 - **What breaks the picture is blending a lot at once**, worst when it reaches the last blocks (38-49). Blocks 20-49 or 30-49 dissolve into grain and smear at 0.75 and are destroyed at 1.0; 20-40 turns grainy at 0.75 and breaks at 1.0; 30-40 is fine at 0.75 but messy at 1.0; every block at once holds up to 0.75 and degrades at 1.0.
 - **No small group of blocks broke it on its own**: every run of 3 blocks, anywhere from 0 to 49, stayed a clean picture even at 1.0 (sometimes grainier than at 0.75), and a few late blocks together with others (20-22 and 38-40 at 0.75) were fine. Keep blends to a few blocks at 0.5-0.75.
 
-**What it needs: a 32 GB card (RTX 5090 class) and 48 GB or more of system RAM.** The blend is rewritten on the card itself, so the whole of H3 Image has to stay there, with no block swap. Measured on an RTX 5090 with ✨Motion:
+**What it needs: a 16 GB card or bigger, and system RAM to match.** The mode always loads H3 Image at int8 (the blend works on the int8 weights). With Preferences' inference block swap on Auto it streams just enough blocks from system RAM for a render up to 2560 × 2560 on your card; a streamed block blends in system RAM and renders exactly as one on the card. Measured on an RTX 5090, also set to act as a 24 GB and a 16 GB Windows card:
 
-| | Card memory (PyTorch's own, plus about 0.5-1 GB the driver keeps) | System RAM (Fizgig's Studio process) |
+| Card | Blocks streamed | System RAM, Fizgig's Studio process at its peak | ✨Motion at 2048 and 2560, every block at 1.0, Save blend |
+|---|---|---|---|
+| 32 GB (RTX 5090 class) | none | 31 GB | yes; renders at 2560 in about 16 s |
+| 24 GB | 11 | 36 GB | yes |
+| 16 GB | 32 | 46 GB | yes |
+
+So plan on **48 GB of system RAM with a 32 GB or 24 GB card, and 64 GB with a 16 GB card**: the streamed blocks wait in RAM (about 0.4 GB each), and the first render loads the text encoder (Qwen3-VL-32B), the biggest moment for RAM on every card. Renders on a smaller card take longer, as streamed blocks do. Saving a new base needs 21 GB of free disk.
+
+On the 32 GB card, card memory at each step (PyTorch's own figure; the driver keeps about 0.5-1 GB more):
+
+| | Card memory | System RAM |
 |---|---|---|
 | H3 Image loaded | 19.9 GB | 3 GB |
-| First render (the prompt's text encoder loads) | 22.3 GB | 31 GB peak, for a moment |
-| Frankenstein mode on, a slider change | 23.8 GB | 10 GB |
-| Render at 1024 / 2048 / 2560 / 3072 | 23.8 / 22.4 / 23.6 / 24.9 GB | 9 GB |
-| Every block to 1.0 at once (the biggest change) | 23.1 GB | 9 GB |
-| Save blend as a new base (18 s, a 21 GB file) | 23.1 GB | 9 GB |
+| First render (the text encoder loads) | 22.3 GB | 31 GB, for a moment |
+| A slider change | 20.7 GB | 9 GB |
+| Render at 1024 / 2048 / 2560 / 3072 | 22.3 / 22.4 / 23.5 / 24.8 GB | 9 GB |
+| Every block to 1.0 at once (the biggest change) | 21.3 GB | 9 GB |
+| Save blend as a new base (17 s, a 21 GB file) | 22.5 GB | 9 GB |
 
-**A 24 GB card can't run it:** capped at the 22.5 GB a 24 GB card leaves free under Windows, plain H3 Image still rendered at 2048, but the first blend ran out of memory. A card that needs block swap for H3 Image gets a message at Start instead. A 32 GB-RAM machine is too tight for the first render's 31 GB. Saving a new base needs 21 GB of free disk. Reuse unchanged blocks is off in this mode.
+A block swap number you set in Preferences is kept; on Auto the mode picks its own, as above. Reuse unchanged blocks is off in this mode.
 
 ## Video (MiniMax H3)
 

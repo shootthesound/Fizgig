@@ -6,6 +6,6 @@
 
 **Save blend as a new base** writes the blend as a new H3 Image file (about 21 GB, int8, the original's own format) that ComfyUI and Fizgig load like the original, with the mix recorded in its metadata.
 
-**What it needs: a 32 GB card (RTX 5090 class) and 48 GB or more of system RAM.** The blend is rewritten on the card, so the whole of H3 Image stays there with no block swap: measured on an RTX 5090, it peaks at 23.8 GB on a slider change and 24.9 GB rendering at 3072 × 3072, and the first render's text encoder takes Fizgig's RAM to 31 GB for a moment. A 24 GB card runs out of memory at the first blend. The [Studio guide](https://github.com/shootthesound/Fizgig/blob/master/docs/STUDIO.md#frankenstein-mode-minimax-h3-image) has the full figures.
+**What it needs: a 16 GB card or bigger, with 48 GB of system RAM (64 GB with a 16 GB card).** The mode always loads H3 Image at int8 and, with block swap on Auto, streams just enough blocks from system RAM for your card: none on a 32 GB card, 11 on a 24 GB card, 32 on a 16 GB card, all measured rendering ✨Motion at 2048 and 2560 and saving a new base. A streamed block blends in system RAM and renders exactly as one on the card; renders on a smaller card take longer. The [Studio guide](https://github.com/shootthesound/Fizgig/blob/master/docs/STUDIO.md#frankenstein-mode-minimax-h3-image) has the full figures.
 
 **To update:** run the updater as usual.

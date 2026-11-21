@@ -112,7 +112,8 @@ What we found, sweeping every block at 2560 × 2560 across five motion scenes (a
 
 - The motion lives in about **blocks 26-36**, strongest around 28-34. 0.5-0.75 keeps H3 Image clean; the presets are the best of the sweep.
 - **Early blocks (0-10)** change the composition (camera, room, framing) more than the motion.
-- **Blocks in the late 30s and 40s**, or many blocks at once, turn the picture grainy at 0.75 and above. 1.0 on any block is often grainier than 0.75.
+- **What breaks the picture is blending a lot at once**, worst when it reaches the last blocks (38-49). Blocks 20-49 or 30-49 dissolve into grain and smear at 0.75 and are destroyed at 1.0; 20-40 turns grainy at 0.75 and breaks at 1.0; 30-40 is fine at 0.75 but messy at 1.0; every block at once holds up to 0.75 and degrades at 1.0.
+- **No small group of blocks broke it on its own**: every run of 3 blocks, anywhere from 0 to 49, stayed a clean picture even at 1.0 (sometimes grainier than at 0.75), and a few late blocks together with others (20-22 and 38-40 at 0.75) were fine. Keep blends to a few blocks at 0.5-0.75.
 
 The whole model must fit on the card (no block swap): each block is rewritten in place on the GPU. Reuse unchanged blocks is off in this mode.
 

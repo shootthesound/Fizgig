@@ -8680,7 +8680,7 @@ function studioPending() {
 
 function studioSchedule(live) {
   if (!S.st.ready) return;
-  if (S.st.split === "base") {                        // sliders change Tweaked only, and it's hidden
+  if (S.st.split === "base" && !S.st.noLora) {        // sliders change Tweaked only, and it's hidden
     $("stStatus").textContent = "Tweaked is hidden: slider changes render when you show it again and press Render.";
     return;
   }
@@ -8793,7 +8793,7 @@ async function studioPollOnce() {
   // Continue, Loop back and Upscale work on the clip in the Tweaked pane: they wait for the render going now (a
   // queued copy could find another clip there by its turn); a queued job upscales only by its Auto tick
   for (const id of ["stContinue", "stLoopBack", "stUpGo", "stUpPrev", "stKeepBtn"]) {
-    $(id).disabled = going || S.st.split === "base" || !!S.st.noTweak;
+    $(id).disabled = going || (S.st.split === "base" && !S.st.noLora) || !!S.st.noTweak;
   }
   $("stStart").title = going ? "A model is loading or a render is going: Add to queue lines this one up behind it " +
     "(or Cancel the one going)." : "";
@@ -9340,7 +9340,8 @@ function wireStudio() {
   playTogether($("stPlayBothBtn"), () => {
     const v = S.st.layout?.kind === "video";
     const ids = (v ? ["stBaseVid", "stTweakVid"] : ["stBaseAud", "stTweakAud"])     // only the panes on screen
-      .filter((id) => !(S.st.split === "tweak" && id.startsWith("stBase")) && !(S.st.split === "base" && id.startsWith("stTweak")));
+      .filter((id) => !((S.st.split === "tweak" || S.st.noLora) && id.startsWith("stBase")) &&
+        !(S.st.split === "base" && !S.st.noLora && id.startsWith("stTweak")));
     if ($("stNolPane").style.display !== "none") ids.unshift(v ? "stNolVid" : "stNolAud");
     return ids;
   });

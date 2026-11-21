@@ -77,7 +77,7 @@ def test_block_values_stay_within_a_blend_share():
     ssync = js[js.index("function studioSync(ids)"):]
     assert "if (S.st.frank) for (const b of Object.values(S.st.blocks)) b.ps = stClampP(b.ps);" in ssync[:200]
     assert 'side === "p" ? stClampP(r)' in js
-    assert '$("stLuckyLo").value = "0"; $("stLuckyHi").value = "1";' in js
+    assert '$("stLuckyLo").value = "0"; $("stLuckyHi").value = "0.6";' in js     # lucky rolls 0 to 0.6 in the mode
     assert "#tab-studio.frankenstein .st-flip, #tab-studio.frankenstein .st-bal { display: none; }" in css
 
 

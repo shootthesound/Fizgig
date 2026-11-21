@@ -8317,8 +8317,9 @@ function studioFrankEnter(on, name) {
   S.st.frankName = name || "";
   $("tab-studio").classList.toggle("frankenstein", on);
   if (on) { $("stFrank").checked = true; studioFrankTick(); }   // found loaded (a page reload): the tick says so too
-  if (on) { $("stLuckyLo").value = "0"; $("stLuckyHi").value = "1"; }   // rolls within what a block can blend
-  else if ($("stLuckyHi").value === "1" && $("stLuckyLo").value === "0") $("stLuckyHi").value = "1.5";   // the LoRA default
+  // rolls from 0 to 0.6 (Peter): past about 0.75, and with many blocks rolled at once, the sweep's blends broke up
+  if (on) { $("stLuckyLo").value = "0"; $("stLuckyHi").value = "0.6"; }
+  else if ($("stLuckyHi").value === "0.6" && $("stLuckyLo").value === "0") $("stLuckyHi").value = "1.5";   // the LoRA default
   for (const b of Object.values(S.st.blocks)) { b.ps = on ? 0 : 1; b.pe = true; }
   studioFrankRanges();
   studioSync(Object.keys(S.st.blocks));

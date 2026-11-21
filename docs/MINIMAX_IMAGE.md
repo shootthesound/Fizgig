@@ -66,6 +66,10 @@ A 16 GB laptop with 32 GB of RAM trains a rank 8 LoRA on Auto and runs Studio (1
 
 Slider LoRAs train from photo pairs. Sliders from prompts are off on this model for now: a smiling / frowning prompt slider moved clothes, styling and light rather than the expression, because on H3 Image a change of prompt reshuffles the whole picture and the slider learns all of it. If you can fix that, a pull request is very welcome.
 
+## Frankenstein mode: H3 video's motion in stills
+
+Studio's **Frankenstein mode** blends MiniMax H3 video's blocks into H3 Image, block by block, to bring back the sense of motion H3 video gives stills (motion blur on fast things, spray, smoke) while keeping H3 Image's clean look. **✨Motion** (H3 video's blocks 26-28 and 32-34 at 75%) is the best mix we found across five motion scenes; **✨Motion, gentle** (28-34 at 60%) is the lighter one. A blend saves as a new H3 Image base file that ComfyUI loads like the original. It needs the H3 video file and H3's Turbo LoRA set in Preferences, and the whole model on the card. See [Studio: Frankenstein mode](STUDIO.md#frankenstein-mode-minimax-h3-image).
+
 ## Other trainers' LoRAs
 
 LoRAs for H3 Image made elsewhere load in Studio, LoRA Royale, the Profiler, Extract and as a Context LoRA, in kohya names (`lora_unet_blocks_…`), ComfyUI names (`diffusion_model.blocks.…`) or diffusers names (`transformer_blocks.…`, whose separate q/k/v Fizgig fuses as ComfyUI does). Tested on public files from three trainers: every module landed.

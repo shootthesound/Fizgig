@@ -8,6 +8,7 @@ Use it to:
 - **Keep part of a LoRA.** Turn off everything but the identity blocks, or everything but the style blocks.
 - **Mix LoRAs** block by block: identity from one, style from another, or several LoRAs at their own amounts.
 - **Explore**: 🎲 I'm feeling lucky rolls random block strengths within limits you set.
+- **Blend two base models** (MiniMax H3 Image with H3 video): [Frankenstein mode](#frankenstein-mode-minimax-h3-image) puts H3 video's sense of motion into H3 Image's stills and saves the blend as a new base model.
 
 Every image and video model has Studio; ACE-Step (songs) has it too, with a song player in place of the pictures.
 
@@ -97,6 +98,23 @@ Red means most, then yellow, then blue; no colour, barely. Each map is scaled fr
   - **It waits** while a training run, a caption job or the Profiler has the GPU.
   - Moving a slider while a job renders doesn't cut the job short: your render follows it, and always on your own LoRA. When the job had another model or LoRA loaded, Studio loads yours again first (the next job waits for that), so nothing of yours is ever rendered or saved on a job's LoRA.
 - **Save setup**: everything on the tab (the LoRAs, every slider and tick, the prompt, seed, size, photos and source) in one named file. **Load a setup…** restores it exactly, switching model if it needs to, loading its LoRAs and rendering.
+
+## Frankenstein mode (MiniMax H3 Image)
+
+Frankenstein mode blends two base models block by block: H3 Image with MiniMax H3 video. Many people prefer H3 video for stills because it understands motion and time; H3 Image is cleaner but renders action frozen and pin-sharp. Blending some of H3 video's blocks into H3 Image brings the motion back (motion blur on fast things, spray, smoke, a curtain whipping in) while keeping H3 Image's look. No LoRA is involved: it works on the two models themselves.
+
+1. Choose **MiniMax H3 Image** as the model, tick **Frankenstein mode: blend in MiniMax H3 video**, and press **Start**. It uses the H3 video file and H3's Turbo LoRA set in Preferences (the Turbo LoRA goes into H3 video's side, so its blocks work at H3 Image's few steps; Start asks for either file if it's missing). The Primary and donor rows step aside.
+2. **Each block slider is now a blend**: how much of that block comes from H3 video, from 0 (H3 Image as it is) to 1 (all H3 video). They start at 0. **Baseline** is H3 Image on its own; **Tweaked** is the blend, rendered as a normal base model.
+3. **Presets** in this mode: **✨Motion** (blocks 26-28 and 32-34 at 0.75), **✨Motion, gentle** (28-34 at 0.6) and **✨Reset All** (everything back to 0). Your own presets for this mode are saved separately from your LoRA presets.
+4. **Save blend as a new base** writes the blend as a new H3 Image file (about 21 GB, int8, the same format as the original) under **New base model**, `<H3 Image file>_frankenstein.safetensors` unless you change it. ComfyUI and Fizgig load it like the original. The mix is recorded in the file's metadata. It renders the blend's look; fine details can differ slightly, as they do for any small change on this model.
+
+What we found, sweeping every block at 2560 × 2560 across five motion scenes (a tennis ball through a window, a car drifting into crates, a wine glass knocked over, a skateboarder grinding a rail, a horse through a river):
+
+- The motion lives in about **blocks 26-36**, strongest around 28-34. 0.5-0.75 keeps H3 Image clean; the presets are the best of the sweep.
+- **Early blocks (0-10)** change the composition (camera, room, framing) more than the motion.
+- **Blocks in the late 30s and 40s**, or many blocks at once, turn the picture grainy at 0.75 and above. 1.0 on any block is often grainier than 0.75.
+
+The whole model must fit on the card (no block swap): each block is rewritten in place on the GPU. Reuse unchanged blocks is off in this mode.
 
 ## Video (MiniMax H3)
 

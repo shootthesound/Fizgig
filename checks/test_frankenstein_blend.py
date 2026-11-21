@@ -166,6 +166,61 @@ def test_other_files_int8_adaln_is_read_with_its_scale(tmp_path):
     assert ((Wv - W).norm() / W.norm()) < 0.01                # the weight itself, to its int8 grid
 
 
+class _Ring:
+    """H3's int8 block streaming, as the blend sees it: per swapped block, the (module, attr, RAM master) entries; which
+    block each card slot holds; the copy stream."""
+    kind = "int8"
+
+    def __init__(self, entries, bidx):
+        import contextlib
+        self.sources = {bidx: entries}
+        self.loaded_block = [bidx, None]
+        self.stream = type("S", (), {"synchronize": lambda self: None})()
+        self._ctx = contextlib.nullcontext()
+
+    def _bind_cpu(self, bidx):
+        for m, a, t in self.sources[bidx]:
+            setattr(m, a, t)
+
+
+def test_a_swapped_block_blends_into_its_ram_master(tmp_path):
+    # with block swap, a swapped layer's module points at its card slot or its RAM master; the blend went into
+    # whichever it pointed at - into the slot, the next streamed copy put the old codes back
+    from safetensors.torch import save_file
+    _, _, (qa, sa), (qb, sb) = _pair()
+    other = str(tmp_path / "other.safetensors")
+    save_file({"blocks.0.lin.weight": qb, "blocks.0.lin.weight_scale": sb, "blocks.0.lin.comfy_quant": _conf(CONF),
+               "blocks.0.norm.weight": torch.randn(64), "blocks.0.norm.bias": torch.zeros(64)}, other)
+    dit, lin, groups = _one_block_dit(qa, sa)
+    master_q, master_s = qa.clone(), sa.reshape(-1, 1).clone()       # the RAM masters
+    lin.qdata, lin.wscale = qa.clone(), sa.reshape(-1, 1).clone()    # the module on its card slot
+    dit._h2d_offloader = _Ring([(lin, "qdata", master_q), (lin, "wscale", master_s)], 0)
+    bl = DiTBlend(dit, groups, other)
+    bl.set({"b0": 1.0})
+    assert torch.equal(master_q, qb) and torch.equal(master_s.reshape(-1), sb.reshape(-1))   # the master has it
+    assert lin.qdata is master_q and lin.wscale is master_s          # the module back on its master
+    assert dit._h2d_offloader.loaded_block == [None, None]           # its slot stale: the next render streams it in
+    bl.set({"b0": 0.0})
+    assert torch.equal(master_q, qa)
+
+
+def test_rows_at_a_time_give_the_whole_layers_codes(tmp_path):
+    # the blend decodes a slice of rows at a time (a whole H3 layer at once peaked ~1.9 GB more on the card)
+    from safetensors.torch import save_file
+    _, _, (qa, sa), (qb, sb) = _pair()
+    other = str(tmp_path / "other.safetensors")
+    save_file({"blocks.0.lin.weight": qb, "blocks.0.lin.weight_scale": sb, "blocks.0.lin.comfy_quant": _conf(CONF),
+               "blocks.0.norm.weight": torch.randn(64), "blocks.0.norm.bias": torch.zeros(64)}, other)
+    got = []
+    for rows in (7, 10_000):
+        dit, lin, groups = _one_block_dit(qa, sa)
+        bl = DiTBlend(dit, groups, other)
+        bl.ROWS = rows
+        bl.set({"b0": 0.4})
+        got.append((lin.qdata.clone(), lin.wscale.clone()))
+    assert torch.equal(got[0][0], got[1][0]) and torch.equal(got[0][1], got[1][1])
+
+
 def test_export_writes_the_blend_and_copies_the_rest(tmp_path):
     """Export: the loaded model's file with the blended blocks' current values in place, everything else byte for
     byte, the mix in its metadata."""

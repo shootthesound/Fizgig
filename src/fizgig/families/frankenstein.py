@@ -129,6 +129,7 @@ class DiTBlend:
         self.lora_used = 0
         dev = next(iter([*dit.parameters(), *dit.buffers()])).device
         self.dev = dev
+        self.cdev = torch.device("cuda") if torch.cuda.is_available() else dev
         self.other_f = f = MemoryEfficientSafeOpen(other_path)
         self.own_f = MemoryEfficientSafeOpen(own_path) if own_path and os.path.isfile(own_path) else None
         own_checked = False
@@ -273,13 +274,7 @@ class DiTBlend:
                 continue
             for it in items:
                 if it[0] == "q":
-                    _, mod, own, ld, name = it
-                    dev = mod.qdata.device
-                    qa, sa = self._own_codes(own, name, dev) if w < 1.0 else (None, None)
-                    qb, sb = self._other_codes(mod, ld, name, dev) if w > 0.0 else (None, None)
-                    q, s = (qa, sa) if w <= 0.0 else (qb, sb) if w >= 1.0 else blend_int8_rows(qa, sa, qb, sb, w)
-                    mod.qdata.copy_(q)
-                    mod.wscale.copy_(s.reshape(mod.wscale.shape))
+                    self._set_int8(it, w)
                 elif it[0] == "d":
                     _, mod, pname, a, b, _k = it
                     t = getattr(mod, pname)
@@ -297,29 +292,63 @@ class DiTBlend:
     def weights(self):
         return dict(self.w)
 
-    def _own_codes(self, own, name, dev):
-        """The loaded model's own int8 codes and scales for a layer: kept copies, or read back from its file."""
-        if own is not None:
-            return own[0].to(dev), own[1].to(dev, torch.float32).reshape(-1, 1)
-        f = self.own_f
-        return (f.get_tensor(name + ".weight").to(dev),
-                f.get_tensor(name + ".weight_scale").to(dev, torch.float32).reshape(-1, 1))
+    ROWS = 2048                                # rows blended at a time: ~45 MB of fp32 on the card, not ~1.9 GB
 
-    def _other_codes(self, mod, ld, name, dev):
-        """The other file's codes and scales for a layer, read now, with the baked LoRA in its stored basis."""
+    def _swap_home(self, mod):
+        """Where a block-swapped int8 layer really lives: (offloader, block index, {"qdata": its RAM master, "wscale":
+        ...}), or None for a layer that stays on the card. Under H3's block streaming a swapped block's codes sit in
+        pinned RAM and a ring on the card streams them in per render; the module points at one or the other."""
+        off = getattr(self.dit, "_h2d_offloader", None)
+        for bidx, entries in (getattr(off, "sources", None) or {}).items():
+            mine = {a: t for m, a, t in entries if m is mod}
+            if mine:
+                return off, bidx, mine
+        return None
+
+    @torch.no_grad()
+    def _set_int8(self, it, w):
+        """One int8 layer at weight w, written where it lives - on the card, or into a swapped block's RAM master (its
+        ring copy marked stale, so the next render streams the blend in) - a slice of rows at a time on the GPU: each
+        row is its own int8 grid, so slices give the same codes as the whole, without decoding a whole layer at once."""
         from fizgig.minimax.convrot import rotate
-        f = self.other_f
-        qb = f.get_tensor(name + ".weight").to(dev)
-        sb = f.get_tensor(name + ".weight_scale").to(dev, torch.float32).reshape(-1, 1)
-        plain = name in self.plain
-        if ld is None and not plain:
-            return qb, sb
-        m = qb.to(torch.float32) * sb
-        if plain:                              # stored unrotated: into this model's ConvRot basis (self-inverse)
-            m = rotate(m, int(mod.rot))
-        if ld is not None:
-            m = m + rotate((ld[1].to(dev) @ ld[0].to(dev)).float(), int(mod.rot))
-        return _requant(m)
+        _, mod, own, ld, name = it
+        home = self._swap_home(mod)
+        if home is not None:
+            off, bidx, views = home
+            off.stream.synchronize()           # no copy of this block in flight while its master changes
+            tq, ts = views["qdata"], views["wscale"]
+        else:
+            tq, ts = mod.qdata, mod.wscale
+        dev = self.cdev
+        if w < 1.0:                            # the loaded model's own codes: kept copies, or read back from its file
+            qa_all, sa_all = own if own is not None else (self.own_f.get_tensor(name + ".weight"),
+                                                         self.own_f.get_tensor(name + ".weight_scale"))
+        if w > 0.0:                            # the other file's, read now
+            qb_all = self.other_f.get_tensor(name + ".weight")
+            sb_all = self.other_f.get_tensor(name + ".weight_scale")
+        plain, rot = name in self.plain, int(mod.rot)
+        ts_rows = ts.view(-1)
+        for r0 in range(0, tq.shape[0], self.ROWS):
+            r1 = min(tq.shape[0], r0 + self.ROWS)
+            if w > 0.0:
+                qb = qb_all[r0:r1].to(dev)
+                sb = sb_all.reshape(-1)[r0:r1].to(dev, torch.float32).reshape(-1, 1)
+                if plain or ld is not None:
+                    m = qb.to(torch.float32) * sb
+                    if plain:                  # stored unrotated: into this model's ConvRot basis (self-inverse)
+                        m = rotate(m, rot)
+                    if ld is not None:         # the baked LoRA, in the stored basis
+                        m = m + rotate((ld[1][r0:r1].to(dev) @ ld[0].to(dev)).float(), rot)
+                    qb, sb = _requant(m)
+            if w < 1.0:
+                qa = qa_all[r0:r1].to(dev)
+                sa = sa_all.reshape(-1)[r0:r1].to(dev, torch.float32).reshape(-1, 1)
+            q, s = (qa, sa) if w <= 0.0 else (qb, sb) if w >= 1.0 else blend_int8_rows(qa, sa, qb, sb, w)
+            tq[r0:r1].copy_(q)
+            ts_rows[r0:r1].copy_(s.reshape(-1))
+        if home is not None:                   # the module back on its master; any ring slot holding it is stale
+            off._bind_cpu(bidx)
+            off.loaded_block = [None if b == bidx else b for b in off.loaded_block]
 
     @torch.no_grad()
     def _adaln_refit(self, it, w):

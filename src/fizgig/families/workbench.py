@@ -182,9 +182,12 @@ class WorkbenchEngine:
         from fizgig.families.frankenstein import DiTBlend
         if self.pipeline is None or self.dit is None:
             raise RuntimeError("Pipeline not loaded; call ensure_pipeline() first.")
-        if getattr(self, "swapped", 0):
-            raise ValueError("Frankenstein mode needs the whole model on the card (no block swap): it rewrites blocks "
-                             "in place. Set Preferences' inference block swap to 0 on a card that holds it.")
+        ring = getattr(self.dit, "_h2d_offloader", None)
+        if getattr(self, "swapped", 0) and getattr(ring, "kind", "") != "int8":
+            # block swap is fine when it's H3's int8 streaming ring: a swapped block blends in its RAM master
+            # (DiTBlend._swap_home); any other swap moves the weights in ways the blend doesn't follow
+            raise ValueError("Frankenstein mode can't blend this model's swapped blocks (it needs int8 block "
+                             "streaming, or no block swap). Set Preferences' inference block swap to Auto or 0.")
         self.frank = DiTBlend(self.dit, self.block_groups(), other_path, other_lora=other_lora, log=logger.info,
                               own_path=getattr(self, "dit_path", None))   # read back, not held: ~42 GB less RAM
         self.primary_block_ids = sorted(self.frank.items)

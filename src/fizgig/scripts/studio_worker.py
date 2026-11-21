@@ -1220,6 +1220,8 @@ def main():
     import numpy  # noqa: F401
     import torch  # noqa: F401
     import fizgig.families.workbench  # noqa: F401
+    from fizgig.families.quant import apply_vram_cap
+    apply_vram_cap()                    # FIZGIG_SIM_VRAM_GB: Studio behaves like a smaller card, as training does
     from fizgig.families.registry import training_families
     training_families()
     # commands come over a local socket, not stdin: a thread blocked reading stdin holds the C runtime's file lock,

@@ -152,6 +152,17 @@ def test_the_mode_is_a_switch_and_saves_where_saving_lives():
     assert '$("stModeSeg").addEventListener("click"' in js
 
 
+def test_both_save_boxes_have_a_folder_picker():
+    # the save boxes were a bare path and a button: no way to choose where without typing it
+    html = open(os.path.join(os.path.dirname(APP), "index.html"), encoding="utf-8").read()
+    js = open(APP, encoding="utf-8").read()
+    for box, btn, save in (("stOut", "stOutPick", "stSave"), ("stFrankOut", "stFrankOutPick", "stFrankExport")):
+        assert html.index(f'id="{box}"') < html.index(f'id="{btn}"') < html.index(f'id="{save}"'), btn
+        assert f'$("{btn}").addEventListener("click", () => studioSaveFolder("{box}",' in js
+    helper = js[js.index("const studioSaveFolder"):][:500]
+    assert "pick(dir, true," in helper and "split(/[\\\\/]/)" in helper      # a folder pick; Windows and / paths
+
+
 def test_page_applies_them_over_zero_and_keeps_your_presets_apart():
     js = open(APP, encoding="utf-8").read()
     apply = js[js.index("async function studioPresetApply"):js.index("// Royale's reference strength")]

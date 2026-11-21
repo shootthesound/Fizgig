@@ -1205,6 +1205,7 @@
               <div class="st-needs-lora-note">Needs a LoRA: this saves the LoRA you've tweaked. With no LoRA, Save tweaked (under the output) keeps the picture.</div>
               <div class="field-row"><span class="field-label">Save as:</span>
                 <input type="text" id="stOut" class="w-path" placeholder="the repaired LoRA's file (.safetensors)">
+                <button class="btn" id="stOutPick" title="Choose the folder to save into; the file name in the box is kept">Folder…</button>
                 <button class="btn btn-primary" id="stSave">Save repaired LoRA</button></div>
               <div id="stSaveMsg"></div>
             </div>
@@ -1214,6 +1215,7 @@
             <div class="card-content">
               <div class="field-row"><span class="field-label">Save as:</span>
                 <input type="text" id="stFrankOut" class="w-path" placeholder="filled in once the mode has loaded: the model's own folder" title="Where the blend is written as a new base model (.safetensors), in the loaded model's own format: ComfyUI and Fizgig load it like the original">
+                <button class="btn" id="stFrankOutPick" title="Choose the folder to save into; the file name in the box is kept">Folder…</button>
                 <button class="btn btn-primary" id="stFrankExport" title="Writes the blend at the sliders as a whole new base model (about the size of the loaded one; a minute or two)">Save blend as a new base</button></div>
               <div class="field-hint">The blend at the sliders, as a whole new base model (about 21 GB for H3 Image), in the loaded model's own format: ComfyUI and Fizgig load it like the original. The mix is recorded in its metadata.</div>
             </div>

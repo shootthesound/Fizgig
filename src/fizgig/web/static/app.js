@@ -9495,6 +9495,22 @@ function wireStudio() {
   wireStudioSetups();
   $("stEqD").addEventListener("click", () => studioEq("donor", !S.st.eq.donor));
   $("stCancel").addEventListener("click", () => api("/api/studio/cancel", {}).then(studioPoll).catch(() => {}));
+  // Folder… beside a save box: the folder picker, keeping the file name in the box (or the usual one when it's empty)
+  const studioSaveFolder = (id, name) => {
+    const cur = $(id).value.trim();
+    const base = cur.split(/[\\/]/).pop() || "";
+    const file = base.trim() || name();
+    const dir = cur.slice(0, cur.length - base.length).replace(/[\\/]+$/, "");
+    pick(dir, true, (p) => {
+      $(id).value = p.replace(/[\\/]+$/, "") + (p.includes("\\") ? "\\" : "/") + file;
+      if (id === "stOut") stRemember();
+    });
+  };
+  const fileOf = (p) => (p || "").split(/[\\/]/).pop();
+  $("stOutPick").addEventListener("click", () => studioSaveFolder("stOut",
+    () => (fileOf($("stPrimary").value).replace(/\.safetensors$/i, "") || "lora") + "_repaired.safetensors"));
+  $("stFrankOutPick").addEventListener("click", () => studioSaveFolder("stFrankOut",
+    () => fileOf(S.st.frankOut) || ((S.st.layout || {}).name || "model").replace(/\s+/g, "_") + "_frankenstein.safetensors"));
   $("stFrankExport").addEventListener("click", async () => {
     // Frankenstein mode: the blend at the sliders as a new base model; a file already there needs a second press
     if (!S.st.frankLoaded) { $("stStatus").textContent = "Press Render to load Frankenstein mode first: then the blend can be saved."; return; }

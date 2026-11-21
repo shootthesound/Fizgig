@@ -10,6 +10,9 @@ def test_tweaked_pane_shows_without_a_lora():
     css = open(os.path.join(STATIC, "style.css"), encoding="utf-8").read()
     assert re.search(r"#tab-studio\.no-lora #stBasePane", css)                       # the layout this is about
     assert re.search(r"#tab-studio\.no-lora \.st-preview\.only-base \.st-tweak-pane\s*\{\s*display:\s*block", css)
+    # in Keep in view (the dock) the pane stays a flex column, or its picture stops scaling to the panel
+    assert re.search(r"\.st-dock \.st-pane\s*\{\s*display:\s*flex", css)
+    assert re.search(r"#tab-studio\.no-lora \.st-dock \.st-preview\.only-base \.st-tweak-pane\s*\{\s*display:\s*flex", css)
 
 
 def test_panes_open_both_each_time():

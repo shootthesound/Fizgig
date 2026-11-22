@@ -26,7 +26,7 @@ worker keeping single-image Regenerate instant. Validated on AMD by them and on 
 Since then they've kept the AMD path working: a safe ROCm update ([#107](https://github.com/shootthesound/Fizgig/pull/107)), the nightly
 wheels behind `--experimental` ([#129](https://github.com/shootthesound/Fizgig/pull/129)), RDNA1/2 attention overrides and the MIOpen /
 rocBLAS paths ([#130](https://github.com/shootthesound/Fizgig/pull/130)), and the ROCm settings and VRAM readout for the web UI
-([#192](https://github.com/shootthesound/Fizgig/pull/192)). In November they made AMD installs default to AMD's stable ROCm index ([#319](https://github.com/shootthesound/Fizgig/pull/319)) with the experimental and nightly indexes overridable ([#340](https://github.com/shootthesound/Fizgig/pull/340)), added Preferences' **Disable GPU for the app window** ([#325](https://github.com/shootthesound/Fizgig/pull/325)), and bisected a Krea 2 LoKR out-of-memory on AMD ([#341](https://github.com/shootthesound/Fizgig/issues/341)).
+([#192](https://github.com/shootthesound/Fizgig/pull/192)). In November they made AMD installs default to AMD's stable ROCm index ([#319](https://github.com/shootthesound/Fizgig/pull/319)) with the experimental and nightly indexes overridable ([#340](https://github.com/shootthesound/Fizgig/pull/340)), added Preferences' **Disable GPU for the app window** ([#325](https://github.com/shootthesound/Fizgig/pull/325)), and bisected a Krea 2 LoKR out-of-memory on AMD ([#341](https://github.com/shootthesound/Fizgig/issues/341)). In v9.8.5 they caught that 9.8.4 had moved the Windows launcher's MIOpen path to a folder the Windows wheels don't have ([#389](https://github.com/shootthesound/Fizgig/issues/389)).
 
 ## Murf-Code
 
@@ -194,7 +194,7 @@ Start at a smaller size, the run summary, the sidebar meters and the captions ta
 
 Since November:
 
-- [tsk5cb-cmyk](https://github.com/tsk5cb-cmyk): the logs and OneTrainer settings behind 9.2's speed work ([#221](https://github.com/shootthesound/Fizgig/issues/221)), the case for repeats from folder names ([#300](https://github.com/shootthesound/Fizgig/issues/300)), and Studio's slow LoRA switch ([#394](https://github.com/shootthesound/Fizgig/issues/394))
+- [tsk5cb-cmyk](https://github.com/tsk5cb-cmyk): the logs and OneTrainer settings behind 9.2's speed work ([#221](https://github.com/shootthesound/Fizgig/issues/221)), the case for repeats from folder names ([#300](https://github.com/shootthesound/Fizgig/issues/300)), and Studio's slow LoRA switch ([#394](https://github.com/shootthesound/Fizgig/issues/394)) and Studio in two tabs ([#395](https://github.com/shootthesound/Fizgig/issues/395))
 - [pomoe136](https://github.com/pomoe136): Extract on MOSS-Image ([#301](https://github.com/shootthesound/Fizgig/issues/301))
 - [spinolover](https://github.com/spinolover): a Fast Identity run error ([#302](https://github.com/shootthesound/Fizgig/issues/302))
 - [Nessa2026691](https://github.com/Nessa2026691): Context LoRAs in LoKR format ([#304](https://github.com/shootthesound/Fizgig/issues/304)) and tracking down the Context LoRA slowdown ([#307](https://github.com/shootthesound/Fizgig/issues/307)), and the diagnosis and fix for MiniMax H3 helper previews on 16 GB cards ([#372](https://github.com/shootthesound/Fizgig/issues/372))

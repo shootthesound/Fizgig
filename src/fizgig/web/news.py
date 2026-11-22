@@ -6,6 +6,18 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 NEWS = [
     {
         "date": "22 Nov 2026",
+        "title": "Studio swaps LoRAs for the queue and other tabs too",
+        "body": (
+            "A queued Studio job that differs only by its primary LoRA swaps it on the loaded model, and your next "
+            "Render swaps yours back in a second or so. A second Studio tab that loads over the first now says so.\n\n"
+            "Launch Fizgig AMD.bat points MIOpen at its database in _rocm_sdk_devel\\bin again (9.8.4 left it unset), "
+            "and FIZGIG_MIOPEN=0 turns MIOpen off for convolutions, for testing."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#22-nov-2026-studio-swaps-loras-for-the-queue-and-other-tabs-too"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.8.5"}],
+    },
+    {
+        "date": "22 Nov 2026",
         "title": "Studio switches LoRAs in a second",
         "body": (
             "Choose another primary LoRA in Studio and press Render: it goes on the model already loaded in a second "

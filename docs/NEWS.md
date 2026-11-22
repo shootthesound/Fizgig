@@ -1,5 +1,13 @@
 # Fizgig news
 
+## 22 Nov 2026: Studio swaps LoRAs for the queue and other tabs too
+
+**Fewer reloads in Studio.** A queued job that differs only by its primary LoRA swaps it on the loaded model, and your next Render swaps yours back in a second or so. A second Studio tab that loads over the first now says so, and the first tab's Render loads its own setup again.
+
+**Windows AMD fix.** Launch Fizgig AMD.bat points MIOpen at `_rocm_sdk_devel\bin` again, where the Windows ROCm wheels keep its database; 9.8.4 had left it unset. `FIZGIG_MIOPEN=0` turns MIOpen off for convolutions, for testing.
+
+[Fizgig v9.8.5 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.8.5)
+
 ## 22 Nov 2026: Studio switches LoRAs in a second
 
 **Another primary LoRA without a reload.** Choose another primary in Studio and press Render: it goes on the model already loaded in a second or so, where the whole model used to load again (minutes on a large model such as MOSS-Image).

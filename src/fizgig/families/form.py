@@ -1312,8 +1312,8 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     if desc.masked_training:
         prompt_slider = kind == "slider" and launch.slider_on(desc, {"FAMILY_SLIDER": True, "FAMILY_SLIDER_SOURCE": (
             "prompts" if values.get("FAMILY_SLIDER_SOURCE") == "Prompts" else "pairs")}, "prompts")
-        media = launch.dataset_media(image_folder) if image_folder else {"photo"}
-        if prompt_slider or (media and "photo" not in media):
+        subs = "TRAIN_SUBFOLDERS" not in hidden and bool(values.get("TRAIN_SUBFOLDERS"))
+        if prompt_slider or launch.no_photos(image_folder, subs):     # the same test the run makes (masked_on, #402)
             hidden.add("masks")             # a prompt slider makes its own pictures; a folder of clips has none to mask
             hidden |= {"FACE_BOOST", "FACE_BOOST_AREA"}   # nor anything for Element boost to find
         elif not values.get("MASKED_TRAINING"):

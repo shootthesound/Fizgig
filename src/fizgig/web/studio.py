@@ -522,9 +522,15 @@ def load(desc, primary, donor, kw, settings, status, turbo, canvas=None):
 
 def primary(path):
     """Unload primary (path ""), or another primary in its place, without reloading the model."""
+    """Returns the new load id: another LoRA on the model is a new load to any other Studio tab, as a fresh load is."""
     if path and not os.path.isfile(path):
         raise ValueError("That primary LoRA isn't there.")
+    with _lock:
+        _S["load_id"] += 1
+        _S["load_by"] = "page"
+        n = _S["load_id"]
     _send({"cmd": "primary", "path": path or ""})
+    return n
 
 
 def donor(path):
@@ -585,6 +591,7 @@ def set_load_key(key, page=False):
     again. page: the Studio page's own load - its renders run only on that."""
     with _lock:
         _S["load_key"] = key
+        _S["load_by"] = "page" if page else "queue"    # a page's load over another tab's: that tab says so
         if page:
             _S.update(page_key=key, page_waiting=0.0)
 
@@ -1035,6 +1042,7 @@ def status():
         d["log"] = _S["log"][-12:]                 # the worker's own lines (the engine's log), for when it goes wrong
         d["out_said"] = _S.get("out_said")         # Save every render's latest files (or why it couldn't)
         d["load_id"] = _S.get("load_id", 0)        # a load the page didn't ask for (the Studio queue's) changes it
+        d["load_by"] = _S.get("load_by") or ""     # "page": a Studio tab's (another tab's, if not this one's)
         # LoRA Royale, a Travel or RefMod rendering on the worker: Studio's Render waits for it too
         d["worker_busy"] = (_R["state"] == "rendering" or _M["state"] == "rendering"
                             or any(t["state"] == "rendering" for t in _T.values()))

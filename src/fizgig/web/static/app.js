@@ -8871,7 +8871,8 @@ async function studioSwapPrimary(key, seq) {
   const p = $("stPrimary").value.trim(), L = S.st.layout;
   if (S.st.eq && S.st.eq.primary) studioEq("primary", false);
   $("stStatus").textContent = "Loading the LoRA…";
-  await api("/api/studio/primary", {path: p});
+  const r = await api("/api/studio/primary", {path: p});
+  S.st.myLoad = r.load_id || S.st.myLoad;               // this tab's own change: another tab sees it as a new load
   for (let i = 0; i < 600; i++) {                     // a LoRA file loads in seconds: two minutes is plenty
     await new Promise((r) => setTimeout(r, 200));
     const s = await api("/api/studio/status");
@@ -8881,7 +8882,7 @@ async function studioSwapPrimary(key, seq) {
       S.st.mix = {mode: "off", epochs: [], rows: []};
       document.querySelector('input[name="stMixMode"][value="off"]').checked = true;
       $("stMixInfo").textContent = ""; studioMixLayout();
-      S.st.loadedKey = key;
+      S.st.loadedKey = key; S.st.foreign = false;
       if ($("stDonor").value.trim() !== (s.donor || "")) await api("/api/studio/donor", {path: $("stDonor").value.trim()});
       if (L.follows_samples) await api("/api/studio/settings", {family: L.key, negative: $("stNeg").value.trim()});
       studioPoll();
@@ -8947,7 +8948,12 @@ async function studioPollOnce() {
   if (String(st.up_room) !== String(S.st.upRoom)) { S.st.upRoom = st.up_room; studioUpSummary(); }
   // loaded with nothing to render yet: say what it waits for (a prompt), not that a preview is coming
   const waiting = st.state === "ready" && !st.rendering && !st.shown && !$("stPrompt").value.trim();
-  $("stStatus").textContent = (waiting ? "Loaded. Enter a prompt (include the LoRA's trigger word), then press Render." :
+  // another Studio tab (or window) loaded over this one's model or LoRA: Studio holds one at a time, so say so - this
+  // tab's model picker still shows its own setup, which Render loads again (#395)
+  const otherTab = S.st.foreign && st.load_by === "page" && !(S.stq && S.stq.job);
+  $("stStatus").textContent = otherTab ? "Another Studio tab or window loaded its own model or LoRA over this one's " +
+    "(Studio holds one at a time). Render here loads this tab's setup again." :
+    (waiting ? "Loaded. Enter a prompt (include the LoRA's trigger word), then press Render." :
     st.status || $("stStatus").textContent) +
     (st.status && /^(Loaded|Ready|Donor loaded)/.test(st.status) && studioEqNote(st) ? " " + studioEqNote(st) : "");
   $("stBadge").textContent = {loading: "Loading", ready: st.rendering ? "Rendering" : "Loaded", idle: ""}[st.state] || "";
@@ -9592,8 +9598,11 @@ function wireStudio() {
     document.querySelector('input[name="stMixMode"][value="off"]').checked = true;
     $("stMixInfo").textContent = ""; studioMixLayout();
     if (!S.st.ready) return;
+    if (S.st.foreign) { S.st.loadedKey = ""; studioPending(); return; }   // another tab's model: Render loads this one's
     try {
-      await api("/api/studio/primary", {path: ""});
+      const r = await api("/api/studio/primary", {path: ""});
+      S.st.myLoad = r.load_id || S.st.myLoad;              // this tab's own change, not another tab's
+      S.st.foreign = false;
       const fast = (document.querySelector('input[name="stDit"]:checked') || {}).value !== "full";
       S.st.loadedKey = studioLoadKey(S.st.layout, fast);       // what's loaded now: Render needn't reload it
       studioPoll(); studioPending();

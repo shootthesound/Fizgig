@@ -1,5 +1,5 @@
-"""Launch Fizgig AMD.bat points MIOpen at its kernel database (share\\miopen\\db), never at the SDK's bin folder,
-where there is none (#389; #384 is the Linux launcher's fix)."""
+"""Launch Fizgig AMD.bat points MIOpen at its kernel database: _rocm_sdk_devel\\bin, where the Windows ROCm wheels keep
+it (#389, @scryptio), or a share\\miopen\\db tree where one exists (as on Linux, #384). gfx1100 skips the block."""
 import os
 import re
 import subprocess
@@ -15,10 +15,11 @@ def _lines():
     return BAT.read_text(encoding="utf-8").splitlines()
 
 
-def test_miopen_only_ever_points_at_a_database_folder():
+def test_miopen_points_at_bin_or_a_database_folder():
     vals = [m.group(1) for ln in _lines() for m in [re.search(r'set "MIOPEN_SYSTEM_DB_PATH=([^"]*)"', ln)] if m]
     assert vals, "the launcher no longer sets MIOPEN_SYSTEM_DB_PATH"
-    for v in vals:
+    assert vals[0] == "!ROCM_DEVEL_BIN!", "the Windows wheels' bin folder first, so a share tree overrides it"
+    for v in vals[1:]:
         assert v.lower().endswith(r"\share\miopen\db"), v
     assert "_rocm_sdk_libraries" in vals[-1], "the libraries database should win (set last)"
 
@@ -36,7 +37,7 @@ def _block():
     (("libraries",), "gfx1201", "_rocm_sdk_libraries"),
     (("devel",), "gfx1201", "_rocm_sdk_devel"),
     (("libraries", "devel"), "gfx1201", "_rocm_sdk_libraries"),
-    ((), "gfx1201", None),
+    ((), "gfx1201", "bin"),         # the Windows wheels' layout: no share tree, the database in bin
     (("libraries", "devel"), "gfx1100", None),
 ])
 def test_miopen_path_on_venv_trees(tmp_path, have, arch, want):
@@ -54,6 +55,8 @@ def test_miopen_path_on_venv_trees(tmp_path, have, arch, want):
     got = re.search(r"MIOPEN=\[(.*)\]", out).group(1)
     if want is None:
         assert got == "", out
+    elif want == "bin":
+        assert Path(got) == sp / "_rocm_sdk_devel" / "bin", out
     else:
         assert Path(got) == sp / f"{want}" / "share" / "miopen" / "db", out
     tensile = re.search(r"TENSILE=\[(.*)\]", out).group(1)

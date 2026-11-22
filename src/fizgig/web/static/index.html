@@ -75,13 +75,25 @@
           title="The tabs"><span class="tabs-toggle-icon">☰</span><span id="tabsToggleName">1. Start</span>
           <span class="tabs-toggle-caret">▾</span></button>
         <nav class="tab-bar-scroller" id="tabs">
-          <div class="side-label">Train</div>
+          <details class="side-section" data-side-section="train" open>
+            <summary class="side-label side-section-toggle" aria-label="Toggle Train navigation">
+              <span class="side-section-chevron" aria-hidden="true"></span><span>Train</span>
+            </summary>
+            <div class="side-section-items">
+
           <button class="tab-item active" data-tab="start"><i></i><span>1. Start</span></button>
           <button class="tab-item" data-tab="prep"><i></i><span>2. Image Prep</span></button>
           <button class="tab-item" data-tab="captions"><i></i><span>3. Captions</span></button>
           <button class="tab-item" data-tab="samples"><i></i><span>4. Samples</span></button>
           <button class="tab-item" data-tab="training"><i></i><span>5. Training</span></button>
-          <div class="side-label">After</div>
+            </div>
+          </details>
+          <details class="side-section" data-side-section="after" open>
+            <summary class="side-label side-section-toggle" aria-label="Toggle After navigation">
+              <span class="side-section-chevron" aria-hidden="true"></span><span>After</span>
+            </summary>
+            <div class="side-section-items">
+
           <button class="tab-item" data-tab="outputs"><i></i><span>Runs &amp; outputs</span></button>
           <button class="tab-item" data-tab="profiler"><i></i><span>Profiler</span></button>
           <button class="tab-item" data-tab="studio"><i></i><span>Studio</span></button>
@@ -92,7 +104,29 @@
           <button class="tab-item" data-tab="prefs"><i></i><span>Preferences</span></button>
           <button class="tab-item" data-tab="pods" id="podsTabBtn" style="display:none"><i></i><span>Pods</span></button>
           <button class="tab-item" data-tab="helpers"><i></i><span>Helpers</span></button>
+            </div>
+          </details>
         </nav>
+        <script>
+          // Persist the two sidebar sections independently. Native <details>
+          // keeps toggles accessible to keyboard and pointer users.
+          (() => {
+            const key = "fizgig.sidebar.sections.v1";
+            let saved = {};
+            try { saved = JSON.parse(localStorage.getItem(key) || "{}") || {}; } catch (_) {}
+            document.querySelectorAll("#tabs .side-section").forEach(section => {
+              const name = section.dataset.sideSection;
+              if (typeof saved[name] === "boolean") section.open = saved[name];
+              section.addEventListener("toggle", () => {
+                try {
+                  const current = JSON.parse(localStorage.getItem(key) || "{}") || {};
+                  current[name] = section.open;
+                  localStorage.setItem(key, JSON.stringify(current));
+                } catch (_) {}
+              });
+            });
+          })();
+        </script>
         <button class="side-run" id="sideRun" data-goto="training" title="The run - open the Training tab">
           <span class="side-queue-title">Training</span>
           <span class="side-run-top"><span class="run-badge" id="runBadge"></span><span id="sideRunName"></span></span>

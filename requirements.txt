@@ -45,7 +45,7 @@ toml==0.10.2
 voluptuous==0.15.2
 
 # Image processing
-pillow==12.3.0
+pillow==13.0.0  # the only release fixing GHSA-g4qv-2jxx-769h: a PNG's eXIf chunk makes EXIF parsing quadratic - 3.5 s for one 1.5 MB picture on 12.3.0, and every picture in a training folder goes through it
 numpy>=1.26.4,<3  # range, not a hard pin — over-constraining numpy breaks pip resolution on some setups (issue #4). torch 2.10 supports numpy 1.26+ and 2.x.
 opencv-python==4.10.0.84
 ai-edge-litert>=2.2,<3  # Image Prep's Make masks: runs Google's person segmenter (16 MB, downloaded on first use) on the CPU; numpy-only, wheels for Python 3.10-3.14

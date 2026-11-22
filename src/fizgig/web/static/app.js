@@ -8921,7 +8921,10 @@ async function studioPoll() {
 }
 async function studioPollOnce() {
   const st = await api("/api/studio/status");
-  if (st.load_id && S.st.myLoad && st.load_id !== S.st.myLoad) S.st.foreign = true;
+  // what was loaded when this tab first looked counts as its own (a page reload finds its own load); any later load
+  // it didn't make is another tab's or a queue job's (#395: a tab that never noted its load copied the other tab's)
+  if (S.st.myLoad == null) S.st.myLoad = st.load_id || 0;
+  if ((st.load_id || 0) !== S.st.myLoad) S.st.foreign = true;
   // your render waited for a queue job that had another LoRA loaded: load yours again and render it (once)
   if (st.page_waiting && !S.st.reloading && st.state === "ready" && !st.rendering) {
     S.st.reloading = true;
@@ -8940,6 +8943,24 @@ async function studioPollOnce() {
   }
   $("stStart").title = going ? "A model is loading or a render is going: Add to queue lines this one up behind it " +
     "(or Cancel the one going)." : "";
+  // another Studio tab (or window) loaded over this one's model or LoRA: Studio holds one at a time, so say so and
+  // keep this tab's own pictures, sliders and Cancel out of it - its loads and renders are that tab's (#395). This
+  // tab's model picker still shows its own setup, which Render loads again
+  if (S.st.foreign && st.load_by === "page" && !(S.stq && S.stq.job)) {
+    S.st.shown = st.shown || S.st.shown;              // seen, never drawn: this tab's next picture is its own
+    S.st.baseEarlyShown = st.baseline_early || S.st.baseEarlyShown;
+    S.st.earlyShown = st.early || S.st.earlyShown;
+    $("stStatus").textContent = "Another Studio tab or window has loaded its own model or LoRA over this one's " +
+      "(Studio holds one at a time)" + (st.status ? ": " + st.status : ".") +
+      " Render here loads this tab's setup again" + (going ? " once it's done." : ".");
+    $("stBadge").textContent = going ? "Other tab" : "";
+    $("stBadge").dataset.state = going ? "running" : "idle";
+    $("stBar").style.width = going ? "100%" : "0";
+    $("stBar").parentElement.classList.toggle("indeterminate", going);
+    $("stStart").textContent = "Render";
+    $("stCancel").disabled = true;
+    return going || qActive;
+  }
   const wasReady = S.st.ready;
   S.st.ready = st.state === "ready";
   S.st.donor = !!st.donor;
@@ -8963,12 +8984,7 @@ async function studioPollOnce() {
   if (String(st.up_room) !== String(S.st.upRoom)) { S.st.upRoom = st.up_room; studioUpSummary(); }
   // loaded with nothing to render yet: say what it waits for (a prompt), not that a preview is coming
   const waiting = st.state === "ready" && !st.rendering && !st.shown && !$("stPrompt").value.trim();
-  // another Studio tab (or window) loaded over this one's model or LoRA: Studio holds one at a time, so say so - this
-  // tab's model picker still shows its own setup, which Render loads again (#395)
-  const otherTab = S.st.foreign && st.load_by === "page" && !(S.stq && S.stq.job);
-  $("stStatus").textContent = otherTab ? "Another Studio tab or window loaded its own model or LoRA over this one's " +
-    "(Studio holds one at a time). Render here loads this tab's setup again." :
-    (waiting ? "Loaded. Enter a prompt (include the LoRA's trigger word), then press Render." :
+  $("stStatus").textContent = (waiting ? "Loaded. Enter a prompt (include the LoRA's trigger word), then press Render." :
     st.status || $("stStatus").textContent) +
     (st.status && /^(Loaded|Ready|Donor loaded)/.test(st.status) && studioEqNote(st) ? " " + studioEqNote(st) : "");
   $("stBadge").textContent = {loading: "Loading", ready: st.rendering ? "Rendering" : "Loaded", idle: ""}[st.state] || "";

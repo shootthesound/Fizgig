@@ -9986,6 +9986,10 @@ const capNormalise = (items) => {
     i.caption = i.caption.split(/\r?\n|\r/).filter((t) => t.trim()).join("\n");
 };
 
+// the Search box's words, read from one place: which files show and where a hit is painted are the same match, and
+// a line must never be shown with its hit left unpainted (or the colour left behind on a line that no longer matches)
+const capQuery = () => $("capSearch").value.trim().toLowerCase();
+
 // while captioning runs: the captions written so far fill in every few seconds - never over one you're editing
 async function captionsLive() {
   if (!S.imageFolder || !document.querySelector("#tab-captions.active")) return;
@@ -10073,7 +10077,7 @@ function renderCaptions() {
   const host = $("captionsGrid");
   host.innerHTML = "";
   const ext = $("captionExt").value.trim() || ".txt";
-  const q = $("capSearch").value.trim().toLowerCase();
+  const q = capQuery();
   const all = S.cap.items;
   let items = q ? all.filter((i) => i.name.toLowerCase().includes(q) || (i.caption || "").toLowerCase().includes(q)) : all;
   const sort = $("capSort").value, px = (i) => (i.size ? i.size[0] * i.size[1] : null);
@@ -10174,6 +10178,48 @@ function renderCaptions() {
   fitTexts(host);
 }
 
+// ---- a Captions search hit --------------------------------------------------------------------------------
+// A caption line is a plain textarea, and a textarea paints its own text: there is no way to put a colour behind one
+// phrase inside it. So the colour lives in a copy of the line - the same words, the same font, the same padding -
+// held behind the (already transparent) textarea, with every hit wrapped in a span. The copy is pinned to its row by
+// CSS (top, bottom and right), so it follows every resize and re-wraps exactly where the textarea does; only its
+// left edge is set here, because the line number's gutter comes and goes with Several captions and its width is a
+// flex-basis plus padding that no single number in the stylesheet gives. Nothing is built unless the Search box
+// holds words and this line holds a hit, so an ordinary render is exactly as it was; the copy is aria-hidden, so the
+// words are read once - by the textarea.
+const CAP_HL_STYLE = ["fontFamily", "fontSize", "fontWeight", "fontStyle", "fontVariant", "fontStretch",
+  "letterSpacing", "lineHeight", "whiteSpace", "overflowWrap", "wordBreak", "color", "textAlign", "textTransform",
+  "textIndent", "wordSpacing", "tabSize", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+  "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth"];
+const capHlPaint = (ta) => {
+  if (ta.tagName !== "TEXTAREA" || !ta.closest(".caption-lines")) return;   // the prompt boxes elsewhere aren't captions
+  const q = capQuery(), text = ta.value, lower = text.toLowerCase();
+  let hl = ta._capHl;
+  if (!q || lower.indexOf(q) < 0) {
+    if (hl) { hl.remove(); ta._capHl = null; }
+    return;
+  }
+  if (!hl) {
+    hl = ta._capHl = el("div", {class: "cap-hl", "aria-hidden": "true"});
+    const cs = getComputedStyle(ta);              // the copy has to lay its text out exactly as the textarea does
+    for (const p of CAP_HL_STYLE) hl.style[p] = cs[p];
+    ta.parentElement.insertBefore(hl, ta);        // ahead of the box, so the words paint over the colour
+  }
+  hl.replaceChildren();
+  let at = 0;
+  for (;;) {
+    const hit = lower.indexOf(q, at);
+    if (hit < 0) break;
+    if (hit > at) hl.append(document.createTextNode(text.slice(at, hit)));
+    hl.append(el("span", {class: "cap-hl-hit", text: text.slice(hit, hit + q.length)}));
+    at = hit + q.length;
+  }
+  if (at < text.length) hl.append(document.createTextNode(text.slice(at)));
+};
+const capHlPlace = (ta) => {
+  if (ta._capHl) ta._capHl.style.left = ta.offsetLeft + "px";
+};
+
 // a caption file a line at a time, every other line shaded and numbered once there are two (the Samples tab's prompt
 // box): several captions per picture read at a glance. Enter starts a new line, Backspace at a line's start joins it to
 // the one above. .value is the whole file, so Save, Re-caption, the big view and the live refresh use it as they did
@@ -10190,6 +10236,7 @@ function captionLines(text, extra = "") {
     list.querySelectorAll(".prompt-num").forEach((n, i) => { n.textContent = i + 1; });
     list.classList.toggle("several", boxes().length > 1);
     list.append(join);                         // always last, after the lines
+    boxes().forEach(capHlPlace);               // the gutter arrives with the second line: the copies follow it
   };
   const changed = () => list.dispatchEvent(new Event("change"));
   join.addEventListener("click", () => {
@@ -12281,12 +12328,14 @@ let wired = false;
 const LB_SIDE = "(min-width: 1100px) and (min-aspect-ratio: 5/4)";
 function fitText(ta, grow) {
   if (!ta || !ta.isConnected || !ta.offsetParent) return;
+  capHlPaint(ta);                            // the copy of this line the search hit, if it has one
   if (grow && ta.scrollHeight <= ta.clientHeight) return;
   // a caption line grows to all its text: the caption around it scrolls instead (.caption-lines, the big view's too)
   const max = ta.closest(".caption-lines") ? Infinity : Math.round(innerHeight * 0.4);
   const border = ta.offsetHeight - ta.clientHeight;
   ta.style.height = "";
   ta.style.height = Math.min(Math.max(ta.scrollHeight + border, ta.offsetHeight), max) + "px";
+  capHlPlace(ta);                            // the copy's left edge, once the box has its final width
 }
 const fitTexts = (host) => requestAnimationFrame(() => host.querySelectorAll("textarea.fit-text").forEach((t) => fitText(t)));
 document.addEventListener("input", (e) => { if (e.target.matches && e.target.matches("textarea.fit-text")) fitText(e.target, true); });

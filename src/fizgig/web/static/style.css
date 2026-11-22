@@ -41,6 +41,8 @@
   --danger-strong: #DC2626;
   --danger-text: #FCA5A5;
   --gold: #F1C40F;             /* Chosen, best */
+  /* Search: the wash behind a Captions search hit - a copy of the line, under its words */
+  --search-hit: color-mix(in srgb, var(--warning) 30%, transparent);
   /* Special: news, helpers, a dataset on another machine, warm-up */
   --special-strong: #8B5CF6;
   --special: #A78BFA;
@@ -2780,14 +2782,22 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   cursor: pointer; }
 .caption-lines.several .cap-join:hover, .caption-lines.several .cap-join:focus-visible { color: var(--accent);
   text-decoration: underline; outline: none; }
-.caption-lines .prompt-line { flex-shrink: 0; }
+.caption-lines .prompt-line { flex-shrink: 0; position: relative; }
 .caption-lines .prompt-num { flex-basis: 26px; }
 .caption-lines:not(.several) .prompt-num { display: none; }
-.caption-lines .prompt-line textarea { flex: 1 1 auto; width: auto; max-width: none; min-height: 32px; resize: none;
-  overflow: hidden; background: transparent; border: none; border-radius: 0; box-shadow: none; padding: 6px 8px;
-  color: var(--text-primary); font: inherit; line-height: 1.4; }
+.caption-lines .prompt-line textarea { position: relative; flex: 1 1 auto; width: auto; max-width: none;
+  min-height: 32px; resize: none; overflow: hidden; background: transparent; border: none; border-radius: 0;
+  box-shadow: none; padding: 6px 8px; color: var(--text-primary); font: inherit; line-height: 1.4; }
 .caption-lines .prompt-line textarea:focus { background: color-mix(in srgb, var(--accent) 8%, transparent);
   box-shadow: none; outline: none; }
+/* a Captions search hit: a copy of the line held behind the transparent textarea, since a textarea paints its own
+   text and nothing can be put behind one phrase inside it. Pinned to its row on three sides so it follows every
+   resize and re-wraps where the textarea does - only its left edge comes from JS, with the line number's gutter.
+   Ahead of the box in the DOM and under the words (both positioned, the box last); never interactive, aria-hidden. */
+.cap-hl { position: absolute; top: 0; bottom: 0; right: 0; left: 0; box-sizing: border-box; overflow: hidden;
+  white-space: pre-wrap; pointer-events: none; user-select: none; }
+/* the hit: colour only. Padding, a border or a radius here would move the text it sits behind. */
+.cap-hl-hit { background-color: var(--search-hit); color: inherit; }
 .captions-table .caption-lines.cap-cell-text { min-width: 260px; margin: 0; }
 /* the Samples gallery's list of every preview setting (previewMode) */
 .preview-settings-box { margin-top: 8px; }

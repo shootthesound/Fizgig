@@ -102,6 +102,22 @@ def report_rocm_devices() -> None:
         print(f"[AMD-ROCm] {env} - couldn't list the devices: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
 
 
+def miopen_switch() -> None:
+    """FIZGIG_MIOPEN=0: convolutions skip MIOpen (torch.backends.cudnn.enabled = False) and use PyTorch's own kernels,
+    as ComfyUI does by default on RDNA3 and newer. Off by default; for #389, where a Windows RX 7900 XTX froze in a VAE
+    recache that slowed with each new picture shape (MIOpen searches kernels per shape). Said on stderr, in the log."""
+    import os
+    import sys
+    if os.environ.get("FIZGIG_MIOPEN") != "0":
+        return
+    try:
+        import torch
+    except Exception:
+        return
+    torch.backends.cudnn.enabled = False
+    print("[AMD-ROCm] FIZGIG_MIOPEN=0 - MIOpen off: convolutions use PyTorch's own kernels", file=sys.stderr, flush=True)
+
+
 def fix_rocm_sdpa_masks() -> None:
     """ROCm's fused attention kernel attends wrongly when the mask broadcasts over the queries - the usual key-padding
     mask, [B, 1, 1, S]: measured on an MI350X (torch 2.14 / ROCm 10.1) against the math kernel, max error 0.1-0.2 at

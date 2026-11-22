@@ -44,6 +44,10 @@ if _os.environ.get("FIZGIG_GPU_BACKEND") == "rocm":
 if _os.environ.get("FIZGIG_GPU_BACKEND") == "rocm":
     from fizgig.utils.gpu_backend import fix_rocm_sdpa_masks as _masks
     _masks()
+# AMD: FIZGIG_MIOPEN=0 turns MIOpen off for convolutions (gpu_backend.miopen_switch, #389); unset changes nothing
+if _os.environ.get("FIZGIG_GPU_BACKEND") == "rocm":
+    from fizgig.utils.gpu_backend import miopen_switch as _miopen
+    _miopen()
 
 from fizgig.utils.container_ram import install as _container_ram
 _container_ram()     # a pod's RAM checks read its own limit, not the host's (Linux containers only)

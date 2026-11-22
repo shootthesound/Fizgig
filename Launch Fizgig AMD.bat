@@ -91,11 +91,14 @@ if "!IS_LEGACY_GPU!"=="1" (
     set "TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1"
 )
 
-REM MIOpen / rocBLAS tensile DBs live under _rocm_sdk_devel; skip on gfx1100
-REM where those trees are often missing.
-set "ROCM_DEVEL_BIN=%~dp0venv\Lib\site-packages\_rocm_sdk_devel\bin"
+REM MIOpen's kernel database is in share\miopen\db (_rocm_sdk_libraries first, then _rocm_sdk_devel; neither there:
+REM MIOpen's own lookup is left alone); rocBLAS tensile DBs under _rocm_sdk_devel\bin. Skip on gfx1100, where those
+REM trees are often missing. It once pointed MIOpen at bin\, where there is no database (#384 on Linux, #389).
+set "ROCM_SP=%~dp0venv\Lib\site-packages"
+set "ROCM_DEVEL_BIN=!ROCM_SP!\_rocm_sdk_devel\bin"
 if /I not "!GPU_ARCH!"=="gfx1100" (
-    if exist "!ROCM_DEVEL_BIN!" set "MIOPEN_SYSTEM_DB_PATH=!ROCM_DEVEL_BIN!"
+    if exist "!ROCM_SP!\_rocm_sdk_devel\share\miopen\db" set "MIOPEN_SYSTEM_DB_PATH=!ROCM_SP!\_rocm_sdk_devel\share\miopen\db"
+    if exist "!ROCM_SP!\_rocm_sdk_libraries\share\miopen\db" set "MIOPEN_SYSTEM_DB_PATH=!ROCM_SP!\_rocm_sdk_libraries\share\miopen\db"
     if exist "!ROCM_DEVEL_BIN!\rocblas" set "ROCBLAS_TENSILE_DB_PATH=!ROCM_DEVEL_BIN!\rocblas"
     if exist "!ROCM_DEVEL_BIN!\rocblas\library" set "ROCBLAS_TENSILE_LIBPATH=!ROCM_DEVEL_BIN!\rocblas\library"
 )

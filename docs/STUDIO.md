@@ -128,7 +128,7 @@ What we found, sweeping every block at 2560 × 2560 across five motion scenes (a
 | 24 GB | 11 | 36 GB | yes |
 | 16 GB | 32 | 46 GB | yes |
 
-So plan on **48 GB of system RAM with a 32 GB or 24 GB card, and 64 GB with a 16 GB card**: the streamed blocks wait in RAM (about 0.4 GB each), and the first render loads the text encoder (Qwen3-VL-32B), the biggest moment for RAM on every card. Renders on a smaller card take longer, as streamed blocks do. Saving a new base needs 21 GB of free disk.
+**32 GB of system RAM is enough.** The peaks above are the moment the first render loads the text encoder (Qwen3-VL-32B), counted with the pages of the model files Windows maps in and can drop again; the rest of the time the Studio process holds about 9 GB, plus about 0.4 GB for each streamed block. Renders on a smaller card take longer, as streamed blocks do. Saving a new base needs 21 GB of free disk.
 
 On the 32 GB card, card memory at each step (PyTorch's own figure; the driver keeps about 0.5-1 GB more):
 

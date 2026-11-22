@@ -12,7 +12,7 @@
 
 ![Save blend as a new base model](https://raw.githubusercontent.com/shootthesound/Fizgig/master/docs/assets/frankenstein/save_blend.png)
 
-**What it needs: a 16 GB card or bigger, with 48 GB of system RAM (64 GB with a 16 GB card).** The mode always loads H3 Image at int8 and, with block swap on Auto, streams just enough blocks from system RAM for your card: none on a 32 GB card, 11 on a 24 GB card, 32 on a 16 GB card, all measured rendering ✨Motion at 2048 and 2560 and saving a new base. A streamed block blends in system RAM and renders exactly as one on the card; renders on a smaller card take longer. The [Studio guide](https://github.com/shootthesound/Fizgig/blob/master/docs/STUDIO.md#frankenstein-mode-minimax-h3-image) has the full figures.
+**What it needs: a 16 GB card or bigger, with 32 GB of system RAM.** The mode always loads H3 Image at int8 and, with block swap on Auto, streams just enough blocks from system RAM for your card: none on a 32 GB card, 11 on a 24 GB card, 32 on a 16 GB card, all measured rendering ✨Motion at 2048 and 2560 and saving a new base. A streamed block blends in system RAM and renders exactly as one on the card; renders on a smaller card take longer. The [Studio guide](https://github.com/shootthesound/Fizgig/blob/master/docs/STUDIO.md#frankenstein-mode-minimax-h3-image) has the full figures.
 
 **MiniMax H3 Image works in Studio on a 16 GB card.** With inference block swap on Auto, Studio streamed nothing on cards of 16 GB and up, so H3 Image's 21 GB model ran out of memory loading on a 16 GB card. When the model can't fit, Studio now streams just enough of it from system RAM; 24 GB cards and up are unchanged.
 

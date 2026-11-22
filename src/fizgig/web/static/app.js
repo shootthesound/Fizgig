@@ -6635,7 +6635,7 @@ function studioQueueDraw(q) {
   $("stQPause").textContent = q.paused ? "▶ Resume" : "⏸ Pause";
   $("stQPause").disabled = !q.paused && !q.left;
   $("stQSay").textContent = q.paused ? `Paused. ${q.reason || ""}` : q.waiting || (q.job ? "Rendering…" : q.left ? "" : "Done.");
-  const word = {waiting: "Waiting", loading: "Loading model", rendering: "Rendering", done: "Saved", failed: "Failed"};
+  const word = {waiting: "Waiting", loading: "Loading model", swapping: "Loading LoRA", rendering: "Rendering", done: "Saved", failed: "Failed"};
   const act = (path, body) => async () => {
     try { studioQueueDraw(await api(path, body)); } catch (e) { $("stQSay").textContent = e.message; }
   };
@@ -6646,7 +6646,7 @@ function studioQueueDraw(q) {
       onclick: act("/api/studio/queue/move", {id: it.id, delta: -1})}) : null,
     it.status === "waiting" ? el("button", {class: "btn btn-sm", text: "↓", title: "Later",
       onclick: act("/api/studio/queue/move", {id: it.id, delta: 1})}) : null,
-    ["loading", "rendering"].includes(it.status) ? null : el("button", {class: "btn btn-sm", text: "✕",
+    ["loading", "swapping", "rendering"].includes(it.status) ? null : el("button", {class: "btn btn-sm", text: "✕",
       title: it.status === "waiting" ? "Remove this job" : "Take this line off the list (its saved files stay)",
       onclick: act("/api/studio/queue/remove", {id: it.id})}),
     it.paths && it.paths.length ? el("div", {class: "stq-files"}, ...it.paths.flatMap((p, k) => [k ? "  ·  " : null,

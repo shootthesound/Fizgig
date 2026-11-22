@@ -148,10 +148,19 @@ def _event(ev):
                               f"Rendered {len(ok)} of {_R['total']}." if ok else "No renders produced."))
         elif kind in ("loaded", "donor", "primary"):
             _S.update({k: ev.get(k) for k in ("primary_blocks", "donor_blocks", "hash", "eq")})
-            if kind == "primary":                # swapped in place: what's loaded is no longer any load's settings,
-                _S.update(primary=ev.get("primary", ""), load_key=None, page_key=None, page_waiting=0.0,  # so a queue
-                          status="Primary unloaded: the base model on its own." if not ev.get("primary")  # job loads
-                          else "Primary loaded.")                                                          # again
+            if kind == "primary":                # swapped in place: the load's settings take the new primary (a queue
+                want, page = _S.pop("swap", None) or (None, True)     # job with them renders without a reload)
+                if ev.get("error"):
+                    pass                         # it couldn't load: the old one is still on, as the settings say
+                elif want is not None and want == (ev.get("primary") or ""):
+                    _S["load_key"] = key_with_primary(_S.get("load_key"), want)
+                    if page:                     # the page's own swap: its renders run on this
+                        _S.update(page_key=_S["load_key"], page_waiting=0.0)
+                else:                            # a swap nobody here asked for: no load's settings any more
+                    _S.update(load_key=None, page_key=None, page_waiting=0.0)
+                _S.update(primary=ev.get("primary", ""),
+                          status="Primary unloaded: the base model on its own." if not ev.get("primary")
+                          else "Primary loaded.")
                 _S["primary_seq"] = _S.get("primary_seq", 0) + 1     # the page waits for this swap's answer
                 _S["error"] = ev.get("error") or ""
                 if ev.get("error"):
@@ -520,17 +529,28 @@ def load(desc, primary, donor, kw, settings, status, turbo, canvas=None):
     threading.Thread(target=go, daemon=True).start()
 
 
-def primary(path):
+def primary(path, page=True):
     """Unload primary (path ""), or another primary in its place, without reloading the model."""
-    """Returns the new load id: another LoRA on the model is a new load to any other Studio tab, as a fresh load is."""
+    """Returns the new load id: another LoRA on the model is a new load to any other Studio tab, as a fresh load is.
+    page=False: a Studio queue job's swap (the page's own load settings stay what they were)."""
     if path and not os.path.isfile(path):
         raise ValueError("That primary LoRA isn't there.")
     with _lock:
         _S["load_id"] += 1
-        _S["load_by"] = "page"
+        _S["load_by"] = "page" if page else "queue"
+        _S["swap"] = (path or "", bool(page))      # when it lands, the load settings take the new primary
         n = _S["load_id"]
     _send({"cmd": "primary", "path": path or ""})
     return n
+
+
+def key_with_primary(key, path):
+    """A load's settings (JSON) with another primary; None stays None."""
+    if not key:
+        return None
+    d = json.loads(key)
+    d["primary"] = path
+    return json.dumps(d, sort_keys=True)
 
 
 def donor(path):

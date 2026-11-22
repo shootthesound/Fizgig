@@ -8817,8 +8817,8 @@ function studioLoadBody() {
 }
 
 // what a loaded model is: the model, the primary and the preview settings - a change of any is a reload at Render
-function studioLoadKey(L, fast) {
-  return [L.key, $("stPrimary").value.trim(), fast, L.kind === "video" ? $("stH3Model").value + $("stH3Base").value : "",
+function studioLoadKey(L, fast, primary) {
+  return [L.key, primary === undefined ? $("stPrimary").value.trim() : primary, fast, L.kind === "video" ? $("stH3Model").value + $("stH3Base").value : "",
     (L.render_choice || {}).value || "", L.follow_ck || "", L.follow_look || "", L.follow_turbo || "",
     studioFrankAsked() ? "frank" : ""].join("|");
 }
@@ -8843,6 +8843,12 @@ async function studioStart() {
       studioRender();
       return;
     }
+    // only the primary LoRA changed: it goes on the loaded model in seconds, not a model reload of minutes (#394).
+    // Not a video model (H3's engine switches an old LoRA off rather than taking it out) or Frankenstein mode
+    if (st.state === "ready" && !st.rendering && !st.worker_busy && !S.st.foreign && L.kind !== "video" &&
+        !st.frankenstein && !studioFrankAsked() && S.st.loadedKey === studioLoadKey(L, fast, st.primary || "")) {
+      if (await studioSwapPrimary(key, st.primary_seq || 0)) return;
+    }
     if (st.state === "loading" || st.rendering || st.worker_busy) {   // never a new model under a render going
       $("stStatus").textContent = "A model is loading or a render is going: Add to queue lines this one up behind " +
         "it (or Cancel the one going, then Render).";
@@ -8857,6 +8863,35 @@ async function studioStart() {
     S.st.pendingFirst = true;
     studioPoll();
   } catch (e) { $("stStatus").textContent = e.message; S.st.upHold = S.st.upNow = S.st.upPrev = 0; }
+}
+
+// Another primary on the loaded model (the worker takes the old one out and wires the new one): true = done here (a
+// render follows, or the LoRA couldn't load and the old one is back on); false = no answer, so Render loads it fresh
+async function studioSwapPrimary(key, seq) {
+  const p = $("stPrimary").value.trim(), L = S.st.layout;
+  if (S.st.eq && S.st.eq.primary) studioEq("primary", false);
+  $("stStatus").textContent = "Loading the LoRA…";
+  await api("/api/studio/primary", {path: p});
+  for (let i = 0; i < 600; i++) {                     // a LoRA file loads in seconds: two minutes is plenty
+    await new Promise((r) => setTimeout(r, 200));
+    const s = await api("/api/studio/status");
+    if ((s.primary_seq || 0) > seq) {
+      if (s.primary !== p) { $("stStatus").textContent = s.status || "Couldn't load that LoRA."; studioPoll(); return true; }
+      // the primary's epochs / LoRA mix went with it; the donor's epoch blend stays (as Unload primary)
+      S.st.mix = {mode: "off", epochs: [], rows: []};
+      document.querySelector('input[name="stMixMode"][value="off"]').checked = true;
+      $("stMixInfo").textContent = ""; studioMixLayout();
+      S.st.loadedKey = key;
+      if ($("stDonor").value.trim() !== (s.donor || "")) await api("/api/studio/donor", {path: $("stDonor").value.trim()});
+      if (L.follows_samples) await api("/api/studio/settings", {family: L.key, negative: $("stNeg").value.trim()});
+      studioPoll();
+      studioRender();
+      return true;
+    }
+    if (s.state !== "ready") break;
+  }
+  S.st.loadedKey = "";
+  return false;
 }
 
 // Studio's status poll. It always comes round again while the tab is open: a status request that failed, or an error

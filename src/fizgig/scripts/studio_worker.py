@@ -1081,8 +1081,14 @@ def cmd_primary(c):
         if eng is None or eng.primary_network is None:
             raise ValueError("Press Start first: the model isn't loaded.")
         S.setdefault("mix_files", {}).pop("primary", None)    # its epoch blend / LoRA mix belonged to the old one
+        old = eng.primary_path or ""
         eng.unload_primary()
-        eng.load_primary(c.get("path") or "")
+        try:
+            eng.load_primary(c.get("path") or "")
+        except Exception as e:                  # a LoRA for another model, say: the old one goes back on
+            eng.load_primary(old)
+            emit(ev="primary", primary=old, error=str(e) or type(e).__name__, **_blocks(eng))
+            return
         emit(ev="primary", primary=c.get("path") or "", **_blocks(eng))
 
 

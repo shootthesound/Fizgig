@@ -152,6 +152,10 @@ def _event(ev):
                 _S.update(primary=ev.get("primary", ""), load_key=None, page_key=None, page_waiting=0.0,  # so a queue
                           status="Primary unloaded: the base model on its own." if not ev.get("primary")  # job loads
                           else "Primary loaded.")                                                          # again
+                _S["primary_seq"] = _S.get("primary_seq", 0) + 1     # the page waits for this swap's answer
+                _S["error"] = ev.get("error") or ""
+                if ev.get("error"):
+                    _S["status"] = f"Couldn't load that LoRA: {ev['error']}"
                 _S["profile"] = _profile(ev.get("hash", ""))
             if kind == "loaded":
                 _S.update(nolora="", nolora_media="", nolora_gen=0, nolora_busy=False)
@@ -1009,6 +1013,7 @@ def status():
         d = {k: _S[k] for k in ("state", "family", "primary", "donor", "primary_blocks", "donor_blocks", "status",
                                 "progress", "shown", "rendering", "error", "saved", "profile")}
         d["notes"] = _S.get("notes")
+        d["primary_seq"] = _S.get("primary_seq", 0)
         d["up_room"] = _S.get("up_room")
         d["frankenstein"] = _S.get("frankenstein") or "" if d.get("state") == "ready" else ""
         d["frank_exported"] = _S.get("frank_exported")

@@ -32,6 +32,42 @@ def cached_snapshot_dir(repo_id: str):
     return path if path and os.path.isdir(path) else None
 
 
+def cached_file(repo_id: str, filename: str, **kwargs) -> str:
+    """hf_hub_download(repo_id, filename) from the local cache, the Hub only when the file isn't cached (#397: a plain
+    hf_hub_download asks the Hub on every call, so a cached file still needs the internet)."""
+    from huggingface_hub import hf_hub_download
+    try:
+        return hf_hub_download(repo_id, filename, local_files_only=True, **kwargs)
+    except Exception:
+        from fizgig.utils import hf_public
+        return hf_public.download(repo_id=repo_id, filename=filename, **kwargs)
+
+
+def single_file_cache_first(cls, path: str, config: str, **kwargs):
+    """diffusers' `cls.from_single_file(path, config=config)` with the config repo's cached folder, the Hub only when it
+    isn't cached: a config given by repo id is looked up on the Hub on every load (#397)."""
+    local = cached_snapshot_dir(config)
+    if local is not None:
+        try:
+            return cls.from_single_file(path, config=local, local_files_only=True, **kwargs)
+        except Exception as e:
+            logger.info(f"{cls.__name__}: the cached {config} config didn't load ({type(e).__name__}) - "
+                        "asking the Hub")
+    return cls.from_single_file(path, config=config, **kwargs)
+
+
+def has_files(repo_id: str, patterns) -> bool:
+    """Does the cached snapshot of `repo_id` hold a file for every allow-pattern? (No network.) A snapshot holding
+    only some of a repo's files (one fetched on its own) isn't the tokenizer folder the patterns name."""
+    import fnmatch
+    local = cached_snapshot_dir(repo_id)
+    if local is None:
+        return False
+    files = [os.path.relpath(os.path.join(r, f), local).replace(os.sep, "/")
+             for r, _, fs in os.walk(local) for f in fs]
+    return all(any(fnmatch.fnmatch(f, p) for f in files) for p in patterns)
+
+
 def from_pretrained_cache_first(cls, repo_id: str, **kwargs):
     """`cls.from_pretrained(repo_id)`, trying the local cache before touching the network.
 

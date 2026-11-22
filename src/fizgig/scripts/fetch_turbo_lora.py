@@ -306,20 +306,23 @@ TEXT_HELPERS = (("krea2_text_encoder", "Qwen/Qwen3-VL-4B-Instruct"), ("text_enco
 def ensure_text_helpers(repo_dir: str = REPO_DIR, log=print):
     """The small tokenizer / processor files of every family set up here (a model path in Preferences): the described
     families' helper_files and the older families' tokenizer configs. Only an early fetch: the drivers still download
-    them on first use if they're missing. A repo already cached is skipped without asking the Hub. Never raises."""
+    them on first use if they're missing. A repo whose files are all cached is skipped without asking the Hub. Never
+    raises."""
     try:
         from fizgig.families.registry import FAMILIES
         from fizgig.utils import hf_public
-        from fizgig.utils.hf_cache import cached_snapshot_dir
+        from fizgig.utils.hf_cache import has_files
         prefs = _load_prefs(_prefs_file(repo_dir))
         has = lambda key: bool(key and str(prefs.get(key) or "").strip())
-        want = {repo: (["*.json", "*.txt", "*.model"], repo.split("/")[-1]) for key, repo in TEXT_HELPERS if has(key)}
+        # (patterns to fetch, patterns that must be there to skip it, label); a Qwen repo has no *.model file
+        want = {repo: (["*.json", "*.txt", "*.model"], ["*.json"], repo.split("/")[-1])
+                for key, repo in TEXT_HELPERS if has(key)}
         for d in FAMILIES.values():
             if d.training_ready and d.helper_files and any(has(f.pref_key) for f in d.model_files):
                 for repo, pats in d.helper_files:
-                    want.setdefault(repo, (list(pats), d.display_name))
-        for repo, (pats, label) in want.items():
-            if cached_snapshot_dir(repo):
+                    want.setdefault(repo, (list(pats), list(pats), d.display_name))
+        for repo, (pats, need, label) in want.items():
+            if has_files(repo, need):       # each pattern's files there; a snapshot of one file isn't enough (#397)
                 continue
             try:
                 log(f"Fetching {label}'s tokenizer files ...")

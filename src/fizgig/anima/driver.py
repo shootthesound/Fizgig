@@ -58,19 +58,30 @@ def _batched(key, v):
     return v if v.dim() == (3 if key == "qwen" else 2) else v[None]
 
 
+def _t5_tokenizer():
+    """The T5 vocabulary straight from its tokenizer.json (its post-processor appends </s>): the repo's
+    tokenizer_config.json is written by a newer transformers than Fizgig pins and does not load in it."""
+    from transformers import PreTrainedTokenizerFast
+    from fizgig.utils.hf_cache import cached_file
+    return PreTrainedTokenizerFast(tokenizer_file=cached_file(HELPER, "t5_tokenizer/tokenizer.json"),
+                                   eos_token="</s>", pad_token="<pad>", unk_token="<unk>")
+
+
+def _tokenizers():
+    """(Qwen tokenizer, T5 tokenizer) from the cached helper files (the model download fetches them), the Hub only
+    when they aren't cached: a plain from_pretrained asks the Hub on every load, so caching needed the internet (#397)."""
+    from transformers import AutoTokenizer
+    from fizgig.utils.hf_cache import from_pretrained_cache_first
+    return from_pretrained_cache_first(AutoTokenizer, HELPER, subfolder="tokenizer"), _t5_tokenizer()
+
+
 class _TextEncoder:
     """Qwen3 0.6B (base) from its single file, with the Qwen and T5 tokenizers."""
 
     def __init__(self, path, device):
         from safetensors.torch import load_file
-        from fizgig.utils import hf_public
-        from transformers import AutoTokenizer, PreTrainedTokenizerFast, Qwen3Config, Qwen3Model
-        self.tok = AutoTokenizer.from_pretrained(HELPER, subfolder="tokenizer")
-        # the T5 vocabulary straight from its tokenizer.json (its post-processor appends </s>): the repo's
-        # tokenizer_config.json is written by a newer transformers than Fizgig pins and does not load in it
-        self.t5 = PreTrainedTokenizerFast(tokenizer_file=hf_public.download(
-            repo_id=HELPER, filename="t5_tokenizer/tokenizer.json"),
-                                          eos_token="</s>", pad_token="<pad>", unk_token="<unk>")
+        from transformers import Qwen3Config, Qwen3Model
+        self.tok, self.t5 = _tokenizers()
         model = Qwen3Model(Qwen3Config(**QWEN3_06B))
         sd = {k[len("model."):] if k.startswith("model.") else k: v for k, v in load_file(path).items()}
         missing, unexpected = model.load_state_dict(sd, strict=False)
@@ -239,11 +250,7 @@ class AnimaDriver(FamilyDriver):
     def trigger_tokenizer(self):
         """The DiT's text keys are the LLM adapter's T5 tokens of the raw caption, one for one."""
         if getattr(self, "_t5_fast", None) is None:
-            from transformers import PreTrainedTokenizerFast
-            from fizgig.utils import hf_public
-            self._t5_fast = PreTrainedTokenizerFast(
-                tokenizer_file=hf_public.download(repo_id=HELPER, filename="t5_tokenizer/tokenizer.json"),
-                eos_token="</s>", pad_token="<pad>", unk_token="<unk>")
+            self._t5_fast = _t5_tokenizer()
         return self._t5_fast
 
     def trigger_text(self, tokenizer, caption):

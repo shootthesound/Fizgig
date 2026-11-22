@@ -129,8 +129,16 @@ def apg(cond, uncond, scale, momentum, norm_threshold=2.5):
 
 
 def _helper_file(name):
-    from fizgig.utils import hf_public
-    return hf_public.download(repo_id=HELPER, filename=name)
+    from fizgig.utils.hf_cache import cached_file
+    return cached_file(HELPER, name)          # cached first: the model download fetches it (#397)
+
+
+def _tokenizer():
+    """Qwen3-Embedding's tokenizer from the cached helper files, the Hub only when they aren't cached: a plain
+    from_pretrained asks the Hub on every load, so caching needed the internet (#397)."""
+    from transformers import AutoTokenizer
+    from fizgig.utils.hf_cache import from_pretrained_cache_first
+    return from_pretrained_cache_first(AutoTokenizer, HELPER, subfolder=TOKENIZER)
 
 
 def silence_latent():
@@ -143,8 +151,8 @@ class _TextEncoder:
 
     def __init__(self, path, device):
         from safetensors.torch import load_file
-        from transformers import AutoTokenizer, Qwen3Config, Qwen3Model
-        self.tok = AutoTokenizer.from_pretrained(HELPER, subfolder=TOKENIZER)
+        from transformers import Qwen3Config, Qwen3Model
+        self.tok = _tokenizer()
         model = Qwen3Model(Qwen3Config(
             vocab_size=151669, hidden_size=1024, intermediate_size=3072, num_hidden_layers=28,
             num_attention_heads=16, num_key_value_heads=8, head_dim=128, max_position_embeddings=32768,

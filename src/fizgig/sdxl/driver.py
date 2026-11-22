@@ -18,6 +18,7 @@ import torch
 import torch.nn.functional as F
 
 from fizgig.families.driver import Block, BlockGroup, FamilyDriver, picture_losses, prior_base, weighted_loss, with_prior
+from fizgig.utils.hf_cache import single_file_cache_first
 
 CONFIG_REPO = "stabilityai/stable-diffusion-xl-base-1.0"
 DTYPE = torch.bfloat16
@@ -72,7 +73,7 @@ class _TextEncoders:
         from diffusers import StableDiffusionXLPipeline
         # the pipeline's single-file loader reads the CLIPs out of the checkpoint. It cannot be built without its UNet
         # and VAE, so those load on the CPU too and are dropped at once (about 10 s at the cache stage)
-        pipe = StableDiffusionXLPipeline.from_single_file(path, torch_dtype=DTYPE, config=CONFIG_REPO)
+        pipe = single_file_cache_first(StableDiffusionXLPipeline, path, CONFIG_REPO, torch_dtype=DTYPE)
         pipe.unet = pipe.vae = None
         self.tok1, self.tok2 = pipe.tokenizer, pipe.tokenizer_2
         for t in (self.tok1, self.tok2):
@@ -143,14 +144,14 @@ class SDXLDriver(FamilyDriver):
     # ---- models ---------------------------------------------------------------------------------
     def load_dit(self, path, device):
         from diffusers import UNet2DConditionModel
-        unet = UNet2DConditionModel.from_single_file(path, config=CONFIG_REPO, subfolder="unet", torch_dtype=DTYPE)
+        unet = single_file_cache_first(UNet2DConditionModel, path, CONFIG_REPO, subfolder="unet", torch_dtype=DTYPE)
         return unet.to(device).eval().requires_grad_(False)
 
     def load_vae(self, path, device):
         """The checkpoint's VAE, or a separate SDXL VAE file (the Preferences override). fp32: SDXL's VAE overflows in
         half precision."""
         from diffusers import AutoencoderKL
-        vae = AutoencoderKL.from_single_file(path, config=CONFIG_REPO, subfolder="vae", torch_dtype=torch.float32)
+        vae = single_file_cache_first(AutoencoderKL, path, CONFIG_REPO, subfolder="vae", torch_dtype=torch.float32)
         from fizgig.modules.wide_attention import ROCM, rocm_vae_processor
         if ROCM:                                      # its one 512-wide head, computed directly on ROCm (#179)
             vae.set_attn_processor(rocm_vae_processor())

@@ -2713,7 +2713,7 @@ def _media_size(path):
                 from PIL import Image
                 with Image.open(path) as im:
                     from fizgig.utils.upright import upright_size
-                    wh = list(upright_size(im))
+                    wh = list(upright_size(im, path))
             else:
                 import cv2
                 cap = cv2.VideoCapture(path)

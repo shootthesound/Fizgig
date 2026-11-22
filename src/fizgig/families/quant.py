@@ -237,12 +237,10 @@ def _adapter_bytes(state_bytes, ema):
 def _target_shapes(driver, dit_path):
     """(out, in) of every Linear the driver's LoRA wraps, read from the model file's header (no weights loaded), or []
     when the file can't be read or its names don't line up with the block map's."""
-    import json
-    import struct
+    from fizgig.utils.st_meta import read_header
     try:
         names = [m for g in driver.block_map(None) for b in g.blocks for m in b.modules]
-        with open(dit_path, "rb") as f:
-            hdr = json.loads(f.read(struct.unpack("<Q", f.read(8))[0]))
+        hdr = read_header(dit_path)
     except Exception:
         return []
     keys = [k for k in hdr if k.endswith(".weight") and len(hdr[k].get("shape") or []) == 2]

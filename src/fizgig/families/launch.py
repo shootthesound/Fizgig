@@ -235,13 +235,11 @@ def latest_ft_checkpoint(out_dir, name):
 def ft_continuation(path):
     """(next_window, epochs_done, n_windows) from a fine-tune checkpoint's metadata (the trainers stamp them); the
     -NNNNNN in the file name wins for the epochs. Anything missing reads as 0."""
-    import json
     import struct
+    from fizgig.utils.st_meta import read_metadata
     md = {}
     try:
-        with open(path, "rb") as f:
-            n = struct.unpack("<Q", f.read(8))[0]
-            md = json.loads(f.read(n)).get("__metadata__") or {}
+        md = read_metadata(path)
     except (OSError, ValueError, struct.error):
         pass
     def num(k):

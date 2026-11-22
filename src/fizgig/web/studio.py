@@ -544,6 +544,24 @@ def primary(path, page=True):
     return n
 
 
+def adopt(body):
+    """The page finds a Studio queue job's (or another tab's) load on the model. Its settings differ from the page's
+    own (body) only by the primary LoRA: {"swap": True, "primary": the one on} - the page swaps its own on; the same
+    primary too: {"same": True}, and the page's renders run on it as they are. Else {}: the page loads again."""
+    with _lock:
+        lk = _S.get("load_key")
+        if _S["state"] != "ready" or not lk or _S.get("frankenstein") or _S.get("rendering"):
+            return {}
+        had, want = json.loads(lk), json.loads(json.dumps(body))
+        hp, wp = had.pop("primary", "") or "", want.pop("primary", "") or ""
+        if had != want:
+            return {}
+        if hp == wp:
+            _S.update(page_key=lk, page_waiting=0.0)
+            return {"same": True}
+        return {"swap": True, "primary": hp}
+
+
 def key_with_primary(key, path):
     """A load's settings (JSON) with another primary; None stays None."""
     if not key:
@@ -1062,8 +1080,7 @@ def status():
         d["log"] = _S["log"][-12:]                 # the worker's own lines (the engine's log), for when it goes wrong
         d["out_said"] = _S.get("out_said")         # Save every render's latest files (or why it couldn't)
         d["load_id"] = _S.get("load_id", 0)        # a load the page didn't ask for (the Studio queue's) changes it
-        d["load_by"] = _S.get("load_by") or ""     # "page": a Studio tab's (another tab's, if not this one's)
-        # LoRA Royale, a Travel or RefMod rendering on the worker: Studio's Render waits for it too
+        d["load_by"] = _S.get("load_by") or ""     # "page": a Studio tab's (another tab's, if not this one's)        # LoRA Royale, a Travel or RefMod rendering on the worker: Studio's Render waits for it too
         d["worker_busy"] = (_R["state"] == "rendering" or _M["state"] == "rendering"
                             or any(t["state"] == "rendering" for t in _T.values()))
         t = _S.get("page_waiting") or 0.0          # your render waits for your LoRA to load again

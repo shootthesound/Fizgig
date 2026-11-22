@@ -8782,7 +8782,7 @@ function studioSchedule(live) {
 async function studioRender() {
   if (!$("stPrompt").value.trim()) { $("stStatus").textContent = "Enter a prompt (include the LoRA's trigger word), then press Render."; return; }
   if (S.st.foreign && !(S.stq && S.stq.job)) {       // a Studio queue job loaded another model or LoRA: yours again
-    S.st.foreign = false; S.st.loadedKey = "";
+    await studioAdopt();
     return studioStart();
   }
   // seed 0: random, rolled by Render / Start (studioStart) and kept while sliders and the other controls render, so
@@ -8797,11 +8797,26 @@ async function studioRender() {
   try {
     const r = await api("/api/studio/render", {state, ...studioExtra(), ...studioMixExtra(), ...setup});
     if (r.after_job) $("stStatus").textContent = "Renders when the Studio queue's job finishes…";
-    if (r.reload) { S.st.foreign = false; S.st.loadedKey = ""; return studioStart(); }   // a job's LoRA is loaded
+    if (r.reload) { await studioAdopt(); return studioStart(); }   // a job's LoRA is loaded
     studioPoll();
   }
   catch (e) { $("stStatus").textContent = e.message; }
   finally { if (S.st.upHold) S.st.upHold = S.st.upNow = S.st.upPrev = 0; }     // the held Upscale request has gone
+}
+
+// What's loaded is a Studio queue job's (or another tab's). The server compares it with this page's load: only the
+// primary LoRA differs - take it as this page's load with that primary, so studioStart swaps this page's LoRA on in
+// seconds (#394); the same primary too - render on it as it is; anything else - load again
+async function studioAdopt() {
+  S.st.foreign = false; S.st.loadedKey = "";
+  const L = S.st.layout;
+  if (!L || L.kind === "video" || studioFrankAsked()) return;
+  try {
+    const r = await api("/api/studio/adopt", studioLoadBody());
+    const fast = (document.querySelector('input[name="stDit"]:checked') || {}).value !== "full";
+    if (r.same) S.st.loadedKey = studioLoadKey(L, fast);
+    else if (r.swap) S.st.loadedKey = studioLoadKey(L, fast, r.primary || "");
+  } catch (e) { /* load again */ }
 }
 
 function studioRollSeed() { S.st.seedUsed = 1 + Math.floor(Math.random() * (2 ** 31 - 2)); }
@@ -8909,8 +8924,8 @@ async function studioPollOnce() {
   if (st.load_id && S.st.myLoad && st.load_id !== S.st.myLoad) S.st.foreign = true;
   // your render waited for a queue job that had another LoRA loaded: load yours again and render it (once)
   if (st.page_waiting && !S.st.reloading && st.state === "ready" && !st.rendering) {
-    S.st.reloading = true; S.st.foreign = false; S.st.loadedKey = "";
-    studioStart().finally(() => { S.st.reloading = false; });
+    S.st.reloading = true;
+    studioAdopt().then(studioStart).finally(() => { S.st.reloading = false; });
   }
   let qActive = false;
   try { qActive = studioQueueDraw(await api("/api/studio/queue")); } catch (e) { /* an older server */ }

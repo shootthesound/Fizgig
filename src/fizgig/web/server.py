@@ -901,6 +901,11 @@ def _studio_post(what, b, from_queue=False):
     if what == "donor":
         studio.donor(str(b.get("path") or "").strip())
         return {"ok": True}
+    if what == "adopt":                      # a queue job's / another tab's load: the page's LoRA swaps on it?
+        desc = _studio_desc(b.get("family", ""))
+        if desc.video_workbench or studio_queue.running():
+            return {}
+        return studio.adopt(b)
     if what == "primary":                    # Unload primary: the zero adapter in its place, no model reload
         if studio_queue.running():
             raise ValueError("The Studio queue is rendering a job. Pause the queue and let the job finish first.")

@@ -70,3 +70,30 @@ def test_a_page_swap_keeps_the_page_rendering(monkeypatch, tmp_path):
     studio.primary(b)
     studio._event({"ev": "primary", "primary": b})
     assert studio.load_key() == studio._S["page_key"] == json.dumps(_load(b), sort_keys=True)
+
+
+def test_the_page_swaps_its_own_lora_back_after_a_job(monkeypatch, tmp_path):
+    # a queue job swapped its LoRA on: the page's next Render swaps the page's own back (seconds), never a reload
+    a, b, key, sent, loads, renders = _setup(monkeypatch, tmp_path)
+    _job(monkeypatch, _load(b))
+    Q._tick()
+    studio._event({"ev": "primary", "primary": b})
+    assert studio.adopt(_load(a)) == {"swap": True, "primary": b}
+    studio.primary(a)
+    studio._event({"ev": "primary", "primary": a})
+    assert studio.load_key() == studio._S["page_key"] == key
+    # the same primary as the job's: the page renders on it as it is; anything else different: it loads again
+    studio._S.update(load_key=json.dumps(_load(b), sort_keys=True), page_key=key)
+    assert studio.adopt(_load(b)) == {"same": True} and studio._S["page_key"] == studio.load_key()
+    assert studio.adopt(_load(a, donor="d.safetensors")) == {}
+
+
+def test_the_page_asks_before_it_reloads():
+    import os
+    js = open(os.path.join(os.path.dirname(studio.__file__), "static", "app.js"), encoding="utf-8").read()
+    render = js[js.index("async function studioRender"):js.index("function studioRollSeed")]
+    assert render.count("await studioAdopt()") == 2 and 'S.st.loadedKey = ""' not in render.split("async function studioAdopt")[0]
+    poll = js[js.index("async function studioPollOnce"):]
+    assert "studioAdopt().then(studioStart)" in poll[:poll.index("\n}\n")]
+    adopt = js[js.index("async function studioAdopt"):js.index("function studioRollSeed")]
+    assert 'api("/api/studio/adopt", studioLoadBody())' in adopt

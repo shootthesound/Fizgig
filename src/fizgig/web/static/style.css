@@ -2446,6 +2446,20 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 #tab-studio.no-lora #stBasePane, #tab-studio.no-lora #stSplit, #tab-studio.no-lora #stMetrics,
 #tab-studio.no-lora #stMaps, #tab-studio.no-lora #stDlBase { display: none !important; }
 #tab-studio.no-lora .st-preview { grid-template-columns: 1fr; }
+/* Frankenstein mode, from the moment the switch says so (not when it has loaded): no LoRA rows, no LoRA save, no donor
+   half of each block row; the blend's own save card; the Tweaked caption (the blend) in the accent colour */
+#tab-studio.frank-asked .st-lora-row, #tab-studio.frank-asked #stMixRows, #tab-studio.frank-asked #stDmixRows,
+#tab-studio.frank-asked .st-lora-save, #tab-studio.frank-asked .st-row.donor { display: none !important; }
+/* a blend share has no sign, and Balance needs a donor */
+#tab-studio.frank-asked .st-flip, #tab-studio.frank-asked .st-bal { display: none; }
+#tab-studio.frank-asked .st-block .st-label { color: var(--text-primary); }
+#tab-studio .st-frank-save { display: none; }
+#tab-studio.frank-asked .st-frank-save { display: block; }
+#tab-studio .st-frank-bar { flex: 1; min-width: 160px; height: 12px; accent-color: var(--accent); }
+#tab-studio.frank-asked #stTweakCap { color: var(--accent); font-weight: 600; }
+/* no LoRA: the one render is the Tweaked pane, shown whatever the arrows were left on (hiding Tweaked left nothing) */
+#tab-studio.no-lora .st-preview.only-base .st-tweak-pane { display: block; }
+#tab-studio.no-lora .st-dock .st-preview.only-base .st-tweak-pane { display: flex; }   /* Keep in view: scales to the panel */
 /* Studio queue: a slim bar between Setup and Preview while it holds jobs; its head opens the list */
 .st-qbar .st-qbar-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer;
   user-select: none; }
@@ -2461,7 +2475,7 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 .stq-list { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
 .stq-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: 1px solid var(--border);
   border-radius: 8px; flex-wrap: wrap; }
-.stq-row.rendering, .stq-row.loading { border-color: var(--accent); }
+.stq-row.rendering, .stq-row.loading, .stq-row.swapping { border-color: var(--accent); }
 .stq-row.failed .stq-state { color: var(--danger, var(--text-secondary)); }
 .stq-state { min-width: 80px; font-size: 12px; color: var(--text-secondary); }
 .stq-label { flex: 1; min-width: 160px; overflow-wrap: anywhere; }

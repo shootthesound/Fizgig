@@ -78,7 +78,8 @@ class AttnBlock(nn.Module):
         h = self.norm(x)
         b, c, height, width = h.shape
         flat = lambda t: t.reshape(b, c, height * width).permute(0, 2, 1).unsqueeze(1).contiguous()
-        h = F.scaled_dot_product_attention(flat(self.q(h)), flat(self.k(h)), flat(self.v(h)))
+        from fizgig.modules.wide_attention import wide_head_attention
+        h = wide_head_attention(flat(self.q(h)), flat(self.k(h)), flat(self.v(h)))   # one wide head: direct on ROCm (#383)
         return x + self.proj_out(h.squeeze(1).permute(0, 2, 1).reshape(b, c, height, width))
 
 

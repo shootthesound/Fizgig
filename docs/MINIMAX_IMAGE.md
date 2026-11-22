@@ -51,7 +51,7 @@ Swapped blocks stream to the card through two slots, so the first 2 swapped bloc
 
 On a card of 40 GB or more, a compiled int8 run trains without gradient checkpointing, about 1.5× faster (23.4 GB at 0.25 MP, 30.6 GB at 1 MP). Compile Blocks on its own adds about 10% at 1 MP and little at 0.25 MP, so Auto compiles only long runs.
 
-A 16 GB laptop with 32 GB of RAM trains a rank 8 LoRA on Auto and runs Studio (14.7 GB peak). A 12 GB card trains too (4-bit, 11.2 GB peak), but the text encoder (Qwen3-VL-32B, shared with MiniMax H3) then streams through about 19 GB of free system RAM, and Studio on a 12 GB card needs about 48 GB of RAM: the model waits in RAM while each new prompt is encoded.
+A 16 GB laptop with 32 GB of RAM trains a rank 8 LoRA on Auto. Studio runs on a 16 GB card too: with inference block swap on Auto it streams 32 of the model's blocks from system RAM there (24 GB cards and up hold the whole model). A 12 GB card trains too (4-bit, 11.2 GB peak), but the text encoder (Qwen3-VL-32B, shared with MiniMax H3) then streams through about 19 GB of free system RAM, and Studio on a 12 GB card needs about 48 GB of RAM: the model waits in RAM while each new prompt is encoded.
 
 ## Previews
 
@@ -65,6 +65,10 @@ A 16 GB laptop with 32 GB of RAM trains a rank 8 LoRA on Auto and runs Studio (1
 ## Sliders
 
 Slider LoRAs train from photo pairs. Sliders from prompts are off on this model for now: a smiling / frowning prompt slider moved clothes, styling and light rather than the expression, because on H3 Image a change of prompt reshuffles the whole picture and the slider learns all of it. If you can fix that, a pull request is very welcome.
+
+## Frankenstein mode: H3 video's motion in stills
+
+Studio's **Frankenstein mode** blends MiniMax H3 video's blocks into H3 Image, block by block, to bring back the sense of motion H3 video gives stills (motion blur on fast things, spray, smoke) while keeping H3 Image's clean look. **✨Motion** (H3 video's blocks 27-28 and 32-34 at 65%) is the best mix we found across five motion scenes; **✨Motion, gentle** (28-34 at 60%) is the lighter one. A blend saves as a new H3 Image base file that ComfyUI loads like the original. It needs the H3 video file and H3's Turbo LoRA set in Preferences, **a 16 GB card or bigger (it streams blocks from system RAM on 16 and 24 GB cards), with 48 GB of system RAM (64 GB with a 16 GB card)**. See [Studio: Frankenstein mode](STUDIO.md#frankenstein-mode-minimax-h3-image).
 
 ## Other trainers' LoRAs
 

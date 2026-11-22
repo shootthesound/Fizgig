@@ -11,10 +11,19 @@ _COPY = 64 << 20
 
 
 def _header(f):
+    """(length, header) - ValueError when the length can't be a header's: over 100 MB or past the end of the file. A
+    GGUF's magic and version read as a length of ~14 GB, and reading that much first cost seconds and gigabytes."""
     n = struct.unpack("<Q", f.read(8))[0]
-    if n <= 0 or n > 100 << 20:
+    if n <= 0 or n > 100 << 20 or n > os.fstat(f.fileno()).st_size - 8:
         raise ValueError("Not a .safetensors file.")
     return n, json.loads(f.read(n).decode("utf-8"))
+
+
+def read_header(path):
+    """The file's whole JSON header (tensor names, dtypes, shapes, "__metadata__"), without reading any weights.
+    ValueError / OSError / struct.error when it can't be read as a .safetensors file."""
+    with open(path, "rb") as f:
+        return _header(f)[1]
 
 
 def read_metadata(path):

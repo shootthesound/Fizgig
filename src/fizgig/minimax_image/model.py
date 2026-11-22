@@ -13,12 +13,12 @@ starts the span and the next one ends it (`span_for`). A sampler running another
 each step (sampling.py), the same span ComfyUI's sampler gives.
 """
 import json
-import struct
 
 import torch
 import torch.nn.functional as F
 
 from fizgig.minimax.model import FinalLayer, MiniMaxH3DiT
+from fizgig.utils.st_meta import read_metadata
 
 # MiniMaxAI/MiniMax-H3-Image pdd_config.json, and the Comfy-Org file's metadata (config.transformer.pdd_sigmas)
 PDD_SIGMAS = (1.0, 0.9675236940383911, 0.8875485062599182, 0.75, 0.5327739119529724, 0.23200887441635132, 0.0)
@@ -28,9 +28,7 @@ def file_pdd_sigmas(path):
     """The sigma grid a checkpoint's heads were distilled on, from its safetensors metadata; PDD_SIGMAS when the file
     does not say (the official shards keep it in pdd_config.json beside them)."""
     try:
-        with open(path, "rb") as f:
-            n = struct.unpack("<Q", f.read(8))[0]
-            meta = json.loads(f.read(n)).get("__metadata__") or {}
+        meta = read_metadata(path)
         cfg = json.loads(meta.get("config") or "{}").get("transformer") or {}
         s = cfg.get("pdd_sigmas")
         if s and len(s) >= 2:

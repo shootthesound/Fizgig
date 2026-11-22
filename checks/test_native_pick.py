@@ -53,3 +53,23 @@ def test_save_as_window(monkeypatch, tmp_path):
     assert native_pick.save_as(str(tmp_path), "lora_tweaked_seed42.png") == {"path": os.path.normpath(str(tmp_path / "x.png"))}
     assert seen["save"] == "lora_tweaked_seed42.png" and seen["ext"] == ".png" and seen["start"] == str(tmp_path)
     compile(native_pick._SCRIPT, "<native_pick>", "exec")
+
+
+def test_off_by_default_on_windows(monkeypatch):
+    """#387: Choose... opens Fizgig's chooser on Windows unless Preferences turns the computer's own window on; the
+    route answers unavailable while it's off, and Reset to defaults puts the default back."""
+    import sys
+    server = pytest.importorskip("fizgig.web.server")
+    from fizgig.web import native_pick as real
+    assert server.PREF_DEFAULTS["native_file_window"] == ("0" if sys.platform == "win32" else "1")
+    assert "native_file_window" in server.SETTING_PREFS
+    for on, called in (("0", False), ("1", True)):
+        seen, out = [], {}
+        monkeypatch.setattr(server, "load_prefs", lambda on=on: {"native_file_window": on})
+        monkeypatch.setattr(real, "pick", lambda *a: seen.append(a) or {"cancelled": True})
+
+        class H:
+            _local_viewer = lambda self: True
+            json = lambda self, d: out.update(d)
+        server.Handler._native_pick(H(), {"path": [""], "dir": ["1"]})
+        assert bool(seen) == called and out == ({"cancelled": True} if called else {"unavailable": True})

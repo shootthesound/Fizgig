@@ -132,7 +132,7 @@ size row for clips kept in sub-folders ([#278](https://github.com/shootthesound/
 checkpointing and run out of memory; those runs now keep it on. They also gave the mask editor **three kept brush
 settings**, recalled with 1, 2 and 3 ([#381](https://github.com/shootthesound/Fizgig/pull/381)).
 
-Since then: **Fibo 2.0** as a trainable family, with measured planner figures ([#250](https://github.com/shootthesound/Fizgig/pull/250), v9.0.4); **Purge run history** on Runs & outputs ([#345](https://github.com/shootthesound/Fizgig/pull/345), v9.7.2); and LoRA Royale treating a run's Save now snapshots and last checkpoint as its own epochs ([#355](https://github.com/shootthesound/Fizgig/pull/355), v9.7.6). Their exact reports found the H3 Context LoRA crash at step 0 ([#298](https://github.com/shootthesound/Fizgig/issues/298)) and MOSS-Image block swap leaving weights on the CPU at a batch size above 1 ([#335](https://github.com/shootthesound/Fizgig/issues/335)). In v9.7.7, a resume at a new size caches again whatever Enable Cache says, and its record waits until training starts ([#370](https://github.com/shootthesound/Fizgig/pull/370)).
+Since then: **Fibo 2.0** as a trainable family, with measured planner figures ([#250](https://github.com/shootthesound/Fizgig/pull/250), v9.0.4); **Purge run history** on Runs & outputs ([#345](https://github.com/shootthesound/Fizgig/pull/345), v9.7.2); and LoRA Royale treating a run's Save now snapshots and last checkpoint as its own epochs ([#355](https://github.com/shootthesound/Fizgig/pull/355), v9.7.6). Their exact reports found the H3 Context LoRA crash at step 0 ([#298](https://github.com/shootthesound/Fizgig/issues/298)) and MOSS-Image block swap leaving weights on the CPU at a batch size above 1 ([#335](https://github.com/shootthesound/Fizgig/issues/335)). In v9.7.7, a resume at a new size caches again whatever Enable Cache says, and its record waits until training starts ([#370](https://github.com/shootthesound/Fizgig/pull/370)). In v9.8.4 the captioner takes only `.safetensors` files, so a GGUF in its slot no longer slows every page load ([#388](https://github.com/shootthesound/Fizgig/pull/388)).
 
 ## DmitryAkDev
 
@@ -165,7 +165,7 @@ Force SageAttention preference for Krea 2 ([#344](https://github.com/shootthesou
 lists optimizers without loading their libraries ([#346](https://github.com/shootthesound/Fizgig/pull/346), v9.7.5), and Krea 2's VAE decoding a still picture
 with about 2 GB less VRAM ([#369](https://github.com/shootthesound/Fizgig/pull/369), v9.7.6). They also found three helpers missing from the Linux AMD installer
 (v9.7.2) and where Arch-based systems keep libnuma ([#356](https://github.com/shootthesound/Fizgig/issues/356)). In v9.7.8, Krea 2 previews fit 16 and 24 GB AMD cards at high resolutions
-([#363](https://github.com/shootthesound/Fizgig/pull/363)), and their investigation found that expandable memory segments corrupt memory on Radeon cards with current ROCm, which is why Fizgig turns them off there. In v9.8.1 their measurements turned INT8 fast inference off by default on AMD cards and stopped Krea 2's text encoder being copied into RAM before it was freed ([#380](https://github.com/shootthesound/Fizgig/issues/380)).
+([#363](https://github.com/shootthesound/Fizgig/pull/363)), and their investigation found that expandable memory segments corrupt memory on Radeon cards with current ROCm, which is why Fizgig turns them off there. In v9.8.1 their measurements turned INT8 fast inference off by default on AMD cards and stopped Krea 2's text encoder being copied into RAM before it was freed ([#380](https://github.com/shootthesound/Fizgig/issues/380)). In v9.8.4 the Linux AMD launcher points MIOpen at its packaged kernel database ([#384](https://github.com/shootthesound/Fizgig/pull/384)).
 
 ## pastuh
 
@@ -194,7 +194,7 @@ Start at a smaller size, the run summary, the sidebar meters and the captions ta
 
 Since November:
 
-- [tsk5cb-cmyk](https://github.com/tsk5cb-cmyk): the logs and OneTrainer settings behind 9.2's speed work ([#221](https://github.com/shootthesound/Fizgig/issues/221)), and the case for repeats from folder names ([#300](https://github.com/shootthesound/Fizgig/issues/300))
+- [tsk5cb-cmyk](https://github.com/tsk5cb-cmyk): the logs and OneTrainer settings behind 9.2's speed work ([#221](https://github.com/shootthesound/Fizgig/issues/221)), the case for repeats from folder names ([#300](https://github.com/shootthesound/Fizgig/issues/300)), and Studio's slow LoRA switch ([#394](https://github.com/shootthesound/Fizgig/issues/394))
 - [pomoe136](https://github.com/pomoe136): Extract on MOSS-Image ([#301](https://github.com/shootthesound/Fizgig/issues/301))
 - [spinolover](https://github.com/spinolover): a Fast Identity run error ([#302](https://github.com/shootthesound/Fizgig/issues/302))
 - [Nessa2026691](https://github.com/Nessa2026691): Context LoRAs in LoKR format ([#304](https://github.com/shootthesound/Fizgig/issues/304)) and tracking down the Context LoRA slowdown ([#307](https://github.com/shootthesound/Fizgig/issues/307)), and the diagnosis and fix for MiniMax H3 helper previews on 16 GB cards ([#372](https://github.com/shootthesound/Fizgig/issues/372))
@@ -226,6 +226,10 @@ Since November:
 - [Marhalt](https://github.com/Marhalt): saying what your subject is ([#365](https://github.com/shootthesound/Fizgig/issues/365))
 - [UNfukashigi](https://github.com/UNfukashigi): the diagnosis and fix for Studio on 12 GB cards with block swap ([#377](https://github.com/shootthesound/Fizgig/issues/377))
 - [RobbieNeko](https://github.com/RobbieNeko): workers that wouldn't start on Linux ROCm ([#379](https://github.com/shootthesound/Fizgig/issues/379))
+- [ongziheng](https://github.com/ongziheng): AMD previews that wouldn't decode on MOSS-Image, Flux 3, Fibo 2, Z-Image and Vimoo ([#383](https://github.com/shootthesound/Fizgig/issues/383))
+- [kvsh88](https://github.com/kvsh88): queueing several runs in a row ([#386](https://github.com/shootthesound/Fizgig/issues/386))
+- [axymeus](https://github.com/axymeus): Choose… opening the Windows file window ([#387](https://github.com/shootthesound/Fizgig/issues/387))
+- [dkspwndj](https://github.com/dkspwndj): an AMD freeze while caching on Windows, which led to the MIOpen database fix ([#389](https://github.com/shootthesound/Fizgig/issues/389))
 - WiseDuck (by email): Gizmo's **Prepare a folder** and clips at any audio sample rate
 - u/Obvious-Bad7548 on r/StableDiffusion: the LCM sampler recipe for H3 Image
 

@@ -56,6 +56,8 @@ class Weight:
         self.switch_from = ""                    # picked over that build: a pref on it moves to this one
         self.same_as = ""                        # another family's pref for the same file (ModelFile.same_as)
         self.signature = ()                      # (tensor, shape) only the right file has (ModelFile.signature)
+        self.revision = None                     # the repo's commit (ModelFile.revision); None = main
+        self.convert = ""                        # "module:function" making the saved file (ModelFile.convert)
 
 
 # The Captions tab captions ANY dataset with the Krea 2 Qwen3-VL text encoder — it follows an
@@ -168,6 +170,7 @@ def _described_families():
                        replaces=f.replaces)
             w.same_as = f.same_as
             w.signature = tuple(f.signature)
+            w.revision, w.convert = f.revision or None, f.convert
             if f.fetch_choice and f.alt_repo and f.alt_path:
                 w.alt = Weight(f.pref_key, f.alt_repo, f.alt_path, f.alt_size_gb or f.size_gb,
                                f"{f.label} — {f.fetch_choice[1]}", optional=w.optional, gated=f.gated,
@@ -272,7 +275,7 @@ def _remote_size(w, token):
     try:
         from huggingface_hub import get_hf_file_metadata, hf_hub_url
         md = get_hf_file_metadata(
-            hf_hub_url(repo_id=w.repo, filename=w.path_in_repo),
+            hf_hub_url(repo_id=w.repo, filename=w.path_in_repo, revision=getattr(w, "revision", None)),
             token=token or os.environ.get("HF_TOKEN") or None)
         return md.size or None
     except Exception:
@@ -294,7 +297,7 @@ def _download_with_progress(w, models_dir, token, log):
     def run():
         try:
             held["path"] = hf_public.download(
-                repo_id=w.repo, filename=w.path_in_repo, local_dir=models_dir,
+                repo_id=w.repo, filename=w.path_in_repo, local_dir=models_dir, revision=getattr(w, "revision", None),
                 token=token or os.environ.get("HF_TOKEN") or None, log=log)
         except BaseException as e:      # re-raised on the calling thread below
             held["err"] = e
@@ -453,6 +456,7 @@ def fetch_weight(w, models_dir, prefs, token=None, log=print, dry_run=False):
         else:
             from fizgig.utils import hf_public
             got = hf_public.download(repo_id=w.repo, filename=w.path_in_repo, local_dir=models_dir,
+                                     revision=getattr(w, "revision", None),
                                      token=token or os.environ.get("HF_TOKEN") or None, log=log)
     except Exception as e:
         name = type(e).__name__
@@ -470,8 +474,23 @@ def fetch_weight(w, models_dir, prefs, token=None, log=print, dry_run=False):
     # hf_hub_download preserves the repo's folder structure under local_dir; the GUI just wants
     # a file, so flatten it into models/ and leave no stray nested dirs behind.
     got = os.path.abspath(got)
+    converted = True
     if got != dest:
-        os.replace(got, dest)
+        if getattr(w, "convert", ""):          # published in another form: convert into dest, drop the download
+            import importlib
+            mod, fn = w.convert.split(":")
+            try:
+                log(f"  [conv] {os.path.basename(got)} -> {w.filename}")
+                getattr(importlib.import_module(mod), fn)(got, dest)
+            except Exception as e:
+                log(f"  [fail] {w.filename}: couldn't convert {os.path.basename(got)}: {type(e).__name__}: {e}")
+                converted = False
+            try:
+                os.remove(got)
+            except OSError:
+                pass
+        else:
+            os.replace(got, dest)
         d = os.path.dirname(got)
         while os.path.normpath(d) != os.path.normpath(models_dir):
             try:
@@ -479,6 +498,8 @@ def fetch_weight(w, models_dir, prefs, token=None, log=print, dry_run=False):
             except OSError:
                 break
             d = os.path.dirname(d)
+    if not converted:
+        return False
 
     if not _valid_safetensors(dest, min_bytes):
         log(f"  [fail] {w.filename} downloaded but failed verification — leaving it for a re-run")

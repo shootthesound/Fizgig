@@ -18,7 +18,7 @@ Vimoo 1.0 Lite is Vimoo-AI's 9.5B video model: one checkpoint for text-to-video 
 | SigLIP (image-to-video) | `vimoo_v1_siglip_so400m_fp16.safetensors` | 0.9 GB |
 | Distilled LoRA (previews) | `vimoo_v1_ti2v_distilled_lora_fp32.safetensors` | 2.3 GB |
 
-All of them come from [Vimoo-AI/Vimoo-1.0-Lite-ComfyUI](https://huggingface.co/Vimoo-AI/Vimoo-1.0-Lite-ComfyUI), the files ComfyUI's Vimoo workflows use. If you already have them in ComfyUI's models folder, point Preferences at them instead of downloading.
+All but one come from [Vimoo-AI/Vimoo-1.0-Lite-ComfyUI](https://huggingface.co/Vimoo-AI/Vimoo-1.0-Lite-ComfyUI), the files ComfyUI's Vimoo workflows use. If you already have them in ComfyUI's models folder, point Preferences at them instead of downloading. Glyph-ByT5 is no longer in Vimoo's repos (since 12 Nov 2026): Download models for me fetches `checkpoints/byt5_model.pt` from [nlpcvcode/Glyph-SDXL-v2](https://huggingface.co/nlpcvcode/Glyph-SDXL-v2), where Vimoo now points, and saves it as `vimoo_v1_glyph_byt5_fp32.safetensors`, the same weights. Preferences also takes the `.pt` as it is.
 
 ## Training data
 

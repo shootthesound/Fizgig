@@ -5,6 +5,30 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 
 NEWS = [
     {
+        "date": "22 Nov 2026",
+        "title": "Studio switches LoRAs in a second",
+        "body": (
+            "Choose another primary LoRA in Studio and press Render: it goes on the model already loaded in a second "
+            "or so, where the whole model used to load again (minutes on a large model such as MOSS-Image).\n\n"
+            "Both AMD launchers now point MIOpen at its packaged kernel database, and a GGUF file in a model slot is "
+            "refused at once instead of being read in full."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#22-nov-2026-studio-switches-loras-in-a-second"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.8.4"}],
+    },
+    {
+        "date": "21 Nov 2026",
+        "title": "Frankenstein mode: blend MiniMax H3 Image with H3 video",
+        "body": (
+            "An experiment: Studio's new Studio mode blends MiniMax H3 Image with H3 video block by block, to see what "
+            "H3 video's sense of motion does for H3 Image's stills. ✨Motion is a good start; it's here for now.\n\n"
+            "H3 Image now runs in Studio on a 16 GB card, Flux 3 trains at bf16 on one, and block swap, AMD previews "
+            "and the training queue get fixes."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#21-nov-2026-frankenstein-mode-blend-minimax-h3-image-with-h3-video"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.8.3"}],
+    },
+    {
         "date": "19 Nov 2026",
         "title": "MiniMax H3 Image fine-tuning, and Studio as a generator",
         "body": (

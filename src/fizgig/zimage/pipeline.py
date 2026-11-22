@@ -74,15 +74,19 @@ def load_vae(path, device, dtype=torch.float32, config=HELPER):
     """The FLUX.1 autoencoder from its single file (LDM key layout), with the reference VAE config."""
     from diffusers import AutoencoderKL
     from fizgig.utils.hf_cache import cached_snapshot_dir
+    from fizgig.modules.wide_attention import ROCM, rocm_vae_processor
     local = cached_snapshot_dir(config)            # the cached config folder: no Hub call once it has been fetched
+    vae = None
     if local is not None:
         try:
             vae = AutoencoderKL.from_single_file(path, config=local, subfolder="vae", torch_dtype=dtype,
                                                  local_files_only=True)
-            return vae.to(device).eval().requires_grad_(False)
         except Exception:
-            pass
-    vae = AutoencoderKL.from_single_file(path, config=config, subfolder="vae", torch_dtype=dtype)
+            vae = None
+    if vae is None:
+        vae = AutoencoderKL.from_single_file(path, config=config, subfolder="vae", torch_dtype=dtype)
+    if ROCM:                                       # its one 512-wide head, computed directly on ROCm (#179, #383)
+        vae.set_attn_processor(rocm_vae_processor())
     return vae.to(device).eval().requires_grad_(False)
 
 

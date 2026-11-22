@@ -55,11 +55,12 @@ def test_server_takes_an_empty_primary_and_refuses_the_save(monkeypatch):
     studio._S.update(state="idle")
 
 
-def test_unload_primary_goes_to_the_worker_and_queue_jobs_load_again(monkeypatch):
+def test_unload_primary_goes_to_the_worker_and_the_load_follows_it(monkeypatch):
     sent = []
     monkeypatch.setattr(studio, "_send", lambda m: sent.append(m))
     studio.primary("")
     assert sent == [{"cmd": "primary", "path": ""}]
     studio._S.update(load_key='{"primary": "A"}', page_key='{"primary": "A"}', primary="A")
     studio._event({"ev": "primary", "primary": "", "primary_blocks": [], "donor_blocks": [], "hash": "", "eq": {}})
-    assert studio._S["primary"] == "" and studio._S["load_key"] is None and studio._S["page_key"] is None
+    # what's loaded is the page's load with no primary now: a queue job with a LoRA swaps it on (#394)
+    assert studio._S["primary"] == "" and studio._S["load_key"] == studio._S["page_key"] == '{"primary": ""}'

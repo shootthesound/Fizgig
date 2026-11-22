@@ -230,11 +230,9 @@ class MemoryEfficientSafeOpen:
         Returns:
             tuple: (header_dict, header_size) containing parsed header and its size.
         """
-        # Read header size (8 bytes, little-endian unsigned long long)
-        header_size = struct.unpack("<Q", self.file.read(8))[0]
-        # Read and decode header JSON
-        header_json = self.file.read(header_size).decode("utf-8")
-        return json.loads(header_json), header_size
+        from fizgig.utils.st_meta import _header      # refuses a length no header has (a GGUF's reads as ~14 GB)
+        header_size, header = _header(self.file)
+        return header, header_size
 
     def get_tensor(self, key: str, device: Optional[torch.device] = None, dtype: Optional[torch.dtype] = None):
         """Load a tensor from the file with memory-efficient strategies.

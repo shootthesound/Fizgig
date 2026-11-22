@@ -81,10 +81,40 @@ def with_prior(loss, prior, base, se_base, mw, *weights):
     return loss + float(prior.weight) * weighted_loss(se_base, *weights, (1.0 - mw).clamp_min(0.0))
 
 
+def release_memory():
+    """Free what was just dropped, now: a garbage collection, then the card's cache back. A model is often a reference
+    cycle (transformers' modules), so dropping it frees nothing until Python's collector happens to run - Flux 3's
+    Qwen3-VL-4B text encoder kept 6.8 GB on the card through a whole run (bf16 couldn't even load on a 16 GB card)."""
+    import gc
+    gc.collect()
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except ImportError:
+        pass
+
+
 class FamilyDriver:
     """Subclass per family. `description` is the family's FamilyDescription."""
 
     description = None
+
+    def __init_subclass__(cls, **kw):
+        """Every driver's unload_text_encoder frees what it dropped before it returns (release_memory), whoever calls
+        it - caching, previews, loss watch, the workbench."""
+        super().__init_subclass__(**kw)
+        fn = cls.__dict__.get("unload_text_encoder")
+        if fn is None or getattr(fn, "_releases", False):
+            return
+
+        def unload_text_encoder(self, te, *a, _fn=fn, **k):
+            out = _fn(self, te, *a, **k)
+            release_memory()
+            return out
+        unload_text_encoder.__doc__ = fn.__doc__
+        unload_text_encoder._releases = True
+        cls.unload_text_encoder = unload_text_encoder
 
     # ---- models ---------------------------------------------------------------------------------
     def load_dit(self, path: str, device):

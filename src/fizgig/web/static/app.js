@@ -179,6 +179,27 @@ function showTrigger(word) {
 }
 const saveTriggerSoon = debounce((word) => api("/api/trigger", {folder: S.imageFolder || "", word}).catch(() => {}), 500);
 
+// the LoRA name follows the training folder (#386): picking a folder brings back the name last used with it (typed,
+// started or queued), or a folder never named gets its own folder's name. A name you typed for no folder in
+// particular is left alone: only the model's default name, none, or one that came with the folder before is replaced
+const saveFolderNameSoon = debounce((folder, name) => name && api("/api/folder_name", {folder, name}).catch(() => {}), 500);
+const folderBase = (p) => String(p || "").replace(/[\\/]+$/, "").split(/[\\/]/).pop()
+  .replace(/[<>:"|?*]/g, "_").replace(/^[.\s]+|[.\s]+$/g, "");
+async function folderNameFollow(was) {
+  const now = S.imageFolder;
+  if (!now || !["draft", "queue"].includes(ctxKind())) return;
+  const get = (f) => api("/api/folder_name?folder=" + encodeURIComponent(f)).then((r) => r.name || "").catch(() => "");
+  const [mine, before] = await Promise.all([get(now), was ? get(was) : ""]);
+  if (S.imageFolder !== now) return;                        // another folder picked meanwhile
+  const cur = String(S.values.LORA_NAME || "").trim();
+  if (cur && cur !== before && cur !== folderBase(was) && cur !== String(defaults().LORA_NAME || "")) return;
+  const name = mine || folderBase(now);
+  if (!name || name === cur) return;
+  S.values.LORA_NAME = name;
+  syncInputs(["LORA_NAME"]);
+  refreshStateSoon(); saveStateSoon();
+}
+
 function defaults() {
   const v = {};
   for (const s of S.fam.form.sections) for (const r of s.rows) if (r.kind !== "note" && r.kind !== "shown") {
@@ -888,6 +909,8 @@ function onValue(r, val) {
        "FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_ON", "SAMPLE_EVERY_N_EPOCHS", "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH",
        "SAMPLE_EVERY_AFTER", "FAMILY_PREVIEW_LOOK", "SAMPLE_CHECKPOINT"].includes(r.key))) sampleLiveSoon();
   if (r.key === "CAPTION_TRIGGER_WORD") { S.trigger = String(val).trim(); $("capTrigger").value = S.trigger; saveTriggerSoon(S.trigger); }
+  if (r.key === "LORA_NAME" && S.imageFolder && ["draft", "queue"].includes(ctxKind()))
+    saveFolderNameSoon(S.imageFolder, String(val || "").trim());
   const extra = r.sets && r.sets[val];            // a kind of training that also sets others (Fine-tune's LR)
   // Fine-tune sets Adafactor (#312): the LoRA optimizer is kept, and comes back when another kind is picked
   const ftOpt = (k) => !!(r.sets && r.sets[k] && "OPTIMIZER_TYPE" in r.sets[k]);
@@ -1117,6 +1140,7 @@ function renderPrefs() {
   if (qt) host.append(qt);                 // between Theme (above) and Web UI
   host.append(webPortCard());
   if (!S.pod) host.append(networkCard());
+  if (!S.onPod && !pageIsElsewhere()) host.append(fileWindowCard());
   host.append(dataFolderCard());
   host.append(outputFolderCard());
   host.append(foldersCard());
@@ -1768,6 +1792,24 @@ function firewallRow() {
   };
   api("/api/lan/firewall").then(show).catch(() => {});
   return box;
+}
+
+// Choose…: Fizgig's own chooser or this computer's Open window (prefs native_file_window; off by default on Windows,
+// #387). Shown only on the machine running Fizgig: a pod or another device always gets Fizgig's chooser
+function fileWindowCard() {
+  const on = el("input", {type: "checkbox"});
+  on.checked = String(S.set.native_file_window) === "1";
+  on.addEventListener("change", () => api("/api/prefs", {changes: {native_file_window: on.checked}})
+    .then(() => { S.set.native_file_window = on.checked ? "1" : "0"; nativePickOff = false; })
+    .catch((e) => { on.checked = !on.checked; showProblems([e.message]); }));
+  return el("div", {class: "section-card"}, el("div", {class: "card-title"}, el("span", {text: "Choose… buttons"})),
+    el("div", {class: "card-desc", text: "Which window opens when you press Choose… to pick a file or folder."}),
+    el("div", {class: "card-content"},
+      el("label", {class: "checkbox-label"}, on, " Use this computer's own Open window"),
+      el("div", {class: "field-hint", text: "Off: Fizgig's chooser, with buttons that go straight to your training " +
+        "data, your trained LoRAs and the Fizgig folder. On: the Open and folder windows of Windows (or " +
+        "your desktop), with its own shortcuts. Off by default on Windows. A pod, or this page opened from another " +
+        "device, always uses Fizgig's chooser."})));
 }
 
 // what Fizgig does on the network by itself (issue #236): finding your other computers and being found by them (a
@@ -6596,7 +6638,7 @@ function studioQueueDraw(q) {
   $("stQPause").textContent = q.paused ? "▶ Resume" : "⏸ Pause";
   $("stQPause").disabled = !q.paused && !q.left;
   $("stQSay").textContent = q.paused ? `Paused. ${q.reason || ""}` : q.waiting || (q.job ? "Rendering…" : q.left ? "" : "Done.");
-  const word = {waiting: "Waiting", loading: "Loading model", rendering: "Rendering", done: "Saved", failed: "Failed"};
+  const word = {waiting: "Waiting", loading: "Loading model", swapping: "Loading LoRA", rendering: "Rendering", done: "Saved", failed: "Failed"};
   const act = (path, body) => async () => {
     try { studioQueueDraw(await api(path, body)); } catch (e) { $("stQSay").textContent = e.message; }
   };
@@ -6607,7 +6649,7 @@ function studioQueueDraw(q) {
       onclick: act("/api/studio/queue/move", {id: it.id, delta: -1})}) : null,
     it.status === "waiting" ? el("button", {class: "btn btn-sm", text: "↓", title: "Later",
       onclick: act("/api/studio/queue/move", {id: it.id, delta: 1})}) : null,
-    ["loading", "rendering"].includes(it.status) ? null : el("button", {class: "btn btn-sm", text: "✕",
+    ["loading", "swapping", "rendering"].includes(it.status) ? null : el("button", {class: "btn btn-sm", text: "✕",
       title: it.status === "waiting" ? "Remove this job" : "Take this line off the list (its saved files stay)",
       onclick: act("/api/studio/queue/remove", {id: it.id})}),
     it.paths && it.paths.length ? el("div", {class: "stq-files"}, ...it.paths.flatMap((p, k) => [k ? "  ·  " : null,
@@ -6649,6 +6691,12 @@ async function studioFamily(res, w, h) {
   const key = $("stFamily").value;
   studioAutosaveShow();                               // Save every render: this model's own tick
   const L = S.st.layout = await api("/api/studio/layout?family=" + encodeURIComponent(key));
+  const frankWith = L.frankenstein || [];             // Frankenstein mode: the models this one's blocks blend with
+  $("stFrankRow").style.display = frankWith.length ? "" : "none";
+  $("stModeFrank").title = `Blend ${frankWith[0] || "another base model"} into this one, block by block: each block ` +
+    "slider is how much of that block comes from it (0 = this model as loaded, 1 = all of it). No LoRA. Baseline is " +
+    "this model on its own; Tweaked is the blend.";
+  if (!frankWith.length) $("stFrank").checked = false;
   const sv = stSaved();
   studioKind(L, sv);
   $("stRes").innerHTML = "";
@@ -6681,6 +6729,11 @@ async function studioFamily(res, w, h) {
   for (const g of L.groups) for (const b of g.blocks) S.st.blocks[b.id] = {pe: true, ps: 1, de: true, ds: 1};
   S.st.locks = new Set(); S.st.dlocks = new Set(); S.st.frozen = new Set(); S.st.dfrozen = new Set();
   S.st.hist = []; S.st.redo = [];
+  // Frankenstein mode follows the tick, loaded or not: its sliders start at 0 and its presets show at once
+  S.st.frank = studioFrankAsked();
+  S.st.frankName = frankWith[0] || "";
+  if (S.st.frank) for (const b of Object.values(S.st.blocks)) b.ps = 0;
+  studioFrankUi();
   studioLuckyCounts();
   studioMasters();
   studioPresets();
@@ -8238,6 +8291,9 @@ function studioNegRow() {
 }
 
 // ---- the sliders ----
+// a primary slider's bounds: in Frankenstein mode a share of the other model's block, 0 to 1; else a LoRA's -3 to 3
+const stLo = () => (S.st.frank ? 0 : -3), stHi = () => (S.st.frank ? 1 : 3);
+const stClampP = (v) => Math.max(stLo(), Math.min(stHi(), v));
 const stFmt = (v) => Math.abs(v - 1) < 1e-9 ? "1.00" : (v >= 0 ? "+" : "") + v.toFixed(2);
 function studioRows() {
   const host = $("stBlocks");
@@ -8248,7 +8304,64 @@ function studioRows() {
       el("div", {}, ...g.blocks.slice(half).map(studioRow)));
     host.append(el("div", {class: "st-group"}, el("h3", {text: g.label}), cols));
   }
+  studioFrankRanges();
   studioActivity();
+}
+
+// the blend's save card: a progress bar while the new base is written, then where it went (or why it couldn't)
+function studioFrankMsg(st) {
+  const box = $("stFrankMsg"), gb = (b) => (b / 1e9).toFixed(1);
+  const s = st.frank_saving;
+  $("stFrankExport").disabled = !!s;
+  if (s) {
+    const bar = el("progress", {max: s.total || 1, value: s.done || 0, class: "st-frank-bar"});
+    box.replaceChildren(el("div", {class: "field-row"}, bar, el("span", {class: "field-hint", text: s.total ?
+      `Writing the new base model… ${gb(s.done)} of ${gb(s.total)} GB` : "Getting the blend ready to write…"})));
+    return;
+  }
+  S.st.frankSaving = false;
+  if (st.frank_error) box.replaceChildren(el("div", {class: "problems", text: st.frank_error}));
+  else if (st.frank_exported) box.replaceChildren(el("div", {class: "field-hint st-saved",
+    text: `Saved: ${st.frank_exported}${st.frank_saved_gb ? ` (${st.frank_saved_gb} GB)` : ""}`}));
+}
+
+// Frankenstein mode (a family's frankenstein_with): another base model blended in block by block
+function studioFrankAsked() {
+  return !!((S.st.layout || {}).frankenstein || []).length && $("stFrank").checked;
+}
+// the tick alone hides the LoRA rows (primary, donor, their mixes): the mode loads no LoRA, so nothing typed there counts
+function studioFrankTick() {
+  const on = studioFrankAsked();
+  if (on !== !!S.st.frank) studioFrankEnter(on, ((S.st.layout || {}).frankenstein || [])[0] || "");
+  else studioFrankUi();
+}
+// the page's side of the mode (from the tick): LoRA rows, lucky limits, the note. What needs the mode LOADED - the Save
+// blend row, Save repaired LoRA out of the way - goes by the "frankenstein" class the status poll sets.
+function studioFrankUi() {
+  const on = !!S.st.frank;
+  $("tab-studio").classList.toggle("frank-asked", on);
+  // rolls from 0 to 0.6 (Peter): past about 0.75, and with many blocks rolled at once, the sweep's blends broke up
+  if (on) { $("stLuckyLo").value = "0"; $("stLuckyHi").value = "0.6"; }
+  else if ($("stLuckyHi").value === "0.6" && $("stLuckyLo").value === "0") $("stLuckyHi").value = "1.5";   // the LoRA default
+  // the switch shows the mode; one short line says what's blended in (the detail is on the button's tooltip)
+  document.querySelectorAll("#stModeSeg .btn").forEach((b) => b.classList.toggle("active", (b.dataset.frank === "1") === on));
+  $("stFrankNote").textContent = on ? `Blending in ${S.st.frankName}: each slider is how much of that block comes from it.` : "";
+}
+function studioFrankRanges() {
+  // in the mode each block slider is a share of the other model's block, 0 to 1; else the LoRA's -3 to 3
+  for (const r of document.querySelectorAll("#stBlocks .st-row:not(.donor) input[type=range]")) {
+    r.min = S.st.frank ? "0" : "-3"; r.max = S.st.frank ? "1" : "3";
+  }
+}
+function studioFrankEnter(on, name) {
+  // the sliders start at 0 (the model as loaded) on entering the mode, and back at 1 (the LoRA as is) on leaving it
+  S.st.frank = on;
+  S.st.frankName = name || "";
+  studioFrankUi();
+  for (const b of Object.values(S.st.blocks)) { b.ps = on ? 0 : 1; b.pe = true; }
+  studioFrankRanges();
+  studioSync(Object.keys(S.st.blocks));
+  studioPresets();                              // the mode's own presets (and your presets for it)
 }
 
 function studioRow(b) {
@@ -8266,9 +8379,12 @@ function studioRow(b) {
       onchange: (e) => {
         const v = Number(String(e.target.value).replace(",", ".").replace(/^\+/, ""));
         if (!Number.isFinite(v)) { row._sync(); return; }
-        studioSet(b.id, sv, Math.max(-3, Math.min(3, Math.round(v * 100) / 100))); studioCommit();
+        const r = Math.round(v * 100) / 100;
+        studioSet(b.id, sv, side === "p" ? stClampP(r) : Math.max(-3, Math.min(3, r))); studioCommit();
       }});
     const btn = (t, title, f) => el("button", {class: "btn btn-sm", text: t, title, onclick: () => { f(); studioCommit(); }});
+    const flip = btn("±", "Flip the sign", () => studioSet(b.id, sv, -st()[sv]));
+    flip.classList.add("st-flip");
     const label = side === "p" ? el("span", {class: "st-label", style: b.color ? `color:${b.color}` : ""},
       b.label, b.cat ? el("small", {text: `[${b.cat}]`}) : null) : el("span", {class: "st-label", text: "donor"});
     const locks = () => side === "p" ? S.st.locks : S.st.dlocks, frozen = () => side === "p" ? S.st.frozen : S.st.dfrozen;
@@ -8281,14 +8397,17 @@ function studioRow(b) {
     const row = el("div", {class: "st-row" + (side === "d" ? " donor" : "")}, lock, tick, label, range, val,
       el("span", {class: "st-btns"},
         btn("0", "Set to 0", () => studioSet(b.id, sv, 0)), btn("1", "Set to 1", () => studioSet(b.id, sv, 1)),
-        btn("±", "Flip the sign", () => studioSet(b.id, sv, -st()[sv])),
+        flip, // ± (a sign means nothing for a blend share: hidden in Frankenstein mode)
         btn("−", "−0.1", () => studioSet(b.id, sv, Math.max(-3, Math.round((st()[sv] - 0.1) * 100) / 100))),
         btn("+", "+0.1", () => studioSet(b.id, sv, Math.min(3, Math.round((st()[sv] + 0.1) * 100) / 100))),
         btn("⇄", "Balance: the other side gets 1 − this (with a donor)", () => {
           const o = side === "p" ? "ds" : "ps", v = st()[sv];
           if (S.st.donor && v >= 0 && v <= 1) { studioSet(b.id, o, Math.round((1 - v) * 100) / 100); studioSet(b.id, "de", true); }
         })));
+    const bal = [...row.querySelectorAll(".st-btns button")].find((x) => x.textContent === "⇄");
+    if (bal) bal.classList.add("st-bal");
     row._sync = () => { tick.checked = st()[en]; range.value = st()[sv];
+      val.title = side === "p" && S.st.frank ? "Type a share from 0 to 1, then Enter" : "Type a value from -3 to 3, then Enter";
       if (document.activeElement !== val) val.value = stFmt(st()[sv]);
       const on = locks().has(b.id); lock.textContent = on ? "🔒" : "🔓"; lock.classList.toggle("on", on); };
     row._sync();
@@ -8302,6 +8421,7 @@ function studioRow(b) {
 }
 
 function studioSync(ids) {
+  if (S.st.frank) for (const b of Object.values(S.st.blocks)) b.ps = stClampP(b.ps);
   document.querySelectorAll("#stBlocks .st-block").forEach((box) => {
     if (!ids || ids.includes(box.dataset.id)) box._rows.forEach((r) => r._sync());
   });
@@ -8389,6 +8509,7 @@ function studioActivity() {
 
 function studioSet(id, k, v, live) {
   if ((k === "ds" || k === "de" ? S.st.dlocks : S.st.locks).has(id)) { studioSync([id]); return; }
+  if (k === "ps") v = stClampP(v);
   S.st.blocks[id][k] = v;
   studioSync([id]);
   studioSchedule(live);
@@ -8460,15 +8581,20 @@ function studioMastersFollow() {
 }
 
 // ---- presets and bulk ----
+// your presets are kept apart in Frankenstein mode: there a slider is a blend weight, not a LoRA strength
+function studioPresetKey() { return S.st.layout.key + (S.st.frank ? "__frankenstein" : ""); }
+function studioBuiltins() { const L = S.st.layout; return S.st.frank ? (L.frank_presets || []) : L.presets; }
+
 async function studioPresets() {
   const L = S.st.layout, sel = $("stPreset");
-  const user = (await api("/api/studio/presets?family=" + encodeURIComponent(L.key)).catch(() => ({user: []}))).user;
+  if (!L) return;
+  const user = (await api("/api/studio/presets?family=" + encodeURIComponent(studioPresetKey())).catch(() => ({user: []}))).user;
   sel.innerHTML = "";
   sel.append(el("option", {value: "", text: "Presets…"}));
-  // every model's: the primary and the donor evenly, block by block (needs a donor loaded)
-  sel.append(el("option", {value: "x:even", text: "Primary + donor, 50/50", title: "Every block both LoRAs touch: " +
-    "each at 0.5. A block only one of them touches: that one at full strength. Needs a donor LoRA loaded."}));
-  for (const p of L.presets) sel.append(el("option", {value: "b:" + p.name, text: p.name}));
+  // every model's: the primary and the donor evenly, block by block (needs a donor loaded; none in Frankenstein mode)
+  if (!S.st.frank) sel.append(el("option", {value: "x:even", text: "Primary + donor, 50/50", title: "Every block both " +
+    "LoRAs touch: each at 0.5. A block only one of them touches: that one at full strength. Needs a donor LoRA loaded."}));
+  for (const p of studioBuiltins()) sel.append(el("option", {value: "b:" + p.name, text: p.name}));
   if (user.length) sel.append(el("optgroup", {label: "Your presets"}, ...user.map((n) => el("option", {value: "u:" + n, text: n}))));
 }
 
@@ -8492,16 +8618,18 @@ async function studioPresetApply(v) {
     $("stStatus").textContent = `Primary + donor, 50/50: ${both} block(s) at 0.5 each, ${one} touched by one LoRA ` +
       "at full strength" + (S.st.locks.size + S.st.dlocks.size ? "; locked sliders left alone." : ".");
   } else if (v.startsWith("b:")) {
-    const p = L.presets.find((x) => x.name === v.slice(2));
+    const p = studioBuiltins().find((x) => x.name === v.slice(2));
+    if (!p) { $("stPreset").value = ""; return; }
+    const rest = S.st.frank ? 0 : 1;              // a block the preset doesn't name: the LoRA as is / the model as loaded
     for (const [id, b] of Object.entries(S.st.blocks)) {
       if (!S.st.dlocks.has(id)) Object.assign(b, {de: true, ds: 1});
       if (S.st.locks.has(id)) continue;
-      Object.assign(b, {pe: true, ps: 1});
+      Object.assign(b, {pe: true, ps: rest});
       if (p.keep) b.pe = p.keep.includes(L.category_of[id]);
       if (p.blocks && id in p.blocks) { b.pe = true; b.ps = Number(p.blocks[id]); }
     }
   } else {
-    const r = await api("/api/studio/preset_load", {family: L.key, name: v.slice(2)});
+    const r = await api("/api/studio/preset_load", {family: studioPresetKey(), name: v.slice(2)});
     for (const [id, bs] of Object.entries(r.blocks || {})) {
       const b = S.st.blocks[id];
       if (!b) continue;
@@ -8582,7 +8710,7 @@ function studioPresetSaveOpen() {
     const blocks = {};
     for (const [id, b] of Object.entries(S.st.blocks)) blocks[id] = {primary_enabled: b.pe, primary_strength: b.ps, donor_enabled: b.de, donor_strength: b.ds};
     try {
-      const r = await api("/api/studio/preset_save", {family: S.st.layout.key, name: name.value, blocks, overwrite: !!overwrite});
+      const r = await api("/api/studio/preset_save", {family: studioPresetKey(), name: name.value, blocks, overwrite: !!overwrite});
       if (r.exists) { msg.replaceChildren(document.createTextNode("That name is taken. "), el("button", {class: "btn btn-sm btn-danger", text: "Replace it", onclick: () => save(true)})); return; }
       host.innerHTML = ""; studioPresets(); $("stStatus").textContent = "Preset saved.";
     } catch (e) { msg.textContent = e.message; }
@@ -8641,7 +8769,12 @@ function studioPending() {
 
 function studioSchedule(live) {
   if (!S.st.ready) return;
-  if (S.st.split === "base") {                        // sliders change Tweaked only, and it's hidden
+  if (!!S.st.frank !== !!S.st.frankLoaded) {          // ticked (or unticked) since the load: Render loads it that way
+    $("stStatus").textContent = S.st.frank ? "Press Render to load Frankenstein mode: the sliders are blend shares now." :
+      "Press Render to leave Frankenstein mode: the sliders are LoRA strengths again.";
+    return;
+  }
+  if (S.st.split === "base" && !S.st.noLora) {        // sliders change Tweaked only, and it's hidden
     $("stStatus").textContent = "Tweaked is hidden: slider changes render when you show it again and press Render.";
     return;
   }
@@ -8652,7 +8785,7 @@ function studioSchedule(live) {
 async function studioRender() {
   if (!$("stPrompt").value.trim()) { $("stStatus").textContent = "Enter a prompt (include the LoRA's trigger word), then press Render."; return; }
   if (S.st.foreign && !(S.stq && S.stq.job)) {       // a Studio queue job loaded another model or LoRA: yours again
-    S.st.foreign = false; S.st.loadedKey = "";
+    await studioAdopt();
     return studioStart();
   }
   // seed 0: random, rolled by Render / Start (studioStart) and kept while sliders and the other controls render, so
@@ -8667,11 +8800,26 @@ async function studioRender() {
   try {
     const r = await api("/api/studio/render", {state, ...studioExtra(), ...studioMixExtra(), ...setup});
     if (r.after_job) $("stStatus").textContent = "Renders when the Studio queue's job finishes…";
-    if (r.reload) { S.st.foreign = false; S.st.loadedKey = ""; return studioStart(); }   // a job's LoRA is loaded
+    if (r.reload) { await studioAdopt(); return studioStart(); }   // a job's LoRA is loaded
     studioPoll();
   }
   catch (e) { $("stStatus").textContent = e.message; }
   finally { if (S.st.upHold) S.st.upHold = S.st.upNow = S.st.upPrev = 0; }     // the held Upscale request has gone
+}
+
+// What's loaded is a Studio queue job's (or another tab's). The server compares it with this page's load: only the
+// primary LoRA differs - take it as this page's load with that primary, so studioStart swaps this page's LoRA on in
+// seconds (#394); the same primary too - render on it as it is; anything else - load again
+async function studioAdopt() {
+  S.st.foreign = false; S.st.loadedKey = "";
+  const L = S.st.layout;
+  if (!L || L.kind === "video" || studioFrankAsked()) return;
+  try {
+    const r = await api("/api/studio/adopt", studioLoadBody());
+    const fast = (document.querySelector('input[name="stDit"]:checked') || {}).value !== "full";
+    if (r.same) S.st.loadedKey = studioLoadKey(L, fast);
+    else if (r.swap) S.st.loadedKey = studioLoadKey(L, fast, r.primary || "");
+  } catch (e) { /* load again */ }
 }
 
 function studioRollSeed() { S.st.seedUsed = 1 + Math.floor(Math.random() * (2 ** 31 - 2)); }
@@ -8683,13 +8831,14 @@ function studioLoadBody() {
   return {family: L.key, primary: $("stPrimary").value.trim(), donor: $("stDonor").value.trim(),
     fast, turbo: $("stTurbo").checked, negative: $("stNeg").value.trim(),
     h3_model: L.kind === "video" ? $("stH3Model").value : "", base: L.kind === "video" ? $("stH3Base").value : "",
-    canvas: studioCanvas()};
+    canvas: studioCanvas(), frankenstein: studioFrankAsked()};
 }
 
 // what a loaded model is: the model, the primary and the preview settings - a change of any is a reload at Render
-function studioLoadKey(L, fast) {
-  return [L.key, $("stPrimary").value.trim(), fast, L.kind === "video" ? $("stH3Model").value + $("stH3Base").value : "",
-    (L.render_choice || {}).value || "", L.follow_ck || "", L.follow_look || "", L.follow_turbo || ""].join("|");
+function studioLoadKey(L, fast, primary) {
+  return [L.key, primary === undefined ? $("stPrimary").value.trim() : primary, fast, L.kind === "video" ? $("stH3Model").value + $("stH3Base").value : "",
+    (L.render_choice || {}).value || "", L.follow_ck || "", L.follow_look || "", L.follow_turbo || "",
+    studioFrankAsked() ? "frank" : ""].join("|");
 }
 
 async function studioStart() {
@@ -8712,6 +8861,12 @@ async function studioStart() {
       studioRender();
       return;
     }
+    // only the primary LoRA changed: it goes on the loaded model in seconds, not a model reload of minutes (#394).
+    // Not a video model (H3's engine switches an old LoRA off rather than taking it out) or Frankenstein mode
+    if (st.state === "ready" && !st.rendering && !st.worker_busy && !S.st.foreign && L.kind !== "video" &&
+        !st.frankenstein && !studioFrankAsked() && S.st.loadedKey === studioLoadKey(L, fast, st.primary || "")) {
+      if (await studioSwapPrimary(key, st.primary_seq || 0)) return;
+    }
     if (st.state === "loading" || st.rendering || st.worker_busy) {   // never a new model under a render going
       $("stStatus").textContent = "A model is loading or a render is going: Add to queue lines this one up behind " +
         "it (or Cancel the one going, then Render).";
@@ -8728,6 +8883,36 @@ async function studioStart() {
   } catch (e) { $("stStatus").textContent = e.message; S.st.upHold = S.st.upNow = S.st.upPrev = 0; }
 }
 
+// Another primary on the loaded model (the worker takes the old one out and wires the new one): true = done here (a
+// render follows, or the LoRA couldn't load and the old one is back on); false = no answer, so Render loads it fresh
+async function studioSwapPrimary(key, seq) {
+  const p = $("stPrimary").value.trim(), L = S.st.layout;
+  if (S.st.eq && S.st.eq.primary) studioEq("primary", false);
+  $("stStatus").textContent = "Loading the LoRA…";
+  const r = await api("/api/studio/primary", {path: p});
+  S.st.myLoad = r.load_id || S.st.myLoad;               // this tab's own change: another tab sees it as a new load
+  for (let i = 0; i < 600; i++) {                     // a LoRA file loads in seconds: two minutes is plenty
+    await new Promise((r) => setTimeout(r, 200));
+    const s = await api("/api/studio/status");
+    if ((s.primary_seq || 0) > seq) {
+      if (s.primary !== p) { $("stStatus").textContent = s.status || "Couldn't load that LoRA."; studioPoll(); return true; }
+      // the primary's epochs / LoRA mix went with it; the donor's epoch blend stays (as Unload primary)
+      S.st.mix = {mode: "off", epochs: [], rows: []};
+      document.querySelector('input[name="stMixMode"][value="off"]').checked = true;
+      $("stMixInfo").textContent = ""; studioMixLayout();
+      S.st.loadedKey = key; S.st.foreign = false;
+      if ($("stDonor").value.trim() !== (s.donor || "")) await api("/api/studio/donor", {path: $("stDonor").value.trim()});
+      if (L.follows_samples) await api("/api/studio/settings", {family: L.key, negative: $("stNeg").value.trim()});
+      studioPoll();
+      studioRender();
+      return true;
+    }
+    if (s.state !== "ready") break;
+  }
+  S.st.loadedKey = "";
+  return false;
+}
+
 // Studio's status poll. It always comes round again while the tab is open: a status request that failed, or an error
 // while drawing one, used to end it, and then a finished render never showed until something else polled (Cancel did)
 async function studioPoll() {
@@ -8742,8 +8927,8 @@ async function studioPollOnce() {
   if (st.load_id && S.st.myLoad && st.load_id !== S.st.myLoad) S.st.foreign = true;
   // your render waited for a queue job that had another LoRA loaded: load yours again and render it (once)
   if (st.page_waiting && !S.st.reloading && st.state === "ready" && !st.rendering) {
-    S.st.reloading = true; S.st.foreign = false; S.st.loadedKey = "";
-    studioStart().finally(() => { S.st.reloading = false; });
+    S.st.reloading = true;
+    studioAdopt().then(studioStart).finally(() => { S.st.reloading = false; });
   }
   let qActive = false;
   try { qActive = studioQueueDraw(await api("/api/studio/queue")); } catch (e) { /* an older server */ }
@@ -8754,7 +8939,7 @@ async function studioPollOnce() {
   // Continue, Loop back and Upscale work on the clip in the Tweaked pane: they wait for the render going now (a
   // queued copy could find another clip there by its turn); a queued job upscales only by its Auto tick
   for (const id of ["stContinue", "stLoopBack", "stUpGo", "stUpPrev", "stKeepBtn"]) {
-    $(id).disabled = going || S.st.split === "base" || !!S.st.noTweak;
+    $(id).disabled = going || (S.st.split === "base" && !S.st.noLora) || !!S.st.noTweak;
   }
   $("stStart").title = going ? "A model is loading or a render is going: Add to queue lines this one up behind it " +
     "(or Cancel the one going)." : "";
@@ -8763,7 +8948,14 @@ async function studioPollOnce() {
   S.st.donor = !!st.donor;
   S.st.primaryBlocks = new Set(st.primary_blocks || []); S.st.donorBlocks = new Set(st.donor_blocks || []);
   // no LoRA loaded: Studio renders the base model on its own (a zero adapter stands in for the primary)
-  S.st.noPrimary = S.st.ready && !st.primary;
+  const frank = S.st.ready && !!st.frankenstein;
+  S.st.frankOut = st.frank_out || "";
+  S.st.frankLoaded = frank;
+  if (S.st.frankSaving || st.frank_saving || st.frank_error) studioFrankMsg(st);
+  $("tab-studio").classList.toggle("frankenstein", frank);
+  if (frank && !$("stFrankOut").value) $("stFrankOut").value = S.st.frankOut || "";
+  if (frank && !S.st.frank) { $("stFrank").checked = true; studioFrankTick(); }   // found loaded (a page reload)
+  S.st.noPrimary = S.st.ready && !st.primary && !frank;
   S.st.noLora = S.st.noPrimary && !st.donor;
   $("tab-studio").classList.toggle("no-primary", S.st.noPrimary);
   $("tab-studio").classList.toggle("no-lora", S.st.noLora);
@@ -8774,7 +8966,12 @@ async function studioPollOnce() {
   if (String(st.up_room) !== String(S.st.upRoom)) { S.st.upRoom = st.up_room; studioUpSummary(); }
   // loaded with nothing to render yet: say what it waits for (a prompt), not that a preview is coming
   const waiting = st.state === "ready" && !st.rendering && !st.shown && !$("stPrompt").value.trim();
-  $("stStatus").textContent = (waiting ? "Loaded. Enter a prompt (include the LoRA's trigger word), then press Render." :
+  // another Studio tab (or window) loaded over this one's model or LoRA: Studio holds one at a time, so say so - this
+  // tab's model picker still shows its own setup, which Render loads again (#395)
+  const otherTab = S.st.foreign && st.load_by === "page" && !(S.stq && S.stq.job);
+  $("stStatus").textContent = otherTab ? "Another Studio tab or window loaded its own model or LoRA over this one's " +
+    "(Studio holds one at a time). Render here loads this tab's setup again." :
+    (waiting ? "Loaded. Enter a prompt (include the LoRA's trigger word), then press Render." :
     st.status || $("stStatus").textContent) +
     (st.status && /^(Loaded|Ready|Donor loaded)/.test(st.status) && studioEqNote(st) ? " " + studioEqNote(st) : "");
   $("stBadge").textContent = {loading: "Loading", ready: st.rendering ? "Rendering" : "Loaded", idle: ""}[st.state] || "";
@@ -8847,9 +9044,11 @@ async function studioPollOnce() {
       (ps === 1 ? "Baseline (LoRA at default 1.0)" : `Baseline (LoRA at ${ps})`) +
       (st.donor ? " - the donor is not in the baseline" : "");
     $("stTweakCap").textContent = noTweak ? "Tweaked (not rendered: it was hidden - press Render to fill it)" :
+      S.st.frankLoaded ? `The blend (${S.st.frankName}'s blocks at the sliders)` :
       !st.primary && !st.donor ? "The base model (no LoRA)" :
       "Tweaked (current sliders)" + (st.donor ? " - includes the donor" : "");
     if (!st.primary && st.donor) $("stBaseCap").textContent = "Baseline: the base model (no primary LoRA)";
+    if (S.st.frankLoaded) $("stBaseCap").textContent = `Baseline: ${S.st.layout.name} as loaded`;
   }
   studioNoLoraPane(st);
   studioAceNotes(st.notes);
@@ -9069,6 +9268,14 @@ function wireStudio() {
   new MutationObserver(studioDockPlay).observe($("stPlayBoth"), {attributes: true, attributeFilter: ["style"]});
   window.addEventListener("resize", debounce(() => { const d = $("stDock"); if (d && d.classList.contains("floating")) studioDockClamp(d); }, 150));
   $("stFamily").addEventListener("change", () => { studioFamily(); stRemember(); });
+  $("stFrank").addEventListener("change", studioFrankTick);
+  // Studio mode: LoRA | Frankenstein - the switch sets the (hidden) tick the mode follows
+  $("stModeSeg").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-frank]");
+    if (!b) return;
+    $("stFrank").checked = b.dataset.frank === "1";
+    studioFrankTick();
+  });
   // the clip row: length / size / steps / speed LoRA / sound wait for Render, as Model and Base do
   for (const id of ["stH3Len", "stH3LenS", "stH3W", "stH3H", "stH3Steps", "stH3Turbo", "stH3Sound", "stH3Boost", "stH3Pieces", "stH3PieceS"])
     $(id).addEventListener("change", () => { if (id.startsWith("stH3Len") || id === "stH3PieceS") studioLenOther(true); if (id === "stH3Pieces") studioLenOther(); studioH3Remember(); studioPending(); });
@@ -9301,7 +9508,8 @@ function wireStudio() {
   playTogether($("stPlayBothBtn"), () => {
     const v = S.st.layout?.kind === "video";
     const ids = (v ? ["stBaseVid", "stTweakVid"] : ["stBaseAud", "stTweakAud"])     // only the panes on screen
-      .filter((id) => !(S.st.split === "tweak" && id.startsWith("stBase")) && !(S.st.split === "base" && id.startsWith("stTweak")));
+      .filter((id) => !((S.st.split === "tweak" || S.st.noLora) && id.startsWith("stBase")) &&
+        !(S.st.split === "base" && !S.st.noLora && id.startsWith("stTweak")));
     if ($("stNolPane").style.display !== "none") ids.unshift(v ? "stNolVid" : "stNolAud");
     return ids;
   });
@@ -9311,7 +9519,7 @@ function wireStudio() {
   });
   $("stQAdd").addEventListener("click", studioQueueAdd);
   // the arrows between Baseline and Tweaked: ◀ hides the Baseline (Tweaked takes the width), ▶ hides Tweaked; the
-  // arrow left at the edge brings the other back. Remembered in this browser
+  // arrow left at the edge brings the other back
   const split = (mode) => {
     S.st.split = mode;
     // a pane stepping aside stops playing (an unmuted clip would go on being heard unseen)
@@ -9321,14 +9529,13 @@ function wireStudio() {
     $("stPreview").classList.toggle("only-base", mode === "base");
     $("stSplitL").title = mode === "base" ? "Show Tweaked again, beside the Baseline" : "Hide the Baseline: Tweaked takes the whole width";
     $("stSplitR").title = mode === "tweak" ? "Show the Baseline again, beside Tweaked" : "Hide Tweaked: the Baseline takes the whole width";
-    try { localStorage.setItem("fizgig_st_split", mode); } catch (e) { /* this browser keeps nothing */ }
     if (S.st.layout) studioMetrics();
     if (mode !== "tweak" && S.st.noBase || mode !== "base" && S.st.noTweak)
       $("stStatus").textContent = "Press Render to fill the pane that was hidden.";
   };
-  let splitWas = "both";
-  try { splitWas = localStorage.getItem("fizgig_st_split") || "both"; } catch (e) { /* both */ }
-  split(["tweak", "base"].includes(splitWas) ? splitWas : "both");
+  // both panes each time the page opens: a pane hidden last time isn't remembered (it hid renders without a word)
+  try { localStorage.removeItem("fizgig_st_split"); } catch (e) { /* this browser keeps nothing */ }
+  split("both");
   $("stSplitL").addEventListener("click", () => split(S.st.split === "base" ? "both" : "tweak"));
   $("stSplitR").addEventListener("click", () => split(S.st.split === "tweak" ? "both" : "base"));
   const stqOpen = (open) => {                         // the queue bar's list: open or closed, remembered here
@@ -9365,6 +9572,36 @@ function wireStudio() {
   wireStudioSetups();
   $("stEqD").addEventListener("click", () => studioEq("donor", !S.st.eq.donor));
   $("stCancel").addEventListener("click", () => api("/api/studio/cancel", {}).then(studioPoll).catch(() => {}));
+  // Folder… beside a save box: the folder picker, keeping the file name in the box (or the usual one when it's empty)
+  const studioSaveFolder = (id, name) => {
+    const cur = $(id).value.trim();
+    const base = cur.split(/[\\/]/).pop() || "";
+    const file = base.trim() || name();
+    const dir = cur.slice(0, cur.length - base.length).replace(/[\\/]+$/, "");
+    pick(dir, true, (p) => {
+      $(id).value = p.replace(/[\\/]+$/, "") + (p.includes("\\") ? "\\" : "/") + file;
+      if (id === "stOut") stRemember();
+    });
+  };
+  const fileOf = (p) => (p || "").split(/[\\/]/).pop();
+  $("stOutPick").addEventListener("click", () => studioSaveFolder("stOut",
+    () => (fileOf($("stPrimary").value).replace(/\.safetensors$/i, "") || "lora") + "_repaired.safetensors"));
+  $("stFrankOutPick").addEventListener("click", () => studioSaveFolder("stFrankOut",
+    () => fileOf(S.st.frankOut) || ((S.st.layout || {}).name || "model").replace(/\s+/g, "_") + "_frankenstein.safetensors"));
+  $("stFrankExport").addEventListener("click", async () => {
+    // Frankenstein mode: the blend at the sliders as a new base model; a file already there needs a second press
+    if (!S.st.frankLoaded) { $("stStatus").textContent = "Press Render to load Frankenstein mode first: then the blend can be saved."; return; }
+    const out = $("stFrankOut").value.trim();
+    const again = S.st.frankOverwrite === out;
+    try {
+      const r = await api("/api/studio/frank_export", {out, state: studioState(), overwrite: again});
+      if (r.exists) { S.st.frankOverwrite = out; studioFrankMsg({frank_error: "That file is there already: press Save blend as a new base again to replace it."}); return; }
+      S.st.frankOverwrite = null;
+      S.st.frankSaving = true;                   // the card shows it at once; the poll takes over
+      studioFrankMsg({frank_saving: {done: 0, total: 0}});
+      studioPoll();
+    } catch (e) { studioFrankMsg({frank_error: e.message}); }
+  });
   $("stUnload").addEventListener("click", async () => { await api("/api/studio/reset", {}); S.st.ready = false; S.st.loadedKey = ""; studioPoll(); });
   $("stPrimaryPick").addEventListener("click", () => pick($("stPrimary").value || loraStart(), false, (p) => { $("stPrimary").value = p; stRemember(); }));
   $("stDonorPick").addEventListener("click", () => pick($("stDonor").value || $("stPrimary").value, false, (p) => { $("stDonor").value = p; stRemember();
@@ -9379,8 +9616,11 @@ function wireStudio() {
     document.querySelector('input[name="stMixMode"][value="off"]').checked = true;
     $("stMixInfo").textContent = ""; studioMixLayout();
     if (!S.st.ready) return;
+    if (S.st.foreign) { S.st.loadedKey = ""; studioPending(); return; }   // another tab's model: Render loads this one's
     try {
-      await api("/api/studio/primary", {path: ""});
+      const r = await api("/api/studio/primary", {path: ""});
+      S.st.myLoad = r.load_id || S.st.myLoad;              // this tab's own change, not another tab's
+      S.st.foreign = false;
       const fast = (document.querySelector('input[name="stDit"]:checked') || {}).value !== "full";
       S.st.loadedKey = studioLoadKey(S.st.layout, fast);       // what's loaded now: Render needn't reload it
       studioPoll(); studioPending();
@@ -9690,9 +9930,17 @@ function openInstr() {
   if (!t) return;
   $("capInstrBox").style.display = "";
   $("capInstr").value = t.instruction;
-  $("capInstrHint").textContent = `What Qwen3-VL is told for "${t.label}"` + (t.edited ? " (edited)" : " (as shipped)") +
-    ". Saved here. Auto-recaption uses it too when the Training tab's First try / Second try picks this task " +
-    "(by default Training caption first, then Exhaustive detail).";
+  // every captioner that follows instructions (Qwen3-VL, JoyCaption) is told the same text for a task: name the one
+  // picked. With extra options (JoyCaption) this is only the first part of what it's told - say so, and where the rest is
+  const d = capDesc() || {}, who = d.label || "The captioner";
+  const parts = (d.prompt_extras || []).length ?
+    `The main instruction for "${t.label}"` + (t.edited ? " (edited)" : " (as shipped)") + `: the start of what ${who} ` +
+    "is told. Your own sentences and the ticked options below are added after it; the \"It's told\" line under them " +
+    "shows the whole text." :
+    `What ${who} is told for "${t.label}"` + (t.edited ? " (edited)" : " (as shipped)") + ".";
+  $("capInstrHint").textContent = parts + " Saved here, for every captioner that follows instructions. Auto-recaption " +
+    "(always Qwen3-VL) uses it too when the Training tab's First try / Second try picks this task (by default " +
+    "Training caption first, then Exhaustive detail).";
   $("capInstrStatus").textContent = "";
 }
 
@@ -9703,6 +9951,7 @@ async function saveInstr(text) {
   await loadCaptionOptions();
   $("capTask").value = keep;
   openInstr();
+  capSentShow();                                   // the "It's told" line follows the saved text
   $("capInstrStatus").textContent = "Saved.";
 }
 
@@ -10730,10 +10979,11 @@ function playTogether(btn, ids) {
 
 // ---- file picker -------------------------------------------------------------------------------------------
 let pickDone = null, pickDir = false, nativePickOff = false;
-// On the machine running Fizgig: the computer's own Open / folder window. Cancel there = nothing; no window to be
-// had (no tkinter, no screen, another computer, an error) = Fizgig's own picker below.
+// On the machine running Fizgig, with Preferences' "Use this computer's own Open window" on (off by default on
+// Windows, #387): the computer's own Open / folder window. Cancel there = nothing; no window to be had (no tkinter,
+// no screen, another computer, an error) = Fizgig's own picker below.
 async function pick(start, dirOnly, done) {
-  if (!nativePickOff && !pageIsElsewhere()) {
+  if (!nativePickOff && !pageIsElsewhere() && String((S.set || {}).native_file_window) === "1") {
     try {
       const r = await api(`/api/native_pick?dir=${dirOnly ? 1 : 0}&path=${encodeURIComponent(start || "")}`);
       if (r && r.path) { done(r.path); return; }
@@ -12311,7 +12561,7 @@ function wire() {
   const setFolder = () => {
     const was = S.imageFolder;
     S.imageFolder = folder.value.trim(); loadTrigger(); refreshStateSoon(); saveStateSoon();
-    if (S.imageFolder !== was) lookForget();
+    if (S.imageFolder !== was) { lookForget(); folderNameFollow(was); }
   };
   folder.addEventListener("change", setFolder);
   $("uploadFiles").addEventListener("change", (e) => { uploadFiles([...e.target.files]); e.target.value = ""; });
@@ -12544,17 +12794,21 @@ function wire() {
         const q = (S.run && S.run.web_queue && S.run.web_queue.items) || [], live = S.run.running || S.run.state === "starting";
         const before = r.position > 1 ? (q[r.position - 2] || {}).lora : live ? S.run.lora : "";
         const eta = r.position === 1 && live && S.run.progress && S.run.progress.eta;
+        // added: the form stays your own setup, Add to queue with it, so the next run is a folder and a name away
+        // (#386: it used to become the queued run, and only the pill led back to queue another)
+        // position 0: nothing was training, so the server started it straight away
         showProblems([], ed ? `Saved: queued run ${r.position} has these settings now.` :
-          `Added to the queue as number ${r.position}` + (before ? `: it starts after ${before}` + (eta ? ` (about ${eta})` : "") :
-          ": it starts as soon as nothing else is training") + ".");
+          (r.position ? `Added to the queue as number ${r.position}` + (before ? `: it starts after ${before}` +
+            (eta ? ` (about ${eta})` : "") : ": it starts as soon as nothing else is training") + ". " +
+            "To change this one, use the pill or Edit in the queue. " : "Nothing else was training, so it has started. ") +
+          "To queue another, pick its training folder and name, then Add to queue again.");
         await pollRun();
         const queued = ((S.run.web_queue || {}).items || []).some((i) => i.id === r.id);
         if (ed && queued) {                                   // saved: still that queued run, as it now is
           queueEditing({...ed, n: r.position || ed.n});
           $("queueEditText").replaceChildren(el("b", {text: `Saved: queued run ${r.position || ed.n}`}),
             el("span", {text: (ed.lora ? `: ${ed.lora}. ` : ". ") + "Change more and Save to queue again, or leave with the pill."}));
-        } else if (!ed && queued) await ctxSwitch({kind: "queue", id: r.id});   // added: the tabs show that job now
-        else if (ed) queueEditing(null);                      // it started meanwhile: it is the run now
+        } else if (ed) queueEditing(null);                    // it started meanwhile: it is the run now
       } else {
         showProblems(r.problems || (r.error ? [r.error] : []));
         if (ed) $("queueEditText").replaceChildren(el("b", {text: `Not saved: `}),   // the bar is where you pressed it
@@ -12568,10 +12822,12 @@ function wire() {
   });
   $("queueEditSave").addEventListener("click", () => $("btnQueue").click());
   $("btnQueueCancel").addEventListener("click", async () => {
+    // the queued run stays as it was, and the form goes back to your own setup (#386: Cancel edit used to stay on
+    // the queued run, its bar still up)
     const c = S.ctx || {};
-    if (c.kind === "queue") await ctxSwitch({kind: "queue", id: c.id});    // its settings as queued, back in the form
+    if (c.kind === "queue") await ctxSwitch({kind: "draft"});
     else queueEditing(null);
-    $("runStatus").textContent = "Edit cancelled: the queued run is as it was.";
+    $("runStatus").textContent = "Edit cancelled: the queued run is as it was, and the form is your own setup again.";
   });
   $("webQueueStart").addEventListener("click", () => api("/api/queue/start", {}).then(pollRun)
     .catch((e) => { $("runStatus").textContent = e.message; }));

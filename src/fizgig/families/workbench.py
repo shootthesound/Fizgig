@@ -172,6 +172,42 @@ class WorkbenchEngine:
         self._source_cache = {}
         self.reference_path = None
         self._reference_cache = {}
+        # Frankenstein mode (families/frankenstein.py): another base DiT blended into this one block by block, the
+        # primary sliders its weights (0 = this model, 1 = the other); None = off
+        self.frank = None
+
+    # ---- Frankenstein mode ------------------------------------------------------------------------------------------
+    def frankenstein(self, other_path, other_lora=None):
+        """Blend another base DiT into the loaded one, block by block (a fresh session: call after load_primary(""))."""
+        from fizgig.families.frankenstein import DiTBlend
+        if self.pipeline is None or self.dit is None:
+            raise RuntimeError("Pipeline not loaded; call ensure_pipeline() first.")
+        ring = getattr(self.dit, "_h2d_offloader", None)
+        if getattr(self, "swapped", 0) and getattr(ring, "kind", "") != "int8":
+            # block swap is fine when it's H3's int8 streaming ring: a swapped block blends in its RAM master
+            # (DiTBlend._swap_home); any other swap moves the weights in ways the blend doesn't follow
+            raise ValueError("Frankenstein mode can't blend this model's swapped blocks (it needs int8 block "
+                             "streaming, or no block swap). Set Preferences' inference block swap to Auto or 0.")
+        self.frank = DiTBlend(self.dit, self.block_groups(), other_path, other_lora=other_lora, log=logger.info,
+                              own_path=getattr(self, "dit_path", None))   # read back, not held: ~42 GB less RAM
+        self.primary_block_ids = sorted(self.frank.items)
+        self._invalidate_baseline_cache()
+        self._invalidate_activation_cache()
+
+    def frank_export(self, out_path, state=None, progress=None):
+        """The blend (at the state's sliders, or as it is now) as a new base file in the loaded model's format."""
+        if self.frank is None:
+            raise ValueError("Frankenstein mode isn't on.")
+        if state is not None:
+            self.frank.set(self.frank_weights(state))
+        if not any(w > 0 for w in self.frank.weights().values()):
+            raise ValueError("Nothing is blended: move a block slider above 0 first.")
+        return self.frank.export(self.dit_path, out_path, log=logger.info, progress=progress)
+
+    def frank_weights(self, state):
+        """The blend weights a slider state asks for: each block's primary slider, 0..1 (off = 0)."""
+        return {b: (min(1.0, max(0.0, float(bs.primary_strength))) if bs.primary_enabled else 0.0)
+                for b, bs in state.blocks.items()}
 
     # ---- the block map ------------------------------------------------------------------------------
     def block_groups(self):
@@ -202,6 +238,7 @@ class WorkbenchEngine:
         speed LoRA: never under the block sliders, never in a save."""
         if self.pipeline is not None:
             return
+        self.dit_path = dit_path                     # Frankenstein mode exports the blend in this file's format
         self.checkpoint_sampling = preview_sampling
         self.speed_on_checkpoint = bool(speed_on_checkpoint and preview_sampling is not None)
         if preview_sampling is not None and not self.speed_on_checkpoint:
@@ -502,6 +539,9 @@ class WorkbenchEngine:
     def apply_state(self, state):
         """Per-block strength / on-off and each LoRA's load strength, live (no reload)."""
         if self.primary_network is None:
+            return
+        if self.frank is not None:              # Frankenstein mode: the sliders are blend weights, the LoRA a zero
+            self.frank.set(self.frank_weights(state))
             return
         targets = []
         for role, who in ((PRIMARY, "primary"), (DONOR, "donor")):
@@ -1003,7 +1043,8 @@ class WorkbenchEngine:
     def _act_for_render(self):
         """The activation cache for this render, or None (Turbo off, no family cache, a streamed DiT, or a render
         generate_preview did not set up: prompt / seed travel, the baseline)."""
-        if not self.turbo_preview or self._act_ctx is None or getattr(self, "swapped", 0) or self.dit is None:
+        if not self.turbo_preview or self._act_ctx is None or getattr(self, "swapped", 0) or self.dit is None \
+                or self.frank is not None:     # Frankenstein mode rewrites the blocks themselves: nothing to reuse
             return None
         if self._act is None:
             from fizgig.families.act_cache import ActivationCache
@@ -1039,6 +1080,8 @@ class WorkbenchEngine:
         base.donor_scale = 0.0              # the primary alone: a loaded donor stays out of the left pane
         for bs in base.blocks.values():
             bs.donor_enabled = False
+            if self.frank is not None:      # Frankenstein mode: the Baseline is the loaded model, nothing blended
+                bs.primary_strength = 0.0
         self._act_bypass = True             # the baseline would overwrite the tweaked render's cache
         try:
             img = self.generate_preview(base)
@@ -1049,7 +1092,10 @@ class WorkbenchEngine:
 
     def same_as_baseline(self, state):
         """True when the tweaked render would be the baseline: every primary block on at 1.0 and no donor block
-        contributing (no donor, its load strength 0, or each of its blocks off or at 0)."""
+        contributing (no donor, its load strength 0, or each of its blocks off or at 0). Frankenstein mode: nothing
+        blended."""
+        if self.frank is not None:
+            return not any(w > 0.0 for w in self.frank_weights(state).values())
         if any(not bs.primary_enabled or float(bs.primary_strength) != 1.0 for bs in state.blocks.values()):
             return False
         if self.donor_network is None or float(getattr(state, "donor_scale", 1.0)) == 0.0:
@@ -1313,6 +1359,7 @@ class WorkbenchEngine:
                 except Exception:
                     pass
         self.dit = self.vae = self.net = None
+        self.frank = None
         self.pipeline = None
         self.speed = None
         self._speed_follow = None

@@ -8,6 +8,7 @@ Use it to:
 - **Keep part of a LoRA.** Turn off everything but the identity blocks, or everything but the style blocks.
 - **Mix LoRAs** block by block: identity from one, style from another, or several LoRAs at their own amounts.
 - **Explore**: 🎲 I'm feeling lucky rolls random block strengths within limits you set.
+- **Blend two base models** (MiniMax H3 Image with H3 video): [Frankenstein mode](#frankenstein-mode-minimax-h3-image) puts H3 video's sense of motion into H3 Image's stills and saves the blend as a new base model.
 
 Every image and video model has Studio; ACE-Step (songs) has it too, with a song player in place of the pictures.
 
@@ -86,9 +87,9 @@ Red means most, then yellow, then blue; no colour, barely. Each map is scaled fr
 
 ## Saving
 
-- **Save repaired LoRA**: name the new file under **Save as** and press it. It's a normal LoRA for ComfyUI and anything else, with the slider settings recorded in its metadata.
-- **No LoRA: Studio as a generator.** Leave the primary box empty and press Start: the base model renders on its own, any model, in one pane, with every setting, Save, Save every render and the queue as usual (saved files say `base` where the LoRA name goes). The block sliders, masters and Save repaired LoRA grey out with a line saying they need a LoRA, and Measures and Maps step aside. A donor with no primary still compares: Baseline is the base model, Tweaked the base model with the donor. **Unload primary** (beside its Choose…) takes the primary out without reloading the model, as Unload donor does for the donor.
-- **◀ ▶ between the panes**: ◀ hides the Baseline so Tweaked takes the whole width, ▶ hides Tweaked so the Baseline does; the one arrow left at that edge brings the other back. **A hidden pane isn't rendered** (for an H3 clip, half the time), for every model; this replaced H3's Tweaked only tick. With Tweaked hidden, slider moves render nothing (they only change Tweaked). A pane brought back that wasn't rendered says so until you press Render, which fills it. Measures (they compare the two) hide while one pane is hidden; Save original / Save tweaked, Continue, Loop back, Upscale and Use as source need their pane rendered. Queue jobs render the panes showing when they were queued. Remembered in your browser; a hidden pane stops playing, and Play together plays only what's on screen. A phone shows both stacked.
+- **Save repaired LoRA**: name the new file under **Save as** (**Folder…** picks where it goes, keeping the name) and press it. It's a normal LoRA for ComfyUI and anything else, with the slider settings recorded in its metadata.
+- **No LoRA: Studio as a generator.** Leave the primary box empty and press Start: the base model renders on its own, any model, in one pane, with every setting, Save, Save every render and the queue as usual (saved files say `base` where the LoRA name goes). The block sliders, masters and Save repaired LoRA grey out with a line saying they need a LoRA, and Measures and Maps step aside. A donor with no primary still compares: Baseline is the base model, Tweaked the base model with the donor. **Unload primary** (beside its Choose…) takes the primary out without reloading the model, as Unload donor does for the donor. Choosing another primary and pressing Render swaps it on the loaded model too, in a second or so (not on MiniMax H3 video or in Frankenstein mode, which load again).
+- **◀ ▶ between the panes**: ◀ hides the Baseline so Tweaked takes the whole width, ▶ hides Tweaked so the Baseline does; the one arrow left at that edge brings the other back. **A hidden pane isn't rendered** (for an H3 clip, half the time), for every model; this replaced H3's Tweaked only tick. With Tweaked hidden, slider moves render nothing (they only change Tweaked). A pane brought back that wasn't rendered says so until you press Render, which fills it. Measures (they compare the two) hide while one pane is hidden; Save original / Save tweaked, Continue, Loop back, Upscale and Use as source need their pane rendered. Queue jobs render the panes showing when they were queued. Studio opens with both panes each time (a hidden pane isn't remembered); with no LoRA it shows its one render in the Tweaked pane, whichever was hidden. A hidden pane stops playing, and Play together plays only what's on screen. A phone shows both stacked.
 - **💾 Save original / Save tweaked**: the two renders straight into the **Studio outputs** folder (Preferences > Other folders; `Studio_Outputs` inside Fizgig unless you change it): pictures in `images`, clips in `videos`, songs in `songs`. No Save window. Each file is named `<model>_<LoRA>_<original|tweaked>_seed<seed>_<date-time>`, so nothing is overwritten; a render already saved says so instead of saving again. On a pod, a phone or another computer the file is saved there and also downloaded to the device you're using. A saved Tweaked picture keeps Studio's settings inside it (the LoRAs, every slider, the prompt and seed): **drop it on the Studio tab to get them all back**.
 - **Save every render** (beside the Save buttons under the preview, off unless ticked, kept for each model): every finished render is saved there by itself: the Tweaked one each time, and the Baseline when it rendered again (not when only the Tweaked one changed). With nothing moved the two are one render, saved once.
 - **Add to queue** (beside Render; greyed while nothing renders and no jobs wait, when Render is the button to press): lines up the render exactly as Studio is set now (model, LoRAs, sliders, prompt, seed, size, a clip's settings) in **Studio's own queue**, separate from the training queue. Jobs render one after another, each loading its model or LoRA first when it differs, and each is saved into the Studio outputs folder as it finishes. A seed of 0 gives each job its own random seed. The **Studio queue** bar sits between Setup and Preview all the time, one slim line until you click it open (click its head again to close it). It lists the jobs (move them up or down, remove them) and keeps finished ones with links that open their saved files, until **Clear finished**; a failed job is marked and the next runs.
@@ -97,6 +98,50 @@ Red means most, then yellow, then blue; no colour, barely. Each map is scaled fr
   - **It waits** while a training run, a caption job or the Profiler has the GPU.
   - Moving a slider while a job renders doesn't cut the job short: your render follows it, and always on your own LoRA. When the job had another model or LoRA loaded, Studio loads yours again first (the next job waits for that), so nothing of yours is ever rendered or saved on a job's LoRA.
 - **Save setup**: everything on the tab (the LoRAs, every slider and tick, the prompt, seed, size, photos and source) in one named file. **Load a setup…** restores it exactly, switching model if it needs to, loading its LoRAs and rendering.
+
+## Frankenstein mode (MiniMax H3 Image)
+
+Frankenstein mode blends two base models block by block: H3 Image with MiniMax H3 video. Many people prefer H3 video for stills because it understands motion and time; H3 Image is cleaner but renders action frozen and pin-sharp. Blending some of H3 video's blocks into H3 Image brings the motion back (motion blur on fast things, spray, smoke, a curtain whipping in) while keeping H3 Image's look. No LoRA is involved: it works on the two models themselves. **It's an experimentation tool**, here for now to explore what mixes of the two models can do; it may not stay in Fizgig for good. ✨Motion is a good start; there's plenty more to find, and finds are welcome.
+
+![Studio mode: LoRA or Frankenstein, under the model picker](assets/frankenstein/studio_mode.png)
+
+1. Choose **MiniMax H3 Image** as the model, set **Studio mode** (under it) to **Frankenstein**, and press **Start**. It uses the H3 video file and H3's Turbo LoRA set in Preferences (the Turbo LoRA goes into H3 video's side, so its blocks work at H3 Image's few steps; Start asks for either file if it's missing). The Primary and donor rows step aside.
+2. **Each block slider is now a blend**: how much of that block comes from H3 video, from 0 (H3 Image as it is) to 1 (all H3 video). They start at 0. **Baseline** is H3 Image on its own; **Tweaked** is the blend, rendered as a normal base model.
+3. **🎲 I'm feeling lucky** rolls blends from 0 to 0.6 in this mode, where big blends rarely break the picture; change the two limits to roll higher (up to 1).
+4. **Presets** in this mode: **✨Motion** (blocks 27-28 and 32-34 at 0.65), **✨Motion, gentle** (28-34 at 0.6) and **✨Reset All** (everything back to 0). Your own presets for this mode are saved separately from your LoRA presets.
+5. **Save blend as a new base** (its own card beside Save) writes the blend as a new H3 Image file (about 21 GB, int8, the same format as the original) under **Save as** (**Folder…** picks where it goes), `<H3 Image file>_frankenstein.safetensors` unless you change it. ComfyUI and Fizgig load it like the original. The mix is recorded in the file's metadata. It renders the blend's look; fine details can differ slightly, as they do for any small change on this model.
+
+   ![Save blend as a new base model](assets/frankenstein/save_blend.png)
+
+What we found, sweeping every block at 2560 × 2560 across five motion scenes (a tennis ball through a window, a car drifting into crates, a wine glass knocked over, a skateboarder grinding a rail, a horse through a river):
+
+- The motion lives in about **blocks 26-36**, strongest around 28-34. 0.5-0.75 keeps H3 Image clean; the presets are the best of the sweep.
+- **Early blocks (0-10)** change the composition (camera, room, framing) more than the motion.
+- **What breaks the picture is blending a lot at once**, worst when it reaches the last blocks (38-49). Blocks 20-49 or 30-49 dissolve into grain and smear at 0.75 and are destroyed at 1.0; 20-40 turns grainy at 0.75 and breaks at 1.0; 30-40 is fine at 0.75 but messy at 1.0; every block at once holds up to 0.75 and degrades at 1.0.
+- **No small group of blocks broke it on its own**: every run of 3 blocks, anywhere from 0 to 49, stayed a clean picture even at 1.0 (sometimes grainier than at 0.75), and a few late blocks together with others (20-22 and 38-40 at 0.75) were fine. Keep blends to a few blocks at 0.5-0.75.
+
+**What it needs: a 16 GB card or bigger, and system RAM to match.** The mode always loads H3 Image at int8 (the blend works on the int8 weights). With Preferences' inference block swap on Auto it streams just enough blocks from system RAM for a render up to 2560 × 2560 on your card; a streamed block blends in system RAM and renders exactly as one on the card. Measured on an RTX 5090, also set to act as a 24 GB and a 16 GB Windows card:
+
+| Card | Blocks streamed | System RAM, Fizgig's Studio process at its peak | ✨Motion at 2048 and 2560, every block at 1.0, Save blend |
+|---|---|---|---|
+| 32 GB (RTX 5090 class) | none | 31 GB | yes; renders at 2560 in about 16 s |
+| 24 GB | 11 | 36 GB | yes |
+| 16 GB | 32 | 46 GB | yes |
+
+**32 GB of system RAM is enough.** The peaks above are the moment the first render loads the text encoder (Qwen3-VL-32B), counted with the pages of the model files Windows maps in and can drop again; the rest of the time the Studio process holds about 9 GB, plus about 0.4 GB for each streamed block. Renders on a smaller card take longer, as streamed blocks do. Saving a new base needs 21 GB of free disk.
+
+On the 32 GB card, card memory at each step (PyTorch's own figure; the driver keeps about 0.5-1 GB more):
+
+| | Card memory | System RAM |
+|---|---|---|
+| H3 Image loaded | 19.9 GB | 3 GB |
+| First render (the text encoder loads) | 22.3 GB | 31 GB, for a moment |
+| A slider change | 20.7 GB | 9 GB |
+| Render at 1024 / 2048 / 2560 / 3072 | 22.3 / 22.4 / 23.5 / 24.8 GB | 9 GB |
+| Every block to 1.0 at once (the biggest change) | 21.3 GB | 9 GB |
+| Save blend as a new base (17 s, a 21 GB file) | 22.5 GB | 9 GB |
+
+A block swap number you set in Preferences is kept; on Auto the mode picks its own, as above. Reuse unchanged blocks is off in this mode.
 
 ## Video (MiniMax H3)
 

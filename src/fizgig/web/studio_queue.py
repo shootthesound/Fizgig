@@ -58,7 +58,7 @@ def configure(load, busy):
             except (OSError, ValueError):
                 items = []
             for i in items:                      # a job cut off by the restart runs again
-                if i.get("status") in ("loading", "rendering"):
+                if i.get("status") in ("loading", "swapping", "rendering"):
                     i["status"] = "waiting"
             _q["items"] = items
             if any(i.get("status") == "waiting" for i in items):
@@ -101,7 +101,7 @@ def remove(item_id):
         it = next((i for i in _q["items"] if i["id"] == item_id), None)
         if it is None:
             return
-        if it.get("status") in ("loading", "rendering"):
+        if it.get("status") in ("loading", "swapping", "rendering"):
             raise ValueError("That job is rendering now: Cancel stops it.")
         _q["items"] = [i for i in _q["items"] if i["id"] != item_id]
         _save()
@@ -216,6 +216,15 @@ def _tick():
             return
         _render(it)
         return
+    if it.get("status") == "swapping":           # its primary going on the loaded model: wait for the answer
+        if st["state"] != "ready":
+            _fail(it, st.get("error") or "The model went while its LoRA was loading.")
+        elif st.get("primary_seq", 0) > it.get("swap_seq", 0):
+            if (st.get("primary") or "") == (it["load"].get("primary") or ""):
+                _render(it)
+            else:
+                _fail(it, st.get("error") or "The LoRA didn't load.")
+        return
     if it.get("status") == "rendering":
         if not studio.generating() and studio.current_job() != it["id"]:     # the worker stopped under it
             _fail(it, st.get("error") or "The render didn't finish.")
@@ -234,6 +243,15 @@ def _tick():
     if st["state"] == "ready" and studio.load_key() == key:
         _render(it)
         return
+    if st["state"] == "ready" and _swaps(studio.load_key(), it["load"]):   # only the primary differs: swap it (#394)
+        try:
+            studio.primary(it["load"].get("primary") or "", page=False)
+            with _lock:
+                it["status"], it["swap_seq"] = "swapping", st.get("primary_seq", 0)
+            return
+        except Exception as e:
+            _fail(it, f"Couldn't load: {e}")
+            return
     try:
         _hooks["load"](it["load"])
         studio.set_load_key(key)
@@ -241,6 +259,23 @@ def _tick():
             it["status"] = "loading"
     except Exception as e:
         _fail(it, f"Couldn't load: {e}")
+
+
+def _swaps(loaded, load):
+    """What's loaded (its settings as JSON) differs from this job's load only by the primary LoRA, on a model whose
+    primary swaps in place (not a video model, not Frankenstein mode): no reload, the LoRA goes on the model."""
+    if not loaded:
+        return False
+    a, b = json.loads(loaded), dict(load)
+    if a.get("frankenstein") or b.get("frankenstein") or a.get("family") != b.get("family"):
+        return False
+    from fizgig.families.registry import get
+    desc = get(b.get("family") or "")
+    if desc is None or getattr(desc, "video_workbench", False):
+        return False
+    a.pop("primary", None)
+    b.pop("primary", None)
+    return a == b
 
 
 def _render(it):

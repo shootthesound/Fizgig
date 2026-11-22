@@ -457,13 +457,10 @@ def adapter_param_count(dit_path: str, include_patterns, network_type: str = "lo
     respects include_patterns and the Blocks to Train restriction, and works the same on the
     pruned and full builds.
     """
-    import json
     import re as _re
-    import struct
+    from fizgig.utils.st_meta import read_header
     try:
-        with open(dit_path, "rb") as f:
-            n = struct.unpack("<Q", f.read(8))[0]
-            hdr = json.loads(f.read(n))
+        hdr = read_header(dit_path)
     except Exception:
         return 0
 
@@ -540,11 +537,8 @@ def frozen_lora_vram_gb(path: str, bytes_per_elem: int = 2) -> float:
     try:
         if not os.path.isfile(path):
             return 0.0
-        import json
-        import struct
-        with open(path, "rb") as f:
-            n = struct.unpack("<Q", f.read(8))[0]
-            hdr = json.loads(f.read(n))
+        from fizgig.utils.st_meta import read_header
+        hdr = read_header(path)
         elems = 0
         for key, ent in hdr.items():
             if key == "__metadata__" or not isinstance(ent, dict):
@@ -855,12 +849,9 @@ def is_pruned_checkpoint(path: str) -> bool:
 
     Needed before the base loads, because the pruned build's NF4 residency is ~6 GB smaller and
     the swap planner would otherwise park blocks nobody needs parked."""
-    import json
-    import struct
+    from fizgig.utils.st_meta import read_header
     try:
-        with open(path, "rb") as f:
-            n = struct.unpack("<Q", f.read(8))[0]
-            return "adaln_t_table" in json.loads(f.read(n))
+        return "adaln_t_table" in read_header(path)
     except Exception:
         return False
 
@@ -869,15 +860,12 @@ def has_int8_codes(path: str) -> bool:
     """Does this DiT carry int8 ConvRot weights (the pruned int8 files: a `<module>.comfy_quant` marker on an int8
     weight)? Reads only the safetensors header(s). The fp8_scaled builds mark their fp8 weights the same way, so the
     weight's dtype decides, not the marker."""
-    import json
-    import struct
+    from fizgig.utils.st_meta import read_header
     files = ([os.path.join(path, n) for n in sorted(os.listdir(path)) if n.endswith(".safetensors")]
              if os.path.isdir(path) else [path])
     for p in files:
         try:
-            with open(p, "rb") as f:
-                n = struct.unpack("<Q", f.read(8))[0]
-                head = json.loads(f.read(n))
+            head = read_header(p)
         except Exception:
             continue
         for k in head:

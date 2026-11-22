@@ -40,8 +40,8 @@ def q(tmp_path, monkeypatch):
     return world
 
 
-def _job(lora="a"):
-    return studio_queue.add({"family": "klein", "primary": lora}, {"state": {"seed": 1}, "extra": {}}, "p")
+def _job(lora="a", family="klein"):
+    return studio_queue.add({"family": family, "primary": lora}, {"state": {"seed": 1}, "extra": {}}, "p")
 
 
 def test_jobs_load_render_and_share_a_load(q):
@@ -59,14 +59,15 @@ def test_jobs_load_render_and_share_a_load(q):
     assert st[b["id"]]["status"] == "failed" and st[b["id"]]["error"] == "boom"
 
 
-def test_another_lora_loads_again(q):
+def test_another_model_loads_again(q):
+    # another LoRA on the same model swaps in place instead (test_studio_queue_swap)
     _job("a")
-    _job("b")
+    _job("b", family="zimage")
     for _ in range(2):
         studio_queue._tick()
     q["finish"]()
     studio_queue._tick()
-    assert [x["primary"] for x in q["loads"]] == ["a", "b"]
+    assert [(x["family"], x["primary"]) for x in q["loads"]] == [("klein", "a"), ("zimage", "b")]
 
 
 def test_pause_never_resumes_by_itself_and_training_waits(q):

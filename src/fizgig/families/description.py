@@ -73,6 +73,11 @@ class ModelFile:
     # another model's (Klein's FLUX.2 VAE and Z-Image's FLUX.1 VAE, both once saved as models/ae.safetensors) is
     # moved to the right one when Fizgig starts and before a download (fetch_models.repair_links)
     signature: tuple = ()
+    # the repo's commit to download from ("" = main), for a file taken from a repo Fizgig doesn't follow
+    revision: str = ""
+    # "module:function" turning the downloaded file into the one saved as local_name, called (source path, dest
+    # path); the source is removed afterwards. For a file only published in another form (Vimoo's Glyph-ByT5: a .pt)
+    convert: str = ""
 
     @property
     def fetch_is_optional(self) -> bool:
@@ -740,6 +745,12 @@ class FamilyDescription:
     # generic video engine, families/video_workbench.py). H3 brings its own for keyframes, references and RefMod on
     # top of the shared clip contract. Built as Class(description).
     workbench_engine: str = ""
+    # Frankenstein mode in Studio (families/frankenstein.py): base DiTs this one's blocks blend with, each (pref key of
+    # the other DiT, its name, pref key of a LoRA baked into its side or "", that LoRA's strength). () = no such mode
+    frankenstein_with: tuple = ()
+    # Frankenstein mode's built-in presets: (name, ((block id, blend weight 0..1), ...)) - every other block at 0 (the
+    # loaded model's own). Shown in Studio's preset menu in the mode, in place of repair_presets
+    frankenstein_presets: tuple = ()
     # a video family's clip render regimes in the workbench: ((name, steps, speed LoRA strength), ...) - H3's "dial"
     # (the fast loop) and "confirm" (the render that matches training previews). () = one regime, the speed LoRA's
     # own steps and strength (or the default sampling without one)

@@ -148,15 +148,30 @@ def _event(ev):
                               f"Rendered {len(ok)} of {_R['total']}." if ok else "No renders produced."))
         elif kind in ("loaded", "donor", "primary"):
             _S.update({k: ev.get(k) for k in ("primary_blocks", "donor_blocks", "hash", "eq")})
-            if kind == "primary":                # swapped in place: what's loaded is no longer any load's settings,
-                _S.update(primary=ev.get("primary", ""), load_key=None, page_key=None, page_waiting=0.0,  # so a queue
-                          status="Primary unloaded: the base model on its own." if not ev.get("primary")  # job loads
-                          else "Primary loaded.")                                                          # again
+            if kind == "primary":                # swapped in place: the load's settings take the new primary (a queue
+                want, page = _S.pop("swap", None) or (None, True)     # job with them renders without a reload)
+                if ev.get("error"):
+                    pass                         # it couldn't load: the old one is still on, as the settings say
+                elif want is not None and want == (ev.get("primary") or ""):
+                    _S["load_key"] = key_with_primary(_S.get("load_key"), want)
+                    if page:                     # the page's own swap: its renders run on this
+                        _S.update(page_key=_S["load_key"], page_waiting=0.0)
+                else:                            # a swap nobody here asked for: no load's settings any more
+                    _S.update(load_key=None, page_key=None, page_waiting=0.0)
+                _S.update(primary=ev.get("primary", ""),
+                          status="Primary unloaded: the base model on its own." if not ev.get("primary")
+                          else "Primary loaded.")
+                _S["primary_seq"] = _S.get("primary_seq", 0) + 1     # the page waits for this swap's answer
+                _S["error"] = ev.get("error") or ""
+                if ev.get("error"):
+                    _S["status"] = f"Couldn't load that LoRA: {ev['error']}"
                 _S["profile"] = _profile(ev.get("hash", ""))
             if kind == "loaded":
                 _S.update(nolora="", nolora_media="", nolora_gen=0, nolora_busy=False)
                 _S.update(state="ready", family=ev.get("family", ""), primary=ev.get("primary", ""),
-                          donor=ev.get("donor", ""), status="Loaded.", error="")
+                          donor=ev.get("donor", ""), status="Loaded.", error="",
+                          frankenstein=ev.get("frankenstein") or "",     # the model blended in (Frankenstein mode)
+                          frank_out=ev.get("frank_out") or "", frank_exported=None)
                 _S["profile"] = _profile(ev.get("hash", ""))
                 _S["up_room"] = ev.get("up_room")      # H3 Upscale: the memory its section hint is worked out from
             elif kind == "donor":
@@ -192,6 +207,8 @@ def _event(ev):
             nxt, _S["pending"] = _S["pending"], None
         elif kind == "error":
             where = ev.get("where")
+            if where == "frank_export":          # the blend's save card says so, where the button was pressed
+                _S.update(frank_saving=None, frank_error=ev.get("msg", ""))
             _S.update(error=ev.get("msg", ""), progress=None,
                       status=("Render error: " if where == "render" else "Couldn't load: " if where == "load" else "")
                       + ev.get("msg", ""))
@@ -202,6 +219,13 @@ def _event(ev):
                 _S["state"] = "idle"
         elif kind == "saved":
             _S["saved"] = {"out": ev.get("out"), "summary": ev.get("summary")}
+        elif kind == "frank_progress":           # Frankenstein mode: the new base model being written
+            _S["frank_saving"] = {"done": ev.get("done", 0), "total": ev.get("total", 0)}
+        elif kind == "frank_exported":           # Frankenstein mode: the new base model, written
+            _S["frank_exported"] = ev.get("out")
+            _S["frank_saved_gb"] = ev.get("gb")
+            _S["frank_saving"] = None
+            _S["status"] = f"New base model written: {ev.get('out')}"
             _S["status"] = "Saved."
         elif kind == "reset":
             _S.update(state="idle", primary="", donor="", primary_blocks=[], donor_blocks=[], hash="", profile=None,
@@ -505,11 +529,46 @@ def load(desc, primary, donor, kw, settings, status, turbo, canvas=None):
     threading.Thread(target=go, daemon=True).start()
 
 
-def primary(path):
+def primary(path, page=True):
     """Unload primary (path ""), or another primary in its place, without reloading the model."""
+    """Returns the new load id: another LoRA on the model is a new load to any other Studio tab, as a fresh load is.
+    page=False: a Studio queue job's swap (the page's own load settings stay what they were)."""
     if path and not os.path.isfile(path):
         raise ValueError("That primary LoRA isn't there.")
+    with _lock:
+        _S["load_id"] += 1
+        _S["load_by"] = "page" if page else "queue"
+        _S["swap"] = (path or "", bool(page))      # when it lands, the load settings take the new primary
+        n = _S["load_id"]
     _send({"cmd": "primary", "path": path or ""})
+    return n
+
+
+def adopt(body):
+    """The page finds a Studio queue job's (or another tab's) load on the model. Its settings differ from the page's
+    own (body) only by the primary LoRA: {"swap": True, "primary": the one on} - the page swaps its own on; the same
+    primary too: {"same": True}, and the page's renders run on it as they are. Else {}: the page loads again."""
+    with _lock:
+        lk = _S.get("load_key")
+        if _S["state"] != "ready" or not lk or _S.get("frankenstein") or _S.get("rendering"):
+            return {}
+        had, want = json.loads(lk), json.loads(json.dumps(body))
+        hp, wp = had.pop("primary", "") or "", want.pop("primary", "") or ""
+        if had != want:
+            return {}
+        if hp == wp:
+            _S.update(page_key=lk, page_waiting=0.0)
+            return {"same": True}
+        return {"swap": True, "primary": hp}
+
+
+def key_with_primary(key, path):
+    """A load's settings (JSON) with another primary; None stays None."""
+    if not key:
+        return None
+    d = json.loads(key)
+    d["primary"] = path
+    return json.dumps(d, sort_keys=True)
 
 
 def donor(path):
@@ -570,6 +629,7 @@ def set_load_key(key, page=False):
     again. page: the Studio page's own load - its renders run only on that."""
     with _lock:
         _S["load_key"] = key
+        _S["load_by"] = "page" if page else "queue"    # a page's load over another tab's: that tab says so
         if page:
             _S.update(page_key=key, page_waiting=0.0)
 
@@ -724,6 +784,15 @@ def save(out, state, include_donor):
             raise ValueError("No LoRA is loaded: Save repaired LoRA saves a LoRA you've tweaked. Load one in Setup.")
         _S["saved"] = None
     _send({"cmd": "save", "out": out, "state": state, "include_donor": bool(include_donor)})
+
+
+def frank_export(out, state):
+    """Frankenstein mode: the blend at these sliders as a new base file (the worker writes it; frank_exported)."""
+    with _lock:
+        if not (_S["state"] == "ready" and _S.get("frankenstein")):
+            raise ValueError("Frankenstein mode isn't on: tick it in Setup and press Start.")
+        _S.update(frank_exported=None, frank_error=None, frank_saving={"done": 0, "total": 0})
+    _send({"cmd": "frank_export", "out": out, "state": state})
 
 
 def reset():
@@ -989,7 +1058,14 @@ def status():
         d = {k: _S[k] for k in ("state", "family", "primary", "donor", "primary_blocks", "donor_blocks", "status",
                                 "progress", "shown", "rendering", "error", "saved", "profile")}
         d["notes"] = _S.get("notes")
+        d["primary_seq"] = _S.get("primary_seq", 0)
         d["up_room"] = _S.get("up_room")
+        d["frankenstein"] = _S.get("frankenstein") or "" if d.get("state") == "ready" else ""
+        d["frank_exported"] = _S.get("frank_exported")
+        d["frank_saved_gb"] = _S.get("frank_saved_gb")
+        d["frank_saving"] = _S.get("frank_saving")   # {"done", "total"} bytes while the new base is written
+        d["frank_error"] = _S.get("frank_error") or ""
+        d["frank_out"] = _S.get("frank_out") or ""
         d["same"] = bool(_S.get("same"))           # the Tweaked render on screen is the Baseline
         d["eq"] = _S.get("eq") or {}
         d["media"] = {k: bool(_S.get(k + "_media")) for k in ("baseline", "tweaked", "nolora")}
@@ -1004,7 +1080,7 @@ def status():
         d["log"] = _S["log"][-12:]                 # the worker's own lines (the engine's log), for when it goes wrong
         d["out_said"] = _S.get("out_said")         # Save every render's latest files (or why it couldn't)
         d["load_id"] = _S.get("load_id", 0)        # a load the page didn't ask for (the Studio queue's) changes it
-        # LoRA Royale, a Travel or RefMod rendering on the worker: Studio's Render waits for it too
+        d["load_by"] = _S.get("load_by") or ""     # "page": a Studio tab's (another tab's, if not this one's)        # LoRA Royale, a Travel or RefMod rendering on the worker: Studio's Render waits for it too
         d["worker_busy"] = (_R["state"] == "rendering" or _M["state"] == "rendering"
                             or any(t["state"] == "rendering" for t in _T.values()))
         t = _S.get("page_waiting") or 0.0          # your render waits for your LoRA to load again
@@ -1195,6 +1271,12 @@ def layout(desc, prefs, pref_path, samples=None):
     audio_vae = desc.model_path("audio_vae", look) if kind == "video" else ""
     vc = desc.video_controls
     return {"key": desc.key, "name": desc.display_name, "groups": groups, "kind": kind,
+            # Frankenstein mode: the models this one's blocks blend with (their names), [] = no such mode
+            "frankenstein": [w[1] for w in getattr(desc, "frankenstein_with", ())],
+            # its presets: Reset All (every block back to the loaded model) and the family's, every other block at 0
+            "frank_presets": ([{"name": "✨Reset All", "keep": None}] + [{"name": n, "blocks": dict(b)} for n, b in
+                                                                       (desc.frankenstein_presets or ())]
+                              if getattr(desc, "frankenstein_with", ()) else []),
             "video": {"lengths": [n for n, _ in vc.lengths], "length_frames": dict(vc.lengths),
                       # the model's frame grid, for a length typed in seconds (the Clip row's Other…)
                       "clip": {"fps": desc.clip_spec.fps, "step": desc.clip_spec.frame_step,

@@ -38,6 +38,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from fizgig.dataset.config import (BlueprintGenerator, ConfigSanitizer,  # noqa: E402
                                    generate_dataset_group_by_blueprint, load_user_config)
 from fizgig.families import quant  # noqa: E402
+from fizgig.families.driver import release_memory  # noqa: E402
 from fizgig.families.lora import FamilyLoRA  # noqa: E402
 from fizgig.families.registry import get as get_family  # noqa: E402
 from fizgig.training.adaptive_lr import AdaptiveLR  # noqa: E402
@@ -452,7 +453,7 @@ def _encode_override(driver, te_path, prompts, dit, device, parkable=True, refer
         finally:
             driver.unload_text_encoder(te)
             del te
-            torch.cuda.empty_cache()
+            release_memory()       # the encoder's cycle freed now, not at the next collection
     finally:
         if tok is not None:
             driver.unpark(dit, device, tok)
@@ -1675,7 +1676,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             slider_neg = {k: v[None] for k, v in driver.encode_text(te, [text])[0].items()}
         driver.unload_text_encoder(te)
         del te
-        torch.cuda.empty_cache()
+        release_memory()       # the encoder's cycle freed now, not at the next collection
     # ---- DOP: each image's caption with the trigger swapped for the class word, encoded once ------------------
     dop_cond = {}
     if dop:
@@ -1706,7 +1707,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     finally:
                         driver.unload_text_encoder(te)
                         del te
-                        torch.cuda.empty_cache()
+                        release_memory()       # the encoder's cycle freed now, not at the next collection
                 dop_cond.update({k: _dop_path(caps[k][1]) for k in keys})
                 logger.info(f"[dop] trigger-free captions: {len(new)} encoded, {len(keys) - len(new)} already in "
                             "the cache")
@@ -1740,7 +1741,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 finally:
                     driver.unload_text_encoder(te)
                     del te
-                    torch.cuda.empty_cache()
+                    release_memory()       # the encoder's cycle freed now, not at the next collection
             uncond = _load_dop_cond(up)
             logger.info(f"[caption dropout] {caption_dropout:g} of steps train with no caption")
     dop_every = max(1, int(dop_every or 1))
@@ -1811,7 +1812,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 neg = driver.encode_text(te, [sample_negative or ""])[0]
         driver.unload_text_encoder(te)
         del te
-        torch.cuda.empty_cache()
+        release_memory()       # the encoder's cycle freed now, not at the next collection
         vae = driver.load_vae(vae_path, device)
         if ref_pictures:
             driver.set_preview_references(vae, ref_pictures)

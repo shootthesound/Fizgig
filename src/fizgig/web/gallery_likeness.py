@@ -149,8 +149,6 @@ def state(samples_dir, run, dataset_dir):
             (d.get("embedder") and                                       # a file this scorer wrote keeps its work
             (previews_todo or str(d.get("status", "")).startswith("loading the face model")))):
         try:
-            print(f"[likeness] AUTO-RESUME {run}: status={d.get('status', '')!r} "
-                  f"scores_in_file={len(d.get('scores') or {})} baselines={names}", flush=True)
             start(samples_dir, run, dataset_dir, names, remember=False)   # a new run, or a consistent unfinished file
             running = True
         except ValueError as e:
@@ -286,9 +284,6 @@ def _worker(samples_dir, run, gen, baselines):
     import numpy as np
     from fizgig.face_utils import same_embedder
     names = [os.path.basename(b) for b in baselines]
-    print(f"[likeness] worker start: run={run} gen={gen} baselines={[os.path.basename(b) for b in baselines]}",
-          flush=True)
-    _t0 = time.time()
     key = (samples_dir, run)
     measure_state = {}
     old = read(samples_dir, run)
@@ -298,17 +293,12 @@ def _worker(samples_dir, run, gen, baselines):
     _write_live(samples_dir, run, gen, names, "loading the face model…", old.get("scores") or {}, carried)
     emb, msg = prep_jobs.session_embedder(baselines, log=lambda m: print(m.replace("[faces]", "[likeness]"), flush=True))
     meta = {"embedder": emb.cache_id, "embedder_label": emb.label, "thresholds": dict(emb.thresholds)}
-    print(f"[likeness] embedder ready: name={emb.name} cache_id={emb.cache_id!r} label={emb.label} "
-          f"in {time.time() - _t0:.1f}s", flush=True)
     # the same three photos AND the same embedder keep their scores (a file without one was ArcFace)
     same = sorted(old.get("baselines") or []) == sorted(names) and same_embedder(old.get("embedder"), emb.cache_id)
     scores = old["scores"] if same and isinstance(old.get("scores"), dict) else {}
     # the training photos' own range (real_photos), kept while the photos, the 3 and the model are the same
     dataset_dir = os.path.dirname(baselines[0])
     sig = _dataset_sig(dataset_dir, names)
-    print(f"[likeness] resume check: same={same} | file embedder={old.get('embedder')!r} vs now={emb.cache_id!r} | "
-          f"file baselines={old.get('baselines')} vs now={names} | kept scores={len(scores)} | "
-          f"file real={bool(old.get('real'))} sig_match={old.get('real_sig') == sig}", flush=True)
     if same and isinstance(old.get("real"), dict) and old.get("real_sig") == sig:
         meta.update(real=old["real"], real_sig=sig)
     partial = old.get("real_partial") if same and "real" not in meta and isinstance(old.get("real_partial"), dict) \
@@ -365,14 +355,11 @@ def _worker(samples_dir, run, gen, baselines):
             # once the previews are scored: the training photos' own range, on a thread of its own, so a new preview
             # never waits for it (the two share the face model, its lock interleaving them a picture at a time)
             measuring.append(True)
-            print("[likeness] measure START: every photo in the training folder, on the CPU "
-                  "(this is the silent heavy phase)", flush=True)
 
             def measure():
                 try:
                     real = real_photos(dataset_dir, names, base, emb,
-                                       log=lambda i, n: (measure_state.update(i=i, n=n),
-                                                         print(f"[likeness] measure… {i}/{n}", flush=True)),
+                                       log=lambda i, n: measure_state.update(i=i, n=n),
                                        cancel=lambda: not _live(samples_dir, run, gen),
                                        resume=partial,
                                        save=lambda p: _keep_partial(samples_dir, run, gen, meta, p))

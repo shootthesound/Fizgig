@@ -1,5 +1,13 @@
 # Fizgig news
 
+## 23 Nov 2026: MiniMax H3 Image reference Strength and Speed boost
+
+**More control over H3 Image.** Studio's reference Strength now works on MiniMax H3 Image, from 1 (the picture as it is) down to 0 (left out). Speed boost On renders the first steps at half size, on the Samples tab and in Studio.
+
+**Edit references keep their shape, and a security update.** Studio and LoRA Royale use an edit model's reference picture whole, at the Reference MP, instead of cropping it to the render. Pillow 13.0.0 fixes a slow-PNG security issue, and the Captions tab opens PNG folders much faster.
+
+[Fizgig v9.8.6 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.8.6)
+
 ## 22 Nov 2026: Studio swaps LoRAs for the queue and other tabs too
 
 **Fewer reloads in Studio.** A queued job that differs only by its primary LoRA swaps it on the loaded model, and your next Render swaps yours back in a second or so. A second Studio tab that loads over the first now says so, and the first tab's Render loads its own setup again.

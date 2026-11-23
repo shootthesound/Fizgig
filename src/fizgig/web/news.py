@@ -5,6 +5,18 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 
 NEWS = [
     {
+        "date": "23 Nov 2026",
+        "title": "MiniMax H3 Image reference Strength and Speed boost",
+        "body": (
+            "Studio's reference Strength now works on MiniMax H3 Image, from 1 (the picture as it is) down to 0 (left "
+            "out), and Speed boost On renders the first steps at half size, on the Samples tab and in Studio.\n\n"
+            "Edit models' reference pictures are used whole at the Reference MP instead of cropped to the render. "
+            "Pillow 13.0.0 fixes a slow-PNG security issue, and the Captions tab opens PNG folders much faster."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#23-nov-2026-minimax-h3-image-reference-strength-and-speed-boost"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.8.6"}],
+    },
+    {
         "date": "22 Nov 2026",
         "title": "Studio swaps LoRAs for the queue and other tabs too",
         "body": (

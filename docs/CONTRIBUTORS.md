@@ -132,7 +132,7 @@ size row for clips kept in sub-folders ([#278](https://github.com/shootthesound/
 checkpointing and run out of memory; those runs now keep it on. They also gave the mask editor **three kept brush
 settings**, recalled with 1, 2 and 3 ([#381](https://github.com/shootthesound/Fizgig/pull/381)).
 
-Since then: **Fibo 2.0** as a trainable family, with measured planner figures ([#250](https://github.com/shootthesound/Fizgig/pull/250), v9.0.4); **Purge run history** on Runs & outputs ([#345](https://github.com/shootthesound/Fizgig/pull/345), v9.7.2); and LoRA Royale treating a run's Save now snapshots and last checkpoint as its own epochs ([#355](https://github.com/shootthesound/Fizgig/pull/355), v9.7.6). Their exact reports found the H3 Context LoRA crash at step 0 ([#298](https://github.com/shootthesound/Fizgig/issues/298)) and MOSS-Image block swap leaving weights on the CPU at a batch size above 1 ([#335](https://github.com/shootthesound/Fizgig/issues/335)). In v9.7.7, a resume at a new size caches again whatever Enable Cache says, and its record waits until training starts ([#370](https://github.com/shootthesound/Fizgig/pull/370)). In v9.8.4 the captioner takes only `.safetensors` files, so a GGUF in its slot no longer slows every page load ([#388](https://github.com/shootthesound/Fizgig/pull/388)).
+Since then: **Fibo 2.0** as a trainable family, with measured planner figures ([#250](https://github.com/shootthesound/Fizgig/pull/250), v9.0.4); **Purge run history** on Runs & outputs ([#345](https://github.com/shootthesound/Fizgig/pull/345), v9.7.2); and LoRA Royale treating a run's Save now snapshots and last checkpoint as its own epochs ([#355](https://github.com/shootthesound/Fizgig/pull/355), v9.7.6). Their exact reports found the H3 Context LoRA crash at step 0 ([#298](https://github.com/shootthesound/Fizgig/issues/298)) and MOSS-Image block swap leaving weights on the CPU at a batch size above 1 ([#335](https://github.com/shootthesound/Fizgig/issues/335)). In v9.7.7, a resume at a new size caches again whatever Enable Cache says, and its record waits until training starts ([#370](https://github.com/shootthesound/Fizgig/pull/370)). In v9.8.4 the captioner takes only `.safetensors` files, so a GGUF in its slot no longer slows every page load ([#388](https://github.com/shootthesound/Fizgig/pull/388)). In v9.8.6: Pillow 13.0.0 for a PNG security fix ([#398](https://github.com/shootthesound/Fizgig/pull/398)), and the Captions tab reading a PNG's size from its headers instead of decoding it ([#399](https://github.com/shootthesound/Fizgig/pull/399)).
 
 ## DmitryAkDev
 
@@ -230,6 +230,9 @@ Since November:
 - [kvsh88](https://github.com/kvsh88): queueing several runs in a row ([#386](https://github.com/shootthesound/Fizgig/issues/386))
 - [axymeus](https://github.com/axymeus): Choose… opening the Windows file window ([#387](https://github.com/shootthesound/Fizgig/issues/387))
 - [dkspwndj](https://github.com/dkspwndj): an AMD freeze while caching on Windows, which led to the MIOpen database fix ([#389](https://github.com/shootthesound/Fizgig/issues/389))
+- [roadmaus](https://github.com/roadmaus): a clips-only H3 folder refused for Masked training, diagnosed exactly ([#402](https://github.com/shootthesound/Fizgig/issues/402))
+- [axymeus](https://github.com/axymeus): caching that needed the internet ([#397](https://github.com/shootthesound/Fizgig/issues/397))
+- [tsk5cb-cmyk](https://github.com/tsk5cb-cmyk): Studio in two tabs ([#395](https://github.com/shootthesound/Fizgig/issues/395))
 - WiseDuck (by email): Gizmo's **Prepare a folder** and clips at any audio sample rate
 - u/Obvious-Bad7548 on r/StableDiffusion: the LCM sampler recipe for H3 Image
 

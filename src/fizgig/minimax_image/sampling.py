@@ -55,6 +55,20 @@ def _lcm_noise(x, seed):
     return lambda: torch.randn(x.size(), dtype=x.dtype, layout=x.layout, device=x.device, generator=g)
 
 
+def reference_aug(strength):
+    """The reference Strength box as the DiT's visual_cond_noise_aug: how much of a reference row is the picture (the
+    rest its seed's noise), and the timestep the rows sit at. 1 (or more) = the model's own 0.999, near clean; lower
+    = a noisier reference the model is told is noisier. None (no box) = the model's default."""
+    if strength is None:
+        return None
+    from fizgig.minimax.model import VISUAL_COND_TIMESTEP
+    try:
+        s = float(strength)
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, min(1.0, s)) * VISUAL_COND_TIMESTEP
+
+
 def boost_steps(n_eval, asked):
     """Speed boost: how many of the n_eval steps run at half size - the number asked for, at least one step left at
     full size (0 = off)."""
@@ -67,14 +81,15 @@ def boost_steps(n_eval, asked):
 
 @torch.no_grad()
 def sample(dit, text, width, height, *, steps=6, seed=0, sigmas=None, noise=None, on_step=None, refs=None,
-           text_token_tags=None, forward=None, sampler="euler", s_noise=LCM_NOISE, boost=0):
+           text_token_tags=None, forward=None, sampler="euler", s_noise=LCM_NOISE, boost=0, ref_aug=None):
     """One picture -> its normalised latent [1, 24, 1, h, w] (fp32, on the DiT's device). `forward(x, t, txt, **kw)`
     replaces the DiT call (Reuse unchanged blocks); refs are normalised reference latents [1, 24, 1, h, w].
     sampler "lcm" is ComfyUI's sample_lcm: each step goes to the head's clean picture (x + sigma * out), then back to
     the next sigma with fresh noise, its strength s_noise (start, end) linear over the steps.
     boost: Speed boost (MiniMax H3's clip speed boost, minimax/speed_boost.py) - the first `boost` steps on a half-size
     latent (the seed's noise, its low part), then grown to full size, the rest carrying on from the grown noise
-    level (an LCM step's fresh noise is drawn at the size the step runs at)."""
+    level (an LCM step's fresh noise is drawn at the size the step runs at).
+    ref_aug: the references' visual_cond_noise_aug (reference_aug, the Strength box); None = the model's own."""
     device = next(p for p in dit.parameters() if p.device.type != "meta").device
     grid = dit.final_layer.pdd_sigmas
     sig = list(sigmas) if sigmas is not None else schedule(steps, grid)
@@ -87,6 +102,8 @@ def sample(dit, text, width, height, *, steps=6, seed=0, sigmas=None, noise=None
     kw = {"seed": int(seed)}
     if refs:
         kw["ref_latents"] = [r.to(device, torch.float32) for r in refs]
+        if ref_aug is not None:
+            kw["visual_cond_noise_aug"] = float(ref_aug)
     if text_token_tags is not None:
         kw["text_token_tags"] = text_token_tags
     call = forward or dit

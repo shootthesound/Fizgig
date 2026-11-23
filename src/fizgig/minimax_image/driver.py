@@ -35,6 +35,32 @@ def _lat5(x):
     return x if x.dim() == 5 else x.unsqueeze(2)
 
 
+def picture_tokens_scaled(cond, strength):
+    """The reference Strength box on the prompt side: the rows the text encoder made from the reference picture (its
+    vision tokens, token_tags VIDEO_TAG) scaled by the strength (0-1; 0 = the picture's rows zeroed). The prompt's
+    words were encoded after the picture, so they still carry some of it. The cond as it is without a box, without
+    tags, or when the tags don't line up with the rows."""
+    if strength is None or cond.get("token_tags") is None:
+        return cond
+    try:
+        s = max(0.0, min(1.0, float(strength)))
+    except (TypeError, ValueError):
+        return cond
+    if s == 1.0:
+        return cond
+    from fizgig.minimax.embedder import VIDEO_TAG
+    h, tags = cond["hidden_states"], cond["token_tags"]
+    t = tags[0] if tags.dim() == 2 else tags
+    if t.shape[0] != h.shape[-2]:
+        return cond
+    pic = (t == VIDEO_TAG).to(h.device)
+    if not bool(pic.any()):
+        return cond
+    scale = torch.where(pic, torch.tensor(s, dtype=h.dtype, device=h.device),
+                        torch.tensor(1.0, dtype=h.dtype, device=h.device)).unsqueeze(-1)
+    return {**cond, "hidden_states": h * scale}
+
+
 class _VAEBox(torch.nn.Module):
     """The image VAE and the device it works on. A module, so the workbench can park it (`.to("cpu")`) like any
     family's VAE on a small card; vae["vae"] / vae["device"] as the driver reads it."""
@@ -483,10 +509,12 @@ class MiniMaxH3ImageDriver(FamilyDriver):
         # the sampler: the call's options, else the run's family option (Samples tab), else Euler (the model's own)
         opts = {**(getattr(self, "options", None) or {}), **dict(options or ())}
         sampler = str(opts.get("sampler") or "euler").strip().lower()
+        cond = picture_tokens_scaled(cond, opts.get("ref_strength"))     # the reference Strength box, prompt side
         z = S.sample(dit, self._real_tokens(cond), width, height, steps=steps, seed=seed, sigmas=sigmas,
                      noise=None if noise is None else _lat5(noise), on_step=on_step,
                      refs=[_lat5(r) for r in refs] if refs else None, text_token_tags=tags, sampler=sampler,
-                     boost=opts.get("boost_steps") or 0)       # Speed boost (Samples tab / Studio's own pick)
+                     boost=opts.get("boost_steps") or 0,       # Speed boost (Samples tab / Studio's own pick)
+                     ref_aug=S.reference_aug(opts.get("ref_strength")))   # the reference Strength box
         return z[:, :, 0]
 
     def pad_conditioning(self, conds):

@@ -220,6 +220,8 @@ MINIMAX_IMAGE = FamilyDescription(
     slider_sources=("pairs",),
     edit_training=True,               # one checkpoint for text-to-image and edits (model card)
     edit_references=16,               # "supports up to 16 reference images" (model card)
+    reference_strength=True,          # Studio's reference Strength box (and Royale's sequential reference)
+    reference_strength_noise=True,    # ...set as the reference rows' noise level, the model's own (not latent scaling)
     edit_note=("Pairs of an original and its edited version, the same crop and shape - about 40 pairs. Each photo "
                "1 MP or larger; Fizgig resizes them."),
     batch_training=True,              # Batch size (Other Options): pictures packed one after another (forward_packed)

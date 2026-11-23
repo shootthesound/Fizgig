@@ -75,6 +75,18 @@ class _Loaded:
     is_loaded = True
 
 
+REF_GREY = 128          # what an edit reference fades towards for the text encoder (the Strength box)
+
+
+def _fade_to_grey(pic, fade):
+    """The picture (uint8 H x W x 3 or 4) faded towards flat grey: fade 1 = as it is, 0 = flat grey."""
+    import numpy as np
+    out = pic.copy()
+    out[..., :3] = (pic[..., :3].astype(np.float32) * fade + REF_GREY * (1.0 - fade)).round().clip(0, 255) \
+        .astype(np.uint8)
+    return out
+
+
 def _slerp(t, a, b):
     """Spherical interpolation of two noise tensors (keeps the norm, so a travel frame never goes mushy)."""
     af, bf = a.flatten().float(), b.flatten().float()
@@ -675,16 +687,29 @@ class WorkbenchEngine:
             self._prompt_cache[key] = z[None].cpu()
         return self._prompt_cache[key]
 
-    def encode(self, prompts, ref="", ref_mp=1.0, size=(768, 768)):
+    def _ref_fade(self, state):
+        """How much of an edit reference the text encoder sees (reference_strength_noise families): the Strength box,
+        0-1 - the picture faded towards flat grey by it. 1 for every other family."""
+        if not (getattr(self.desc, "reference_strength", False)
+                and getattr(self.desc, "reference_strength_noise", False)):
+            return 1.0
+        try:
+            return max(0.0, min(1.0, float(getattr(state, "ref_strength", 1.0))))
+        except (TypeError, ValueError):
+            return 1.0
+
+    def encode(self, prompts, ref="", ref_mp=1.0, size=(768, 768), fade=1.0):
         """Conditioning for each prompt (CPU), through the family's text encoder, loaded for the call and freed.
         With a reference picture (`ref`), the prompt sees it the family's way (reference_kind): through the
-        encoder's vision path at `ref_mp`, or as an edit of the picture at the preview `size`. The DiT parks on CPU
-        while the encoder runs when both would not fit."""
+        encoder's vision path at `ref_mp`, or as an edit of the picture at the preview `size`, faded towards grey by
+        `fade` (_ref_fade, the Strength box). The DiT parks on CPU while the encoder runs when both would not fit."""
         kind = self.reference_kind if ref else ""
         if kind == "edit":
             size = self._ref_size(ref, ref_mp, *size)
+        fade = max(0.0, min(1.0, float(fade))) if kind == "edit" else 1.0
         tag = ((ref, round(float(ref_mp), 4)) if kind == "vision" else
-               (ref, int(size[0]), int(size[1])) if kind == "edit" else ()) + tuple(self.driver.text_cache_key())
+               (ref, int(size[0]), int(size[1])) if kind == "edit" else ()) \
+            + ((round(fade, 3),) if fade != 1.0 else ()) + tuple(self.driver.text_cache_key())
         need = [p for p in prompts if (p,) + tag not in self._prompt_cache]
         if need:
             te_gb = self.driver.text_encoder_gb(self.te_path)
@@ -704,6 +729,8 @@ class WorkbenchEngine:
                                                                        megapixels=ref_mp)
                     elif kind == "edit":
                         pic = self._fit_reference(ref, *size)
+                        if fade != 1.0:              # the Strength box: the whole picture faded towards grey
+                            pic = _fade_to_grey(pic, fade)
                         conds = self.driver.encode_text_with_references(te, list(need), [[pic]] * len(need))
                     else:
                         conds = self.driver.encode_text(te, list(need))
@@ -858,12 +885,22 @@ class WorkbenchEngine:
         s, r = self._source_key(), self._reference_key()
         return None if s is None and r is None else (s, r)
 
+    def _ref_options(self, options, refs):
+        """The render's options plus ("ref_strength", s) when this render's reference takes the Strength box in the
+        driver (reference_strength_noise, set by _edit_refs for this render and used up here; at 0 there are no
+        reference latents, but the prompt still holds the picture)."""
+        rs = self.__dict__.pop("_ref_noise_strength", None)
+        if rs is not None:
+            return tuple(options or ()) + (("ref_strength", float(rs)),)
+        return options
+
     def render(self, cond, width, height, seed, *, steps=None, noise=None, refs=None, neg_cond=None, cond_b=None,
                blend=0.0, source=None, refer=None):
         """One image from conditioning with the adapters as currently set (refs: an edit's reference latents;
         neg_cond: the negative, used when the CFG is above 1)."""
         d_steps, cfg, sigmas, options = self.sampling()
         steps = int(steps or d_steps)
+        options = self._ref_options(options, refs)
         if cfg > 1.0 and neg_cond is not None:
             neg_cond = self._cond_to_device(neg_cond)
         else:
@@ -991,18 +1028,19 @@ class WorkbenchEngine:
         width = int(width or state.preview_width)
         height = int(height or state.preview_height)
         ref, ref_mp = self._state_reference(state) if self.reference_kind else ("", 1.0)
+        fade = self._ref_fade(state) if ref else 1.0
         if override_ctx is not None:
             cond = override_ctx
         else:
             cond = self.encode([prompt if prompt is not None else state.prompt], ref=ref, ref_mp=ref_mp,
-                               size=(width, height))[0]
+                               size=(width, height), fade=fade)[0]
         refs = self._edit_refs(state, ref, width, height, prev_latent, prev_latent_strength) \
             if self.reference_kind == "edit" else None
         source = self._source_latent(width) if self._source_live() else None
         refer = self._reference_latent() if self._reference_live() else None
         cond_b = None
         if override_ctx is None and self._prompt_b_live():
-            cond_b = self.encode([self.prompt_b], ref=ref, ref_mp=ref_mp, size=(width, height))[0]
+            cond_b = self.encode([self.prompt_b], ref=ref, ref_mp=ref_mp, size=(width, height), fade=fade)[0]
         noise = None
         if seed_b is not None:
             noise = _slerp(float(travel_t or 0.0), self.driver.initial_noise(seed, width, height),
@@ -1016,7 +1054,7 @@ class WorkbenchEngine:
                 # the prompt (an edit's reference included)
                 text = ps.get("negative") if ps is not None else self.desc.preview_negative
                 neg = self.encode([str(text or "")], ref=("" if override_ctx is not None else ref),
-                                  ref_mp=ref_mp, size=(width, height))[0]
+                                  ref_mp=ref_mp, size=(width, height), fade=fade)[0]
         except (TypeError, ValueError):
             neg = None
         self._act_ctx = None
@@ -1040,16 +1078,20 @@ class WorkbenchEngine:
         family has reference_strength; 0 = left out) and, for a chained travel frame, the previous frame's clean
         latent at prev_strength. None when there is neither."""
         chain = bool(getattr(self.desc, "reference_strength", False))
+        by_noise = chain and bool(getattr(self.desc, "reference_strength_noise", False))
         out = []
         s1 = 1.0
+        self._ref_noise_strength = None
         if chain:
             try:
                 s1 = float(getattr(state, "ref_strength", 1.0))
             except (TypeError, ValueError):
                 s1 = 1.0
+        if ref and by_noise:                 # the driver applies the box (render's options) - at 0 too: the prompt
+            self._ref_noise_strength = s1    # still holds the picture, which the driver weakens
         if ref and s1 != 0.0:
             z = self._reference_latents(ref, *self._ref_size(ref, self._state_reference(state)[1], width, height))
-            out.append(z if s1 == 1.0 else z * s1)
+            out.append(z if by_noise or s1 == 1.0 else z * s1)
         if chain and prev_latent is not None and float(prev_strength) != 0.0:
             z = prev_latent.detach().to("cpu")
             z = z[None] if z.dim() == 3 else z

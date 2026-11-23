@@ -1371,6 +1371,7 @@ input[type="range"] {
 .upload-drop { border: 2px dashed var(--border); border-radius: 8px; padding: 18px; margin: 8px 0; text-align: center;
   color: var(--text-explain); }
 .upload-drop.over { border-color: var(--accent); background: var(--accent-subtle); }
+.drop-over { outline: 2px dashed var(--accent); outline-offset: 2px; background: var(--accent-subtle); }
 #uploadStatus.bad { color: var(--warning); }
 
 /* ---- text wraps at every width: help lines, labels and messages never run off the side ---- */

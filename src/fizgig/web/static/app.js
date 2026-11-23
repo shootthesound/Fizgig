@@ -12307,18 +12307,23 @@ async function uploadFiles(picked, opts = {}) {
   }
 }
 
+// a dropped file against an <input type=file> accept list (".onnx", "image/*", ...); no list = anything
+function uploadAccepts(f, accept) {
+  const toks = String(accept || "").split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
+  const name = (f.name || "").toLowerCase(), type = (f.type || "").toLowerCase();
+  return !toks.length || toks.some((t) => t.startsWith(".") ? name.endsWith(t) :
+    t.endsWith("/*") ? type.startsWith(t.slice(0, -1)) : type === t);
+}
+
 // an Upload button beside a form box whose file or folder may be on this computer, not the one training
 function uploadButton(r, input, set) {
   const status = el("div", {class: "field-hint upload-status"});
   const say = (t, bad) => { status.textContent = t; status.classList.toggle("bad", !!bad); };
   const picker = r.kind === "folder" ? el("input", {type: "file", webkitdirectory: true, hidden: true}) :
     el("input", {type: "file", hidden: true, accept: r.accept || ".safetensors,image/*,.mp4,audio/*,.m4a"});
-  picker.addEventListener("change", async () => {
-    const files = [...picker.files];
-    picker.value = "";
-    if (!files.length) return;
+  const take = async (files, top) => {
     if (r.kind === "folder") {
-      const top = (files[0].webkitRelativePath || "").split("/")[0];
+      top = top || (files[0].webkitRelativePath || "").split("/")[0];
       const name = tidyName(top).replace(/^[.\s]+/, "") || r.key.toLowerCase();
       return uploadFiles(files, {name, say, done: (folder) => { input.value = folder; set(folder); }});
     }
@@ -12337,9 +12342,39 @@ function uploadButton(r, input, set) {
       set(res.data.path);
       say(`Uploaded to ${res.data.path}` + ((res.data.replaced || []).length ? " (replacing the one there)." : "."));
     } catch (e) { say(`${f.name}: ${e.message}`, true); }
+  };
+  picker.addEventListener("change", () => {
+    const files = [...picker.files];
+    picker.value = "";
+    if (files.length) take(files);
   });
-  const btn = el("label", {class: "btn", title: "From the device you're using now, sent to the machine running Fizgig. On the computer running Fizgig itself there's no need: Choose… picks it directly."},
+  const btn = el("label", {class: "btn", title: "From the device you're using now, sent to the machine running Fizgig. On the computer running Fizgig itself there's no need: Choose… picks it directly. A file (or folder) dragged onto the box or this button goes up the same way."},
     r.kind === "folder" ? "Upload a folder…" : "Upload…", picker);
+  // a file dragged from the desktop onto the box or its Upload button goes up as Upload… sends it (#392)
+  const dropOn = (t) => {
+    const files = (e) => [...((e.dataTransfer && e.dataTransfer.types) || [])].includes("Files");
+    t.addEventListener("dragover", (e) => { if (files(e)) { e.preventDefault(); t.classList.add("drop-over"); } });
+    t.addEventListener("dragleave", () => t.classList.remove("drop-over"));
+    t.addEventListener("drop", async (e) => {
+      if (!files(e)) return;
+      e.preventDefault(); e.stopPropagation();
+      t.classList.remove("drop-over");
+      if (r.kind === "folder") {
+        const dir = [...e.dataTransfer.items].map((it) => it.webkitGetAsEntry && it.webkitGetAsEntry())
+          .find((en) => en && en.isDirectory);
+        if (!dir) return say("Drop a folder here.", true);
+        const all = [];
+        await collect(dir, all);
+        return all.length ? take(all, dir.name) : say(`${dir.name} is empty.`, true);
+      }
+      const f = [...e.dataTransfer.files][0];
+      if (!f) return;
+      if (!uploadAccepts(f, picker.accept)) return say(`${f.name} isn't a file this box takes.`, true);
+      take([f]);
+    });
+  };
+  dropOn(input);
+  dropOn(btn);
   return {btn, status};
 }
 

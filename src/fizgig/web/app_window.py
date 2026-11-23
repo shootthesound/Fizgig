@@ -454,6 +454,22 @@ def _last_pod(port):
         return ""
 
 
+SERVER_LOG_MAX = 5 * 1024 * 1024     # bytes: the server's output log starts afresh past this, one old copy kept
+
+
+def server_log():
+    """user_data/web_stdout.log, where the app window's server writes its output. Each start appends to it; past
+    SERVER_LOG_MAX it moves to web_stdout.log.1 (replacing the older copy) and a new one begins, so it never grows
+    without end."""
+    path = user_file("web_stdout.log")
+    try:
+        if os.path.getsize(path) > SERVER_LOG_MAX:
+            os.replace(path, path + ".1")
+    except OSError:
+        pass
+    return path
+
+
 def _start_server(port, key):
     """The web UI as `--web` serves it (this computer only, unless a password is saved: then your other devices too),
     the window's key in its environment."""
@@ -468,7 +484,7 @@ def _start_server(port, key):
     con = os.path.join(os.path.dirname(exe), "python.exe")
     if os.name == "nt" and os.path.basename(exe).lower() == "pythonw.exe" and os.path.isfile(con):
         exe = con
-    with open(user_file("web_stdout.log"), "ab") as out:  # the server's prints (likeness/faces/runs) land here
+    with open(server_log(), "ab") as out:  # the server's prints (likeness/faces/runs) land here
         return subprocess.Popen([exe, os.path.join(BASE_DIR, "fizgig.py"), "--web", "--port",
                                  str(port)], cwd=BASE_DIR, env=env, stdout=out,
                                 stderr=subprocess.STDOUT, **kw)

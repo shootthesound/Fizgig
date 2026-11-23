@@ -31,6 +31,17 @@ from fizgig.dataset.image_dataset import dtype_to_str, source_stamp  # noqa: E40
 from fizgig.families.registry import get  # noqa: E402
 
 logger = logging.getLogger(__name__)
+
+
+def release_between_pictures():
+    """On AMD (ROCm) hand the allocator's cache back after each picture's encode (#389). Each picture is encoded at its
+    own bucket shape, and AMD's convolutions take large work buffers sized to the shape, so the cache keeps a new set
+    per shape and grows through a recache: measured with cuDNN off (the nearest NVIDIA stand-in), the FLUX.2 VAE at
+    0.75 MP over 22 bucket shapes reserved 11.4 GB and still growing, against 8.2 GB at most when emptied after each
+    picture. Windows then spills it to shared memory until the PC stalls. The latents are unchanged; NVIDIA keeps its
+    cache as before."""
+    if getattr(torch.version, "hip", None) and torch.cuda.is_available():
+        torch.cuda.empty_cache()
 logging.basicConfig(level=logging.INFO)
 FORMAT_VERSION = "1.0.0"
 
@@ -206,6 +217,7 @@ def main():
                 logger.info(f"latent cache: {it.item_key} -> {tuple(z.shape)}"
                             + (f" + {len(ctrl)} before-image(s)" if ctrl else ""))
                 save_latents(desc, it, z, ctrl)
+            release_between_pictures()
         encode_datasets(datasets, encode, args)
     else:
         from fizgig.scripts.cache_text import post_process, prepare_cache_files_and_paths, process_batches

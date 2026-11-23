@@ -80,3 +80,35 @@ def test_queue_links_open_only_files_in_the_outputs_folder(tmp_path, monkeypatch
     outside.write_text("x")
     assert studio.output_file(good) and not studio.output_file(str(outside))
     assert not studio.output_file(str(tmp_path / "out" / "images" / ".." / ".." / "secret.txt"))
+
+
+def _png(tmp_path, name, tag):
+    from PIL import Image
+    p = tmp_path / name
+    Image.new("RGB", (4, 4), tag).save(p)
+    return str(p)
+
+
+def test_every_saved_still_carries_its_renders_setup(tmp_path, monkeypatch):
+    # the original as well as the tweaked one; the render's own setup, not the page's at Save (sliders moved since)
+    import json
+    out = tmp_path / "out"
+    monkeypatch.setattr(studio, "outputs_dir", lambda: str(out))
+    mine = {"fizgig_repair_setup": 1, "seed": 5}
+    studio._S.update(family="klein", primary="lora.safetensors", out_saved={}, same=False, shown=6,
+                     gens={6: {"seed": 5, "setup": mine}}, baseline_media="", tweaked_media="",
+                     baseline=_png(tmp_path, "b.png", "red"), tweaked=_png(tmp_path, "t.png", "blue"))
+    for which in ("baseline", "tweaked"):
+        data = open(studio.save_output(which, {"seed": 99})["path"], "rb").read()
+        assert studio.SETUP_KEY.encode() in data and json.dumps(mine, separators=(",", ":")).encode() in data, which
+    # a render that came without one (an older page): the page's setup as Save was pressed
+    studio._S.update(out_saved={}, gens={6: {"seed": 5}}, tweaked=_png(tmp_path, "t2.png", "green"))
+    assert b'"seed":99' in open(studio.save_output("tweaked", {"seed": 99})["path"], "rb").read()
+
+
+def test_the_page_sends_the_setup_with_every_still_render():
+    js = open(os.path.join(ROOT, "src", "fizgig", "web", "static", "app.js"), encoding="utf-8").read()
+    fn = js[js.index("async function studioRender"):]
+    fn = fn[:fn.index("\n}\n")]
+    line = next(l for l in fn.splitlines() if "const setup =" in l)
+    assert "stAutoSave" not in line and "studioSetupData()" in line

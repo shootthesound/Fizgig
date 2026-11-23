@@ -300,7 +300,8 @@ def output_path(root, kind, model, lora, word, seed, ext, when=None):
 
 def save_output(which, setup=None):
     """Save (Studio's Save original / Save tweaked, the song's Save): the render in that pane into the Studio outputs
-    folder - a clip as its mp4, a song as its WAV, a still as its PNG (a tweaked still with Studio's setup inside).
+    folder - a clip as its mp4, a song as its WAV, a still as its PNG with Studio's setup inside (the original and
+    the tweaked one alike: dropping either on Studio restores the render).
     A render already saved (by Save every render too) isn't saved again: {"already": True, "path"}."""
     import hashlib
     import shutil
@@ -329,8 +330,8 @@ def save_output(which, setup=None):
         model = fam
     out = output_path(outputs_dir(), kind, model, lora, "original" if which == "baseline" else "tweaked",
                       info.get("seed"), ext)
-    setup = setup if setup is not None else info.get("setup")
-    data = png_with_setup(src, setup) if which == "tweaked" and kind == "image" and setup else None
+    setup = info.get("setup") or setup             # the render's own setup, else the page's as Save was pressed
+    data = png_with_setup(src, setup) if kind == "image" and setup else None
     if data is not None:
         with open(out, "wb") as f:
             f.write(data)

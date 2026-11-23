@@ -3765,8 +3765,8 @@ class Handler(BaseHTTPRequestHandler):
             dl = re.sub(r'[\\/:*?"<>|]+', "_", (qs.get("dl") or [""])[0])        # a Save / Download button
             if dl:                                    # the name the page asks for, with the file's own extension
                 dl = os.path.splitext(dl)[0] + os.path.splitext(p)[1]
-            if dl and (qs.get("which") or [""])[0] == "tweaked" and _STUDIO_DL_SETUP:
-                # Download tweaked: the setup on the page when it was pressed, inside the PNG (drop it on Studio)
+            if dl and (qs.get("which") or [""])[0] in ("baseline", "tweaked") and _STUDIO_DL_SETUP:
+                # Save on another device: the setup on the page when it was pressed, inside the PNG (drop it on Studio)
                 png = studio.png_with_setup(p, _STUDIO_DL_SETUP[0])
                 if png is not None:
                     return self._send(200, png, "image/png",
@@ -5116,11 +5116,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(_start_ai_captions(b))
             if path == "/api/studio/save_output":
                 # Save original / tweaked (and the song's Save): straight into Preferences' Studio outputs folder,
-                # no Save window; a tweaked still keeps the setup the page sent just before (download_setup)
+                # no Save window; a still keeps its render's setup, else the one the page sent just before
+                # (download_setup)
                 which = str(b.get("which") or "")
                 try:
-                    r = studio.save_output(which, _STUDIO_DL_SETUP[0] if which == "tweaked" and _STUDIO_DL_SETUP
-                                           else None)
+                    r = studio.save_output(which, _STUDIO_DL_SETUP[0] if _STUDIO_DL_SETUP else None)
                 except (ValueError, OSError) as e:
                     return self.json({"error": f"Couldn't save: {e}"})
                 r["name"] = os.path.basename(r["path"])

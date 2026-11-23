@@ -7919,7 +7919,7 @@ async function studioSetupLoad(name) {
   await studioSetupApply(d, name);
 }
 
-async function studioSetupApply(d, name) {        // a saved setup, or one read from a picture Save tweaked saved
+async function studioSetupApply(d, name) {        // a saved setup, or one read from a picture Studio saved
   const fam = d.family && [...$("stFamily").options].some((o) => o.value === d.family) ? d.family : $("stFamily").value;
   if (fam !== $("stFamily").value) { $("stFamily").value = fam; await studioFamily(); stRemember(); }
   const v = d.values || {};
@@ -7980,7 +7980,7 @@ async function studioSetupMix() {
   studioSchedule();
 }
 
-// a PNG's fizgig_studio_setup text (Save tweaked writes it), or null
+// a PNG's fizgig_studio_setup text (Studio writes it into every still it saves), or null
 function studioSetupFromPng(buf) {
   const u = new Uint8Array(buf), dv = new DataView(buf);
   if (u.length < 8 || u[0] !== 0x89 || u[1] !== 0x50) return null;
@@ -8005,15 +8005,16 @@ function wireStudioSetups() {
   $("stSetupList").addEventListener("change", () => { const n = $("stSetupList").value; $("stSetupList").value = ""; if (n) studioSetupLoad(n); });
   studioSetupList();
   // Save original / tweaked (and the song's Save): straight into Preferences' Studio outputs folder (images,
-  // videos or songs), no Save window. A tweaked still sends the setup first, so the picture carries it. Viewed from
-  // another device (a pod, a phone), the file is also downloaded to that device.
+  // videos or songs), no Save window. A still sends the setup first, so the picture carries it (the render's own
+  // setup wins when the server has it). Viewed from another device (a pod, a phone), the file is also downloaded to
+  // that device.
   for (const id of ["stDlBase", "stDlTweak", "stSongSave"]) {
     $(id).addEventListener("click", async (e) => {
       const b = $(id);
       if (b.dataset.go) return;                       // the browser's download (another device)
       e.preventDefault();
       const tweak = id !== "stDlBase";
-      if (tweak && S.st.layout && S.st.layout.kind === "stills") {
+      if (S.st.layout && S.st.layout.kind === "stills") {
         try { await api("/api/studio/download_setup", {data: studioSetupData()}); } catch (err) { /* the picture alone */ }
       }
       try {
@@ -8042,7 +8043,7 @@ function wireStudioSetups() {
     if (!f || e.defaultPrevented) return;
     e.preventDefault();
     const d = studioSetupFromPng(await f.arrayBuffer());
-    if (!d || !d.fizgig_repair_setup) { $("stSetupMsg").textContent = `${f.name} has no Studio settings in it (Save tweaked saves them).`; return; }
+    if (!d || !d.fizgig_repair_setup) { $("stSetupMsg").textContent = `${f.name} has no Studio settings in it (pictures Studio saves carry them).`; return; }
     await studioSetupApply(d, f.name.replace(/\.png$/i, ""));
   });
 }
@@ -8792,8 +8793,9 @@ async function studioRender() {
     if (!S.st.seedUsed) studioRollSeed();
     state.seed = S.st.seedUsed;
   }
-  // Save every render saves a tweaked still with the setup inside, as Save does
-  const setup = $("stAutoSave").checked && S.st.layout && S.st.layout.kind === "stills" ? {setup: studioSetupData()} : {};
+  // every still render carries its setup, so whatever saves it (Save, Save every render - ticked here or in another
+  // tab) writes the setup the picture was rendered with into it
+  const setup = S.st.layout && S.st.layout.kind === "stills" ? {setup: studioSetupData()} : {};
   try {
     const r = await api("/api/studio/render", {state, ...studioExtra(), ...studioMixExtra(), ...setup});
     if (r.after_job) $("stStatus").textContent = "Renders when the Studio queue's job finishes…";

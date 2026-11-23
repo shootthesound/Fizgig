@@ -219,10 +219,43 @@ def pick_columns(cols, spec):
         if cols[-1] not in picked:
             picked.append(cols[-1])
         return picked or [cols[-1]]
-    wanted = [t.strip() for t in spec.replace(" ", ",").split(",") if t.strip()]
-    picked = [(lbl, p) for lbl, p in cols
-              if any(str(lbl) == w or (str(lbl).isdigit() and w.isdigit() and int(lbl) == int(w)) for w in wanted)]
-    return picked or cols
+    wanted = listed_epochs(spec)
+    return [(lbl, p) for lbl, p in cols
+            if any(str(lbl) == w or (str(lbl).isdigit() and w.isdigit() and int(lbl) == int(w)) for w in wanted)]
+
+
+def listed_epochs(spec):
+    """The Epochs box as a list ("5,11,22,38" or "5 11 22"), or [] when it's blank or an "every N"."""
+    spec = (spec or "").strip().lower()
+    if not spec or re.fullmatch(r"(?:every\s*|/)(\d+)", spec):
+        return []
+    return [t.strip() for t in spec.replace(" ", ",").split(",") if t.strip()]
+
+
+def sheet_columns(rendered, run_items, spec):
+    """The comparison sheet's columns in Every epoch mode (#401). Epochs listed in the box come from the training
+    folder's own checkpoints (run_items), so "5,11,22,38" works without rendering those epochs at the top first; an
+    epoch the run doesn't have is named, never silently replaced by every column. Blank or "every N" picks from the
+    epochs rendered at the top, else from the whole run."""
+    wanted = listed_epochs(spec)
+    if wanted:
+        base = run_items or rendered
+        if not base:
+            raise ValueError("Pick the training folder at the top of this tab: the sheet takes the epochs you list "
+                             "from its checkpoints.")
+        cols = pick_columns(base, spec)
+        found = {str(int(lbl)) if str(lbl).isdigit() else str(lbl) for lbl, _p in cols}
+        missing = [w for w in wanted if (str(int(w)) if w.isdigit() else w) not in found]
+        if missing:
+            nums = [str(lbl) for lbl, _p in base if str(lbl).isdigit()]
+            have = f" (it has epochs {nums[0]}-{nums[-1]})" if nums else ""
+            raise ValueError(f"Epochs: this run has no {', '.join(missing)}{have}.")
+        return cols
+    base = rendered or run_items
+    if not base:
+        raise ValueError('"Every epoch" needs a training run: pick the training folder at the top of this tab (or '
+                         'use "Without / with LoRA", which needs no epochs).')
+    return pick_columns(base, spec) or base
 
 
 def save_travel(frames, out_dir, run, prefix, fmt="MP4", speed="Normal", pingpong=True, brand=True, badge=True,

@@ -4494,7 +4494,8 @@ async function ryTravel(mode) {
 async function rySheet(confirm) {
   try {
     const r = await api("/api/royale/travel", {mode: "sheet", confirm: confirm === true, family: $("ryFamily").value, source: rySource(),
-      single: $("rySingle").value.trim(), i: royaleCurrent(), prompts: $("ryCPrompts").value, sheet_mode: $("ryCMode").value,
+      single: $("rySingle").value.trim(), folder: $("ryFolder").value.trim(), i: royaleCurrent(),
+      prompts: $("ryCPrompts").value, sheet_mode: $("ryCMode").value,
       epochs: $("ryCEpochs").value, trigger: $("ryCTrigger").value.trim(), seed: seedOf("ryCSeed"),
       width: Number($("ryCW").value), height: Number($("ryCH").value), row_labels: $("ryCRows").checked, brand: $("ryCTag").checked});
     if (r.confirm) {                  // a big sheet: say so first, as the desktop does

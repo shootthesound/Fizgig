@@ -1522,8 +1522,8 @@
               the same seed across a row so only the LoRA changes. Saved as one labelled PNG.</div>
             <div class="card-content">
               <div class="field-hint pf-hint">Without / with LoRA: two columns on the current LoRA (Single LoRA, or the epoch on the
-                crossfade) - fill in Trigger so the no-LoRA column drops it. Every epoch: one column per epoch of the render at the
-                top (render it first); Epochs keeps it readable - blank = all, "every 4", or "4,8,12". Every cell is a fresh render, so 3
+                crossfade) - fill in Trigger so the no-LoRA column drops it. Every epoch: one column per epoch of the training folder
+                at the top; Epochs picks them - "4,8,12" (no render needed first), "every 4", or blank for the epochs rendered at the top. Every cell is a fresh render, so 3
                 prompts across 5 epochs is 15 renders: keep the prompt list short the first time.</div>
               <div class="field-row"><span class="field-label">Prompts:</span><textarea id="ryCPrompts" rows="4" spellcheck="false"
                 placeholder="one per line - each becomes a row"></textarea></div>

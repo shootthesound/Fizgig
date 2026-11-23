@@ -5453,12 +5453,12 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError("Enter at least one prompt - each line becomes a row of the sheet.")
                     sheet_mode = str(b.get("sheet_mode") or "Without / with LoRA")
                     if sheet_mode == "Every epoch":
-                        cols = [[l, pth] for l, pth, _png in rendered if os.path.isfile(pth)]
-                        if not cols:
-                            raise ValueError('"Every epoch" reuses the epochs from the render at the top of this tab: '
-                                             'pick the training folder and Render epochs first (or use "Without / '
-                                             'with LoRA", which needs no epoch render).')
-                        cols = royale.pick_columns(cols, b.get("epochs"))
+                        folder = str(b.get("folder") or "").strip()
+                        run_items = (royale.scan(folder)["items"] if not single and folder and os.path.isdir(folder)
+                                     else [])
+                        cols = [list(c) for c in royale.sheet_columns(
+                            [[l, pth] for l, pth, _png in rendered if os.path.isfile(pth)],
+                            [[l, pth] for l, pth in run_items if os.path.isfile(pth)], b.get("epochs"))]
                     else:
                         if not lpath or not os.path.isfile(lpath):
                             raise ValueError("Pick a LoRA file (Single LoRA), or render epochs and slide to the one "

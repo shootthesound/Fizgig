@@ -70,12 +70,15 @@ def reference_aug(strength):
 
 
 def boost_steps(n_eval, asked):
-    """Speed boost: how many of the n_eval steps run at half size - the number asked for, at least one step left at
-    full size (0 = off)."""
-    try:
-        k = int(asked or 0)
-    except (TypeError, ValueError):
-        return 0
+    """Speed boost: how many of the n_eval steps run at half size - "auto" (the On choice) = 2 or a third of the
+    steps, whichever is more; a number = that many; at least one step left at full size (0 = off)."""
+    if str(asked or "").strip().lower() == "auto":
+        k = max(2, n_eval // 3)
+    else:
+        try:
+            k = int(asked or 0)
+        except (TypeError, ValueError):
+            return 0
     return max(0, min(k, n_eval - 1))
 
 

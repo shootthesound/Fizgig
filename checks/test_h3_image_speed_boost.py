@@ -48,10 +48,16 @@ def test_at_least_one_full_size_step_and_off_is_unchanged():
     assert torch.equal(z0, S.sample(dit, torch.zeros(4, 8), 256, 256, steps=6, seed=3))   # no boost argument
 
 
-def test_the_choice_reaches_studio_and_previews_as_an_option():
+def test_on_is_two_steps_or_a_third_whichever_is_more():
+    assert [S.boost_steps(n, "auto") for n in (2, 4, 6, 8, 9, 10, 12, 30)] == [1, 2, 2, 2, 3, 3, 4, 10]
+    z, seen = _run("auto")                                      # 6 steps: 2 at half size
+    assert seen == [(8, 8)] * 2 + [(16, 16)] * 4
+
+
+def test_the_choice_is_on_or_off_on_the_samples_tab_and_in_studio():
     from fizgig.web import studio
     d = get("minimax_image")
     o = next(x for x in d.options if x.key == "MINIMAX_IMAGE_SPEED_BOOST")
-    assert o.tab == "samples" and o.studio and o.choice_labels()[0] == "Off"
+    assert o.tab == "samples" and o.studio and list(o.choice_labels()) == ["Off", "On"]
     assert "boost_steps" not in studio.studio_tokens(d, {})                         # off unless picked: nothing sent
-    assert studio.studio_tokens(d, {"studio_opt_MINIMAX_IMAGE_SPEED_BOOST": "2"})["boost_steps"] == "2"
+    assert studio.studio_tokens(d, {"studio_opt_MINIMAX_IMAGE_SPEED_BOOST": "On"})["boost_steps"] == "auto"

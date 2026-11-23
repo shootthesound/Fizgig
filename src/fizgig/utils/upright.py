@@ -2,8 +2,15 @@
 orientation) that viewers apply; PIL reads the stored pixels as they are. OpenCV already applies the flag, so the
 face finders see the picture upright: every PIL read of a training picture goes through here to match. The read
 also gives 16-bit greyscale as 8-bit (eight_bit) and a picture with a colour profile in sRGB (srgb)."""
+import struct
 
 ORIENTATION = 0x0112
+
+_PNG_SIG = b"\x89PNG\r\n\x1a\n"
+# what a PNG could hold an orientation in: its own eXIf chunk, or a text chunk (where XMP and ImageMagick's
+# "Raw profile type exif" are carried)
+_ORIENT_CHUNKS = (b"eXIf", b"tEXt", b"zTXt", b"iTXt")
+_MAX_CHUNKS = 100_000         # a chunk-count ceiling: past it the walk stops and the picture is asked the slow way
 
 
 def orientation(im):
@@ -74,7 +81,44 @@ def eight_bit(im):
     return Image.fromarray((a.astype(np.float32) / 257.0 + 0.5).clip(0, 255).astype(np.uint8), "L")
 
 
-def upright_size(im):
-    """(width, height) as seen, from the header alone: flags 5-8 turn the picture a quarter."""
+def png_carries_orientation(path) -> bool:
+    """Whether a PNG file holds anything a rotation flag could be read from.
+
+    Pillow's PNG reader only puts exif in info when it read the chunk before the first IDAT, and
+    PngImageFile.getexif() inflates the whole picture to find out - 17.8 ms a file against 44 us for the
+    size itself (both measured over the 518 pictures of one training folder). Walking the chunk headers
+    instead reads 8 bytes a chunk and seeks over the data, so the cost never follows the size of the
+    picture: 137 us a file, median 20 chunks, and it sees a chunk written after the image data, which is
+    exactly what open() misses.
+
+    True whenever the walk can't answer for certain - an unreadable or unexpected file is asked the slow
+    way rather than assumed to have no rotation."""
+    try:
+        with open(path, "rb") as f:
+            if f.read(8) != _PNG_SIG:
+                return True
+            for _ in range(_MAX_CHUNKS):
+                head = f.read(8)
+                if len(head) < 8:
+                    return True                                     # ended without IEND: no answer here
+                length, typ = struct.unpack(">I4s", head)
+                if typ in _ORIENT_CHUNKS:
+                    return True
+                if typ == b"IEND":
+                    return False                                    # walked the whole file: nothing to read
+                f.seek(length + 4, 1)                               # its data and its CRC
+            return True                                             # chunk ceiling: the walk gave up
+    except Exception:
+        return True
+
+
+def upright_size(im, path=None):
+    """(width, height) as seen, from the header alone: flags 5-8 turn the picture a quarter.
+
+    path: the picture's own file, which lets a PNG that carries no rotation anywhere answer without
+    inflating itself (see png_carries_orientation). Omitted, every picture is asked the slow, certain
+    way, so callers that only have an open file are exactly as they were."""
     w, h = im.size
+    if path is not None and im.format == "PNG" and "exif" not in im.info and not png_carries_orientation(path):
+        return (w, h)
     return (h, w) if orientation(im) in (5, 6, 7, 8) else (w, h)

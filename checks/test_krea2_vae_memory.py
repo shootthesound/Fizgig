@@ -70,6 +70,31 @@ class VAEMemoryChecks(unittest.TestCase):
         self.compare_cached("decode", True)
 
     @torch.no_grad()
+    def test_amd_decodes_pictures_in_tiles(self):
+        """#404: on AMD a whole 1024x1536 decode reserved ~30 GB on a 16 GB card; decode_to_pixels tiles it there
+        (512 px tiles, 384 stride), leaves the VAE's own tiling settings as they were, and decodes whole elsewhere."""
+        vae = self.vae
+        vae.latents_mean, vae.latents_std = [0.0, 0.0], [1.0, 1.0]
+        z = torch.randn(1, 2, 1, 96, 64)                       # a 512x768 picture
+        before = (vae.tile_sample_min_height, vae.tile_sample_min_width,
+                  vae.tile_sample_stride_height, vae.tile_sample_stride_width)
+        for rocm in (False, True):
+            with self.subTest(rocm=rocm):
+                seen = []
+                tiled = vae.tiled_decode
+                def spy(*a, **k):
+                    seen.append((vae.tile_sample_min_height, vae.tile_sample_stride_height))
+                    return tiled(*a, **k)
+                with patch("fizgig.modules.wide_attention.ROCM", rocm), \
+                        patch.object(vae, "tiled_decode", side_effect=spy):
+                    pixels = vae.decode_to_pixels(z)
+                self.assertEqual(pixels.shape, (1, 3, 768, 512))
+                self.assertEqual(seen, [(512, 384)] if rocm else [])
+                self.assertFalse(vae.use_tiling)
+                self.assertEqual((vae.tile_sample_min_height, vae.tile_sample_min_width,
+                                  vae.tile_sample_stride_height, vae.tile_sample_stride_width), before)
+
+    @torch.no_grad()
     def test_video_keeps_temporal_caches(self):
         vae = self.vae
         for tiled in (False, True):

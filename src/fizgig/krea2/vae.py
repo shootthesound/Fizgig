@@ -1007,8 +1007,31 @@ class AutoencoderKLQwenImage(nn.Module):  # ModelMixin, ConfigMixin, FromOrigina
         latents_mean = torch.tensor(self.latents_mean).view(1, self.z_dim, 1, 1, 1).to(latents.device, latents.dtype)
         latents_std = 1.0 / torch.tensor(self.latents_std).view(1, self.z_dim, 1, 1, 1).to(latents.device, latents.dtype)
         latents = latents / latents_std + latents_mean
-        image = self.decode(latents, return_dict=False)[0][:, :, 0]  # -1 to 1
+        from fizgig.modules.wide_attention import ROCM
+        if ROCM and not self.use_tiling:
+            image = self._rocm_tiled_decode(latents)
+        else:
+            image = self.decode(latents, return_dict=False)[0]
+        image = image[:, :, 0]  # -1 to 1
         return (image * 0.5 + 0.5).clamp(0.0, 1.0)  # Convert to [0, 1] range
+
+    ROCM_TILE = (512, 384)  # sample tile and stride for decoding on AMD (#404)
+
+    def _rocm_tiled_decode(self, latents):
+        """On AMD the decoder's convolutions run with a large workspace: a whole 1024x1536 decode reserved 29.8 GB on a
+        16 GB card, which Windows spills to shared memory until the PC stalls (#404; cuDNN off on NVIDIA, its nearest
+        stand-in, measures 24.4 GB, and 4.9 GB with cuDNN). 512 px tiles blended over 128 px keep it near 4 GB, and the
+        picture differs from a whole decode by 0.3 of 255 on average with no seams. NVIDIA decodes whole, as before."""
+        saved = (self.tile_sample_min_height, self.tile_sample_min_width,
+                 self.tile_sample_stride_height, self.tile_sample_stride_width)
+        tile, stride = self.ROCM_TILE
+        self.enable_tiling(tile, tile, stride, stride)
+        try:
+            return self.decode(latents, return_dict=False)[0]
+        finally:
+            self.disable_tiling()
+            (self.tile_sample_min_height, self.tile_sample_min_width,
+             self.tile_sample_stride_height, self.tile_sample_stride_width) = saved
 
     def encode_pixels_to_latents(self, pixels: torch.Tensor) -> torch.Tensor:
         """

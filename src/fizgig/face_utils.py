@@ -40,6 +40,7 @@ scores record, so a cache made by another embedder is recognised and recomputed.
 """
 
 import ast
+import contextlib
 import json
 import os
 import threading
@@ -101,9 +102,6 @@ YOLO_FACE_CLASSES = ("face", "head")   # classes taken from a multi-class model 
 
 FACE_CPU_THREADS = min(8, os.cpu_count() or 8)   # CPU face work (detection, embedding) stays off every core
 
-_ort_sessions_limited = False
-
-
 def limit_torch_threads():
     """torch's CPU pool follows the same limit; called at embedder init, safe to call again."""
     try:
@@ -121,33 +119,37 @@ def limit_ort_session_options(so):
     return so
 
 
-def limit_ort_sessions():
-    """InsightFace builds its ONNX sessions without options, and its model_zoo subclasses InferenceSession at import
-    time - so the limit goes in through a subclass (a function swap would break that subclassing). Every session this
-    process makes gets the CPU thread limit. Idempotent; call before the first FaceAnalysis / InferenceSession use."""
-    global _ort_sessions_limited
-    if _ort_sessions_limited:
-        return
+@contextlib.contextmanager
+def limited_ort_sessions():
+    """While open, onnxruntime's InferenceSession is a subclass that caps a session's CPU threads at FACE_CPU_THREADS
+    (a count the caller set below the cap is kept). For InsightFace, which builds its ONNX sessions without options
+    and subclasses InferenceSession when its model_zoo is first imported, so the import and FaceAnalysis go inside.
+    Restored on exit: every other onnxruntime user in the process keeps onnxruntime's own default."""
     try:
         import onnxruntime as ort
-
-        class _LimitedSession(ort.InferenceSession):
-            def __init__(self, path, *args, **kw):
-                so = args[0] if args and isinstance(args[0], ort.SessionOptions) else \
-                    kw.pop("sess_options", None)
-                if so is None:
-                    so = ort.SessionOptions()
-                    so.log_severity_level = 3
-                so.intra_op_num_threads = FACE_CPU_THREADS
-                if args and isinstance(args[0], ort.SessionOptions):
-                    args = args[1:]
-                kw["sess_options"] = so
-                super().__init__(path, *args, **kw)
-
-        ort.InferenceSession = _LimitedSession
-        _ort_sessions_limited = True
     except Exception:
-        pass
+        yield
+        return
+    base = ort.InferenceSession
+
+    class _LimitedSession(base):
+        def __init__(self, path, *args, **kw):
+            if args and isinstance(args[0], ort.SessionOptions):
+                so, args = args[0], args[1:]
+            else:
+                so = kw.pop("sess_options", None)
+            if so is None:
+                so = ort.SessionOptions()
+                so.log_severity_level = 3
+            kw["sess_options"] = limit_ort_session_options(so)
+            super().__init__(path, *args, **kw)
+
+    ort.InferenceSession = _LimitedSession
+    try:
+        yield
+    finally:
+        ort.InferenceSession = base
+
 
 def load_face_settings(prefs: Optional[dict] = None) -> dict:
     """The face settings: defaults, then prefs.json (or the given prefs dict), then FIZGIG_FACE_DETECTOR /
@@ -353,11 +355,11 @@ class InsightFaceBackend:
                 ensure_face_models(adaface=False)     # its two files, so InsightFace never fetches the whole pack
                 from fizgig.utils import ort_telemetry
                 ort_telemetry.off()
-                limit_ort_sessions()
-                from insightface.app import FaceAnalysis
-                app = FaceAnalysis(name='buffalo_l', root=insightface_root(), allowed_modules=list(self.modules),
-                                   providers=['CPUExecutionProvider'])
-                app.prepare(ctx_id=-1)      # ctx_id=-1 forces CPU
+                with limited_ort_sessions():
+                    from insightface.app import FaceAnalysis
+                    app = FaceAnalysis(name='buffalo_l', root=insightface_root(), allowed_modules=list(self.modules),
+                                       providers=['CPUExecutionProvider'])
+                    app.prepare(ctx_id=-1)      # ctx_id=-1 forces CPU
                 self._shared[self.modules] = app
             return app
 
@@ -540,7 +542,6 @@ class YoloOnnxBackend:
                 import onnxruntime as ort
                 from fizgig.utils import ort_telemetry
                 ort_telemetry.off()
-                limit_ort_sessions()
                 so = ort.SessionOptions()
                 so.log_severity_level = 3
                 limit_ort_session_options(so)

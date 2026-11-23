@@ -635,6 +635,20 @@ class WorkbenchEngine:
             mp = 1.0
         return (path, mp) if path and os.path.isfile(path) else ("", 1.0)
 
+    def _ref_size(self, path, ref_mp, width, height):
+        """The size an edit reference is used at: the picture's own shape at ref_mp megapixels (Studio's Reference MP),
+        each side on the family's grid - every edit model takes a reference at its own size. The render's
+        (width, height) when the picture can't be read."""
+        from PIL import Image
+        try:
+            with Image.open(path) as im:
+                w, h = upright(im).size
+        except Exception:
+            return int(width), int(height)
+        g = int(getattr(self.desc, "reference_grid", 32) or 32)
+        s = (float(ref_mp or 1.0) * 1_000_000 / float(w * h)) ** 0.5
+        return max(g, round(w * s / g) * g), max(g, round(h * s / g) * g)
+
     def _fit_reference(self, path, width, height):
         """An edit reference as uint8 (H, W, 3), or (H, W, 4) with its transparency, as training takes it, cropped and
         scaled to the preview's size."""
@@ -667,6 +681,8 @@ class WorkbenchEngine:
         encoder's vision path at `ref_mp`, or as an edit of the picture at the preview `size`. The DiT parks on CPU
         while the encoder runs when both would not fit."""
         kind = self.reference_kind if ref else ""
+        if kind == "edit":
+            size = self._ref_size(ref, ref_mp, *size)
         tag = ((ref, round(float(ref_mp), 4)) if kind == "vision" else
                (ref, int(size[0]), int(size[1])) if kind == "edit" else ()) + tuple(self.driver.text_cache_key())
         need = [p for p in prompts if (p,) + tag not in self._prompt_cache]
@@ -1032,7 +1048,7 @@ class WorkbenchEngine:
             except (TypeError, ValueError):
                 s1 = 1.0
         if ref and s1 != 0.0:
-            z = self._reference_latents(ref, width, height)
+            z = self._reference_latents(ref, *self._ref_size(ref, self._state_reference(state)[1], width, height))
             out.append(z if s1 == 1.0 else z * s1)
         if chain and prev_latent is not None and float(prev_strength) != 0.0:
             z = prev_latent.detach().to("cpu")

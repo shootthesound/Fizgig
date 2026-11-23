@@ -6711,7 +6711,7 @@ async function studioFamily(res, w, h) {
   $("stNeg").value = (sv.neg || {})[key] ?? (L.negative_default || "");
   $("stTurboRow").style.display = L.turbo_preview ? "" : "none";
   $("stRefRow").style.display = L.reference_kind ? "" : "none";
-  $("stRefMp").disabled = L.reference_kind === "edit";
+  $("stRefMp").disabled = false;     // every reference kind uses it: an edit model takes the reference at this size
   $("stRefStr").style.display = $("stRefStrLabel").style.display = L.reference_strength ? "" : "none";
   // which model previews: the follows-the-Samples-tab families say so; others pick fast or full
   $("stDitRow").style.display = L.follows_samples || !L.dit_fast ? "none" : "";

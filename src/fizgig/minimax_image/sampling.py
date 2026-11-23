@@ -55,13 +55,26 @@ def _lcm_noise(x, seed):
     return lambda: torch.randn(x.size(), dtype=x.dtype, layout=x.layout, device=x.device, generator=g)
 
 
+def boost_steps(n_eval, asked):
+    """Speed boost: how many of the n_eval steps run at half size - the number asked for, at least one step left at
+    full size (0 = off)."""
+    try:
+        k = int(asked or 0)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, min(k, n_eval - 1))
+
+
 @torch.no_grad()
 def sample(dit, text, width, height, *, steps=6, seed=0, sigmas=None, noise=None, on_step=None, refs=None,
-           text_token_tags=None, forward=None, sampler="euler", s_noise=LCM_NOISE):
+           text_token_tags=None, forward=None, sampler="euler", s_noise=LCM_NOISE, boost=0):
     """One picture -> its normalised latent [1, 24, 1, h, w] (fp32, on the DiT's device). `forward(x, t, txt, **kw)`
     replaces the DiT call (Reuse unchanged blocks); refs are normalised reference latents [1, 24, 1, h, w].
     sampler "lcm" is ComfyUI's sample_lcm: each step goes to the head's clean picture (x + sigma * out), then back to
-    the next sigma with fresh noise, its strength s_noise (start, end) linear over the steps."""
+    the next sigma with fresh noise, its strength s_noise (start, end) linear over the steps.
+    boost: Speed boost (MiniMax H3's clip speed boost, minimax/speed_boost.py) - the first `boost` steps on a half-size
+    latent (the seed's noise, its low part), then grown to full size, the rest carrying on from the grown noise
+    level (an LCM step's fresh noise is drawn at the size the step runs at)."""
     device = next(p for p in dit.parameters() if p.device.type != "meta").device
     grid = dit.final_layer.pdd_sigmas
     sig = list(sigmas) if sigmas is not None else schedule(steps, grid)
@@ -80,10 +93,20 @@ def sample(dit, text, width, height, *, steps=6, seed=0, sigmas=None, noise=None
     fl = dit.final_layer
     n = len(sig) - 1
     lcm = str(sampler or "").lower() == "lcm"
+    small = boost_steps(n, boost)
+    if small:
+        from fizgig.minimax import speed_boost as sb
+        full_hw = tuple(x.shape[-2:])
+        x = sb.shrink(x, *sb.half_size(*full_hw))     # the same noise, its low part: white stays white
+        grow_gen = torch.Generator(device="cpu").manual_seed((int(seed) + 7) & 0xFFFFFFFF)
     fresh = _lcm_noise(x, seed) if lcm else None
     for i in range(n):
         if on_step is not None:
             on_step(i, n)
+        if small and i == small:                      # grown to full size; this step starts from the grown noise level
+            x, sig[i] = sb.grow(x, *full_hw, float(sig[i]), grow_gen)
+            if lcm:
+                fresh = _lcm_noise(x, seed + 1)
         s, s_next = float(sig[i]), float(sig[i + 1])
         fl.span_override = step_span(grid, s, s_next)
         try:

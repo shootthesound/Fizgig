@@ -485,7 +485,8 @@ class MiniMaxH3ImageDriver(FamilyDriver):
         sampler = str(opts.get("sampler") or "euler").strip().lower()
         z = S.sample(dit, self._real_tokens(cond), width, height, steps=steps, seed=seed, sigmas=sigmas,
                      noise=None if noise is None else _lat5(noise), on_step=on_step,
-                     refs=[_lat5(r) for r in refs] if refs else None, text_token_tags=tags, sampler=sampler)
+                     refs=[_lat5(r) for r in refs] if refs else None, text_token_tags=tags, sampler=sampler,
+                     boost=opts.get("boost_steps") or 0)       # Speed boost (Samples tab / Studio's own pick)
         return z[:, :, 0]
 
     def pad_conditioning(self, conds):

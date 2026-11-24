@@ -154,7 +154,7 @@ def move(dit, device):
         move_nf4_to_device(dit, device)
 
 
-def load_base(driver, path, device, precision="bf16", blocks_to_swap=0, supports_backward=True):
+def load_base(driver, path, device, precision="bf16", blocks_to_swap=0, supports_backward=True, fast_lora_stream=False):
     """The family's DiT at `precision`, optionally block-swapped. NF4 cannot swap (its weights are not .weight), so
     swap is dropped for it; a family whose driver has no block swap ignores the request. Returns (dit, swapped)."""
     swap = int(blocks_to_swap or 0)
@@ -182,8 +182,14 @@ def load_base(driver, path, device, precision="bf16", blocks_to_swap=0, supports
         dit = driver.load_dit(path, "cpu" if (swap or precision != "bf16") else device)
         quantize(dit, driver, precision, device, store_device="cpu" if swap else None)
     if swap:
-        driver.enable_block_swap(dit, swap, device, supports_backward)
-        logger.info(f"[block swap] {swap} blocks stream between CPU and GPU")
+        import inspect
+        sig = inspect.signature(driver.enable_block_swap)
+        if "fast_lora_stream" in sig.parameters:
+            driver.enable_block_swap(dit, swap, device, supports_backward, fast_lora_stream=fast_lora_stream)
+        else:
+            driver.enable_block_swap(dit, swap, device, supports_backward)
+        logger.info(f"[block swap] {swap} blocks stream between CPU and GPU" +
+                    (" (fast H2D stream)" if fast_lora_stream else ""))
     elif precision != "bf16":
         move(dit, device)
     return dit, swap

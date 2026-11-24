@@ -1,6 +1,7 @@
 """LoRA Isolation's side-by-sides (#407): two pasted photos, two backgrounds and a seam, taught that two people in one
-picture come split down the middle. Each side-by-side now has a mask (both people white, both backgrounds black) and
-trains at floor 0 whatever the masked-training setting; its caption ends in words of its own."""
+picture come split down the middle. Each side-by-side now has a mask: the stranger's half from the strangers set (the
+person white, the background black), the subject's half whole; it trains at floor 0 whatever the masked-training
+setting."""
 import os
 
 import numpy as np
@@ -42,11 +43,9 @@ def built(tmp_path, monkeypatch):
     for i in range(4):
         _portrait(folder / f"p{i}.png", (600, 800), (100, 200, 500, 800))
         (folder / f"p{i}.txt").write_text("zwxa, a girl", encoding="utf-8")
-    own = Image.new("L", (600, 800), 0)                  # p0 has its own mask: only a small square
+    own = Image.new("L", (600, 800), 0)                  # p0 has a mask of its own: the side-by-side doesn't use it
     own.paste(255, (250, 350, 350, 450))
     own.save(folder / "p0-masklabel.png")
-    import fizgig.dataset.automask as am
-    monkeypatch.setattr(am, "available", lambda: False)  # no person finder: a subject half without a mask is white
     out = tmp_path / "out"
     logs = []
     mp.build([{"folder": str(folder), "fused": "zwxagirl", "out": str(out), "index": 1}], log=logs.append)
@@ -74,30 +73,22 @@ def test_the_strangers_half_leaves_out_its_background(built):
         assert half[mp.PANEL - 20:, mp.PANEL // 2 - 10:mp.PANEL // 2 + 10].min() == 1.0   # the person: in
 
 
-def test_the_subjects_half_uses_its_own_mask_else_counts_whole(built):
-    out, logs = built
-    own_seen = whole_seen = 0
+def test_the_subjects_half_trains_whole(built):
+    out, _ = built
     for k in range(mp.PER_SUBJECT):
         cap = (out / f"{mp.PREFIX}{k:02d}.txt").read_text(encoding="utf-8")
         m = np.asarray(Image.open(out / f"{mp.PREFIX}{k:02d}-masklabel.png"), dtype=np.float32) / 255
         mine = slice(0, mp.PANEL) if "on the right, and" in cap else slice(mp.PANEL, None)
-        cover = float(m[:, mine].mean())
-        if cover > 0.99:
-            whole_seen += 1
-        else:
-            assert 0.0 < cover < 0.2                      # p0's own small square, cropped like the photo
-            own_seen += 1
-    assert own_seen and whole_seen
-    assert any("no person finder" in line for line in logs)
+        assert m[:, mine].min() == 1.0
 
 
-def test_the_caption_ends_in_its_own_words_and_a_change_rebuilds(built, tmp_path, monkeypatch):
+def test_the_caption_is_as_before_and_masks_rebuild_older_side_by_sides(built):
     out, _ = built
-    cap = (out / f"{mp.PREFIX}00.txt").read_text(encoding="utf-8")
-    assert cap.endswith(mp.TAIL) and "side by side" not in cap
+    assert (out / f"{mp.PREFIX}00.txt").read_text(encoding="utf-8").endswith(
+        ", two people side by side, two close-up portraits")
     import json
     sig = json.load(open(out / "fizgig_mp_built.json", encoding="utf-8"))
-    assert sig["masks"] == 1 and sig["tail"] == mp.TAIL and sig["revision"] == mp.REVISION
+    assert sig["masks"] == 1 and sig["revision"] == mp.REVISION
 
 
 def test_side_by_sides_weigh_at_floor_zero_whatever_the_setting():

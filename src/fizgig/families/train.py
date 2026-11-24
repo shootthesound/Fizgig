@@ -1341,7 +1341,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             ImageDataset.loss_masks = True      # each still with a photo-masklabel.png gets its mask (dataset/masks.py)
         if desc.masked_training:
             from fizgig.dataset.image_dataset import ImageDataset
-            ImageDataset.side_by_side_masks = True     # LoRA Isolation's side-by-sides: always their people only (#407)
+            ImageDataset.side_by_side_masks = True     # LoRA Isolation's side-by-sides: the stranger's background out (#407)
         if face_on:
             from fizgig.dataset.image_dataset import ImageDataset
             ImageDataset.face_boost = float(face_weight)     # each still's largest face as an oval (Boost the face)
@@ -1364,8 +1364,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     sbs_masked = sum(1 for ds in group.datasets for b in ds.batch_manager.buckets.values() for it in b
                      if getattr(it, "mask_path", None) and side_by_side(it.item_key))
     if sbs_masked:
-        logger.info(f"[masks] LoRA Isolation: {sbs_masked} side-by-side picture(s) train on their two people only "
-                    f"(the backgrounds and the seam count x0, whatever the masked-training setting)")
+        logger.info(f"[masks] LoRA Isolation: {sbs_masked} side-by-side picture(s): the stranger's background counts "
+                    f"x0, whatever the masked-training setting")
     mask_prior = float(mask_prior or 0.0) if masked_training else 0.0
     if mask_prior and (slider or finetune):
         logger.info("[masks] keeping the model's own picture outside the mask needs a LoRA to switch off (not a "

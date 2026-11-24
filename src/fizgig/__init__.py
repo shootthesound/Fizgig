@@ -44,7 +44,7 @@ if _os.environ.get("FIZGIG_GPU_BACKEND") == "rocm":
 if _os.environ.get("FIZGIG_GPU_BACKEND") == "rocm":
     from fizgig.utils.gpu_backend import fix_rocm_sdpa_masks as _masks
     _masks()
-# AMD: FIZGIG_MIOPEN=0 turns MIOpen off for convolutions (gpu_backend.miopen_switch, #389); unset changes nothing
+# AMD: MIOpen off for convolutions when Preferences or FIZGIG_MIOPEN=0 say so (gpu_backend.miopen_switch, #389)
 if _os.environ.get("FIZGIG_GPU_BACKEND") == "rocm":
     from fizgig.utils.gpu_backend import miopen_switch as _miopen
     _miopen()

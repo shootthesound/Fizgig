@@ -16,11 +16,28 @@ def test_switch_turns_miopen_off(monkeypatch):
     assert torch.backends.cudnn.enabled is False
 
 
-def test_unset_changes_nothing(monkeypatch):
+def test_unset_changes_nothing(monkeypatch, tmp_path):
+    from fizgig import user_data
+    monkeypatch.setattr(user_data, "PREFS_FILE", str(tmp_path / "prefs.json"))      # no tick saved: MIOpen stays on
     monkeypatch.setattr(torch.backends.cudnn, "enabled", True)
     monkeypatch.delenv("FIZGIG_MIOPEN", raising=False)
     gpu_backend.miopen_switch()
     assert torch.backends.cudnn.enabled is True
+
+
+def test_the_preferences_tick_turns_it_off(monkeypatch, tmp_path):
+    import json
+    from fizgig import user_data
+    path = tmp_path / "prefs.json"
+    path.write_text(json.dumps({"rocm_miopen": "0"}), encoding="utf-8")
+    monkeypatch.setattr(user_data, "PREFS_FILE", str(path))
+    monkeypatch.setattr(torch.backends.cudnn, "enabled", True)
+    monkeypatch.setenv("FIZGIG_MIOPEN", "1")                 # the variable wins
+    gpu_backend.miopen_switch()
+    assert torch.backends.cudnn.enabled is True
+    monkeypatch.delenv("FIZGIG_MIOPEN")
+    gpu_backend.miopen_switch()
+    assert torch.backends.cudnn.enabled is False
 
 
 def _cudnn_after_import(backend, cwd):

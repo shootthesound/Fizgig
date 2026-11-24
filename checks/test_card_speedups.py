@@ -47,8 +47,10 @@ def test_amd_bands_follow_the_tick(prefs, monkeypatch):
 def test_the_page_saves_and_resets_them():
     from fizgig.web import server
     assert server.PREF_DEFAULTS["pin_block_swap"] == "0" and server.PREF_DEFAULTS["rocm_conv_bands"] == "1"
-    assert {"pin_block_swap", "rocm_conv_bands"} <= set(server.SETTING_PREFS)
+    assert server.PREF_DEFAULTS["rocm_miopen"] == "1"
+    assert {"pin_block_swap", "rocm_conv_bands", "rocm_miopen"} <= set(server.SETTING_PREFS)
     js = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "fizgig", "web",
                            "static", "app.js"), encoding="utf-8").read()
     assert 'tick("pin_block_swap", "0")' in js and 'tick("rocm_conv_bands", "1")' in js
+    assert 'tick("rocm_miopen", "1")' in js
     assert "host.append(cardSpeedupsCard());" in js

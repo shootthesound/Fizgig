@@ -31,7 +31,7 @@ If a preview can't fit, previews auto-disable and **training keeps running and s
 ## SageAttention image generation on AMD
 
 With a compatible SageAttention build installed in Fizgig's Python environment, an AMD launch offers
-**Preferences → Inference performance → Force SageAttention for Krea 2 image generation**.
+**Preferences → Speed-ups for your graphics card → Force SageAttention for Krea 2 image generation**.
 It takes effect on the next image in training previews, Studio, Royale and Profiler. Training keeps its own backend.
 
 Generation follows ComfyUI's fixed-length attention calls: expanded K/V heads, explicit HND layout and

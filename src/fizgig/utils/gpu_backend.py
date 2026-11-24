@@ -103,19 +103,25 @@ def report_rocm_devices() -> None:
 
 
 def miopen_switch() -> None:
-    """FIZGIG_MIOPEN=0: convolutions skip MIOpen (torch.backends.cudnn.enabled = False) and use PyTorch's own kernels,
-    as ComfyUI does by default on RDNA3 and newer. Off by default; for #389, where a Windows RX 7900 XTX froze in a VAE
-    recache that slowed with each new picture shape (MIOpen searches kernels per shape). Said on stderr, in the log."""
+    """MIOpen off: convolutions skip it (torch.backends.cudnn.enabled = False) and use PyTorch's own kernels, as
+    ComfyUI does by default on RDNA3 and newer. Preferences > Speed-ups for your graphics card > "Use AMD's MIOpen for
+    convolutions" (on by default; rocm_miopen), FIZGIG_MIOPEN=0/1 winning over it. For #389, where a Windows RX 7900
+    XTX froze in a VAE recache that slowed with each new picture shape (MIOpen searches kernels per shape). Said on
+    stderr, in the log."""
     import os
     import sys
-    if os.environ.get("FIZGIG_MIOPEN") != "0":
+    env = os.environ.get("FIZGIG_MIOPEN", "")
+    if env not in ("0", "1"):
+        from fizgig.user_data import pref
+        env = "0" if pref("rocm_miopen", "1") == "0" else "1"
+    if env != "0":
         return
     try:
         import torch
     except Exception:
         return
     torch.backends.cudnn.enabled = False
-    print("[AMD-ROCm] FIZGIG_MIOPEN=0 - MIOpen off: convolutions use PyTorch's own kernels", file=sys.stderr, flush=True)
+    print("[AMD-ROCm] MIOpen off: convolutions use PyTorch's own kernels", file=sys.stderr, flush=True)
 
 
 def fix_rocm_sdpa_masks() -> None:

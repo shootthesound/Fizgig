@@ -25,6 +25,7 @@ def test_preference_offered_only_on_amd_with_installed_package(monkeypatch, back
 
 
 def test_preference_ui_hides_sage_controls_without_capability():
+    """The Speed-ups card: SageAttention only where it's offered, each kind of card's own group."""
     if not shutil.which("node"):
         pytest.skip("node not installed")
     app = Path(__file__).resolve().parents[1] / "src/fizgig/web/static/app.js"
@@ -32,14 +33,27 @@ def test_preference_ui_hides_sage_controls_without_capability():
     card = source[source.index("const INFERENCE_SWAP"):source.index("// where the LoRA and reference pickers")]
     script = '''
 const assert = require('node:assert/strict');
-const S = {set: {}, sageAttentionOption: false};
+const S = {set: {}, sageAttentionOption: false, rocm: false,
+           gpu: {list: [{index: 0, uuid: "u0", name: "NVIDIA GeForce RTX 5090", total_gb: 31.8}]}};
+const api = () => Promise.resolve(); const showProblems = () => {}; const $ = () => ({classList: {add() {}}});
 function el(tag, props, ...children) {
   return {tag, props, children, append(...items) {this.children.push(...items);}, addEventListener() {}};
 }
 ''' + card + '''
-assert(!JSON.stringify(inferenceCard()).includes('Force SageAttention'));
-S.sageAttentionOption = true;
-assert(JSON.stringify(inferenceCard()).includes('Force SageAttention'));
+const txt = (c) => JSON.stringify(c);
+// SageAttention and INT8 live on Speed-ups for your graphics card now, not Inference performance
+assert(!txt(inferenceCard()).includes('Force SageAttention') && !txt(inferenceCard()).includes('INT8 fast inference ('));
+assert(!txt(cardSpeedupsCard()).includes('Force SageAttention'));
+S.sageAttentionOption = true;        // only ever offered on an AMD launch: never in the NVIDIA group
+const nv = txt(cardSpeedupsCard());
+assert(!nv.includes('Force SageAttention') && nv.includes('RTX 5090') && nv.includes('pinned RAM'));
+assert(nv.includes('INT8 fast inference (recommended)') && !nv.includes('MIOpen'));
+S.rocm = true;                       // an AMD launch: the AMD group only
+const amd = txt(cardSpeedupsCard());
+assert(amd.includes('MIOpen') && amd.includes('Split large convolutions') && !amd.includes('pinned RAM'));
+assert(amd.includes('Force SageAttention'));
+S.sageAttentionOption = false;
+assert(!txt(cardSpeedupsCard()).includes('Force SageAttention'));
 '''
     subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True)
 

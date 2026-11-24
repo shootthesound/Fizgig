@@ -2,9 +2,18 @@
 
 Fizgig is a web page: in its own app window on your computer, in your browser, on a pod, on a machine with no screen, or on your phone or another computer to set up and watch training.
 
+## Speed-ups for your graphics card
+
+**Preferences → Speed-ups for your graphics card** holds the settings that help on some cards and not others. It names your card and shows only the group for it:
+
+- **NVIDIA:** INT8 fast inference (on by default; Studio, Royale, the Profiler and previews), **Keep swapped blocks in pinned RAM (Krea 2)** (off by default: 1.5x on an RTX 5090 with 128 GB of RAM, a few percent slower on some other cards, so compare the s/step in the log; it only turns on with plenty of free RAM), and on Windows **Show how** for turning off CUDA Sysmem Fallback.
+- **AMD:** INT8 fast inference (off by default: the stored fp8 file is faster there), Force SageAttention where it's installed (see below), **Split large convolutions** (on by default: about a third of the VAE's memory for the same result) and **Use AMD's MIOpen for convolutions** (on by default; try it off if caching or previews freeze or slow down picture after picture).
+
+Each run reads these when it starts. `FIZGIG_PIN_SWAP`, `FIZGIG_ROCM_BANDS` and `FIZGIG_MIOPEN` (0 or 1) still win over the ticks.
+
 ## Krea 2 generation on ROCm
 
-In **Preferences → Inference performance**, **Force SageAttention for Krea 2 image generation**
+In **Preferences → Speed-ups for your graphics card** (AMD), **Force SageAttention for Krea 2 image generation**
 uses SageAttention for Krea 2's denoiser, including training previews, Studio, Royale and Profiler.
 It takes effect on the next generated image; training steps keep their existing backend.
 This can avoid PyTorch's high-memory math attention fallback on ROCm. It does not change

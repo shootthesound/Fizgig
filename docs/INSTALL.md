@@ -124,7 +124,7 @@ A failed clone, build or import check prints a warning and installation continue
 including `ensure_face_models()` for the face finder and AdaFace. The ROCm pin,
 bitsandbytes, GPU kernel and VRAM monitor checks are retained. Other architectures
 skip this optional build. Once installed, enable **Force SageAttention for Krea 2
-image generation** under **Preferences → Inference performance**; leave it off if
+image generation** under **Preferences → Speed-ups for your graphics card** (AMD); leave it off if
 the optional build failed.
 
 Linux ROCm cache scripts import `fizgig.rocm.cache_exit` only when `FIZGIG_GPU_BACKEND=rocm` (set by `launch_fizgig_amd.sh`); NVIDIA and other platforms call `main()` directly. Opt out with `FIZGIG_ROCM_NO_FAST_EXIT=1 ./launch_fizgig_amd.sh`.

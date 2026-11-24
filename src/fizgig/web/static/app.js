@@ -87,7 +87,7 @@ async function boot() {
   S.pod = pr.pod;
   S.outputDefault = pr.output_default || "";
   S.outputPref = pr.lora_output_dir || "";
-  S.set = pr.settings || {}; S.setAbs = pr.abs || {}; S.sageAttentionOption = !!pr.sageattention_option; S.rocm = !!pr.rocm;
+  S.set = pr.settings || {}; S.setAbs = pr.abs || {}; S.sageAttentionOption = !!pr.sageattention_option; S.rocm = !!pr.rocm; S.sysmemOption = !!pr.sysmem_option;
   S.studioAutosave = pr.studio_autosave || {};
   S.gpu = {chosen: pr.cuda_device || "", list: pr.gpus || [], envLocked: pr.gpu_env_locked};
   S.all = st.values || {};
@@ -1202,7 +1202,7 @@ function renderPrefs() {
         if (e.target.dataset.sure !== "1") { e.target.dataset.sure = "1"; e.target.textContent = "Reset? Click again"; return; }
         await api("/api/prefs", {reset: true});
         const pr = await api("/api/prefs");
-        S.set = pr.settings || {}; S.setAbs = pr.abs || {}; S.sageAttentionOption = !!pr.sageattention_option; S.rocm = !!pr.rocm;
+        S.set = pr.settings || {}; S.setAbs = pr.abs || {}; S.sageAttentionOption = !!pr.sageattention_option; S.rocm = !!pr.rocm; S.sysmemOption = !!pr.sysmem_option;
         S.studioAutosave = pr.studio_autosave || {};
         S.outputPref = pr.lora_output_dir || ""; S.outputDefault = pr.output_default;
         renderPrefs();
@@ -1330,34 +1330,12 @@ function inferenceCard() {
   swap.value = INFERENCE_SWAP.find((o) => lead && o.startsWith(lead + " ")) || INFERENCE_SWAP[0];
   swap.addEventListener("change", () => api("/api/prefs", {changes: {inference_blocks_to_swap: swap.value}})
     .then(() => { S.set.inference_blocks_to_swap = swap.value; }));
-  const int8 = el("input", {type: "checkbox"});
-  int8.checked = String(S.set.inference_int8 ?? (S.rocm ? "0" : "1")) !== "0";
-  int8.addEventListener("change", () => api("/api/prefs", {changes: {inference_int8: int8.checked}})
-    .then(() => { S.set.inference_int8 = int8.checked ? "1" : "0"; }));
-  const sage = el("input", {type: "checkbox"});
-  sage.checked = String(S.set.inference_sageattention ?? "0") === "1";
-  sage.addEventListener("change", async () => {
-    try {
-      await api("/api/prefs", {changes: {inference_sageattention: sage.checked}});
-      S.set.inference_sageattention = sage.checked ? "1" : "0";
-    } catch (e) { sage.checked = !sage.checked; showProblems([e.message]); }
-  });
-  const sageControls = S.sageAttentionOption ? [
-    el("label", {class: "checkbox-label"}, sage, " Force SageAttention for Krea 2 image generation"),
-    el("div", {class: "field-hint", text: "Krea 2 pictures (training previews, Studio, Royale, the Profiler) use the " +
-      "SageAttention the installer built for your card, from the next picture. Off by default. If pictures fail " +
-      "with it on, turn it off. Training keeps its own attention."})] : [];
   return el("div", {class: "section-card"}, el("div", {class: "card-title"}, el("span", {text: "Inference performance"})),
     el("div", {class: "card-desc", text: "For Studio, Royale, the Profiler and Extract. Block swap moves blocks to the CPU " +
       "between steps to save memory, at some speed. Training manages its own and ignores these."}),
     el("div", {class: "card-content"},
       el("div", {class: "field-row"}, el("span", {class: "field-label", text: "DiT block swap:"}), swap),
-      el("label", {class: "checkbox-label"}, int8, S.rocm ? " INT8 fast inference" : " INT8 fast inference (recommended)"),
-      el("div", {class: "field-hint", text: S.rocm
-        ? "Off by default on AMD cards: there the model's stored fp8 file renders faster and uses far less memory " +
-          "(Krea 2 at 2048 x 2048 on an RX 9070 XT: about twice as fast, a quarter of the RAM). Previews only."
-        : "On by default: same memory as fp8, near-identical pictures, previews only. Turn it off to use fp8."}),
-      ...sageControls));
+      el("div", {class: "field-hint", text: "INT8 fast inference and SageAttention are under Speed-ups for your graphics card."})));
 }
 
 // Preferences > Speed-ups for your graphics card: settings that help on some cards and not others, grouped by the kind
@@ -1376,21 +1354,48 @@ function cardSpeedupsCard() {
   };
   const g = S.gpu || {list: []};
   const card = g.list.find((c) => c.uuid === g.chosen || String(c.index) === g.chosen) || g.list[0];
+  // INT8 fast inference: on by default on NVIDIA, off on AMD (the stored fp8 file renders faster there)
+  const int8 = el("input", {type: "checkbox"});
+  int8.checked = String(S.set.inference_int8 ?? (S.rocm ? "0" : "1")) !== "0";
+  int8.addEventListener("change", () => api("/api/prefs", {changes: {inference_int8: int8.checked}})
+    .then(() => { S.set.inference_int8 = int8.checked ? "1" : "0"; }));
+  const int8Row = (text, hint) => [el("label", {class: "checkbox-label"}, int8, text),
+    el("div", {class: "field-hint", text: hint})];
   const group = (title, ...rows) => el("div", {class: "pref-file"}, el("div", {class: "field-label", text: title}), ...rows);
   const rows = [];
   if (S.rocm) {
     rows.push(group("AMD (Radeon)",
+      ...int8Row(" INT8 fast inference", "Off by default on AMD cards: there the model's stored fp8 file renders " +
+        "faster and uses far less memory (Krea 2 at 2048 x 2048 on an RX 9070 XT: about twice as fast, a quarter of " +
+        "the RAM). For Studio, Royale, the Profiler and previews."),
+      ...(S.sageAttentionOption ? [
+        el("label", {class: "checkbox-label"}, tick("inference_sageattention", "0"),
+          " Force SageAttention for Krea 2 image generation"),
+        el("div", {class: "field-hint", text: "Krea 2 pictures (training previews, Studio, Royale, the Profiler) use the " +
+          "SageAttention the installer built for your card, from the next picture. Off by default. If pictures fail " +
+          "with it on, turn it off. Training keeps its own attention."})] : []),
       el("label", {class: "checkbox-label"}, tick("rocm_conv_bands", "1"), " Split large convolutions (saves memory)"),
       el("div", {class: "field-hint", text: "On by default. The VAE's big convolutions run in strips, so decoding and " +
         "caching don't ask for a work buffer the size of the whole picture: about a third of the memory, the same " +
-        "result. Turn it off only if previews or caching go wrong with it on. From the next run or model load."})));
+        "result. Turn it off only if previews or caching go wrong with it on. From the next run or model load."}),
+      el("label", {class: "checkbox-label"}, tick("rocm_miopen", "1"), " Use AMD's MIOpen for convolutions"),
+      el("div", {class: "field-hint", text: "On by default. Off, convolutions use PyTorch's own kernels instead, as " +
+        "ComfyUI does on newer Radeon cards. Try it off if caching or previews freeze or slow down picture after " +
+        "picture: MIOpen searches for kernels at each new picture shape. From the next run."})));
   } else if (card) {
     rows.push(group("NVIDIA",
+      ...int8Row(" INT8 fast inference (recommended)", "On by default: the same memory as fp8, near-identical " +
+        "pictures, faster. For Studio, Royale, the Profiler and previews. Turn it off to use fp8."),
       el("label", {class: "checkbox-label"}, tick("pin_block_swap", "0"), " Keep swapped blocks in pinned RAM (Krea 2)"),
       el("div", {class: "field-hint", text: "For Krea 2 training with Blocks Swap. 1.5x faster on an RTX 5090 with 128 GB " +
         "of RAM, but a few percent slower on some other cards, so compare the s/step in the log with it on and off. " +
         "It only turns on when there's plenty of free RAM (the swapped blocks' size plus 4 GB), and the log says " +
-        "whether it did. Off by default. From the next run."})));
+        "whether it did. Off by default. From the next run."}),
+      ...(S.sysmemOption ? [
+        el("div", {class: "field-row"}, el("button", {class: "btn", text: "Show how",
+          onclick: () => $("sysmemModal").classList.add("active")}),
+          el("span", {class: "field-hint", text: "Stop Windows moving training into system RAM (CUDA Sysmem Fallback " +
+            "Policy). Driver and Windows updates can turn it back on."}))] : [])));
   }
   const intro = card ? `Your card: ${card.name}${card.total_gb ? ` (${Math.round(card.total_gb)} GB)` : ""}. ` : "";
   return el("div", {class: "section-card"},

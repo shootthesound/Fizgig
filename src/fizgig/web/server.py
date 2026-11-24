@@ -3561,6 +3561,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({"error": "bad host"}, 403)
         u = urlparse(self.path)
         path, qs = u.path, parse_qs(u.query)
+        if path.startswith("/api/") and not path.startswith("/api/app/"):
+            _page_seen[0] = time.time()          # a page is open (it asks for /api/run every 2 s)
         if path in ("/", "/index.html"):
             with open(os.path.join(STATIC_DIR, "index.html"), encoding="utf-8") as f:
                 page = f.read().replace("__FIZGIG_TOKEN__", TOKEN)
@@ -4435,7 +4437,10 @@ class Handler(BaseHTTPRequestHandler):
                         of = int(str(vals.get("MAX_TRAIN_EPOCHS") or "0").strip())
                     except ValueError:
                         of = 0
-                return self.json({"training": busy, "lora": lora, "saved": saved, "of": of, "queued": queued})
+                # page_age: seconds since a page last asked for anything (None: none yet), for a window that gave
+                # way to the browser - it stops the server once the browser is closed and nothing trains (#406)
+                return self.json({"training": busy, "lora": lora, "saved": saved, "of": of, "queued": queued,
+                                  "page_age": round(time.time() - _page_seen[0], 1) if _page_seen[0] else None})
             if busy:                              # cut off by quitting: offered again at the next start
                 with _lock:
                     cut = str(_run.get("history_id") or "")
@@ -5885,6 +5890,7 @@ def _maps_has(output_dir, lora):
 _RESTART = [False]
 _SWITCH = [False]
 _SRV = [None]
+_page_seen = [0.0]                  # when a page last asked for anything (0: none yet); /api/app/busy's page_age
 
 
 def shutdown_for_switch():

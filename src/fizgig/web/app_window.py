@@ -700,6 +700,43 @@ class EngineFailed:
         self.event.set()
 
 
+def browser_done(busy, waited, idle=180, never=300):
+    """After the window gave way to the browser: whether Fizgig can stop. There's no window to close then and, from
+    Launch Fizgig.bat (pythonw), no console either, so closing the browser has to be what closes it (#406: it ran on
+    until Task Manager). `busy` is /api/app/busy's answer (None: no answer), `waited` the seconds since the browser
+    opened. Stops once no page has been heard from for `idle` seconds (3 minutes: a hidden tab's timers can slow to
+    once a minute) or none ever came in `never`, unless a run is training: it finishes first, as quitting the window
+    never cuts a run off unasked."""
+    if busy is None or busy.get("training"):
+        return False
+    age = busy.get("page_age")
+    if age is None:
+        return waited >= never
+    return age >= idle and waited >= idle
+
+
+def _ask_busy(port, key):
+    try:
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/api/app/busy", data=b"{}", method="POST",
+                                     headers={"X-Fizgig-App-Key": key, "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return json.loads(r.read() or b"{}")
+    except Exception:
+        return None
+
+
+def _serve_for_browser(own, port, key, step=5.0, settle=3):
+    """Keep the server up for the browser until browser_done says so `settle` checks in a row (a queued run starts
+    a few seconds after the last one ends), or the server ends by itself."""
+    began, done = time.time(), 0
+    while own.poll() is None:
+        time.sleep(step)
+        done = done + 1 if browser_done(_ask_busy(port, key), time.time() - began) else 0
+        if done >= settle:
+            _log("[app] the browser page is closed and nothing is training: Fizgig stops")
+            return
+
+
 def _windows_engine_problem():
     """Why the window can't show the web UI on this Windows machine, or "". pywebview falls back to the Internet
     Explorer engine when it finds no WebView2 runtime (or .NET under 4.6.2), and the web UI can't run there: the
@@ -1040,11 +1077,12 @@ def main():
                "your distro's gir1.2-webkit2-4.1 and libgirepository dev packages, then `venv/bin/pip install "
                "PyGObject` (the distro's python3-gi isn't seen inside the venv). If the window opens then crashes or "
                "stays blank, try Preferences → App window → Disable GPU for the app window, then open Fizgig again.")
-        _log(f"[app] no app window ({e}) - opening the web UI in your browser instead. {how}")
+        _log(f"[app] no app window ({e}) - opening the web UI in your browser instead. Closing the browser closes "
+             f"Fizgig (a run that's training finishes first). {how}")
         webbrowser.open(url)
         if own is not None:
             try:
-                own.wait()                               # keep the server up until it is stopped (Ctrl+C)
+                _serve_for_browser(own, port, key)
             except KeyboardInterrupt:
                 pass
     finally:

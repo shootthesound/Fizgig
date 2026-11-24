@@ -125,16 +125,13 @@ class Krea2Driver(FamilyDriver):
         else:
             use_h2d = bool(send_only and is_frozen)
         cpu_weights = getattr(dit, "_cpu_weight_masters", None) if not supports_backward else None
-        if use_h2d:
-            pinned = False if use_pinned_memory is None else bool(use_pinned_memory)
-        else:
-            gb = sum(p.numel() * p.element_size() for b in dit.blocks[len(dit.blocks) - num_blocks:]
-                     for p in (*b.parameters(), *b.buffers())) / 1e9
-            pinned = (cpu_weights is None and pin_swap_ok(gb)) if use_pinned_memory is None else bool(use_pinned_memory)
-            if cpu_weights is None:
-                logging.getLogger(__name__).info(
-                    "[block swap] %d blocks (%.1f GB) %s", num_blocks, gb,
-                    "in pinned RAM" if pinned else "in ordinary RAM")
+        gb = sum(p.numel() * p.element_size() for b in dit.blocks[len(dit.blocks) - num_blocks:]
+                 for p in (*b.parameters(), *b.buffers())) / 1e9
+        pinned = (cpu_weights is None and pin_swap_ok(gb)) if use_pinned_memory is None else bool(use_pinned_memory)
+        if cpu_weights is None:
+            logging.getLogger(__name__).info(
+                "[block swap] %d blocks (%.1f GB) %s", num_blocks, gb,
+                "in pinned RAM" if pinned else "in ordinary RAM")
         dit.enable_block_swap(
             num_blocks,
             BlockSwapConfig(

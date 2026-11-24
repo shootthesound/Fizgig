@@ -134,6 +134,8 @@ class FamilyDriver:
         return os.path.getsize(path) / 1e9
 
     # ---- block swap (optional) --------------------------------------------------------------------
+    send_only_block_swap = False
+
     def max_blocks_to_swap(self, dit=None) -> int:
         """How many blocks may stream between CPU and GPU; 0 = the family has no block swap."""
         return 0

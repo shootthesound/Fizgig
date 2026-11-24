@@ -178,6 +178,16 @@ def _krea2(monkeypatch):
     return dit.float(), item
 
 
+def _krea2_stream(monkeypatch):
+    from fizgig.krea2 import driver as KD
+    dit, item = _krea2(monkeypatch)
+
+    def swap(dit, k):
+        drv = KD.Krea2Driver()
+        drv.enable_block_swap(dit, k, "cuda", send_only=True)
+    return dit, item, swap
+
+
 FAMILIES = {"minimax": _h3, "krea2": _krea2, "moss_image": _moss, "fibo2": _fibo, "flux3": _flux3, "qwen_image21": _qwen, "zimage": _zimage,
             "klein": _klein}
 
@@ -240,7 +250,9 @@ def _train(key, build, monkeypatch, swap, batch, steps=3, precision="bf16"):
         if swap and getattr(dit, "offloader_single", None) is not None and blocks is getattr(dit, "single_blocks", None):
             streamed = dit.offloader_single.blocks_to_swap        # Klein splits its swap between two lists
         ring = getattr(dit, "_h2d_offloader", None)
-        allowed = len(blocks) - streamed + (ring.ring_size if ring is not None else 1 if own_swap else 0)
+        offloader = getattr(dit, "offloader", None)
+        ring_b = ring.ring_size if ring is not None else getattr(offloader, "B", 0)
+        allowed = len(blocks) - streamed + (ring_b if ring_b else 1 if own_swap else 0)
         seen = []
 
         hooks = []
@@ -326,12 +338,29 @@ def test_h3_ring_trains_as_with_no_swap(kind, swap, batch, monkeypatch):
                 assert torch.allclose(a, b, atol=1e-5, rtol=1e-4), (step, i, (a - b).abs().max())
 
 
+@pytest.mark.parametrize("batch", [1, 2])
+@pytest.mark.parametrize("swap", [1, 3, 4])
+def test_krea2_stream_trains_as_with_no_swap(swap, batch, monkeypatch):
+    """Krea 2 fast stream offloader (H2D ring with B slots): the same losses and gradients as no swap, and never more
+    streamed blocks on the card than the ring has slots."""
+    want = _train("krea2", _krea2, monkeypatch, 0, batch)
+    got = _train("krea2", _krea2_stream, monkeypatch, swap, batch)
+    for step, ((wl, wg), (gl, gg)) in enumerate(zip(want, got)):
+        assert wl == pytest.approx(gl, rel=1e-5, abs=1e-6), step
+        for i, (a, b) in enumerate(zip(wg, gg)):
+            assert (a is None) == (b is None), (step, i)
+            if a is not None:
+                assert torch.allclose(a, b, atol=1e-5, rtol=1e-4), (step, i, (a - b).abs().max())
+
+
 def _card_weight_bytes(dit):
     """Frozen bytes on the card: every unique storage the model reaches (parameters, buffers, packed codes, bnb's
     quantisation state) plus an H2D ring's own slots - what block swap is there to save."""
     found = []
     ring = getattr(dit, "_h2d_offloader", None)
     found += [t for t in (getattr(ring, "gpu_data", None) or []) if torch.is_tensor(t)]
+    offloader = getattr(dit, "offloader", None)
+    found += [t for t in (getattr(offloader, "ring_flat", None) or []) if torch.is_tensor(t)]
     for m in dit.modules():
         for v in list(m._parameters.values()) + list(m._buffers.values()):
             if v is None:
@@ -381,19 +410,21 @@ def _peak_card_bytes(key, build, monkeypatch, swap):
     return max(seen)
 
 
-@pytest.mark.parametrize("mech", ["exchange", "krea2", "parking", "ring-int8", "ring-nf4", "ring-hqq"])
+@pytest.mark.parametrize("mech", ["exchange", "krea2", "ring-krea2", "parking", "ring-int8", "ring-nf4", "ring-hqq"])
 def test_card_memory_saved_per_swapped_block(mech, monkeypatch):
     """What Auto's planner relies on (peak minus GB per swapped block), at the mechanism level: the exchange offloaders
     (the shared one, Krea 2's) free a whole block per swapped block; H3's parking frees one fewer (a block is always
     in flight); an H2D ring frees nothing for its first ring_size (2) swapped blocks - their card slots cost a block
     each - then the same for each one after. (H3 Image's planner figures are a straight line through 10 / 20 swapped
     blocks, so 1-9 swapped plan on memory a ring doesn't give back: noted for the planner, not changed here.)"""
-    key, build = {"exchange": ("moss_image", _moss), "krea2": ("krea2", _krea2), "parking": ("minimax", _h3),
+    key, build = {"exchange": ("moss_image", _moss), "krea2": ("krea2", _krea2),
+                  "ring-krea2": ("krea2", _krea2_stream),
+                  "parking": ("minimax", _h3),
                   "ring-int8": ("minimax", _h3_ring("int8")), "ring-nf4": ("minimax", _h3_ring("nf4")),
                   "ring-hqq": ("minimax", _h3_ring("hqq"))}[mech]
     base = _peak_card_bytes(key, build, monkeypatch, 0)
     saved = {k: base - _peak_card_bytes(key, build, monkeypatch, k) for k in (1, 2, 3, 4)}
-    if mech in ("exchange", "krea2", "parking"):
+    if mech in ("exchange", "krea2", "ring-krea2", "parking"):
         lost = 1 if mech == "parking" else 0
         unit = saved[4] / (4 - lost)
         assert unit > 0

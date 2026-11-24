@@ -136,11 +136,13 @@ def create_offloader(block_type: str, blocks: list[nn.Module], num_blocks: int, 
     """
     if config.h2d_only:
         # H2D-only streaming for frozen-base (LoRA) training: keep a CPU master, copy Host->Device only.
+        # Stream blocks_to_swap + ring_size blocks so the card slots come out of resident blocks rather than on top (same peak VRAM).
+        streamed = min(num_blocks, blocks_to_swap + config.ring_size)
         return LoRAStreamOffloader(
             block_type,
             blocks,
             num_blocks,
-            blocks_to_swap,
+            streamed,
             config.supports_backward,
             config.device,
             ring_size=config.ring_size,

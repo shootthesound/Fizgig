@@ -1284,8 +1284,8 @@ def train_command(desc, inputs, plan):
     swap = swap_blocks(st.get("blocks_swap"))
     if swap:
         cmd += ["--blocks_to_swap", str(swap)]       # -1: the trainer sizes it for the precision that runs
-    if st.get("FAST_LORA_STREAM"):
-        cmd += ["--fast_lora_stream"]
+    if st.get("send_only_swap"):
+        cmd += ["--send_only_swap"]
     if desc.ema_default:
         ema = str(st.get("FAMILY_EMA", "") or desc.ema_default).split(" ")[0]
         if ema != "Off":

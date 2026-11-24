@@ -85,7 +85,7 @@ DEFAULTS = {
     "LORA_NAME": "", "LEARNING_RATE": "4e-4", "LORA_LR_RATIO": "1", "NETWORK_DIM": "4", "NETWORK_ALPHA": "4",
     "NETWORK_TYPE": "LoRA (standard)", "LOKR_FACTOR": "8", "MAX_TRAIN_EPOCHS": "12", "SAVE_EVERY_N_EPOCHS": "1",
     "SAVE_LATER": False, "SAVE_UNTIL_EPOCH": "10", "SAVE_EVERY_AFTER": "1",
-    "SEED": "42", "BLOCKS_SWAP": "Auto (detect from GPU)", "FAST_LORA_STREAM": False, "RESUME_TRAINING": "", "OPTIMIZER_TYPE": "adamw8bit",
+    "SEED": "42", "BLOCKS_SWAP": "Auto (detect from GPU)", "RESUME_TRAINING": "", "OPTIMIZER_TYPE": "adamw8bit",
     "OPTIMIZER_ARGS": "", "GRADIENT_ACCUMULATION": "1", "BATCH_SIZE": "1", "MAX_GRAD_NORM": "1.0", "LR_SCHEDULER": "constant",
     "LR_WARMUP_STEPS": "", "ADAPTIVE_LR": False, "ADAPTIVE_LR_MIN": "1e-5", "ADAPTIVE_LR_MAX": "4e-4",
     "CONTEXT_LORA_PATH": "", "CONTEXT_LORA_STRENGTH": "1.0", "FAMILY_DOP": False, "FAMILY_MULTI_PERSON": False, "FAMILY_DOP_TRIGGER": "",
@@ -690,9 +690,6 @@ def form(desc):
     add("memory", "Memory & Precision", "training", [
         _row("BLOCKS_SWAP", "Blocks Swap", "combo", "Auto plans the fewest swapped blocks that fit your free VRAM.",
              SWAP) if launch.swaps_blocks(desc) else None,       # SDXL, Anima, ACE-Step: no block swap to set
-        _row("FAST_LORA_STREAM", "Fast stream offload (Krea 2 LoRA)", "check",
-             "Stream frozen base weights via double-buffered GPU ring buffers (no CPU writeback). "
-             "Faster training when block swapping, training only.") if desc.key == "krea2" else None,
         _row("FAMILY_PRECISION", desc.precision_label or "Base precision", "choice", desc.precision_hint,
              [labels[p] for p in precisions], default=labels["auto"]) if len(desc.precisions) > 1 else None,
         _row("COMPILE_BLOCKS", "Compile Blocks", "choice", desc.compile_hint, ["Auto", "On", "Off"])
@@ -1338,8 +1335,6 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     else:
         hidden.add("LEARNING_RATE")          # Adaptive LR on: Min and Max in its place (the box is ignored)
     if kind == "finetune":       # a fine-tune trains at its own fixed rate: no Adaptive LR, on any model
-        disabled.add("FAST_LORA_STREAM")
-        force["FAST_LORA_STREAM"] = False
         hidden.add("ADAPTIVE_LR")
     if kind == "finetune":       # its optimizers take no args; a LoRA optimizer is said, and trains as Adafactor (#312)
         from fizgig.training.optimizers import FT_OPTIMIZERS
@@ -1809,7 +1804,7 @@ def _option_values(desc, values):
 
 
 def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, samples_dir, inference_int8=False,
-           captioner="", caption_overrides=None, caption_concept=""):
+           captioner="", caption_overrides=None, caption_concept="", send_only_swap=False):
     """The launch plan's inputs from the form's values, as the desktop's _family_launch_inputs builds them."""
     v = {**DEFAULTS, **({"SAMPLE_PROMPT": desc.sample_prompt} if desc.sample_prompt else {}), **values}
     kind = _kind(desc, v)
@@ -1850,8 +1845,8 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
         STAGE_MP=s("STAGE_MP") if desc.resolution_stages else "", STAGE_UNTIL=s("STAGE_UNTIL"),
         clip_megapixels=s("CLIP_MEGAPIXELS") if "clip" in desc.media else "",
         enable_bucket=b("ENABLE_BUCKET"), no_upscale=b("BUCKET_NO_UPSCALE"), cache_root=cache_root,
-        blocks_swap=s("BLOCKS_SWAP"), enable_cache=b("ENABLE_CACHE"),
-        FAST_LORA_STREAM=b("FAST_LORA_STREAM"), resuming=bool(s("RESUME_TRAINING")),
+        blocks_swap=s("BLOCKS_SWAP"), enable_cache=b("ENABLE_CACHE"), resuming=bool(s("RESUME_TRAINING")),
+        send_only_swap=bool(send_only_swap),
         loss_watch={"detect": b("KREA2_LOSS_WATCH") and desc.loss_watch,
                     "per_image_lr": b("KREA2_PER_IMAGE_LR") and desc.loss_watch,
                     "warmup": b("KREA2_WARMUP_LOOK") and desc.loss_watch,

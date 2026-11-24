@@ -1145,6 +1145,7 @@ function renderPrefs() {
   host.append(outputFolderCard());
   host.append(foldersCard());
   host.append(inferenceCard());
+  host.append(trainingMemoryCard());
   host.append(captionerCard());
   const gpuCard = gpuPickCard();
   if (gpuCard) host.append(gpuCard);
@@ -1357,6 +1358,23 @@ function inferenceCard() {
           "(Krea 2 at 2048 x 2048 on an RX 9070 XT: about twice as fast, a quarter of the RAM). Previews only."
         : "On by default: same memory as fp8, near-identical pictures, previews only. Turn it off to use fp8."}),
       ...sageControls));
+}
+
+function trainingMemoryCard() {
+  const sendOnly = el("input", {type: "checkbox", id: "prefSendOnlySwap"});
+  sendOnly.checked = String(S.set.send_only_block_swap ?? "0") === "1";
+  sendOnly.addEventListener("change", () => api("/api/prefs", {changes: {send_only_block_swap: sendOnly.checked}})
+    .then(() => { S.set.send_only_block_swap = sendOnly.checked ? "1" : "0"; }));
+  return el("div", {class: "section-card", id: "prefsTrainingMemory"},
+    el("div", {class: "card-title"}, el("span", {text: "Training memory"})),
+    el("div", {class: "card-content"},
+      el("label", {class: "checkbox-label", title: "Krea 2 LoRA runs with Blocks Swap: the base model never changes " +
+        "while a LoRA trains, so each swapped block is only copied to the GPU and dropped after use, never copied back. " +
+        "Same VRAM, same results, less copying. Off by default."},
+        sendOnly, " Faster block swap (send-only)"),
+      el("div", {class: "field-hint", text: "Off by default. LoRA runs with Blocks Swap on Krea 2; " +
+        "fine-tunes and other models keep the classic swap. It switches itself off for a run where it won't help " +
+        "(NF4, un-checkpointed blocks, or only a few blocks swapped) and says why in the log."})));
 }
 
 // where the LoRA and reference pickers start (Preferences > Other folders, else what they used before)
@@ -1963,7 +1981,7 @@ async function start(path, body) {
 const SIZE_KEYS = {DATASET_MEGAPIXELS: "Target Megapixels", CLIP_MEGAPIXELS: "Clip Megapixels"};
 // what Resume takes from the form as it is now (server.py _RESUME_SAMPLE_KEYS); the rest trains on as the run began
 const RESUME_KEYS = ["SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS", "SAMPLE_CFG_SCALE",
-  "FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_ON", "SAMPLE_CHECKPOINT", "BLOCKS_SWAP", "FAST_LORA_STREAM", "FAMILY_PREVIEW_LOOK",
+  "FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_ON", "SAMPLE_CHECKPOINT", "BLOCKS_SWAP", "FAMILY_PREVIEW_LOOK",
   "SAMPLE_EVERY_N_EPOCHS", "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH", "SAMPLE_EVERY_AFTER",
   "SAVE_EVERY_N_EPOCHS", "SAVE_LATER", "SAVE_UNTIL_EPOCH", "SAVE_EVERY_AFTER",
   "LEARNING_RATE", "ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX"];

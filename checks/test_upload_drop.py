@@ -60,3 +60,11 @@ def test_single_purpose_boxes_take_only_their_kind():
                     assert r.get("accept") == want[r["key"]], (desc.key, r["key"])
                     seen.add(r["key"])
     assert seen == set(want)
+
+
+def test_drop_outline_shows_on_text_boxes():
+    """The text box rule (input[type="text"] { outline: none }) outranks a bare .drop-over, so the path boxes - most
+    of the drop targets - showed no dashed outline while a file hovered; only the Upload buttons did."""
+    css = os.path.join(os.path.dirname(APP), "style.css")
+    with open(css, encoding="utf-8") as f:
+        assert ":is(input, textarea, select).drop-over" in f.read()

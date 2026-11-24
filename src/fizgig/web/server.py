@@ -402,7 +402,7 @@ PREF_DEFAULTS = {"lora_output_dir": "output_loras", "profiles_dir": "user_data/p
                  "studio_outputs_dir": "Studio_Outputs",
                  "runpod_stop_when_done": "0", "inference_blocks_to_swap": "Auto (detect from GPU)",
                  "inference_int8": "0" if ROCM_LAUNCH else "1", "inference_sageattention": "0", "lan_discovery": "1",
-                 "update_check": "1",
+                 "update_check": "1", "pin_block_swap": "0", "rocm_conv_bands": "1",
                  # Choose…: the computer's own Open / folder window, or Fizgig's chooser (its buttons jump to the
                  # training and output folders). Off on Windows by default (#387), on elsewhere
                  "native_file_window": "0" if sys.platform == "win32" else "1"}
@@ -479,7 +479,7 @@ def set_folder_lora_name(folder, name):
 # the Preferences settings Reset to defaults puts back (the model files are never reset)
 SETTING_PREFS = ("lora_output_dir", "profiles_dir", "cache_dir", "studio_outputs_dir", "input_lora_dir", "input_ref_dir",
                  "inference_blocks_to_swap", "inference_int8", "inference_sageattention", "lan_discovery", "update_check",
-                 "native_file_window")
+                 "native_file_window", "pin_block_swap", "rocm_conv_bands")
 
 
 def load_prefs() -> dict:
@@ -5049,6 +5049,7 @@ class Handler(BaseHTTPRequestHandler):
                 if "inference_int8" in ch:
                     ch["inference_int8"] = "1" if ch["inference_int8"] in (True, "1", 1) else "0"
                 for k in ("lan_discovery", "update_check", "qt_disable_gpu", "inference_sageattention", "native_file_window",
+                          "pin_block_swap", "rocm_conv_bands",
                           *(k for k in ch if k in autosave_keys)):
                     if k in ch:
                         ch[k] = "1" if ch[k] in (True, "1", 1) else "0"

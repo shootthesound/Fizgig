@@ -46,6 +46,17 @@ def user_file(name):
     return os.path.join(USER_DATA, name)
 
 
+def pref(key, default=""):
+    """One Preferences setting as text, read from prefs.json each call (a training run or worker reads the choice the
+    page saved), or `default` when it isn't set or the file can't be read."""
+    try:
+        with open(PREFS_FILE, encoding="utf-8") as f:
+            v = json.load(f).get(key)
+    except (OSError, ValueError):
+        return default
+    return default if v is None or v == "" else str(v)
+
+
 def _park(src):
     """Both places hold it: the old one is kept, out of the way and where it was (its folders too), not lost."""
     dest = os.path.join(USER_DATA, "from_fizgig_7", os.path.relpath(src, BASE_DIR))

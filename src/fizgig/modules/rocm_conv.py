@@ -11,7 +11,8 @@ A convolution's output row reads only the input rows under its kernel, so splitt
 giving each band exactly the input rows it needs (zero rows where the padding would be) computes the same values - not
 tiles blended at their seams, the same convolution - with the work buffer bounded by the band. Only convolutions whose
 im2col-sized buffer would pass BAND_BYTES are split, so the DiTs' small convolutions and everything else run as before.
-ROCm only; FIZGIG_ROCM_BANDS=0 turns it off. NVIDIA never installs it.
+ROCm only. Preferences > Speed-ups for your graphics card > "Split large convolutions" (on by default) turns it off,
+and FIZGIG_ROCM_BANDS=0/1 wins over it. NVIDIA never installs it.
 """
 import os
 
@@ -60,10 +61,19 @@ def _banded(fn, nd):
     return conv
 
 
+def wanted():
+    """FIZGIG_ROCM_BANDS=0/1 when set, else Preferences' rocm_conv_bands (on unless switched off)."""
+    env = os.environ.get("FIZGIG_ROCM_BANDS", "")
+    if env in ("0", "1"):
+        return env == "1"
+    from fizgig.user_data import pref
+    return pref("rocm_conv_bands", "1") != "0"
+
+
 def install(force=False):
     """On ROCm (or force=True, for checks): F.conv2d / F.conv3d banded. Idempotent. nn.Conv2d / Conv3d call F.conv*
     at run time, so every VAE picks it up."""
-    if not (force or getattr(torch.version, "hip", None)) or os.environ.get("FIZGIG_ROCM_BANDS", "1") == "0":
+    if not force and not (getattr(torch.version, "hip", None) and wanted()):
         return False
     for name, nd in (("conv2d", 2), ("conv3d", 3)):
         fn = getattr(F, name)

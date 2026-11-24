@@ -1145,6 +1145,7 @@ function renderPrefs() {
   host.append(outputFolderCard());
   host.append(foldersCard());
   host.append(inferenceCard());
+  host.append(cardSpeedupsCard());
   host.append(captionerCard());
   const gpuCard = gpuPickCard();
   if (gpuCard) host.append(gpuCard);
@@ -1357,6 +1358,47 @@ function inferenceCard() {
           "(Krea 2 at 2048 x 2048 on an RX 9070 XT: about twice as fast, a quarter of the RAM). Previews only."
         : "On by default: same memory as fp8, near-identical pictures, previews only. Turn it off to use fp8."}),
       ...sageControls));
+}
+
+// Preferences > Speed-ups for your graphics card: settings that help on some cards and not others, grouped by the kind
+// of card, only the group for this machine's card shown (AMD: the AMD launcher; NVIDIA: nvidia-smi lists a card)
+function cardSpeedupsCard() {
+  const tick = (key, dflt) => {
+    const box = el("input", {type: "checkbox"});
+    box.checked = String(S.set[key] || dflt) === "1";
+    box.addEventListener("change", async () => {
+      try {
+        await api("/api/prefs", {changes: {[key]: box.checked}});
+        S.set[key] = box.checked ? "1" : "0";
+      } catch (e) { box.checked = !box.checked; showProblems([e.message]); }
+    });
+    return box;
+  };
+  const g = S.gpu || {list: []};
+  const card = g.list.find((c) => c.uuid === g.chosen || String(c.index) === g.chosen) || g.list[0];
+  const group = (title, ...rows) => el("div", {class: "pref-file"}, el("div", {class: "field-label", text: title}), ...rows);
+  const rows = [];
+  if (S.rocm) {
+    rows.push(group("AMD (Radeon)",
+      el("label", {class: "checkbox-label"}, tick("rocm_conv_bands", "1"), " Split large convolutions (saves memory)"),
+      el("div", {class: "field-hint", text: "On by default. The VAE's big convolutions run in strips, so decoding and " +
+        "caching don't ask for a work buffer the size of the whole picture: about a third of the memory, the same " +
+        "result. Turn it off only if previews or caching go wrong with it on. From the next run or model load."})));
+  } else if (card) {
+    rows.push(group("NVIDIA",
+      el("label", {class: "checkbox-label"}, tick("pin_block_swap", "0"), " Keep swapped blocks in pinned RAM (Krea 2)"),
+      el("div", {class: "field-hint", text: "For Krea 2 training with Blocks Swap. 1.5x faster on an RTX 5090 with 128 GB " +
+        "of RAM, but a few percent slower on some other cards, so compare the s/step in the log with it on and off. " +
+        "It only turns on when there's plenty of free RAM (the swapped blocks' size plus 4 GB), and the log says " +
+        "whether it did. Off by default. From the next run."})));
+  }
+  const intro = card ? `Your card: ${card.name}${card.total_gb ? ` (${Math.round(card.total_gb)} GB)` : ""}. ` : "";
+  return el("div", {class: "section-card"},
+    el("div", {class: "card-title"}, el("span", {text: "Speed-ups for your graphics card"})),
+    el("div", {class: "card-desc", text: intro + (rows.length
+      ? "Settings that help on some cards and not others. Only the ones for your kind of card are shown."
+      : "Nothing here applies to this machine.")}),
+    el("div", {class: "card-content"}, ...rows));
 }
 
 // where the LoRA and reference pickers start (Preferences > Other folders, else what they used before)

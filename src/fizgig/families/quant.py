@@ -219,13 +219,18 @@ def swap_blocks_for(desc, per_block, short_gb):
 
 
 def pin_swap_ok(pinned_gb, available_gb=None):
-    """Whether the swapped blocks may live in pinned (page-locked) RAM - opt-in: FIZGIG_PIN_SWAP=1, and then only with
-    the pinned size plus 4 GB free. It isn't a win everywhere (Krea 2, INT8, the existing swap): 1.5x on a 5090 with
+    """Whether the swapped blocks may live in pinned (page-locked) RAM - opt-in, and then only with the pinned size plus
+    4 GB free. It isn't a win everywhere (Krea 2, INT8, the existing swap): 1.5x on a 5090 with
     128 GB (16 swapped, 1 MP: 3.06 -> 2.01 s/it), 4% on a 32 GB 4090 laptop, where 7.0 GB pinned took free RAM from a
     2.6 GB low to 0.2 GB, and 5.5% slower on a 4070 Ti with 64 GB (22 swapped, 0.25 MP: 4.90 -> 5.17, @Murf-Code on
     #403), with ~8 GB more RAM and 13.7 GiB of Windows shared GPU memory. Pinning with RAM nearly full has failed
-    before (#175). Off by default, as before."""
-    if os.environ.get("FIZGIG_PIN_SWAP", "") != "1":
+    before (#175). Off by default: Preferences > Speed-ups for your graphics card > "Keep swapped blocks in pinned
+    RAM" (pin_block_swap) turns it on, and FIZGIG_PIN_SWAP=0/1 wins over it."""
+    env = os.environ.get("FIZGIG_PIN_SWAP", "")
+    if env not in ("0", "1"):
+        from fizgig.user_data import pref
+        env = "1" if pref("pin_block_swap", "0") == "1" else "0"
+    if env != "1":
         return False
     if available_gb is None:
         import psutil

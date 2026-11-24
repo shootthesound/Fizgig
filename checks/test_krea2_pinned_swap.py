@@ -9,7 +9,9 @@ import pytest
 from fizgig.families import quant
 
 
-def test_off_by_default(monkeypatch):
+def test_off_by_default(monkeypatch, tmp_path):
+    from fizgig import user_data
+    monkeypatch.setattr(user_data, "PREFS_FILE", str(tmp_path / "prefs.json"))     # no tick saved
     monkeypatch.delenv("FIZGIG_PIN_SWAP", raising=False)
     assert quant.pin_swap_ok(1.0, 500) is False
     monkeypatch.setenv("FIZGIG_PIN_SWAP", "0")

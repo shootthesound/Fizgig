@@ -113,9 +113,18 @@ class Krea2Driver(FamilyDriver):
 
     def enable_block_swap(self, dit, num_blocks, device, supports_backward=True):
         from fizgig.krea2.offloading import BlockSwapConfig
+        from fizgig.families.quant import pin_swap_ok
         cpu_weights = getattr(dit, "_cpu_weight_masters", None) if not supports_backward else None
+        # the swapped blocks (the last num_blocks) in pinned RAM when there's room to spare: no staging pass per copy
+        gb = sum(p.numel() * p.element_size() for b in dit.blocks[len(dit.blocks) - num_blocks:]
+                 for p in (*b.parameters(), *b.buffers())) / 1e9
+        pinned = cpu_weights is None and pin_swap_ok(gb)
+        if cpu_weights is None:
+            logging.getLogger(__name__).info(
+                "[block swap] %d blocks (%.1f GB) %s", num_blocks, gb,
+                "in pinned RAM" if pinned else "in ordinary RAM")
         dit.enable_block_swap(num_blocks, BlockSwapConfig(torch.device(device), supports_backward=supports_backward,
-                                                         cpu_weights=cpu_weights))
+                                                         use_pinned_memory=pinned, cpu_weights=cpu_weights))
         dit.move_to_device_except_swap_blocks(torch.device(device))
         dit.switch_block_swap_for_training()
 

@@ -308,6 +308,15 @@ class SingleStreamBlock(nn.Module):
         return x
 
 
+def _run_krea2_block(block, index, offloader, combined, tvec, freqs, attn_params):
+    """Run one DiT block, waiting for its weights in the GPU ring if offloaded.
+    Placed at module level so torch.utils.checkpoint re-runs the wait inside
+    the backward recompute pass, ensuring weights are resident on GPU."""
+    if offloader is not None:
+        offloader.wait_for_block(index)
+    return block(combined, tvec, freqs, attn_params)
+
+
 class SingleStreamDiT(nn.Module):
     def __init__(self, config: SingleMMDiTConfig, attn_mode: str = "torch", split_attn: bool = False):
         super().__init__()
@@ -486,17 +495,21 @@ class SingleStreamDiT(nn.Module):
         attn_probe.layout((0, imglen), imglen, combined.shape[1], fulllen)    # the padded tail isn't attended
 
         for index, block in enumerate(self.blocks):
-            if self.blocks_to_swap:
-                self.offloader.wait_for_block(index)
+            offloader = self.offloader if self.blocks_to_swap else None
 
             if getattr(block, "_handles_checkpointing", False):
                 # torch.compile wraps blocks in a module that checkpoints itself, so the recompute
                 # is captured inside the compiled graph. Checkpointing again here would nest it.
+                if offloader is not None:
+                    offloader.wait_for_block(index)
                 combined = block(combined, tvec, freqs, attn_params)
             elif self.gradient_checkpointing and self.training:
-                combined = torch.utils.checkpoint.checkpoint(block, combined, tvec, freqs, attn_params, use_reentrant=False)
+                combined = torch.utils.checkpoint.checkpoint(
+                    _run_krea2_block, block, index, offloader, combined, tvec, freqs, attn_params,
+                    use_reentrant=False
+                )
             else:
-                combined = block(combined, tvec, freqs, attn_params)
+                combined = _run_krea2_block(block, index, offloader, combined, tvec, freqs, attn_params)
 
             if self.blocks_to_swap:
                 self.offloader.submit_move_blocks_forward(self.blocks, index)

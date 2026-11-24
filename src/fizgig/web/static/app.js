@@ -1394,6 +1394,14 @@ function cardSpeedupsCard() {
         "off and compare s/step in the log.",
         "It only turns on with enough free RAM (the swapped blocks plus 4 GB), and the log says whether it did. " +
         "From the next run."),
+      setting(tick("send_only_block_swap", "0"), "Faster block swap (send-only)",
+        "For Krea 2 LoRA training with Blocks Swap on.",
+        "Off by default. The base model doesn't change while a LoRA trains, so each swapped block is only copied to " +
+        "the card and never copied back, with the same memory and the same results. 1.5x on an RTX 5090, about " +
+        "the same on a 16 GB laptop RTX 4090: to see what it does on yours, train once with it on and once off and " +
+        "compare s/step in the log. Works with or without pinned RAM.",
+        "Fine-tunes and other models keep the usual swap. It also stays off for a run with NF4, with gradient " +
+        "checkpointing off, or with fewer than 4 blocks swapped, and the log says why. From the next run."),
       ...(S.sysmemOption ? [setting(null, "Stop Windows moving training into system RAM",
         "For training on Windows.",
         "When the card fills up, NVIDIA's driver can quietly move part of a run into system RAM, and training runs " +

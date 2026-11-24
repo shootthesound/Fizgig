@@ -136,11 +136,13 @@ def create_offloader(block_type: str, blocks: list[nn.Module], num_blocks: int, 
     """
     if config.h2d_only:
         # H2D-only streaming for frozen-base (LoRA) training: keep a CPU master, copy Host->Device only.
+        # Stream blocks_to_swap + ring_size blocks so the card slots come out of resident blocks rather than on top (same peak VRAM).
+        streamed = min(num_blocks, blocks_to_swap + config.ring_size)
         return LoRAStreamOffloader(
             block_type,
             blocks,
             num_blocks,
-            blocks_to_swap,
+            streamed,
             config.supports_backward,
             config.device,
             ring_size=config.ring_size,
@@ -1052,6 +1054,10 @@ class LoRAStreamOffloader:
         self.copier.reset()
         for k in range(self.B):
             self._load(k, k)
+            blk = self.stream_idx[k]
+            if self.copier.wait(blk) is None:
+                if hasattr(self.copier, "_events"):
+                    self.copier._events[blk] = self.copier.copy_stream.record_event()
 
         _synchronize_device(self.device)
         _clean_memory_on_device(self.device)
@@ -1071,6 +1077,8 @@ class LoRAStreamOffloader:
             self._load(j, slot, ctx)
         ev = self.copier.wait(block_idx)
         if ev is None:
+            # Fallback: ensure compute stream is fully synced with any in-flight DMA on copy_stream
+            torch.cuda.current_stream().wait_stream(self.copier.copy_stream)
             return
         if not self.debug:
             torch.cuda.current_stream().wait_event(ev)  # compute waits for H2D (GPU-side, does not block CPU)
@@ -1122,7 +1130,11 @@ class LoRAStreamOffloader:
                 self.free_event[j % self.B] = torch.cuda.current_stream().record_event()
                 if j - self.B >= 0:
                     self._load(j - self.B, (j - self.B) % self.B, "bwd")  # same slot as rank j; evicts rank j
-            if wait_prev:
+                if j - 1 >= 0:
+                    self._wait_ctx = "bwd"
+                    self.wait_for_block(self.stream_idx[j - 1])
+                    self._wait_ctx = "fwd"
+            elif wait_prev:
                 self._wait_ctx = "bwd"
                 self.wait_for_block(block_index - 1)  # ensure the next block to run is ready
                 self._wait_ctx = "fwd"

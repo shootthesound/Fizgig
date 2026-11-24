@@ -1181,7 +1181,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  dop=False, dop_trigger=None, dop_class="", dop_weight=1.0, dop_every=1, dop_ft_samples=8,
                  lr_boost=None, share_worker=None, masked_training=False, mask_floor=0.1, mask_prior=0.0, face_weight=1.0, face_area="face", face_cycle="1:0", face_until="0:0",
                  caption_dropout=0.0, stage_dataset_config=None, stage_until=0.3, stage_blend=0.1,
-                 batch_size_auto=False):
+                 batch_size_auto=False, send_only_swap=False):
     desc = get_family(family)
     if desc is None or not desc.training_ready:
         raise RuntimeError(f"unknown or untrainable family {family!r}")
@@ -1830,7 +1830,21 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
 
     # ---- model ----------------------------------------------------------------------------------
     logger.info(f"Loading {desc.display_name} DiT ({precision}) from {dit_path}")
-    dit, swapped = quant.load_base(driver, dit_path, device, precision, blocks_to_swap)
+    send_only = False
+    if send_only_swap:
+        if finetune:
+            logger.info("[block swap] send-only off: fine-tune trains base weights - classic swap")
+        elif precision == "nf4":
+            pass
+        elif not gradient_checkpointing:
+            logger.info("[block swap] send-only off: gradient checkpointing is off this run - classic swap")
+        elif gc_off_blocks:
+            logger.info(f"[block swap] send-only off: {gc_off_blocks} block(s) run un-checkpointed - classic swap")
+        elif 0 < int(blocks_to_swap or 0) < 4:
+            logger.info(f"[block swap] Faster block swap is off for this run: only {blocks_to_swap} blocks swapped (it helps from 4)")
+        elif int(blocks_to_swap or 0) > 0:
+            send_only = True
+    dit, swapped = quant.load_base(driver, dit_path, device, precision, blocks_to_swap, send_only=send_only)
     if gradient_checkpointing:
         driver.enable_gradient_checkpointing(dit, True)
         dit.gc_off_blocks = gc_off_blocks       # the compiled blocks / H3's loop leave the last ones un-checkpointed
@@ -3388,6 +3402,8 @@ def setup_parser():
                    help="base precision: bf16, int8 (8-bit, int8 matmuls), nf4 (4-bit) or auto (fits free VRAM)")
     p.add_argument("--blocks_to_swap", type=int, default=0,
                    help="blocks streamed between CPU and GPU (not with nf4); -1 = as few as fit free VRAM")
+    p.add_argument("--send_only_swap", action="store_true", default=False,
+                   help="stream frozen base weights host -> device into a ring buffer without copying back")
     p.add_argument("--network_dim", type=int, default=32)
     p.add_argument("--network_type", default="lora", choices=("lora", "lokr"))
     p.add_argument("--preview_lora", default=None,
@@ -3603,7 +3619,7 @@ def main():
         prompts = [""]          # a reference alone: 'generate from this picture'
     train_family(
         a.family, a.dit, a.dataset_config, a.output_dir, a.output_name, precision=a.precision,
-        blocks_to_swap=a.blocks_to_swap, speed_lora_strength=a.speed_lora_strength, network_type=a.network_type, lokr_factor=a.lokr_factor,
+        blocks_to_swap=a.blocks_to_swap, send_only_swap=a.send_only_swap, speed_lora_strength=a.speed_lora_strength, network_type=a.network_type, lokr_factor=a.lokr_factor,
         log_per_image_loss=a.log_per_image_loss, per_image_lr=a.per_image_lr, auto_recaption=a.auto_recaption,
         training_maps=a.training_maps, training_maps_images=a.training_maps_images,
         warmup_look_outliers=a.warmup_look_outliers, trigger_word=a.trigger_word, trigger_position=a.trigger_position,

@@ -70,6 +70,16 @@ def mask_weight(m, floor):
     return m.clamp(min=float(floor), max=1.0)
 
 
+def weights_with_side_by_sides(m, sbs, floor, masked_training):
+    """A batch's loss weights when it holds LoRA Isolation's side-by-sides (sbs: one bool per picture): theirs at floor
+    0, so only their two people count (#407); the others at the run's floor when it trains masked, else whole (their
+    mask is all ones then). m: (B, ...) masks in [0, 1]."""
+    import torch
+    fl = torch.tensor([0.0 if s else (float(floor) if masked_training else 1.0) for s in sbs],
+                      device=m.device, dtype=m.dtype).view(-1, *([1] * (m.dim() - 1)))
+    return torch.maximum(m, fl).clamp(max=1.0)
+
+
 MIN_COVER = 0.01        # a mask with less white than this (an all-black one) leaves nothing to train on: not used
 
 

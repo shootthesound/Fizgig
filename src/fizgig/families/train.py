@@ -1339,6 +1339,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 raise RuntimeError(f"{desc.display_name} has no masked training - drop --masked_training")
             from fizgig.dataset.image_dataset import ImageDataset
             ImageDataset.loss_masks = True      # each still with a photo-masklabel.png gets its mask (dataset/masks.py)
+        if desc.masked_training:
+            from fizgig.dataset.image_dataset import ImageDataset
+            ImageDataset.side_by_side_masks = True     # LoRA Isolation's side-by-sides: always their people only (#407)
         if face_on:
             from fizgig.dataset.image_dataset import ImageDataset
             ImageDataset.face_boost = float(face_weight)     # each still's largest face as an oval (Boost the face)
@@ -1357,6 +1360,12 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                              for b in ds.batch_manager.buckets.values() for it in b if getattr(it, "mask_path", None)})
         logger.info(f"[masks] masked training: {masked_images} picture(s) with a mask, outside the mask counts "
                     f"x{float(mask_floor):g}")
+    from fizgig.dataset.image_dataset import side_by_side
+    sbs_masked = sum(1 for ds in group.datasets for b in ds.batch_manager.buckets.values() for it in b
+                     if getattr(it, "mask_path", None) and side_by_side(it.item_key))
+    if sbs_masked:
+        logger.info(f"[masks] LoRA Isolation: {sbs_masked} side-by-side picture(s) train on their two people only "
+                    f"(the backgrounds and the seam count x0, whatever the masked-training setting)")
     mask_prior = float(mask_prior or 0.0) if masked_training else 0.0
     if mask_prior and (slider or finetune):
         logger.info("[masks] keeping the model's own picture outside the mask needs a LoRA to switch off (not a "
@@ -1411,8 +1420,11 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         return total, out
 
     def _loss_mask(batch):
-        """The step's per-cell loss weights (masked training), or None: a picture without a mask trains as normal."""
-        m = batch.get("loss_mask") if masked_training else None
+        """The step's per-cell loss weights (masked training), or None: a picture without a mask trains as normal.
+        LoRA Isolation's side-by-sides weigh by their masks at floor 0 whatever the run's setting (#407)."""
+        from fizgig.dataset.image_dataset import side_by_side
+        sbs = [side_by_side(k) for k in batch.get("item_keys") or []]
+        m = batch.get("loss_mask") if masked_training or any(sbs) else None
         if face_on and any(_face_end) and _face_cyc[1] > 0 and not face_phase["ended"]:
             # with --face_until, the cycle runs in steps: the window (epoch E or step S, the sooner) splits into E
             # equal blocks (12 if no epoch is given) - an epoch each when they fit, so a big dataset whose S steps
@@ -1437,8 +1449,12 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             f = None
         if m is None and f is None:
             return None
-        from fizgig.dataset.masks import mask_weight
-        w = mask_weight(m.to(device).float(), mask_floor) if m is not None else None
+        from fizgig.dataset.masks import mask_weight, weights_with_side_by_sides
+        w = None
+        if m is not None and torch.is_tensor(m) and any(sbs) and len(sbs) == m.shape[0]:
+            w = weights_with_side_by_sides(m.to(device).float(), sbs, mask_floor, masked_training)
+        elif m is not None:
+            w = mask_weight(m.to(device).float(), mask_floor)
         if f is not None:                    # the face: x face_weight over its oval (0 = not at all), on top of the mask
             f = 1.0 + (float(face_weight) - 1.0) * f.to(device).float()
             w = f if w is None else w * f
@@ -3189,6 +3205,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                                                        **({"refs": refs} if refs else {}),
                                                        **({"loss_mask": _lm} if _lm is not None else {}),
                                                        **({"prior": prior} if prior is not None and _lm is not None
+                                                          and not any(side_by_side(k) for k in
+                                                                      batch.get("item_keys") or [])
                                                           else {}))
                 if "lr_mult" in _info and lr_acc:
                     lr_acc[-1] *= _info["lr_mult"]     # where the step landed (the H3 noise-band LR)

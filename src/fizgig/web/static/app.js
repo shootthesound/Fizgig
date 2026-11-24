@@ -1400,7 +1400,7 @@ function cardSpeedupsCard() {
         "several times slower. This is a setting in the NVIDIA Control Panel, not in Fizgig; driver and Windows " +
         "updates can switch it back on.",
         el("div", {class: "field-row"}, el("button", {class: "btn", text: "Show how",
-          onclick: () => $("sysmemModal").classList.add("active")})))] : []));
+          onclick: () => sysmemOpen(true)})))] : []));
   }
   const intro = card ? `Your card: ${card.name}${card.total_gb ? ` (${Math.round(card.total_gb)} GB)` : ""}. ` : "";
   return el("div", {class: "section-card"},
@@ -1699,9 +1699,15 @@ function sysmemTipShow(pr) {
   let seen = false;
   try { seen = sessionStorage.getItem("fizgig.sysmemSeen") === "1"; } catch (e) { /* no storage */ }
   if (!pr.sysmem_tip || seen || S.onPod || pageIsElsewhere()) return;
+  sysmemOpen(false);
+}
+// the pop-up itself: at launch (with Don't show this again), or from Preferences' Show how (without it: asked for)
+function sysmemOpen(fromPrefs) {
   const m = $("sysmemModal");
+  $("sysmemNever").closest("label").style.display = fromPrefs ? "none" : "";
   const close = () => {
     m.classList.remove("active");
+    if (fromPrefs) return;
     try { sessionStorage.setItem("fizgig.sysmemSeen", "1"); } catch (e) { /* no storage */ }
     if ($("sysmemNever").checked) api("/api/prefs", {changes: {sysmem_tip_hidden: "1"}}).catch(() => {});
   };

@@ -54,3 +54,36 @@ def test_the_page_saves_and_resets_them():
     assert 'tick("pin_block_swap", "0")' in js and 'tick("rocm_conv_bands", "1")' in js
     assert 'tick("rocm_miopen", "1")' in js
     assert "host.append(cardSpeedupsCard());" in js
+
+
+def test_show_how_popup_closes():
+    """Preferences' Show how opens the Sysmem pop-up with its close buttons wired (they were only wired by the launch
+    pop-up, so opened from Preferences it couldn't be dismissed), and without Don't show this again."""
+    import shutil
+    import subprocess
+    from pathlib import Path
+    if not shutil.which("node"):
+        pytest.skip("node not installed")
+    js = (Path(__file__).resolve().parents[1] / "src/fizgig/web/static/app.js").read_text(encoding="utf-8")
+    assert "onclick: () => sysmemOpen(true)" in js
+    start = js.index("function sysmemOpen(")
+    fn = js[start:js.index("\n}\n", start) + 3]
+    script = """
+const assert = require('node:assert/strict');
+const made = {};
+const node = () => { const n = {style: {}, checked: false, classList: {s: new Set(), add(c) {this.s.add(c);},
+  remove(c) {this.s.delete(c);}, contains(c) {return this.s.has(c);}}}; n.closest = () => n; return n; };
+const $ = (id) => (made[id] = made[id] || node());
+let saved = 0; const api = () => { saved++; return Promise.resolve(); };
+""" + fn + """
+for (const how of ["sysmemClose", "sysmemX", "backdrop"]) {
+  sysmemOpen(true);
+  const m = $("sysmemModal");
+  assert(m.classList.contains("active"));
+  assert.equal($("sysmemNever").style.display, "none");
+  if (how === "backdrop") m.onclick({target: m}); else $(how).onclick();
+  assert(!m.classList.contains("active"), how);
+}
+assert.equal(saved, 0);
+"""
+    subprocess.run(["node", "-e", script], check=True)

@@ -1359,49 +1359,54 @@ function cardSpeedupsCard() {
   int8.checked = String(S.set.inference_int8 ?? (S.rocm ? "0" : "1")) !== "0";
   int8.addEventListener("change", () => api("/api/prefs", {changes: {inference_int8: int8.checked}})
     .then(() => { S.set.inference_int8 = int8.checked ? "1" : "0"; }));
-  const int8Row = (text, hint) => [el("label", {class: "checkbox-label"}, int8, text),
-    el("div", {class: "field-hint", text: hint})];
-  const group = (title, ...rows) => el("div", {class: "pref-file"}, el("div", {class: "field-label", text: title}), ...rows);
+  // one setting a block: its switch and name (no switch: a setting outside Fizgig), what it's for, then short notes
+  const setting = (box, name, forWhat, ...notes) => el("div", {class: "speedup"},
+    box ? el("label", {class: "checkbox-label"}, box, " " + name) : el("div", {class: "speedup-name", text: name}),
+    el("div", {class: "speedup-for", text: forWhat}),
+    ...notes.map((n) => typeof n === "string" ? el("div", {class: "field-hint", text: n}) : n));
   const rows = [];
   if (S.rocm) {
-    rows.push(group("AMD (Radeon)",
-      ...int8Row(" INT8 fast inference", "Off by default on AMD cards: there the model's stored fp8 file renders " +
-        "faster and uses far less memory (Krea 2 at 2048 x 2048 on an RX 9070 XT: about twice as fast, a quarter of " +
-        "the RAM). For Studio, Royale, the Profiler and previews."),
-      ...(S.sageAttentionOption ? [
-        el("label", {class: "checkbox-label"}, tick("inference_sageattention", "0"),
-          " Force SageAttention for Krea 2 image generation"),
-        el("div", {class: "field-hint", text: "Krea 2 pictures (training previews, Studio, Royale, the Profiler) use the " +
-          "SageAttention the installer built for your card, from the next picture. Off by default. If pictures fail " +
-          "with it on, turn it off. Training keeps its own attention."})] : []),
-      el("label", {class: "checkbox-label"}, tick("rocm_conv_bands", "1"), " Split large convolutions (saves memory)"),
-      el("div", {class: "field-hint", text: "On by default. The VAE's big convolutions run in strips, so decoding and " +
-        "caching don't ask for a work buffer the size of the whole picture: about a third of the memory, the same " +
-        "result. Turn it off only if previews or caching go wrong with it on. From the next run or model load."}),
-      el("label", {class: "checkbox-label"}, tick("rocm_miopen", "1"), " Use AMD's MIOpen for convolutions"),
-      el("div", {class: "field-hint", text: "On by default. Off, convolutions use PyTorch's own kernels instead, as " +
-        "ComfyUI does on newer Radeon cards. Try it off if caching or previews freeze or slow down picture after " +
-        "picture: MIOpen searches for kernels at each new picture shape. From the next run."})));
+    rows.push(
+      setting(int8, "INT8 fast inference", "For pictures in Studio, Royale, the Profiler and training previews.",
+        "Off by default on AMD cards: the model's own fp8 file renders faster there and uses far less memory " +
+        "(Krea 2 at 2048 x 2048 on an RX 9070 XT: about twice as fast, a quarter of the RAM)."),
+      ...(S.sageAttentionOption ? [setting(tick("inference_sageattention", "0"),
+        "Force SageAttention for Krea 2 image generation",
+        "For Krea 2 pictures: training previews, Studio, Royale and the Profiler. Training itself is unchanged.",
+        "Off by default. Uses the SageAttention the installer built for your card, from the next picture. If " +
+        "pictures fail with it on, turn it off.")] : []),
+      setting(tick("rocm_conv_bands", "1"), "Split large convolutions (saves memory)",
+        "For caching and turning previews into pictures (the VAE).",
+        "On by default. The big convolutions run in strips, so they need about a third of the memory for the same " +
+        "result. Turn it off only if previews or caching go wrong with it on. From the next run or model load."),
+      setting(tick("rocm_miopen", "1"), "Use AMD's MIOpen for convolutions",
+        "For caching and previews, if they freeze or get slower picture after picture.",
+        "On by default. MIOpen searches for the fastest kernels at each new picture size, which can stall. Off, " +
+        "PyTorch's own kernels are used instead, as ComfyUI does on newer Radeon cards. From the next run."));
   } else if (card) {
-    rows.push(group("NVIDIA",
-      ...int8Row(" INT8 fast inference (recommended)", "On by default: the same memory as fp8, near-identical " +
-        "pictures, faster. For Studio, Royale, the Profiler and previews. Turn it off to use fp8."),
-      el("label", {class: "checkbox-label"}, tick("pin_block_swap", "0"), " Keep swapped blocks in pinned RAM (Krea 2)"),
-      el("div", {class: "field-hint", text: "For Krea 2 training with Blocks Swap. 1.5x faster on an RTX 5090 with 128 GB " +
-        "of RAM, but a few percent slower on some other cards, so compare the s/step in the log with it on and off. " +
-        "It only turns on when there's plenty of free RAM (the swapped blocks' size plus 4 GB), and the log says " +
-        "whether it did. Off by default. From the next run."}),
-      ...(S.sysmemOption ? [
+    rows.push(
+      setting(int8, "INT8 fast inference (recommended)", "For pictures in Studio, Royale, the Profiler and training previews.",
+        "On by default: faster than fp8, with the same memory and near-identical pictures. Turn it off to use fp8."),
+      setting(tick("pin_block_swap", "0"), "Keep swapped blocks in pinned RAM",
+        "For Krea 2 training with Blocks Swap on.",
+        "Off by default. It speeds training up on some machines and slows it down on others: 1.5x on an RTX 5090 " +
+        "with 128 GB of RAM, a little slower on an RTX 4070 Ti. To see which yours is, train once with it on and once " +
+        "off and compare s/step in the log.",
+        "It only turns on with enough free RAM (the swapped blocks plus 4 GB), and the log says whether it did. " +
+        "From the next run."),
+      ...(S.sysmemOption ? [setting(null, "Stop Windows moving training into system RAM",
+        "For training on Windows.",
+        "When the card fills up, NVIDIA's driver can quietly move part of a run into system RAM, and training runs " +
+        "several times slower. This is a setting in the NVIDIA Control Panel, not in Fizgig; driver and Windows " +
+        "updates can switch it back on.",
         el("div", {class: "field-row"}, el("button", {class: "btn", text: "Show how",
-          onclick: () => $("sysmemModal").classList.add("active")}),
-          el("span", {class: "field-hint", text: "Stop Windows moving training into system RAM (CUDA Sysmem Fallback " +
-            "Policy). Driver and Windows updates can turn it back on."}))] : [])));
+          onclick: () => $("sysmemModal").classList.add("active")})))] : []));
   }
   const intro = card ? `Your card: ${card.name}${card.total_gb ? ` (${Math.round(card.total_gb)} GB)` : ""}. ` : "";
   return el("div", {class: "section-card"},
     el("div", {class: "card-title"}, el("span", {text: "Speed-ups for your graphics card"})),
     el("div", {class: "card-desc", text: intro + (rows.length
-      ? "Settings that help on some cards and not others. Only the ones for your kind of card are shown."
+      ? `Settings that help on some cards and not others. These are the ones for ${S.rocm ? "AMD" : "NVIDIA"} cards.`
       : "Nothing here applies to this machine.")}),
     el("div", {class: "card-content"}, ...rows));
 }

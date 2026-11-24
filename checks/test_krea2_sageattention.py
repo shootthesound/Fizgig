@@ -46,7 +46,7 @@ assert(!txt(inferenceCard()).includes('Force SageAttention') && !txt(inferenceCa
 assert(!txt(cardSpeedupsCard()).includes('Force SageAttention'));
 S.sageAttentionOption = true;        // only ever offered on an AMD launch: never in the NVIDIA group
 const nv = txt(cardSpeedupsCard());
-assert(!nv.includes('Force SageAttention') && nv.includes('RTX 5090') && nv.includes('pinned RAM'));
+assert(!nv.includes('Force SageAttention') && nv.includes('RTX 5090') && nv.includes('pinned RAM') && nv.includes('NVIDIA cards'));
 assert(nv.includes('INT8 fast inference (recommended)') && !nv.includes('MIOpen'));
 S.rocm = true;                       // an AMD launch: the AMD group only
 const amd = txt(cardSpeedupsCard());

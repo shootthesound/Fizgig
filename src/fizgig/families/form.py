@@ -1804,7 +1804,7 @@ def _option_values(desc, values):
 
 
 def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, samples_dir, inference_int8=False,
-           captioner="", caption_overrides=None, caption_concept=""):
+           captioner="", caption_overrides=None, caption_concept="", send_only_swap=False):
     """The launch plan's inputs from the form's values, as the desktop's _family_launch_inputs builds them."""
     v = {**DEFAULTS, **({"SAMPLE_PROMPT": desc.sample_prompt} if desc.sample_prompt else {}), **values}
     kind = _kind(desc, v)
@@ -1846,6 +1846,7 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
         clip_megapixels=s("CLIP_MEGAPIXELS") if "clip" in desc.media else "",
         enable_bucket=b("ENABLE_BUCKET"), no_upscale=b("BUCKET_NO_UPSCALE"), cache_root=cache_root,
         blocks_swap=s("BLOCKS_SWAP"), enable_cache=b("ENABLE_CACHE"), resuming=bool(s("RESUME_TRAINING")),
+        send_only_swap=bool(send_only_swap),
         loss_watch={"detect": b("KREA2_LOSS_WATCH") and desc.loss_watch,
                     "per_image_lr": b("KREA2_PER_IMAGE_LR") and desc.loss_watch,
                     "warmup": b("KREA2_WARMUP_LOOK") and desc.loss_watch,

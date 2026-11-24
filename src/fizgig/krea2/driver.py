@@ -111,20 +111,34 @@ class Krea2Driver(FamilyDriver):
     def max_blocks_to_swap(self, dit=None):
         return (len(dit.blocks) if dit is not None else self.description.n_blocks) - 2
 
-    def enable_block_swap(self, dit, num_blocks, device, supports_backward=True):
+    def enable_block_swap(self, dit, num_blocks, device, supports_backward=True, h2d_only=None, ring_size=2, use_pinned_memory=None):
         from fizgig.krea2.offloading import BlockSwapConfig
         from fizgig.families.quant import pin_swap_ok
+        # LoRAStreamOffloader requires frozen base weights: enable H2D-only streaming with double-buffered ring for LoRA
+        is_frozen = not any(p.requires_grad for p in dit.parameters())
+        use_h2d = h2d_only if h2d_only is not None else is_frozen
         cpu_weights = getattr(dit, "_cpu_weight_masters", None) if not supports_backward else None
-        # the swapped blocks (the last num_blocks) in pinned RAM when there's room to spare: no staging pass per copy
-        gb = sum(p.numel() * p.element_size() for b in dit.blocks[len(dit.blocks) - num_blocks:]
-                 for p in (*b.parameters(), *b.buffers())) / 1e9
-        pinned = cpu_weights is None and pin_swap_ok(gb)
-        if cpu_weights is None:
-            logging.getLogger(__name__).info(
-                "[block swap] %d blocks (%.1f GB) %s", num_blocks, gb,
-                "in pinned RAM" if pinned else "in ordinary RAM")
-        dit.enable_block_swap(num_blocks, BlockSwapConfig(torch.device(device), supports_backward=supports_backward,
-                                                         use_pinned_memory=pinned, cpu_weights=cpu_weights))
+        if use_h2d:
+            pinned = False if use_pinned_memory is None else bool(use_pinned_memory)
+        else:
+            gb = sum(p.numel() * p.element_size() for b in dit.blocks[len(dit.blocks) - num_blocks:]
+                     for p in (*b.parameters(), *b.buffers())) / 1e9
+            pinned = (cpu_weights is None and pin_swap_ok(gb)) if use_pinned_memory is None else bool(use_pinned_memory)
+            if cpu_weights is None:
+                logging.getLogger(__name__).info(
+                    "[block swap] %d blocks (%.1f GB) %s", num_blocks, gb,
+                    "in pinned RAM" if pinned else "in ordinary RAM")
+        dit.enable_block_swap(
+            num_blocks,
+            BlockSwapConfig(
+                torch.device(device),
+                supports_backward=supports_backward,
+                h2d_only=use_h2d,
+                ring_size=ring_size,
+                use_pinned_memory=pinned,
+                cpu_weights=cpu_weights,
+            ),
+        )
         dit.move_to_device_except_swap_blocks(torch.device(device))
         dit.switch_block_swap_for_training()
 

@@ -675,6 +675,31 @@ def _log_pywebview():
         pass
 
 
+class EngineFailed:
+    """pywebview saying WebView2 failed to start (its runtime missing or broken: #406). pywebview only logs it and
+    leaves a blank window, so this listens on its log and the window gives way to the browser at once, saying why."""
+    def __init__(self):
+        import logging
+        self.event = threading.Event()
+        self.why = ""
+        outer = self
+
+        class _H(logging.Handler):
+            def emit(self, record):
+                try:
+                    outer.saw(record.getMessage())
+                except Exception:
+                    pass
+        self.handler = _H(logging.ERROR)
+
+    def saw(self, msg):
+        if "WebView2 initialization failed" not in msg:
+            return
+        lines = [ln.strip() for ln in msg.splitlines()[1:] if ln.strip()]
+        self.why = lines[0].split(" ---> ")[0].strip() if lines else ""
+        self.event.set()
+
+
 def _windows_engine_problem():
     """Why the window can't show the web UI on this Windows machine, or "". pywebview falls back to the Internet
     Explorer engine when it finds no WebView2 runtime (or .NET under 4.6.2), and the web UI can't run there: the
@@ -720,8 +745,11 @@ def main():
             cur = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "").strip()
             if flag not in cur.split():
                 os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = f"{cur} {flag}".strip()
+        import logging
         import webview
         _log_pywebview()
+        engine = EngineFailed()
+        logging.getLogger("pywebview").addHandler(engine.handler)
         if os.name == "nt":            # the taskbar shows Fizgig's own button and icon, not pythonw's (as the old app)
             try:
                 import ctypes
@@ -960,10 +988,24 @@ def main():
         page_ready = threading.Event()
         started = threading.Event()       # webview.start came back (or failed: no engine) - the watchdog stands down
 
+        def give_way(why):
+            fallback[0] = why
+            try:
+                window.destroy()
+            except Exception:
+                pass
+
+        def failed():                      # WebView2 said it didn't start: the browser now, not a blank window
+            return engine.event.is_set() and not page_ready.is_set()
+        engine_why = lambda: ("WebView2 didn't start" + (f" ({engine.why})" if engine.why else "") +
+                              "; reinstalling the WebView2 Runtime usually fixes it")
+
         def watchdog():                    # a window that never appears ends, its server with it, not left unseen
             for _ in range(120):
                 if window.events.shown.wait(1):
                     break
+                if failed():
+                    return give_way(engine_why())
                 if started.is_set():       # no window at all: the browser took over and the server must stay up
                     return
             else:
@@ -971,14 +1013,16 @@ def main():
                 os._exit(1)
             # a window that appears but never runs the page (a white window: a broken WebView2, its sandbox on a
             # junctioned profile folder, a blocked GPU process) gives way to the browser rather than staying white.
-            # Only for this computer's own page: a pod's may be an older Fizgig that doesn't report in
-            if first == url and not page_ready.wait(30):
-                fallback[0] = ("the window opened but the page never ran in it (WebView2 may be failing to draw, or "
-                               "be blocked by security software)")
-                try:
-                    window.destroy()
-                except Exception:
-                    pass
+            # WebView2 failing to start gives way at once, for any page; the 30 s wait only for this computer's own
+            # page: a pod's may be an older Fizgig that doesn't report in
+            for _ in range(120):
+                if page_ready.wait(0.25):
+                    return
+                if failed():
+                    return give_way(engine_why())
+            if first == url:
+                give_way("the window opened but the page never ran in it (WebView2 may be failing to draw, or be "
+                         "blocked by security software)")
         threading.Thread(target=watchdog, daemon=True).start()
         profile = user_file("app_profile")
         try:
@@ -990,7 +1034,8 @@ def main():
     except Exception as e:
         # no engine here (a Linux machine without GTK/WebKit or Qt, Windows without WebView2) or a window that never
         # showed the page: the browser, and how to get the window
-        how = (f"For the window, install Microsoft Edge WebView2 Runtime: {WEBVIEW2_URL}" if os.name == "nt" else
+        how = (f"For the window, install (or reinstall) Microsoft Edge WebView2 Runtime: {WEBVIEW2_URL}"
+               if os.name == "nt" else
                "For the window on Linux, in Fizgig's venv: `venv/bin/pip install \"pywebview[qt]\"`, or WebKitGTK: "
                "your distro's gir1.2-webkit2-4.1 and libgirepository dev packages, then `venv/bin/pip install "
                "PyGObject` (the distro's python3-gi isn't seen inside the venv). If the window opens then crashes or "

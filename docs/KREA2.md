@@ -20,7 +20,7 @@ Output is ComfyUI-ready.
 
 Users train full Krea 2 LoRAs on 8 GB with everything on **Auto** and batch size 1. Auto reads your *free* VRAM and picks INT8 or NF4 plus the right block swap — the console explains its choice. On longer runs the transformer blocks **torch.compile** automatically for roughly 2× faster steps.
 
-LoRA runs with block swap can go faster with **Preferences → Speed-ups for your graphics card → Faster block swap (send-only)**: the base model never changes while a LoRA trains, so each swapped block is only copied to the card and never copied back. Same VRAM, same results (about 1.5x on an RTX 5090, 16 blocks swapped). Off by default; it stays off for fine-tunes, NF4 and runs with fewer than 4 blocks swapped, and the log says which swap ran.
+LoRA runs with block swap can go faster with **Preferences → Speed-ups for your graphics card → Faster block swap (send-only)**: the base model never changes while a LoRA trains, so each swapped block is only copied to the card and never copied back. Same VRAM, same results; 1.5x on an RTX 5090 with 16 blocks swapped, about the same on a 16 GB laptop RTX 4090, so compare the s/step in the log. Off by default; it stays off for fine-tunes, NF4 and runs with fewer than 4 blocks swapped, and the log says which swap ran.
 
 | Your card | What to do |
 |---|---|

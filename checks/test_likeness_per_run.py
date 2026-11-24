@@ -177,3 +177,20 @@ def test_style_needs_a_run(tmp_path, monkeypatch):
     gs, _ = _style(monkeypatch)
     with pytest.raises(ValueError):
         gs.switch(str(tmp_path), "", str(tmp_path), True)
+
+
+def test_style_bank_follows_a_picture_replaced_under_the_same_name(tmp_path, monkeypatch):
+    """The training pictures' style vectors were cached by file names only, so a photo replaced under the same name
+    kept its old vector (@mabseyuk). The key has each file's size and time now."""
+    import numpy as np
+    from fizgig.web import gallery_style as gs
+    ds, samples = tmp_path / "set", tmp_path / "sample"
+    ds.mkdir()
+    samples.mkdir()
+    (ds / "a.png").write_bytes(b"x" * 10)
+    (ds / "b.png").write_bytes(b"y" * 20)
+    monkeypatch.setattr(gs, "_embed", lambda p: np.array([float(os.path.getsize(p)), 1.0]))
+    first = gs._bank(str(samples), str(ds), lambda m: None)
+    assert first[:, 0].tolist() == [10.0, 20.0]
+    (ds / "a.png").write_bytes(b"z" * 30)                          # replaced, same name
+    assert gs._bank(str(samples), str(ds), lambda m: None)[:, 0].tolist() == [30.0, 20.0]

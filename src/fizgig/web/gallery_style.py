@@ -103,12 +103,20 @@ def _images(dataset_dir):
 
 
 def _bank(samples_dir, dataset_dir, say):
-    """The training pictures' vectors, worked out once and kept beside the previews (a new set works them out again)."""
+    """The training pictures' vectors, worked out once and kept beside the previews (a new set works them out again,
+    and so does a picture replaced under the same name: the key has each file's size and time)."""
     import numpy as np
     imgs = _images(dataset_dir)
     if not imgs:
         return None
-    key = hashlib.sha1("\n".join(imgs).encode("utf-8")).hexdigest()
+
+    def stamp(f):
+        try:
+            st = os.stat(f)
+            return f"{f}|{st.st_size}|{st.st_mtime_ns}"
+        except OSError:
+            return f
+    key = hashlib.sha1("\n".join(stamp(f) for f in imgs).encode("utf-8")).hexdigest()
     path = os.path.join(samples_dir, f".style_bank_{key[:12]}.npz")     # one per training set: runs share it
     try:
         with np.load(path) as z:

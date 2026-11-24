@@ -244,3 +244,45 @@ def test_a_folder_inside_the_training_folder_is_never_a_subfolder(tmp_path):
     toml = launch.dataset_toml(desc, st)
     assert 'item_prefix = "reg/"' not in toml and 'item_prefix = "more/"' in toml and 'item_prefix = "reg:"' in toml
     assert form.subfolders_note(desc, v, str(train))[0].startswith("Training on 2 folders")
+
+
+def test_a_small_bucket_still_trains_its_share():
+    """A bucket whose share of the per-epoch limit is under one picture was given a fixed 0 and never trained: three
+    pictures in three buckets with a limit of 1 trained the same picture all 50 epochs (@mabseyuk). Each epoch's
+    leftover places are now drawn afresh, in proportion; the steps an epoch stay the count made at the start."""
+    import random
+    from collections import Counter
+    from fizgig.dataset.image_dataset import BucketBatchManager
+
+    class It:
+        def __init__(self, k):
+            self.item_key = k
+
+    def run(buckets, per_epoch, bs, epochs):
+        bm = BucketBatchManager({r: [It(f"{r[0]}_{i}") for i in range(n)] for r, n in buckets.items()}, bs)
+        bm.limit(per_epoch)
+        start_len, seen, per = len(bm), Counter(), []
+        for e in range(epochs):
+            random.seed(42 + e)                     # shuffle_buckets seeds each epoch the same way
+            bm.shuffle()
+            assert len(bm) == start_len
+            keys = []
+            for reso, i in bm.bucket_batch_indices:
+                s = i * bm.bucket_batch(reso)
+                keys += [it.item_key for it in bm.buckets[reso][s:min(s + bm.bucket_batch(reso), bm.quota[reso])]]
+            per.append(keys)
+            seen.update(keys)
+        return seen, per
+
+    seen, per = run({(512, 512): 1, (448, 576): 1, (576, 448): 1}, 1, 1, 60)
+    assert all(len(k) == 1 for k in per)
+    assert len(seen) == 3 and min(seen.values()) >= 10            # each about 20 of 60
+    seen, per = run({(512, 512): 98, (448, 576): 1, (576, 448): 1}, 10, 1, 200)
+    assert all(len(k) == 10 for k in per)
+    small = sum(n for k, n in seen.items() if not k.startswith("512"))
+    assert 15 <= small <= 70                                       # 0.2 an epoch: about 40 of 200
+    seen, per = run({(512, 512): 9, (448, 576): 2, (576, 448): 2}, 5, 4, 40)
+    assert {k[:3] for k in seen} == {"512", "448", "576"}          # bigger batches: every bucket, steps unchanged
+    a, _ = run({(512, 512): 1, (448, 576): 1, (576, 448): 1}, 1, 1, 10)
+    b, _ = run({(512, 512): 1, (448, 576): 1, (576, 448): 1}, 1, 1, 10)
+    assert a == b                                                  # seeded per epoch: a resume picks the same

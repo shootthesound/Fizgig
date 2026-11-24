@@ -61,8 +61,15 @@ def swap_weight_devices_no_cuda(device: torch.device, layer_to_cpu: nn.Module, l
     _synchronize_device(device)
 
 
+from fizgig.modules.offloading import block_to  # noqa: E402
+
+
 def weighs_to_device(layer: nn.Module, device: torch.device):
+    from fizgig.modules.offloading import parked_ids
+    skip = parked_ids(layer)            # a parked adapter (the preview's speed LoRA) stays on the CPU (#405)
     for module in layer.modules():
+        if id(module) in skip:
+            continue
         if hasattr(module, "weight") and module.weight is not None and module.__class__.__name__.endswith("Linear"):
             module.weight.data = module.weight.data.to(device, non_blocking=device.type != "cpu")
 
@@ -231,10 +238,13 @@ class Offloader:
         #         weight_swap_jobs.append((module_to_cpu, module_to_cuda, module_to_cpu.weight.data, module_to_cuda.weight.data))
 
         with T.section("find modules"):
+            from fizgig.modules.offloading import parked_ids
+            skip = parked_ids(layer_to_cuda)    # parked adapters don't swap: they stay on the CPU (#405)
             modules_to_cpu = {k: v for k, v in layer_to_cpu.named_modules()}
             for module_to_cuda_name, module_to_cuda in layer_to_cuda.named_modules():
                 if (
-                    hasattr(module_to_cuda, "weight")
+                    id(module_to_cuda) not in skip
+                    and hasattr(module_to_cuda, "weight")
                     and module_to_cuda.weight is not None
                     and module_to_cuda.__class__.__name__.endswith("Linear")
                 ):
@@ -546,7 +556,7 @@ class ModelOffloader(Offloader):
             if self.cpu_weights:
                 from fizgig.krea2.safetensors_utils import move_frozen_weights
                 move_frozen_weights(b, self.device, self.cpu_weights)
-            b.to(self.device)
+            block_to(b, self.device)
             weighs_to_device(b, self.device)  # make sure weights are on device
 
         cpu_device = torch.device("cpu")
@@ -557,13 +567,13 @@ class ModelOffloader(Offloader):
                 for module, _ in modules:
                     module.weight = None
                 try:
-                    b.to(self.device)  # Adapters, biases and buffers still move normally.
+                    block_to(b, self.device)  # adapters (not parked ones), biases and buffers still move
                 finally:
                     for module, weight in modules:
                         weight.data = self.cpu_weights[weight]
                         module.weight = weight
             else:
-                b.to(self.device)  # move block to device first. this makes sure that buffers (non weights) are on the device
+                block_to(b, self.device)  # move block to device first. this makes sure that buffers (non weights) are on the device
                 weighs_to_device(b, cpu_device)  # make sure weights are on cpu
 
         _synchronize_device(self.device)

@@ -47,11 +47,45 @@ def _synchronize_device(device: torch.device):
 # Standalone weight-transfer helpers
 # ---------------------------------------------------------------------------
 
+def parked_ids(layer: nn.Module) -> set:
+    """ids of every module inside a frozen adapter parked on the CPU (FamilyLoRA.move_adapter: the preview's speed and
+    look LoRAs between previews). Block moves and swaps leave them where they are (#405)."""
+    out = set()
+    for m in layer.modules():
+        if getattr(m, "_fizgig_parked", False):
+            out.update(id(x) for x in m.modules())
+    return out
+
+
+def block_to(layer: nn.Module, device) -> nn.Module:
+    """layer.to(device), except that a parked adapter stays on the CPU. A plain .to() on a block put back on the card
+    (the training layout after a training-maps, DOP or masked-prior forward) carried the preview LoRAs parked inside
+    its Linears along: MOSS-Image's Turbo and look LoRAs, ~2.3 GB on a 10 GB card with 14 of 42 blocks swapped (#405)."""
+    skip = parked_ids(layer)
+    if not skip:
+        return layer.to(device)
+    for m in layer.modules():
+        if id(m) in skip:
+            continue
+        for p in m.parameters(recurse=False):
+            p.data = p.data.to(device)
+            if p.grad is not None:
+                p.grad.data = p.grad.data.to(device)
+        for k, b in m._buffers.items():
+            if b is not None:
+                m._buffers[k] = b.to(device)
+    return layer
+
+
 def _streamed_linears(layer: nn.Module):
     """{name: module} for the Linears a swap streams, keyed with LoRA wrappers' ".base" dropped, so a block whose
-    Linears carry a LoRA pairs with one whose don't (#199)."""
+    Linears carry a LoRA pairs with one whose don't (#199). A parked adapter's factors are left out: they stay on the
+    CPU wherever their block is (#405)."""
     out = {}
+    skip = parked_ids(layer)
     for name, m in layer.named_modules():
+        if id(m) in skip:
+            continue
         if hasattr(m, "weight") and m.weight is not None and m.__class__.__name__.endswith("Linear"):
             out[name[:-5] if name.endswith(".base") else name] = m
     return out
@@ -85,8 +119,11 @@ def swap_weight_devices_no_cuda(device: torch.device, layer_to_cpu: nn.Module, l
 
 
 def weighs_to_device(layer: nn.Module, device: torch.device):
-    """Move all Linear weights (and fp8 scale_weight buffers) in *layer* to *device*."""
+    """Move all Linear weights (and fp8 scale_weight buffers) in *layer* to *device*, parked adapters aside (#405)."""
+    skip = parked_ids(layer)
     for module in layer.modules():
+        if id(module) in skip:
+            continue
         if hasattr(module, "weight") and module.weight is not None and module.__class__.__name__.endswith("Linear"):
             module.weight.data = module.weight.data.to(device, non_blocking=device.type != "cpu")
             if hasattr(module, "scale_weight"):
@@ -502,12 +539,12 @@ class ModelOffloader(Offloader):
             print(f"[{self.block_type}] Prepare block devices before forward")
 
         for b in blocks[0 : self.num_blocks - self.blocks_to_swap]:
-            b.to(self.device)
+            block_to(b, self.device)
             weighs_to_device(b, self.device)  # ensure weights are on device
 
         cpu_device = torch.device("cpu")
         for b in blocks[self.num_blocks - self.blocks_to_swap :]:
-            b.to(self.device)  # move block to device first (buffers/non-weights go to device)
+            block_to(b, self.device)  # move block to device first (buffers/non-weights go to device)
             weighs_to_device(b, cpu_device)  # then move weights back to cpu
 
         _synchronize_device(self.device)

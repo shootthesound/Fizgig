@@ -40,6 +40,7 @@ scores record, so a cache made by another embedder is recognised and recomputed.
 """
 
 import ast
+import contextlib
 import json
 import os
 import threading
@@ -97,6 +98,57 @@ RECOMMENDED_FURRY_MODEL = "Fdetailer v1.1 (Civitai 1228695), converted to ONNX"
 # DEFAULT_YOLO. Fizgig never downloads it (Civitai needs a login).
 LOCAL_YOLO_DEFAULT = os.path.join(user_data.MODELS_DIR, "face", "fdetailer_v11.onnx")
 YOLO_FACE_CLASSES = ("face", "head")   # classes taken from a multi-class model (the first one present wins)
+
+
+FACE_CPU_THREADS = min(8, os.cpu_count() or 8)   # CPU face work (detection, embedding) stays off every core
+
+def limit_torch_threads():
+    """torch's CPU pool follows the same limit; called at embedder init, safe to call again."""
+    try:
+        import torch
+        if torch.get_num_threads() != FACE_CPU_THREADS:
+            torch.set_num_threads(FACE_CPU_THREADS)
+    except Exception:
+        pass
+
+
+def limit_ort_session_options(so):
+    """A session this code builds itself gets the limit in its SessionOptions (default 0 = every core)."""
+    if getattr(so, "intra_op_num_threads", 0) in (0, None) or so.intra_op_num_threads > FACE_CPU_THREADS:
+        so.intra_op_num_threads = FACE_CPU_THREADS
+    return so
+
+
+@contextlib.contextmanager
+def limited_ort_sessions():
+    """While open, onnxruntime's InferenceSession is a subclass that caps a session's CPU threads at FACE_CPU_THREADS
+    (a count the caller set below the cap is kept). For InsightFace, which builds its ONNX sessions without options
+    and subclasses InferenceSession when its model_zoo is first imported, so the import and FaceAnalysis go inside.
+    Restored on exit: every other onnxruntime user in the process keeps onnxruntime's own default."""
+    try:
+        import onnxruntime as ort
+    except Exception:
+        yield
+        return
+    base = ort.InferenceSession
+
+    class _LimitedSession(base):
+        def __init__(self, path, *args, **kw):
+            if args and isinstance(args[0], ort.SessionOptions):
+                so, args = args[0], args[1:]
+            else:
+                so = kw.pop("sess_options", None)
+            if so is None:
+                so = ort.SessionOptions()
+                so.log_severity_level = 3
+            kw["sess_options"] = limit_ort_session_options(so)
+            super().__init__(path, *args, **kw)
+
+    ort.InferenceSession = _LimitedSession
+    try:
+        yield
+    finally:
+        ort.InferenceSession = base
 
 
 def load_face_settings(prefs: Optional[dict] = None) -> dict:
@@ -303,10 +355,11 @@ class InsightFaceBackend:
                 ensure_face_models(adaface=False)     # its two files, so InsightFace never fetches the whole pack
                 from fizgig.utils import ort_telemetry
                 ort_telemetry.off()
-                from insightface.app import FaceAnalysis
-                app = FaceAnalysis(name='buffalo_l', root=insightface_root(), allowed_modules=list(self.modules),
-                                   providers=['CPUExecutionProvider'])
-                app.prepare(ctx_id=-1)      # ctx_id=-1 forces CPU
+                with limited_ort_sessions():
+                    from insightface.app import FaceAnalysis
+                    app = FaceAnalysis(name='buffalo_l', root=insightface_root(), allowed_modules=list(self.modules),
+                                       providers=['CPUExecutionProvider'])
+                    app.prepare(ctx_id=-1)      # ctx_id=-1 forces CPU
                 self._shared[self.modules] = app
             return app
 
@@ -491,6 +544,7 @@ class YoloOnnxBackend:
                 ort_telemetry.off()
                 so = ort.SessionOptions()
                 so.log_severity_level = 3
+                limit_ort_session_options(so)
                 sess = ort.InferenceSession(path, sess_options=so, providers=self.providers)
                 self._sessions[path] = sess
         self._sess = sess
@@ -844,6 +898,7 @@ class _AdaFace:
                 ensure_face_models()
                 from fizgig import face_vit
                 cls._net = face_vit.load(ADAFACE_FILE["dest"])
+                limit_torch_threads()
             return cls._net
 
     def embed_bgr(self, bgr):
@@ -957,6 +1012,7 @@ class _DinoV2(_CropEmbedder):
         import torch
         from transformers import AutoModel
         model = _hf_pretrained(AutoModel, self.model_id, self.revision).to("cpu", torch.float32).eval()
+        limit_torch_threads()
         return None, model
 
     def _features(self, crop):
@@ -990,6 +1046,7 @@ class FaceEmbedder:
             self.settings["face_identity"] = backend
         self.name = resolve_identity(self.settings)
         self._impl = _EMBEDDERS[self.name](self.settings)
+        limit_torch_threads()                     # the CPU pool, before the first embed (net load applies it too)
         self.thresholds = dict(IDENTITY_THRESHOLDS[self.name])
         self.label = IDENTITY_LABELS[self.name]
         self._lock = threading.Lock()

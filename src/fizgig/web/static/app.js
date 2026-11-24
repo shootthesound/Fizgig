@@ -4572,7 +4572,7 @@ async function wireRoyaleTravel() {
     if (!b.classList.contains("ry-tab-off")) ryShowTool(b.dataset.ry);       // greyed Epochs: its hover text says why
   }));
   const setSingle = (p) => { $("rySingle").value = p; ryRemember(); };
-  const up = uploadButton({kind: "path", key: "ROYALE_SINGLE"}, $("rySingle"), setSingle);
+  const up = uploadButton({kind: "path", key: "ROYALE_SINGLE", accept: ".safetensors"}, $("rySingle"), setSingle);
   $("rySingleBtns").replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () => pick($("rySingle").value || loraStart(), false, setSingle)}),
     up.btn, up.status);
   for (const [mode, p] of Object.entries(RY_MODES)) {
@@ -4897,11 +4897,11 @@ function wireProfiler() {
   for (const id of ["pfFamily", "pfSize", "pfPrompt", "pfClass"]) $(id).addEventListener("change", pfRemember);
   $("pfFamily").addEventListener("change", renderChoiceRefresh);
   $("pfLora").addEventListener("change", () => pfLora($("pfLora").value.trim(), true));
-  const up = uploadButton({kind: "path", key: "PROFILER_LORA"}, $("pfLora"), (p) => pfLora(p, true));
+  const up = uploadButton({kind: "path", key: "PROFILER_LORA", accept: ".safetensors"}, $("pfLora"), (p) => pfLora(p, true));
   $("pfLoraBtns").replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () =>
     pick($("pfLora").value || loraStart(), false, (p) => pfLora(p, true))}), up.btn, up.status);
   const addPhoto = (p) => { if (S.pf.photos.length < 3 && !S.pf.photos.includes(p)) S.pf.photos.push(p); pfPhotosDraw(); pfRemember(); };
-  const pup = uploadButton({kind: "path", key: "PROFILER_PHOTO"}, el("input", {type: "text"}), addPhoto);
+  const pup = uploadButton({kind: "path", key: "PROFILER_PHOTO", accept: "image/*"}, el("input", {type: "text"}), addPhoto);
   $("pfPhotoBtns").replaceChildren(el("button", {class: "btn btn-sm", text: "Choose…", onclick: () => {
     // the Samples gallery's picker (as LoRA Royale's), from the photos' folder; Choose folder… points it anywhere
     const dir = (p) => p.replace(/[\\/][^\\/]*$/, "");
@@ -5091,7 +5091,7 @@ function wireExtract() {
     extractName(); exRemember();
   });
   $("exSource").addEventListener("change", () => extractSource($("exSource").value.trim()));
-  const up = uploadButton({kind: "path", key: "EXTRACT_SOURCE"}, $("exSource"), extractSource);
+  const up = uploadButton({kind: "path", key: "EXTRACT_SOURCE", accept: ".safetensors"}, $("exSource"), extractSource);
   $("exSourceBtns").replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () =>
     pick($("exSource").value || loraStart(), false, extractSource)}), up.btn, up.status);
   $("exOutPick").addEventListener("click", () => pick($("exOutDir").value, true, (p) => { $("exOutDir").value = p; }));
@@ -5099,7 +5099,7 @@ function wireExtract() {
   document.querySelectorAll("#exModes .ry-tab").forEach((b) => b.addEventListener("click", () => exMode(b.dataset.exmode)));
   for (const [id, host] of [["exFtBase", "exFtBaseBtns"], ["exFtTuned", "exFtTunedBtns"]]) {
     const set = (p) => { $(id).value = p; exRemember(); };
-    const up = uploadButton({kind: "path", key: "EXTRACT_" + id}, $(id), set);
+    const up = uploadButton({kind: "path", key: "EXTRACT_" + id, accept: ".safetensors"}, $(id), set);
     $(host).replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () => pick($(id).value || S.outputDefault, false, set)}),
       up.btn, up.status);
     $(id).addEventListener("change", exRemember);
@@ -5122,7 +5122,7 @@ function mdWire() {
   el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Description:"}),
     el("textarea", {rows: 4, "data-key": "modelspec.description"})));
   const load = (p) => { $("mdPath").value = p; mdLoad(p); };
-  const up = uploadButton({kind: "path", key: "METADATA_FILE"}, $("mdPath"), load);
+  const up = uploadButton({kind: "path", key: "METADATA_FILE", accept: ".safetensors"}, $("mdPath"), load);
   $("mdPathBtns").replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () => pick($("mdPath").value || loraStart(), false, load)}),
     up.btn, up.status);
   $("mdPath").addEventListener("change", () => mdLoad($("mdPath").value.trim()));
@@ -5130,7 +5130,7 @@ function mdWire() {
     try { const r = await api("/api/metadata/thumbnail", {path: p}); S.md.thumb = r.uri; mdThumb(); }
     catch (e) { $("mdSaveMsg").textContent = e.message; }
   };
-  const tup = uploadButton({kind: "path", key: "METADATA_THUMB"}, el("input", {type: "text"}), setThumb);
+  const tup = uploadButton({kind: "path", key: "METADATA_THUMB", accept: "image/*"}, el("input", {type: "text"}), setThumb);
   $("mdThumbBtns").replaceChildren(el("button", {class: "btn", text: "Replace…", onclick: () => pick(S.imageFolder, false, setThumb)}),
     tup.btn, tup.status);
   $("mdThumbClear").addEventListener("click", () => { S.md.thumb = null; mdThumb(); });

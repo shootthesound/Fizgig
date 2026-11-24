@@ -356,7 +356,7 @@ def form(desc):
         _row("SEED", "Seed"),
         _row("CONTEXT_LORA_PATH", "Context LoRA", "path",
              "Trains with an existing LoRA active on the base. Use the same LoRA and strength at inference.",
-             upload=True, start="lora"),
+             upload=True, start="lora", accept=".safetensors"),
         _row("CONTEXT_LORA_STRENGTH", "Context LoRA strength"),
         None if not pictures else _row("DATASET_MEGAPIXELS", "Target Megapixels", "combo",
              "Images are resized to this area, any aspect ratio: 0.25 = 496 x 496, 1.0 = 992 x 992, 1.05 = 1024 x 1024, 2.4 = 1536 x "
@@ -593,7 +593,7 @@ def form(desc):
                  "so the previews can look better than the LoRA really is." + (
                      "\nWith extra pictures: put the test photo's own in the Extra pictures folder the same way "
                      "(test_1.jpg, test_2.jpg ... for test.jpg)." if desc.edit_references > 1 else ""),
-                 upload=True, start="data"),
+                 upload=True, start="data", accept="image/*"),
         ])
     if desc.slider_training:
         srcs = slider_sources(desc)
@@ -728,7 +728,7 @@ def form(desc):
         _row("METADATA_TAGS", "Tags"),
         _row("METADATA_TRIGGER_PHRASE", "Trigger phrase", hint="Blank uses the captions' trigger word."),
         _row("METADATA_THUMBNAIL", "Thumbnail", "path", "Blank embeds the latest preview; type off for none.",
-             upload=True, start="output"),
+             upload=True, start="output", accept="image/*"),
         _row("ENABLE_CACHE", "Prepare the cache before training", "check"),
     ], collapsed=True)
 
@@ -833,14 +833,14 @@ def form(desc):
              if desc.reference_kind == "vision" else
              "Optional - every preview edits this photo with its prompt, at the photo's shape. Leave empty for normal "
              "previews. An Edit LoRA run previews on the photo set on its own card instead.",
-             upload=True, start="data") if desc.reference_kind else None,
+             upload=True, start="data", accept="image/*") if desc.reference_kind else None,
         *[_row(f"SAMPLE_{kf.upper()}_FRAME", f"{kf.capitalize()} frame", "path",
                f"Optional - every clip preview {'starts' if kf == 'first' else 'ends'} on this picture, cropped to the "
                "preview's shape from its centre. For a LoRA captioned for what happens next in a clip (an "
                "image-to-video dataset), whose previews mean little without the picture they start from. Leave "
                "empty for normal previews. A still preview uses neither; the Reference training base ignores both. "
                "A change reaches a run at its next Start or Resume.",
-               upload=True, start="data") for kf in desc.preview_keyframes],
+               upload=True, start="data", accept="image/*") for kf in desc.preview_keyframes],
         # a picture size only for a model that makes pictures (ACE-Step's previews are songs: the launcher then
         # uses the description's own preview size)
         _row("SAMPLE_WIDTH", "Width", "choice", choices=sizes, default=str(desc.preview_width)) if pictures else None,

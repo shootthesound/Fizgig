@@ -115,7 +115,8 @@ def _cpu(self, *a, **k):
     return _move(self, False)
 
 
-_FACTORIES = ("zeros", "ones", "empty", "full", "arange", "tensor", "randn", "rand", "randint", "linspace", "eye")
+_FACTORIES = ("zeros", "ones", "empty", "full", "arange", "tensor", "randn", "rand", "randint", "linspace", "eye",
+              "empty_like", "zeros_like", "ones_like", "full_like")
 
 
 def _factory(real):
@@ -125,8 +126,15 @@ def _factory(real):
     real CUDA (an allocation on the real card, or "Torch not compiled with CUDA" on a CPU-only PyTorch)."""
     def make(*args, **kwargs):
         dev = kwargs.get("device")
-        if dev is None or torch.device(dev).type != "cuda":
+        if dev is None:
             return real(*args, **kwargs)
+        if torch.device(dev).type != "cuda":
+            # asked for the CPU: marked off the card, in any thread. The function mode below only runs in the thread
+            # that entered it, and a mark lives on a data address, so a CPU buffer made in the offloader's worker
+            # thread (the pinned swap's) could land on a freed card tensor's address and read as on the card
+            out = real(*args, **kwargs)
+            _mark(out, False)
+            return out
         kw = dict(kwargs, device="cpu")
         kw.pop("pin_memory", None)
         out = real(*args, **kw)

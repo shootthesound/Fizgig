@@ -463,6 +463,37 @@ def uncached_pictures(toml_text):
     return n
 
 
+def changed_captions(toml_text):
+    """How many pictures in the dataset TOML's folders have a caption file saved after their text cache (#409: a
+    caption edited between runs, in the Problem Images window or the Captions tab; a resume skips caching, so it
+    would train on the old caption). Edits during a run are re-encoded by the trainer, which rewrites the cache."""
+    import toml
+    from fizgig.dataset.image_dataset import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
+    exts = {e.lower() for e in (*IMAGE_EXTENSIONS, *VIDEO_EXTENSIONS, *AUDIO_EXTENSIONS)}
+    try:
+        cfg = toml.loads(toml_text or "")
+    except toml.TomlDecodeError:
+        return 0
+    n = 0
+    for ds in cfg.get("datasets") or []:
+        img, cdir = ds.get("image_directory"), ds.get("cache_directory")
+        if not img or not cdir or not os.path.isdir(img) or not os.path.isdir(cdir):
+            continue
+        ext = ds.get("caption_extension") or (cfg.get("general") or {}).get("caption_extension") or ".txt"
+        te = {}                         # stem -> when its text cache was written (<stem>_<arch>_te.safetensors)
+        for f in os.listdir(cdir):
+            if f.endswith("_te.safetensors"):
+                stem = "_".join(f[:-len(".safetensors")].split("_")[:-2])
+                te[stem] = max(te.get(stem, 0.0), os.path.getmtime(os.path.join(cdir, f)))
+        for f in os.listdir(img):
+            stem, e = os.path.splitext(f)
+            cap = os.path.join(img, stem + ext)
+            if (e.lower() in exts and not is_mask_file(f) and stem in te and os.path.isfile(cap)
+                    and os.path.getmtime(cap) > te[stem]):
+                n += 1
+    return n
+
+
 def multi_caption_on(desc, st):
     """Several captions per picture (#300, the Training tab tick, off by default): each line of a caption file trains
     as a caption of its own. A family that caches text the shared way (description multi_caption); not an edit or a
@@ -2246,6 +2277,12 @@ def plan(desc, inputs):
         if n:                           # a resume expects its cache; deleted by hand, it's made again (only what's gone)
             inputs["recache"] = True
             p.console.append(f"[cache] {n} picture(s) have no cache - caching them before the run resumes.\n")
+    recaption = 0
+    if resuming and not inputs.get("recache") and inputs.get("enable_cache", True):
+        recaption = changed_captions(p.dataset_toml)
+        if recaption:                   # captions edited since the last run: the text stage alone, every caption
+            p.console.append(f"[cache] {recaption} caption(s) changed since they were cached - encoding the "
+                             "captions again before the run resumes.\n")
     crop_sizes = detail_crop_sizes(desc, inputs)
     if crop_sizes:                      # before caching: the crops (and their captions) the dataset blocks name
         from fizgig.krea2.caption_text import recaption_instruction
@@ -2263,10 +2300,14 @@ def plan(desc, inputs):
     if caches(desc, inputs):
         p.stages += [Stage("Cache Preparation", cache_command(desc, inputs, "latents")),
                      Stage("Text Encoder Caching", cache_command(desc, inputs, "text"))]
+    elif recaption:
+        p.stages.append(Stage("Text Encoder Caching", cache_command(desc, inputs, "text")))
     if stage_cfg:
         if caches(desc, inputs):
             p.stages += [Stage(f"Cache Preparation ({smp:g} MP)", cache_command(desc, inputs, "latents", stage_cfg)),
                          Stage(f"Text Encoder Caching ({smp:g} MP)", cache_command(desc, inputs, "text", stage_cfg))]
+        elif recaption:
+            p.stages.append(Stage(f"Text Encoder Caching ({smp:g} MP)", cache_command(desc, inputs, "text", stage_cfg)))
         train += ["--stage_dataset_config", stage_cfg, "--stage_until", f"{stage_until(inputs):g}",
                   "--stage_blend", f"{STAGE_BLEND:g}"]
     p.stages.append(Stage("Training", train))

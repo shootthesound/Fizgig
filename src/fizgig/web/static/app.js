@@ -1359,43 +1359,51 @@ function cardSpeedupsCard() {
   int8.checked = String(S.set.inference_int8 ?? (S.rocm ? "0" : "1")) !== "0";
   int8.addEventListener("change", () => api("/api/prefs", {changes: {inference_int8: int8.checked}})
     .then(() => { S.set.inference_int8 = int8.checked ? "1" : "0"; }));
-  // one setting a block: its switch and name (no switch: a setting outside Fizgig), what it's for, then short notes
-  const setting = (box, name, forWhat, ...notes) => el("div", {class: "speedup"},
+  // one setting a block: its switch and name (no switch: a setting outside Fizgig), what it's for, short notes, and
+  // a link to its section of the guide (docs/WEB_UI.md's Speed-ups sections; INSTALL.md for the Windows setting)
+  const GUIDE = "https://github.com/shootthesound/Fizgig/blob/master/docs/";
+  const setting = (box, name, forWhat, guide, ...notes) => el("div", {class: "speedup"},
     box ? el("label", {class: "checkbox-label"}, box, " " + name) : el("div", {class: "speedup-name", text: name}),
     el("div", {class: "speedup-for", text: forWhat}),
-    ...notes.map((n) => typeof n === "string" ? el("div", {class: "field-hint", text: n}) : n));
+    ...notes.map((n) => typeof n === "string" ? el("div", {class: "field-hint", text: n}) : n),
+    el("div", {class: "speedup-more"}, el("a", {href: GUIDE + guide, target: "_blank", rel: "noopener",
+                                                text: "More in the guide"})));
   const rows = [];
   if (S.rocm) {
     rows.push(
       setting(int8, "INT8 fast inference", "For pictures in Studio, Royale, the Profiler and training previews.",
+        "WEB_UI.md#int8-fast-inference",
         "Off by default on AMD cards: the model's own fp8 file renders faster there and uses far less memory " +
         "(Krea 2 at 2048 x 2048 on an RX 9070 XT: about twice as fast, a quarter of the RAM)."),
       ...(S.sageAttentionOption ? [setting(tick("inference_sageattention", "0"),
         "Force SageAttention for Krea 2 image generation",
         "For Krea 2 pictures: training previews, Studio, Royale and the Profiler. Training itself is unchanged.",
+        "WEB_UI.md#krea-2-generation-on-rocm",
         "Off by default. Uses the SageAttention the installer built for your card, from the next picture. If " +
         "pictures fail with it on, turn it off.")] : []),
       setting(tick("rocm_conv_bands", "1"), "Split large convolutions (saves memory)",
-        "For caching and turning previews into pictures (the VAE).",
+        "For caching and turning previews into pictures (the VAE).", "WEB_UI.md#split-large-convolutions",
         "On by default. The big convolutions run in strips, so they need about a third of the memory for the same " +
         "result. Turn it off only if previews or caching go wrong with it on. From the next run or model load."),
       setting(tick("rocm_miopen", "1"), "Use AMD's MIOpen for convolutions",
         "For caching and previews, if they freeze or get slower picture after picture.",
+        "WEB_UI.md#use-amds-miopen-for-convolutions",
         "On by default. MIOpen searches for the fastest kernels at each new picture size, which can stall. Off, " +
         "PyTorch's own kernels are used instead, as ComfyUI does on newer Radeon cards. From the next run."));
   } else if (card) {
     rows.push(
       setting(int8, "INT8 fast inference (recommended)", "For pictures in Studio, Royale, the Profiler and training previews.",
+        "WEB_UI.md#int8-fast-inference",
         "On by default: faster than fp8, with the same memory and near-identical pictures. Turn it off to use fp8."),
       setting(tick("pin_block_swap", "0"), "Keep swapped blocks in pinned RAM",
-        "For Krea 2 training with Blocks Swap on.",
+        "For Krea 2 training with Blocks Swap on.", "WEB_UI.md#keep-swapped-blocks-in-pinned-ram",
         "Off by default. It speeds training up on some machines and slows it down on others: 1.5x on an RTX 5090 " +
         "with 128 GB of RAM, a little slower on an RTX 4070 Ti. To see which yours is, train once with it on and once " +
         "off and compare s/step in the log.",
         "It only turns on with enough free RAM (the swapped blocks plus 4 GB), and the log says whether it did. " +
         "From the next run."),
       setting(tick("send_only_block_swap", "0"), "Faster block swap (send-only)",
-        "For Krea 2 LoRA training with Blocks Swap on.",
+        "For Krea 2 LoRA training with Blocks Swap on.", "WEB_UI.md#faster-block-swap-send-only",
         "Off by default. The base model doesn't change while a LoRA trains, so each swapped block is only copied to " +
         "the card and never copied back, with the same memory and the same results. 1.5x on an RTX 5090, about " +
         "the same on a 16 GB laptop RTX 4090: to see what it does on yours, train once with it on and once off and " +
@@ -1403,7 +1411,7 @@ function cardSpeedupsCard() {
         "Fine-tunes and other models keep the usual swap. It also stays off for a run with NF4, with gradient " +
         "checkpointing off, or with fewer than 4 blocks swapped, and the log says why. From the next run."),
       ...(S.sysmemOption ? [setting(null, "Stop Windows moving training into system RAM",
-        "For training on Windows.",
+        "For training on Windows.", "INSTALL.md#training-suddenly-several-times-slower-windows-shared-gpu-memory",
         "When the card fills up, NVIDIA's driver can quietly move part of a run into system RAM, and training runs " +
         "several times slower. This is a setting in the NVIDIA Control Panel, not in Fizgig; driver and Windows " +
         "updates can switch it back on.",

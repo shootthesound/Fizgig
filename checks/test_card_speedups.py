@@ -104,3 +104,22 @@ for (const how of ["sysmemClose", "sysmemX", "backdrop"]) {
 assert.equal(saved, 0);
 """
     subprocess.run(["node", "-e", script], check=True)
+
+
+def test_every_guide_link_on_the_card_lands_on_a_heading():
+    """Each setting on Speed-ups for your graphics card links to its section of the guide: the section must exist
+    under the anchor GitHub gives its heading."""
+    import re
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    js = open(os.path.join(root, "src", "fizgig", "web", "static", "app.js"), encoding="utf-8").read()
+    card = js[js.index("function cardSpeedupsCard()"):]
+    card = card[:card.index("\nfunction ", 1)]
+    links = re.findall(r'"([A-Z_]+\.md)#([a-z0-9-]+)"', card)
+    assert len(links) >= 8
+
+    def slug(h):
+        return re.sub(r"[^a-z0-9 _-]", "", h.strip().lower()).replace(" ", "-")
+    for doc, anchor in links:
+        text = open(os.path.join(root, "docs", doc), encoding="utf-8").read()
+        heads = {slug(m) for m in re.findall(r"^#{1,6} (.+)$", text, re.M)}
+        assert anchor in heads, f"{doc}#{anchor} has no heading"

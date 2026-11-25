@@ -4,12 +4,44 @@ Fizgig is a web page: in its own app window on your computer, in your browser, o
 
 ## Speed-ups for your graphics card
 
-**Preferences → Speed-ups for your graphics card** holds the settings that help on some cards and not others. It names your card and shows only the group for it:
+**Preferences → Speed-ups for your graphics card** holds the settings that help on some cards and not others. It names your card and shows only the group for it. NVIDIA cards get INT8 fast inference, pinned RAM and Faster block swap for Krea 2's block swap, and on Windows the steps to stop the driver moving training into system RAM. AMD cards get INT8 fast inference, Force SageAttention where it's installed, Split large convolutions and MIOpen. Each run reads these when it starts. `FIZGIG_PIN_SWAP`, `FIZGIG_ROCM_BANDS` and `FIZGIG_MIOPEN` (0 or 1) still win over the ticks.
 
-- **NVIDIA:** INT8 fast inference (on by default; Studio, Royale, the Profiler and previews), **Keep swapped blocks in pinned RAM (Krea 2)** (off by default: 1.5x on an RTX 5090 with 128 GB of RAM, a few percent slower on some other cards, so compare the s/step in the log; it only turns on with plenty of free RAM), **Faster block swap (send-only)** (Krea 2 LoRA training with Blocks Swap; off by default: each swapped block is only copied to the card, never back, for the same memory and the same results: 1.5x on an RTX 5090, about the same on a 16 GB laptop RTX 4090, so compare the s/step in the log; fine-tunes and other models keep the usual swap), and on Windows **Show how** for turning off CUDA Sysmem Fallback.
-- **AMD:** INT8 fast inference (off by default: the stored fp8 file is faster there), Force SageAttention where it's installed (see below), **Split large convolutions** (on by default: about a third of the VAE's memory for the same result) and **Use AMD's MIOpen for convolutions** (on by default; try it off if caching or previews freeze or slow down picture after picture).
+### INT8 fast inference
 
-Each run reads these when it starts. `FIZGIG_PIN_SWAP`, `FIZGIG_ROCM_BANDS` and `FIZGIG_MIOPEN` (0 or 1) still win over the ticks.
+For pictures: training previews, Studio, LoRA Royale and the Profiler. Training itself isn't affected.
+
+- **NVIDIA:** on by default. The model runs in 8-bit with INT8 maths: faster than fp8, with the same memory and near-identical pictures. Untick it to use fp8.
+- **AMD:** off by default. There the model's own fp8 file renders faster and uses far less memory: Krea 2 at 2048 x 2048 on an RX 9070 XT ran about twice as fast with a quarter of the RAM.
+
+### Keep swapped blocks in pinned RAM
+
+NVIDIA, for Krea 2 training with Blocks Swap on. Off by default.
+
+Pinned (page-locked) RAM lets the card copy swapped blocks without a staging pass. Whether that helps depends on the machine: 1.5x on an RTX 5090 with 128 GB of RAM (Krea 2 INT8, 16 blocks swapped: 3.06 to 2.01 s/step), about 4% faster on a 32 GB laptop RTX 4090, and 5.5% slower on an RTX 4070 Ti with 64 GB. To see which yours is, train once with it on and once off and compare s/step in the log. It only turns on when there's enough free RAM (the swapped blocks plus 4 GB), and the log says whether it did. From the next run.
+
+### Faster block swap (send-only)
+
+NVIDIA, for Krea 2 LoRA training with Blocks Swap on. Off by default.
+
+The base model doesn't change while a LoRA trains, so each swapped block can be copied to the card and never copied back. The blocks stream through a 2-slot ring on the card taken out of the blocks kept there, so it uses the same VRAM, and the results are the same. Krea 2 INT8, 16 blocks swapped, 1 MP: 3.28 to 2.17 s/step on an RTX 5090; a 16 GB laptop RTX 4090 ran at about the same speed (6.72 to 6.67) with 0.7 GB less VRAM. Compare s/step in the log on yours. It works with or without pinned RAM.
+
+Fine-tunes and other models keep the usual swap. It also stays off for a run with NF4, with gradient checkpointing off, or with fewer than 4 blocks swapped, and the log says why. From the next run.
+
+### Split large convolutions
+
+AMD, for caching and for turning previews into pictures (the VAE). On by default.
+
+The VAE's big convolutions run in strips, so they need about a third of the memory for the same result. On ROCm, a whole-picture convolution can ask for a work buffer the size of the picture, which on a 16 GB card can fill it and freeze Windows. Turn it off only if previews or caching go wrong with it on. From the next run or model load. `FIZGIG_ROCM_BANDS=0` turns it off too.
+
+### Use AMD's MIOpen for convolutions
+
+AMD, for caching and previews. On by default.
+
+MIOpen is AMD's convolution library. It searches for the fastest kernels at each new picture size, and on some cards that search can stall: caching or previews freeze, or get slower picture after picture. Untick it to use PyTorch's own kernels instead, as ComfyUI does on newer Radeon cards. From the next run. `FIZGIG_MIOPEN=0` does the same.
+
+### Force SageAttention and the Windows system RAM setting
+
+Force SageAttention (AMD) is described under [Krea 2 generation on ROCm](#krea-2-generation-on-rocm). The NVIDIA setting that stops Windows moving training into system RAM lives in the NVIDIA Control Panel, not in Fizgig: see [Training suddenly several times slower?](INSTALL.md#training-suddenly-several-times-slower-windows-shared-gpu-memory) (the card's **Show how** opens the same steps).
 
 ## Krea 2 generation on ROCm
 

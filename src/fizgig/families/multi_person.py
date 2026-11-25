@@ -33,7 +33,9 @@ PREFIX = "fizgig_mp_"                                       # the composites' fi
 PER_SUBJECT = 16
 LR_BOOST = 2.0
 PANEL = 512                                                 # each half of a 1024 x 512 composite
-TAIL = "two people side by side, two close-up portraits"
+# the side-by-sides' last words: what they are (two separate portraits joined), in words a prompt with two subjects
+# together doesn't use - "two people side by side" did, and the subjects borrowed each other's looks more (#407)
+TAIL = "a split-screen diptych of two separate close-up portraits"
 _IMG = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 # what a subject can be, read from the captions when the folder's "replace it with" box is empty
 CLASS_WORDS = ("woman", "man", "girl", "boy", "lady", "guy", "person", "child", "kid", "baby", "teenager", "dog", "cat",
@@ -361,7 +363,8 @@ def build(subjects, ext=".txt", seed=42, log=print, face_first=True):
             st = os.stat(os.path.join(s["folder"], n))
             stamps.append([n, int(st.st_mtime), st.st_size])
         sig = {"photos": stamps, "fused": s["fused"], "n": PER_SUBJECT, "seed": seed, "index": s["index"],
-               "revision": REVISION, "ext": ext, "face_first": bool(face_first), "picking": 2, "masks": 1}
+               "revision": REVISION, "ext": ext, "face_first": bool(face_first), "picking": 2, "masks": 1,
+               "tail": TAIL}
         mark = os.path.join(s["out"], "fizgig_mp_built.json")
         try:
             with open(mark, encoding="utf-8") as f:

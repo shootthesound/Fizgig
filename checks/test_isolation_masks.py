@@ -82,13 +82,13 @@ def test_the_subjects_half_trains_whole(built):
         assert m[:, mine].min() == 1.0
 
 
-def test_the_caption_is_as_before_and_masks_rebuild_older_side_by_sides(built):
+def test_the_caption_ends_in_its_own_words_and_a_change_rebuilds(built):
     out, _ = built
-    assert (out / f"{mp.PREFIX}00.txt").read_text(encoding="utf-8").endswith(
-        ", two people side by side, two close-up portraits")
+    cap = (out / f"{mp.PREFIX}00.txt").read_text(encoding="utf-8")
+    assert cap.endswith(", a split-screen diptych of two separate close-up portraits") and "side by side" not in cap
     import json
     sig = json.load(open(out / "fizgig_mp_built.json", encoding="utf-8"))
-    assert sig["masks"] == 1 and sig["revision"] == mp.REVISION
+    assert sig["masks"] == 1 and sig["revision"] == mp.REVISION and sig["tail"] == mp.TAIL
 
 
 def test_side_by_sides_weigh_at_floor_zero_whatever_the_setting():

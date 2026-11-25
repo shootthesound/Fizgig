@@ -34,6 +34,7 @@
 </p>
 
 > ### 📰 Latest news
+> - **Fizgig 9.8.7 — LoRA Isolation without split backgrounds, and faster Krea 2 block swap.** Two subjects in one picture stay in one scene, and Krea 2's Faster block swap runs 1.5x faster on an RTX 5090 at the same VRAM. Also a Speed-ups for your graphics card card in Preferences, far less memory on AMD, and drag and drop. [Release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.8.7)
 > - **Fizgig 9.8.6 — MiniMax H3 Image reference Strength and Speed boost.** Studio's reference Strength works on H3 Image, and Speed boost renders its first steps at half size. Also edit references kept in their own shape, a Pillow security update and faster Captions on PNGs. [Release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.8.6)
 > - **Fizgig 9.8.5 — Studio swaps LoRAs for the queue and other tabs too.** A queued job that differs only by its LoRA swaps it on the loaded model, and your next Render swaps yours back; a second Studio tab that loads over the first now says so. Also the Windows AMD launcher's MIOpen path restored. [Release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.8.5)
 > - **Fizgig 9.8.4 — Studio switches LoRAs in a second.** Choosing another primary LoRA in Studio swaps it on the loaded model instead of loading the whole model again. Also AMD's MIOpen kernel database found on Linux and Windows, and GGUF files refused at once. [Release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.8.4)

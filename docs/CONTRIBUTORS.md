@@ -38,7 +38,7 @@ learning rate from the form ([#214](https://github.com/shootthesound/Fizgig/pull
 **loss graph views** ([#290](https://github.com/shootthesound/Fizgig/pull/290)); **Prodigy, Muon and Automagic v4** ([#292](https://github.com/shootthesound/Fizgig/pull/292)); and
 Stop asking for a second click ([#294](https://github.com/shootthesound/Fizgig/pull/294)). From their Fizgig Advanced fork, with credit: Adaptive LR judging plateaus on a 3-epoch average, the Samples gallery's
 **Style score**, the **Cosmic Pigeon** and **Deep Space** themes (v9.4.0, their own commits) and
-**out-of-memory recovery**, which tries a failed run again lighter (v9.6.0), and **Choose…** opening your system's own file window on the computer running Fizgig (v9.7.8, their commit).
+**out-of-memory recovery**, which tries a failed run again lighter (v9.6.0), and **Choose…** opening your system's own file window on the computer running Fizgig (v9.7.8, their commit). In v9.8.7 their RTX 4070 Ti measurements of Krea 2's block swap ([#403](https://github.com/shootthesound/Fizgig/pull/403)) decided which speed-ups are on by default.
 
 ## rintic-13
 
@@ -70,7 +70,7 @@ report with instrumented diagnosis of the two crashes in the way, both fixed in 
 in the optional hash metadata (landed with co-author credit, e54b0d3) and the post-preview
 fragmentation OOM. Confirmed training otherwise fully stable at 12 GB — epoch 14 with
 checkpoints throughout when they first reported. They later added the **live Progress section**
-to the Training tab ([#138](https://github.com/shootthesound/Fizgig/pull/138)) and keep sending precise bug reports.
+to the Training tab ([#138](https://github.com/shootthesound/Fizgig/pull/138)) and keep sending precise bug reports: in v9.8.7, a regularisation set's smaller picture sizes that never trained under a per-epoch limit, and the Style score keeping a replaced picture's old reading.
 
 ## Hell-Bent-Fox
 
@@ -132,13 +132,17 @@ size row for clips kept in sub-folders ([#278](https://github.com/shootthesound/
 checkpointing and run out of memory; those runs now keep it on. They also gave the mask editor **three kept brush
 settings**, recalled with 1, 2 and 3 ([#381](https://github.com/shootthesound/Fizgig/pull/381)).
 
-Since then: **Fibo 2.0** as a trainable family, with measured planner figures ([#250](https://github.com/shootthesound/Fizgig/pull/250), v9.0.4); **Purge run history** on Runs & outputs ([#345](https://github.com/shootthesound/Fizgig/pull/345), v9.7.2); and LoRA Royale treating a run's Save now snapshots and last checkpoint as its own epochs ([#355](https://github.com/shootthesound/Fizgig/pull/355), v9.7.6). Their exact reports found the H3 Context LoRA crash at step 0 ([#298](https://github.com/shootthesound/Fizgig/issues/298)) and MOSS-Image block swap leaving weights on the CPU at a batch size above 1 ([#335](https://github.com/shootthesound/Fizgig/issues/335)). In v9.7.7, a resume at a new size caches again whatever Enable Cache says, and its record waits until training starts ([#370](https://github.com/shootthesound/Fizgig/pull/370)). In v9.8.4 the captioner takes only `.safetensors` files, so a GGUF in its slot no longer slows every page load ([#388](https://github.com/shootthesound/Fizgig/pull/388)). In v9.8.6: Pillow 13.0.0 for a PNG security fix ([#398](https://github.com/shootthesound/Fizgig/pull/398)), and the Captions tab reading a PNG's size from its headers instead of decoding it ([#399](https://github.com/shootthesound/Fizgig/pull/399)).
+Since then: **Fibo 2.0** as a trainable family, with measured planner figures ([#250](https://github.com/shootthesound/Fizgig/pull/250), v9.0.4); **Purge run history** on Runs & outputs ([#345](https://github.com/shootthesound/Fizgig/pull/345), v9.7.2); and LoRA Royale treating a run's Save now snapshots and last checkpoint as its own epochs ([#355](https://github.com/shootthesound/Fizgig/pull/355), v9.7.6). Their exact reports found the H3 Context LoRA crash at step 0 ([#298](https://github.com/shootthesound/Fizgig/issues/298)) and MOSS-Image block swap leaving weights on the CPU at a batch size above 1 ([#335](https://github.com/shootthesound/Fizgig/issues/335)). In v9.7.7, a resume at a new size caches again whatever Enable Cache says, and its record waits until training starts ([#370](https://github.com/shootthesound/Fizgig/pull/370)). In v9.8.4 the captioner takes only `.safetensors` files, so a GGUF in its slot no longer slows every page load ([#388](https://github.com/shootthesound/Fizgig/pull/388)). In v9.8.6: Pillow 13.0.0 for a PNG security fix ([#398](https://github.com/shootthesound/Fizgig/pull/398)), and the Captions tab reading a PNG's size from its headers instead of decoding it ([#399](https://github.com/shootthesound/Fizgig/pull/399)). In v9.8.7: Captions search highlighting the words it found ([#400](https://github.com/shootthesound/Fizgig/pull/400)).
 
 ## DmitryAkDev
 
 [DmitryAkDev](https://github.com/DmitryAkDev) fixed the **app window on Linux**: closing it no
 longer hangs ([#197](https://github.com/shootthesound/Fizgig/pull/197)), and Ctrl+= / Ctrl+- / Ctrl+0 zoom works under WebKitGTK
-([#198](https://github.com/shootthesound/Fizgig/pull/198)), both in v8.9.0.
+([#198](https://github.com/shootthesound/Fizgig/pull/198)), both in v8.9.0. In v9.8.7 they made the Samples gallery's **likeness scorer** a well-behaved background job: it shows what it's doing, cancels cleanly, never starts counting again by itself and leaves CPU cores free ([#382](https://github.com/shootthesound/Fizgig/pull/382)).
+
+## knoic
+
+[knoic](https://github.com/knoic) built Krea 2's **Faster block swap (send-only)** ([#403](https://github.com/shootthesound/Fizgig/pull/403), v9.8.7): for LoRA training the swapped blocks are only copied to the card, never back, through a GPU ring that costs no extra VRAM, with the same results. 1.5x on an RTX 5090.
 
 ## vishnuteja7054
 
@@ -232,6 +236,12 @@ Since November:
 - [dkspwndj](https://github.com/dkspwndj): an AMD freeze while caching on Windows, which led to the MIOpen database fix ([#389](https://github.com/shootthesound/Fizgig/issues/389))
 - [roadmaus](https://github.com/roadmaus): a clips-only H3 folder refused for Masked training, diagnosed exactly ([#402](https://github.com/shootthesound/Fizgig/issues/402))
 - [axymeus](https://github.com/axymeus): caching that needed the internet ([#397](https://github.com/shootthesound/Fizgig/issues/397))
+- [AlexWolfgangDRG](https://github.com/AlexWolfgangDRG): AMD previews that reserved 30 GB on a 16 GB card ([#404](https://github.com/shootthesound/Fizgig/issues/404)), and the app window when WebView2 breaks ([#406](https://github.com/shootthesound/Fizgig/issues/406))
+- [dkspwndj](https://github.com/dkspwndj): the memory AMD caching held on to ([#389](https://github.com/shootthesound/Fizgig/issues/389))
+- [spinolover](https://github.com/spinolover): block swap slowing down through a run ([#405](https://github.com/shootthesound/Fizgig/issues/405))
+- [AlonDan](https://github.com/AlonDan): drag and drop ([#392](https://github.com/shootthesound/Fizgig/issues/392))
+- [axymeus](https://github.com/axymeus): LoRA Royale's sheet of listed epochs ([#401](https://github.com/shootthesound/Fizgig/issues/401))
+- [pomoe136](https://github.com/pomoe136): split backgrounds with LoRA Isolation ([#407](https://github.com/shootthesound/Fizgig/issues/407))
 - [tsk5cb-cmyk](https://github.com/tsk5cb-cmyk): Studio in two tabs ([#395](https://github.com/shootthesound/Fizgig/issues/395))
 - WiseDuck (by email): Gizmo's **Prepare a folder** and clips at any audio sample rate
 - u/Obvious-Bad7548 on r/StableDiffusion: the LCM sampler recipe for H3 Image

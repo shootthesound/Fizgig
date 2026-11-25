@@ -1,5 +1,15 @@
 # Fizgig news
 
+## 25 Nov 2026: LoRA Isolation without split backgrounds, and faster Krea 2 block swap
+
+**LoRA Isolation keeps two subjects in one scene.** The side-by-side pictures it trains on no longer teach a background split down the middle: the stranger's half is masked and their captions say what they are. Nothing to set up; your side-by-sides rebuild on the next run.
+
+**Faster Krea 2 block swap, and a new Preferences card.** Faster block swap (send-only) copies each swapped block to the card and never back: 1.5x on an RTX 5090 at the same VRAM, off by default. It lives in the new **Speed-ups for your graphics card**, with every per-card setting for NVIDIA or AMD in one place.
+
+**AMD memory, drag and drop, and fixes.** On AMD, previews and caching take far less memory. Drop files on any box with an Upload button; block swap no longer slows down through a run; and when the app window can't start, Fizgig opens in the browser at once and says why.
+
+[Fizgig v9.8.7 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.8.7)
+
 ## 23 Nov 2026: MiniMax H3 Image reference Strength and Speed boost
 
 **More control over H3 Image.** Studio's reference Strength now works on MiniMax H3 Image, from 1 (the picture as it is) down to 0 (left out). Speed boost On renders the first steps at half size, on the Samples tab and in Studio.

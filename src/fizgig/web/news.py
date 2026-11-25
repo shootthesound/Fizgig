@@ -5,6 +5,18 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 
 NEWS = [
     {
+        "date": "25 Nov 2026",
+        "title": "LoRA Isolation without split backgrounds, and faster Krea 2 block swap",
+        "body": (
+            "LoRA Isolation's side-by-side pictures no longer teach a background split down the middle: the "
+            "stranger's half is masked and their captions say what they are. Your side-by-sides rebuild on the next run.\n\n"
+            "Faster block swap (send-only) for Krea 2 LoRAs, 1.5x on an RTX 5090 at the same VRAM, sits in the new "
+            "Preferences card Speed-ups for your graphics card. Also far less memory on AMD, drag and drop, and fixes."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#25-nov-2026-lora-isolation-without-split-backgrounds-and-faster-krea-2-block-swap"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.8.7"}],
+    },
+    {
         "date": "23 Nov 2026",
         "title": "MiniMax H3 Image reference Strength and Speed boost",
         "body": (

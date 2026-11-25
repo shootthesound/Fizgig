@@ -56,6 +56,23 @@ def test_the_page_saves_and_resets_them():
     assert "host.append(cardSpeedupsCard());" in js
 
 
+def test_every_tick_on_the_card_saves_as_1_or_0():
+    """A tick shows on when its saved value is "1" (String(S.set[key]) === "1"), so the save must store "1" / "0":
+    Faster block swap was missed and saved as "True", showing unticked after a reload though it was on."""
+    import re
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    js = open(os.path.join(root, "src", "fizgig", "web", "static", "app.js"), encoding="utf-8").read()
+    card = js[js.index("function cardSpeedupsCard()"):]
+    card = card[:card.index("\nfunction ", 1)]
+    keys = set(re.findall(r'tick\("([a-z0-9_]+)"', card))
+    assert {"pin_block_swap", "send_only_block_swap", "rocm_conv_bands", "rocm_miopen"} <= keys
+    py = open(os.path.join(root, "src", "fizgig", "web", "server.py"), encoding="utf-8").read()
+    start = py.index('for k in ("lan_discovery", "update_check"')
+    block = py[start:py.index("*(k for k in ch if k in autosave_keys)", start)]
+    missing = [k for k in sorted(keys) if f'"{k}"' not in block]
+    assert not missing, f"saved as True/False, not 1/0: {missing}"
+
+
 def test_show_how_popup_closes():
     """Preferences' Show how opens the Sysmem pop-up with its close buttons wired (they were only wired by the launch
     pop-up, so opened from Preferences it couldn't be dismissed), and without Don't show this again."""

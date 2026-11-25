@@ -5058,7 +5058,7 @@ class Handler(BaseHTTPRequestHandler):
                 if "inference_int8" in ch:
                     ch["inference_int8"] = "1" if ch["inference_int8"] in (True, "1", 1) else "0"
                 for k in ("lan_discovery", "update_check", "qt_disable_gpu", "inference_sageattention", "native_file_window",
-                          "pin_block_swap", "rocm_conv_bands", "rocm_miopen",
+                          "pin_block_swap", "send_only_block_swap", "rocm_conv_bands", "rocm_miopen",
                           *(k for k in ch if k in autosave_keys)):
                     if k in ch:
                         ch[k] = "1" if ch[k] in (True, "1", 1) else "0"

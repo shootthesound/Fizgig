@@ -1396,14 +1396,16 @@ function cardSpeedupsCard() {
         "WEB_UI.md#int8-fast-inference",
         "On by default: faster than fp8, with the same memory and near-identical pictures. Turn it off to use fp8."),
       setting(tick("pin_block_swap", "0"), "Keep swapped blocks in pinned RAM",
-        "For Krea 2 training with Blocks Swap on.", "WEB_UI.md#keep-swapped-blocks-in-pinned-ram",
+        "For Krea 2 training with Blocks Swap on, on a machine with plenty of spare RAM: the blocks reach the card " +
+        "faster.", "WEB_UI.md#keep-swapped-blocks-in-pinned-ram",
         "Off by default. It speeds training up on some machines and slows it down on others: 1.5x on an RTX 5090 " +
         "with 128 GB of RAM, a little slower on an RTX 4070 Ti. To see which yours is, train once with it on and once " +
         "off and compare s/step in the log.",
         "It only turns on with enough free RAM (the swapped blocks plus 4 GB), and the log says whether it did. " +
         "From the next run."),
       setting(tick("send_only_block_swap", "0"), "Faster block swap (send-only)",
-        "For Krea 2 LoRA training with Blocks Swap on.", "WEB_UI.md#faster-block-swap-send-only",
+        "For Krea 2 LoRA training with Blocks Swap on: each block is copied to the card and never back.",
+        "WEB_UI.md#faster-block-swap-send-only",
         "Off by default. The base model doesn't change while a LoRA trains, so each swapped block is only copied to " +
         "the card and never copied back, with the same memory and the same results. 1.5x on an RTX 5090, about " +
         "the same on a 16 GB laptop RTX 4090: to see what it does on yours, train once with it on and once off and " +

@@ -69,6 +69,13 @@ def starred_or_say(folder, items, sample_info):
     """starred_items, or a plain message when there are none."""
     got = starred_items(folder, items, sample_info)
     if not got:
+        from fizgig.web import stars
+        marks = sorted({(i["run"], i.get("epoch")) for i in map(sample_info, stars.read(os.path.join(folder, "sample")))
+                        if i and i.get("run")}, key=lambda m: (m[0], m[1] or 0))
+        if marks:                      # starred, but their checkpoints aren't here (not saved that epoch, or deleted)
+            names = ", ".join(f"{r} epoch {e}" for r, e in marks[:6]) + ("..." if len(marks) > 6 else "")
+            raise ValueError(f"The starred previews ({names}) have no checkpoint left in this folder: that epoch "
+                             "wasn't saved, or its file has gone. Star previews of epochs whose checkpoint is here.")
         raise ValueError("No starred epochs in this run: star the previews you like in the Samples gallery (the ☆ "
                          "on each picture), then come back. A star counts when that epoch's checkpoint was saved.")
     return got

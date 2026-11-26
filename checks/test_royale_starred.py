@@ -52,3 +52,12 @@ def test_starred_within_a_range(tmp_path):
         stars.toggle(str(s / f"one_e{ep:06d}_00_2026111{i}120000_1.png"), True)
     got = royale.epoch_range(royale.starred_items(str(tmp_path), items, sample_info), 10, 20)
     assert [lbl for lbl, _p in got] == [15, 20]
+
+
+def test_a_starred_epoch_without_its_checkpoint_is_named(tmp_path):
+    s, items = _run(tmp_path)
+    p = s / "one_e000012_00_20261112093128_1.png"                  # epoch 12: never saved as a checkpoint
+    p.write_bytes(b"x")
+    stars.toggle(str(p), True)
+    with pytest.raises(ValueError, match="one epoch 12"):
+        royale.starred_or_say(str(tmp_path), items, sample_info)

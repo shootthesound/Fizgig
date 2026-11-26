@@ -1071,7 +1071,7 @@ python -m fizgig.scripts.batch_caption --captioner qwen3vl --model_file /models/
 
 The GUI's caption tasks (person or character, object or product, style, concept) are instructions; write the one you want to a file. Florence-2 downloads itself: `--captioner florence2_promptgen` (or `florence2_base`, `florence2_large`) with `--task "<DETAILED_CAPTION>"`. JoyCaption Beta One follows an instruction like Qwen3-VL: `--captioner joycaption_beta_one --instruction_file instruction.txt` (downloads itself, 16 GB; bf16 with about 19 GB free, else 4-bit). Booru tags: `--captioner wd_eva02_large_v3` (downloads itself, 1.3 GB; tags scoring 0.35 or more). To add a captioner, see [ADDING_A_CAPTIONER.md](ADDING_A_CAPTIONER.md).
 
-**Bilingual captions** — `python -m fizgig.scripts.translate_captions <folder> [--skip_existing] [--ext .txt]` adds a Chinese translation to every caption (`<trigger>, <english> - <chinese>`), keeping the trigger word as it is.
+**Bilingual captions** — `python -m fizgig.scripts.translate_captions <folder> [--skip_existing] [--ext .txt]` adds a Chinese translation to every caption (`<trigger>, <english> - <chinese>`), keeping the trigger word as it is; each line of a file is translated on its own, and `--skip_existing` leaves the lines that already have Chinese.
 
 **A fine-tune as LoRAs** — `extract_finetune.py` takes the difference between a fine-tuned checkpoint and the base it started from, one LoRA per rank from a single pass:
 

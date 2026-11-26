@@ -48,6 +48,13 @@ def _translate(tok, model, device, english):
     return " ".join(text.split())
 
 
+def _english(line):
+    """What goes to the translator: the line without its trigger word (the first comma-separated part), or the whole
+    line when it has no comma."""
+    trigger, rest = line.split(", ", 1) if ", " in line else ("", line)
+    return rest or line
+
+
 def main():
     p = argparse.ArgumentParser(description="Add a Chinese translation to every caption in a folder")
     p.add_argument("folder")
@@ -83,18 +90,30 @@ def main():
                 skipped += 1
                 _say(f"SKIP: {name} (empty)")
                 continue
-            if a.skip_existing and _CJK.search(original):
+            lines = [ln.strip() for ln in original.splitlines() if ln.strip()]
+            if a.skip_existing and all(_CJK.search(ln) for ln in lines):
                 skipped += 1
                 _say(f"SKIP: {name} (already has Chinese)")
                 continue
-            trigger, rest = original.split(", ", 1) if ", " in original else ("", original)
-            chinese = _translate(tok, model, device, rest or original)
-            if not chinese:
+            # each line on its own: a file of several lines (Several captions per picture, the captioner's Add as
+            # another line) is several captions, and translated whole its first line stayed English while the Chinese
+            # of every line landed on the last one
+            out, bad = [], False
+            for ln in lines:
+                if a.skip_existing and _CJK.search(ln):      # a line already translated (a line added since)
+                    out.append(ln)
+                    continue
+                chinese = _translate(tok, model, device, _english(ln))
+                if not chinese:
+                    bad = True
+                    break
+                out.append(f"{ln} - {chinese}")
+            if bad:
                 failed += 1
                 _say(f"FAIL: {name} (empty translation, kept as it was)")
                 continue
             with open(fp, "w", encoding="utf-8") as f:
-                f.write(f"{trigger}, {rest} - {chinese}" if trigger else f"{original} - {chinese}")
+                f.write("\n".join(out))
             done += 1
             _say(f"OK: {name}")
         except Exception as e:

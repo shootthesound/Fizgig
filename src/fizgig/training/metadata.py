@@ -9,6 +9,7 @@ import datetime
 import hashlib
 from io import BytesIO
 import os
+import re
 from typing import List, Optional, Tuple, Union
 
 import safetensors
@@ -321,3 +322,244 @@ def build_merged_from(models: List[str]) -> str:
             title = os.path.splitext(os.path.basename(model))[0]
         return title
     return ", ".join(_get_title(m) for m in models)
+
+
+# ---- training facts (kohya ss_* keys + one fizgig_training_config JSON) -----------------------------------------
+# Technical recipe only: no captions, tag lists, prompts, author names, dataset paths, or folder names.
+TRAINING_CONFIG_KEY = "fizgig_training_config"
+_SECRETISH = re.compile(r"(hf_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9_\-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|"
+                        r"xox[abprs]-[A-Za-z0-9\-]{10,}|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_\-]{20,}|[A-Fa-f0-9]{40,}|[A-Za-z0-9+/]{48,})")
+_PRIVATE_SPEC_KEY = re.compile(
+    r"^(?:author|authors|user|user_id|username|tag|tags|caption|captions|prompt|prompts|trigger_phrase|"
+    r"description|image_directory|cache_directory|directory|directories|folder_name|folder_names|"
+    r"dataset_name|dataset_names)$"
+    r"|(?:^|_)(?:path|paths|file_path|file_paths|directory|directories|folder_name|folder_names|"
+    r"username|user_id)(?:_|$)"
+    r"|^(?:caption|prompt|tag)_(?:text|list|content|bodies|strings)$",
+    re.IGNORECASE,
+)
+_OMIT = object()
+_VERSION = []
+
+
+def _safe_name(value) -> str:
+    """A file name only: the last part of a path (either slash), with secret-like strings removed."""
+    s = str(value or "").replace("\\", "/").rstrip("/")
+    s = s.rsplit("/", 1)[-1]
+    return _SECRETISH.sub("[removed]", s)
+
+
+def _safe_text(value) -> str:
+    """A short setting value: path-like values are reduced to a basename and secrets are removed."""
+    s = str(value if value is not None else "")
+    if "/" in s or "\\" in s:
+        s = _safe_name(s)
+    return _SECRETISH.sub("[removed]", s)[:200]
+
+
+def _safe_training_spec(value, key=None):
+    """Recursively keep scalar training settings while filtering content, identity, and path-bearing fields."""
+    if key is not None and _PRIVATE_SPEC_KEY.fullmatch(str(key)):
+        return _OMIT
+    if isinstance(value, dict):
+        out = {}
+        for k, v in value.items():
+            safe = _safe_training_spec(v, k)
+            if safe is not _OMIT and safe is not None:
+                out[str(k)] = safe
+        return out
+    if isinstance(value, (list, tuple)):
+        out = [_safe_training_spec(v) for v in value]
+        return [v for v in out if v is not _OMIT and v is not None]
+    if value is None or isinstance(value, (bool, int)):
+        return value
+    if isinstance(value, float):
+        import math
+        return value if math.isfinite(value) else None
+    if isinstance(value, str):
+        return _safe_text(value)
+    return _safe_text(value)
+
+
+def fizgig_version() -> dict:
+    """The running Fizgig version and commit, read once, offline."""
+    if not _VERSION:
+        import subprocess
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+        def git(*a):
+            try:
+                r = subprocess.run(["git", *a], cwd=root, capture_output=True, text=True, timeout=5,
+                                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                return r.stdout.strip() if r.returncode == 0 else ""
+            except (OSError, ValueError, Exception):
+                return ""
+        try:
+            from fizgig import __version__ as pkg
+        except Exception:
+            pkg = ""
+        commit = git("rev-parse", "HEAD")
+        info = {"version": git("describe", "--tags", "--always") or pkg or "unknown",
+                "commit": commit if re.fullmatch(r"[0-9a-f]{40}", commit or "") else "",
+                "changed": bool(git("status", "--porcelain", "--untracked-files=no"))}
+        _VERSION.append(info)
+    return dict(_VERSION[0])
+
+
+def dataset_dirs(datasets) -> Tuple[dict, dict, dict]:
+    """Kohya-shaped counts plus anonymous, technical per-dataset recipe summaries; no names or paths."""
+    dirs, reg, table = {}, {}, {}
+    train_i = reg_i = 0
+    for ds in datasets or []:
+        if not getattr(ds, "image_directory", None):
+            continue
+        is_reg = bool(getattr(ds, "is_reg", False))
+        if is_reg:
+            reg_i += 1
+            key, target = f"reg_dataset_{reg_i:02d}", reg
+        else:
+            train_i += 1
+            key, target = f"dataset_{train_i:02d}", dirs
+        try:
+            count = ds.get_total_image_count()
+        except Exception:
+            count = None
+        reps = int(getattr(ds, "num_repeats", 1) or 1)
+        img_count = int(count) if count is not None else 0
+        target[key] = {"n_repeats": reps, "img_count": img_count}
+
+        recipe = {
+            "weight": float(getattr(ds, "loss_weight", 1.0) or 1.0),
+            "repeats": reps,
+            "img_count": img_count,
+            "batch_size": int(getattr(ds, "batch_size", 1) or 1),
+            "enable_bucket": bool(getattr(ds, "enable_bucket", False)),
+            "bucket_no_upscale": bool(getattr(ds, "bucket_no_upscale", False)),
+            "cache_enabled": bool(getattr(ds, "cache_directory", None)),
+            "tag_shuffle": bool(getattr(ds, "tag_shuffle", False)),
+            "keep_first_tags": int(getattr(ds, "keep_first_tags", 1) or 0),
+            "tag_dropout": float(getattr(ds, "tag_dropout", 0.0) or 0.0),
+            "caption_dropout": float(getattr(ds, "caption_dropout", 0.0) or 0.0),
+            "caption_variants": int(getattr(ds, "caption_variants", 0) or 0),
+            "caption_variant_cap": int(getattr(ds, "caption_variant_cap", 0) or 0),
+            "paired_data": bool(getattr(ds, "control_directory", None)),
+            "extra_reference_data": bool(getattr(ds, "extra_reference_directory", None)),
+            "mask_directory_enabled": bool(getattr(ds, "mask_directory", None)),
+            "photos_only": bool(getattr(ds, "photos_only", False)),
+        }
+        resolution = getattr(ds, "resolution", None)
+        if isinstance(resolution, (list, tuple)) and len(resolution) >= 2:
+            recipe["resolution"] = [int(resolution[0]), int(resolution[1])]
+        extension = str(getattr(ds, "caption_extension", "") or "")
+        if re.fullmatch(r"\.[A-Za-z0-9]{1,10}", extension):
+            recipe["caption_extension"] = extension
+        clip_mp = getattr(ds, "clip_megapixels", None)
+        if clip_mp is not None:
+            try:
+                recipe["clip_megapixels"] = float(clip_mp)
+            except (TypeError, ValueError):
+                pass
+        if not is_reg:
+            table[key] = recipe
+        else:
+            # The regularization dataset gets the same technical recipe, without a folder identity.
+            table[key] = {**recipe, "regularization": True}
+    return dirs, reg, table
+
+
+def bucket_resolutions(datasets) -> List[str]:
+    """The resolutions the pictures actually trained at (each dataset's buckets), "WxH", largest area first."""
+    seen = set()
+    for ds in datasets or []:
+        bm = getattr(ds, "batch_manager", None)
+        for r in getattr(bm, "bucket_resos", None) or []:
+            try:
+                seen.add((int(r[0]), int(r[1])))
+            except (TypeError, ValueError, IndexError):
+                pass
+    return [f"{w}x{h}" for w, h in sorted(seen, key=lambda r: (-r[0] * r[1], r))]
+
+
+def training_metadata(*, seed=None, batch_size=None, grad_accum=1, epochs=None, epoch=None, steps=None,
+                      steps_per_epoch=None, max_steps=None, num_images=None, scheduler=None, warmup_steps=None,
+                      resolution=None, buckets=None, mixed_precision="bf16", base_precision=None, base_model=None,
+                      datasets=None, training_method=None, selective_block_check=False, folder_balance=None,
+                      validation_groups=None, best_epoch=None, best_val_loss=None, current_lr=None,
+                      training_spec=None, started_at=None, now=None) -> dict:
+    """Kohya ss_* keys plus a sanitized Fizgig training recipe; no paths, folder names, captions or tags."""
+    import json
+    import time as _time
+    now = float(now if now is not None else _time.time())
+    dirs, reg, table = dataset_dirs(datasets)
+    buckets = list(buckets or [])
+    if isinstance(resolution, (list, tuple)) and len(resolution) >= 2:
+        reso = f"({int(resolution[0])}, {int(resolution[1])})"
+    elif resolution:
+        reso = f"({int(resolution)}, {int(resolution)})"
+    else:
+        reso = ""
+    md = {}
+
+    def put(k, v):
+        if v is not None and v != "":
+            md[k] = _safe_text(v)
+    put("ss_seed", seed)
+    put("ss_batch_size_per_device", batch_size)
+    put("ss_gradient_accumulation_steps", grad_accum)
+    put("ss_num_epochs", epochs)
+    put("ss_epoch", epoch)
+    put("ss_steps", steps)
+    put("ss_num_batches_per_epoch", steps_per_epoch)
+    put("ss_max_train_steps", max_steps)
+    put("ss_num_train_images", num_images)
+    put("ss_num_reg_images", sum(int(x.get("img_count", 0)) for x in reg.values()))
+    put("ss_num_datasets", len(dirs))
+    put("ss_num_reg_datasets", len(reg))
+    put("ss_lr_scheduler", scheduler)
+    put("ss_lr_warmup_steps", warmup_steps)
+    put("ss_resolution", reso)
+    put("ss_mixed_precision", mixed_precision)
+    put("ss_base_precision", base_precision)
+    put("ss_sd_model_name", _safe_name(base_model) if base_model else None)
+    if started_at:
+        put("ss_training_started_at", f"{float(started_at):.0f}")
+    put("ss_training_finished_at", f"{now:.0f}")
+    # The Kohya field names are retained, but directory keys are anonymous indices.
+    md["ss_dataset_dirs"] = json.dumps(dirs, sort_keys=True)
+    if reg:
+        md["ss_reg_dataset_dirs"] = json.dumps(reg, sort_keys=True)
+    if buckets:
+        md["ss_bucket_info"] = json.dumps({"buckets": buckets}, sort_keys=True)
+    ver = fizgig_version()
+    cfg = {
+        "training_method": _safe_text(training_method or "standard"),
+        "selective_block_check": bool(selective_block_check),
+        "dataset_layout": table,
+        "folder_balance": folder_balance if folder_balance is None else bool(folder_balance),
+        "validation_groups": int(validation_groups) if validation_groups else None,
+        "epoch": int(epoch) if epoch is not None else None,
+        "epochs": int(epochs) if epochs is not None else None,
+        "steps": int(steps) if steps is not None else None,
+        "steps_per_epoch": int(steps_per_epoch) if steps_per_epoch is not None else None,
+        "max_steps": int(max_steps) if max_steps is not None else None,
+        "best_epoch": int(best_epoch) if best_epoch is not None else None,
+        "best_val_loss": float(best_val_loss) if best_val_loss is not None else None,
+        "current_lr": float(current_lr) if current_lr is not None else None,
+        "training_seconds": round(now - float(started_at), 1) if started_at else None,
+        "resolution": reso.strip("()").replace(", ", "x") or None,
+        "trained_resolutions": buckets,
+        "base_precision": _safe_text(base_precision) if base_precision else None,
+        "base_model": _safe_name(base_model) if base_model else None,
+        "dataset_counts": {
+            "training_datasets": len(dirs),
+            "regularization_datasets": len(reg),
+            "training_images": int(num_images or 0),
+            "regularization_images": sum(int(x.get("img_count", 0)) for x in reg.values()),
+        },
+        "training_spec": _safe_training_spec(training_spec or {}),
+        "fizgig_version": _safe_text(ver.get("version")),
+        "fizgig_commit": ver.get("commit") or None,
+        "fizgig_files_changed": ver.get("changed"),
+    }
+    md[TRAINING_CONFIG_KEY] = json.dumps(cfg, sort_keys=True)
+    return md

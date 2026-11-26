@@ -48,6 +48,8 @@ class CaptionerDescription:
     tasks: tuple = ()                # a fixed menu of tasks the model understands (Florence's <CAPTION>...), first = default
     default_task: str = ""
     instruction: bool = False        # follows a written instruction (the Captions tab's task menu + edit box)
+    frames: int = 1                  # how many frames of a clip it can look at together (#351): above 1, caption()
+                                     # may be handed a list of pictures, a clip's frames in order
     hint: str = ""                   # one line for the model menu's hint
     blurb: str = ""                  # a few words on what it's good for (Preferences' Other captioning models)
     download_skip: tuple = ()        # repo files its class never loads (a second copy of the weights...): the

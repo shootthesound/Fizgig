@@ -227,6 +227,7 @@ def options(prefs, captioner, secondary=""):
     qwen_label = _captioners.get(QWEN_KEY).label
     return {"models": [d.label for d in offered],
             "captioners": [{"label": d.label, "key": d.key, "kind": d.kind, "instruction": d.instruction,
+                            "frames": d.frames,
                             "tasks": list(d.tasks), "default_task": d.default_task, "hint": d.hint,
                             "size_gb": d.size_gb, "licence": d.licence,
                             "prompt_types": [list(t) for t in d.prompt_types], "prompt_lengths": list(d.prompt_lengths),
@@ -516,7 +517,7 @@ def _popen(cmd, prefs, stdin=False):
 
 def ai_captions(prefs, captioner, folder, model, task_label, instruction, max_tokens, trigger, overwrite, clips,
                 only=None, photos=True, ext=".txt", threshold=0.35, leave_out="", underscores=False, add_line=False,
-                first_line=False):
+                first_line=False, clip_frames=1):
     """Caption the folder's pictures (and clips) with a captioner from the registry (`model` is its label or key), or
     just `only` (a re-caption). The worker loads once and stays loaded for the next batch. A tagger keeps the tags
     scoring `threshold` or more, minus `leave_out` (comma-separated), underscores as spaces unless `underscores`.
@@ -571,6 +572,8 @@ def ai_captions(prefs, captioner, folder, model, task_label, instruction, max_to
     job = {"list_file": list_file, "max_new_tokens": int(max_tokens or 120), "trigger": trigger.strip(),
            "stop_file": stop_file, "caption_ext": ext, **({"add_line": True} if add_line else {}),
            **({"first_line": True} if first_line and not add_line else {})}
+    if clips and desc.frames > 1 and int(clip_frames or 1) > 1:     # #351: a clip seen as several frames
+        job["clip_frames"] = min(int(clip_frames), desc.frames)
     if desc.instruction:
         instr = os.path.join(JOB_DIR, "instruction.txt")
         with open(instr, "w", encoding="utf-8") as f:

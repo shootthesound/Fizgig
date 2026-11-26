@@ -9795,7 +9795,7 @@ function capSettings() {
     tokens: $("capTokens").value, overwrite: $("capOverwrite").checked, songWords: $("capSongWords").value,
     skipCjk: $("capSkipCjk").checked, perPage: $("capPerPage").value, concept: $("capConcept").value.trim(),
     threshold: $("capThreshold").value, leaveOut: $("capLeaveOut").value, underscores: $("capUnderscores").checked,
-    extras: (S.capSaved || {}).extras || {}};
+    frames: $("capFrames").value, extras: (S.capSaved || {}).extras || {}};
 }
 // a queued caption job on show (the pill): its settings change here, in memory only, until Save to queue
 const saveCapSoon = debounce(() => { S.capSaved = capSettings(); if (!S.capViewing) api("/api/state", {captions: S.capSaved}).catch(() => {}); }, 600);
@@ -9908,6 +9908,7 @@ async function loadCaptionOptions() {
   if (saved.perPage) { $("capPerPage").value = saved.perPage; CAP_PAGE = Number(saved.perPage) || 12; }
   fillTasks(saved.task);
   if (saved.tokens) $("capTokens").value = saved.tokens;
+  if (saved.frames) $("capFrames").value = saved.frames;
   if (saved.concept !== undefined) $("capConcept").value = saved.concept;
   if (saved.threshold) $("capThreshold").value = saved.threshold;
   if (saved.leaveOut !== undefined) $("capLeaveOut").value = saved.leaveOut;
@@ -9943,6 +9944,8 @@ function capKindRows() {
   show("capTask", d.instruction || d.tasks.length);
   show("capTokens", d.kind !== "tags");
   $("capTagRows").style.display = pictures && d.kind === "tags" ? "" : "none";
+  // #351: a captioner that can look at several frames, for a model that trains on clips
+  $("capFramesRow").style.display = media.includes("clip") && (d.frames || 1) > 1 ? "" : "none";
   $("capModelHint").textContent = d.hint || S.cap.hint || "";
   if (o && !qwenOn()) $("capTaskHint").style.display = "none";
   capOwnRows();
@@ -10066,6 +10069,7 @@ function capJobBody(extra = {}) {
   return {family: S.family, folder: capFolder(), model: $("capModel").value, task: $("capTask").value, ext: capExt(),
     instruction: capInstruction(),
     max_tokens: Number($("capTokens").value) || 120,
+    clip_frames: Number($("capFrames").value) || 1,
     threshold: Number($("capThreshold").value) || 0.35, leave_out: $("capLeaveOut").value,
     underscores: $("capUnderscores").checked,
     // Add as another line greys Overwrite out: a static or song caption then writes only the files without one
@@ -10513,7 +10517,7 @@ function wireCaptions() {
   });
   $("capOverwrite").addEventListener("change", capLinesWarn);
   for (const id of ["capTrigger", "capTokens", "capOverwrite", "capSongWords", "capSkipCjk", "capThreshold", "capLeaveOut",
-                    "capUnderscores"])
+                    "capUnderscores", "capFrames"])
     $(id).addEventListener("change", saveCapSoon);
   // a trigger word typed here fills auto-recaption's on the Training tab (an empty one leaves it alone)
   $("capTrigger").addEventListener("input", () => {

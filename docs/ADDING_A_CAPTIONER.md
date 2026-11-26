@@ -67,7 +67,9 @@ class WDTagger(Captioner):
               # self.precision: one of the description's precisions, or ""
 
     def caption(self, image, request: CaptionRequest) -> CaptionResult:
-        ...   # image: one upright RGB PIL picture (a clip's middle frame; see-through laid on white)
+        ...   # image: one upright RGB PIL picture (a clip's middle frame; see-through laid on white); with
+              # frames=N in the description (a model that takes several pictures), a clip may come as a list of
+              # up to N frames in order, the instruction saying they are one clip
         return CaptionResult(tags=[("1girl", 0.97), ("long_hair", 0.91)])   # or CaptionResult(text="...")
 
     def unload(self):

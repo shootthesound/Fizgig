@@ -428,20 +428,23 @@ def generate_caption(conditioner: "Qwen3VLConditioner", image_path, *,
     proc = conditioner._get_image_processor()
     # image_path is a path OR an already-opened PIL image. The second form exists because a
     # MiniMax H3 training item can be a video clip, and what gets captioned is a frame decoded
-    # from it — there is no file on disk to hand over.
+    # from it — there is no file on disk to hand over. A list is a clip's frames in order (#351): each goes in as
+    # its own picture, sharing the megapixels (at least 0.25 MP each) so a long clip doesn't swamp the model.
     from fizgig.utils.upright import open_upright
-    src = open_upright(image_path) if isinstance(image_path, (str, os.PathLike)) else image_path
-    im = conditioner._cap_image(src, megapixels)
+    srcs = list(image_path) if isinstance(image_path, (list, tuple)) else [image_path]
+    srcs = [open_upright(s) if isinstance(s, (str, os.PathLike)) else s for s in srcs]
+    each = megapixels if len(srcs) == 1 else max(0.25, megapixels / len(srcs))
+    ims = [conditioner._cap_image(s, each) for s in srcs]
     # An explicit instruction wins (the Captions tab's task menu, or a user-edited one); otherwise
     # the historical detailed/standard pair, so existing callers are unaffected.
     if instruction is None:
         instruction = DETAILED_CAPTION_INSTRUCTION if detailed else CAPTION_INSTRUCTION
     if detailed:
         max_new_tokens = max(max_new_tokens, 240)
-    messages = [{"role": "user", "content": [{"type": "image"},
-                                             {"type": "text", "text": instruction}]}]
+    messages = [{"role": "user", "content": [{"type": "image"} for _ in ims] +
+                 [{"type": "text", "text": instruction}]}]
     prompt = proc.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
-    inputs = proc(text=[prompt], images=[im], return_tensors="pt").to(conditioner.qwen.device)
+    inputs = proc(text=[prompt], images=ims, return_tensors="pt").to(conditioner.qwen.device)
 
     cpu_state = torch.random.get_rng_state()
     cuda_states = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None

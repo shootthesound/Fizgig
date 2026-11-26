@@ -12,6 +12,7 @@ class Qwen3VLCaptioner(Captioner):
         self.encoder = load_krea2_text_encoder(self.files["path"], dtype=torch.bfloat16, device=self.device)
 
     def caption(self, image, request: CaptionRequest) -> CaptionResult:
+        """image: a picture, or a list of a clip's frames in order (#351)."""
         from fizgig.krea2.embedder import generate_caption
         return CaptionResult(text=generate_caption(self.encoder, image, max_new_tokens=request.max_new_tokens,
                                                    instruction=request.instruction or None))

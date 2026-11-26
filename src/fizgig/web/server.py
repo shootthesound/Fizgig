@@ -2283,7 +2283,8 @@ def _start_ai_captions(b):
         bool(b.get("overwrite")), clips, only=only or None, photos=photos,
         ext=captions.caption_ext(b.get("ext")), threshold=float(b.get("threshold") or 0.35),
         leave_out=str(b.get("leave_out") or ""), underscores=bool(b.get("underscores")),
-        add_line=bool(b.get("add_line")), first_line=bool(b.get("first_line")) and bool(only))
+        add_line=bool(b.get("add_line")), first_line=bool(b.get("first_line")) and bool(only),
+        clip_frames=int(b.get("clip_frames") or 1))
 
 
 def _queue_starter(item):

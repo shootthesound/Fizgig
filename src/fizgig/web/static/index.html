@@ -571,6 +571,12 @@
                 (viewpoint, face, pose, clothing), and for an object or product (shape, colours, materials). For a pose,
                 an action or an effect, pick the concept task and say what it is; for a style, pick Style - it leaves the look unnamed so the trigger word carries it; for anything else,
                 Edit instructions.</div>
+              <div class="field-row" id="capFramesRow" style="display:none"><span class="field-label">Frames per clip:</span>
+                <select id="capFrames" class="w-combo st-small-select"
+                  title="How much of each clip the captioner sees. Several frames let it describe the movement and what happens; 1 is the middle frame only, as before.">
+                  <option value="1">1 (the middle frame)</option><option value="4">4</option><option value="8">8</option></select>
+                <span class="field-hint">Several frames from through each clip, so the caption says what happens in it, not just how
+                  one moment looks. Pictures are captioned as before.</span></div>
               <div class="field-row"><span class="field-label">Max tokens:</span>
                 <input type="number" id="capTokens" class="w-num" value="120">
                 <span class="field-hint">How long a caption may be.</span></div>

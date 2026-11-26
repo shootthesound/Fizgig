@@ -81,6 +81,40 @@ def picture(path: str):
     return flatten(_open_training_frame(path))
 
 
+# a clip seen as several frames (#351): said before the Captions tab's instruction, so the caption covers what happens
+CLIP_FRAMES_RULE = ("These {n} pictures are frames from one video clip, in order from its start to its end. Write one "
+                    "caption for the whole clip: describe what is in it and how it looks, and what happens over it - "
+                    "the movement, the actions and what changes. Don't describe the frames one by one.")
+
+
+def clip_frames(path: str, n: int):
+    """n frames spread evenly through a clip (the middle of each nth of it), upright and RGB; fewer when the clip has
+    fewer frames."""
+    from PIL import Image
+    from fizgig.utils.image import flatten
+    frames = []
+    try:
+        import cv2
+        cap = cv2.VideoCapture(path)
+        try:
+            total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+            for i in sorted({min(total - 1, int((k + 0.5) * total / n)) for k in range(n)}) if total > 0 else []:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, i)
+                ok, frame = cap.read()
+                if ok and frame is not None:
+                    frames.append(Image.fromarray(frame[:, :, ::-1]))
+        finally:
+            cap.release()
+    except Exception:
+        frames = []
+    if not frames:
+        from fizgig.minimax.clip import read_frames
+        allf = read_frames(path)
+        frames = [Image.fromarray(allf[i]) for i in sorted({min(len(allf) - 1, int((k + 0.5) * len(allf) / n))
+                                                             for k in range(n)})]
+    return [flatten(f) for f in frames]
+
+
 def _load_image_list(list_file: str) -> list[str]:
     out: list[str] = []
     with open(list_file, encoding="utf-8") as f:
@@ -171,9 +205,20 @@ def request_for(desc, job: dict):
 
 
 def caption_file(state: CaptionState, path: str, request, job: dict) -> str:
-    """One file's caption as Fizgig writes it (the captioner's result finished, the trigger word first), or ""."""
+    """One file's caption as Fizgig writes it (the captioner's result finished, the trigger word first), or "".
+    A clip, with job["clip_frames"] above 1 and a captioner that takes several frames: that many frames from through
+    it, with the instruction told they are one clip (#351)."""
     from fizgig import captioners
-    text = captioners.finish(state.captioner.caption(picture(path), request),
+    n = min(int(job.get("clip_frames") or 1), int(getattr(state.desc, "frames", 1) or 1))
+    seen = picture(path)
+    if n > 1 and os.path.splitext(path)[1].lower() in VIDEO_EXTENSIONS:
+        frames = clip_frames(path, n)
+        if len(frames) > 1:
+            from dataclasses import replace
+            seen = frames
+            request = replace(request, instruction=CLIP_FRAMES_RULE.format(n=len(frames)) + "\n\n" +
+                              (request.instruction or ""))
+    text = captioners.finish(state.captioner.caption(seen, request),
                              threshold=float(job.get("threshold") or 0.35), leave_out=job.get("leave_out") or (),
                              underscores=bool(job.get("underscores")))
     return captioners.with_trigger(text, job.get("trigger") or "")

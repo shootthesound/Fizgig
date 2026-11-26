@@ -98,7 +98,7 @@ CAPTIONERS = (
     CaptionerDescription(
         key="qwen3vl", label="Qwen3-VL (Krea 2 text encoder, or the secondary captioning model)", kind="sentences",
         module="fizgig.captioners.qwen3vl:Qwen3VLCaptioner", files=PrefFile("captioner"),
-        licence="Apache-2.0", vram_gb=8.0, instruction=True),
+        licence="Apache-2.0", vram_gb=8.0, instruction=True, frames=8),
     CaptionerDescription(
         key="joycaption_beta_one", label="JoyCaption Beta One", kind="sentences",
         module="fizgig.captioners.joycaption:JoyCaption",

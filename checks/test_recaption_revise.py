@@ -119,10 +119,10 @@ def _cmd(tmp_path, **values):
 def test_the_tick_reaches_the_trainer_and_shows_with_auto_recaption(tmp_path):
     from fizgig.families import form
     from fizgig.families.train import setup_parser
-    assert form.DEFAULTS["RECAPTION_REVISE"] is False
-    desc, v, cap, cmd = _cmd(tmp_path, RECAPTION_REVISE=True)
+    assert form.DEFAULTS["RECAPTION_REVISE"] is True                  # Peter, 26 Nov 2026: the default
+    desc, v, cap, cmd = _cmd(tmp_path)
     assert "--auto_recaption" in cmd and setup_parser().parse_args(cmd[2:]).recaption_revise is True
-    *_, cmd = _cmd(tmp_path)
+    *_, cmd = _cmd(tmp_path, RECAPTION_REVISE=False)
     assert "--recaption_revise" not in cmd and setup_parser().parse_args(cmd[2:]).recaption_revise is False
     assert "RECAPTION_REVISE" not in form.state(desc, v, captioner=cap)["hidden"]
     assert "RECAPTION_REVISE" in form.state(desc, {**v, "KREA2_AUTO_RECAPTION": False}, captioner=cap)["hidden"]

@@ -97,7 +97,7 @@ DEFAULTS = {
     "FAMILY_SUBJECT_KIND3": "From its captions", "FAMILY_SUBJECT_KIND4": "From its captions",
     "SAVE_STATE_ON_TRAIN_END": True, "KEEP_LAST_N_STATES": "2", "KREA2_LOSS_WATCH": False,
     "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False, "TRAIN_SUBFOLDERS": False, "TRAIN_SUBFOLDER_REPEATS": False, "MULTI_CAPTION": False, "CAPTION_TRIGGER_WORD": "",
-    "RECAPTION_FIRST": "Training caption (person or character)", "RECAPTION_SECOND": "Exhaustive detail (person or character)", "RECAPTION_REVISE": False, "KREA2_WARMUP_LOOK": False,
+    "RECAPTION_FIRST": "Training caption (person or character)", "RECAPTION_SECOND": "Exhaustive detail (person or character)", "RECAPTION_REVISE": True, "KREA2_WARMUP_LOOK": False,
     "FAMILY_PRECISION": launch.PRECISION_LABELS["auto"], "FAMILY_EMA": "0.98 (recommended)",
     "FAMILY_TRAINING_ADAPTER": True, "FAMILY_KIND": "standard", "FAMILY_FAST_ID": False,
     "FAMILY_MULTICONCEPT": False, "FAMILY_CONCEPT_DIR": "", "FAMILY_CONCEPT_COUNT": "2 subjects",
@@ -413,7 +413,8 @@ def form(desc):
                  "The first try is given the picture's caption as it is now: it fixes what the picture doesn't show "
                  "and adds what's missing, and keeps your words and terms where they still fit. Best for concept "
                  "LoRAs, where your own terms matter. The second try still writes a new caption from the picture. "
-                 "Your original caption is kept: Edit caption on the image's tile offers it back."),
+                 "Your original caption is kept: Edit caption on the image's tile offers it back. On by default; untick it "
+                 "for a new caption written from the picture on the first try as well."),
             _row("CAPTION_TRIGGER_WORD", "Trigger word", hint="Used by Auto-recaption (below): it adds this word at the "
                  "end of a new caption. The training folder's word, the same as the Captions tab's."),
         ]

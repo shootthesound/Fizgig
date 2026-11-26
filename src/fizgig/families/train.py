@@ -3447,7 +3447,7 @@ def setup_parser():
     p.add_argument("--recaption_task", default=None, help="the first try's Captions tab task, for the log")
     p.add_argument("--recaption_task_detailed", default=None, help="the second try's Captions tab task, for the log")
     p.add_argument("--recaption_revise", action="store_true",
-                   help="auto-recaption's first try corrects the picture's caption instead of writing a new one (#244)")
+                   help="auto-recaption's first try corrects the picture's caption instead of writing a new one (#244; the GUI sends it by default)")
     p.add_argument("--captioner", default=None,
                    help="auto-recaption's captioner: the Krea 2 Qwen3-VL-4B text encoder file (as the Captions tab)")
     p.add_argument("--lokr_factor", type=int, default=8, help="LoKR only: w1 is about factor x factor")

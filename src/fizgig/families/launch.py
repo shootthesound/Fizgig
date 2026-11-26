@@ -848,12 +848,14 @@ def _media_count(folder):
 
 # Folders Fizgig itself makes inside a training folder: never trained on as sub-folders. Image Prep's Keep them safe
 # (originals, then originals_2, _3... on later runs), Exclude by look and the desktop's Remove. Matched in any case.
-OWN_SUBFOLDERS = {"excluded_by_look", "originals", "removed", "fizgig_detail_crops", "detail_masters"}
+OWN_SUBFOLDERS = {"excluded_by_look", "excluded_duplicates", "originals", "removed", "fizgig_detail_crops",
+                  "detail_masters"}
 _OWN_NUMBERED = re.compile(r"originals(_\d+)?", re.IGNORECASE)
 
 
 def is_own_subfolder(name):
-    """A folder Fizgig made inside a training folder (originals, originals_2, excluded_by_look, removed)."""
+    """A folder Fizgig made inside a training folder (originals, originals_2, excluded_by_look, excluded_duplicates,
+    removed)."""
     n = os.path.basename(str(name).rstrip("\\/")).lower()
     return n in OWN_SUBFOLDERS or bool(_OWN_NUMBERED.fullmatch(n))
 

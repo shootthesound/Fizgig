@@ -313,6 +313,45 @@ def look_move(folder, paths, caption_ext=".txt"):
             "left": len(_look["scores"])}
 
 
+# ---- Find duplicate pictures (web/duplicates.py: the fork's difference-hash scan) --------------------------------
+def dupes_scan(folder):
+    """Scan the training folder's pictures (as the Look Filter lists them) for near-duplicates, in the background."""
+    from fizgig.web import duplicates
+    if not folder or not os.path.isdir(folder):
+        raise ValueError("Choose the training folder on the Start tab first.")
+    files = prep.look_files(folder)
+    if len(files) < 2:
+        raise ValueError("The training folder needs at least two pictures to compare.")
+    return duplicates.start(folder, files)
+
+
+def dupes_status(folder, strictness=4, offset=0):
+    from fizgig.web import duplicates
+    if not folder or not os.path.isdir(folder):
+        return {"stage": "idle"}
+    return duplicates.status(folder, strictness, offset, page_size=24)
+
+
+def dupes_move(folder, paths, caption_ext=".txt", strictness=16):
+    """Move the pictures marked in the duplicate groups (with captions and masks) to excluded_duplicates/; only
+    pictures in a group at the page's strictness are moved, and they leave the groups."""
+    from fizgig.web import duplicates
+    root = os.path.realpath(os.path.abspath(folder or "."))
+    with duplicates._LOCK:
+        job = duplicates._JOBS.get(root)
+        if not job or job["stage"] != "done":
+            raise ValueError("Scan the folder first, and wait for it to finish.")
+        known = {p for a, b, diff, _same in job["pairs"] if diff <= int(strictness) for p in (a, b)}
+    want = [p for p in (os.path.realpath(x) for x in paths or []) if p in known]
+    moved, errors = prep.move_out(folder, want, (".txt", caption_ext or ".txt"), dest_name="excluded_duplicates")
+    gone = set(moved)
+    with duplicates._LOCK:
+        for p in gone:
+            job["files"].pop(p, None)
+        job["pairs"] = [x for x in job["pairs"] if x[0] not in gone and x[1] not in gone]
+    return {"moved": len(moved), "errors": errors, "dest": os.path.join(folder, "excluded_duplicates")}
+
+
 # ---- Make masks (masked training) -------------------------------------------------------------------------------
 def masks_available() -> bool:
     from fizgig.dataset import automask

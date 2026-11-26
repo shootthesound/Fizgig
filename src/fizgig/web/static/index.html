@@ -519,6 +519,35 @@
               </div>
             </div>
           </div>
+          <div class="section-card" id="dupCard">
+            <div class="card-title">Find duplicate pictures</div>
+            <div class="card-desc">Finds pictures in the training folder that are the same shot: copies, resized or
+              re-saved versions, and near-identical frames. A duplicate trains that picture twice as often, which can
+              bake it in. Each group shows the pictures that match; the largest is kept and the others are marked.
+              Click a picture to swap it between Keep and Move out, then move the marked ones out in one go (to an
+              excluded_duplicates subfolder, with their captions and masks; nothing is deleted). It runs on the CPU,
+              so it's fine while a model is loaded.</div>
+            <div class="card-content">
+              <div class="field-row">
+                <button class="btn btn-primary" id="dupScan">Scan folder</button>
+                <label class="field-label" for="dupStrict">How alike:</label>
+                <input type="range" id="dupStrict" min="0" max="16" step="1" value="4" style="flex:0 1 220px">
+                <span class="field-hint" id="dupStrictText"></span>
+              </div>
+              <div class="field-hint" id="dupStatus"></div>
+              <div class="field-row" id="dupTools" style="display:none">
+                <button class="btn btn-danger" id="dupMove" disabled>Move marked out of the dataset</button>
+                <span class="field-hint" id="dupCount"></span>
+              </div>
+              <div id="dupConfirm"></div>
+              <div id="dupGroups"></div>
+              <div class="field-row" id="dupPages" style="display:none">
+                <button class="btn btn-sm" id="dupPrev">‹ Previous</button>
+                <span class="field-hint" id="dupPageInfo"></span>
+                <button class="btn btn-sm" id="dupNext">Next ›</button>
+              </div>
+            </div>
+          </div>
           <div class="section-card" id="lookCard">
             <div class="card-title">Final step: Look Consistency Filter (faces)</div>
             <div class="card-desc">For a person or character LoRA: it scores faces, so skip it for a style, object or

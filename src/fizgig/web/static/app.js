@@ -6602,6 +6602,114 @@ function lookMoveAsk() {
       el("button", {class: "btn btn-sm", text: "Cancel", onclick: () => { $("lookConfirm").innerHTML = ""; }}))));
 }
 
+// ---- Find duplicate pictures (web/duplicates.py, the Fizgig Advanced scan): groups, Keep / Move out, move aside ----
+S.dup = {folder: "", groups: [], marked: new Set(), seen: new Set(), offset: 0, next: null, count: 0, timer: null};
+function dupStrictSay() {
+  const v = +$("dupStrict").value;
+  $("dupStrictText").textContent = `${v} - ` + (v <= 1 ? "identical-looking only" : v <= 5 ? "close copies" +
+    (v === 4 ? " (the usual)" : "") : v <= 10 ? "looser: check each group" : "very loose: expect pictures that only look similar");
+}
+function dupReset() {
+  Object.assign(S.dup, {folder: S.imageFolder, groups: [], marked: new Set(), seen: new Set(), offset: 0, next: null, count: 0});
+  $("dupGroups").innerHTML = ""; $("dupTools").style.display = "none"; $("dupPages").style.display = "none";
+  $("dupConfirm").innerHTML = "";
+}
+async function dupScan() {
+  if (!S.imageFolder) { $("dupStatus").textContent = "Choose the training folder on the Start tab first."; return; }
+  dupReset();
+  $("dupScan").disabled = true;
+  try {
+    await api("/api/dupes/scan", {folder: S.imageFolder});
+    $("dupStatus").textContent = "Scanning…";
+    dupPoll();
+  } catch (e) { $("dupStatus").textContent = e.message; $("dupScan").disabled = false; }
+}
+async function dupPoll() {
+  clearTimeout(S.dup.timer);
+  const r = await api("/api/dupes/status", {folder: S.dup.folder, strictness: +$("dupStrict").value, offset: 0}).catch((e) => ({stage: "error", error: e.message}));
+  if (r.stage === "scanning" || r.stage === "matching") {
+    $("dupStatus").textContent = r.stage === "matching" ? "Comparing the pictures…" : `Reading pictures: ${r.processed || 0} of ${r.total || 0}…`;
+    S.dup.timer = setTimeout(dupPoll, 700);
+    return;
+  }
+  $("dupScan").disabled = false;
+  if (r.stage === "error") { $("dupStatus").textContent = `The scan stopped: ${r.error || "unknown error"}`; return; }
+  dupShow(r);
+}
+async function dupLoad(offset) {
+  if (!S.dup.folder) return;
+  const r = await api("/api/dupes/status", {folder: S.dup.folder, strictness: +$("dupStrict").value, offset}).catch(() => null);
+  if (r && r.stage === "done") dupShow(r);
+}
+function dupShow(r) {
+  Object.assign(S.dup, {groups: r.groups || [], offset: r.offset || 0, next: r.next_offset, count: r.group_count || 0});
+  for (const g of S.dup.groups) {            // first sight of a group: keep its largest picture, mark the others
+    if (S.dup.seen.has(g.id)) continue;
+    S.dup.seen.add(g.id);
+    const big = g.items.reduce((a, b) => (b.width * b.height > a.width * a.height ? b : a), g.items[0]);
+    g.items.forEach((it) => { if (it.path !== big.path) S.dup.marked.add(it.path); });
+  }
+  const fails = (r.failures || []).length ? ` ${r.failures.length} picture(s) couldn't be read.` : "";
+  $("dupStatus").textContent = (S.dup.count ? `${S.dup.count} group(s) of matching pictures among ${r.scanned} scanned.` :
+    `No duplicates at this setting among ${r.scanned} pictures.`) + (r.truncated ? " Too many matches: showing the closest; lower How alike." : "") + fails;
+  dupRender();
+}
+function dupRender() {
+  const host = $("dupGroups");
+  host.innerHTML = "";
+  $("dupTools").style.display = S.dup.count ? "" : "none";
+  $("dupCount").textContent = S.dup.marked.size ? `${S.dup.marked.size} marked` : "";
+  $("dupMove").disabled = !S.dup.marked.size;
+  const pages = Math.ceil(S.dup.count / 24);
+  $("dupPages").style.display = pages > 1 ? "" : "none";
+  $("dupPageInfo").textContent = `Groups ${S.dup.offset + 1}-${Math.min(S.dup.count, S.dup.offset + 24)} of ${S.dup.count}`;
+  $("dupPrev").disabled = S.dup.offset === 0; $("dupNext").disabled = S.dup.next == null;
+  for (const g of S.dup.groups) {
+    const grid = el("div", {class: "look-grid"});
+    for (const it of g.items) {
+      const marked = S.dup.marked.has(it.path);
+      grid.append(el("button", {class: "look-tile" + (marked ? " marked" : ""), title: it.path,
+        onclick: () => { S.dup.marked.has(it.path) ? S.dup.marked.delete(it.path) : S.dup.marked.add(it.path); dupRender(); }},
+        el("img", {loading: "lazy", src: thumbOf(it.path), alt: ""}),
+        el("span", {class: "look-name", text: it.name}),
+        el("span", {class: "look-verdict", text: `${it.width}×${it.height}` + (marked ? "" : " · KEEP")}),
+        el("span", {class: "look-mark", text: marked ? "✕ marked to move out" : ""})));
+    }
+    host.append(el("div", {class: "field-hint", style: "margin-top:12px",
+      text: `${g.count} pictures · ` + (g.identical ? "identical-looking" : `differ by up to ${g.distance} of 16`)}), grid);
+  }
+}
+function dupMoveAsk() {
+  const n = S.dup.marked.size;
+  if (!n) return;
+  const sep = S.dup.folder.includes("\\") ? "\\" : "/";
+  $("dupConfirm").replaceChildren(el("div", {class: "run-delete"},
+    el("div", {class: "field-hint", text: `Move ${n} picture(s), with their captions and masks, out of the dataset to ` +
+      `${S.dup.folder}${sep}excluded_duplicates? Nothing is deleted: move them back to put them in again.`}),
+    el("div", {class: "field-row"},
+      el("button", {class: "btn btn-sm btn-danger", text: "Move", onclick: async (ev) => {
+        ev.currentTarget.disabled = true;
+        try {
+          const r = await api("/api/dupes/move", {folder: S.dup.folder, paths: [...S.dup.marked], ext: capExt(), strictness: +$("dupStrict").value});
+          S.dup.marked = new Set();
+          $("dupConfirm").innerHTML = "";
+          await dupLoad(0);
+          $("dupStatus").textContent = `Moved ${r.moved} picture(s) to ${r.dest}.` + (r.errors.length ? " " + r.errors.join(" ") : "");
+          loadDatasets();
+        } catch (e) { $("dupConfirm").replaceChildren(el("div", {class: "problems", text: e.message})); }
+      }}),
+      el("button", {class: "btn btn-sm", text: "Cancel", onclick: () => { $("dupConfirm").innerHTML = ""; }}))));
+}
+function dupWire() {
+  dupStrictSay();
+  let t = null;
+  $("dupStrict").addEventListener("input", () => { dupStrictSay(); clearTimeout(t); t = setTimeout(() => dupLoad(0), 250); });
+  $("dupScan").addEventListener("click", dupScan);
+  $("dupMove").addEventListener("click", dupMoveAsk);
+  $("dupPrev").addEventListener("click", () => dupLoad(Math.max(0, S.dup.offset - 24)));
+  $("dupNext").addEventListener("click", () => { if (S.dup.next != null) dupLoad(S.dup.next); });
+}
+
 // Save preset: a name, then saved for this model in the desktop's format (asks before replacing one)
 function presetSaveOpen() {
   const host = $("presetSaveRow");
@@ -6641,6 +6749,7 @@ function wirePrep() {
   meWire();
   $("prepTest").addEventListener("click", prepTest);
   faceSettingsWire();
+  dupWire();
   $("lookPick").addEventListener("click", lookPickOpen);
   $("lookScan").addEventListener("click", lookScan);
   $("lookSuggest").addEventListener("click", lookSuggest);

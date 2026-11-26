@@ -5313,7 +5313,14 @@ class Handler(BaseHTTPRequestHandler):
                     pics.append({"name": name, "cover": round(cover, 3),
                                  "src": "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()})
                 return self.json({"ok": True, "pictures": pics, "fresh": fresh, "of": len(sammask.pictures(folder))})
-            if path in ("/api/prep/run", "/api/look/scan", "/api/look/move", "/api/masks/make", "/api/masks/edit/save"):
+            if path == "/api/dupes/status":           # the duplicate groups at a strictness (re-grouped, not re-scanned)
+                try:
+                    return self.json(prep_jobs.dupes_status(str(b.get("folder") or ""), b.get("strictness", 4),
+                                                            b.get("offset") or 0))
+                except ValueError as e:
+                    return self.json({"error": str(e)}, 400)
+            if path in ("/api/prep/run", "/api/look/scan", "/api/look/move", "/api/masks/make", "/api/masks/edit/save",
+                        "/api/dupes/scan", "/api/dupes/move"):
                 folder = str(b.get("folder") or "")
                 norm = lambda p: os.path.normcase(os.path.abspath(p or "."))
                 with _lock:
@@ -5329,6 +5336,12 @@ class Handler(BaseHTTPRequestHandler):
                                                          b.get("padding") or 20, bool(b.get("replace")),
                                                          bool(b.get("crops_only")),
                                                          _min_face(b.get("min_face"))))
+                    if path == "/api/dupes/scan":
+                        return self.json(prep_jobs.dupes_scan(folder))
+                    if path == "/api/dupes/move":
+                        return self.json(prep_jobs.dupes_move(folder, b.get("paths") or [],
+                                                              captions.caption_ext(b.get("ext")),
+                                                              int(b.get("strictness", 16))))
                     if path == "/api/look/scan":
                         captions.unload()
                         return self.json(prep_jobs.look_scan(folder, b.get("baselines") or []))

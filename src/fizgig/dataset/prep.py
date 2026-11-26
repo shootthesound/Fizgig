@@ -609,10 +609,11 @@ def save_scores(folder, baselines, scores, embedder=None):
         json.dump(payload, f, indent=2)
 
 
-def move_out(folder, paths, caption_exts=(".txt",)):
-    """Move the images (and their captions) to <folder>/excluded_by_look/ - never deletes. (moved paths, errors).
+def move_out(folder, paths, caption_exts=(".txt",), dest_name="excluded_by_look"):
+    """Move the images (and their captions and masks) to <folder>/<dest_name>/ (the Look Filter's excluded_by_look,
+    the duplicate finder's excluded_duplicates) - never deletes. (moved paths, errors).
     A failed move that left a copy behind removes the copy, so the image isn't in and out of the dataset."""
-    dest = os.path.join(folder, "excluded_by_look")
+    dest = os.path.join(folder, dest_name)
     os.makedirs(dest, exist_ok=True)
     moved, errors = [], []
     for p in paths:

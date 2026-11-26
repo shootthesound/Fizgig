@@ -240,9 +240,12 @@ Since November:
 - [dkspwndj](https://github.com/dkspwndj): the memory AMD caching held on to ([#389](https://github.com/shootthesound/Fizgig/issues/389))
 - [spinolover](https://github.com/spinolover): block swap slowing down through a run ([#405](https://github.com/shootthesound/Fizgig/issues/405))
 - [AlonDan](https://github.com/AlonDan): drag and drop ([#392](https://github.com/shootthesound/Fizgig/issues/392))
-- [axymeus](https://github.com/axymeus): LoRA Royale's sheet of listed epochs ([#401](https://github.com/shootthesound/Fizgig/issues/401))
+- [axymeus](https://github.com/axymeus): LoRA Royale's sheet of listed epochs and starred epochs ([#401](https://github.com/shootthesound/Fizgig/issues/401))
 - [pomoe136](https://github.com/pomoe136): split backgrounds with LoRA Isolation ([#407](https://github.com/shootthesound/Fizgig/issues/407))
 - [tsk5cb-cmyk](https://github.com/tsk5cb-cmyk): Studio in two tabs ([#395](https://github.com/shootthesound/Fizgig/issues/395))
+- [bkrew](https://github.com/bkrew): auto-recaption that corrects your caption ([#244](https://github.com/shootthesound/Fizgig/issues/244))
+- [CognitiveDiffusion](https://github.com/CognitiveDiffusion): clip captions from several frames ([#351](https://github.com/shootthesound/Fizgig/issues/351)) and Studio's oversized mix saves ([#411](https://github.com/shootthesound/Fizgig/issues/411))
+- [mart-hill](https://github.com/mart-hill): edited captions after Continue ([#409](https://github.com/shootthesound/Fizgig/issues/409))
 - WiseDuck (by email): Gizmo's **Prepare a folder** and clips at any audio sample rate
 - u/Obvious-Bad7548 on r/StableDiffusion: the LCM sampler recipe for H3 Image
 

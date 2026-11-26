@@ -5,6 +5,18 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 
 NEWS = [
     {
+        "date": "26 Nov 2026",
+        "title": "Auto-recaption corrects your caption, and Royale renders your starred epochs",
+        "body": (
+            "Auto-recaption's first try on a stuck picture now corrects the caption you wrote instead of starting "
+            "over, and your old caption is kept. LoRA Royale renders the epochs you starred in the Samples gallery.\n\n"
+            "Qwen3-VL can caption clips from 4 or 8 frames, a Studio Epochs of this run mix saves at one file's rank "
+            "(not 4.5 GB), and Continue picks up captions edited between runs."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#26-nov-2026-auto-recaption-corrects-your-caption-and-royale-renders-your-starred-epochs"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.8.8"}],
+    },
+    {
         "date": "25 Nov 2026",
         "title": "LoRA Isolation without split backgrounds, and faster Krea 2 block swap",
         "body": (

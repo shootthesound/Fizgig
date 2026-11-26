@@ -1,5 +1,15 @@
 # Fizgig news
 
+## 26 Nov 2026: Auto-recaption corrects your caption, and Royale renders your starred epochs
+
+**Auto-recaption keeps your words.** Its first try on a stuck picture now corrects the caption you wrote, changing only what the picture doesn't show, instead of starting over. Your old caption is kept and one click puts it back.
+
+**Starred epochs and clip captions.** LoRA Royale renders the epochs you starred in the Samples gallery, in the crossfade and the comparison sheet. For clip models, Qwen3-VL can caption from 4 or 8 frames of each clip, so it sees what happens over it.
+
+**Smaller Studio saves, and fixes.** An Epochs of this run mix saves at one file's rank instead of every file's added together (4.5 GB down to one LoRA's size). Continue picks up captions edited between runs, and each Studio pane says when it's rendering.
+
+[Fizgig v9.8.8 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.8.8)
+
 ## 25 Nov 2026: LoRA Isolation without split backgrounds, and faster Krea 2 block swap
 
 **LoRA Isolation keeps two subjects in one scene.** The side-by-side pictures it trains on no longer teach a background split down the middle: the stranger's half is masked and their captions say what they are. Nothing to set up; your side-by-sides rebuild on the next run.

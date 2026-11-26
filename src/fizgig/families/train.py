@@ -43,7 +43,7 @@ from fizgig.families.lora import FamilyLoRA  # noqa: E402
 from fizgig.families.registry import get as get_family  # noqa: E402
 from fizgig.training.adaptive_lr import AdaptiveLR  # noqa: E402
 from fizgig.training.resume_lr import resume_lr  # noqa: E402
-from fizgig.training.metadata import (build_metadata, latest_sample_image, refresh_checkpoint_thumbnail,  # noqa: E402
+from fizgig.training.metadata import (build_metadata, training_metadata, bucket_resolutions, latest_sample_image, refresh_checkpoint_thumbnail,  # noqa: E402
                                       resolve_title, sample_for_epoch, thumbnail_data_uri)
 from fizgig.training.train_utils import LossRecorder, prune_state_dirs, validate_output_name  # noqa: E402
 from fizgig.training.step_log import StepLog, take_request  # noqa: E402
@@ -1186,6 +1186,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     desc = get_family(family)
     if desc is None or not desc.training_ready:
         raise RuntimeError(f"unknown or untrainable family {family!r}")
+    _meta_t0 = time.time()                     # the saved LoRA's training time (training_metadata)
     validate_output_name(output_name)          # before any model loads, not at the first save an epoch in (#70)
     # none given: a LoRA trains with AdamW, a fine-tune with Adafactor (#312)
     ft_optimizer_type, optimizer_type = optimizer_type or "adafactor", optimizer_type or "adamw"
@@ -2248,6 +2249,46 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             if any(_face_end):
                 md["ss_face_until"] = f"{_face_end[0]}:{_face_end[1]}"
         md.update(driver.run_metadata())
+        try:                                 # the training recipe (training_metadata): names only, never paths
+            try:
+                _lr = float(optimizer.param_groups[0]["lr"])
+            except Exception:
+                _lr = None
+            _ds = [d for d in getattr(group, "datasets", []) or []]
+            _reso = getattr(_ds[0], "resolution", None) if _ds else None
+            _spec = {
+                "family": desc.key, "finetune": bool(finetune),
+                "network": {"type": network_type, "rank": int(network_dim), "alpha": float(network_alpha),
+                            "lokr_factor": int(lokr_factor) if network_type == "lokr" else None},
+                "optimizer": {"type": str(optimizer_type), "learning_rate": float(learning_rate),
+                              "adaptive_lr": bool(adaptive_lr),
+                              "adaptive_lr_min": float(adaptive_lr_min) if adaptive_lr else None,
+                              "adaptive_lr_max": float(adaptive_lr_max) if adaptive_lr else None,
+                              "max_grad_norm": float(max_grad_norm), "ema_decay": float(ema_decay or 0.0)},
+                "schedule": {"minimum_timestep": float(min_timestep), "maximum_timestep": float(max_timestep),
+                             "caption_dropout": float(caption_dropout or 0.0)},
+                "memory": {"base_precision": str(precision), "blocks_to_swap": int(blocks_to_swap or 0),
+                           "send_only_swap": bool(send_only_swap)},
+                "training_features": {
+                    "masked_training": bool(masked_training), "face_boost": bool(face_on),
+                    "dop": bool(dop), "training_maps": bool(training_maps), "slider": bool(slider),
+                    "loss_watch": bool(log_per_image_loss), "per_image_lr": bool(per_image_lr),
+                    "auto_recaption": bool(auto_recaption), "multi_caption": bool(multi_caption),
+                    "folder_repeats": bool(folder_repeats), "regularisation_images": len(reg_keys or ()),
+                    "context_lora": bool(context_lora_path), "train_blocks": bool(train_blocks),
+                },
+            }
+            for k, v in training_metadata(
+                    seed=seed, batch_size=bsz, grad_accum=accum, epochs=max_train_epochs, epoch=epoch,
+                    steps=epoch * steps_per_epoch if epoch else None, steps_per_epoch=steps_per_epoch,
+                    max_steps=steps_per_epoch * max_train_epochs,
+                    num_images=getattr(group, "num_train_items", None), scheduler=lr_scheduler,
+                    warmup_steps=lr_warmup_steps, resolution=_reso, buckets=bucket_resolutions(_ds),
+                    mixed_precision="bf16", base_precision=precision, base_model=dit_path, datasets=_ds,
+                    current_lr=_lr, training_spec=_spec, started_at=_meta_t0).items():
+                md.setdefault(k, v)          # an existing key (ours or the family's) is never replaced
+        except Exception:                    # never in the way of a save
+            logger.debug("[save] training facts left out of the metadata", exc_info=True)
         return md
 
     def save_lora(path, epoch):

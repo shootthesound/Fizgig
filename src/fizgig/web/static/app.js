@@ -9014,6 +9014,23 @@ async function studioPoll() {
   catch (e) { console.error("[studio] status poll", e); }
   if ($("tab-studio").classList.contains("active")) S.st.poll = setTimeout(studioPoll, active ? 400 : 2000);
 }
+// a render's state under each picture (Peter, 26 Nov 2026): the status line and bar sit above the output, out of
+// sight while you work the sliders (the output kept in view included), so each pane says so itself
+function studioPaneBusy(st, going) {
+  const p = st.progress, pct = p && p[1] ? ` ${Math.round(100 * p[0] / p[1])}%` : "";
+  const text = st.state === "loading" ? "Loading the model…" :
+    S.st.foreign && st.load_by === "page" ? "Another Studio tab is rendering…" :
+    S.stq && S.stq.job && !st.rendering ? "Rendering a queued job…" : `Rendering…${pct}`;
+  // the Baseline landed first: only the Tweaked one is still coming
+  const baseDone = !!(st.rendering && st.baseline_early && st.baseline_early !== st.shown);
+  for (const [k, on] of [["Base", going && !baseDone], ["Tweak", going], ["Nol", !!st.nolora_busy]]) {
+    const b = $("stBusy" + k);
+    if (!b) continue;
+    b.hidden = !on;
+    if (on) b.lastElementChild.textContent = k === "Nol" && !going ? "Rendering…" : text;
+  }
+}
+
 async function studioPollOnce() {
   const st = await api("/api/studio/status");
   // what was loaded when this tab first looked counts as its own (a page reload finds its own load); any later load
@@ -9029,6 +9046,7 @@ async function studioPollOnce() {
   try { qActive = studioQueueDraw(await api("/api/studio/queue")); } catch (e) { /* an older server */ }
   // Add to queue lines a render up behind something: with nothing rendering and no jobs waiting, Render is the button
   const going = st.rendering || st.state === "loading" || st.worker_busy || !!(S.stq && S.stq.job);
+  studioPaneBusy(st, going);
   $("stQAdd").disabled = !(going || (S.stq && S.stq.left));
   $("stStart").disabled = going;                      // one at a time: Add to queue lines the next one up
   // Continue, Loop back and Upscale work on the clip in the Tweaked pane: they wait for the render going now (a

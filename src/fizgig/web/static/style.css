@@ -2196,6 +2196,11 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 
 /* Studio (ACE-Step): the section dragged across the Tweaked waveform */
 .st-pane { position: relative; }
+/* a render's state under each picture, so it shows while you're down at the sliders */
+.st-pane-busy { display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 4px; padding: 3px 10px;
+  border-radius: 999px; font-size: 12px; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.st-pane-busy[hidden] { display: none; }
+.st-dock .st-pane-busy { flex: none; }
 .st-region { position: absolute; display: none; pointer-events: none; z-index: 1;
   background: color-mix(in srgb, var(--pic-highlight) 25%, transparent); border-left: 2px solid var(--pic-highlight); border-right: 2px solid var(--pic-highlight); }
 .st-pane.audio #stTweak { cursor: crosshair; }

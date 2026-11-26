@@ -4430,7 +4430,13 @@ function imageLossCaption(im, run, live) {
           : "Saved. It's used the next time this folder trains.";
       } catch (e) { say.textContent = e.message; }
     }});
-    box.replaceChildren(ta, el("div", {class: "field-row"}, save), say);
+    // auto-recaption replaced your caption (#244): yours is kept, and Put it back puts it in the box to save
+    const before = r.before ? el("div", {class: "il-cap-before"},
+      el("div", {class: "field-hint", text: "Your caption before auto-recaption:"}),
+      el("div", {class: "il-cap-before-text", text: r.before}),
+      el("button", {class: "btn btn-sm", text: "Put it back", title: "Puts your caption in the box above; Save to use it",
+        onclick: () => { ta.value = r.before; ta.focus(); say.textContent = "Your caption is back in the box: Save to use it."; }})) : null;
+    box.replaceChildren(ta, el("div", {class: "field-row"}, save), say, before);
     ta.focus();
   }});
   return el("div", {}, btn, box);

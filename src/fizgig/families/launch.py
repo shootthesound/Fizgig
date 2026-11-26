@@ -21,6 +21,7 @@ FAMILY_EDIT, ...) plus the values the app reads from its other tabs, all lower c
     caption_concept             the Captions tab's "The concept is" words, for a Concept task
     recaption_triggers          auto-recaption's trigger word for each other folder ({key prefix: word})
     recaption_tasks             auto-recaption's (first try, second try) Captions tab task keys
+    recaption_revise            auto-recaption's first try corrects the caption there is (#244)
     keep_checkpointing          a helper is set to train a share: gradient checkpointing stays on (both halves match)
     samples                     {"enabled", "every", "width", "height", "steps", "cfg", "negative", "seed",
                                  "at_first": ..., "prompts": [lines as typed on the Samples tab]}
@@ -1307,6 +1308,8 @@ def train_command(desc, inputs, plan):
                                                       ("--recaption_instruction_detailed", "--recaption_task_detailed"))):
                 label, instr, edited = recaption_instruction(key, ovr, st.get("caption_concept") or "")
                 cmd += [flag, instr, task_flag, f'"{label}"' + (" (your edit)" if edited else " (as shipped)")]
+            if st.get("recaption_revise"):
+                cmd += ["--recaption_revise"]
     if any(lw.get(key) for key, _ in watch) and "--text_encoder" not in cmd:
         cmd += ["--text_encoder", _model(st, desc, "text_encoder")]   # caption repair re-encodes
     if ("lokr" in desc.network_types and str(st.get("NETWORK_TYPE", "")).startswith("LoKR")

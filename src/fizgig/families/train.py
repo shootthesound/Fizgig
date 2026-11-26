@@ -1173,6 +1173,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  training_maps=False, training_maps_images=3,
                  trigger_word=None, trigger_position="start", recaption_triggers=None, recaption_instruction=None,
                  recaption_instruction_detailed=None, recaption_task=None, recaption_task_detailed=None,
+                 recaption_revise=False,
                  captioner=None, finetune=False, ft_rotations=10, ft_save_every_rotations=1, ft_rotate_every=1, ft_max_parts=0,
                  ft_start_window=0,
                  ft_epochs_done=0, ft_fused_backward=False, reg_lr_multiplier=0.2, reg_per_epoch=0, folder_repeats=None, multi_caption=False,
@@ -2111,7 +2112,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                   recaption_triggers=json.loads(recaption_triggers) if recaption_triggers else None,
                   recaption_instruction=recaption_instruction,
                   recaption_instruction_detailed=recaption_instruction_detailed, captioner_path=captioner,
-                  recaption_task=recaption_task, recaption_task_detailed=recaption_task_detailed)
+                  recaption_task=recaption_task, recaption_task_detailed=recaption_task_detailed,
+                  recaption_revise=recaption_revise)
     # Gradient accumulation (Krea 2's rule): N micro-batches average into one update - each loss is divided by N, the
     # optimizer steps every N and at every epoch end (a partial group is flushed), so updates per epoch are
     # ceil(steps / N) and the schedule runs in those updates. Sliders already backpropagate two poles per step: 1.
@@ -3444,6 +3446,8 @@ def setup_parser():
     p.add_argument("--recaption_instruction_detailed", default=None)
     p.add_argument("--recaption_task", default=None, help="the first try's Captions tab task, for the log")
     p.add_argument("--recaption_task_detailed", default=None, help="the second try's Captions tab task, for the log")
+    p.add_argument("--recaption_revise", action="store_true",
+                   help="auto-recaption's first try corrects the picture's caption instead of writing a new one (#244)")
     p.add_argument("--captioner", default=None,
                    help="auto-recaption's captioner: the Krea 2 Qwen3-VL-4B text encoder file (as the Captions tab)")
     p.add_argument("--lokr_factor", type=int, default=8, help="LoKR only: w1 is about factor x factor")
@@ -3645,6 +3649,7 @@ def main():
         recaption_instruction=a.recaption_instruction,
         recaption_instruction_detailed=a.recaption_instruction_detailed, captioner=a.captioner,
         recaption_task=a.recaption_task, recaption_task_detailed=a.recaption_task_detailed,
+        recaption_revise=a.recaption_revise,
         network_dim=a.network_dim, network_alpha=a.network_alpha, learning_rate=a.learning_rate,
         max_train_epochs=a.max_train_epochs, save_every_n_epochs=a.save_every_n_epochs,
         save_until_epoch=a.save_until_epoch, save_every_n_epochs_after=a.save_every_n_epochs_after, save_state=a.save_state,

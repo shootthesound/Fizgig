@@ -200,6 +200,37 @@ RECAPTION_CHOICES = [(key, label) for key, (label, _text, _tokens) in CAPTION_TA
 RECAPTION_DEFAULTS = ("training", "exhaustive")
 
 
+# Auto-recaption's "revise, don't rewrite" (#244, @bkrew): the first try is handed the caption the picture has now and
+# corrects it against the picture, keeping its words where they still fit; the second try writes from scratch.
+# Wording picked on Qwen3-VL-4B (26 Nov, 3 pictures x 3 wordings): this one fixed every false detail (night -> sunset,
+# a barn -> lotus flowers), kept the user's own term word for word and left a right caption as it was, adding only
+# what it missed; "it may contain mistakes" alone often echoed the wrong caption back unchanged.
+REVISE_RULE = (
+    "Start from this existing caption and correct it: \"{caption}\". First decide which of its details are false for "
+    "this picture; change those to what the picture shows. Keep every true detail and every name, term or style word "
+    "in the same words. Reply with the corrected caption only."
+)
+
+
+def revise_instruction(instruction, caption):
+    """A first-try instruction that revises `caption` (the picture's caption now, without its trigger word)."""
+    return f"{str(instruction or CAPTION_INSTRUCTION).rstrip()}\n\n{REVISE_RULE.format(caption=str(caption).strip())}"
+
+
+def drop_trigger(caption, trigger):
+    """A caption without its trigger word at the start ("zwx, ...") or the end ("..., zwx"), as auto-recaption adds
+    it back."""
+    text, t = str(caption or "").strip(), str(trigger or "").strip()
+    if not t:
+        return text
+    low, tl = text.lower(), t.lower()
+    if low.startswith(tl + ","):
+        return text[len(t) + 1:].strip()
+    if low.endswith(", " + tl) or low.endswith("," + tl):
+        return text[:len(text) - len(t)].rstrip().rstrip(",").strip()
+    return "" if low == tl else text
+
+
 def recaption_instruction(key, overrides=None, concept=""):
     """(label, instruction, edited) of a recaption choice: the Captions tab's edited text when there is one, with the
     Captions tab's concept in place of {concept}."""

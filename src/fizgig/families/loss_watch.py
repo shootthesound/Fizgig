@@ -102,7 +102,7 @@ class Watch:
     def __init__(self, output_dir, group, user_config, driver, *, log=False, per_image_lr=False, auto_recaption=False,
                  warmup_look=False, resume=False, start_epoch=0, te_path=None, trigger_word=None,
                  trigger_position="start", recaption_triggers=None, recaption_instruction=None, recaption_instruction_detailed=None,
-                 captioner_path=None, recaption_task=None, recaption_task_detailed=None):
+                 captioner_path=None, recaption_task=None, recaption_task_detailed=None, recaption_revise=False):
         from fizgig.training.loss_logger import PerImageLossWatch, is_enabled as env_on
         self.output_dir, self.group, self.driver, self.te_path = output_dir, group, driver, te_path
         # Several captions per picture (#300): a fixed caption's every line is encoded, and auto-recaption swaps line 1
@@ -110,6 +110,7 @@ class Watch:
         self.trigger_word, self.trigger_position = trigger_word, trigger_position
         self.triggers = dict(recaption_triggers or {})     # another folder's own trigger word, by key prefix
         self.instr, self.instr_detailed = recaption_instruction, recaption_instruction_detailed
+        self.revise = bool(recaption_revise)      # the first try corrects the caption there is (#244)
         self.recaptioned = {}
         self.captioner_path = captioner_path
         self.watch = None
@@ -142,7 +143,9 @@ class Watch:
                                        else '"Training caption" (as shipped)')
             second = recaption_task_detailed or ("an instruction given on the command line"
                                                  if recaption_instruction_detailed else '"Exhaustive detail" (as shipped)')
-            logger.info(f"[auto-recaption] first try: {first}; second try: {second} (Captions tab instructions)")
+            logger.info(f"[auto-recaption] first try: {first}"
+                        f"{', correcting the caption the picture has' if self.revise else ''}; second try: {second} "
+                        f"(Captions tab instructions)")
         self.watch = PerImageLossWatch(output_dir, apply_lr=per_image_lr, write_jsonl=True,
                                        dataset_dir=self.image_dir, caption_ext=self.caption_ext,
                                        family=self.driver.description.key, folders=self.folders)
@@ -382,23 +385,29 @@ class Watch:
             for k, img, attempt in auto:
                 try:
                     instr = (self.instr_detailed if attempt >= 2 else self.instr) or None
-                    # 160 tokens on the first try: room for the Detailed and Style tasks (a caption ends where it ends)
-                    cap = generate_caption(enc, img, detailed=attempt >= 2, instruction=instr, max_new_tokens=160)
                     prefix = self.watch.where(k)[0] or ""
                     trig = self.triggers.get(prefix, "") if prefix else self.trigger_word   # the picture's folder's
+                    _p, folder, name = self.watch.where(k)
+                    txt = os.path.join(folder, name + self.caption_ext)
+                    now = _read_caption(txt)                 # the whole file as it is, before anything is written
+                    revising = ""
+                    if attempt == 1 and getattr(self, "revise", False):   # #244: correct the caption there is, not a new one
+                        from fizgig.krea2.caption_text import drop_trigger, revise_instruction
+                        revising = drop_trigger((now.splitlines() or [""])[0], trig)
+                        if revising:
+                            instr = revise_instruction(instr, revising)
+                    # 160 tokens on the first try: room for the Detailed and Style tasks (a caption ends where it ends)
+                    cap = generate_caption(enc, img, detailed=attempt >= 2, instruction=instr, max_new_tokens=160)
                     if trig:
                         cap = (f"{cap}, {trig}" if str(self.trigger_position) == "end" else f"{trig}, {cap}")
                     text = cap
                     try:
-                        _p, folder, name = self.watch.where(k)
-                        txt = os.path.join(folder, name + self.caption_ext)
-                        if getattr(self, "multi_caption", False) and os.path.exists(txt):
+                        if getattr(self, "multi_caption", False) and now:
                             # several captions per picture: the new caption replaces the first line only, and the
                             # picture's other lines (yours) stay
-                            from fizgig.dataset.image_dataset import decode_caption
-                            with open(txt, "rb") as f:     # as training reads it: UTF-16 and Windows-1252 too
-                                rest = [ln for ln in decode_caption(f.read(), txt).splitlines() if ln.strip()][1:]
+                            rest = [ln for ln in now.splitlines() if ln.strip()][1:]
                             text = "\n".join([cap] + rest)
+                        keep_before(folder, name, now, text)  # your caption, to put back from Edit caption
                         with open(txt, "w", encoding="utf-8") as f:
                             f.write(text)
                     except OSError:
@@ -406,7 +415,7 @@ class Watch:
                                        "a future re-cache will use the old caption")
                     rows.append((k, items[k], text, attempt))
                     logger.info(f"[auto-recaption] {k} (attempt {attempt}/2"
-                                f"{', detailed' if attempt >= 2 else ''}): \"{cap}\"")
+                                f"{', detailed' if attempt >= 2 else ', corrected' if revising else ''}): \"{cap}\"")
                 except Exception:
                     logger.warning(f"[auto-recaption] captioning failed for {k} - retry next "
                                    f"boundary", exc_info=True)
@@ -416,6 +425,57 @@ class Watch:
             gc.collect()
             torch.cuda.empty_cache()
         return rows
+
+
+def _read_caption(path):
+    """A caption file as training reads it (UTF-16 and Windows-1252 too), stripped; "" when there is none."""
+    try:
+        from fizgig.dataset.image_dataset import decode_caption
+        with open(path, "rb") as f:
+            return decode_caption(f.read(), path).strip()
+    except OSError:
+        return ""
+
+
+BEFORE_FILE = "fizgig_caption_history.json"
+
+
+def keep_before(folder, name, before, after):
+    """Keep a picture's caption before auto-recaption replaces it, in <folder>/fizgig_caption_history.json (with the
+    pictures, so it outlives the run's own logs): {name: {"before": your caption, "after": the AI caption written}}.
+    The first one is kept while the file still holds an AI caption; once you change it, that is the new "before"."""
+    p = os.path.join(folder, BEFORE_FILE)
+    try:
+        with open(p, encoding="utf-8") as f:
+            hist = json.load(f)
+        if not isinstance(hist, dict):
+            hist = {}
+    except (OSError, ValueError):
+        hist = {}
+    old = hist.get(name) if isinstance(hist.get(name), dict) else None
+    if old is not None and str(old.get("after", "")).strip() == str(before).strip():
+        before = old.get("before", "")           # still the AI's caption: keep the one you wrote
+    if not str(before).strip():
+        return
+    hist[name] = {"before": str(before).strip(), "after": str(after).strip()}
+    try:
+        with open(p + ".tmp", "w", encoding="utf-8") as f:
+            json.dump(hist, f, indent=1, ensure_ascii=False)
+        os.replace(p + ".tmp", p)
+    except OSError:
+        logger.warning(f"[auto-recaption] could not keep the earlier caption of {name} in {p}")
+
+
+def caption_before(folder, name, now):
+    """The caption you had before auto-recaption, while the file still holds the caption it wrote (else None)."""
+    try:
+        with open(os.path.join(folder, BEFORE_FILE), encoding="utf-8") as f:
+            e = (json.load(f) or {}).get(name)
+    except (OSError, ValueError, AttributeError):
+        return None
+    if isinstance(e, dict) and str(e.get("after", "")).strip() == str(now or "").strip() and e.get("before"):
+        return str(e["before"])
+    return None
 
 
 def _warmup_keys(keys, look, prefix):

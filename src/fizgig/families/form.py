@@ -97,7 +97,7 @@ DEFAULTS = {
     "FAMILY_SUBJECT_KIND3": "From its captions", "FAMILY_SUBJECT_KIND4": "From its captions",
     "SAVE_STATE_ON_TRAIN_END": True, "KEEP_LAST_N_STATES": "2", "KREA2_LOSS_WATCH": False,
     "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False, "TRAIN_SUBFOLDERS": False, "TRAIN_SUBFOLDER_REPEATS": False, "MULTI_CAPTION": False, "CAPTION_TRIGGER_WORD": "",
-    "RECAPTION_FIRST": "Training caption (person or character)", "RECAPTION_SECOND": "Exhaustive detail (person or character)", "KREA2_WARMUP_LOOK": False,
+    "RECAPTION_FIRST": "Training caption (person or character)", "RECAPTION_SECOND": "Exhaustive detail (person or character)", "RECAPTION_REVISE": False, "KREA2_WARMUP_LOOK": False,
     "FAMILY_PRECISION": launch.PRECISION_LABELS["auto"], "FAMILY_EMA": "0.98 (recommended)",
     "FAMILY_TRAINING_ADAPTER": True, "FAMILY_KIND": "standard", "FAMILY_FAST_ID": False,
     "FAMILY_MULTICONCEPT": False, "FAMILY_CONCEPT_DIR": "", "FAMILY_CONCEPT_COUNT": "2 subjects",
@@ -409,6 +409,11 @@ def form(desc):
             _row("RECAPTION_SECOND", "Second try uses", "choice",
                  "Used when the first new caption didn't help. Set separately from the first try.",
                  [label for _key, label in _recaption_choices()]),
+            _row("RECAPTION_REVISE", "First try corrects the caption you wrote, instead of starting over", "check",
+                 "The first try is given the picture's caption as it is now: it fixes what the picture doesn't show "
+                 "and adds what's missing, and keeps your words and terms where they still fit. Best for concept "
+                 "LoRAs, where your own terms matter. The second try still writes a new caption from the picture. "
+                 "Your original caption is kept: Edit caption on the image's tile offers it back."),
             _row("CAPTION_TRIGGER_WORD", "Trigger word", hint="Used by Auto-recaption (below): it adds this word at the "
                  "end of a new caption. The training folder's word, the same as the Captions tab's."),
         ]
@@ -527,7 +532,7 @@ def form(desc):
     # the on/off tiles together at the bottom of the card, under every plain box (Adaptive LR stays beside its Min/Max)
     TILES = ("KREA2_LOSS_WATCH", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK", "KREA2_AUTO_RECAPTION", "FAMILY_FAST_ID",
              "FAMILY_TRAINING_ADAPTER")
-    UNDER = ("RECAPTION_FIRST", "RECAPTION_SECOND")      # Auto-recaption's pickers, straight under the tiles
+    UNDER = ("RECAPTION_FIRST", "RECAPTION_SECOND", "RECAPTION_REVISE")      # Auto-recaption's pickers, straight under the tiles
     params = ([r for r in params if not (r and r["key"] in TILES + UNDER)] + [r for r in params if r and r["key"] in TILES]
               + [r for r in params if r and r["key"] in UNDER])
     add("params", "Training Parameters", "training", params)
@@ -1279,7 +1284,7 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     if not captioner:
         hidden |= {"KREA2_AUTO_RECAPTION", "CAPTION_TRIGGER_WORD"}
     if not captioner or not values.get("KREA2_AUTO_RECAPTION"):
-        hidden |= {"RECAPTION_FIRST", "RECAPTION_SECOND"}
+        hidden |= {"RECAPTION_FIRST", "RECAPTION_SECOND", "RECAPTION_REVISE"}
     kind = _kind(desc, values)
     # a regularisation dataset (the Subjects card's last fold, #332): the rest of the card is set aside for the run -
     # greyed, its values kept - so nothing it would switch on elsewhere (Isolation's loss watch off) applies either
@@ -1549,7 +1554,7 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     if kind == "slider":         # the trainer turns these off for a slider: a slider step has two targets, not one
         hidden |= {"ADAPTIVE_LR", "ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX", "FAMILY_EMA", "KREA2_LOSS_WATCH",
                    "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK", "KREA2_AUTO_RECAPTION", "CAPTION_TRIGGER_WORD",
-                   "RECAPTION_FIRST", "RECAPTION_SECOND"}
+                   "RECAPTION_FIRST", "RECAPTION_SECOND", "RECAPTION_REVISE"}
     if kind == "finetune":       # the model itself trains: no LoRA (rank, alpha), every noise level, its own continue
         hidden |= {"MIN_TIMESTEP", "MAX_TIMESTEP", "NETWORK_DIM", "NETWORK_ALPHA", "RESUME_TRAINING"}
     if str(values.get("TARGET_LAYERS") or "") != "Custom":   # the block picker is Model Area's Custom
@@ -1855,6 +1860,7 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
         caption_overrides=caption_overrides, caption_concept=caption_concept,
         recaption_tasks=(_recaption_key(s("RECAPTION_FIRST"), "training"),
                          _recaption_key(s("RECAPTION_SECOND"), "exhaustive")),
+        recaption_revise=b("RECAPTION_REVISE"),
         samples={"enabled": b("SAMPLE_ENABLED"), "every": s("SAMPLE_EVERY_N_EPOCHS"), "later": b("SAMPLE_LATER"),
                  "until": s("SAMPLE_UNTIL_EPOCH"), "after": s("SAMPLE_EVERY_AFTER"), "width": s("SAMPLE_WIDTH"),
                  "height": s("SAMPLE_HEIGHT"), "steps": s("SAMPLE_STEPS"), "cfg": s("SAMPLE_CFG_SCALE") or

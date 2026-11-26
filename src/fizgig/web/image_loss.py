@@ -141,6 +141,14 @@ def read_caption(run, key, ext):
         return "", os.path.isdir(folder or "")
 
 
+def caption_before(run, key, now):
+    """The caption this picture had before auto-recaption replaced it (#244), while its file still holds the caption
+    auto-recaption wrote; None otherwise (families/loss_watch.keep_before)."""
+    from fizgig.families.loss_watch import caption_before as before
+    folder, name = _where(run, str(key))
+    return before(folder, name, now) if folder else None
+
+
 def save_caption(run, key, caption, ext):
     """An image's caption fixed from the per-image loss view (the desktop's Problem Images editor): the caption file
     rewritten, and - while the run is going or paused - the edit queued for the trainer, which re-encodes it at the

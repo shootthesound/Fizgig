@@ -4048,9 +4048,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/runs/caption":              # one training image's caption, for the per-image editor
             from fizgig.web import image_loss
             run = history.get((qs.get("id") or [""])[0]) or {}
-            text, ok = image_loss.read_caption(run, (qs.get("key") or [""])[0],
-                                               captions.caption_ext((qs.get("ext") or [""])[0]))
-            return self.json({"caption": text, "folder_ok": ok})
+            key = (qs.get("key") or [""])[0]
+            text, ok = image_loss.read_caption(run, key, captions.caption_ext((qs.get("ext") or [""])[0]))
+            # yours from before auto-recaption, while the file holds the AI's caption (#244): offered back
+            return self.json({"caption": text, "folder_ok": ok, "before": image_loss.caption_before(run, key, text)})
         if path == "/api/about":                     # ?check=1: look for a newer release again (the About box's)
             from fizgig.web import update_check
             if (qs.get("check") or [""])[0] == "1":

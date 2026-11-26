@@ -359,7 +359,7 @@ def _safe_text(value) -> str:
 
 def _safe_training_spec(value, key=None):
     """Recursively keep scalar training settings while filtering content, identity, and path-bearing fields."""
-    if key is not None and _PRIVATE_SPEC_KEY.fullmatch(str(key)):
+    if key is not None and _PRIVATE_SPEC_KEY.search(str(key)):
         return _OMIT
     if isinstance(value, dict):
         out = {}

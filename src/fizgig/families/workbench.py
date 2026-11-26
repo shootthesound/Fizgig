@@ -1222,9 +1222,10 @@ class WorkbenchEngine:
         self._sync_epochs()
         self.apply_state(flat)
         try:
-            names = [n for n, w in self._role_names(PRIMARY) if w] + \
-                ([n for n, w in self._role_names(DONOR) if w] if use_donor else [])
-            sd, ranks = self.net.bake(names)
+            mixes = [[n for n, w in self._role_names(PRIMARY) if w]] + \
+                ([[n for n, w in self._role_names(DONOR) if w]] if use_donor else [])
+            squeezed = {}                  # a mix comes back to its files' rank, not their sum (#411)
+            sd, ranks = self.net.bake([n for g in mixes for n in g], mixes=mixes, report=squeezed)
         finally:
             self.apply_state(state)
         try:
@@ -1262,7 +1263,7 @@ class WorkbenchEngine:
                 "keys_in": 3 * len(self.net._frozen[PRIMARY]["alpha_rank"]), "keys_out": len(sd),
                 "donor_path": self.donor_path if use_donor else None, "format_out": "standard",
                 "lycoris_converted": 0, "use_at": use_at,
-                "strengths_baked": bool(blended)}
+                "strengths_baked": bool(blended), "mix_rank": squeezed or None}
 
     # ---- teardown -----------------------------------------------------------------------------------
     MAP_LEVELS = (0.25, 0.5, 0.75)

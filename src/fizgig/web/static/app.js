@@ -9250,6 +9250,9 @@ function studioSavedSay(sv) {
   if (s.keys_in != null) lines.push(`Keys: ${s.keys_in} → ${s.keys_out}`);
   for (const [k, t] of [["dropped_blocks", "Dropped blocks"], ["rescaled_blocks", "Rescaled blocks"], ["blended_blocks", "Donor-blended blocks"]])
     if (s[k] && s[k].length) lines.push(`${t} (${s[k].length}): ${s[k].join(", ")}`);
+  const mr = s.mix_rank;
+  if (mr && mr.from > mr.to)
+    lines.push(`The mix saved at rank ${mr.to} (its files together: ${mr.from}), ${(100 * mr.kept).toFixed(2)}% of it kept.`);
   if (s.use_at != null) lines.push(`Use it at strength ${s.use_at}.`);
   $("stSaveMsg").replaceChildren(el("pre", {class: "field-hint st-saved", text: lines.join("\n")}));
 }

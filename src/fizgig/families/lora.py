@@ -267,6 +267,33 @@ class LoRAConv(nn.Module):
         return out
 
 
+def _squeeze_mix(As, Bs, keep, report=None):
+    """One mix's rank-concatenated factors (As: [r_i, in, ...], Bs: [out, r_i, ...], scales in B) as one pair with
+    the same product at the rank it needs: the SVD of B·A through two QRs (no out x in matrix), cut to the largest
+    part's rank, or more where that keeps under `keep` of the energy; never above the concatenation."""
+    A, B = torch.cat(As, 0), torch.cat(Bs, 1)
+    R, a_tail, b_tail = A.shape[0], A.shape[1:], B.shape[2:]
+    if any(d != 1 for d in b_tail):                  # an up factor that isn't 1x1: leave the mix concatenated
+        return As, Bs
+    A2, B2 = A.reshape(R, -1).float(), B.reshape(B.shape[0], R).float()
+    Qb, Rb = torch.linalg.qr(B2)
+    Qa, Ra = torch.linalg.qr(A2.T)
+    U, S, Vh = torch.linalg.svd(Rb @ Ra.T, full_matrices=False)
+    energy = S.square()
+    total = float(energy.sum())
+    need = int((energy.cumsum(0) < keep * total).sum()) + 1 if total > 0 else 1
+    k = min(S.numel(), max(max(a.shape[0] for a in As), need))
+    root = S[:k].sqrt()
+    A_new = ((root[:, None] * Vh[:k]) @ Qa.T).reshape(k, *a_tail)
+    B_new = (Qb @ (U[:, :k] * root)).reshape(B.shape[0], k, *b_tail)
+    if report is not None:
+        kept = float(energy[:k].sum()) / total if total > 0 else 1.0
+        report["from"] = max(report.get("from", 0), R)
+        report["to"] = max(report.get("to", 0), k)
+        report["kept"] = min(report.get("kept", 1.0), kept)
+    return [A_new], [B_new]
+
+
 class FamilyLoRA:
     """A DiT's adapter set. `wrapped` maps the module name (relative to the DiT) -> LoRALinear."""
 
@@ -612,11 +639,16 @@ class FamilyLoRA:
 
     # ---- bake: what is live now, as one standard LoRA in the family format ------------------------
     @torch.no_grad()
-    def bake(self, names, dtype=torch.bfloat16):
+    def bake(self, names, dtype=torch.bfloat16, mixes=(), report=None, keep=0.999):
         """One LoRA state dict equal to the named adapters as currently set (strengths, block settings, on/off),
         in the family's key format. Several adapters on a module are rank-concatenated with their scales folded
-        into the up weights, so alpha = total rank (scale 1). Returns (state_dict, {module: rank})."""
+        into the up weights, so alpha = total rank (scale 1). Returns (state_dict, {module: rank}).
+        `mixes`: groups of names that are one LoRA's mix (a run's epochs, a LoRA mix). A group's concatenation is
+        brought back down by an SVD of its product (#411: twenty r128 epochs saved at r2560), to its largest file's
+        rank or more where `keep` of the delta's energy needs more; `report` (a dict) gets the ranks and the share
+        kept."""
         sd, ranks = {}, {}
+        group_of = {n: i for i, g in enumerate(mixes) for n in g}
         for full, w in self.wrapped.items():
             live = [(n, w.scales[n]) for n in names if n in w.adapters and w.scales.get(n, 0.0)]
             if not live:
@@ -630,9 +662,10 @@ class FamilyLoRA:
                 sd[f"{stem}.alpha"] = torch.tensor(1.0)
                 ranks[full] = 0
                 continue
-            As, Bs = [], []
+            parts = {}                             # group (a mix's index, else the name) -> ([A], [B])
             for n, sc in live:
                 ad = w.adapters[n]
+                As, Bs = parts.setdefault(group_of.get(n, n), ([], []))
                 if isinstance(ad, (LoKR, LoHa)):   # Kronecker / Hadamard delta: SVD to a rank <= 64 LoRA
                     U, S, Vh = torch.linalg.svd(ad.delta(), full_matrices=False)
                     k = min(64, S.numel())
@@ -643,6 +676,12 @@ class FamilyLoRA:
                 a, b = ad
                 As.append(a.weight.float())
                 Bs.append(b.weight.float() * sc)
+            As, Bs = [], []
+            for g, (ga, gb) in parts.items():
+                if len(ga) > 1 and isinstance(g, int):
+                    ga, gb = _squeeze_mix(ga, gb, keep, report)
+                As += ga
+                Bs += gb
             A, B = torch.cat(As, 0), torch.cat(Bs, 1)
             ka, kb, kal = self._keys(full)
             sd[ka] = A.to("cpu", dtype).contiguous()

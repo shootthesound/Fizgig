@@ -3822,7 +3822,14 @@ class Handler(BaseHTTPRequestHandler):
                               "out_dir": out_dir or default_output_dir()})
         if path == "/api/royale/scan":
             from fizgig.web import royale
-            return self.json(royale.scan((qs.get("folder") or [""])[0]))
+            folder = (qs.get("folder") or [""])[0]
+            r = royale.scan(folder)
+            starred = royale.starred_items(folder, r["items"], sample_info) if r["items"] else []
+            r["starred"] = [label for label, _p in starred]              # #401: the epochs starred in the Samples gallery
+            if starred:
+                r["summary"] += (f" {len(starred)} starred in the Samples gallery "
+                                 f"({', '.join(str(x) for x in r['starred'][:12])}{'...' if len(starred) > 12 else ''}).")
+            return self.json(r)
         if path == "/api/royale/status":
             return self.json(studio.royale_status())
         if path == "/api/royale/travel/status":
@@ -5409,7 +5416,11 @@ class Handler(BaseHTTPRequestHandler):
                 from fizgig.web import royale
                 fams = {d.key: d for d in royale.families()}
                 scan = royale.scan(str(b.get("folder") or "").strip())
-                items = royale.pick(scan["items"], b.get("max") or "12", b.get("from"), b.get("to"))
+                if royale.is_starred(b.get("max")):        # #401: only the epochs starred in the Samples gallery
+                    items = royale.epoch_range(royale.starred_or_say(str(b.get("folder") or "").strip(), scan["items"],
+                                                                     sample_info), b.get("from"), b.get("to"))
+                else:
+                    items = royale.pick(scan["items"], b.get("max") or "12", b.get("from"), b.get("to"))
                 if not items:
                     raise ValueError("No checkpoints found - pick a folder with trained LoRAs.")
                 prompt = str(b.get("prompt") or "").strip()
@@ -5468,9 +5479,15 @@ class Handler(BaseHTTPRequestHandler):
                         folder = str(b.get("folder") or "").strip()
                         run_items = (royale.scan(folder)["items"] if not single and folder and os.path.isdir(folder)
                                      else [])
-                        cols = [list(c) for c in royale.sheet_columns(
-                            [[l, pth] for l, pth, _png in rendered if os.path.isfile(pth)],
-                            [[l, pth] for l, pth in run_items if os.path.isfile(pth)], b.get("epochs"))]
+                        if royale.is_starred(b.get("epochs")):      # #401: a column per starred epoch
+                            if not run_items:
+                                raise ValueError("Pick the training folder at the top of this tab: the starred epochs "
+                                                 "come from its Samples gallery.")
+                            cols = [list(c) for c in royale.starred_or_say(folder, run_items, sample_info)]
+                        else:
+                            cols = [list(c) for c in royale.sheet_columns(
+                                [[l, pth] for l, pth, _png in rendered if os.path.isfile(pth)],
+                                [[l, pth] for l, pth in run_items if os.path.isfile(pth)], b.get("epochs"))]
                     else:
                         if not lpath or not os.path.isfile(lpath):
                             raise ValueError("Pick a LoRA file (Single LoRA), or render epochs and slide to the one "

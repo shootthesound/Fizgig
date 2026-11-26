@@ -1339,8 +1339,9 @@
                 <select id="ryH" class="w-combo st-small-select"><option>384</option><option>512</option><option>768</option><option>1024</option><option>1280</option><option>1536</option><option>2048</option></select>
                 <span class="field-hint">Max renders</span>
                 <select id="ryMax" class="w-combo st-small-select"><option>All</option><option>6</option><option>8</option>
-                  <option>10</option><option selected>12</option><option>16</option><option>20</option></select>
-                <span class="field-hint">how many epochs to render, spread across the run</span></div>
+                  <option>10</option><option selected>12</option><option>16</option><option>20</option>
+                  <option value="Starred" id="ryMaxStarred">Starred</option></select>
+                <span class="field-hint">how many epochs to render, spread across the run; Starred = the epochs whose preview you starred in the Samples gallery</span></div>
               <div class="field-row"><span class="field-label">Epochs:</span>
                 <input type="text" id="ryFrom" class="w-num" placeholder="first" title="The first epoch to render. Empty: the start of the run.">
                 <span class="field-hint">to</span>
@@ -1529,13 +1530,14 @@
             <div class="card-content">
               <div class="field-hint pf-hint">Without / with LoRA: two columns on the current LoRA (Single LoRA, or the epoch on the
                 crossfade) - fill in Trigger so the no-LoRA column drops it. Every epoch: one column per epoch of the training folder
-                at the top; Epochs picks them - "4,8,12" (no render needed first), "every 4", or blank for the epochs rendered at the top. Every cell is a fresh render, so 3
+                at the top; Epochs picks them - "4,8,12" (no render needed first), "every 4", "starred" (the epochs whose preview you starred in the Samples gallery), or blank for the epochs rendered at the top. Every cell is a fresh render, so 3
                 prompts across 5 epochs is 15 renders: keep the prompt list short the first time.</div>
               <div class="field-row"><span class="field-label">Prompts:</span><textarea id="ryCPrompts" rows="4" spellcheck="false"
                 placeholder="one per line - each becomes a row"></textarea></div>
               <div class="field-row"><span class="field-label">Columns:</span><select id="ryCMode" class="w-combo">
                 <option>Without / with LoRA</option><option>Every epoch</option></select>
                 <span class="field-hint">Epochs</span><input type="text" id="ryCEpochs" class="w-num" placeholder="all">
+                <button class="btn btn-sm" id="ryCStarred" title="A column for each epoch whose preview you starred in the Samples gallery">★ Starred</button>
                 <span class="field-hint">Trigger</span><input type="text" id="ryCTrigger" class="w-num"></div>
               <div class="field-row"><span class="field-label">Seed:</span><input type="text" id="ryCSeed" class="w-num" value="42">
                 <span class="field-hint">W</span><select id="ryCW" class="w-combo st-small-select"><option>384</option><option>512</option><option>768</option><option>1024</option><option>1280</option><option>1536</option><option>2048</option></select><span class="field-hint">H</span><select id="ryCH" class="w-combo st-small-select"><option>384</option><option>512</option><option>768</option><option>1024</option><option>1280</option><option>1536</option><option>2048</option></select>

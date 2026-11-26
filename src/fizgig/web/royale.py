@@ -46,6 +46,34 @@ def scan(folder):
     return {"items": [[e, p] for e, p in cps], "summary": summary, "run": run_name_for_folder(folder)}
 
 
+def is_starred(spec):
+    """The Epochs box or Max renders asks for the starred epochs (#401): "starred" (or "favourites")."""
+    return str(spec or "").strip().lower() in ("starred", "favourites", "favorites", "★")
+
+
+def starred_items(folder, items, sample_info):
+    """The checkpoints among items (a scan's [[label, path]]) whose epoch's preview you starred in the Samples gallery
+    (#401), in run order: the checkpoint saved with a starred preview of its run and epoch (web/stars)."""
+    from fizgig.web import stars
+    entries = []
+    for _label, p in items:
+        try:
+            entries.append({"name": os.path.basename(p), "time": os.path.getmtime(p)})
+        except OSError:
+            pass
+    names = stars.starred_checkpoints(folder, entries, sample_info)
+    return [[label, p] for label, p in items if os.path.basename(p) in names]
+
+
+def starred_or_say(folder, items, sample_info):
+    """starred_items, or a plain message when there are none."""
+    got = starred_items(folder, items, sample_info)
+    if not got:
+        raise ValueError("No starred epochs in this run: star the previews you like in the Samples gallery (the ☆ "
+                         "on each picture), then come back. A star counts when that epoch's checkpoint was saved.")
+    return got
+
+
 def _epoch_box(value, which):
     text = str(value or "").strip()
     if not text:

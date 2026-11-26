@@ -2663,7 +2663,7 @@ function starButton(it, fig) {
   const b = el("button", {class: "star-btn", type: "button"});
   const show = () => {
     b.textContent = it.starred ? "★" : "☆";
-    b.title = it.starred ? "Starred - click to unstar" : "Star this preview (its epoch's checkpoint gets a star too)";
+    b.title = it.starred ? "Starred - click to unstar" : "Star this preview (its epoch's checkpoint gets a star too, and LoRA Royale can render just the starred epochs)";
     b.setAttribute("aria-pressed", it.starred ? "true" : "false");
     fig.classList.toggle("starred", !!it.starred);
   };
@@ -4669,6 +4669,11 @@ async function wireRoyaleTravel() {
     }
   }
   $("ryCGo").addEventListener("click", () => rySheet());
+  $("ryCStarred").addEventListener("click", () => {            // #401: one column per starred epoch
+    $("ryCEpochs").value = "starred";
+    if ($("ryCMode").value !== "Every epoch") $("ryCMode").value = "Every epoch";
+    $("ryCEpochs").dispatchEvent(new Event("change", {bubbles: true}));
+  });
   $("ryCSave").addEventListener("click", async () => {
     try { const r = await api("/api/royale/travel/save", {mode: "sheet", out_dir: $("ryOut").value.trim()});
       $("ryCMsg").textContent = `Saved ${r.path}`; } catch (e) { $("ryCMsg").textContent = e.message; }
@@ -4728,6 +4733,8 @@ async function royaleScan() {
   if (!f) { $("ryScan").textContent = ""; return; }
   const r = await api("/api/royale/scan?folder=" + encodeURIComponent(f)).catch(() => ({summary: ""}));
   $("ryScan").textContent = r.summary || "";
+  const n = (r.starred || []).length;              // #401: the epochs starred in the Samples gallery
+  $("ryMaxStarred").textContent = n ? `Starred (${n})` : "Starred";
 }
 
 async function royaleRender() {

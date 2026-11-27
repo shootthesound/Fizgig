@@ -6682,7 +6682,7 @@ function lookMoveAsk() {
       el("button", {class: "btn btn-sm", text: "Cancel", onclick: () => { $("lookConfirm").innerHTML = ""; }}))));
 }
 
-// ---- Find duplicate pictures (web/duplicates.py, the Fizgig Advanced scan): groups, Keep / Move out, move aside ----
+// ---- Find duplicate pictures (web/duplicates.py, @Murf-Code's scan): groups, Keep / Move out, move aside ----
 // marks: auto = every picture but the largest of its group, worked out from the groups at the slider's setting now
 // (so a group's largest is never marked); user = your clicks, which win and are kept when the slider moves
 S.dup = {folder: "", groups: [], auto: new Map(), autoAt: null, user: new Map(), offset: 0, next: null, count: 0, timer: null};

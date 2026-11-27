@@ -1,4 +1,4 @@
-"""CPU-only near-duplicate picture finder (Fizgig Advanced's Caption Studio duplicate scan).
+"""CPU-only near-duplicate picture finder (@Murf-Code's duplicate scan).
 
 No training model, GPU, or network calls are used. Pictures are decoded one at
 a time by a background thread. Duplicate candidates follow TagBench 1.2's 64-bit difference-hash and 4x4

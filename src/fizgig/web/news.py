@@ -10,7 +10,7 @@ NEWS = [
         "body": (
             "Each caption card shows its picture's loss-watch verdict, a new filter shows one group at a time, and a "
             "caption you save during a run trains from the next epoch. Image Prep finds duplicate pictures.\n\n"
-            "From @Murf-Code's Fizgig Advanced: every saved LoRA carries its training recipe, Krea 2's text cache is "
+            "Thanks to @Murf-Code: every saved LoRA carries its training recipe, Krea 2's text cache is "
             "about a quarter of the size, and Fibo 2's block swap crash is fixed."
         ),
         "links": [{"text": "Read more", "href": _ARTICLE + "#27-nov-2026-the-loss-watch-on-the-captions-tab-and-find-duplicate-pictures"},
@@ -307,7 +307,7 @@ NEWS = [
             "Fizgig's training adapter on by default for photographic skin and likeness. Press Download models for me "
             "in Preferences.\n\n"
             "For every model: a run that runs out of memory carries on by itself where it can, and a failed run no "
-            "longer holds the queue (from @Murf-Code's Fizgig Advanced). AMD installs use AMD's stable PyTorch "
+            "longer holds the queue (thanks @Murf-Code). AMD installs use AMD's stable PyTorch "
             "(thanks @scryptio)."
         ),
         "links": [{"text": "Read more", "href": _ARTICLE + "#11-nov-2026-minimax-h3-image-and-out-of-memory-recovery"},

@@ -6,7 +6,7 @@
 
 **Find duplicate pictures.** A new Image Prep card finds copies, resized versions and near-identical frames, so no picture trains twice as often as it should. You choose what goes; nothing is deleted.
 
-**From @Murf-Code's Fizgig Advanced:** every saved LoRA now carries its training recipe in its metadata, Krea 2's text cache is about a quarter of the size, Fibo 2's block swap crash is fixed, and the sidebar's groups fold away.
+**Thanks to @Murf-Code:** every saved LoRA now carries its training recipe in its metadata, Krea 2's text cache is about a quarter of the size, Fibo 2's block swap crash is fixed, and the sidebar's groups fold away.
 
 [Fizgig v9.8.9 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.8.9)
 
@@ -220,7 +220,7 @@ If training on Windows with an NVIDIA card is suddenly several times slower, esp
 
 **A new model: MiniMax H3 Image**, MiniMax's picture model from the H3 family: text-to-image and edits with up to 16 reference pictures, in 6 steps with no CFG. Train LoRAs, LoKRs, edit LoRAs from before/after pairs and slider LoRAs from photo pairs. Fizgig's training adapter is on by default: without it people came out as caricatures, with it the same dataset gave photographic skin and a clear likeness. The presets train on Automagic v3 with 40% of training on the nearly finished picture (Clean-end share). It runs in about 23 GB with int8, 13 GB in 4-bit. Press **Download models for me** in Preferences.
 
-**Out-of-memory recovery, for every model.** A run that runs out of GPU memory or system RAM carries on by itself where it can, up to three times: from its newest save, then a step lighter. A failed run no longer holds the queue; the next one starts. From @Murf-Code's Fizgig Advanced.
+**Out-of-memory recovery, for every model.** A run that runs out of GPU memory or system RAM carries on by itself where it can, up to three times: from its newest save, then a step lighter. A failed run no longer holds the queue; the next one starts. Thanks to @Murf-Code.
 
 **AMD installs use AMD's stable PyTorch** (torch 2.14.0 for ROCm 10.1) instead of the nightlies. Thanks @scryptio (#319).
 
@@ -246,7 +246,7 @@ Update Fizgig on your computers; your pods follow. [Fizgig v9.5.0 release notes]
 
 **Studio draws heatmaps over its preview, for any LoRA it can load,** including ones you didn't train. Pick a map under the preview: **Where the LoRA acts** (as you've set it, against no LoRA), **What your tweaks change** (move a slider and see where it acts), **Trigger word** (where its attention goes, which on a made-up word often includes any lettering in the picture), and **Blocks** (where each group of the LoRA's blocks acts: on MOSS-Image the Identity group lights up the face, the last blocks edges and texture everywhere). It turns the Profiler's numbers into a picture, and shows which slider to pull down when a LoRA reaches into the background or clothes.
 
-**Two new themes** from @Murf-Code's Fizgig Advanced: Cosmic Pigeon and Deep Space, under Preferences → Theme.
+**Two new themes** from @Murf-Code: Cosmic Pigeon and Deep Space, under Preferences → Theme.
 
 Update Fizgig on your computers; your pods follow. [Studio guide: Maps](https://github.com/shootthesound/Fizgig/blob/master/docs/STUDIO.md#maps) · [Fizgig v9.4.0 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.4.0)
 

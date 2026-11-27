@@ -2387,8 +2387,11 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
   background: var(--warning); color: var(--text-on-light); }
 .il-cap-state.done { background: var(--success); color: var(--text-on-color); }
 /* a Captions card's loss-watch verdict (the run training on the folder, or its last run) */
-.cap-loss { display: flex; align-items: center; gap: 4px; margin: 2px 0 4px; }
-.cap-loss .il-verdict { border-radius: 3px; cursor: help; }
+.cap-loss { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 2px 0 4px; }
+.cap-lw-pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px 2px 5px; border: 1px solid var(--border);
+  border-radius: 999px; font-size: 8.5pt; color: var(--text-primary); background: var(--bg-surface); cursor: help;
+  white-space: nowrap; }
+.cap-lw-sq { width: 9px; height: 9px; border-radius: 2px; flex: none; }
 .il-cap { margin-top: 6px; }
 .il-cap-text { width: 100%; font: inherit; font-size: 9pt; resize: vertical; }
 

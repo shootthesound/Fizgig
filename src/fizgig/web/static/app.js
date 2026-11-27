@@ -10247,11 +10247,13 @@ function capLossTag(it) {
   const run = L.run || {};
   const from = `${run.live ? "Training now" : "Last run here"}: ${run.lora || "the run"}` +
     (run.epoch != null ? `, epoch ${run.epoch}` : "");
+  // a mini pill: the verdict's colour as a small square, the words beside it in the card's own text colour
+  const pill = (colour, text, title) => el("span", {class: "cap-lw-pill", title},
+    el("span", {class: "cap-lw-sq", style: `background:${colour}`}), el("span", {text}));
   return el("span", {class: "cap-loss"},
-    el("span", {class: "il-verdict", style: `background:${col}`, title: `${say}\n${from}`,
-      text: "Loss watch: " + (v.verdict || "mid") + (v.multiplier != null && v.multiplier !== 1 ? ` ×${v.multiplier}` : "")}),
-    v.queued ? el("span", {class: "il-cap-state", text: "caption queued",
-      title: "Waiting for the next epoch, when the trainer re-encodes it"}) : null);
+    pill(col, "Loss watch: " + (v.verdict || "mid") + (v.multiplier != null && v.multiplier !== 1 ? ` ×${v.multiplier}` : ""),
+      `${say}\n${from}`),
+    v.queued ? pill("var(--accent)", "Caption queued", "Waiting for the next epoch, when the trainer re-encodes it") : null);
 }
 // what a save says: queued for the run training on this folder (it trains from the next epoch), or just saved
 function capSavedSay(r, it) {

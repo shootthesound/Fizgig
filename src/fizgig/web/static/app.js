@@ -4435,9 +4435,11 @@ function imageLossToCaptions(im) {
 // one image's caption, edited from its tile (the desktop's Problem Images editor)
 function imageLossCaption(im, run, live) {
   const box = el("div", {class: "il-cap", style: "display:none"});
+  const done = el("div", {class: "field-hint il-cap-done"});      // what the last save did, once the editor closes
   const btn = el("button", {class: "btn btn-sm", text: "Edit caption", onclick: async () => {
     if (box.style.display !== "none") { box.style.display = "none"; return; }
     box.style.display = "";
+    done.textContent = "";
     box.replaceChildren(el("div", {class: "field-hint", text: "Loading…"}));
     let r;
     try { r = await api(`/api/runs/caption?id=${encodeURIComponent(run.id)}&key=${encodeURIComponent(im.key)}&ext=${encodeURIComponent(capExt())}&family=${encodeURIComponent(S.family || "")}`); }
@@ -4448,10 +4450,12 @@ function imageLossCaption(im, run, live) {
     const save = el("button", {class: "btn btn-sm btn-primary", text: live ? "Save and queue for re-encode" : "Save caption", onclick: async () => {
       try {
         const res = await api("/api/runs/caption", {id: run.id, key: im.key, caption: ta.value, ext: capExt()});
-        say.textContent = res.queued ? "Saved and queued - the trainer re-encodes it at the next epoch." +
+        // saved: the editor closes, and what happened stays under the button
+        done.textContent = res.queued ? "Saved and queued - the trainer re-encodes it at the next epoch." +
           (res.wrote ? "" : " (The caption file couldn't be written: the run is fixed, a later re-cache uses the old caption.)")
           : "Saved. It's used the next time this folder trains.";
-      } catch (e) { say.textContent = e.message; }
+        box.style.display = "none";
+      } catch (e) { say.textContent = e.message; }          // not saved: the editor stays open with why
     }});
     // auto-recaption replaced your caption (#244): yours is kept, and Put it back puts it in the box to save
     const before = r.before ? el("div", {class: "il-cap-before"},
@@ -4462,7 +4466,7 @@ function imageLossCaption(im, run, live) {
     box.replaceChildren(ta, el("div", {class: "field-row"}, save), say, before);
     ta.focus();
   }});
-  return el("div", {}, el("div", {class: "il-act-row"}, btn), box);
+  return el("div", {}, el("div", {class: "il-act-row"}, btn), done, box);
 }
 
 // ---- LoRA Royale: every epoch on one seed, crossfaded (fizgig/web/royale.py; renders on the GPU worker) ----

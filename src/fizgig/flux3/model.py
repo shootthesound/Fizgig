@@ -7,6 +7,7 @@ lora_unet_<path> onto these names, including q_proj / k_proj / v_proj on a file 
 Fizgig additions: gradient checkpointing around each block, and a loader that accepts the reference package
 (model.safetensors) or Comfy-Org's single file (diffusion_models/flux3-image-klein*-bf16.safetensors).
 """
+import contextlib
 import math
 from dataclasses import dataclass
 
@@ -86,14 +87,16 @@ def packed_attention(q: Tensor, k: Tensor, v: Tensor, bounds: list) -> Tensor:
     """Per-sample attention over (1, H, L, D); samples never attend to each other."""
     _, heads, length, dim = q.shape
     out = torch.zeros(length, heads * dim, device=q.device, dtype=q.dtype)
-    backend = SDPBackend.CUDNN_ATTENTION if q.is_cuda else SDPBackend.MATH
+    # ROCm tensors also report is_cuda=True, and cuDNN is NVIDIA-only: on ROCm PyTorch picks (a fused kernel where the
+    # card has one, Math where it doesn't), as modules/sdpa.py does for every other family
+    backend = None if torch.version.hip else SDPBackend.CUDNN_ATTENTION if q.is_cuda else SDPBackend.MATH
     for start, end in bounds:
         if start == end:
             continue
         qs, ks, vs = q[:, :, start:end], k[:, :, start:end], v[:, :, start:end]
         chunk = _i8a.attend(qs, ks, vs)          # workbench renders: the INT8 kernel when it's switched on
         if chunk is None:
-            with sdpa_kernel(backend):
+            with sdpa_kernel(backend) if backend is not None else contextlib.nullcontext():
                 chunk = F.scaled_dot_product_attention(qs, ks, vs)
         out[start:end] = chunk[0].transpose(0, 1).reshape(end - start, heads * dim)
     return out

@@ -9419,6 +9419,11 @@ async function studioPollOnce() {
     $("stReport").href = `/api/studio/report?t=${encodeURIComponent(TOKEN)}`;
   }
   if (st.saved && st.saved.out !== S.st.savedShown) { S.st.savedShown = st.saved.out; studioSavedSay(st.saved); }
+  const se = st.save_error;                    // a save that failed says so in its card, not "Saving…" for ever (#413)
+  if (se && se.n !== S.st.saveErrShown) {
+    S.st.saveErrShown = se.n;
+    $("stSaveMsg").replaceChildren(el("div", {class: "problems", text: `Couldn't save: ${se.msg}`}));
+  }
   const said = st.out_said ? JSON.stringify(st.out_said) : "";      // Save every render's latest files
   if (said && said !== S.st.outSaid) {
     S.st.outSaid = said;

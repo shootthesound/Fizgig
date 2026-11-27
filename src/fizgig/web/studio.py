@@ -209,8 +209,11 @@ def _event(ev):
             where = ev.get("where")
             if where == "frank_export":          # the blend's save card says so, where the button was pressed
                 _S.update(frank_saving=None, frank_error=ev.get("msg", ""))
+            elif where == "save":                # Save repaired LoRA's card says so, not only the status line (#413)
+                _S["save_error"] = {"msg": ev.get("msg", ""), "n": _S.get("save_n", 0)}
             _S.update(error=ev.get("msg", ""), progress=None,
-                      status=("Render error: " if where == "render" else "Couldn't load: " if where == "load" else "")
+                      status=("Render error: " if where == "render" else "Couldn't load: " if where == "load"
+                              else "Couldn't save: " if where == "save" else "")
                       + ev.get("msg", ""))
             if where == "render":
                 _S["rendering"] = False
@@ -783,7 +786,8 @@ def save(out, state, include_donor):
     with _lock:
         if _S["state"] == "ready" and not _S.get("primary"):
             raise ValueError("No LoRA is loaded: Save repaired LoRA saves a LoRA you've tweaked. Load one in Setup.")
-        _S["saved"] = None
+        _S["saved"] = _S["save_error"] = None
+        _S["save_n"] = _S.get("save_n", 0) + 1
     _send({"cmd": "save", "out": out, "state": state, "include_donor": bool(include_donor)})
 
 
@@ -1066,6 +1070,7 @@ def status():
         d["frank_saved_gb"] = _S.get("frank_saved_gb")
         d["frank_saving"] = _S.get("frank_saving")   # {"done", "total"} bytes while the new base is written
         d["frank_error"] = _S.get("frank_error") or ""
+        d["save_error"] = _S.get("save_error")
         d["frank_out"] = _S.get("frank_out") or ""
         d["same"] = bool(_S.get("same"))           # the Tweaked render on screen is the Baseline
         d["eq"] = _S.get("eq") or {}

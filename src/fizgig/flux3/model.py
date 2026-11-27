@@ -86,7 +86,8 @@ def packed_attention(q: Tensor, k: Tensor, v: Tensor, bounds: list) -> Tensor:
     """Per-sample attention over (1, H, L, D); samples never attend to each other."""
     _, heads, length, dim = q.shape
     out = torch.zeros(length, heads * dim, device=q.device, dtype=q.dtype)
-    backend = SDPBackend.CUDNN_ATTENTION if q.is_cuda else SDPBackend.MATH
+    # ROCm tensors also report is_cuda=True; cuDNN is NVIDIA-only.
+    backend = SDPBackend.MATH if (torch.version.hip or not q.is_cuda) else SDPBackend.CUDNN_ATTENTION
     for start, end in bounds:
         if start == end:
             continue

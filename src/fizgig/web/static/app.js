@@ -10231,7 +10231,24 @@ async function loadCaptions() {
   S.cap.items = r.items;                      // the pictures, then the largest detail crops (it.crop: their folder)
   // the loss watch's verdicts for these pictures, from the run training on this folder or its last run with a log
   S.cap.loss = await api(`/api/captions/loss?folder=${encodeURIComponent(capFolder())}`).catch(() => ({items: {}}));
+  capLossFilterFill();
   renderCaptions();
+}
+
+// the Loss watch filter (between Sort and View): All pictures, then each verdict the pictures here have, worst
+// first, with its count; greyed out when no run on this folder has a loss log
+function capLossFilterFill() {
+  const sel = $("capLossFilter"), was = sel.value;
+  const counts = {};
+  for (const it of S.cap.items) {
+    const v = ((S.cap.loss || {}).items || {})[capLossKey(it)];
+    if (v) counts[v.verdict || "mid"] = (counts[v.verdict || "mid"] || 0) + 1;
+  }
+  const names = {mid: "normal"};
+  sel.replaceChildren(el("option", {value: "", text: "All pictures"}),
+    ...IL_ORDER.filter((k) => counts[k]).map((k) => el("option", {value: k, text: `${names[k] || k} (${counts[k]})`})));
+  sel.disabled = !Object.keys(counts).length;
+  sel.value = counts[was] ? was : "";
 }
 
 // a card's loss-watch tag: its verdict in the run training on this folder (or the last run here), as the run's
@@ -10248,7 +10265,7 @@ function capLossTag(it) {
   const from = `${run.live ? "Training now" : "Last run here"}: ${run.lora || "the run"}` +
     (run.epoch != null ? `, epoch ${run.epoch}` : "");
   // a mini pill: the verdict's colour as a small square, the words beside it in the card's own text colour
-  const pill = (colour, text, title) => el("span", {class: "cap-lw-pill", title},
+  const pill = (colour, text, tip) => el("span", {class: "cap-lw-pill", "data-tip": tip},
     el("span", {class: "cap-lw-sq", style: `background:${colour}`}), el("span", {text}));
   return el("span", {class: "cap-loss"},
     pill(col, "Loss watch: " + (v.verdict || "mid") + (v.multiplier != null && v.multiplier !== 1 ? ` ×${v.multiplier}` : ""),
@@ -10273,6 +10290,9 @@ function renderCaptions() {
   const q = capQuery();
   const all = S.cap.items;
   let items = q ? all.filter((i) => i.name.toLowerCase().includes(q) || (i.caption || "").toLowerCase().includes(q)) : all;
+  const lf = $("capLossFilter").value;           // the Loss watch filter: one verdict's pictures
+  if (lf) items = items.filter((i) => ((((S.cap.loss || {}).items || {})[capLossKey(i)] || {}).verdict || "mid") === lf &&
+    ((S.cap.loss || {}).items || {})[capLossKey(i)]);
   const sort = $("capSort").value, px = (i) => (i.size ? i.size[0] * i.size[1] : null);
   if (sort !== "name") {                       // by pixel count; songs (no size) go last either way
     items = [...items].sort((a, b) => (px(a) == null) - (px(b) == null) ||
@@ -10292,7 +10312,7 @@ function renderCaptions() {
   if (!multi) $("frEachLine").checked = false;
   capLinesWarn();
   $("captionsSummary").textContent = `${all.length} files${missing ? `, ${missing} without a caption` : ""}` +
-    (q ? ` · ${items.length} match` : "") + (pages > 1 ? ` · page ${S.cap.page + 1} of ${pages}` : "");
+    (q || lf ? ` · ${items.length} match` : "") + (pages > 1 ? ` · page ${S.cap.page + 1} of ${pages}` : "");
   $("capPrev").disabled = S.cap.page === 0; $("capNext").disabled = S.cap.page >= pages - 1;
   host.classList.toggle("captions-as-table", $("capView").value === "table");
   if ($("capView").value === "table") {
@@ -10664,6 +10684,7 @@ function wireCaptions() {
   $("frApply").addEventListener("click", held($("frApply"), () => findReplace(true)));
   $("capSearch").addEventListener("input", debounce(() => { S.cap.page = 0; renderCaptions(); }, 250));
   $("capSort").addEventListener("change", () => { S.cap.page = 0; renderCaptions(); });
+  $("capLossFilter").addEventListener("change", () => { S.cap.page = 0; renderCaptions(); });
   $("capPrev").addEventListener("click", () => { S.cap.page--; renderCaptions(); window.scrollTo(0, 0); });
   $("capNext").addEventListener("click", () => { S.cap.page++; renderCaptions(); });
   const goto = () => {                          // the desktop's Go to page: a number, kept within the pages there are

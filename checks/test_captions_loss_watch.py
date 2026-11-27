@@ -82,3 +82,13 @@ def test_the_page_shows_verdicts_and_queues_saves():
     assert "/api/captions/loss?folder=" in js and "capLossTag(it), ta," in js
     assert "status.textContent = capSavedSay(r, it);" in js and "imageLossToCaptions(im)" in js
     assert '$("capSearch").value = name.replace' in js and 'showTab("captions")' in js
+    # the pill's words show at once on hover (its own box, no help cursor); the Loss watch filter sits between
+    # Sort and View, greyed out when no run here has a loss log
+    css = open(os.path.join(os.path.dirname(__file__), "..", "src", "fizgig", "web", "static", "style.css"),
+               encoding="utf-8").read()
+    pill = css[css.index(".cap-lw-pill {"):css.index("}", css.index(".cap-lw-pill {"))]
+    assert ".cap-lw-pill[data-tip]:hover::after" in css and "cursor: help" not in pill
+    html = open(os.path.join(os.path.dirname(__file__), "..", "src", "fizgig", "web", "static", "index.html"),
+                encoding="utf-8").read()
+    assert html.index('id="capSort"') < html.index('id="capLossFilter"') < html.index('id="capView"')
+    assert "sel.disabled = !Object.keys(counts).length;" in js

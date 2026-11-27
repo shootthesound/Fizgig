@@ -2244,6 +2244,8 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 .il-tile figcaption { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
 .il-name { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .il-verdict { color: var(--text-on-color); font-size: 8.5pt; padding: 1px 6px; }
+/* a tile's Edit caption and Edit on the Captions tab: each centred on its own row, a little apart */
+.il-act-row { display: flex; justify-content: center; margin-top: 6px; }
 .il-nopic { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; font-size: 9pt;
   color: var(--text-muted); background: var(--bg-deep); text-align: center; padding: 8px; }
 .il-chart { width: 100%; height: 56px; display: block; background: var(--bg-deep); margin-top: 4px; }

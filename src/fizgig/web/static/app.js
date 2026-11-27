@@ -4429,7 +4429,7 @@ function imageLossToCaptions(im) {
       S.cap.page = 0;
       showTab("captions");
     }});
-  return el("div", {}, btn, say);
+  return el("div", {}, el("div", {class: "il-act-row"}, btn), say);
 }
 
 // one image's caption, edited from its tile (the desktop's Problem Images editor)
@@ -4462,7 +4462,7 @@ function imageLossCaption(im, run, live) {
     box.replaceChildren(ta, el("div", {class: "field-row"}, save), say, before);
     ta.focus();
   }});
-  return el("div", {}, btn, box);
+  return el("div", {}, el("div", {class: "il-act-row"}, btn), box);
 }
 
 // ---- LoRA Royale: every epoch on one seed, crossfaded (fizgig/web/royale.py; renders on the GPU worker) ----

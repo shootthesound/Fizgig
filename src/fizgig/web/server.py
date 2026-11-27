@@ -4038,6 +4038,14 @@ class Handler(BaseHTTPRequestHandler):
                               "images": [{**im, "path": pics.get(im["key"], ""), "queued": im["key"] in queued,
                                           "applied": (applied.get(im["key"]) or [{}])[-1].get("epoch")}
                                          for im in res["images"]]})
+        if path == "/api/captions/loss":             # the Captions tab's cards: each picture's loss-watch verdict
+            from fizgig.web import image_loss
+            folder = (qs.get("folder") or [""])[0]
+
+            def _has_watch(r):
+                d = get_family(r.get("family") or "")
+                return d is not None and getattr(d, "loss_watch", False)
+            return self.json(image_loss.folder_verdicts(history.runs()[:200], folder, _has_watch) or {"items": {}})
         if path == "/api/runs/train_maps":           # one run's training maps (training/train_maps.py), by epoch
             from fizgig.training import train_maps
             from fizgig.web import image_loss
@@ -5702,7 +5710,20 @@ class Handler(BaseHTTPRequestHandler):
                 from fizgig.dataset import detail_crops
                 if detail_crops.is_crop_dir(folder):        # a detail crop: the same caption at its other sizes
                     detail_crops.share_captions(detail_crops.root_of(folder), ext)
-                return self.json({"ok": True})
+                # a run training on this folder: the edit is queued too, so it trains from the next epoch (the
+                # trainer re-encodes it at the boundary, as an edit from the run's per-image loss view does)
+                queued = ""
+                if str(text).strip():
+                    from fizgig.web import image_loss
+                    run = image_loss.live_run_on(history.runs()[:50], folder)
+                    d = get_family((run or {}).get("family") or "")
+                    if run and d is not None and getattr(d, "loss_watch", False):
+                        try:
+                            image_loss.queue_caption(run, image_loss.folder_key(run, folder, name), text)
+                            queued = run.get("lora") or "the run"
+                        except ValueError as e:
+                            return self.json({"ok": True, "queue_error": str(e)})
+                return self.json({"ok": True, "queued": queued})
         except ValueError as e:
             return self.json({"error": str(e)}, 400)
         return self.json({"error": "not found"}, 404)

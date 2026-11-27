@@ -32,7 +32,8 @@ def test_filter_and_highlight_agree_on_the_query():
     js = _js()
     assert re.search(r"const capQuery = \(\) => \$\(\"capSearch\"\)\.value\.trim\(\)\.toLowerCase\(\);", js)
     assert re.search(r"const q = capQuery\(\);", js)
-    readers = [l for l in js.splitlines() if "capSearch" in l and ".value" in l]
+    # every line that READS the box (setting it - the per-image loss view's Edit on the Captions tab - isn't one)
+    readers = [l for l in js.splitlines() if "capSearch" in l and ".value" in l and ".value =" not in l]
     assert len(readers) == 1, readers
 
 

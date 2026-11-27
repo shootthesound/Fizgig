@@ -54,6 +54,7 @@ The line under the repeats tick is a table: each folder's pictures, its repeats,
 
 **While it trains** (the Krea 2 loss watch, [details](KREA2.md#the-trainer-curates-your-dataset-while-it-trains-experimental)), every picture is kept with its own folder:
 - **Per-image loss** (on the run card while it trains, and on the run in Runs & outputs) names each picture with its folder (`outfits/red/03`), and a caption you edit there is written into that picture's own folder.
+- **The loss watch on the Captions tab.** Each caption card shows its picture's loss-watch verdict (stuck, suspect, learning, easy and so on, coloured as in the per-image loss view) from the run training on that folder, or the folder's last run. A caption saved on the Captions tab while a run trains on that folder trains from the next epoch: the trainer re-encodes it at the epoch boundary, as an edit from the per-image loss view, with or without the loss-watch ticks on. In the per-image loss view, **Edit on the Captions tab** opens the tab on that picture.
 - **Auto-recaption** writes the new caption into the picture's own folder, with that folder's trigger word.
 - **Exclusions** are saved in each folder's own `fizgig_excluded.json`, so they travel with its pictures.
 - The **look-outlier warm-up** reads each folder's own Look Filter scores (`fizgig_look_scores.json`, from a scan of that folder). Pictures moved into a sub-folder's `excluded_by_look` are left out.

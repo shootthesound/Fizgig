@@ -1310,8 +1310,10 @@ def train_command(desc, inputs, plan):
                 cmd += [flag, instr, task_flag, f'"{label}"' + (" (your edit)" if edited else " (as shipped)")]
             if st.get("recaption_revise"):
                 cmd += ["--recaption_revise"]
-    if any(lw.get(key) for key, _ in watch) and "--text_encoder" not in cmd:
-        cmd += ["--text_encoder", _model(st, desc, "text_encoder")]   # caption repair re-encodes
+    if (any(lw.get(key) for key, _ in watch) or desc.loss_watch) and "--text_encoder" not in cmd:
+        # caption repair re-encodes: an edit from the Captions tab or the per-image loss view during the run is
+        # queued and re-encoded at the next epoch, loss-watch ticks or not (the trainer loads it only then)
+        cmd += ["--text_encoder", _model(st, desc, "text_encoder")]
     if ("lokr" in desc.network_types and str(st.get("NETWORK_TYPE", "")).startswith("LoKR")
             and not slider_on(desc, st)):        # a slider is always a plain LoRA
         cmd += ["--network_type", "lokr", "--lokr_factor", str(st.get("LOKR_FACTOR", 8))]

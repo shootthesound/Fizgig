@@ -167,28 +167,83 @@ def save_caption(run, key, caption, ext):
         os.replace(tmp, p)
         wrote = True
     if run.get("result") in ("running", "paused") and run.get("output_dir"):
-        d = os.path.join(run["output_dir"], "loss_log")
-        os.makedirs(d, exist_ok=True)
-        q = os.path.join(d, "caption_updates.json")
-        updates = {}
-        if os.path.exists(q):
-            try:
-                with open(q, encoding="utf-8") as f:
-                    updates = json.load(f)
-            except (OSError, ValueError):
-                # other edits are waiting in a file we can't read: writing just this one would lose them
-                raise ValueError("The trainer's caption queue couldn't be read - not overwriting it. Try again in a "
-                                 "moment.")
-            if not isinstance(updates, dict):
-                updates = {}
-        updates[key] = caption
-        with open(q + ".tmp", "w", encoding="utf-8") as f:
-            json.dump(updates, f, indent=2)
-        os.replace(q + ".tmp", q)                    # atomic: the trainer never reads half a file
+        queue_caption(run, key, caption)
         queued = True
     if not wrote and not queued:
         raise ValueError("The run's training folder isn't there any more - nothing saved.")
     return {"wrote": wrote, "queued": queued}
+
+
+def queue_caption(run, key, caption):
+    """A caption edit queued for a running (or paused) run: the trainer re-encodes it at the next epoch boundary and
+    restarts that picture's loss history (families/loss_watch.py)."""
+    d = os.path.join(run["output_dir"], "loss_log")
+    os.makedirs(d, exist_ok=True)
+    q = os.path.join(d, "caption_updates.json")
+    updates = {}
+    if os.path.exists(q):
+        try:
+            with open(q, encoding="utf-8") as f:
+                updates = json.load(f)
+        except (OSError, ValueError):
+            # other edits are waiting in a file we can't read: writing just this one would lose them
+            raise ValueError("The trainer's caption queue couldn't be read - not overwriting it. Try again in a "
+                             "moment.")
+        if not isinstance(updates, dict):
+            updates = {}
+    updates[str(key)] = str(caption).strip()
+    with open(q + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(updates, f, indent=2)
+    os.replace(q + ".tmp", q)                    # atomic: the trainer never reads half a file
+
+
+def _same(a, b):
+    return bool(a) and bool(b) and os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+
+
+def folder_key(run, folder, name):
+    """The training key of a picture the Captions tab shows (its folder, its file name), in this run - the run's
+    training folder ("a") or one of its detail crop folders ("fizgig_detail_crops/a") - or None when the run doesn't
+    train that folder."""
+    stem = os.path.splitext(os.path.basename(str(name)))[0]
+    image_folder = run.get("image_folder") or ""
+    if _same(folder, image_folder):
+        return stem
+    parent = os.path.dirname(os.path.abspath(folder or "."))
+    if os.path.basename(parent) == "fizgig_detail_crops" and _same(os.path.dirname(parent), image_folder):
+        return f"fizgig_detail_crops/{stem}"
+    return None
+
+
+def live_run_on(runs, folder):
+    """The run training (or paused) on this folder, the newest, or None."""
+    live = [r for r in runs if r.get("result") in ("running", "paused") and r.get("output_dir")
+            and folder_key(r, folder, "x") is not None]
+    return max(live, key=lambda r: float(r.get("started_at") or 0)) if live else None
+
+
+def folder_verdicts(runs, folder, has_watch):
+    """The loss watch's verdicts for the pictures the Captions tab shows in this folder: from the run training on it,
+    else the newest run on it with a loss log. {"run": {id, lora, live, epoch}, "items": {key: {verdict, multiplier,
+    queued, recent}}} (key: the file's stem, or fizgig_detail_crops/<stem> for a detail crop), or None."""
+    owners = owner_runs(runs)
+    cands = [r for r in runs if owners.get(r.get("id")) and has_watch(r) and folder_key(r, folder, "x") is not None]
+    if not cands:
+        return None
+    run = max(cands, key=lambda r: (r.get("result") in ("running", "paused"), float(r.get("started_at") or 0)))
+    res = residuals(run.get("output_dir"))
+    if not res:
+        return None
+    queued, _applied = caption_state(run.get("output_dir"))
+    items = {}
+    for im in res["images"]:
+        k = im["key"]
+        if ":" in k or ("/" in k and not k.startswith("fizgig_detail_crops/")):
+            continue                     # another subject's or a sub-folder's picture: not on this folder's tab
+        items[k] = {"verdict": im.get("verdict"), "multiplier": im.get("multiplier"), "queued": k in queued,
+                    "recent": im.get("recent")}
+    return {"run": {"id": run.get("id"), "lora": run.get("lora"), "live": run.get("result") in ("running", "paused"),
+                    "epoch": (res.get("report") or {}).get("epoch")}, "items": items}
 
 
 def image_paths(run, keys):

@@ -4406,7 +4406,30 @@ function imageLossTile(im, ymax, run, live) {
       el("span", {class: "field-hint", text: ` now ${sign(im.recent)}`, title: "Mean over the last 5 epochs (the watch's window)"}),
       im.queued ? el("span", {class: "il-cap-state", text: "caption queued", title: "Waiting for the next epoch boundary, when the trainer re-encodes it"}) :
         im.applied != null ? el("span", {class: "il-cap-state done", text: `caption fixed at epoch ${im.applied}`}) : null),
-    svg, run ? imageLossCaption(im, run, live) : null);
+    svg, run ? imageLossCaption(im, run, live) : null, im.path ? imageLossToCaptions(im) : null);
+}
+
+// a picture from the per-image loss view on the Captions tab: the tab opens with just its card showing (the Search
+// box set to its name). The Captions tab works on the Start tab's training folder: a picture elsewhere says where
+function imageLossToCaptions(im) {
+  const say = el("span", {class: "field-hint"});
+  const btn = el("button", {class: "btn btn-sm", text: "Edit on the Captions tab",
+    title: "Open the Captions tab on this picture, to edit its caption with the tab's tools. During the run, a " +
+      "caption saved there trains from the next epoch.", onclick: () => {
+      const sep = im.path.includes("\\") ? "\\" : "/";
+      const parts = im.path.split(/[\\/]/), name = parts.pop(), dir = parts.join(sep);
+      const crop = parts.length > 1 && parts[parts.length - 2] === "fizgig_detail_crops";
+      const home = crop ? parts.slice(0, -2).join(sep) : dir;
+      const same = (a, b) => (a || "").replace(/[\\/]+$/, "").toLowerCase() === (b || "").replace(/[\\/]+$/, "").toLowerCase();
+      if (!same(home, S.imageFolder)) {
+        say.textContent = ` It's in ${home}: choose that as the training folder on the Start tab first.`;
+        return;
+      }
+      $("capSearch").value = name.replace(/\.[^.]+$/, "");
+      S.cap.page = 0;
+      showTab("captions");
+    }});
+  return el("div", {}, btn, say);
 }
 
 // one image's caption, edited from its tile (the desktop's Problem Images editor)
@@ -10206,7 +10229,39 @@ async function loadCaptions() {
     `&ext=${encodeURIComponent(ext)}&family=${encodeURIComponent(S.family || "")}`);
   capNormalise(r.items);
   S.cap.items = r.items;                      // the pictures, then the largest detail crops (it.crop: their folder)
+  // the loss watch's verdicts for these pictures, from the run training on this folder or its last run with a log
+  S.cap.loss = await api(`/api/captions/loss?folder=${encodeURIComponent(capFolder())}`).catch(() => ({items: {}}));
   renderCaptions();
+}
+
+// a card's loss-watch tag: its verdict in the run training on this folder (or the last run here), as the run's
+// per-image loss view shows it; "caption queued" while an edit waits for the next epoch
+function capLossKey(it) {
+  const stem = it.name.replace(/\.[^.]+$/, "");
+  return it.crop ? `fizgig_detail_crops/${stem}` : stem;
+}
+function capLossTag(it) {
+  const L = S.cap.loss || {}, v = (L.items || {})[capLossKey(it)];
+  if (!v) return null;
+  const [col, say] = IL_VERDICTS[v.verdict] || IL_VERDICTS.mid;
+  const run = L.run || {};
+  const from = `${run.live ? "Training now" : "Last run here"}: ${run.lora || "the run"}` +
+    (run.epoch != null ? `, epoch ${run.epoch}` : "");
+  return el("span", {class: "cap-loss"},
+    el("span", {class: "il-verdict", style: `background:${col}`, title: `${say}\n${from}`,
+      text: "Loss watch: " + (v.verdict || "mid") + (v.multiplier != null && v.multiplier !== 1 ? ` ×${v.multiplier}` : "")}),
+    v.queued ? el("span", {class: "il-cap-state", text: "caption queued",
+      title: "Waiting for the next epoch, when the trainer re-encodes it"}) : null);
+}
+// what a save says: queued for the run training on this folder (it trains from the next epoch), or just saved
+function capSavedSay(r, it) {
+  if (r && r.queue_error) return `Saved, but not queued for the run: ${r.queue_error}`;
+  if (r && r.queued) {
+    const v = ((S.cap.loss || {}).items || {})[capLossKey(it)];
+    if (v) v.queued = true;
+    return `Saved · trains from the next epoch of ${r.queued}`;
+  }
+  return it.crop ? "Saved, at every crop size" : "Saved";
 }
 
 function renderCaptions() {
@@ -10249,9 +10304,9 @@ function renderCaptions() {
     it._ta = ta;                                 // for the live refresh while captioning runs
     const status = el("span", {class: "field-hint"});
     const saveCap = async () => {
-      await api("/api/captions/save", {folder: capItemFolder(it), name: it.name, text: ta.value, ext});
+      const r = await api("/api/captions/save", {folder: capItemFolder(it), name: it.name, text: ta.value, ext});
       it.caption = ta.value;
-      status.textContent = it.crop ? "Saved, at every crop size" : "Saved";
+      status.textContent = capSavedSay(r, it);
     };
     const save = el("button", {class: "btn btn-sm", text: "Save", onclick: saveCap});
     const kind = it.name.split(".").pop().toLowerCase();
@@ -10307,7 +10362,8 @@ function renderCaptions() {
       el("div", {class: "caption-card-title", text: mediaLabel(it) + (it.crop ? " · detail crop" : ""),
         title: it.crop ? "This picture's detail crop (Image Prep's Detail crops), the largest size: its caption is " +
           "copied to the crop at every other size" : ""}),
-      size ? el("div", {class: "field-hint caption-card-size", text: size + (it.mask ? " · has a mask" : "")}) : null, ta,
+      size ? el("div", {class: "field-hint caption-card-size", text: size + (it.mask ? " · has a mask" : "")}) : null,
+      capLossTag(it), ta,
       el("div", {class: "field-row"}, save, recap, speech, maskBtn, remove, status)));
     host.append(card);
   }
@@ -10457,8 +10513,9 @@ function captionsTable(items, ext) {
     const words = el("td", {class: "cap-num", text: String(capWords(it))});
     ta.addEventListener("change", async () => {  // saved when you leave the box, as typed
       try {
-        await api("/api/captions/save", {folder: capItemFolder(it), name: it.name, text: ta.value, ext});
+        const r = await api("/api/captions/save", {folder: capItemFolder(it), name: it.name, text: ta.value, ext});
         it.caption = ta.value; words.textContent = String(capWords(it));
+        ta.title = capSavedSay(r, it);
       } catch (e) { ta.title = e.message; }
     });
     const thumb = it.size ? el("img", {class: "cap-thumb", loading: "lazy",

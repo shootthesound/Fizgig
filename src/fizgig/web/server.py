@@ -4430,8 +4430,14 @@ class Handler(BaseHTTPRequestHandler):
             except OSError:
                 text = None
             p = os.path.join(folder, n)
+            try:
+                mtime = os.path.getmtime(p)
+            except OSError:                                  # gone since the listdir: no time, but not a failed list
+                mtime = None
             mask = mask_for_stem(folder, stem, lower)        # masked training: the picture's mask, shown on its row
-            out.append((n, p, {"caption": text, "size": _media_size(p),
+            # its own time rides along so the address names this exact file: mediaFor appends it as &v=, which is
+            # what lets the browser keep the picture across a re-render - a Sort click, a search, a page turn
+            out.append((n, p, {"caption": text, "size": _media_size(p), "time": mtime,
                                **({"mask": os.path.basename(mask)} if mask else {})}))
         return pair_songs(out)
 

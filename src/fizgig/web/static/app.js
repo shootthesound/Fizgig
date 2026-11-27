@@ -10536,11 +10536,11 @@ function renderCaptions() {
   host.classList.toggle("captions-as-table", $("capView").value === "table");
   if ($("capView").value === "table") {
     host.append(captionsTable(items.slice(S.cap.page * CAP_PAGE, (S.cap.page + 1) * CAP_PAGE), ext));
-    fitTexts(host);
+    // no fit pass here either: a table cell's caption is a `captionLines` like any other, and its setter
+    // had queued the fit of every line before this block ended - the proof is at the grid's end
     return;
   }
   for (const it of items.slice(S.cap.page * CAP_PAGE, (S.cap.page + 1) * CAP_PAGE)) {
-    const src = `/api/media?path=${encodeURIComponent(it.path)}&t=${encodeURIComponent(TOKEN)}`;
     const ta = captionLines(it.caption ?? "");
     it._ta = ta;                                 // for the live refresh while captioning runs
     const status = el("span", {class: "field-hint"});
@@ -10608,7 +10608,10 @@ function renderCaptions() {
       el("div", {class: "field-row"}, save, recap, speech, maskBtn, remove, status)));
     host.append(card);
   }
-  fitTexts(host);
+  // No fit pass here: building each card already queued the page's one fit for the frame - the setter
+  // calls `fitBatch`, which covers every caption box - so a trailing pass could only repeat it, at the
+  // cost `fitFlush` explains. The highlight copies are placed there too, following the gutter that
+  // `renumber()` sets before the fit is queued.
 }
 
 // ---- a Captions search hit --------------------------------------------------------------------------------
@@ -10680,7 +10683,10 @@ function captionLines(text, extra = "") {
     const box = el("textarea", {rows: 1, class: "fit-text", spellcheck: "false", "aria-label": "Caption line"});
     box.value = t;
     const item = el("div", {class: "prompt-line"}, el("span", {class: "prompt-num"}), box);
-    box.addEventListener("input", () => fitText(box));
+    // no `input` listener of our own: the document's (beside the sizing below) already catches every
+    // keystroke in a `fit-text` box and calls `fitText` with `grow` set, which is the documented
+    // behaviour - a line grows to its text, and a box dragged taller stays as dragged. Ours ran the
+    // same sizing again on every keystroke without `grow`, which took that back again
     box.addEventListener("keydown", (e) => {
       const at = box.selectionStart, flat = at === box.selectionEnd;
       if (e.key === "Enter" && !e.isComposing && !e.ctrlKey && !e.metaKey) {   // the rest of the line: the next line
@@ -10707,7 +10713,7 @@ function captionLines(text, extra = "") {
       const lines = String(v ?? "").split(/\r?\n/).filter((t) => t.trim());
       for (const t of lines.length ? lines : [""]) line(t);
       renumber();
-      requestAnimationFrame(() => boxes().forEach((b) => fitText(b)));
+      fitBatch();
     }});
   list.value = text;
   return list;
@@ -12799,20 +12805,44 @@ let wired = false;
 // window (the big view's: half); typing grows one past its height, and a box dragged taller stays as dragged.
 // On a wide window the big view's box sits beside the picture at full height (CSS), so it isn't sized here.
 const LB_SIDE = "(min-width: 1100px) and (min-aspect-ratio: 5/4)";
+// A box's fit in the four steps a batch needs - frame, drop, read, write - so that `fitText` can do one
+// box and `fitFlush` the whole page. No step reads what another has just written: that read forces a
+// fresh measure of the page, which is the cost `fitFlush` is arranged to avoid.
+const fitFrame = (ta) => ta.offsetHeight - ta.clientHeight;
+const fitDrop = (ta) => { ta.style.height = ""; };
+const fitRead = (ta) => [ta.scrollHeight, ta.offsetHeight];
+const fitWrite = (ta, border, [scroll, floor]) => {
+  // a caption line grows to all its text: the caption around it scrolls instead (.caption-lines, the big view's too)
+  const max = ta.closest(".caption-lines") ? Infinity : Math.round(innerHeight * 0.4);
+  ta.style.height = Math.min(Math.max(scroll + border, floor), max) + "px";
+  capHlPlace(ta);                            // the copy's left edge, once the box has its final width
+};
 function fitText(ta, grow) {
   if (!ta || !ta.isConnected || !ta.offsetParent) return;
   capHlPaint(ta);                            // the copy of this line the search hit, if it has one
   if (grow && ta.scrollHeight <= ta.clientHeight) return;
-  // a caption line grows to all its text: the caption around it scrolls instead (.caption-lines, the big view's too)
-  const max = ta.closest(".caption-lines") ? Infinity : Math.round(innerHeight * 0.4);
-  const border = ta.offsetHeight - ta.clientHeight;
-  ta.style.height = "";
-  ta.style.height = Math.min(Math.max(ta.scrollHeight + border, ta.offsetHeight), max) + "px";
-  capHlPlace(ta);                            // the copy's left edge, once the box has its final width
+  const border = fitFrame(ta);
+  fitDrop(ta);
+  fitWrite(ta, border, fitRead(ta));
 }
-const fitTexts = (host) => requestAnimationFrame(() => host.querySelectorAll("textarea.fit-text").forEach((t) => fitText(t)));
+let fitQueued = false;
+// One fit for the whole page, once a frame. The four steps run across every box at once rather than box
+// by box: one at a time, each fit takes a measurement against a page the previous write has just dirtied,
+// and a page of 200 pictures with two-line captions is 400 boxes - the reported 15-20 s to open the tab.
+// The page is measured twice now, whatever it holds. The boxes are re-enumerated rather than held, so a
+// box a re-render detached is skipped by the same gate `fitText` has always had.
+const fitFlush = () => {
+  fitQueued = false;
+  const boxes = [...document.querySelectorAll("textarea.fit-text")].filter((ta) => ta.isConnected && ta.offsetParent);
+  boxes.forEach(capHlPaint);
+  const borders = boxes.map(fitFrame);
+  boxes.forEach(fitDrop);
+  const sizes = boxes.map(fitRead);
+  boxes.forEach((ta, i) => fitWrite(ta, borders[i], sizes[i]));
+};
+const fitBatch = () => { if (!fitQueued) { fitQueued = true; requestAnimationFrame(fitFlush); } };
 document.addEventListener("input", (e) => { if (e.target.matches && e.target.matches("textarea.fit-text")) fitText(e.target, true); });
-matchMedia(LB_SIDE).addEventListener("change", () => fitTexts($("lightboxCapText")));
+matchMedia(LB_SIDE).addEventListener("change", () => fitBatch());
 
 // ---- the picture viewer: any preview or Captions picture, big, with the others in its list a step away --------
 const LIGHTBOX_PICS = ".gallery-item > img, .caption-card > img";      // (Repair Studio's panes are gallery items)
@@ -12877,7 +12907,7 @@ function lightboxShow(i) {
   $("lightboxPrev").style.visibility = i > 0 ? "" : "hidden";
   $("lightboxNext").style.visibility = i < S.lb.list.length - 1 ? "" : "hidden";
   $("lightbox").style.display = "";
-  if (pic.cap) fitTexts($("lightboxCapText"));     // its lines, now the view is on screen
+  if (pic.cap) fitBatch();                        // its lines, now the view is on screen
 }
 async function lightboxClose() {
   if (!(await lightboxCapFlush())) return;

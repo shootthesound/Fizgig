@@ -2,6 +2,8 @@
 
 Fizgig is a web page: in its own app window on your computer, in your browser, on a pod, on a machine with no screen, or on your phone or another computer to set up and watch training.
 
+The sidebar lists the tabs in two groups, **TRAIN** (Start to Training, in the order you use them) and **AFTER** (the tools for a trained LoRA). Click a group's heading to fold its tabs away, and again to bring them back; each group remembers how you left it.
+
 ## Speed-ups for your graphics card
 
 **Preferences → Speed-ups for your graphics card** holds the settings that help on some cards and not others. It names your card and shows only the group for it. NVIDIA cards get INT8 fast inference, pinned RAM and Faster block swap for Krea 2's block swap, and on Windows the steps to stop the driver moving training into system RAM. AMD cards get INT8 fast inference, Force SageAttention where it's installed, Split large convolutions and MIOpen. Each run reads these when it starts. `FIZGIG_PIN_SWAP`, `FIZGIG_ROCM_BANDS` and `FIZGIG_MIOPEN` (0 or 1) still win over the ticks.

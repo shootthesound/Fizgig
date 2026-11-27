@@ -38,7 +38,7 @@ learning rate from the form ([#214](https://github.com/shootthesound/Fizgig/pull
 **loss graph views** ([#290](https://github.com/shootthesound/Fizgig/pull/290)); **Prodigy, Muon and Automagic v4** ([#292](https://github.com/shootthesound/Fizgig/pull/292)); and
 Stop asking for a second click ([#294](https://github.com/shootthesound/Fizgig/pull/294)). From their Fizgig Advanced fork, with credit: Adaptive LR judging plateaus on a 3-epoch average, the Samples gallery's
 **Style score**, the **Cosmic Pigeon** and **Deep Space** themes (v9.4.0, their own commits) and
-**out-of-memory recovery**, which tries a failed run again lighter (v9.6.0), and **Choose…** opening your system's own file window on the computer running Fizgig (v9.7.8, their commit). In v9.8.7 their RTX 4070 Ti measurements of Krea 2's block swap ([#403](https://github.com/shootthesound/Fizgig/pull/403)) decided which speed-ups are on by default.
+**out-of-memory recovery**, which tries a failed run again lighter (v9.6.0), and **Choose…** opening your system's own file window on the computer running Fizgig (v9.7.8, their commit). In v9.8.7 their RTX 4070 Ti measurements of Krea 2's block swap ([#403](https://github.com/shootthesound/Fizgig/pull/403)) decided which speed-ups are on by default. In v9.8.9, from their Fizgig Advanced fork: the **training recipe** in every saved LoRA's metadata, the scan behind **Find duplicate pictures**, the **compact Krea 2 text cache**, the Fibo 2 block swap fix, the collapsible sidebar sections, deleted detail crops staying deleted, Make masks' Stop, and five smaller fixes.
 
 ## rintic-13
 

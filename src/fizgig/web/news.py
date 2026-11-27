@@ -5,6 +5,18 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 
 NEWS = [
     {
+        "date": "27 Nov 2026",
+        "title": "The loss watch on the Captions tab, and Find duplicate pictures",
+        "body": (
+            "Each caption card shows its picture's loss-watch verdict, a new filter shows one group at a time, and a "
+            "caption you save during a run trains from the next epoch. Image Prep finds duplicate pictures.\n\n"
+            "From @Murf-Code's Fizgig Advanced: every saved LoRA carries its training recipe, Krea 2's text cache is "
+            "about a quarter of the size, and Fibo 2's block swap crash is fixed."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#27-nov-2026-the-loss-watch-on-the-captions-tab-and-find-duplicate-pictures"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.8.9"}],
+    },
+    {
         "date": "26 Nov 2026",
         "title": "Auto-recaption corrects your caption, and Royale renders your starred epochs",
         "body": (

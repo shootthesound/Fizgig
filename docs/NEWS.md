@@ -1,5 +1,15 @@
 # Fizgig news
 
+## 27 Nov 2026: The loss watch on the Captions tab, and Find duplicate pictures
+
+**See what the loss watch thinks, where you edit captions.** Each caption card shows its picture's verdict (stuck, learning, easy...) as a small pill, a new filter shows one group at a time, and a caption you save during a run trains from the next epoch.
+
+**Find duplicate pictures.** A new Image Prep card finds copies, resized versions and near-identical frames, so no picture trains twice as often as it should. You choose what goes; nothing is deleted.
+
+**From @Murf-Code's Fizgig Advanced:** every saved LoRA now carries its training recipe in its metadata, Krea 2's text cache is about a quarter of the size, Fibo 2's block swap crash is fixed, and the sidebar's groups fold away.
+
+[Fizgig v9.8.9 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.8.9)
+
 ## 26 Nov 2026: Auto-recaption corrects your caption, and Royale renders your starred epochs
 
 **Auto-recaption keeps your words.** Its first try on a stuck picture now corrects the caption you wrote, changing only what the picture doesn't show, instead of starting over. Your old caption is kept and one click puts it back.

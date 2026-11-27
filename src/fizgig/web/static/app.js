@@ -6603,14 +6603,19 @@ function lookMoveAsk() {
 }
 
 // ---- Find duplicate pictures (web/duplicates.py, the Fizgig Advanced scan): groups, Keep / Move out, move aside ----
-S.dup = {folder: "", groups: [], marked: new Set(), offset: 0, next: null, count: 0, timer: null};
+// marks: auto = every picture but the largest of its group, worked out from the groups at the slider's setting now
+// (so a group's largest is never marked); user = your clicks, which win and are kept when the slider moves
+S.dup = {folder: "", groups: [], auto: new Map(), autoAt: null, user: new Map(), offset: 0, next: null, count: 0, timer: null};
+const dupMarked = (p) => (S.dup.user.has(p) ? S.dup.user.get(p) : !!S.dup.auto.get(p));
+const dupMarkedAll = () => [...new Set([...S.dup.auto.keys(), ...S.dup.user.keys()])].filter(dupMarked);
 function dupStrictSay() {
   const v = +$("dupStrict").value;
   $("dupStrictText").textContent = `${v} - ` + (v <= 1 ? "identical-looking only" : v <= 5 ? "close copies" +
     (v === 4 ? " (the usual)" : "") : v <= 10 ? "looser: check each group" : "very loose: expect pictures that only look similar");
 }
 function dupReset() {
-  Object.assign(S.dup, {folder: S.imageFolder, groups: [], marked: new Set(), offset: 0, next: null, count: 0});
+  Object.assign(S.dup, {folder: S.imageFolder, groups: [], auto: new Map(), autoAt: null, user: new Map(), offset: 0,
+    next: null, count: 0});
   $("dupGroups").innerHTML = ""; $("dupTools").style.display = "none"; $("dupPages").style.display = "none";
   $("dupConfirm").innerHTML = "";
 }
@@ -6643,40 +6648,48 @@ async function dupLoad(offset) {
 }
 function dupShow(r) {
   Object.assign(S.dup, {groups: r.groups || [], offset: r.offset || 0, next: r.next_offset, count: r.group_count || 0});
-  // nothing is marked for you: you click the pictures to move out (Peter, 27 Nov 2026)
+  if (S.dup.autoAt !== r.strictness) { S.dup.auto = new Map(); S.dup.autoAt = r.strictness; }   // regrouped: afresh
+  for (const g of S.dup.groups) {
+    const big = dupLargest(g);
+    for (const it of g.items) S.dup.auto.set(it.path, it.path !== big.path);
+  }
   const fails = (r.failures || []).length ? ` ${r.failures.length} picture(s) couldn't be read.` : "";
   $("dupStatus").textContent = (S.dup.count ? `${S.dup.count} group(s) of matching pictures among ${r.scanned} scanned.` :
     `No duplicates at this setting among ${r.scanned} pictures.`) + (r.truncated ? " Too many matches: showing the closest; lower How alike." : "") + fails;
   dupRender();
 }
+// a group's largest picture (most pixels; the first of equals)
+const dupLargest = (g) => g.items.reduce((a, b) => (b.width * b.height > a.width * a.height ? b : a), g.items[0]);
 function dupRender() {
   const host = $("dupGroups");
   host.innerHTML = "";
   $("dupTools").style.display = S.dup.count ? "" : "none";
-  $("dupCount").textContent = S.dup.marked.size ? `${S.dup.marked.size} marked` : "";
-  $("dupMove").disabled = !S.dup.marked.size;
+  const n = dupMarkedAll().length;
+  $("dupCount").textContent = n ? `${n} marked` : "";
+  $("dupMove").disabled = !n;
   const pages = Math.ceil(S.dup.count / 24);
   $("dupPages").style.display = pages > 1 ? "" : "none";
   $("dupPageInfo").textContent = `Groups ${S.dup.offset + 1}-${Math.min(S.dup.count, S.dup.offset + 24)} of ${S.dup.count}`;
   $("dupPrev").disabled = S.dup.offset === 0; $("dupNext").disabled = S.dup.next == null;
   for (const g of S.dup.groups) {
     const grid = el("div", {class: "look-grid"});
+    const big = dupLargest(g);
     for (const it of g.items) {
-      const marked = S.dup.marked.has(it.path);
+      const marked = dupMarked(it.path);
       grid.append(el("button", {class: "look-tile" + (marked ? " marked" : ""), title: it.path,
-        onclick: () => { S.dup.marked.has(it.path) ? S.dup.marked.delete(it.path) : S.dup.marked.add(it.path); dupRender(); }},
+        onclick: () => { S.dup.user.set(it.path, !dupMarked(it.path)); dupRender(); }},
         el("img", {loading: "lazy", src: thumbOf(it.path), alt: ""}),
         el("span", {class: "look-name", text: it.name}),
-        el("span", {class: "look-verdict", text: `${it.width}×${it.height}`}),
+        el("span", {class: "look-verdict", text: `${it.width}×${it.height}` + (it.path === big.path ? " · largest" : "")}),
         el("span", {class: "look-mark", text: marked ? "✕ marked to move out" : ""})));
     }
     host.append(el("div", {class: "field-hint", style: "margin-top:12px",
       text: `${g.count} pictures · ` + (g.identical ? "identical-looking" : `differ by up to ${g.distance} of 16`) +
-        " · click the ones to move out"}), grid);
+        " · all but the largest marked: click one to change it"}), grid);
   }
 }
 function dupMoveAsk() {
-  const n = S.dup.marked.size;
+  const marked = dupMarkedAll(), n = marked.length;
   if (!n) return;
   const sep = S.dup.folder.includes("\\") ? "\\" : "/";
   $("dupConfirm").replaceChildren(el("div", {class: "run-delete"},
@@ -6686,8 +6699,8 @@ function dupMoveAsk() {
       el("button", {class: "btn btn-sm btn-danger", text: "Move", onclick: async (ev) => {
         ev.currentTarget.disabled = true;
         try {
-          const r = await api("/api/dupes/move", {folder: S.dup.folder, paths: [...S.dup.marked], ext: capExt(), strictness: +$("dupStrict").value});
-          S.dup.marked = new Set();
+          const r = await api("/api/dupes/move", {folder: S.dup.folder, paths: marked, ext: capExt(), strictness: +$("dupStrict").value});
+          S.dup.auto = new Map(); S.dup.autoAt = null; S.dup.user = new Map();
           $("dupConfirm").innerHTML = "";
           await dupLoad(0);
           $("dupStatus").textContent = `Moved ${r.moved} picture(s) to ${r.dest}.` + (r.errors.length ? " " + r.errors.join(" ") : "");

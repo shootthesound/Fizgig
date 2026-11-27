@@ -55,3 +55,31 @@ def test_scan_group_and_move_out(tmp_path):
 
 def test_the_moved_out_folder_is_fizgigs_own():
     assert is_own_subfolder("excluded_duplicates") and is_own_subfolder("excluded_by_look")
+
+
+def test_the_largest_is_never_marked_however_the_slider_moved():
+    """Peter, 27 Nov 2026: a picture marked in a looser grouping stayed marked when a tighter one made it its group's
+    largest. Marks are worked out from the groups at the slider's setting now; a click wins and is kept."""
+    import re
+    import shutil
+    import subprocess
+    import pytest
+    if not shutil.which("node"):
+        pytest.skip("node not installed")
+    js = open(os.path.join(os.path.dirname(__file__), "..", "src", "fizgig", "web", "static", "app.js"),
+              encoding="utf-8").read()
+    body = js[js.index("S.dup = {folder:"):js.index("function dupRender()")]
+    for f in ("function dupStrictSay", "function dupReset", "async function dupScan", "async function dupPoll",
+              "async function dupLoad"):
+        body = re.sub(re.escape(f) + r"\(.*?\) \{.*?\n\}\n", "", body, flags=re.S)
+    prog = "const S={}; const $=()=>({textContent:''}); function dupRender(){}\n" + body + """
+const g=(s,items)=>({stage:'done',strictness:s,groups:[{id:'x',items:items.map(([p,w])=>({path:p,width:w,height:w}))}],
+  scanned:3,group_count:1});
+const m=(ps)=>ps.map(p=>dupMarked(p)?1:0).join('');
+dupShow(g(8,[['A',100],['B',90],['C',200]])); const a=m(['A','B','C']);
+dupShow(g(4,[['A',100],['B',90]])); const b=m(['A','B']);
+S.dup.user.set('A', true); dupShow(g(4,[['A',100],['B',90]])); const c=m(['A','B']);
+console.log([a,b,c].join(','));
+"""
+    out = subprocess.run(["node", "-e", prog], capture_output=True, text=True, check=True).stdout.strip()
+    assert out == "110,01,11"

@@ -1,4 +1,4 @@
-"""CPU-only duplicate-picture groups (the scan part of Fizgig Advanced's Caption Studio duplicate finder)."""
+"""CPU-only duplicate-picture groups (the duplicate scan, from @Murf-Code)."""
 import os
 import time
 

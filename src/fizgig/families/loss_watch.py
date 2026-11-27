@@ -222,7 +222,7 @@ class Watch:
         return bool(self.reg) and bool(keys) and all(k in self.reg for k in keys)
 
     # ---- Batch Size above 1: each picture its own weight and record, as its own step would have them (the driver
-    # hands back each picture's loss, info["per"] - the idea from @Murf-Code's Fizgig Advanced) ------------------
+    # hands back each picture's loss, info["per"] - the idea from @Murf-Code) ------------------
     def weigh(self, info, keys, reg_keys=(), reg_mult=1.0):
         """(loss to backpropagate, the step's recorded loss, kept indices) for a batched step: each picture at its
         per-image LR / look warm-up (a regularisation picture at reg_mult), an excluded one at 0 and left out of the

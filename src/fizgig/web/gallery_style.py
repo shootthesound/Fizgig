@@ -1,4 +1,4 @@
-"""The Samples gallery's Style score (from @Murf-Code's Fizgig Advanced): how close each preview is to the training
+"""The Samples gallery's Style score (from @Murf-Code): how close each preview is to the training
 set's look as a whole - texture, palette, line and medium more than who is in the picture - for a style LoRA, where a
 face likeness says nothing. Each picture's vector is the mean and spread of DINOv2-base's patch tokens (the pinned model
 the anime / furry look match uses, downloaded once, on the CPU); a preview's score is the mean similarity of its 8

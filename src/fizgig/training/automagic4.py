@@ -1,4 +1,4 @@
-"""Automagic v4 — Ostris's sensitivity-balanced Automagic, vendored from AI-Toolkit
+"""Automagic v4: Ostris's sensitivity-balanced Automagic, vendored from AI-Toolkit
 (https://github.com/ostris/ai-toolkit, toolkit/optimizers/automagic4.py, commit 534d462f of 23 Oct 2026).
 
 Copyright (c) 2024 Ostris, LLC. Brought in under the MIT License — the full licence text ships

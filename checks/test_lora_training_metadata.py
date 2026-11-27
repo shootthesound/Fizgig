@@ -1,4 +1,4 @@
-"""Full LoRA save metadata: Kohya ss_* keys plus a sanitized reproducibility recipe.
+"""Full LoRA save metadata: Kohya ss_* keys plus a sanitised reproducibility recipe.
 No captions, tags, folder names, paths, user identity, or prompt content are stored.
 """
 import json

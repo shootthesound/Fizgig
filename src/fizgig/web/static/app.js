@@ -10272,6 +10272,20 @@ function capLossTag(it) {
       `${say}\n${from}`),
     v.queued ? pill("var(--accent)", "Caption queued", "Waiting for the next epoch, when the trainer re-encodes it") : null);
 }
+// a pill's words on hover: one box for the page, placed under the pill (above it near the window's foot) and kept
+// inside the window, so no card edge cuts it off
+function capLossTip(e) {
+  const pill = e.target.closest && e.target.closest(".cap-lw-pill[data-tip]");
+  let tip = document.getElementById("capLossTip");
+  if (!pill) { if (tip) tip.remove(); return; }
+  if (!tip) { tip = el("div", {class: "cap-lw-tip", id: "capLossTip"}); document.body.append(tip); }
+  tip.textContent = pill.dataset.tip;
+  const r = pill.getBoundingClientRect(), t = tip.getBoundingClientRect();
+  const below = r.bottom + 4 + t.height <= window.innerHeight - 4;
+  tip.style.top = `${below ? r.bottom + 4 : Math.max(4, r.top - 4 - t.height)}px`;
+  tip.style.left = `${Math.max(4, Math.min(r.left, window.innerWidth - t.width - 4))}px`;
+}
+
 // what a save says: queued for the run training on this folder (it trains from the next epoch), or just saved
 function capSavedSay(r, it) {
   if (r && r.queue_error) return `Saved, but not queued for the run: ${r.queue_error}`;
@@ -10685,6 +10699,9 @@ function wireCaptions() {
   $("capSearch").addEventListener("input", debounce(() => { S.cap.page = 0; renderCaptions(); }, 250));
   $("capSort").addEventListener("change", () => { S.cap.page = 0; renderCaptions(); });
   $("capLossFilter").addEventListener("change", () => { S.cap.page = 0; renderCaptions(); });
+  $("captionsGrid").addEventListener("mouseover", capLossTip);       // a loss-watch pill's words, on hover
+  $("captionsGrid").addEventListener("mouseleave", capLossTip);
+  window.addEventListener("scroll", () => { const t = $("capLossTip"); if (t) t.remove(); }, true);
   $("capPrev").addEventListener("click", () => { S.cap.page--; renderCaptions(); window.scrollTo(0, 0); });
   $("capNext").addEventListener("click", () => { S.cap.page++; renderCaptions(); });
   const goto = () => {                          // the desktop's Go to page: a number, kept within the pages there are

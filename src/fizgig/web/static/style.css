@@ -2391,11 +2391,12 @@ img.see-through { background: repeating-conic-gradient(var(--pic-text) 0 25%,
 .cap-lw-pill { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px 2px 5px;
   border: 1px solid var(--border); border-radius: 999px; font-size: 8.5pt; color: var(--text-primary);
   background: var(--bg-surface); white-space: nowrap; }
-/* its words, at once on hover (the browser's own title tip waits a second or two, or doesn't come in the app window) */
-.cap-lw-pill[data-tip]:hover::after { content: attr(data-tip); position: absolute; left: 0; top: calc(100% + 4px);
-  z-index: 5; width: max-content; max-width: 240px; white-space: pre-line; padding: 6px 8px; border-radius: 6px;
-  background: var(--bg-raised); color: var(--text-primary); border: 1px solid var(--border); font-size: 8.5pt;
-  line-height: 1.35; box-shadow: 0 4px 12px color-mix(in srgb, var(--shadow) 35%, transparent); }
+/* its words, at once on hover, in a box floating over the page (app.js capLossTip): the browser's own title tip
+   doesn't come in the app window, and a box inside the card was cut off by the card's edges */
+.cap-lw-tip { position: fixed; z-index: 1000; max-width: 260px; white-space: pre-line; padding: 6px 8px;
+  border-radius: 6px; background: var(--bg-raised); color: var(--text-primary); border: 1px solid var(--border);
+  font-size: 8.5pt; line-height: 1.35; pointer-events: none;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--shadow) 35%, transparent); }
 .cap-lw-sq { width: 9px; height: 9px; border-radius: 2px; flex: none; }
 .il-cap { margin-top: 6px; }
 .il-cap-text { width: 100%; font: inherit; font-size: 9pt; resize: vertical; }

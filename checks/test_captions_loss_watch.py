@@ -87,7 +87,8 @@ def test_the_page_shows_verdicts_and_queues_saves():
     css = open(os.path.join(os.path.dirname(__file__), "..", "src", "fizgig", "web", "static", "style.css"),
                encoding="utf-8").read()
     pill = css[css.index(".cap-lw-pill {"):css.index("}", css.index(".cap-lw-pill {"))]
-    assert ".cap-lw-pill[data-tip]:hover::after" in css and "cursor: help" not in pill
+    assert ".cap-lw-tip { position: fixed;" in css and "cursor: help" not in pill      # floats: no card edge cuts it
+    assert '$("captionsGrid").addEventListener("mouseover", capLossTip);' in js
     html = open(os.path.join(os.path.dirname(__file__), "..", "src", "fizgig", "web", "static", "index.html"),
                 encoding="utf-8").read()
     assert html.index('id="capSort"') < html.index('id="capLossFilter"') < html.index('id="capView"')

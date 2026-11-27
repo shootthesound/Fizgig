@@ -6603,14 +6603,14 @@ function lookMoveAsk() {
 }
 
 // ---- Find duplicate pictures (web/duplicates.py, the Fizgig Advanced scan): groups, Keep / Move out, move aside ----
-S.dup = {folder: "", groups: [], marked: new Set(), seen: new Set(), offset: 0, next: null, count: 0, timer: null};
+S.dup = {folder: "", groups: [], marked: new Set(), offset: 0, next: null, count: 0, timer: null};
 function dupStrictSay() {
   const v = +$("dupStrict").value;
   $("dupStrictText").textContent = `${v} - ` + (v <= 1 ? "identical-looking only" : v <= 5 ? "close copies" +
     (v === 4 ? " (the usual)" : "") : v <= 10 ? "looser: check each group" : "very loose: expect pictures that only look similar");
 }
 function dupReset() {
-  Object.assign(S.dup, {folder: S.imageFolder, groups: [], marked: new Set(), seen: new Set(), offset: 0, next: null, count: 0});
+  Object.assign(S.dup, {folder: S.imageFolder, groups: [], marked: new Set(), offset: 0, next: null, count: 0});
   $("dupGroups").innerHTML = ""; $("dupTools").style.display = "none"; $("dupPages").style.display = "none";
   $("dupConfirm").innerHTML = "";
 }
@@ -6643,12 +6643,7 @@ async function dupLoad(offset) {
 }
 function dupShow(r) {
   Object.assign(S.dup, {groups: r.groups || [], offset: r.offset || 0, next: r.next_offset, count: r.group_count || 0});
-  for (const g of S.dup.groups) {            // first sight of a group: keep its largest picture, mark the others
-    if (S.dup.seen.has(g.id)) continue;
-    S.dup.seen.add(g.id);
-    const big = g.items.reduce((a, b) => (b.width * b.height > a.width * a.height ? b : a), g.items[0]);
-    g.items.forEach((it) => { if (it.path !== big.path) S.dup.marked.add(it.path); });
-  }
+  // nothing is marked for you: you click the pictures to move out (Peter, 27 Nov 2026)
   const fails = (r.failures || []).length ? ` ${r.failures.length} picture(s) couldn't be read.` : "";
   $("dupStatus").textContent = (S.dup.count ? `${S.dup.count} group(s) of matching pictures among ${r.scanned} scanned.` :
     `No duplicates at this setting among ${r.scanned} pictures.`) + (r.truncated ? " Too many matches: showing the closest; lower How alike." : "") + fails;
@@ -6672,11 +6667,12 @@ function dupRender() {
         onclick: () => { S.dup.marked.has(it.path) ? S.dup.marked.delete(it.path) : S.dup.marked.add(it.path); dupRender(); }},
         el("img", {loading: "lazy", src: thumbOf(it.path), alt: ""}),
         el("span", {class: "look-name", text: it.name}),
-        el("span", {class: "look-verdict", text: `${it.width}×${it.height}` + (marked ? "" : " · KEEP")}),
+        el("span", {class: "look-verdict", text: `${it.width}×${it.height}`}),
         el("span", {class: "look-mark", text: marked ? "✕ marked to move out" : ""})));
     }
     host.append(el("div", {class: "field-hint", style: "margin-top:12px",
-      text: `${g.count} pictures · ` + (g.identical ? "identical-looking" : `differ by up to ${g.distance} of 16`)}), grid);
+      text: `${g.count} pictures · ` + (g.identical ? "identical-looking" : `differ by up to ${g.distance} of 16`) +
+        " · click the ones to move out"}), grid);
   }
 }
 function dupMoveAsk() {

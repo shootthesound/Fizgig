@@ -356,7 +356,9 @@ MINIMAX_IMAGE = FamilyDescription(
 
     presets=(
         ("✨ MiniMax H3 Image Standard (rank 32, full model)", _preset(32, epochs=30, likeness=True, optimizer="automagic4", lr=2.5e-4)),
-        ("✨ MiniMax H3 Image Style (rank 16)", _preset(16, epochs=64)),
+        # Style on CAME at a fixed 5e-5 (Peter, 28 Nov 2026): A/B on a papercut set, epoch 20 - Automagic v3 at 2.8e-4
+        # left people nearly photographic, CAME had them in the style too
+        ("✨ MiniMax H3 Image Style (rank 16, 5e-5)", _preset(16, epochs=64, optimizer="came", lr=5e-5)),
         ("✨ MiniMax H3 Image Edit (rank 8)", _preset(8, epochs=12, edit=True)),
         ("✨ MiniMax H3 Image Slider (rank 8)", _preset(8, epochs=20, slider=True)),
         ("✨ MiniMax H3 Image Fine-tune (5e-5)", _preset(16, likeness=True, lr=5e-5, ft=True)),

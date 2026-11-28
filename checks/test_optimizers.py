@@ -83,7 +83,9 @@ PRESET_CHOSEN = {("minimax_image", "✨ MiniMax H3 Image Standard (rank 32, full
                  ("moss_image", "✨ MOSS-Image Style (rank 16, 5e-5)"): "came",           # #416
                  ("anima", "✨ Anima Style (rank 16, 5e-5)"): "came",
                  ("qwen_image21", "✨ Qwen 2.1 Style (rank 16, 5e-5)"): "came",
-                 ("flux3", "✨ Flux 3 Style (rank 16, 5e-5)"): "came"}
+                 ("flux3", "✨ Flux 3 Style (rank 16, 5e-5)"): "came",
+                 ("krea2", "✨ Krea 2 Style (rank 16, 5e-5)"): "came",
+                 ("zimage", "✨ Z-Image Turbo Style (rank 16, 5e-5)"): "came"}
 
 
 def test_no_preset_picks_a_new_optimizer():

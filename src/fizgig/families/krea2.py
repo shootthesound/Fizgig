@@ -205,7 +205,10 @@ KREA2 = FamilyDescription(
     presets=(
         ("✨ Krea 2 Ultra Fast (rank 8, adaptive LR)", _preset(8, adaptive=("2e-4", "4e-4"))),
         ("✨ Krea 2 Standard (rank 32, full model)", _preset(32, epochs=64)),
-        ("✨ Krea 2 Style (rank 16, gentle LR)", _preset(16, adaptive=("5e-5", "2e-4"), epochs=64)),
+        # Style: CAME at a fixed 5e-5, the MOSS-Image Style recipe (Peter, 28 Nov 2026): the style by epoch 20 on a
+        # papercut set; it was Muon with Adaptive LR 5e-5 to 2e-4
+        ("✨ Krea 2 Style (rank 16, 5e-5)", {**_preset(16, lr=5e-5, epochs=64), "OPTIMIZER_TYPE": "came",
+                                           "OPTIMIZER_ARGS": ""}),
         # Slider: hot and short, as Qwen's and the experiment/slider-training branch's Krea 2 Slider (rank 8, 2e-4,
         # 0.5 MP). The loss watch and Adaptive LR are switched off for sliders by the trainer. 20 epochs: a happy/sad
         # prompt slider (16 practice pictures, guidance 2) was right at 20 and had turned +1 into an illustration by 25.

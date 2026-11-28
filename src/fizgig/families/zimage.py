@@ -164,8 +164,9 @@ ZIMAGE = FamilyDescription(
         # rank 16 at a flat 1e-4, 1 MP, to likeness 78 by ~3000 steps on 170 photos.
         ("✨ Z-Image Turbo Fast (rank 8, adaptive LR)", _preset(8, adaptive=("2e-4", "4e-4"), mp="0.25")),
         ("✨ Z-Image Turbo Standard (rank 16, adaptive LR)", _preset(16, adaptive=("1e-4", "2e-4"))),
-        # Style: flat, because style loss descends steadily and Adaptive LR climbs toward its ceiling there
-        ("✨ Z-Image Turbo Style (rank 16, 1.5e-4)", _preset(16, lr=1.5e-4)),
+        # Style: flat, because style loss descends steadily and Adaptive LR climbs toward its ceiling there. CAME at
+        # 5e-5, the MOSS-Image Style recipe (Peter, 28 Nov 2026): the style by epoch 10 on a papercut set; was Muon 1.5e-4
+        ("✨ Z-Image Turbo Style (rank 16, 5e-5)", {**_preset(16, lr=5e-5), "OPTIMIZER_TYPE": "came", "OPTIMIZER_ARGS": ""}),
         # Slider: sliders run hot and short (rank 8, 2e-4)
         ("✨ Z-Image Turbo Slider (rank 8, 2e-4)", _preset(8, lr=2e-4, slider=True)),
         # full fine-tune, the training adapter on. Not the shared 1e-5: Z-Image's weights are ~3x larger (median |w| 0.082
@@ -188,9 +189,14 @@ ZIMAGE = FamilyDescription(
 
 def _base_presets():
     # Turbo's modes and values without the training adapter (Base is not distilled, so there is nothing to keep)
+    # except Style, which stays on Muon at 1.5e-4: Turbo's CAME at 5e-5 learned no style on Base (papercut set, 30
+    # epochs, 28 Nov 2026)
     out = []
     for name, p in ZIMAGE.presets:
         p = {k: v for k, v in p.items() if k != "FAMILY_TRAINING_ADAPTER"}
+        if name.startswith("✨ Z-Image Turbo Style"):
+            name, p = "✨ Z-Image Base Style (rank 16, 1.5e-4)", {**p, **_preset(16, lr=1.5e-4)}
+            p.pop("FAMILY_TRAINING_ADAPTER", None)
         out.append((name.replace("Z-Image Turbo", "Z-Image Base"), p))
     return tuple(out)
 

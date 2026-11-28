@@ -34,13 +34,13 @@ A LoRA trained on Turbo the usual way undoes the distillation that makes it fast
 
 ## Presets
 
-Every preset trains 30 epochs with Muon, EMA 0.98 and the per-image loss watch, saving every epoch:
+Every preset trains 30 epochs with Muon (Style with CAME), EMA 0.98 and the per-image loss watch, saving every epoch:
 
 | Preset | Rank | Learning rate | Size | For |
 |---|---|---|---|---|
 | **Z-Image Turbo Fast** | 8 | Adaptive LR 2e-4 to 4e-4 | 0.25 MP | Characters and most LoRAs, quickest to a likeness |
 | **Z-Image Turbo Standard** | 16 | Adaptive LR 1e-4 to 2e-4 | 0.5 MP | Bigger or more varied datasets |
-| **Z-Image Turbo Style** | 16 | Flat 1.5e-4 | 0.5 MP | Styles |
+| **Z-Image Turbo Style** | 16 | Flat 5e-5, CAME | 0.5 MP | Styles |
 | **Z-Image Turbo Slider** | 8 | Flat 2e-4 | 0.5 MP | Slider LoRAs |
 | **Z-Image Turbo Fine-tune** | — | 5e-5 | 0.5 MP | A full fine-tune (10 rotations) |
 | **Z-Image Turbo Fine-tune Strong** | — | 1e-4 | 0.5 MP | A fine-tune that should move the model further, such as a strong style |

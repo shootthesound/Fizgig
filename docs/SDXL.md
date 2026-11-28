@@ -29,12 +29,13 @@ A LoRA works best on the checkpoint it was trained on: train on the one you gene
 
 ## Presets
 
-Every preset trains at 1 MP with Muon, EMA 0.98, a flat learning rate and the per-image loss watch, saving every epoch. Strong and Standard also have per-image learning rates and auto-recaption on:
+Every preset trains at 1 MP with Muon (Style with CAME), EMA 0.98, a flat learning rate and the per-image loss watch, saving every epoch. Strong, Standard and Style also have per-image learning rates and auto-recaption on:
 
 | Preset | Rank / alpha | Learning rate | Epochs |
 |---|---|---|---|
 | **SDXL Strong** (the default) | 32 / 16 | 5e-5 | 50 |
 | **SDXL Standard** | 16 / 8 | 5e-5 | 50 |
+| **SDXL Style** | 16 / 8 | 5e-5, CAME | 50 |
 | **SDXL Slider** | 32 / 16 | 5e-5 | 30 |
 | **SDXL Fine-tune** | — | 1e-5 | 20 |
 | **SDXL Fine-tune Official** | — | 3e-6 | 20 |

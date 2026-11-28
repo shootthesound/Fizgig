@@ -190,6 +190,10 @@ SDXL = FamilyDescription(
         # 5e-5 for every SDXL preset (Peter, 5 Oct 2026: clearly better results than 1e-4 in his comparisons)
         ("✨ SDXL Strong (rank 32, alpha 16, 5e-5)", _preset(32, lr=5e-5, alpha=16, epochs=50)),      # the default (Peter)
         ("✨ SDXL Standard (rank 16, alpha 8, 5e-5)", _preset(16, lr=5e-5, alpha=8, epochs=50)),
+        # Style: Standard on CAME at a fixed 5e-5, the MOSS-Image Style recipe (Peter, 28 Nov 2026): on an 8-picture
+        # papercut set it had the style by epoch 20
+        ("✨ SDXL Style (rank 16, alpha 8, 5e-5)", {**_preset(16, lr=5e-5, alpha=8, epochs=50), "OPTIMIZER_TYPE": "came",
+                                                  "OPTIMIZER_ARGS": ""}),
         # Slider: the default's rank 32 / alpha 16 at 5e-5 (Peter, 5 Oct 2026). Not yet measured on SDXL.
         ("✨ SDXL Slider (rank 32, alpha 16, 5e-5)", _preset(32, lr=5e-5, alpha=16, epochs=30, slider=True)),
         # full fine-tune at the shared fine-tune rate (Peter), and at OneTrainer's

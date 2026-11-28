@@ -81,6 +81,7 @@ CHOSEN = {k: "muon" for k in ("qwen_image21", "krea2", "moss_image", "vimoo", "z
 # single presets chosen on a new optimizer (Peter, 12 Nov 2026: H3 Image Standard on Automagic v4 at its 2.5e-4 ceiling)
 PRESET_CHOSEN = {("minimax_image", "✨ MiniMax H3 Image Standard (rank 32, full model)"): "automagic4",
                  ("minimax_image", "✨ MiniMax H3 Image Style (rank 16, 5e-5)"): "came",
+                 ("minimax", "✨ MiniMax H3 Style (LoRA 8, 5e-5)"): "came",
                  ("moss_image", "✨ MOSS-Image Style (rank 16, 5e-5)"): "came",           # #416
                  ("anima", "✨ Anima Style (rank 16, 5e-5)"): "came",
                  ("qwen_image21", "✨ Qwen 2.1 Style (rank 16, 5e-5)"): "came",

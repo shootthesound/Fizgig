@@ -44,7 +44,10 @@ def _preset(rank, epochs, clip_still=True, slider=False, lr=1e-6, optimizer="aut
 PRESETS = (
     ("✨ MiniMax H3 Fast (LoRA 8, 50 epochs)", _preset(8, 50)),
     ("✨ MiniMax H3 (rank 16, 60 epochs)", _preset(16, 60)),
-    ("✨ MiniMax H3 Style (LoRA 8)", _preset(8, 50, clip_still=False)),
+    # Style on CAME at a fixed 5e-5 (Peter, 28 Nov 2026): A/B on a papercut set, epoch 20 - Automagic v3 left people
+    # nearly photographic and kept the no-LoRA letterboxing, CAME had both in the style, full frame
+    ("✨ MiniMax H3 Style (LoRA 8, 5e-5)", {**_preset(8, 50, clip_still=False, lr=5e-5, optimizer="came"),
+                                          "OPTIMIZER_ARGS": ""}),
     # Slider (3 Oct): rank 8 (Peter) at 2e-4 for ~160 steps; a prompt smile slider at push 2
     # was clear by epoch 5 of 10 (16 practice pictures an epoch)
     ("✨ MiniMax H3 Slider (rank 8, 2e-4)", _preset(8, 16, clip_still=False, slider=True, lr=2e-4,

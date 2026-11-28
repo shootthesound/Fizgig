@@ -19,13 +19,13 @@ Fizgig's adapter is trained at a higher resolution than the existing Qwen 2.1 tr
 
 Qwen renders very sharp images. A LoRA pulls fine detail such as skin texture toward your dataset, so a long run on softer photos trades Qwen's sharpness for theirs. Training faster keeps more of it, and in our testing **0.5 MP is the sweet spot**: quicker than 1 MP, and it keeps more sharpness than 0.25 MP.
 
-All three presets train at 0.5 MP with Muon, EMA 0.98 and the training adapter, for 30 epochs with every epoch saved:
+All three presets train at 0.5 MP with Muon (Style with CAME), EMA 0.98 and the training adapter, for 30 epochs with every epoch saved:
 
 | Preset | Rank | Learning rate | For |
 |---|---|---|---|
 | **Qwen 2.1 Fast** (default) | 8 | Adaptive LR 2e-4 to 4e-4 | Most subjects. The quickest to likeness in our tests, and the best at holding skin detail. |
 | **Qwen 2.1 Standard** | 16 | Adaptive LR 1e-4 to 2e-4 | Bigger or mixed datasets. Rank 16 at Fast's rates overtrains. |
-| **Qwen 2.1 Style** | 16 | Flat 1.5e-4 | Styles. Adaptive LR climbs on style datasets, which is where styles overbake. |
+| **Qwen 2.1 Style** | 16 | Flat 5e-5, CAME | Styles. Adaptive LR climbs on style datasets, which is where styles overbake. |
 
 If a later epoch looks softer than you'd like, an earlier one is often the better pick; scrub them in LoRA Royale.
 

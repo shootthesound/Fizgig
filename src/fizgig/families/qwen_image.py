@@ -265,9 +265,9 @@ QWEN_IMAGE_21 = FamilyDescription(
         # detail 6.4 -> 4.7 by epoch 30), so the range is halved; Peter has run this at rank 16.
         ("✨ Qwen 2.1 Standard (rank 16, adaptive LR)", _preset(16, adaptive=("1e-4", "2e-4"))),
         # Style: flat, because style loss descends steadily and Adaptive LR climbs toward its ceiling on steady
-        # descent, where style overbakes. 1.5e-4 sits between flat 1e-4 (slow at rank 16) and the range that
-        # overcooked rank 16. 30 epochs, every one saved: stop early or pick an epoch in LoRA Royale.
-        ("✨ Qwen 2.1 Style (rank 16, 1.5e-4)", _preset(16, lr=1.5e-4)),
+        # descent, where style overbakes. CAME at 5e-5 (Peter, 28 Nov 2026), the MOSS-Image Style recipe; it was
+        # Muon at 1.5e-4. 30 epochs, every one saved: stop early or pick an epoch in LoRA Royale.
+        ("✨ Qwen 2.1 Style (rank 16, 5e-5)", {**_preset(16, lr=5e-5), "OPTIMIZER_TYPE": "came", "OPTIMIZER_ARGS": ""}),
         # Edit: Peter's proven recipe (29 Sep, 40-pair Sedona film grade, v6.6.0 demo) - Fast's rank 8 + Adaptive
         # 2e-4..4e-4, best at epoch 9. 12 epochs covers that with headroom; pick the epoch in LoRA Royale.
         ("✨ Qwen 2.1 Edit (rank 8, adaptive LR)", _preset(8, adaptive=("2e-4", "4e-4"), epochs=12, edit=True)),

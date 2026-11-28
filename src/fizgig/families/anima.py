@@ -168,7 +168,8 @@ ANIMA = FamilyDescription(
         # (sd-scripts guides, HF discussions), styles at 5e-5. Not yet measured in Fizgig.
         # 50 epochs: the character guides aim for ~1,000-1,500 steps on 20-30 images; every epoch is saved
         ("✨ Anima Character (rank 16, 1e-4)", _preset(16, 1e-4, epochs=50)),
-        ("✨ Anima Style (rank 16, 5e-5)", _preset(16, 5e-5)),
+        # Style on CAME at 5e-5 (Peter, 28 Nov 2026): on an 8-picture papercut set it had the style by epoch 10
+        ("✨ Anima Style (rank 16, 5e-5)", {**_preset(16, 5e-5), "OPTIMIZER_TYPE": "came", "OPTIMIZER_ARGS": ""}),
         ("✨ Anima Official (rank 32, 2e-5)", _preset(32, 2e-5)),
         # Slider: Qwen's slider recipe (rank 8, 2e-4, 30 epochs). Not yet measured on Anima
         ("✨ Anima Slider (rank 8, 2e-4)", _preset(8, 2e-4, slider=True)),

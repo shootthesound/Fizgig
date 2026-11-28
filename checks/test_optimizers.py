@@ -82,7 +82,8 @@ CHOSEN = {k: "muon" for k in ("qwen_image21", "krea2", "moss_image", "vimoo", "z
 PRESET_CHOSEN = {("minimax_image", "✨ MiniMax H3 Image Standard (rank 32, full model)"): "automagic4",
                  ("moss_image", "✨ MOSS-Image Style (rank 16, 5e-5)"): "came",           # #416
                  ("anima", "✨ Anima Style (rank 16, 5e-5)"): "came",
-                 ("qwen_image21", "✨ Qwen 2.1 Style (rank 16, 5e-5)"): "came"}
+                 ("qwen_image21", "✨ Qwen 2.1 Style (rank 16, 5e-5)"): "came",
+                 ("flux3", "✨ Flux 3 Style (rank 16, 5e-5)"): "came"}
 
 
 def test_no_preset_picks_a_new_optimizer():

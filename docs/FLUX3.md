@@ -29,13 +29,13 @@ All four come from [black-forest-labs/flux-3-image-klein-comfy](https://huggingf
 
 ## Presets
 
-Every LoRA preset trains at 0.25 MP with Muon, EMA 0.98 and the per-image loss watch, saving every epoch:
+Every LoRA preset trains at 0.25 MP with Muon (Style with CAME), EMA 0.98 and the per-image loss watch, saving every epoch:
 
 | Preset | Rank | Learning rate | Epochs |
 |---|---|---|---|
 | **Flux 3 Ultra Fast** | 16 | Adaptive LR 1e-4 to 2e-4 | 50 |
 | **Flux 3 Standard** | 32 | Flat 1e-4 | 64 |
-| **Flux 3 Style** | 16 | Adaptive LR 5e-5 to 2e-4 | 64 |
+| **Flux 3 Style** | 16 | Flat 5e-5, CAME | 64 |
 | **Flux 3 Edit** | 16 | Adaptive LR 1e-4 to 2e-4 | 12 |
 | **Flux 3 Edit Strong** (trickier edits) | 32 | Flat 1e-4 | 12 |
 | **Flux 3 Slider** | 8 | Flat 2e-4, at 0.5 MP | 20 |

@@ -153,7 +153,10 @@ FLUX3 = FamilyDescription(
         # Krea 2's presets at Krea 2's values (families/krea2.py), Ultra Fast and Edit at rank 16, Adaptive LR 1e-4 to 2e-4 (Peter, 15 Oct 2026)
         ("✨ Flux 3 Ultra Fast (rank 16, adaptive LR)", _preset(16, adaptive=("1e-4", "2e-4"), epochs=50)),
         ("✨ Flux 3 Standard (rank 32, full model)", _preset(32, epochs=64)),
-        ("✨ Flux 3 Style (rank 16, gentle LR)", _preset(16, adaptive=("5e-5", "2e-4"), epochs=64)),
+        # Style on CAME at a fixed 5e-5 (Peter, 28 Nov 2026), the MOSS-Image Style recipe; it was Muon with Adaptive
+        # LR 5e-5 to 2e-4
+        ("✨ Flux 3 Style (rank 16, 5e-5)", {**_preset(16, lr=5e-5, epochs=64), "OPTIMIZER_TYPE": "came",
+                                           "OPTIMIZER_ARGS": ""}),
         # Krea 2 has no edit mode: Ultra Fast's and Standard's settings, at 12 epochs (edit pairs learn fast)
         ("✨ Flux 3 Edit (rank 16, adaptive LR)", _preset(16, adaptive=("1e-4", "2e-4"), epochs=12, edit=True)),
         ("✨ Flux 3 Edit Strong (rank 32) - trickier edits", _preset(32, epochs=12, edit=True)),

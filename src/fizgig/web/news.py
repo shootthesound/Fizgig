@@ -5,6 +5,17 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 
 NEWS = [
     {
+        "date": "28 Nov 2026",
+        "title": "Style presets that learn the style, and CAME is back",
+        "body": (
+            "Most models' Style preset now trains on CAME at a fixed 5e-5: on a papercut set, MOSS-Image's old Style "
+            "preset learned no style in 50 epochs, and CAME had it by epoch 20. SDXL gets a Style preset too.\n\n"
+            "CAME is back in Optimizer Type for every model, thanks to @sam00778 for asking."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#28-nov-2026-style-presets-that-learn-the-style-and-came-is-back"},
+                  {"text": "Release notes", "href": "https://github.com/shootthesound/Fizgig/releases/tag/v9.9.0"}],
+    },
+    {
         "date": "27 Nov 2026",
         "title": "The loss watch on the Captions tab, and Find duplicate pictures",
         "body": (

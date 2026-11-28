@@ -1,5 +1,13 @@
 # Fizgig news
 
+## 28 Nov 2026: Style presets that learn the style, and CAME is back
+
+**Style presets now learn the style.** Most models' Style preset trains on CAME at a fixed 5e-5. On an 8-picture papercut set, MOSS-Image's old Style preset learned no style in 50 epochs; CAME had it by epoch 20, and it learned the style on MOSS-Image, Anima, Qwen Image 2.1, Flux 3, Krea 2, Z-Image Turbo and both MiniMax H3 models. SDXL gets a Style preset of its own.
+
+**CAME is back.** It's in Optimizer Type for every model, with Adafactor's small memory use, and Fizgig carries its own copy, so there's nothing extra to install. Thanks to @sam00778 for asking.
+
+[Fizgig v9.9.0 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v9.9.0)
+
 ## 27 Nov 2026: The loss watch on the Captions tab, and Find duplicate pictures
 
 **See what the loss watch thinks, where you edit captions.** Each caption card shows its picture's verdict (stuck, learning, easy...) as a small pill, a new filter shows one group at a time, and a caption you save during a run trains from the next epoch.

@@ -246,6 +246,8 @@ Since November:
 - [bkrew](https://github.com/bkrew): auto-recaption that corrects your caption ([#244](https://github.com/shootthesound/Fizgig/issues/244))
 - [CognitiveDiffusion](https://github.com/CognitiveDiffusion): clip captions from several frames ([#351](https://github.com/shootthesound/Fizgig/issues/351)) and Studio's oversized mix saves ([#411](https://github.com/shootthesound/Fizgig/issues/411))
 - [mart-hill](https://github.com/mart-hill): edited captions after Continue ([#409](https://github.com/shootthesound/Fizgig/issues/409))
+- [sam00778](https://github.com/sam00778): bringing back CAME, which became the Style presets' optimizer ([#416](https://github.com/shootthesound/Fizgig/issues/416))
+- [Aymenbayoss](https://github.com/Aymenbayoss): a Studio save that never finished ([#413](https://github.com/shootthesound/Fizgig/issues/413))
 - WiseDuck (by email): Gizmo's **Prepare a folder** and clips at any audio sample rate
 - u/Obvious-Bad7548 on r/StableDiffusion: the LCM sampler recipe for H3 Image
 

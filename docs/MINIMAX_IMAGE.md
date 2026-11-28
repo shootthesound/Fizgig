@@ -85,6 +85,8 @@ LoRAs for H3 Image made elsewhere load in Studio, LoRA Royale, the Profiler, Ext
 | KSampler | sampler `euler`, scheduler `simple`, 6 steps, CFG 1 |
 | Your LoRA | Load LoRA |
 
+**Tip: a smoother VAE.** [ostris/ostris_h3_image_vae](https://huggingface.co/ostris/ostris_h3_image_vae) is a fine-tune of the H3 Image VAE's decoder: it takes the over-sharp edge off fine detail, so skin, hair and small text come out smoother. Put `ostris_h3_image_vae_fp16.safetensors` in `ComfyUI/models/vae/` and pick it in the Load VAE node. Its encoder is the stock one, so it works with any H3 Image LoRA, and to see the same look in Fizgig's previews and Studio, set it as the MiniMax H3 Image VAE in Preferences.
+
 **Your LoRA can look smoother in ComfyUI than in Fizgig.** ComfyUI's default loading (dynamic VRAM) currently applies a LoRA a little weaker on this model: it adds the LoRA to each weight in bf16, where the smallest changes round away. On our test LoRA about 15% was lost, and the same seed came out cleaner and slightly less like the subject. Fizgig's previews and Studio show the LoRA at its full strength, and so does ComfyUI started with `--disable-dynamic-vram`. To see ComfyUI's default look in Studio, set the LoRA's strength to about 0.8. Reported to ComfyUI as [#17690](https://github.com/Comfy-Org/ComfyUI/issues/17690).
 
 ## Licence

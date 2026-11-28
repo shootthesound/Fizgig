@@ -79,7 +79,8 @@ def test_runtime_discovery_still_probes_native_imports(monkeypatch):
 CHOSEN = {k: "muon" for k in ("qwen_image21", "krea2", "moss_image", "vimoo", "zimage", "zimage_base",
                                     "klein", "sdxl", "flux3", "anima", "fibo2")}
 # single presets chosen on a new optimizer (Peter, 12 Nov 2026: H3 Image Standard on Automagic v4 at its 2.5e-4 ceiling)
-PRESET_CHOSEN = {("minimax_image", "✨ MiniMax H3 Image Standard (rank 32, full model)"): "automagic4"}
+PRESET_CHOSEN = {("minimax_image", "✨ MiniMax H3 Image Standard (rank 32, full model)"): "automagic4",
+                 ("moss_image", "✨ MOSS-Image Style (rank 16, 5e-5)"): "came"}           # #416
 
 
 def test_no_preset_picks_a_new_optimizer():

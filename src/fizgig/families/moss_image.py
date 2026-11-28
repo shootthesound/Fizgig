@@ -363,7 +363,10 @@ MOSS_IMAGE = FamilyDescription(
         # Fast first, so a first visit applies it (Peter, 27 Oct 2026)
         ("✨ MOSS-Image Fast (rank 16, 0.25 MP)", _preset(16, epochs=70, mp="0.25")),
         ("✨ MOSS-Image Standard (rank 32, 1e-4)", _preset(32, epochs=70, face=True)),
-        ("✨ MOSS-Image Style (rank 16, 5e-5)", {**_preset(16, lr=5e-5, epochs=50), "FAMILY_EMA": "Off"}),   # no EMA: a style at 5e-5 is slow enough
+        # Style on CAME (#416, Peter 28 Nov 2026): on an 8-picture papercut set Muon at 5e-5 learned no style in 50
+        # epochs; CAME at 5e-5 had it by epoch 20, and still beat Muon at 5.5e-4, which moved the model as far
+        ("✨ MOSS-Image Style (rank 16, 5e-5)", {**_preset(16, lr=5e-5, epochs=50), "FAMILY_EMA": "Off",
+                                               "OPTIMIZER_TYPE": "came", "OPTIMIZER_ARGS": ""}),   # no EMA: a style at 5e-5 is slow enough
         ("✨ MOSS-Image Slider (rank 8, 2e-4)", _preset(8, lr=2e-4, epochs=20, slider=True)),
         # Fast with Adaptive LR (2e-4 to 4e-4) and the per-image loss watch + per-image LR (Peter, 8 Nov 2026); rank 32
         # alpha 16 (Peter, 9 Nov); just above Fine-tune

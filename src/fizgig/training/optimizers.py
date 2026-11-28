@@ -13,7 +13,7 @@ Two things matter for a LoRA and pull against the "more optimizers is better" in
   produce a fried LoRA and a bug report, so `create_optimizer` warns loudly on the record when
   the LR looks wrong for the family. Prodigy estimates the rate itself (`d`) and takes `lr=1.0` as a
   multiplier; Muon with `adjust_lr_fn=match_rms_adamw` matches AdamW's step size, so AdamW's rates
-  apply. (CAME stays out; see the note above _CATALOG.)
+  apply. CAME runs at the rate it is given, like Adafactor.
 
 Free-form `module.path.ClassName` is accepted too, so a user who pip-installs something exotic
 does not need a Fizgig release to use it.
@@ -48,7 +48,7 @@ AUTOMAGIC4_MAX_LR = 2.5e-4    # Automagic v4's rate never climbs past this unles
 # via the full module.path.ClassName form.
 # Prodigy came back with #292 (@Murf-Code): vendored (fizgig/training/prodigy.py, no package),
 # Adaptive LR and the scheduler stand down for it (owns_its_rate), and it never falls back to
-# AdamW. CAME stays out; Adafactor came back at a fixed rate (#312, see its entry).
+# AdamW. Adafactor came back at a fixed rate (#312, see its entry), and CAME the same way (#416).
 _CATALOG = {
     "adamw8bit":          ("bitsandbytes", "AdamW, 8-bit state (default — the validated recipe)"),
     "adamw":              (None,           "AdamW, fp32 state, CUDA-fused where available"),
@@ -56,6 +56,12 @@ _CATALOG = {
     # and the scheduler drive it like any other: the old bugs came from relative_step's lr=None. Every full
     # fine-tune trains on it by default.
     "adafactor":          ("transformers",  "Adafactor - factored state, far smaller than AdamW's; the fine-tune default"),
+    # Back 28 Nov 2026 (#416), vendored (fizgig/training/came.py, MIT): an Adafactor variant that divides each step
+    # by how unsteady the update has been. It has no rate of its own, so the Learning Rate box, Adaptive LR and the
+    # scheduler drive it like AdamW - but at the same rate its steps are larger than AdamW's where the update holds
+    # steady (4-30x on a LoRA-shaped toy, 28 Nov 2026).
+    "came":               (None,           "CAME - Adafactor's small state; steps grow where the update holds "
+                                            "steady, so they run larger than AdamW's at the same learning rate"),
     "pagedadamw8bit":     ("bitsandbytes", "AdamW8bit that pages state to CPU under pressure"),
     "ademamix8bit":       ("bitsandbytes", "AdEMAMix — second slow EMA, aimed at long runs"),
     "pagedademamix8bit":  ("bitsandbytes", "AdEMAMix8bit with CPU paging"),
@@ -400,6 +406,9 @@ def create_optimizer(name: str, params, lr: float, args_str: str = "",
             for k, v in (("scale_parameter", False), ("relative_step", False), ("warmup_init", False)):
                 kwargs.setdefault(k, v)
             opt = Adafactor(params, lr=lr, **kwargs)
+        elif key == "came":
+            from fizgig.training.came import CAME             # the vendored copy only, never a package
+            opt = CAME(params, lr=lr, **kwargs)
         elif key == "adamw":
             # Fused AdamW is one CUDA kernel over all 264 factors instead of a Python loop —
             # the "CUDA optimizer" the comparison thread was pointing at. Requires every param
